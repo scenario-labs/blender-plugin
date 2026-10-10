@@ -61,8 +61,14 @@ Staging uses a private temporary subdirectory and
 publication in the same filesystem. A filesystem without hard-link support fails
 closed. Directory metadata durability after sudden power loss is not guaranteed.
 
-An optional expected byte count and SHA256 are checked before publication. The
-returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
+An optional expected byte count and SHA256 are checked before publication. A
+call without an expected byte count needs a valid `Content-Length` instead, and
+the streamed body must match it. A close-delimited body that ends early reads
+exactly like a complete one, and Python's TLS layer also reports a peer close
+without `close_notify` as the end of data, so a response with neither bound is
+rejected as incomplete: nothing is published and no receipt is returned. With a
+known expected size, a body without `Content-Length` must still match that size.
+The returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
 [job store](JOB_STORAGE.md) can persist this receipt; `verify_download` rehashes it
 before explicit recovery or Blender application. Verification accepts only a
 regular nonsymlink file with the saved size/digest, enforces a byte cap and checks
@@ -172,6 +178,51 @@ This is a prerequisite for explicit material application under #65/#68. It does
 not assign materials or choose between multiple texture sets/variants. A later
 material approval must select unambiguous assets and the intended mesh targets;
 role preservation alone does not authorize a scene mutation.
+
+## Declared HDR originals and 360 projection
+
+SDK 2.2.0 documents that an HDRi skybox asset exposes a JPEG preview as `url` and
+its `.exr` or `.hdr` file as `originalFileUrl`, labelled by `originalMimeType`.
+The extension selects only the OpenEXR labels: when an image asset declares
+`image/x-exr` or `image/aces` there, the manifest records
+`source: original`, that media type, an `.exr` local name and an unknown expected
+size: originals publish no size metadata. The download fetches `originalFileUrl`
+through the same storage policy, online check, redirect rules and atomic
+publication, with a 128 MiB cap matching the World file limit instead of a size
+match. Because no size is known, the storage response must declare a valid
+`Content-Length` within that cap and the body must match it. A response without
+one ends in `download_failed` with nothing published and no receipt, and the same
+resume command can retry it. The receipt digest then binds the saved bytes.
+Radiance (`.hdr`), mesh, splat, audio and video originals keep the asset's own
+file and size.
+
+A declared EXR original without a usable `originalFileUrl` fails before any
+manifest is saved, so a retry can still choose the original; the JPEG preview is
+never saved in its place. Refreshing an unfinished download reuses the saved
+manifest's choice. A saved original whose declaration or destination later
+disappears, changes to another format or loses its projection stops before
+transfer with `download_failed`. Manifests saved before
+[schema 10](JOB_STORAGE.md#schema-10-declared-originals-and-lane-defaults) keep
+downloading the file they recorded, even if Scenario now declares an original.
+
+`result_metadata.panorama_projection` reports `equirectangular` only when an image
+asset's `metadata.type` is `skybox-base-360`, `upscale-skybox` or `skybox-hdri`.
+Filenames, dimensions, models and `skybox-3d` never set it, and an unclassified
+saved result is never relabelled later, as for texture roles. The projection and
+EXR container are labels for later review; Blender must still decode the file,
+the World preflight still checks its 2:1 shape and no dynamic range is measured.
+[World application](WORLD_APPLICATION.md) offers both original labels and applies
+them only after its own OpenEXR container and color primaries checks; an original
+whose primaries it refuses stays saved, and the JPEG preview is not kept as a
+fallback. Image import accepts `image/x-exr` but not yet `image/aces`, so an
+ACES-labelled original is offered for World application and inspection only.
+The offline and installed-ZIP tests use mocked storage responses. A live HDRi run
+must still confirm `metadata.type`, the original's host, size, `Content-Length`
+header and color labelling before the release freezes this behavior. An
+`originalFileUrl` host outside the storage policy, or an original served without
+`Content-Length`, makes each such job end in `download_failed`, where earlier
+builds saved the JPEG preview; that needs a reviewed storage policy or transport
+change, never a host derived from another URL or an unbounded body.
 
 ## Local Film media measurement
 

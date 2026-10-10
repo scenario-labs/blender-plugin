@@ -212,6 +212,8 @@ class ResultDownloader:
 
         Content hashes supplied by a trusted manifest are optional. Without one,
         the returned digest detects later local changes, not server authenticity.
+        Without an expected size, the response must declare a valid Content-Length
+        that the streamed body matches; an unbounded body is never published.
         Temporary cleanup is attempted on ordinary/control exceptions. Once
         published, cleanup failures cannot turn verified output into a failed
         transfer. After cleanup failure or process death, unreferenced
@@ -307,7 +309,9 @@ class ResultDownloader:
                 if response.getheader("Transfer-Encoding") is not None:
                     raise TransferError("Transfer-encoded storage responses are unsupported")
                 length = response.getheader("Content-Length")
-                if allow_size_mismatch and length is None:
+                # Without a trusted size, a close-delimited body that ends early
+                # (including a TLS close without close_notify) reads like EOF.
+                if (allow_size_mismatch or expected_size is None) and length is None:
                     raise TransferError("Storage response needs a complete byte count")
                 if length is not None:
                     if not re.fullmatch(r"[0-9]{1,20}", length) or int(length) > limit:

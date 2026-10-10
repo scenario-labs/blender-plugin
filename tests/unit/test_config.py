@@ -75,6 +75,9 @@ def test_ext_for_mime():
     assert config.ext_for_mime("video/mp4") == "mp4"
     assert config.ext_for_mime("application/x-unknown") == "bin"
     assert config.ext_for_mime(None) == "bin"
+    for mime in ("image/exr", "image/x-exr", "image/aces"):
+        assert config.ext_for_mime(mime) == "exr"
+    assert config.ext_for_mime("image/vnd.radiance") == "hdr"
 
 
 def test_output_filename_is_readable_and_unique():

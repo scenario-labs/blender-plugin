@@ -18,11 +18,13 @@ from pathlib import Path
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator
 from scenario.core.jobs.credential_storage import open_credential_store
+from scenario.core.jobs.result_metadata import ORIGINAL_MEDIA_TYPES
 from scenario.core.jobs.store import JobOrigin, JobState
 from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
+from scenario.core.scene.panorama import MAX_FILE_BYTES, PanoramaError, inspect_panorama
 from tools.dev_config import live_settings
 
-RESULT_KINDS = ("image", "material", "video", "model", "audio")
+RESULT_KINDS = ("image", "material", "video", "model", "audio", "panorama", "hdri")
 # Patina's selectable maps use these input names. Smoothness is the inverse
 # representation supported by the shared material application contract.
 MATERIAL_MAP_ROLES = {
@@ -130,14 +132,52 @@ def material_requirements(payload_json):
     return maps, count
 
 
-def verify_result_kind(record, result_kind, *, material_payload=None):
-    """Check saved metadata after receipt verification; this does not decode media."""
+def panoramas(record, paths):
+    """Return projected results whose verified bytes pass the World panorama preflight.
+
+    Only the server-declared projection selects a file; the bounded container
+    check then requires a 2:1 PNG, JPEG or OpenEXR. It does not decode pixels, measure
+    dynamic range or judge seams, which stay with Blender and human review.
+    """
+    if len(paths) != len(record.results):
+        raise SmokeError("Verified files do not match the saved results", 1)
+    checked = []
+    for item, path in zip(record.results, paths, strict=True):
+        if item.asset.projection != "equirectangular":
+            continue
+        try:
+            if path.stat().st_size > MAX_FILE_BYTES:
+                raise PanoramaError("Panorama file exceeds the byte limit")
+            checked.append((item.asset, inspect_panorama(path.read_bytes())))
+        except (OSError, PanoramaError):
+            raise SmokeError("A projected result is not a supported 2:1 panorama file", 1) from None
+    return checked
+
+
+def verify_result_kind(record, result_kind, *, material_payload=None, paths=()):
+    """Check saved metadata after receipt verification.
+
+    Panorama kinds also run the bounded container preflight on the verified files;
+    no kind decodes media or applies it to a scene.
+    """
     assets = [item.asset for item in record.results]
     if not assets or any(item.receipt is None or item.receipt.size <= 0 for item in record.results):
         raise SmokeError("Downloaded results contain no usable bytes", 1)
     media_types = [item.media_type for item in assets]
     if result_kind == "image":
         matches = all(mime.startswith("image/") for mime in media_types)
+    elif result_kind in {"panorama", "hdri"}:
+        checked = panoramas(record, paths)
+        if result_kind == "hdri":
+            # A declared OpenEXR original, never a tonemapped preview or a filename.
+            checked = [
+                (asset, info)
+                for asset, info in checked
+                if asset.source == "original"
+                and asset.media_type in ORIGINAL_MEDIA_TYPES
+                and info.hdr_capable
+            ]
+        matches = all(mime.startswith("image/") for mime in media_types) and bool(checked)
     elif result_kind == "material":
         if material_payload is None:
             raise SmokeError("Material quote lacks map expectations; inspect saved results", 4)
@@ -198,7 +238,12 @@ def follow(
             )
             if not verified.paths:
                 raise SmokeError("Downloaded results contain no usable files", 1)
-            verify_result_kind(verified.record, result_kind, material_payload=material_payload)
+            verify_result_kind(
+                verified.record,
+                result_kind,
+                material_payload=material_payload,
+                paths=verified.paths,
+            )
             print(f"Verified {len(verified.paths)} result file(s); no Blender application")
             return 0
         elif record.state in {JobState.FAILED, JobState.CANCELED}:

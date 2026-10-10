@@ -229,7 +229,8 @@ under maintainer-authorized credentials and project before any route is enabled.
 ## Model acceptance commands
 
 All model smoke entry points now use `tools.smoke_image` as their shared engine;
-`tools.smoke_model` selects Image, Material, Video, GLB or audio result checks.
+`tools.smoke_model` selects Image, Material, Video, GLB, audio, panorama or HDRI
+result checks.
 Fresh metadata uses SDK 2.2.0 `models.with_raw_response.retrieve`, exact estimates
 and one paid submission use `generate.with_raw_response.run_model`, and saved-job
 polling/download metadata use `jobs.with_raw_response.retrieve` and
@@ -244,11 +245,17 @@ maps fail submission-result and recovery checks without regenerating. Old materi
 quotes can recover results for inspection but cannot establish map completeness
 or authorize new submission; unsubmitted runs need a fresh quote.
 Offline SDK-transport tests
-exercise all five kinds, uncertainty, cost/schema drift, scope changes and receipt
+exercise every kind, uncertainty, cost/schema drift, scope changes and receipt
 recovery. Result checks use verified nonempty bytes, MIME metadata and known
 texture roles; they do not establish decoding, local reference upload, Film,
 native interaction, live provider acceptance or a protected aggregate CI budget.
 See [the command reference](../tests/smoke/README.md).
+
+The `panorama` and `hdri` kinds check the saved `projection` and `source` fields
+from the same `assets.with_raw_response.retrieve` metadata, then the bounded
+2:1 container preflight on the verified files; `hdri` requires a saved OpenEXR
+original. They add no SDK call or dependency. Offline tests use synthetic PNG,
+JPEG and OpenEXR headers, not live skybox output.
 
 ## Shared model text reads
 
@@ -690,6 +697,26 @@ application; unknown semantics remain unknown. See
 [versioned store](JOB_STORAGE.md#atomicity-and-failures) for download guards and
 atomic schema 2/3 upgrades. This does not change authentication, scope, retry
 policy, provider acceptance or the dependency pin.
+
+## Declared HDR originals and projections
+
+The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.2.0
+`originalFileUrl` and `originalMimeType` fields. The typed
+`AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes a
+JPEG preview as `url` and its `.exr` or `.hdr` file as the original; the extension
+selects only the OpenEXR labels. Its `original_file_url`
+docstring still describes only video, audio and 3D originals, which is a
+documentation gap rather than a missing operation. `metadata.type` includes the
+skybox labels used for the projection. Offline contracts check the raw and typed
+fields through the public wrapper. The result command downloads EXR-family
+originals through the existing credential-free storage policy; no new endpoint,
+SDK method, extension or raw fallback is added. `assets.download.request` was not
+used: it requests a converted download with a status poll, and none of its
+`target_format` values is EXR. See
+[declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
+and [schema 10](JOB_STORAGE.md#schema-10-declared-originals-and-lane-defaults).
+Live original hosts, sizes and asset layouts remain unverified until an authorized
+panorama run.
 
 ## Verified Film composition quotes
 

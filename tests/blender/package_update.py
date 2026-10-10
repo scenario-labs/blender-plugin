@@ -20,6 +20,7 @@ from repository_update import checked_repository, owned_profile
 
 PACKAGE = "bl_ext.update_fixture.scenario"
 PROJECT_ID = "update-fixture-project"
+ORIGIN = ("update-file", "update-scene", "update-revision", "update-target")
 
 
 def module(name):
@@ -61,7 +62,119 @@ def job_snapshot(record):
     value = asdict(record)
     if value["intent"].get("source") != "cloud":
         value["intent"].setdefault("film_task", None)
+    for item in value["results"]:
+        # Schema 10 gives earlier results the asset's own file and no projection.
+        item["asset"].setdefault("source", "asset")
+        item["asset"].setdefault("projection", None)
     return value
+
+
+DEFAULT_LANES = ("image", "render_image")
+BASE_JOBS = frozenset(("prepared", "uncertain", "remote", "download_failed", "ready", "applied"))
+
+
+def supports_schema_10():
+    """Lane defaults and declared originals arrived together in job schema 10."""
+    jobs = module("core.jobs.store")
+    fields = getattr(jobs.ResultAsset, "__dataclass_fields__", {})
+    return hasattr(jobs, "TrainedModelDefault") and {"source", "projection"} <= set(fields)
+
+
+def store_schema(paths):
+    """Read the job database version without opening or upgrading it."""
+    import sqlite3
+
+    database = paths.state_dir / "shared-jobs" / "jobs.sqlite3"
+    connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True)
+    try:
+        return connection.execute("PRAGMA user_version").fetchone()[0]
+    finally:
+        connection.close()
+
+
+def trained_defaults_snapshot(selected, other):
+    """Lane defaults live in their own table; an untouched lane matches older packages."""
+    if not hasattr(selected, "trained_default"):
+        return None
+    states = {lane: selected.trained_default(lane) for lane in DEFAULT_LANES}
+    if (
+        any(other.trained_default(lane).revision for lane in DEFAULT_LANES)
+        or other.trained_defaults()
+    ):
+        raise RuntimeError("Trained-model defaults escaped their credential scope")
+    if not any(state.revision for state in states.values()):
+        return None
+    return {lane: asdict(state) for lane, state in states.items()}
+
+
+def seed_schema_10(selected, results, origin):
+    """Save a declared EXR original with its projection, plus a saved and a cleared default."""
+    jobs = module("core.jobs.store")
+    transfers = module("core.jobs.transfers")
+    default = jobs.TrainedModelDefault(
+        "image", "stack", "update-base-model", (jobs.TrainedModelPick("update-lora", 0.75),)
+    )
+    selected.set_trained_default(default, expected_revision=0)
+    custom = jobs.TrainedModelDefault("render_image", "custom", "update-private-model")
+    saved = selected.set_trained_default(custom, expected_revision=0)
+    selected.clear_trained_default("render_image", expected_revision=saved.revision)
+    record = selected.create(
+        jobs.JobIntent(
+            "panorama",
+            selected.scope,
+            origin,
+            "model",
+            "update-skybox-model",
+            digest(b"fixture panorama payload"),
+            digest(b"fixture panorama quote"),
+            "2.5",
+        )
+    )
+    for state, extra in (
+        ("submitting", {}),
+        ("remote", {"remote_job_id": "remote-panorama"}),
+        ("succeeded", {}),
+    ):
+        record = selected.transition(
+            "panorama", expected_revision=record.revision, state=jobs.JobState(state), **extra
+        )
+    asset = jobs.ResultAsset(
+        "asset-panorama",
+        "000-panorama.exr",
+        "image/aces",
+        source="original",
+        projection="equirectangular",
+    )
+    record = selected.set_results("panorama", (asset,), expected_revision=record.revision)
+    record = selected.transition(
+        "panorama", expected_revision=record.revision, state=jobs.JobState.DOWNLOADING
+    )
+    data = b"offline preserved EXR original bytes"
+    (results._directory(record) / asset.name).write_bytes(data)
+    receipt = transfers.DownloadedResult(asset.name, len(data), digest(data))
+    record = selected.record_download(
+        "panorama", asset.asset_id, receipt, expected_revision=record.revision
+    )
+    selected.transition("panorama", expected_revision=record.revision, state=jobs.JobState.READY)
+
+
+def check_schema_10(selected, results):
+    """The saved original and lane default must stay exact; the cleared lane stays cleared."""
+    record = selected.get("panorama")
+    asset = record.results[0].asset
+    if (record.state.value, asset.source, asset.projection, asset.media_type) != (
+        "ready",
+        "original",
+        "equirectangular",
+        "image/aces",
+    ) or asset.expected_size is not None:
+        raise RuntimeError("Update lost the saved original or its projection")
+    results.verify_ready("panorama", expected_revision=record.revision)
+    image, render = (selected.trained_default(lane) for lane in DEFAULT_LANES)
+    if image.default is None or image.default.picks[0].scale != 0.75:
+        raise RuntimeError("Update lost the saved trained-model default")
+    if render.default is not None or render.revision != 2:
+        raise RuntimeError("Update lost the cleared default's revision")
 
 
 def film_upload_snapshot(selected, other):
@@ -343,7 +456,7 @@ def seed(profile):
     prefs.mcp_port, prefs.mcp_allow_python = 19876, False
     paths, selected, other, uploads, sources, results = stores()
     jobs = module("core.jobs.store")
-    origin = jobs.JobOrigin("update-file", "update-scene", "update-revision", "update-target")
+    origin = jobs.JobOrigin(*ORIGIN)
     mesh_binding = seed_mesh_upload(profile, selected, uploads, sources, origin)
     seed_film_upload(selected, uploads)
     template = jobs.JobIntent(
@@ -414,6 +527,8 @@ def seed(profile):
             advance("applied")
             seed_local_applications(selected, record, origin)
     other.create(replace(template, scope=other.scope, request_id="other-scope"))
+    if supports_schema_10():
+        seed_schema_10(selected, results, origin)
     source = profile / "reference.png"
     source.write_bytes(b"offline preserved reference bytes")
     upload_states = module("core.jobs.upload_store").UploadState
@@ -488,10 +603,17 @@ def snapshot(profile):
         raise RuntimeError("Scenario storage escaped the disposable profile")
     check_project_scope(paths, prefs, selected, scene=bpy.context.scene)
     records = selected.records()
-    if len(records) != 6 or selected.get("other-scope") is not None or len(other.records()) != 1:
+    names = {record.intent.request_id for record in records}
+    if (
+        names - {"panorama"} != BASE_JOBS
+        or selected.get("other-scope") is not None
+        or len(other.records()) != 1
+    ):
         raise RuntimeError("Update lost durable records or credential isolation")
     check_mesh_bindings(selected, uploads)
     check_local_applications(selected)
+    if "panorama" in names:
+        check_schema_10(selected, results)
     for record in records:
         if record.state.value == "ready":
             results.verify_ready(record.intent.request_id, expected_revision=record.revision)
@@ -553,6 +675,7 @@ def snapshot(profile):
         "other_jobs": [job_snapshot(r) for r in other.records()],
         "uploads": [asdict(r) for r in uploads.records()],
         "film_upload": film_upload_snapshot(selected, other),
+        "trained_defaults": trained_defaults_snapshot(selected, other),
         "files": files,
         "scene": scene,
         "workflow": workflow_snapshot(bpy.context.scene, other),
@@ -587,6 +710,7 @@ def main():
     args = parser.parse_args(sys.argv[sys.argv.index("--") + 1 :])
     checked_repository(profile, args.url, args.report)
     expected_path = profile.parent / "expected-state.json"
+    evidence_path = profile.parent / "update-evidence.json"
     with no_service_connections():
         if args.restart:
             check_version(profile, args.after)
@@ -594,18 +718,38 @@ def main():
             expected = json.loads(expected_path.read_text())
             if snapshot(profile) != expected:
                 raise RuntimeError("Scenario state changed after restart")
+            evidence = json.loads(evidence_path.read_text())
+            if store_schema(module("blender.runtime").paths()) != evidence["store_schema"]["after"]:
+                raise RuntimeError("Job storage version changed after restart")
         else:
             check_version(profile, args.before)
             seed(profile)
             expected = snapshot(profile)
             expected_path.write_text(json.dumps(expected, indent=2) + "\n")
+            before_schema = store_schema(module("blender.runtime").paths())
+            seeded = "before-update" if expected["trained_defaults"] is not None else None
             if bpy.ops.extensions.repo_sync_all() != {"FINISHED"}:
                 raise RuntimeError("Native repository sync failed")
             if bpy.ops.extensions.package_upgrade_all() != {"FINISHED"}:
                 raise RuntimeError("Native Scenario upgrade failed")
             check_version(profile, args.after)
+            # The first post-update store access performs any schema upgrade.
             if snapshot(profile) != expected:
                 raise RuntimeError("Scenario state changed during native update")
+            after_schema = store_schema(module("blender.runtime").paths())
+            if seeded is None and supports_schema_10():
+                # Write schema 10 state into the upgraded store; restart must keep it.
+                _, selected, _, _, _, results = stores()
+                origin = module("core.jobs.store").JobOrigin(*ORIGIN)
+                seed_schema_10(selected, results, origin)
+                expected = snapshot(profile)
+                expected_path.write_text(json.dumps(expected, indent=2) + "\n")
+                seeded = "after-upgrade"
+            evidence = {
+                "store_schema": {"before": before_schema, "after": after_schema},
+                "schema_10_state": seeded or "unavailable",
+            }
+            evidence_path.write_text(json.dumps(evidence) + "\n")
             bpy.ops.wm.save_userpref()
         args.report.write_text(
             json.dumps(
@@ -618,6 +762,7 @@ def main():
                     "project_scope_preserved": True,
                     "workflow_references_preserved": expected["workflow"] is not None,
                     "service_requests": 0,
+                    **evidence,
                 }
             )
             + "\n"

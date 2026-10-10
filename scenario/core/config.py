@@ -24,6 +24,11 @@ _MIME_EXT = {
     "image/gif": "gif",
     "image/avif": "avif",
     "image/tiff": "tif",
+    # OpenEXR labels, including ACES-labelled EXR originals, and Radiance HDR.
+    "image/exr": "exr",
+    "image/x-exr": "exr",
+    "image/aces": "exr",
+    "image/vnd.radiance": "hdr",
     "video/mp4": "mp4",
     "video/webm": "webm",
     "model/gltf-binary": "glb",

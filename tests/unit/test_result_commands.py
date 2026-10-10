@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import sqlite3
 import threading
 from dataclasses import replace
 
@@ -710,3 +711,223 @@ def test_legacy_mesh_resume_corrects_only_local_size_and_keeps_prior_receipt(
     assert assets["asset-two"]["properties"]["size"] == 2
     verified = coordinator.verify_results("request", expected_revision=ready.revision)
     assert all(path.read_bytes() == DATA for path in verified.paths)
+
+
+class OriginalDownloader(ResultDownloader):
+    """Record each destination and byte cap without contacting storage."""
+
+    def __init__(self):
+        super().__init__(
+            StoragePolicy(frozenset({"storage.example.invalid"})), online_access=lambda: True
+        )
+        self.calls = []
+
+    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
+        self._policy.destination(url)
+        self.calls.append((url, name, expected_size, max_bytes))
+        with (root / name).open("xb") as target:
+            target.write(DATA)
+        return DownloadedResult(name, len(DATA), hashlib.sha256(DATA).hexdigest())
+
+
+def hdri(assets, identifier="asset-one", *, original="image/aces"):
+    """An HDRi skybox: JPEG preview as `url`, its EXR as the declared original."""
+    assets[identifier].update(
+        mimeType="image/jpeg",
+        kind="image-hdr",
+        metadata={"type": "skybox-hdri", "prompt": "private fixture prompt"},
+        originalMimeType=original,
+        originalFileUrl=f"https://storage.example.invalid/{identifier}-original?signed=private",
+    )
+
+
+@pytest.mark.parametrize("original", ["image/aces", "image/x-exr"])
+def test_declared_exr_original_is_saved_instead_of_its_preview(setup, tmp_path, original):
+    from scenario.core.jobs.results import MAX_ORIGINAL_BYTES
+
+    coordinator, store, current, _, assets, _, calls, _ = setup
+    hdri(assets, original=original)
+    assets["asset-two"]["metadata"] = {"type": "skybox-base-360"}
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    result = coordinator.download_results("request", expected_revision=current.revision)
+    assert result.state == JobState.READY
+    first, second = (item.asset for item in result.results)
+    assert (first.media_type, first.source, first.projection, first.expected_size) == (
+        original,
+        "original",
+        "equirectangular",
+        None,
+    )
+    assert first.name.endswith(".exr") and first.texture_role is None
+    assert (second.media_type, second.source, second.projection) == (
+        "image/png",
+        "asset",
+        "equirectangular",
+    )
+    assert downloader.calls[0][0] == assets["asset-one"]["originalFileUrl"]
+    assert downloader.calls[0][2:] == (None, MAX_ORIGINAL_BYTES)
+    assert downloader.calls[1][0] == assets["asset-two"]["url"]
+    assert downloader.calls[1][2:] == (len(DATA), None)
+    assert all(request.method == "GET" for request in calls)
+    assert JobStore(tmp_path / "jobs.sqlite3", store.scope).get("request") == result
+    saved = (tmp_path / "jobs.sqlite3").read_bytes()
+    assert b"signed=" not in saved and b"private fixture" not in saved
+
+
+@pytest.mark.parametrize(
+    "mime,original",
+    [
+        ("image/jpeg", "image/vnd.radiance"),
+        ("model/spz", "model/ply"),
+        ("video/mp4", "video/quicktime"),
+        ("model/gltf-binary", "image/x-exr"),
+    ],
+)
+def test_other_originals_keep_the_asset_file_and_its_size(setup, mime, original):
+    coordinator, _, current, _, assets, _, _, _ = setup
+    assets["asset-one"].update(
+        mimeType=mime,
+        originalMimeType=original,
+        originalFileUrl="https://storage.example.invalid/original",
+    )
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    result = coordinator.download_results("request", expected_revision=current.revision)
+    asset = result.results[0].asset
+    assert (asset.media_type, asset.source, asset.expected_size) == (mime, "asset", len(DATA))
+    assert downloader.calls[0][0] == assets["asset-one"]["url"]
+    assert downloader.calls[0][3] is None
+
+
+@pytest.mark.parametrize("url", ["missing", None, "", 7])
+def test_declared_original_without_destination_never_saves_its_preview(setup, url):
+    coordinator, store, current, _, assets, downloader, _, _ = setup
+    hdri(assets)
+    if url == "missing":
+        del assets["asset-one"]["originalFileUrl"]
+    else:
+        assets["asset-one"]["originalFileUrl"] = url
+    with pytest.raises(ResultError, match="destination"):
+        coordinator.download_results("request", expected_revision=current.revision)
+    assert store.get("request") == current
+    assert downloader.calls == []
+
+
+@pytest.mark.parametrize("change", ["withdrawn", "no-url", "radiance", "projection"])
+def test_saved_original_fails_closed_when_scenario_changes_it(setup, change):
+    coordinator, store, current, _, assets, _, _, _ = setup
+    hdri(assets)
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    if change == "withdrawn":
+        del assets["asset-one"]["originalMimeType"]
+    elif change == "no-url":
+        del assets["asset-one"]["originalFileUrl"]
+    elif change == "radiance":
+        assets["asset-one"]["originalMimeType"] = "image/vnd.radiance"
+    else:
+        assets["asset-one"]["metadata"] = {"type": "texture"}
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=manifest.revision)
+    failed = store.get("request")
+    assert failed.state == JobState.DOWNLOAD_FAILED
+    assert failed.results == manifest.results
+    assert downloader.calls == []
+
+
+def test_schema_nine_manifest_keeps_downloading_its_saved_preview(setup, tmp_path):
+    coordinator, store, current, _, assets, _, _, _ = setup
+    assets["asset-one"]["mimeType"] = "image/jpeg"
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    path = tmp_path / "jobs.sqlite3"
+    with sqlite3.connect(path) as connection:
+        value = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
+        for item in value["results"]:
+            del item["asset"]["source"], item["asset"]["projection"]
+        connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
+        connection.execute("DROP TABLE trained_defaults")
+        connection.execute("PRAGMA user_version=9")
+    assert JobStore(path, store.scope).get("request") == manifest
+    # Scenario now declares an HDR original and a 360 type for the saved preview.
+    hdri(assets)
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    result = coordinator.download_results("request", expected_revision=manifest.revision)
+    assert result.state == JobState.READY
+    asset = result.results[0].asset
+    assert (asset.media_type, asset.source, asset.projection) == ("image/jpeg", "asset", None)
+    assert downloader.calls[0][0] == assets["asset-one"]["url"]
+    assert downloader.calls[0][3] is None
+
+
+def _mock_storage(monkeypatch, length=None):
+    import io
+    from unittest.mock import Mock
+
+    from scenario.core.jobs import transfers
+
+    class Response(io.BytesIO):
+        status = 200
+
+        def getheader(self, key, default=None):
+            return str(length) if key == "Content-Length" and length is not None else default
+
+    requested = []
+    connection = Mock()
+    connection.request.side_effect = lambda method, target, headers: requested.append(target)
+    connection.getresponse.side_effect = lambda: Response(DATA)
+    https = Mock(return_value=connection)
+    monkeypatch.setattr(transfers.http.client, "HTTPSConnection", https)
+    return https, requested
+
+
+def test_original_transfer_uses_the_storage_policy_downloader(setup, monkeypatch):
+    coordinator, store, current, _, assets, _, _, root = setup
+    hdri(assets)
+    # The original has no size metadata, so its response must declare its length.
+    https, requested = _mock_storage(monkeypatch)
+    coordinator._results._downloader = ResultDownloader(
+        StoragePolicy(frozenset({"storage.example.invalid"})), online_access=lambda: True
+    )
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=current.revision)
+    failed = store.get("request")
+    assert failed.state == JobState.DOWNLOAD_FAILED
+    assert all(item.receipt is None for item in failed.results)
+    assert requested == ["/asset-one-original?signed=private"]
+    assert not [path for path in root.rglob("*") if path.is_file()]
+    # The same resume command retries it; an exact Content-Length completes it.
+    https, requested = _mock_storage(monkeypatch, len(DATA))
+    result = coordinator.download_results("request", expected_revision=failed.revision)
+    assert result.state == JobState.READY
+    assert requested == ["/asset-one-original?signed=private", "/asset-two?signed=initial"]
+    assert {call.args[0] for call in https.call_args_list} == {"storage.example.invalid"}
+    assert result.results[0].receipt.size == len(DATA)
+    verified = coordinator.verify_results("request", expected_revision=result.revision)
+    assert verified.paths[0].read_bytes() == DATA
+
+
+@pytest.mark.parametrize("damage", ["host", "cap"])
+def test_original_outside_policy_or_world_byte_cap_is_rejected(setup, monkeypatch, damage):
+    from scenario.core.jobs.results import MAX_ORIGINAL_BYTES
+
+    coordinator, store, current, _, assets, _, _, _ = setup
+    hdri(assets)
+    if damage == "host":
+        assets["asset-one"]["originalFileUrl"] = "https://elsewhere.example.invalid/original"
+    # Within the general 256 MiB storage policy, beyond the 128 MiB original cap.
+    https, requested = _mock_storage(
+        monkeypatch, MAX_ORIGINAL_BYTES + 1 if damage == "cap" else None
+    )
+    coordinator._results._downloader = ResultDownloader(
+        StoragePolicy(frozenset({"storage.example.invalid"})), online_access=lambda: True
+    )
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=current.revision)
+    failed = store.get("request")
+    assert failed.state == JobState.DOWNLOAD_FAILED
+    assert all(item.receipt is None for item in failed.results)
+    assert https.called is (damage == "cap")
+    assert requested == (["/asset-one-original?signed=private"] if damage == "cap" else [])

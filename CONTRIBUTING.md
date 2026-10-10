@@ -283,7 +283,7 @@ before spending. Preserve the private run directory after uncertainty and use
 `resume`, never another submission. This tool verifies downloaded receipts, not
 Blender UI interaction, media decoding or scene application.
 
-Use `tools.smoke_model quote --result-kind image|material|video|model|audio`
+Use `tools.smoke_model quote --result-kind image|material|video|model|audio|panorama|hdri`
 with the same arguments for other result kinds. The expected kind is part of the
 saved approval. Existing Material, Video and image-to-3D scripts now accept the
 same quote/submit/resume commands through this shared engine; local references

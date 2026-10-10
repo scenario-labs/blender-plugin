@@ -1246,6 +1246,8 @@ class ModelJobs:
                     "name": item.asset.name,
                     "media_type": item.asset.media_type,
                     "size": item.asset.expected_size,
+                    "source": item.asset.source,
+                    "projection": item.asset.projection,
                     "downloaded": item.receipt is not None,
                 }
                 for item in record.results

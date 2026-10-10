@@ -385,15 +385,22 @@ def legacy_store(path, version):
             if version in {2, 3}:
                 for item in value["results"]:
                     del item["asset"]["texture_role"]
+            if version < 10:
+                for item in value["results"]:
+                    del item["asset"]["source"]
+                    del item["asset"]["projection"]
             connection.execute(
                 "UPDATE jobs SET record=? WHERE scope=? AND request_id=?",
                 (json.dumps(value), scope, request_id),
             )
-        connection.execute("DROP TABLE film_uploads")
+        if version < 9:
+            connection.execute("DROP TABLE film_uploads")
+        if version < 10:
+            connection.execute("DROP TABLE trained_defaults")
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8, 9])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -425,11 +432,11 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 9
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 10
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8, 9])
 def test_shared_store_upgrade_failure_preserves_every_row_and_version(
     tmp_path, intent, monkeypatch, damage, version
 ):

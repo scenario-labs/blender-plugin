@@ -14,6 +14,7 @@ from ..core.api.library import asset_summary as _asset_summary
 from ..core.scene.panorama import describe_world_media
 from ..core.schema.params import build_body, validate
 from ..core.ui import capability_status
+from ..core.ui.costs import workflow_quote_notice
 from .protocol import DeferredTool, ToolSpec
 
 
@@ -283,6 +284,7 @@ def estimate_workflow(args):
             "payload": estimate.payload,
             "cu_cost_exact": str(estimate.cost),
             "mesh_sources": [asdict(source) for source in ticket.quote.mesh_sources],
+            **workflow_quote_notice(estimate.loop_steps),
         }
 
     return DeferredTool(lambda: _wait_workflow(ticket.task), finish)
@@ -300,7 +302,8 @@ def run_workflow(args):
     return {
         "local_id": view.local_id,
         "state": view.status,
-        "note": "One workflow submission saved. Inspect job_status; never repeat uncertain work. Results require explicit application. General workflow cancellation is unavailable.",
+        **workflow_quote_notice(view.meta.get("workflow_loop_steps", 0)),
+        "note": "One workflow submission saved. Inspect job_status; never repeat uncertain work. Results require explicit application. General workflow cancellation is unavailable. job_status cu_cost_exact stays the approved quote, not the final charge.",
     }
 
 
@@ -1230,6 +1233,9 @@ def list_generations(args):
                 "prompt": e.prompt,
                 "status": e.status,
                 "cu_cost": e.cu_cost,
+                "cost_unavailable": e.cost_unavailable,
+                "workflow_id": e.workflow_id or None,
+                "workflow_job_id": e.workflow_job_id or None,
                 "local_files": [],
                 "local_request_ids": saved_ids.get(e.job_id, list(e.local_request_ids)),
             }
@@ -1338,7 +1344,7 @@ SPECS = (
         (
             "Request a free exact workflow price bound to the selected scene and connection.\n"
             "Args: workflow_id is required; parameters is an input object (default empty).\n"
-            "Returns: quote_id, workflow_id, original parameters, normalized payload, cu_cost_exact and mesh_sources.\n"
+            "Returns: quote_id, workflow_id, original parameters, normalized payload, cu_cost_exact, mesh_sources, loop_steps, quote_may_understate and cost_warning. loop_steps counts ForEach steps in the workflow definition (null when unknown); when quote_may_understate is true the price covers one loop pass and the final charge can be higher. Show cost_warning with the price; it does not block approval.\n"
             'Example: {"workflow_id": "workflow-example", "parameters": {"prompt": "a cup"}}.\n'
             "No paid submission or upload. Review the normalized payload and exact price; run_workflow requires the same original parameters and explicit approved_cost. Scene, file, credential or project changes require a fresh estimate.\n"
             "Platform equivalent: dry_run on workflow_run."
@@ -1355,6 +1361,7 @@ SPECS = (
             "Args: workflow_id, quote_id and approved_cost are required; parameters must match estimate_workflow's original parameters. approved_cost must be its exact cu_cost_exact string.\n"
             "Returns: local_id and saved state; use job_status, wait_for_job and explicit result application.\n"
             'Example: {"workflow_id": "workflow-example", "quote_id": "approved-quote", "parameters": {"prompt": "a cup"}, "approved_cost": "1.25"}.\n'
+            "Returns: local_id, state, loop_steps, quote_may_understate, cost_warning and note. job_status cu_cost_exact remains the approved quote, not the final charge.\n"
             "Consumes the quote before persistence. Never repeat an uncertain submission; inspect saved jobs. Closing views does not stop it. No automatic scene import. General workflow cancellation and interactive approval/selection nodes are not supported here.\n"
             "Platform equivalent: workflow_run."
         ),
@@ -2324,7 +2331,7 @@ SPECS = (
             "Args:\n"
             "  - limit: optional integer, default 20, maximum number of rows to return.\n"
             "  - refresh: optional boolean, request a new cloud page or retry a failed read; then poll without refresh.\n"
-            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, empty local_files and local_request_ids. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
+            "Returns: generations[] with job_id, kind, model_id, prompt, status, cu_cost, cost_unavailable, workflow_id, workflow_job_id, empty local_files and local_request_ids. cu_cost is billing.cuCost plus cuCostDetails add-ons; a workflow run (kind=workflow) reports its own charge plus its steps' charges, or cu_cost null with cost_unavailable true when a step could not be read. Rows with workflow_job_id are steps already counted in that run. Matching scoped saved jobs expose request IDs; inspect list_local_jobs and use explicit result approval. Use recover_cloud_job for unsaved completed model jobs. The first call may return an empty list and a note while history loads; call again after loading.\n"
             'Example: {"limit": 10}.\n'
             "Prefer job_status for a tracked active generation; this is not a fresh platform-wide history query on every call.\n"
             "Platform equivalent: jobs_list."

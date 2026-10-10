@@ -352,6 +352,18 @@ Unavailable or explicitly truncated text previews remain unresolved; an existing
 local job's prompt can still supply the display text. Full text downloads remain
 part of transfer integration.
 
+A row's cost is `billing.cuCost` plus its `cuCostDetails` add-ons, such as
+quality-gate fees, which the SDK job billing type documents as charged on top of
+the main action. Workflow runs (`jobType: workflow`) are listed beside their
+model steps. A run's own charge is normally 0, so its row adds the charges of
+the steps named by `metadata.flow[].jobId` or by a step's `metadata.workflowJobId`.
+The history worker reads a finished run's missing steps with
+`jobs.with_raw_response.retrieve`, at most 24 per page. A failed or malformed
+step read, a cycle or nesting deeper than four runs leaves the run's cost
+unavailable instead of reporting 0; a running workflow shows no cost yet. Step
+rows name their run so the total is not counted twice. Malformed billing on a
+listed row still fails the page, and drawing performs no reads.
+
 The existing worker queue delivers pages to both the GUI and headless MCP.
 Connection identity and request keys reject superseded results and errors;
 credential retirement clears visible cloud history and its cursor. A failed read
@@ -563,7 +575,12 @@ An explicit operation tag prevents a model approval from authorizing a workflow
 or vice versa. Failed workflow quotes release their retained approval capacity.
 
 The original parameters, normalized payload/defaults and exact decimal price are
-separate fields. Approval consumes the handle before persistence and requires
+separate fields. Both commands also return `loop_steps`, `quote_may_understate`
+and `cost_warning`. The adapter counts ForEach steps in the same retrieved
+definition the quote validated; a missing flow or a nested workflow step makes
+coverage unknown. The server's dry run prices one loop pass, so a run that
+iterates more often can cost more. The warning never blocks approval of the exact
+quoted string. Approval consumes the handle before persistence and requires
 unchanged input, scene and connection. Results stay saved for explicit application;
 there is no workflow-specific worker pool, store or automatic import. Native
 workflow controls below now share those commands. Interactive nodes, general
@@ -605,6 +622,9 @@ Pricing and confirmation use the existing `ModelJobs.quote_workflow` and
 `submit_workflow` commands. Native and MCP entry points share the same quote
 registry, exact-price check, operation tag, durable submission and results.
 The confirmation shows normalized payload values, including service defaults.
+A quote with ForEach steps, or with unknown loop coverage, labels Generate as
+**Generate (from N CU)** and shows the one-pass warning below it and in the
+confirmation. The exact quoted string remains the approval value.
 Credential/project retirement discards the UI controller with the shared owner;
 file-load retirement removes approval handles while saved scene inputs survive.
 Closing Studio owns no cancellation or teardown. No new transport, store or

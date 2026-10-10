@@ -316,7 +316,12 @@ class ModelJobs:
         ):
             raise ScenarioError(0, "Approve the unchanged workflow and exact price while online")
         ticket.used = True
-        return self._submit_quote(ticket.quote, lane="workflow", kind="workflow")
+        return self._submit_quote(
+            ticket.quote,
+            lane="workflow",
+            kind="workflow",
+            meta={"workflow_loop_steps": estimate.loop_steps},
+        )
 
     def discard_workflow_quote(self, quote_id):
         ticket = self.require_quote(quote_id)

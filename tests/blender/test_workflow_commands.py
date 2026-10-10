@@ -43,6 +43,7 @@ class WorkflowCommandTests(unittest.TestCase):
                 {"name": "prompt", "type": "string", "required": True},
                 {"name": "count", "type": "number", "default": 1},
             ],
+            "flow": [{"id": "node-a", "type": "custom-model"}],
         }
         self.lose_response, self.fail_metadata = False, False
         self.project = None
@@ -335,3 +336,36 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual(result["inputs"], [])
         self.assertFalse(self.store.records())
         self.assertFalse(self.paid)
+
+    def test_loop_quote_and_run_return_nonblocking_one_pass_warning(self):
+        quote = self.quote()
+        self.assertEqual(
+            (quote["loop_steps"], quote["quote_may_understate"], quote["cost_warning"]),
+            (0, False, None),
+        )
+        self.workflow["flow"] = [
+            {"id": "loop", "type": "for-each", "loopBodyNodeIds": ["node-a"]},
+            {"id": "node-a", "type": "custom-model"},
+        ]
+        quote = self.quote()
+        self.assertEqual(quote["cu_cost_exact"], "0.1234567890123456789")
+        self.assertEqual((quote["loop_steps"], quote["quote_may_understate"]), (1, True))
+        self.assertIn("covers one loop pass", quote["cost_warning"])
+        result = self.approve(quote)
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual((result["loop_steps"], result["quote_may_understate"]), (1, True))
+        self.assertEqual(result["cost_warning"], quote["cost_warning"])
+        self.assertIn("approved quote", result["note"])
+        self.assertEqual(
+            self.store.get(result["local_id"]).intent.quote_cost, quote["cu_cost_exact"]
+        )
+
+    def test_unknown_flow_is_flagged_without_blocking_approval(self):
+        del self.workflow["flow"]
+        quote = self.quote()
+        self.assertEqual((quote["loop_steps"], quote["quote_may_understate"]), (None, True))
+        self.assertIn("could not be checked", quote["cost_warning"])
+        self.approve(quote)
+        self.settle()
+        self.assertEqual(len(self.paid), 1)

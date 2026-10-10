@@ -37,6 +37,7 @@ class SDKHistoryTests(unittest.TestCase):
         self.page = {"jobs": [job()], "nextPaginationToken": "page-two"}
         self.status = 200
         self.preview = "resolved prompt"
+        self.steps = {}
         adapter = submodule("core.api.sdk_adapter")
 
         def respond(request):
@@ -45,6 +46,11 @@ class SDKHistoryTests(unittest.TestCase):
             if request.url.path == "/v1/jobs":
                 self.assertEqual(request.url.params["hideResults"], "false")
                 return httpx.Response(self.status, json=self.page)
+            if request.url.path.startswith("/v1/jobs/"):
+                identifier = request.url.path.rsplit("/", 1)[1]
+                if identifier not in self.steps:
+                    return httpx.Response(404, json={"message": "private fixture"})
+                return httpx.Response(200, json={"job": self.steps[identifier]})
             self.assertEqual(request.url.path, "/v1/assets/asset_prompt")
             return httpx.Response(200, json={"asset": {"metadata": {"preview": self.preview}}})
 
@@ -490,3 +496,80 @@ class SDKHistoryTests(unittest.TestCase):
                 self.assertFalse(self.runtime.state.history)
                 self.assertFalse(self.runtime.state.history_loading)
                 self.assertTrue(self.runtime.state.history_error)
+
+    def test_workflow_run_cost_sums_steps_and_unknown_steps_are_unavailable(self):
+        from test_model_picker import FakeLayout
+
+        def step(identifier, main, parent="job-run"):
+            return {
+                **job(identifier, prompt="step"),
+                "billing": {
+                    "cuCost": main,
+                    "cuDiscount": 0,
+                    "cuCostDetails": {"quality-gate": 1.75},
+                },
+                "metadata": {
+                    "input": {"modelId": "fixture-model", "prompt": "step"},
+                    "workflowJobId": parent,
+                },
+            }
+
+        def run(identifier, steps):
+            return {
+                "jobId": identifier,
+                "jobType": "workflow",
+                "status": "success",
+                "billing": {"cuCost": 0, "cuDiscount": 0},
+                "metadata": {
+                    "input": {"prompt": "loop run"},
+                    "workflowId": "fixture-workflow",
+                    "flow": [{"id": "loop", "type": "for-each", "status": "success"}]
+                    + [
+                        {"id": f"n-{s}", "type": "custom-model", "status": "success", "jobId": s}
+                        for s in steps
+                    ],
+                },
+            }
+
+        self.page = {
+            "jobs": [
+                step("job-a", 1),
+                step("job-b", 1),
+                run("job-run", ["job-a", "job-b", "job-c"]),
+                run("job-lost", ["job-gone"]),
+            ]
+        }
+        self.steps = {"job-c": step("job-c", 2)}
+        self.history.refresh()
+        self.deliver()
+        entries = {e.job_id: e for e in self.runtime.state.history}
+        self.assertEqual(set(entries), {"job-a", "job-b", "job-run", "job-lost"})
+        self.assertEqual(entries["job-run"].cu_cost, 9.25)
+        self.assertTrue(entries["job-lost"].cost_unavailable)
+        reads = sorted(r.url.path for r in self.calls if r.url.path.startswith("/v1/jobs/"))
+        self.assertEqual(reads, ["/v1/jobs/job-c", "/v1/jobs/job-gone"])
+        count = len(self.calls)
+        with patch.object(
+            self.runtime, "ensure_model_jobs", side_effect=AssertionError("Draw mutation")
+        ):
+            for _ in range(5):
+                layout = FakeLayout()
+                submodule("blender.panels").draw_history(layout, bpy.context)
+        self.assertEqual(len(self.calls), count)
+        labels = [call[2].get("text") for node in layout.walk() for call in node.named("label")]
+        self.assertIn("9.25 CU", labels)
+        self.assertIn("Cost unavailable", labels)
+        self.assertIn("2.75 CU", labels)
+        self.assertTrue(any("Workflow step" in (text or "") for text in labels))
+        operators = [call for node in layout.walk() for call in node.named("operator")]
+        recover = [
+            call[2].get("text") for call in operators if call[1][0] == "scenario.import_result"
+        ]
+        self.assertEqual(len(recover), 2)  # Only the two listed model steps.
+        rows = {row["job_id"]: row for row in self.tools.list_generations({})["generations"]}
+        self.assertEqual((rows["job-run"]["kind"], rows["job-run"]["cu_cost"]), ("workflow", 9.25))
+        self.assertEqual(rows["job-run"]["workflow_id"], "fixture-workflow")
+        self.assertIsNone(rows["job-lost"]["cu_cost"])
+        self.assertTrue(rows["job-lost"]["cost_unavailable"])
+        self.assertEqual(rows["job-a"]["workflow_job_id"], "job-run")
+        self.assertEqual(rows["job-a"]["cu_cost"], 2.75)

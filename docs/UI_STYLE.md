@@ -837,6 +837,13 @@ activation, service requests or scene/job changes. Import commands independently
 recheck current storage. A changed credential selection hides the old row actions
 until refresh; a failed saved read disables those actions until a successful read.
 
+Each row's price adds the job's documented add-on charges to its main charge.
+A workflow run has its own row with the node-tree icon and the sum of its step
+charges; when a step cannot be read, it shows **Cost unavailable** rather than
+0 CU. Its steps keep their rows with a linked note that they are counted in the
+workflow's cost. Workflow rows offer no **Save for recovery**; their model steps
+do. Step reads happen on the history worker, never while drawing.
+
 The exact ZIP with SHA-256
 `30b0e2c03268e81a64ad83d0cc2924be9d0afaac8d7aebf9a80b3aafc9349b2c`
 passes 749 installed tests on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1.
@@ -1336,7 +1343,11 @@ inclusion checkbox omits it from the request, allowing declared defaults.
 **Request workflow price** starts a shared session quote. **Generate** opens a
 separate confirmation with normalized inputs, scene and the full exact CU price.
 Cancel submits nothing; confirmation rechecks the form, scene, selected session
-and original quote. Drawing is read-only and never starts catalog or job workers.
+and original quote. When the workflow definition has ForEach steps, or its loop
+coverage cannot be checked, the button reads **Generate (from N CU)** and a
+wrapped warning states that the price covers one loop pass and the final charge
+can be higher. The confirmation repeats it. The warning does not disable
+approval. Drawing is read-only and never starts catalog or job workers.
 Page search/navigation use unsaved WindowManager state; scene form edits require
 a new price. The maintenance pump completes metadata and quote requests even
 after the popup closes. Saved jobs use the existing Jobs and Results controls.

@@ -431,6 +431,11 @@ review, read and review it again. Recovery reads never generate another plan.
 This session's results appear first, followed by cloud history with prompt, kind,
 price, status and asset identity. **Load older** pages back in time.
 
+A price includes add-on fees, such as quality checks, charged on top of the
+generation. A workflow run shows the total of its steps. If a step cannot be
+read, the run shows **Cost unavailable**, not 0 CU. Its steps also appear with
+a note that they are counted in the workflow's cost, so do not add them again.
+
 For a job saved by this extension's shared runtime, choose **Inspect saved jobs**.
 Use its explicit recovery controls to resume a download, then review the selected
 destination before applying a result. This also works after restarting Blender.
@@ -743,6 +748,10 @@ Conditional requirements and allowed values are checked before pricing.
 
 Choose **Request workflow price**, then **Generate**. The separate confirmation
 shows the server-normalized inputs, original scene and complete exact CU price.
+If the workflow repeats steps in a loop (For Each), Scenario prices one pass
+through the loop. The button then reads **Generate (from N CU)** and a warning
+explains that the final charge can be higher. Check the loop's item count
+before you confirm.
 Cancel submits nothing. Confirmation saves one workflow job; inspect it in Jobs
 and use Results for separate application. Never repeat an uncertain submission.
 Changing inputs, scene or connection requires a fresh valid approval.

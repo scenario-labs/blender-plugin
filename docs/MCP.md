@@ -678,6 +678,16 @@ selected credential-bound store. All cloud rows expose empty `local_files`; use
 and explicit result preparation/approval. Matching is refreshed even when the
 cloud page was loaded before a local remote-job acknowledgement.
 
+Each row's `cu_cost` is the job's `billing.cuCost` plus its `cuCostDetails`
+add-ons, such as quality-gate fees. Workflow runs appear as `kind=workflow`
+rows whose own charge is normally 0; their `cu_cost` adds the charges of the
+step jobs named by the run's flow or by each step's `workflowJobId`. Steps
+missing from the page are read on the history worker, at most 24 per page. If
+any step cannot be read or priced, the finished run reports `cu_cost: null` and
+`cost_unavailable: true` instead of 0; a running workflow reports no cost yet.
+Step rows keep their own cost and name their run in `workflow_job_id`, so do not
+add them to the run's total again. Workflow rows cannot use `recover_cloud_job`.
+
 `job_status`, `wait_for_job` and the old `import_result` lookup prefer a matching
 scoped record to an old unscoped cache. `import_result` rejects direct application
 of both saved jobs and prototype cache entries. Ambiguous remote IDs require a
@@ -811,6 +821,14 @@ with `dry_run="true"` in the query. It returns the original `parameters`, the
 normalized `payload` including defaults, and `cu_cost_exact`. Review that payload
 and price. `run_workflow` requires its `quote_id`, the same workflow and original
 parameters, and that exact decimal string as `approved_cost`.
+
+Both tools also return `loop_steps`, `quote_may_understate` and `cost_warning`.
+`loop_steps` counts ForEach steps in the retrieved workflow definition; it is
+`null` when the flow is missing or contains a nested workflow step that the quote
+does not read. The server's dry run prices one pass through a loop, so a run
+that iterates more often can be charged more than `cu_cost_exact`. Show the
+warning with the price. It never blocks approval, and `job_status` keeps
+reporting the approved quote rather than the final charge.
 
 Approval is bound to the current scene revision, file, credential and project.
 It is consumed before local persistence and the single paid dispatch. A timeout

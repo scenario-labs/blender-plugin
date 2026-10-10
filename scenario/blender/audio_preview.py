@@ -4,7 +4,9 @@
 
 Each reader thread decodes the selected file in an owned offline Blender process
 through ``core.jobs.audio_decode``, so decoding never holds this Blender's Python
-lock. The worker checks that the file is unchanged before it publishes.
+lock. The worker checks that the file is unchanged before it publishes. Readers
+are daemon threads, so unregistering, which Blender also does on exit, cancels
+them and waits a bounded time for each to stop its decoder process.
 """
 
 import array
@@ -25,6 +27,8 @@ from . import runtime
 
 MAX_READERS = 2
 READ_TIMEOUT = 30.0
+# A canceled decode terminates its child within about 0.1 s and kills it 3 s later.
+STOP_TIMEOUT = 5.0
 LOADING_INTERVAL = 0.1
 IDLE_INTERVAL = 1.0
 
@@ -75,7 +79,8 @@ def _read(token, path, decoder, directory, cancel, outcomes):
         result = (token, None, None, str(error))
     except Exception:
         result = (token, None, None, "Could not prepare this local waveform")
-    outcomes.put(result)
+    # The finish time lets the main thread honor the deadline even when its timer runs late.
+    outcomes.put((*result, monotonic()))
 
 
 def _channels(count):
@@ -109,6 +114,18 @@ class PreviewController:
             reader.cancel.set()
         self._pending = self.selection = None
         self._release_icon()
+
+    def shutdown(self, timeout=STOP_TIMEOUT):
+        """Cancel every reader and wait a bounded time for each to stop its decoder.
+
+        Python abandons daemon threads at exit, so a reader left running could
+        not terminate its offline Blender child. Only unregistering waits here.
+        """
+        self.clear()
+        deadline = monotonic() + timeout
+        for reader in self._readers:
+            reader.thread.join(max(0.0, deadline - monotonic()))
+        self._readers = [reader for reader in self._readers if reader.thread.is_alive()]
 
     def cancel(self):
         _main_thread()
@@ -193,26 +210,19 @@ class PreviewController:
             self.clear()
             selected = None
             changed = True
-        if (
-            selected is not None
-            and selected.status == "LOADING"
-            and monotonic() >= selected.deadline
-        ):
-            saturated = self._pending is not None and len(self._readers) >= MAX_READERS
-            self.cancel()
-            selected.status = "ERROR"
-            selected.message = (
-                "Audio readers are still occupied; retry when they finish or restart Blender"
-                if saturated
-                else "Waveform preview timed out; try another file"
-            )
-            changed = True
+        # Outcomes come first: one that finished before the deadline publishes even
+        # when this timer runs after it. One that finished later never publishes.
         while True:
             try:
-                token, waveform, pixels, error = self._outcomes.get_nowait()
+                token, waveform, pixels, error, finished = self._outcomes.get_nowait()
             except queue.Empty:
                 break
-            if selected is None or token is not selected.token or selected.status != "LOADING":
+            if (
+                selected is None
+                or token is not selected.token
+                or selected.status != "LOADING"
+                or finished >= selected.deadline
+            ):
                 continue
             changed = True
             if waveform is not None:
@@ -233,6 +243,20 @@ class PreviewController:
                     error = "The captured preview could not be displayed"
             if error:
                 selected.status, selected.message = "ERROR", error
+        if (
+            selected is not None
+            and selected.status == "LOADING"
+            and monotonic() >= selected.deadline
+        ):
+            saturated = self._pending is not None and len(self._readers) >= MAX_READERS
+            self.cancel()
+            selected.status = "ERROR"
+            selected.message = (
+                "Audio readers are still occupied; retry when they finish or restart Blender"
+                if saturated
+                else "Waveform preview timed out; try another file"
+            )
+            changed = True
         if self._pending is not None and len(self._readers) < MAX_READERS:
             selected, self._pending = self._pending, None
             cancel = threading.Event()
@@ -365,7 +389,7 @@ def register():
 
 
 def unregister():
-    controller.clear()
+    controller.shutdown()
     if bpy.app.timers.is_registered(_tick):
         bpy.app.timers.unregister(_tick)
     if _file_load in bpy.app.handlers.load_pre:

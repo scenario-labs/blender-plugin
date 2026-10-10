@@ -7,16 +7,16 @@
     "path": "docs/UI_STYLE.md",
     "scope": "offline-generation-status",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-27",
-    "base_revision": "252b25a3825a3a0c97a694fe6f7f55fb9c64e459",
-    "limits": "Source-reviewed offline display, pending estimate retention and Image ready-handle presentation guards. Submission still validates exact quotes. Native tests use an offline SDK transport; this does not certify live pricing, all keyboard layouts or integrated release acceptance.",
+    "reviewed_at": "2026-10-10",
+    "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
+    "limits": "Source-reviewed offline display, pending estimate retention, selected-scene pricing and Image ready-handle presentation guards. The GUI pump requests prices only for the selected scene; another scene keeps its pending request without an error until it is selected. Submission still validates exact quotes. Native tests use an offline SDK transport and switch the window scene in background Blender; this does not certify live pricing, two windows showing different scenes, all keyboard layouts or integrated release acceptance.",
     "sources": {
-      "docs/UI_STYLE.md": "0d081869e3efe7c4cba708eedf524e4304c621d2d802658884c6c5e16c22ae24",
-      "scenario/blender/panels.py": "6387af1a3be867970291c43a6367b001b4f62765efd5d217d4353d454bafccfe",
-      "scenario/blender/pump.py": "9da80b20919f9e9c94d6f584725f82e404e44b2c9c6d3bf6fbd04d1bfe2c5e16",
-      "scenario/blender/composer/draw.py": "05d1bdd0ef55ac78775207822ea0696daeb2c3934395b3b20d21dd83bb0b9128",
-      "scenario/blender/composer/modal.py": "cfb3f7a59f1c96208a76680921938f1237bbab3b990e9cd59b2c3c2a00aa87a2",
-      "tests/blender/test_sdk_estimates.py": "fe5a6223644af8b64531bcb2349f97190fac72a9411e6e91994e11061700c6c0"
+      "docs/UI_STYLE.md": "b21688ae1dcf8a2883943dcc630497b2e62d4f2df3d423d09c745ecfa14d1e90",
+      "scenario/blender/panels.py": "9d92e8074690c6174edd831af81bfd01e69197ca2f16e65d97f95afae63ed027",
+      "scenario/blender/pump.py": "14ca29af007afa5dbf35c7f39a3caf39a709914a16f8cefa938dff58efcf7f2d",
+      "scenario/blender/composer/draw.py": "2514a1ae064493dae895b60704dc3d0795467b7a819400053cbcc19e53032719",
+      "scenario/blender/composer/modal.py": "362aa797f4f52a8e8e320a024f64bd187eab39cdc32fbc8f26c03d4d168daebb",
+      "tests/blender/test_sdk_estimates.py": "07de12d4f429c6bd8b4d954ee7fc150df6c5eb3df532d8203711860846c465d3"
     }
   }
 }
@@ -25,4 +25,5 @@
 # Offline generation status
 
 Supports the [UI style guide](../../UI_STYLE.md#buttons) for offline composer labels,
-disabled Image actions and estimates retained until network access returns.
+disabled Image actions and estimates retained until network access returns or
+their scene is selected.

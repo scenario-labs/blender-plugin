@@ -233,6 +233,74 @@ class SDKEstimateTests(unittest.TestCase):
         self.assertEqual(second_lane.estimate_state, "ERROR")
         self.assertEqual(len(self.runtime.state.estimates), 1)
 
+    def test_pump_defers_unselected_scene_until_it_becomes_current(self):
+        pump = submodule("blender.pump")
+        panels = submodule("blender.panels")
+        first, window = bpy.context.scene, bpy.context.window
+        second = first.copy()
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.addCleanup(setattr, window, "scene", first)
+        second_lane = second.scenario.lane_state("image")
+        self.lane.estimate_dirty_at = second_lane.estimate_dirty_at = 1.0
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        clock = patch.object(submodule("blender.props"), "clock", return_value=10.0)
+        with clock:
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        # Only the selected scene can receive a quote. The other form keeps its
+        # pending request without an error or a quote that would be refused.
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        self.assertEqual(second_lane.estimate_error, "")
+        self.assertEqual(second_lane.estimate_dirty_at, 1.0)
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 1)
+        window.scene = second
+        self.assertIs(bpy.context.scene, second)
+        with clock:
+            pump._process()
+        self.deliver()
+        self.assertEqual(second_lane.estimate_state, "READY", second_lane.estimate_error)
+        self.assertTrue(panels.generate_enabled(second_lane, "image"))
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 2)
+        window.scene = first
+        with clock:
+            pump._process()
+        self.deliver()
+        # Switching back neither reprices nor releases the first scene's quote.
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        self.assertTrue(panels.generate_enabled(self.lane, "image"))
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 2)
+
+    def test_unselected_scene_edit_is_priced_after_switching_to_it(self):
+        pump = submodule("blender.pump")
+        first, window = bpy.context.scene, bpy.context.window
+        second = first.copy()
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.addCleanup(setattr, window, "scene", first)
+        second_lane = second.scenario.lane_state("image")
+        self.lane.estimate_dirty_at = 1.0
+        props = submodule("blender.props")
+        with patch.object(props, "clock", return_value=10.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        with patch.object(props, "clock", return_value=20.0):
+            second_lane.prompt = "a kettle"  # A script or driver edits the hidden form.
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        with patch.object(props, "clock", return_value=21.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(second_lane.estimate_state, "PENDING")
+        self.assertEqual(second_lane.estimate_error, "")
+        self.assertFalse(second_lane.estimate_key)
+        window.scene = second
+        with patch.object(props, "clock", return_value=21.1):
+            pump._process()
+        self.deliver()
+        self.assertEqual(second_lane.estimate_state, "READY", second_lane.estimate_error)
+        posts = [json.loads(call.content) for call in self.calls if call.method == "POST"]
+        self.assertEqual(posts, [{"prompt": "a teapot"}, {"prompt": "a kettle"}])
+
     def test_changed_prompt_discards_queued_price(self):
         self.generation.request_estimate(bpy.context.scene, "image")
         self.manager.join(5)

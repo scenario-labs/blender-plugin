@@ -571,7 +571,7 @@ _DECISION_NOTES = {
     "the steps below; any new decision needs the user's explicit choice again.",
     "uncertain": "The decision may have been applied. Never repeat it: call workflow_job_steps "
     "and decide again only if the step is shown waiting again and the user chooses again.",
-    "not_sent": "Nothing was sent to Scenario: a check failed first or the job had already "
+    "not_sent": "No decision was sent to Scenario: a check failed first or the job had already "
     "finished. Read state, decision_error and the steps below; any new decision needs the "
     "user's explicit choice again.",
 }
@@ -2841,7 +2841,7 @@ SPECS = (
             "  - action: refresh, resume, cancel, recover_download or retry_receipt.\n"
             "Returns: saved status, revision, available actions and delivery error if any.\n"
             'Example: {"context_id":"from-list","request_id":"from-list","expected_revision":2,"action":"resume"}.\n'
-            "Refresh reads once; resume polls and downloads without automatic import. Cancel is listed only after a refresh confirms a running inference job, the only job type Scenario documents as cancellable; it requests cancellation once and observes the actual outcome. Other jobs are refused without a request and keep running. A workflow job cannot be canceled: cancel returns an explanation and sends nothing; with the user's approval, reject a waiting step through decide_workflow_step instead. recover_download verifies interrupted local receipts without network calls. retry_receipt saves an already completed import without repeating it and requires the same live owner. Stale contexts/revisions and uncertain submissions are rejected.\n"
+            "Refresh reads once; resume polls and downloads without automatic import. Cancel is listed only after a refresh confirms a running inference job, the only job type Scenario documents as cancellable; it requests cancellation once and observes the actual outcome. Other jobs are refused without a request and keep running. A running workflow job cannot be canceled: cancel returns an explanation and sends nothing; with the user's approval, reject a waiting step through decide_workflow_step instead. recover_download verifies interrupted local receipts without network calls. retry_receipt saves an already completed import without repeating it and requires the same live owner. Stale contexts/revisions and uncertain submissions are rejected.\n"
             "Platform equivalent: jobs.retrieve, jobs.trigger_action and assets.retrieve through the shared SDK, plus local receipt recovery."
         ),
         _schema(

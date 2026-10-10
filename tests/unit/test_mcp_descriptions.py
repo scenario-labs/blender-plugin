@@ -404,7 +404,7 @@ def test_workflow_step_tools_require_the_users_explicit_choice():
         "interactive approval/selection nodes are not supported" not in descriptions["run_workflow"]
     )
     assert (
-        "A workflow job cannot be canceled: cancel returns an explanation and sends nothing"
+        "A running workflow job cannot be canceled: cancel returns an explanation and sends nothing"
         in descriptions["recover_local_job"]
     )
     schema = ast.literal_eval(tools["decide_workflow_step"].args[2].args[0])

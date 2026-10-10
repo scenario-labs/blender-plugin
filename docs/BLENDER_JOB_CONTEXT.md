@@ -432,9 +432,10 @@ single-action claim and authoritative status polling. A canceled acknowledgement
 an uncertain response remains recoverable by refreshing the known ID without
 replaying the action. A running workflow cannot be canceled; rejecting a
 [waiting workflow step](#waiting-workflow-steps) is the only way to stop one.
-`ModelJobs.control` answers `cancel` on a workflow job with
+`ModelJobs.control` answers `cancel` on a running (`remote`) workflow job with
 `WorkflowCancelUnavailable`, which says so, before its revision and action
-checks and without queuing a command.
+checks and without queuing a command. A prepared workflow job that was never
+sent keeps its local `cancel_prepared` action.
 
 Cancellation, refresh and recovery inspection deliberately do not require the
 old scene/target to remain available. This allows explicit cancellation and

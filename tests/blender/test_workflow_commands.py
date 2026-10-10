@@ -1004,7 +1004,7 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual(result["outcome"], "not_sent")
         self.assertEqual(result["state"], "failed")
         self.assertEqual(result["steps"], [])
-        self.assertIn("Nothing was sent", result["note"])
+        self.assertIn("No decision was sent", result["note"])
         self.assertFalse(self.decisions)
 
     def test_mcp_selection_keeps_the_given_order_and_reject_stops_the_workflow(self):
@@ -1138,6 +1138,37 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual(len(self.calls), calls)
         self.assertNotIn(local_id, owner._commands)
         self.assertEqual(self.store.get(local_id), running)
+        self.assertFalse(self.decisions)
+
+    def test_prepared_workflow_cancel_is_not_explained_as_running(self):
+        quote = self.quote()
+        session = self.runtime.ensure_job_session()
+        with (
+            patch.object(session, "submit", side_effect=RuntimeError("fixture queue refused")),
+            self.assertRaises(RuntimeError),
+        ):
+            self.approve(quote)
+        (record,) = self.store.records()
+        local_id = record.intent.request_id
+        self.assertEqual(record.state.value, "prepared")
+        owner = self.runtime.state.model_jobs
+        self.assertEqual(
+            tuple(self.tools.job_status({"job_id": local_id})["actions"]), ("cancel_prepared",)
+        )
+        calls = len(self.calls)
+        args = self.step_args(local_id, expected_revision=record.revision, action="cancel")
+        # An unsent workflow job is not running: its local cancellation stays the path.
+        with self.assertRaisesRegex(Exception, "available action changed") as caught:
+            self.tools.recover_local_job(args)
+        self.assertNotIn("running workflow", str(caught.exception))
+        with self.assertRaisesRegex(Exception, "available action changed"):
+            owner.control(local_id, record.revision, "cancel")
+        canceled = self.tools.cancel_prepared_job(
+            self.step_args(local_id, expected_revision=record.revision)
+        )
+        self.assertEqual(canceled["state"], "canceled")
+        self.assertEqual(len(self.calls), calls)
+        self.assertFalse(self.paid)
         self.assertFalse(self.decisions)
 
     def test_mcp_and_native_decisions_share_one_projection(self):

@@ -44,8 +44,9 @@ resume/download, known model-job cancellation, interrupted-download reconciliati
 or pending import-receipt retry. `cancel` appears in `actions` only after a refresh
 in the current context reported a running `inference` job, the only type Scenario
 documents as cancellable; for any other job it is refused without a request and
-the job keeps running, matching the native Jobs panel. A workflow job cannot be canceled: `cancel`
-returns that explanation and sends nothing. Resuming a restarted job does not import it into
+the job keeps running, matching the native Jobs panel. A running workflow job
+cannot be canceled: `cancel` returns that explanation and sends nothing, while an
+unsent prepared one keeps `cancel_prepared_job`. Resuming a restarted job does not import it into
 the current scene. Shared `wait_for_job` waits without blocking Blender's main
 thread and returns when delivery finishes, needs review, is held by disabled
 Online Access, or reaches its timeout.
@@ -1180,7 +1181,7 @@ Workflow results are never automatically imported. `discard_workflow_estimate`
 releases only a ready local approval, leaving saved jobs unchanged.
 
 A running workflow step cannot be canceled: `recover_local_job` `cancel` on a
-workflow job returns that explanation and sends nothing. Rejecting a waiting
+running workflow job returns that explanation and sends nothing. Rejecting a waiting
 approval or selection step is the only way to stop a workflow. Workflow
 authoring, native decision controls, the expanded Studio form and live
 provider/output acceptance remain incomplete. Do not infer live compatibility

@@ -1275,8 +1275,14 @@ class ModelJobs:
     def control(self, request_id, expected_revision, action):
         """Explicit recovery never reconstructs a quote or approves another import."""
         record = self.store.get(request_id)
-        if action == "cancel" and record is not None and record.intent.operation == "workflow":
+        if (
+            action == "cancel"
+            and record is not None
+            and record.intent.operation == "workflow"
+            and record.state == JobState.REMOTE
+        ):
             # Explain why rather than refuse generically: no request can stop it.
+            # A prepared, unsent workflow job keeps its cancel_prepared action.
             raise WorkflowCancelUnavailable()
         if (
             action == "cancel"

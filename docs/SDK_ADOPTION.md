@@ -385,8 +385,9 @@ error. The native picker and every form request now build selections with `apply
 (see [trained models in the native picker](#trained-models-in-the-native-picker)),
 and so do local MCP requests ([trained models through local MCP](#trained-models-through-local-mcp)).
 A problem the listed records already show, such as a LoRA in `modelIdInput`, is
-then refused before any request with the same text as a `RouteError`; the fresh
-reads still catch what changed since the listing.
+then refused before any request with the same text as a `RouteError`; local MCP
+also refuses a listed composition named in the stack input instead of moving it
+to `modelIdInput`. The fresh reads still catch what changed since the listing.
 
 Every call here is an existing public SDK 2.2.0 method; there is no raw
 fallback, SDK extension, SDK issue or dependency change. Offline tests compare

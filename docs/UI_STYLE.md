@@ -1413,7 +1413,10 @@ been sent. A ready card lists the asset's current and resulting state, the numbe
 of requests Apply sends and the 10-minute expiry, with **Apply** and **Discard**.
 Apply is accepted only for that ready card, once; it sends each write once with
 no retry, then the card shows the read-back result: Verified, Refused with the
-HTTP status, Unconfirmed, Not sent or Not verified. An unconfirmed card says to
+HTTP status, Unconfirmed, Not sent or Not verified. When another client added the
+asset first, the service refuses the add as a whole; the read-back shows the
+asset as a member, so nothing more is sent and the card shows Verified with a
+note that it was already in the collection. An unconfirmed card says to
 refresh and inspect; nothing is resent automatically. A finished, refused,
 unchanged, unsent or expired card offers **Dismiss**. Rows take the tags and memberships Scenario
 read back. A row that left the browsed collection stays marked "No longer in this
@@ -1434,7 +1437,8 @@ reviews expire after 10 minutes.
 
 Installed tests cover operator registration, the dynamic collection enum with
 `OperatorProperties`, read-only drawing, public and busy pages, dialog cancel,
-Apply gating and single use, row updates, filtered-row refresh marks, a new
+Apply gating and single use, row updates, an asset added elsewhere before Apply
+(one request, Verified), filtered-row refresh marks, a new
 collection joining a list at the load bound, the card across Studio redraws
 during Apply, connection and file retirement, sanitized refusals, online access
 off, a review bound filled by agent reviews and narrow-width wrapping. Physical desktop evidence is pending: focus, typing

@@ -448,6 +448,31 @@ class LibraryOrganizationTests(unittest.TestCase):
         self.assertIsNone(self.owner.review)
         self.assertEqual(len(self.service.writes), 1)
 
+    def test_asset_added_elsewhere_before_apply_is_verified_with_one_request(self):
+        self.collections()
+        self.refresh()
+        review = self.organize("asset-b", action="ADD")
+        self.assertEqual(review["phase"], "READY", review["message"])
+        self.assertEqual(review["request_count"], 1)
+        # Another client adds the asset first. The service refuses the add as a
+        # whole and writes nothing; the read-back shows it is a member, so
+        # nothing more is sent.
+        self.service.assets["asset-b"]["collectionIds"].append("props")
+        result = self.apply()
+        self.assertEqual(result["phase"], "FINISHED")
+        self.assertEqual(result["result"]["state"], "VERIFIED")
+        self.assertEqual(result["result"]["requests_sent"], 1)
+        self.assertEqual(
+            self.service.writes,
+            [("PUT", "/v1/collections/props/assets", {"assetIds": ["asset-b"]})],
+        )
+        self.assertEqual(self.row("asset-b")["collection_ids"], ["props"])
+        texts = self.draw().texts()
+        self.assertIn("Result: Verified by reading back", texts)
+        self.assertIn("The asset was already in the collection", " ".join(texts))
+        self.assertNotIn("HTTP 400", " ".join(texts))
+        self.assert_public(texts)
+
     def test_tag_changes_keep_unicode_text_and_update_rows(self):
         self.refresh()
         self.organize("asset-b", action="ADD_TAGS", tags=" héros , 雪 ")

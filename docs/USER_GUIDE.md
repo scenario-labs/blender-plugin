@@ -812,9 +812,11 @@ After Apply, the card shows what Scenario reports when the asset is read back:
 **Verified**, **Refused** (with the HTTP status), **Unconfirmed**, **Not sent**
 or **Not verified**. Changes are immediate Scenario account metadata. They use
 no credits, and Blender Undo does not reverse them; undo a change by organizing
-the asset again. If a result is unconfirmed, choose Refresh and inspect the
-asset. Nothing is resent automatically; organize it again only if the change is
-still needed. A row removed from the collection you are browsing stays marked
+the asset again. If another client added the asset to the collection after the
+review, Scenario refuses the add without changing anything; the card then shows
+**Verified** and says the asset was already in the collection. If a result is
+unconfirmed, choose Refresh and inspect the asset. Nothing is resent
+automatically; organize it again only if the change is still needed. A row removed from the collection you are browsing stays marked
 until you refresh.
 
 Organize is unavailable for Public assets, while a page is loading and while a

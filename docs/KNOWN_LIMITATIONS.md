@@ -127,9 +127,12 @@ establish live generation or full render-lane desktop acceptance.
   not available, and pages loaded with Public assets cannot be organized. Reviews
   and results are session-local: a restart, file load or connection change loses
   the card, while a sent write keeps its effect. Search results may lag behind
-  tag changes; verification reads the assets back instead. Re-adding an existing
-  member, DELETE body survival through the production edge, name uniqueness, tag
-  normalization and service limits are unverified live. Physical desktop focus,
+  tag changes; verification reads the assets back instead. An add of an asset
+  that is already a member is refused as a whole and writes nothing, as the
+  service was observed to behave; the review then reads the asset back as
+  verified without another request. This is not yet checked live from this
+  repository. DELETE body survival through the production edge, name uniqueness,
+  tag normalization and service limits are unverified live. Physical desktop focus,
   typing (including Unicode and IME tags), dismissal, small-window and alternate-DPI
   checks are pending under
   [#66](https://github.com/scenario-labs/blender-plugin/issues/66).

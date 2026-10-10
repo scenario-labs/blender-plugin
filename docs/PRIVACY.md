@@ -48,11 +48,11 @@ limits of its current controls. It does not replace Scenario's service policies.
 ## Where it goes
 
 The Scenario API is `https://api.cloud.scenario.com`. Upload parts, generated
-files, full text results, model thumbnails and saved-result preview images or
-clips use content URLs returned by the service, so content transfers are not
-limited to the API hostname. The Create a key in the portal button opens
-`https://app.scenario.com/team` in your browser. The local agent connection uses
-loopback HTTP, described below.
+files, full text results, model thumbnails, saved-result preview images or
+clips and workflow review images use content URLs returned by the service, so
+content transfers are not limited to the API hostname. The Create a key in the
+portal button opens `https://app.scenario.com/team` in your browser. The local
+agent connection uses loopback HTTP, described below.
 
 The official update repository and handbook use `https://blender.scenario.com/`,
 hosted by GitHub Pages. The Release ZIPs button opens
@@ -106,11 +106,14 @@ private source copies live under `state/shared-uploads`, including
 [saved-result previews](RESULT_PREVIEWS.md) are cached under
 `cache/result-previews`: server preview images and clips, decoded stills, audio
 envelopes, temporary private copies of saved results awaiting decoding, and
-digests and asset IDs, without signed URLs. Unused entries beyond 512 MiB are
-evicted, and the directory is safe to delete, even while Blender runs. Audio
-envelopes are computed by a separate offline Blender process that reads only
-the private copy; its disposable profile, temporary files and log stay in that
-copy's work directory and are removed with it. The Generations waveform preview
+digests and asset IDs, without signed URLs. **Load previews** on a waiting
+workflow step adds stills of the assets that step lists for review: the images
+themselves, up to 8 MiB each, or their server thumbnails. Their icons stay in
+memory and never enter Blender's file-thumbnail cache. Unused entries beyond
+512 MiB are evicted, and the directory is safe to delete, even while Blender
+runs. Audio envelopes are computed by a separate offline Blender process that
+reads only the private copy; its disposable profile, temporary files and log
+stay in that copy's work directory and are removed with it. The Generations waveform preview
 for retained prototype results uses the same process with short-lived
 directories under `cache/audio-preview`; it reads the downloaded file in place.
 A directory left by an exit during decoding is removed by a later preview once

@@ -57,6 +57,8 @@ class WorkflowCommandTests(unittest.TestCase):
             "metadata": {"input": {"workflowId": self.workflow["id"]}},
         }
         self.decisions, self.decision_reply = [], None
+        # Asset records served to preview metadata reads; None refuses them.
+        self.bulk_assets, self.bulk_reads = None, []
         api = submodule("core.api.sdk_adapter")
         catalog_type, session_type = self.runtime.SDKCatalog, self.runtime.JobSession
 
@@ -81,6 +83,14 @@ class WorkflowCommandTests(unittest.TestCase):
                     return httpx.Response(200, json={"job": self.remote_job})
                 self.assertEqual(request.url.path, "/v1/workflows/fixture-workflow")
                 return httpx.Response(200, json={"workflow": self.workflow})
+            if self.bulk_assets is not None and (request.method, request.url.path) == (
+                "POST",
+                "/v1/assets/get-bulk",
+            ):
+                self.bulk_reads.append(request)
+                identifiers = json.loads(request.content)["assetIds"]
+                rows = [self.bulk_assets[name] for name in identifiers if name in self.bulk_assets]
+                return httpx.Response(200, json={"assets": rows})
             self.assertEqual(request.method, "PUT")
             if request.url.path.rsplit("/", 1)[-1] in ("user-approval", "user-selection"):
                 self.decisions.append(request)

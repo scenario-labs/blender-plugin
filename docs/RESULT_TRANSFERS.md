@@ -370,6 +370,11 @@ that does not complete, including one redirected to another host, is fetched
 again by the preview scheduler's bounded polling window; each call is still one
 attempt with the same-host redirect rule. Local image and audio previews make no
 transfer; they copy the saved file while rehashing it against its receipt.
+[Workflow review assets](RESULT_PREVIEWS.md#workflow-review-assets), which are
+not saved results, use the same still transfer: a PNG, JPEG or WebP asset's own
+signed `url` when it is declared within the still bounds, otherwise its server
+thumbnail. A declared size above the 8 MiB still cap is refused before any
+transfer.
 
 `download` also accepts an optional `cancel` event, checked with online
 permission before each connection and chunk. Preview transfers pass their lane

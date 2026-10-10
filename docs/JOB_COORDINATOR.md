@@ -537,11 +537,16 @@ storage policy's byte limit (256 MiB by default), is not interrupted.
 It accepts a `ready`, `applying`, `apply_failed` or `applied` job and returns one
 immutable target per selected asset with a download receipt, keyed by scope,
 request, asset, MIME type and receipt. Unknown or malformed asset selections fail
-before any work.
+before any work. `review_preview_targets(request_id, asset_ids)` also reads the
+store only: it accepts 1 to 50 distinct asset IDs for a `remote` workflow job
+with a known remote ID and returns review targets keyed by scope, request,
+remote job and asset, without a receipt. The caller, which owns the waiting
+step projection, supplies that step's asset IDs.
 
 The [preview lane](#application-owned-workers) runs five commands with the cache
 root supplied by the application. `prepare_result_previews(work, root=...)`
-rechecks that each target still holds the same receipt, reads verified cache
+rechecks that each target still holds the same receipt (a review target, the
+same `remote` workflow job), reads verified cache
 entries, issues private decode copies for images and audio, and reads server
 preview metadata once per batch through the adapter's `assets.get_bulk`, whatever
 the batch size. Available stills and clips are downloaded with the configured

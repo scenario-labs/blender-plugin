@@ -125,11 +125,15 @@ establish live generation or full render-lane desktop acceptance.
   approved price. So can any selection in a workflow with such a node when the
   links between its steps cannot be read from the job or the workflow
   definition; an approval then warns that its review assets may be incomplete.
-  Review assets and candidates are asset IDs or text without
-  previews, and the native dialog shows at most 12 wrapped lines of each text
-  candidate. Decisions are not live-verified, including repeated or concurrent
-  decisions, omitted project IDs and rejection inside a loop; desktop interaction
-  evidence for the native review is pending
+  Review assets and candidates are asset IDs or text until
+  **Load previews** fetches private previews: a PNG, JPEG or WebP asset larger
+  than 8 MiB or 4096 pixels per side, or another kind of asset, is previewed
+  only through a server thumbnail Scenario offers, and MCP returns no preview.
+  The native dialog shows at most 12 wrapped lines of each text candidate.
+  Decisions are not live-verified, including repeated or concurrent decisions,
+  omitted project IDs and rejection inside a loop, and neither are the review
+  assets and preview sources real flows list; desktop interaction evidence for
+  the native review and its previews is pending
   ([#65](https://github.com/scenario-labs/blender-plugin/issues/65),
   [#66](https://github.com/scenario-labs/blender-plugin/issues/66)). See
   [waiting workflow steps](UI_STYLE.md#waiting-workflow-steps).

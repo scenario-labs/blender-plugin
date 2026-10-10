@@ -676,6 +676,10 @@ class JobCoordinator:
         """Read receipt-bound preview targets from this scope's store; no I/O beyond it."""
         return self._results.preview_targets(request_id, asset_ids)
 
+    def review_preview_targets(self, request_id, asset_ids):
+        """Preview targets for a waiting workflow step's review assets; reads the store only."""
+        return self._results.review_targets(request_id, asset_ids)
+
     def prepare_result_previews(self, work, *, root, cancel, maintain=False):
         """Preview-lane command: cache reads, decode copies and server preview fetches."""
         batch = self._results.prepare_previews(work, root=root, cancel=cancel, maintain=maintain)

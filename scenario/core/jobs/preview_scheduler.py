@@ -11,6 +11,9 @@ preview lane of ``JobWorkers``; job refresh and downloads never wait for them.
 Server previews can appear minutes after a result is saved, so missing ones,
 and transfers that did not complete, are polled with backoff for a bounded
 window of online time, then marked missing or failed until an explicit retry.
+Stills of the assets a waiting workflow step lists for review use the same
+lane, window and cache through ``request_review``; their entries are keyed
+apart from saved results, so the same asset ID never shares state.
 Cache maintenance runs with a batch at most every ``MAINTAIN_SECONDS``; after
 previews were written, an idle scheduler queues a maintenance-only lane command
 on the same cadence, so the cache budget does not wait for the next poll.
@@ -202,6 +205,11 @@ class ResultPreviewScheduler:
         if len(self._entries) >= ENTRY_LIMIT:
             raise previews.PreviewError("Too many result previews are pending; try again shortly")
 
+    @staticmethod
+    def _key(target):
+        """Entries of a review asset never share state with a saved result's."""
+        return target.request_id, target.asset_id, target.kind == previews.REVIEW
+
     def request(self, request_id, *, asset_ids=None, clip=False):
         """Track previews for a saved job's downloaded assets and return their status.
 
@@ -211,10 +219,26 @@ class ResultPreviewScheduler:
         """
         self._check()
         targets = self._coordinator.result_preview_targets(request_id, asset_ids)
+        return self._track(targets, clip=clip)
+
+    def request_review(self, request_id, asset_ids):
+        """Track stills of the assets a saved workflow job's waiting step lists.
+
+        The caller owns the step projection and passes its review asset IDs.
+        Stills come from Scenario through the same lane, polling window and
+        cache as server previews, bound to the saved workflow job. Requesting
+        again keeps existing state; use ``retry(..., review=True)`` after a
+        failure.
+        """
+        self._check()
+        targets = self._coordinator.review_preview_targets(request_id, tuple(asset_ids))
+        return self._track(targets)
+
+    def _track(self, targets, *, clip=False):
         now = self._clock()
         result = []
         for target in targets:
-            key = (target.request_id, target.asset_id)
+            key = self._key(target)
             entry = self._entries.get(key)
             if entry is None or entry.target != target:
                 if entry is None and len(self._entries) >= ENTRY_LIMIT:
@@ -245,7 +269,7 @@ class ResultPreviewScheduler:
             result.append(self._snapshot(entry))
         return tuple(result)
 
-    def retry(self, request_id, asset_id):
+    def retry(self, request_id, asset_id, *, review=False):
         """Explicitly fetch again, clearing a missing marker and the polling window.
 
         Every rendition except unsupported ones and decoded previews being
@@ -255,9 +279,10 @@ class ResultPreviewScheduler:
         it: the pump that collects that batch applies its outcome and queues
         the renditions again in the same call, so a late outcome is never
         reported as settled and cannot undo the retry.
+        ``review`` selects a workflow review asset rather than a saved result.
         """
         self._check()
-        entry = self._entries.get((request_id, asset_id))
+        entry = self._entries.get((request_id, asset_id, review is True))
         if entry is None:
             raise previews.PreviewError("Request a preview for this saved result first")
         if entry.inflight:
@@ -285,11 +310,11 @@ class ResultPreviewScheduler:
         entry.window, entry.used = None, 0.0
         entry.poll = entry.due = now
 
-    def status(self, request_id, asset_id):
+    def status(self, request_id, asset_id, *, review=False):
         """Read the last known status; no I/O, safe while drawing."""
         if threading.current_thread() is not self._owner:
             raise RuntimeError("Use result previews from their owning thread")
-        entry = self._entries.get((request_id, asset_id))
+        entry = self._entries.get((request_id, asset_id, review is True))
         return None if entry is None else self._snapshot(entry)
 
     def decode_requests(self):
@@ -384,7 +409,7 @@ class ResultPreviewScheduler:
         for entry, work in batch:
             target = entry.target
             renew, entry.renew = entry.renew, False
-            if self._entries.get((target.request_id, target.asset_id)) is entry:
+            if self._entries.get(self._key(target)) is entry:
                 if entry.retry:
                     self._restart(entry, now)
                 elif renew and work.final:
@@ -441,7 +466,7 @@ class ResultPreviewScheduler:
             return
         for outcome in result.outcomes:
             target = outcome.target
-            entry = self._entries.get((target.request_id, target.asset_id))
+            entry = self._entries.get(self._key(target))
             if entry is None or entry.target != target or self._closed:
                 for item in outcome.renditions:
                     if item.request is not None:

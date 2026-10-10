@@ -25,7 +25,7 @@ from ..core.jobs.transfers import ResultDownloader, StoragePolicy
 from ..core.jobs.upload_sources import UploadSources
 from ..core.jobs.upload_store import UploadStore
 from ..core.jobs.upload_transfers import PartUploader, S3UploadPolicy
-from .job_session import JobSession, reap_retired
+from .job_session import JobSession, OriginUnavailable, reap_retired
 
 log = logging.getLogger("scenario")
 PACKAGE = __package__.rsplit(".", 1)[0]  # the extension package, e.g. bl_ext.user_default.scenario
@@ -46,6 +46,8 @@ class RuntimeState:
         self.blockout_jobs = None
         self.film_jobs = None
         self.reference_uploads = None
+        # Icons of waiting workflow steps' review assets; per job context.
+        self.review_previews = None
         self.model_previews = {}
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
@@ -129,6 +131,9 @@ class RuntimeState:
         self.blockout_jobs = None
         self.film_jobs = None
         self.reference_uploads = None
+        if self.review_previews is not None:
+            self.review_previews.clear()
+        self.review_previews = None
         self.model_previews.clear()
 
     def retire_model_defaults(self):
@@ -462,6 +467,33 @@ def decide_workflow_step(
     task = jobs.decide(request_id, expected_revision, node_id, review_id, action, selected_indices)
     show_job_views((jobs.views[request_id],))
     return jobs, task
+
+
+def load_review_previews(
+    context_id, request_id, expected_revision, node_id, review_id, *, retry=False
+):
+    """Native entry that loads private previews of one waiting step's review assets.
+
+    Bound like a decision to the context, saved revision and the step's
+    `review_id`; previews are read-only and never decide, spend or apply.
+    Returns the number of assets requested.
+    """
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    try:
+        scheduler = ensure_job_session().result_previews
+    except OriginUnavailable:
+        raise ScenarioError(0, "Previews are unavailable for this connection") from None
+    from .review_previews import ReviewPreviews
+
+    if state.review_previews is None or state.review_previews.context_id != context_id:
+        if state.review_previews is not None:
+            state.review_previews.clear()
+        state.review_previews = ReviewPreviews(context_id)
+    return state.review_previews.request(
+        jobs, scheduler, request_id, expected_revision, node_id, review_id, retry=retry
+    )
 
 
 def prepare_image_application(context_id, request_id, expected_revision, scene):

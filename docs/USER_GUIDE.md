@@ -912,16 +912,22 @@ shows **Workflow waits for your decision**, checks for changes every 15 seconds
 and offers **Review approval** or **Choose 1 to 2 of 3** (the numbers follow the
 step). The Workflows page lists the same steps under **Waiting for your
 decision**. The review shows the workflow, the job, its approved price and the
-result asset IDs to approve, or the candidates to choose from (asset IDs or text;
-no previews). Choose **Approve** or **Select** with the items you want, or
-**Stop workflow** to reject the step, then **Send decision**. Continuing runs
-the remaining steps, which spend credits; their charge is not verified against
-the approved price. Stopping cancels the workflow; completed steps stay charged,
-and inside a loop Scenario may stop only that loop. A selection that feeds a
-loop can only be stopped from Blender for now. Blender reads how the steps
-connect from the workflow itself; when it cannot, a selection in a workflow
-with a loop can only be stopped too, and an approval warns that results to
-review may be missing, so check them in Scenario first. The decision is sent once; if its
+result asset IDs to approve, or the candidates to choose from (asset IDs or text).
+To see the images first, choose **Load previews** below the step in Jobs or on
+the Workflows page: Blender downloads private copies of those images (each up to
+8 MiB and 4096 pixels per side, otherwise Scenario's thumbnail when it offers
+one) into its extension cache and shows small previews there and in the review.
+**Retry previews** fetches the ones that failed. Loading previews needs Online
+Access and never decides, spends or applies anything. Choose **Approve** or
+**Select** with the items you want, or **Stop workflow** to reject the step,
+then **Send decision**. Continuing runs the remaining steps, which spend
+credits; their charge is not verified against the approved price. Stopping
+cancels the workflow; completed steps stay charged, and inside a loop Scenario
+may stop only that loop. A selection that feeds a loop can only be stopped from
+Blender for now. Blender reads how the steps connect from the workflow itself;
+when it cannot, a selection in a workflow with a loop can only be stopped too,
+and an approval warns that results to review may be missing, so check them in
+Scenario first. The decision is sent once; if its
 outcome is unknown, wait until the step is shown again instead of repeating it.
 After a restart, choose **Refresh status** first. A connected agent can read and
 decide the same steps through the local MCP, whose tool guidance requires your

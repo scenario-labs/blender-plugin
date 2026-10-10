@@ -10,6 +10,11 @@ entry local MCP `decide_workflow_step` also uses. That entry checks the context
 token, the saved revision and the step's `review_id` again, and nothing is
 retried. Rejecting a waiting step ("Stop workflow") is the only way to stop a
 workflow: Scenario has no endpoint that cancels a running step.
+
+**Load previews** on the same rows explicitly fetches private stills of the
+step's review assets through `runtime.load_review_previews`; the rows and the
+dialog then draw the icons `review_previews` decoded outside drawing. Opening
+the dialog sends nothing.
 """
 
 import textwrap
@@ -21,7 +26,7 @@ from bpy.props import BoolProperty, CollectionProperty, EnumProperty, IntPropert
 from ..core.api.errors import ScenarioError
 from ..core.jobs import workflow_nodes
 from ..core.ui import saved_job_actions
-from . import job_recovery, runtime
+from . import job_recovery, review_previews, runtime
 
 # Dialog text width in characters at the default popup width.
 WRAP = 70
@@ -29,6 +34,13 @@ WRAP = 70
 MIN_WIDTH = 540
 # Lines of one text candidate drawn in the dialog before it is shortened.
 ITEM_LINES = 12
+# Loaded review asset icons in the dialog: an approval's grid columns and size,
+# and the size beside a selection candidate.
+GRID_COLUMNS, GRID_SCALE, CANDIDATE_SCALE = 4, 5.0, 4.0
+NO_PREVIEWS = (
+    "Load previews from the Jobs row or Studio Workflows to see these assets here, "
+    "or open them in Scenario."
+)
 CONTINUE_TEXT = (
     "Continuing runs the remaining steps of this job, which spend credits. The charge "
     "after a decision is not verified against the approved price."
@@ -171,22 +183,48 @@ def _wrapped(layout, text, icon="NONE", width=WRAP):
         layout.label(text=line, icon=icon if index == 0 else "NONE")
 
 
-def _draw_approval(box, step):
+def _icon(value):
+    """A loaded review asset's icon ID, else 0; memory only."""
+    return value.icon_id if value is not None and value.state == review_previews.READY else 0
+
+
+def _draw_previews_note(box, request_id, asset_ids):
+    """Whether previews of these assets were requested, else ask to load them."""
+    if any(review_previews.get(request_id, asset) is not None for asset in asset_ids):
+        return True
+    _wrapped(box, NO_PREVIEWS, "INFO")
+    return False
+
+
+def _draw_approval(box, request_id, step):
     if not step.links_complete:
         _wrapped(box, UNLINKED, "ERROR")
     if not step.review_asset_ids:
         box.label(text="No result assets are listed for this step.")
         return
     box.label(text="Results to review before approving:")
-    for asset_id in step.review_asset_ids:
-        box.label(text=asset_id, icon="FILE")
+    values = [(asset, review_previews.get(request_id, asset)) for asset in step.review_asset_ids]
+    loaded = [(asset, value) for asset, value in values if _icon(value)]
+    # Loaded previews first, as a grid of icons named by asset ID.
+    for start in range(0, len(loaded), GRID_COLUMNS):
+        row = box.row()
+        for asset, value in loaded[start : start + GRID_COLUMNS]:
+            column = row.column(align=True)
+            column.template_icon(icon_value=value.icon_id, scale=GRID_SCALE)
+            column.label(text=asset)
+    for asset, value in values:
+        if _icon(value):
+            continue
+        box.label(text=asset, icon="FILE")
+        if value is not None:
+            box.label(text=f"    {review_previews.status_text(value)}")
     hidden = step.review_asset_total - len(step.review_asset_ids)
     if hidden > 0:
         box.label(text=f"{hidden} more result assets are not listed")
-    box.label(text="Open these assets in Scenario to see them.")
+    _draw_previews_note(box, request_id, step.review_asset_ids)
 
 
-def _draw_selection(box, step, candidates, choosable):
+def _draw_selection(box, request_id, step, candidates, choosable):
     if step.blocked:
         _wrapped(box, workflow_nodes.BLOCKED[step.blocked], "ERROR")
     kind = "asset IDs" if step.item_kind == "asset" else "texts"
@@ -201,11 +239,18 @@ def _draw_selection(box, step, candidates, choosable):
         )
     for index, item in enumerate(candidates):
         text = f"{index + 1}." if step.item_kind == "text" else f"{index + 1}. {item.label}"
+        value = review_previews.get(request_id, item.label) if step.item_kind == "asset" else None
         row = box.row()
+        if _icon(value):
+            # The candidate's loaded preview beside its checkbox.
+            row.template_icon(icon_value=value.icon_id, scale=CANDIDATE_SCALE)
+            row = row.column()
         if choosable:
             row.prop(item, "selected", text=text)
         else:
             row.label(text=text)
+        if value is not None and not _icon(value):
+            box.label(text=f"    {review_previews.status_text(value)}")
         if step.item_kind == "text":
             column = box.column(align=True)
             lines = textwrap.wrap(item.label, WRAP - 4) or [""]
@@ -213,6 +258,8 @@ def _draw_selection(box, step, candidates, choosable):
                 column.label(text=f"    {line}")
             if len(lines) > ITEM_LINES:
                 column.label(text=f"    (first {ITEM_LINES} of {len(lines)} lines shown)")
+    if step.item_kind == "asset":
+        _draw_previews_note(box, request_id, step.items)
 
 
 class ScenarioWorkflowStepItem(bpy.types.PropertyGroup):
@@ -312,9 +359,21 @@ class SCENARIO_OT_review_workflow_step(bpy.types.Operator):
             _wrapped(layout, f"Last decision: {review.error}", "ERROR")
         box = layout.box()
         if step.node_type == "user-approval":
-            _draw_approval(box, step)
+            _draw_approval(box, review.request_id, step)
         else:
-            _draw_selection(box, step, self.candidates, review.can_continue)
+            _draw_selection(box, review.request_id, step, self.candidates, review.can_continue)
+        owner = review_previews.owner()
+        region = getattr(context, "region_popup", None)
+        if region is not None:
+            # Refresh this dialog from the pump only while its previews load, like Studio.
+            from .studio import _popups
+
+            if owner is not None and owner.loading(
+                review.request_id, workflow_nodes.preview_assets(step)
+            ):
+                _popups[self] = region
+            else:
+                _popups.pop(self, None)
         layout.separator(factor=0.5)
         # One continuous segmented control with equal cells (UI_STYLE "Tabs and
         # segmented choices"); the Select cell alone may be disabled.
@@ -408,9 +467,56 @@ def draw_pending(layout, context):
                 or item.key.partition(":")[0] in saved_job_actions.DECISION_ROWS
             ):
                 job_recovery.draw_action(column, item)
+        review_previews.draw_step_previews(column, view)
 
 
-CLASSES = (ScenarioWorkflowStepItem, SCENARIO_OT_review_workflow_step)
+class SCENARIO_OT_load_workflow_step_previews(bpy.types.Operator):
+    bl_idname = review_previews.LOAD
+    bl_label = "Load previews"
+    bl_description = (
+        "Download private previews of the assets this waiting workflow step lists into "
+        "this computer's preview cache; nothing is decided, spent or applied"
+    )
+    bl_options = {"INTERNAL"}
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    node_id: StringProperty(options={"HIDDEN"})
+    review_id: StringProperty(options={"HIDDEN"})
+    retry: BoolProperty(default=False, options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        from .operators import _network_poll
+
+        return _network_poll(cls, context)
+
+    def execute(self, context):
+        try:
+            count = runtime.load_review_previews(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                self.node_id,
+                self.review_id,
+                retry=self.retry,
+            )
+        except ScenarioError as error:
+            self.report({"ERROR"}, error.reason)
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not load previews; inspect the saved job again")
+            return {"CANCELLED"}
+        runtime.set_message(f"Loading private previews of {count} asset{'s' if count != 1 else ''}")
+        return {"FINISHED"}
+
+
+CLASSES = (
+    ScenarioWorkflowStepItem,
+    SCENARIO_OT_review_workflow_step,
+    SCENARIO_OT_load_workflow_step_previews,
+)
 
 
 def register():

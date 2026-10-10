@@ -620,6 +620,19 @@ def pending_steps(job, *, remote_job_id, workflow_id, links=None):
     return tuple(steps)
 
 
+def preview_assets(step):
+    """Asset IDs a person reviews at one waiting step, in listed order, never URLs.
+
+    An approval's upstream result assets, or an asset selection's candidates;
+    a text selection has none. At most 50 either way.
+    """
+    if step.node_type == "user-approval":
+        return step.review_asset_ids
+    if step.item_kind == "asset":
+        return step.items
+    return ()
+
+
 def validate_selection(step, indices):
     """Return the ordered picks when they fit the step's candidates and bounds."""
     if not isinstance(indices, (list, tuple)):

@@ -486,7 +486,12 @@ runs jobs without previews. On the main thread, `result_previews` returns the
 scheduler only while the session is active and configured; otherwise it raises
 `OriginUnavailable`. Previews are keyed by the saved job, asset and receipt, not
 by a captured origin: they work after a scene switch or restart and never grant
-scene or application authority.
+scene or application authority. The review assets of a waiting workflow step are
+keyed by the saved workflow job instead and requested with `request_review`;
+`runtime.load_review_previews` binds that request to the context, saved
+revision and step `review_id`, and the runtime-owned
+[review previews](RESULT_PREVIEWS.md#workflow-review-assets) object, cleared
+when jobs retire, turns ready stills into icons in the GUI pump.
 
 The optional `preview_waveform` argument is the
 [offline audio decoder](RESULT_PREVIEWS.md#offline-audio-envelopes)
@@ -936,9 +941,14 @@ a `remote` workflow, a command in flight or a missing step is refused, and
 nothing is queued. [workflow_steps.py](../scenario/blender/workflow_steps.py)
 opens the review dialog with that step and its `review_id`, and sends the chosen
 decision once through `runtime.decide_workflow_step`, the entry MCP
-`decide_workflow_step` uses; `decide` checks the binding again. The dialog,
-its wording and the Workflows page section are described in
-[UI style](UI_STYLE.md#waiting-workflow-steps).
+`decide_workflow_step` uses; `decide` checks the binding again.
+`ModelJobs.review_assets(request_id, expected_revision, node_id, review_id)`
+returns the asset IDs one current step lists for review, an approval's result
+assets or an asset selection's candidates, with the same binding but without
+refusing a command in flight, since previews never decide; **Load previews**
+passes them to the [review previews](#saved-result-preview-ownership). The
+dialog, its wording, the previews and the Workflows page section are described
+in [UI style](UI_STYLE.md#waiting-workflow-steps).
 
 ## Explicit recovered Image application
 

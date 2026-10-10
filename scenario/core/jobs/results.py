@@ -132,6 +132,22 @@ def _download_url(record, source):
     return url
 
 
+def _reviewing(record):
+    """Whether a saved record is a `remote` workflow job whose steps may wait."""
+    return (
+        record is not None
+        and record.intent.operation == "workflow"
+        and record.state == JobState.REMOTE
+        and record.remote_job_id is not None
+    )
+
+
+def _changed(target):
+    if target.kind == previews.REVIEW:
+        return "This workflow job is no longer waiting; review its step again"
+    return "This saved result changed; preview it again"
+
+
 def _asset(record, identifier, name, *, source=None):
     """Describe the file to save; a saved manifest passes its own source when refreshing."""
     if record.get("id") != identifier or record.get("status") != "success":
@@ -667,10 +683,46 @@ class ResultCommands:
             if item.receipt is not None and (selected is None or item.asset.asset_id in selected)
         )
 
+    def review_targets(self, request_id, asset_ids):
+        """Preview targets for assets a saved workflow job's waiting step lists.
+
+        Reads the scoped store only. The job must be a `remote` workflow job
+        with a known remote ID; the caller, which owns the step projection,
+        supplies the step's asset IDs. Each target binds the scope, request,
+        remote job and asset, and is fetched from Scenario, never from results.
+        """
+        try:
+            selected = tuple(_identity(value) for value in asset_ids)
+        except (TypeError, ValueError):
+            raise ResultError("Choose the review assets of a waiting workflow step") from None
+        if not 1 <= len(selected) <= previews.REVIEW_ASSET_LIMIT or len(set(selected)) != len(
+            selected
+        ):
+            raise ResultError("Choose the review assets of a waiting workflow step")
+        with self._guard():
+            record = self._store.get(request_id)
+        if not _reviewing(record):
+            raise ResultError("Previews need a saved workflow job that waits for a decision")
+        return tuple(
+            previews.PreviewTarget.for_review(
+                self._store.scope, request_id, record.remote_job_id, asset_id
+            )
+            for asset_id in selected
+        )
+
     def _preview_record(self, target):
-        """The current saved record if it still holds the target's exact receipt."""
+        """The current saved record if it still holds the target's exact receipt.
+
+        A review target instead needs the same `remote` workflow job.
+        """
         with self._guard():
             record = self._store.get(target.request_id)
+        if target.kind == previews.REVIEW:
+            if not _reviewing(record) or target != previews.PreviewTarget.for_review(
+                self._store.scope, target.request_id, record.remote_job_id, target.asset_id
+            ):
+                return None
+            return record
         if record is None or record.state not in PREVIEW_STATES:
             return None
         for item in record.results:
@@ -691,9 +743,7 @@ class ResultCommands:
         """Resolve one rendition from the cache or a local decode request; None needs Scenario."""
         state, target = previews.PreviewState, item.target
         if record is None:
-            return previews.RenditionOutcome(
-                rendition, state.FAILED, reason="This saved result changed; preview it again"
-            )
+            return previews.RenditionOutcome(rendition, state.FAILED, reason=_changed(target))
         if not previews.supports(target.kind, rendition):
             return previews.RenditionOutcome(
                 rendition, state.UNSUPPORTED, reason="No preview is available for this format"
@@ -772,8 +822,13 @@ class ResultCommands:
             try:
                 if index not in sources:
                     record = records.get(item.target.asset_id)
-                    found = {} if record is None else previews.server_sources(record, item.target)
-                    sources[index] = found
+                    sources[index] = (
+                        {}
+                        if record is None
+                        else previews.review_sources(record, item.target)
+                        if item.target.kind == previews.REVIEW
+                        else previews.server_sources(record, item.target)
+                    )
                 source = sources[index].get(rendition)
                 if source is not None and not self._adapter.network_allowed():
                     settle(index, rendition, state.OFFLINE, reason="Online access is disabled")
@@ -871,9 +926,7 @@ class ResultCommands:
                         if outcome.request is not None:
                             cache.discard(outcome.request.directory)
                         outcomes[index][rendition] = changed(
-                            rendition,
-                            previews.PreviewState.FAILED,
-                            reason="This saved result changed; preview it again",
+                            rendition, previews.PreviewState.FAILED, reason=_changed(item.target)
                         )
             return previews.PreviewBatch(
                 self._store.scope,

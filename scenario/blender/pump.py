@@ -84,6 +84,10 @@ def _process():
                     changed = True
     if _jobs_changed():
         changed = True
+    # Review previews decode verified cached stills here, never while drawing.
+    previews = runtime.state.review_previews
+    if previews is not None and previews.pump():
+        changed = True
     if changed:
         redraw()
     studio.redraw_popups()

@@ -2045,8 +2045,8 @@ loop Scenario may stop only that loop, so the refreshed status is authoritative.
 checks the context, saved revision, step review, decision and selection bounds
 again and queues one request that is never retried. Selected items are sent in
 listed order. A changed step, revision or connection, a command in flight or
-disabled Online Access sends nothing and reports why. Review assets and
-candidates are IDs or text only; no preview is downloaded.
+disabled Online Access sends nothing and reports why. Opening the dialog sends
+nothing either.
 
 While the decision is sent, the row shows **Sending your decision...**. A
 refused, uncertain or unsent decision then stays as wrapped error rows until
@@ -2057,6 +2057,26 @@ or pauses at its next approval or selection. The pump redraws Jobs rows when a
 step starts or stops waiting, a decision is queued or finishes, or its error
 changes.
 
+Below its review button, each waiting step that lists assets (an approval's
+result assets, or an asset selection's candidates) shows **Load previews (N)**
+in its Jobs row and in Studio's Workflows section. It is the only control that
+fetches them: an explicit, read-only request through `runtime.load_review_previews`,
+bound to the context, saved revision and the step's `review_id`, and disabled
+offline. It never decides, spends or applies. The
+[preview lane and cache](RESULT_PREVIEWS.md#workflow-review-assets) fetch each
+asset's still. Once requested, the step shows up to eight loaded icons, four to a
+row, and **Previews: R of N ready** with any loading, waiting for Online Access
+or unavailable count; **Retry previews** appears while some are unavailable and
+fetches only those again. The review dialog shows an approval's loaded previews
+as a grid of icons named by asset ID, and a candidate's loaded preview beside
+its checkbox; an asset without one keeps its ID and a short status line, and a
+step with nothing loaded says to load previews from the Jobs row or Studio
+Workflows. While its previews load, the dialog is refreshed by the pump like
+Studio. Icons are decoded by the pump from the verified cached still, at most
+two per tick and at most 256 pixels per side, never while drawing or while a
+render job runs; drawing reads memory only. A step that is decided or changes
+releases its icons, and so does a connection change.
+
 Installed tests on macOS arm64 Blender 5.1.2 cover the descriptors drawn in the
 sidebar, Studio Jobs and Studio Workflows with storage reads refused, the dialog
 contents, single use, bounds, listed order, the explicit stop, a blocked
@@ -2064,8 +2084,16 @@ selection (also one blocked because its links could not be read), the approval
 warning for unread links and the results a workflow definition links, changed
 step, revision and connection, offline refusal, a refused
 decision, steps after an explicit refresh following a restart, redraws and
-registration, with synthetic SDK responses. Physical desktop evidence of the
-rows and dialog (input, focus, DPI, IME and screenshots) is pending.
+registration, with synthetic SDK responses. Installed tests of the previews
+cover the Load previews controls and their binding, metadata and transfers on
+the preview lane, decoding only in the pump (a fitted icon with the stored
+colors, the temporary image removed), icons drawn in rows, Studio and the dialog
+with storage reads and requests refused, unavailable candidates and their
+explicit retry, stale, foreign and offline requests, released icons after a
+decision or connection change, and cached stills reused after a restart.
+Background Blender assigns no icon IDs, so drawn icons were recorded with a
+stand-in ID. Physical desktop evidence of the rows, previews and dialog (input,
+focus, DPI, IME and screenshots) is pending.
 
 ## Native Library controls
 

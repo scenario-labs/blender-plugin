@@ -4,11 +4,13 @@
 [`preview_scheduler`](../scenario/core/jobs/preview_scheduler.py) prepare small
 previews of downloaded saved results for the shared runtime. They are bpy-free.
 Previews are read-only: they never submit, spend, apply, resolve a scene origin or
-write the job store. This runtime layer has no user interface or local MCP tool
-yet. Audio envelopes are decoded in an owned offline Blender process, described
-below. Blender-side image decoding, display, playback and waveform drawing are
-follow-up work under [#189](https://github.com/scenario-labs/blender-plugin/issues/189)
-and [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
+write the job store. The only user interface is the private previews of
+[workflow review assets](#workflow-review-assets); saved results have no preview
+view or local MCP tool yet. Audio envelopes are decoded in an owned offline
+Blender process, described below. Blender-side image decoding of saved results,
+display, playback and waveform drawing are follow-up work under
+[#189](https://github.com/scenario-labs/blender-plugin/issues/189) and
+[#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
 ## Sources by result type
 
@@ -213,6 +215,46 @@ entry to go instead and is tried again on the next pass. The cache is safe to de
 while Blender runs: each lane command recreates the root as a private directory
 when its parent still exists.
 
+## Workflow review assets
+
+A workflow job waiting at an approval or selection step lists assets for a
+person to review: an approval's upstream result assets, or an asset selection's
+candidates, at most 50 per step ([waiting workflow steps](UI_STYLE.md#waiting-workflow-steps)).
+They are not downloaded results, so they have no receipt. **Load previews** asks
+`ModelJobs.review_assets` for the current step's asset IDs, bound like a decision
+to the context, saved revision and the step's `review_id`, then calls
+`ResultPreviewScheduler.request_review`. The coordinator's
+`review_preview_targets` accepts 1 to 50 distinct IDs only for a saved
+`remote` workflow job with a known remote ID. Their entries are keyed apart
+from saved results, so the same asset ID never shares state, and the lane
+refuses a target once its job is no longer that `remote` workflow job.
+
+Each review asset gets one still, through the same lane, batches, metadata read,
+polling window, downloader and cache as server stills:
+
+| Review asset | Still |
+| --- | --- |
+| PNG, JPEG or WebP declared within 8 MiB and 4096 pixels per side (or undeclared) | The asset's own signed `url`, the field result downloads use |
+| Such an image declared larger | Its server `thumbnail` when offered; otherwise it fails at once, without a transfer |
+| Any other asset | Its server `thumbnail` when offered; otherwise polled, then `missing` |
+
+The bytes must be a PNG, JPEG or WebP within the still bounds above, checked from
+their content. The cache key, a `ReviewKey`, binds the scope, request, remote job
+and asset; the sidecar records the digest of the bytes the transfer returned.
+Transient transfer and metadata failures stay `pending` within the window, as
+for server stills, and failures and `missing` markers need an explicit retry.
+
+The [Blender owner](../scenario/blender/review_previews.py) runs on the main
+thread. The GUI pump copies scheduler statuses into memory and, for each newly
+ready still, verifies the cached file again with `check_still` (size, digest and
+signature against its entry), reads it through a temporary image datablock with
+the Non-Color color space, fits it to 256 pixels per side and removes the
+datablock. At most two stills are decoded per pump tick, and none while a render
+job runs. The pixels fill an icon of a private `bpy.utils.previews` collection,
+so Blender's file-thumbnail cache is never written. At most 128 review assets
+are tracked; icons of a step that no longer waits are released, and retiring the
+job context releases them all. Drawing reads only that memory.
+
 ## Lane and ownership
 
 `JobWorkers` owns one dedicated `ScenarioPreview` thread with its own bounded
@@ -231,11 +273,12 @@ command is queued or running. Shutdown joins the lane with the other workers.
 
 `ResultPreviewScheduler` runs on its owner thread, normally Blender's main
 thread, and performs no network I/O or preview cache work. `request` reads saved
-receipts from the local job store, and `release` removes leftover private copies
-after the lane stops. `request`, `retry`, `status`, `decode_requests`,
-`finish_decode` and `discard_decode` are its interface; status snapshots are
-immutable and safe to read while drawing. It sends at most one batch of up to 32
-assets at a time.
+receipts from the local job store, `request_review` reads the saved workflow job,
+and `release` removes leftover private copies after the lane stops. `request`,
+`request_review`, `retry`, `status`, `decode_requests`, `finish_decode` and
+`discard_decode` are its interface; `retry` and `status` take `review=True` for
+a review asset. Status snapshots are immutable and safe to read while drawing.
+It sends at most one batch of up to 32 assets at a time.
 
 `JobSession(preview_root=...)` exposes it as `result_previews` while the session
 is active. The session's existing maintenance timer, and `reap_retired` in
@@ -252,12 +295,14 @@ These are offline contracts with synthetic SDK and storage fixtures. Which asset
 kinds receive server thumbnails or previews, their sizes and dimensions, signed
 URL lifetime and hosts, where a first request may redirect, their timing after a
 job succeeds, and how `get_bulk` reports a deleted asset are not established by
-live evidence. The installed-ZIP native tests decode synthetic WAV, MP3, Ogg,
-FLAC, Matroska AAC and MP4 AAC files in the offline child and exercise its
-failures, cancellation and timeout. They passed on Blender 5.0.1, 5.1.2 and 5.2.1
-locally on macOS arm64 and in hosted CI on Linux x64 and Windows x64 runners.
-Provider audio files, child start-up time and antivirus behavior on real Windows
-and Linux desktops, macOS x64 and sandboxed Blender packages are not covered.
-The timing figures above are macOS arm64 measurements only. Blender-side image
-decoding, the user interface, MCP parity and native desktop acceptance remain
-open under #189, #65 and #66.
+live evidence. Neither are the review assets real workflow flows list, nor
+whether their `url` and declared sizes are as documented for results. The
+installed-ZIP native tests decode synthetic WAV, MP3, Ogg, FLAC, Matroska AAC
+and MP4 AAC files in the offline child and exercise its failures, cancellation
+and timeout. They passed on Blender 5.0.1, 5.1.2 and 5.2.1 locally on macOS
+arm64 and in hosted CI on Linux x64 and Windows x64 runners. Provider audio
+files, child start-up time and antivirus behavior on real Windows and Linux
+desktops, macOS x64 and sandboxed Blender packages are not covered. The timing
+figures above are macOS arm64 measurements only. Blender-side image decoding of
+saved results, their user interface, MCP parity and native desktop acceptance,
+including of the review previews, remain open under #189, #65 and #66.

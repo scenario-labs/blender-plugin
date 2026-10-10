@@ -8,12 +8,17 @@ result transfer and its configured storage hosts. Images and audio waveforms
 use the verified local result instead: this module issues a decode request that
 holds a private verified copy. Blender decodes an image copy later on its main
 thread; ``decode_envelope`` decodes an audio copy in an owned offline Blender
-process. Every function here performs file or network I/O and belongs on the
-dedicated preview worker lane, never in drawing or on Blender's main thread.
+process. The assets a waiting workflow step asks a person to review are not
+downloaded results: their still is the bounded image itself, or else its server
+thumbnail, bound to the saved workflow job rather than to a receipt. Every
+function here performs file or network I/O and belongs on the dedicated preview
+worker lane, never in drawing; ``check_still`` is the one bounded exception that
+Blender's main thread runs right before it decodes a cached still.
 """
 
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -37,6 +42,10 @@ from .transfers import DownloadedResult, TransferError, _root
 FORMAT = 1
 STILL, CLIP, ENVELOPE = "still", "clip", "envelope"
 RENDITIONS = (STILL, CLIP, ENVELOPE)
+# Preview kind of an asset a waiting workflow step lists for review.
+REVIEW = "review"
+# Most review assets one request may track: a step lists at most 50.
+REVIEW_ASSET_LIMIT = 50
 PREVIEW_EDGE = 256
 # Server stills are decoded on Blender's main thread later: bound pixels, not
 # only bytes, so a small compressed file cannot declare a huge decode.
@@ -238,6 +247,9 @@ _LOCAL_AUDIO = {
 }
 # Material libraries are text sidecars of an OBJ, not a previewable model.
 _NO_SERVER_PREVIEW = frozenset({"model/mtl"})
+# Review assets whose own bytes are a still Blender decodes; other kinds use
+# their server thumbnail. The content, not this declared type, is checked.
+_REVIEW_IMAGES = frozenset({"image/png", "image/jpeg", "image/jpg", "image/webp"})
 
 
 def preview_kind(media_type):
@@ -259,7 +271,7 @@ def preview_kind(media_type):
 
 def renditions(kind, *, clip=False):
     """Default renditions for a kind; server clips are only fetched on request."""
-    if kind == "image":
+    if kind in {"image", REVIEW}:
         return (STILL,)
     if kind == "audio":
         return (STILL, ENVELOPE)
@@ -328,16 +340,63 @@ class PreviewKey:
         return hashlib.sha256(_json({"format": FORMAT, **asdict(self)}).encode()).hexdigest()
 
 
+def _digest_of(value):
+    return hashlib.sha256(_identity(value).encode()).hexdigest()
+
+
+@dataclass(frozen=True)
+class ReviewKey:
+    """Exact binding of a review preview to one asset of one saved workflow job.
+
+    A waiting step's review assets were never downloaded, so no saved receipt
+    exists: the key binds the scope, the local request, the remote job and the
+    asset. The cached still records the digest of the bytes the transfer
+    returned, and readers verify that digest before decoding.
+    """
+
+    scope: str
+    request: str
+    job: str
+    asset_id: str
+
+    def __post_init__(self):
+        _identity(self.asset_id)
+        if not all(isinstance(value, str) and _HEX.fullmatch(value) for value in self.digests):
+            raise ValueError("Use an exact workflow review preview identity")
+
+    @property
+    def digests(self):
+        return self.scope, self.request, self.job
+
+    @classmethod
+    def for_step(cls, scope, request_id, remote_job_id, asset_id):
+        return cls(scope_digest(scope), _digest_of(request_id), _digest_of(remote_job_id), asset_id)
+
+    @property
+    def name(self):
+        value = {"format": FORMAT, "kind": REVIEW, **asdict(self)}
+        return hashlib.sha256(_json(value).encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class PreviewTarget:
-    """One downloaded asset of a saved job, captured from the scoped store."""
+    """One downloaded asset of a saved job, or one review asset of a waiting step.
+
+    Review targets (``kind`` REVIEW) carry a ``ReviewKey``, an empty media type
+    until Scenario's metadata names one, and no receipt.
+    """
 
     request_id: str
     asset_id: str
     media_type: str
     kind: str | None
-    key: PreviewKey
-    receipt: DownloadedResult = field(repr=False)
+    key: PreviewKey | ReviewKey
+    receipt: DownloadedResult | None = field(repr=False)
+
+    @classmethod
+    def for_review(cls, scope, request_id, remote_job_id, asset_id):
+        key = ReviewKey.for_step(scope, request_id, remote_job_id, asset_id)
+        return cls(request_id, asset_id, "", REVIEW, key, None)
 
 
 @dataclass(frozen=True)
@@ -790,6 +849,24 @@ def _remaining_bytes(entry, size):
     return sum(item.st_size for item in files if stat.S_ISREG(item.st_mode))
 
 
+def _server_source(record, name):
+    """One signed ``thumbnail`` or ``preview`` source of an asset record, or None."""
+    value = record.get(name)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise PreviewError("Scenario returned invalid preview metadata")
+    url = value.get("url")
+    if url is None or url == "":
+        return None
+    try:
+        if not isinstance(url, str):
+            raise ValueError
+        return _identity(value.get("assetId")), url
+    except ValueError:
+        raise PreviewError("Scenario returned invalid preview metadata") from None
+
+
 def server_sources(record, target):
     """Signed preview URLs from one SDK asset record; URLs stay in memory only."""
     if (
@@ -800,21 +877,78 @@ def server_sources(record, target):
         raise PreviewError("Scenario returned different metadata for this saved result")
     sources = {}
     for rendition, name in ((STILL, "thumbnail"), (CLIP, "preview")):
-        value = record.get(name)
-        if value is None:
-            continue
-        if not isinstance(value, dict):
-            raise PreviewError("Scenario returned invalid preview metadata")
-        url = value.get("url")
-        if url is None or url == "":
-            continue
-        try:
-            if not isinstance(url, str):
-                raise ValueError
-            sources[rendition] = (_identity(value.get("assetId")), url)
-        except ValueError:
-            raise PreviewError("Scenario returned invalid preview metadata") from None
+        source = _server_source(record, name)
+        if source is not None:
+            sources[rendition] = source
     return sources
+
+
+def _declared(properties, name):
+    """A nonnegative integral size property, None when absent or unreadable."""
+    value = properties.get(name) if isinstance(properties, dict) else None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not (math.isfinite(value) and value >= 0 and int(value) == value):
+        return None
+    return int(value)
+
+
+def review_sources(record, target):
+    """The signed still source of one review asset; the URL stays in memory only.
+
+    A PNG, JPEG or WebP asset previews its own bytes through its ``url`` when
+    its declared size and dimensions fit the still bounds. Any other asset, or
+    an image declared larger, uses its server ``thumbnail`` when Scenario
+    offers one. An image without a usable source fails at once, so a declared
+    size above the bound is never downloaded; other kinds poll for a thumbnail.
+    """
+    if not isinstance(record, dict) or record.get("id") != target.asset_id:
+        raise PreviewError("Scenario returned different metadata for this review asset")
+    image = record.get("mimeType") in _REVIEW_IMAGES
+    fits = False
+    if image:
+        properties = record.get("properties")
+        size = _declared(properties, "size")
+        width, height = _declared(properties, "width"), _declared(properties, "height")
+        fits = (size is None or size <= STILL_MAX_BYTES) and all(
+            value is None or value <= STILL_MAX_EDGE for value in (width, height)
+        )
+        url = record.get("url")
+        if fits and isinstance(url, str) and url:
+            return {STILL: (target.asset_id, url)}
+    thumbnail = _server_source(record, "thumbnail")
+    if thumbnail is not None:
+        return {STILL: thumbnail}
+    if image and not fits:
+        raise PreviewError(
+            f"This image is larger than {STILL_MAX_BYTES // (1024 * 1024)} MiB or "
+            f"{STILL_MAX_EDGE} pixels; open it in Scenario"
+        )
+    return {}
+
+
+def check_still(preview):
+    """Verify a cached still again right before Blender decodes it; return its path.
+
+    Reads at most ``STILL_MAX_BYTES`` of one regular, nonsymlink file in the
+    private cache and compares its size, digest and image signature with the
+    entry the lane verified, so the decoded bytes are the cached ones.
+    """
+    if (
+        not isinstance(preview, CachedPreview)
+        or preview.rendition != STILL
+        or preview.path is None
+        or preview.media_type not in _SERVER[STILL]
+    ):
+        raise PreviewError("Use a cached still preview")
+    _, check = _SERVER[STILL][preview.media_type]
+    try:
+        size, digest, head = _digest(preview.path, STILL_MAX_BYTES)
+    except OSError:
+        raise PreviewError("The cached preview is unavailable; use Retry") from None
+    if size != preview.size or digest != preview.sha256 or not check(head):
+        raise PreviewError("The cached preview changed; use Retry")
+    return preview.path
 
 
 def fetch(cache, downloader, target, rendition, source, cancel=None):

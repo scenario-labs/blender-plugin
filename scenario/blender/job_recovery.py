@@ -8,7 +8,7 @@ from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProper
 from ..core.api.errors import ScenarioError
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.ui import saved_job_actions
-from . import render_lanes, runtime
+from . import render_lanes, review_previews, runtime
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
 
@@ -911,6 +911,8 @@ def draw_action(layout, item):
 def draw_controls(layout, record):
     for item in result_actions(record):
         draw_action(layout, item)
+    # Waiting workflow steps: Load previews and the review asset icons.
+    review_previews.draw_step_previews(layout, record)
 
 
 CLASSES = (

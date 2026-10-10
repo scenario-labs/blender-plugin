@@ -576,20 +576,22 @@ or vice versa. Failed workflow quotes release their retained approval capacity.
 
 The original parameters, normalized payload/defaults and exact decimal price are
 separate fields. Both commands also return `loop_steps`, `quote_may_understate`
-and `cost_warning`. The adapter counts loop nodes (`for-each`, or any node
-carrying a ForEach field) in the same retrieved definition the quote validated.
-It reports 0 only when every node has a known non-loop type: the SDK 2.2.0
-`WorkflowFlow.type` values other than `for-each` and `workflow`, plus the
-observed `user-selection`. A missing or malformed flow, a nested workflow step,
-or a node whose type is missing, not a string or unknown makes coverage unknown,
-which also warns. A unit test fails when an SDK upgrade changes that type list.
-The server's dry run prices one loop pass, so a run that iterates more often can
-cost more. The warning never blocks approval of the exact quoted string.
-Approval consumes the handle before persistence and requires unchanged input,
-scene and connection. Results stay saved for explicit application; there is no
-workflow-specific worker pool, store or automatic import. Native workflow
-controls below now share those commands. Interactive nodes, general cancellation
-and live output acceptance remain open under #64/#65/#66/#68.
+and `cost_warning`; `job_status` repeats them for saved workflow jobs, with
+unknown coverage after a restart because the record keeps no loop count. The
+adapter counts loop nodes (`for-each`, or any node carrying a ForEach field) in
+the same retrieved definition the quote validated. It reports 0 only when every
+node has a known non-loop type: the SDK 2.2.0 `WorkflowFlow.type` values other
+than `for-each` and `workflow`, plus the observed `user-selection`. A missing or
+malformed flow, a nested workflow step, or a node whose type is missing, not a
+string or unknown makes coverage unknown, which also warns. A unit test fails
+when an SDK upgrade changes that type list. The server's dry run prices one loop
+pass, so a run that iterates more often can cost more. The warning never blocks
+approval of the exact quoted string. Approval consumes the handle before
+persistence and requires unchanged input, scene and connection. Results stay
+saved for explicit application; there is no workflow-specific worker pool, store
+or automatic import. Native workflow controls below now share those commands.
+Interactive nodes, general cancellation and live output acceptance remain open
+under #64/#65/#66/#68.
 
 
 ## Explicit expanded native view
@@ -629,7 +631,8 @@ registry, exact-price check, operation tag, durable submission and results.
 The confirmation shows normalized payload values, including service defaults.
 A quote with loop nodes, or with unknown loop coverage, labels Generate as
 **Generate (from N CU)** and shows the one-pass warning below it and in the
-confirmation. The exact quoted string remains the approval value.
+confirmation. The session result row then shows **from N CU** as well. The exact
+quoted string remains the approval value.
 Credential/project retirement discards the UI controller with the shared owner;
 file-load retirement removes approval handles while saved scene inputs survive.
 Closing Studio owns no cancellation or teardown. No new transport, store or

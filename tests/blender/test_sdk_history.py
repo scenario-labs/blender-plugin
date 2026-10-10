@@ -560,7 +560,8 @@ class SDKHistoryTests(unittest.TestCase):
         self.assertIn("9.25 CU", labels)
         self.assertIn("Cost unavailable", labels)
         self.assertIn("2.75 CU", labels)
-        self.assertTrue(any("Workflow step" in (text or "") for text in labels))
+        # True while the run is running or its total is unavailable too.
+        self.assertIn("Workflow step; included in its run's total once known", labels)
         operators = [call for node in layout.walk() for call in node.named("operator")]
         recover = [
             call[2].get("text") for call in operators if call[1][0] == "scenario.import_result"

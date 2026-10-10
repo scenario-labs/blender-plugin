@@ -8,7 +8,7 @@ import textwrap
 
 import bpy
 
-from ..core.ui.costs import format_cu
+from ..core.ui.costs import format_cu, workflow_loop_warning
 from . import generation, job_recovery, params_ui, props, runtime
 
 KIND_ICON = {
@@ -516,7 +516,7 @@ def draw_result(layout, rec):
         ).local_id = rec.local_id
     elif not rec.is_success:
         header.label(text="", icon="ERROR")
-    header.label(text=f"{format_cu(rec.cu_cost)} CU" if rec.cu_cost is not None else "")
+    header.label(text=result_cost_label(rec))
     if collapsed:
         return
     row = box.row(align=True)
@@ -623,6 +623,16 @@ def draw_result(layout, rec):
         box.label(text=os.path.basename(rec.files[0]), icon="FILE")
 
 
+def result_cost_label(rec):
+    """A session job's approved price; a workflow quote not proven loop-free is a lower bound."""
+    if rec.cu_cost is None:
+        return ""
+    lower_bound = rec.kind == "workflow" and workflow_loop_warning(
+        rec.meta.get("workflow_loop_steps")
+    )
+    return f"{'from ' if lower_bound else ''}{format_cu(rec.cu_cost)} CU"
+
+
 def history_cost_label(entry):
     """A row's documented charge; never 0 for a run whose step charges are unknown."""
     if entry.cu_cost is not None:
@@ -661,7 +671,7 @@ def draw_history(layout, context, shown_ids=()):
         )
         header.label(text=history_cost_label(entry))
         if entry.workflow_job_id:
-            box.label(text="Workflow step; counted in its workflow's cost", icon="LINKED")
+            box.label(text="Workflow step; included in its run's total once known", icon="LINKED")
         if entry.asset_ids:
             op = box.row(align=True).operator(
                 "scenario.copy_text", text=entry.asset_ids[0], icon="COPYDOWN"

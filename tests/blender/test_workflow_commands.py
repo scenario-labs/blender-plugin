@@ -360,6 +360,10 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual(
             self.store.get(result["local_id"]).intent.quote_cost, quote["cu_cost_exact"]
         )
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["cu_cost_exact"], quote["cu_cost_exact"])
+        self.assertEqual((status["loop_steps"], status["quote_may_understate"]), (1, True))
+        self.assertEqual(status["cost_warning"], quote["cost_warning"])
 
     def test_unknown_flow_is_flagged_without_blocking_approval(self):
         # Coverage is unknown unless every node is proven not to loop.
@@ -382,4 +386,38 @@ class WorkflowCommandTests(unittest.TestCase):
                 self.tools.discard_workflow_estimate({"quote_id": quote["quote_id"]})
         self.approve(self.quote())
         self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_status_without_a_recorded_loop_count_reports_unknown_coverage(self):
+        quote = self.quote()
+        owner = self.runtime.state.model_jobs
+        submit = owner.submit_workflow
+
+        def without_count(*args, **kwargs):
+            view = submit(*args, **kwargs)
+            del view.meta["workflow_loop_steps"]
+            return view
+
+        with patch.object(owner, "submit_workflow", side_effect=without_count):
+            result = self.approve(quote)
+        self.settle()
+        self.assertEqual((result["loop_steps"], result["quote_may_understate"]), (None, True))
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual((status["loop_steps"], status["quote_may_understate"]), (None, True))
+        self.assertEqual(len(self.paid), 1)
+
+    def test_status_after_restart_flags_the_unrecorded_loop_count(self):
+        result = self.approve(self.quote())
+        self.settle()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(
+            (status["loop_steps"], status["quote_may_understate"], status["cost_warning"]),
+            (0, False, None),
+        )
+        # The saved record keeps the approved quote, not the definition's loop count.
+        self.runtime.state.reset()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["cu_cost_exact"], "0.1234567890123456789")
+        self.assertEqual((status["loop_steps"], status["quote_may_understate"]), (None, True))
+        self.assertIn("could not be checked", status["cost_warning"])
         self.assertEqual(len(self.paid), 1)

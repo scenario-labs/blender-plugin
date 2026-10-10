@@ -122,6 +122,7 @@ def test_real_tool_descriptions_are_complete_static_contracts(module):
         assert re.fullmatch(r"[a-z][a-z0-9_]*", name)
         assert len(description) >= 120, name
         assert all(label in description for label in ("Args:", "Returns:", "Example:")), name
+        assert description.count("Returns:") == 1, name  # One complete return contract.
         assert re.search(
             r"\n(?:Platform equivalent: [^\n]+|No platform equivalent)\.$", description
         )

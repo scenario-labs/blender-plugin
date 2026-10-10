@@ -434,7 +434,8 @@ price, status and asset identity. **Load older** pages back in time.
 A price includes add-on fees, such as quality checks, charged on top of the
 generation. A workflow run shows the total of its steps. If a step cannot be
 read, the run shows **Cost unavailable**, not 0 CU. Its steps also appear with
-a note that they are counted in the workflow's cost, so do not add them again.
+a note that they are included in the run's total once it is known, so do not
+add them to that total again.
 
 For a job saved by this extension's shared runtime, choose **Inspect saved jobs**.
 Use its explicit recovery controls to resume a download, then review the selected
@@ -753,7 +754,7 @@ through the loop. The button then reads **Generate (from N CU)** and a warning
 explains that the final charge can be higher. The same happens when the
 extension cannot confirm that the workflow has no loop, for example when it
 contains a step type the extension does not know. Check the loop's item count
-before you confirm.
+before you confirm. The submitted job's result also shows **from N CU**.
 Cancel submits nothing. Confirmation saves one workflow job; inspect it in Jobs
 and use Results for separate application. Never repeat an uncertain submission.
 Changing inputs, scene or connection requires a fresh valid approval.

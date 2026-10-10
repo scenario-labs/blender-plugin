@@ -338,3 +338,32 @@ class WorkflowControlTests(unittest.TestCase):
         self.assertEqual(cls.execute(operator, context), {"FINISHED"})
         self.fixture.settle()
         self.assertEqual(len(self.fixture.paid), 1)
+        # The session result row keeps the approved quote as a lower bound.
+        (result,) = self.fixture.runtime.state.model_jobs.views.values()
+        self.assertEqual(self.result_costs(result), ["from 0.123 CU"])
+
+    def result_costs(self, record):
+        layout = MagicMock()
+        submodule("blender.panels").draw_result(layout, record)
+        header = layout.box.return_value.row.return_value
+        return [
+            call.kwargs["text"]
+            for call in header.label.call_args_list
+            if call.kwargs.get("text", "").endswith("CU")
+        ]
+
+    def test_session_workflow_cost_is_a_lower_bound_unless_proven_loop_free(self):
+        records = submodule("core.jobs.records")
+        for meta, expected in (
+            ({"workflow_loop_steps": 0}, "0.5 CU"),
+            ({"workflow_loop_steps": 2}, "from 0.5 CU"),
+            # Recovered saved jobs do not record the definition's loop count.
+            ({}, "from 0.5 CU"),
+        ):
+            with self.subTest(meta=meta):
+                record = records.JobRecord.new("workflow", "workflow", "fixture", {}, meta=meta)
+                record.cu_cost = 0.5
+                self.assertEqual(self.result_costs(record), [expected])
+        model = records.JobRecord.new("image", "image", "fixture", {}, meta={})
+        model.cu_cost = 0.5
+        self.assertEqual(self.result_costs(model), ["0.5 CU"])

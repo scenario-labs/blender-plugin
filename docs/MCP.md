@@ -685,8 +685,10 @@ step jobs named by the run's flow or by each step's `workflowJobId`. Steps
 missing from the page are read on the history worker, at most 24 per page. If
 any step cannot be read or priced, the finished run reports `cu_cost: null` and
 `cost_unavailable: true` instead of 0; a running workflow reports no cost yet.
-Step rows keep their own cost and name their run in `workflow_job_id`, so do not
-add them to the run's total again. Workflow rows cannot use `recover_cloud_job`.
+Step rows keep their own cost and name their run in `workflow_job_id`. A run's
+non-null `cu_cost` already includes them, so do not add them again; while the
+run is running or its cost is unavailable, no total includes them yet. Workflow
+rows cannot use `recover_cloud_job`.
 
 `job_status`, `wait_for_job` and the old `import_result` lookup prefer a matching
 scoped record to an old unscoped cache. `import_result` rejects direct application
@@ -833,8 +835,12 @@ non-loop types are those of the SDK 2.2.0 `WorkflowFlow.type` other than
 `for-each` and `workflow`, plus the `user-selection` type seen in live workflow
 jobs. The server's dry run prices one pass through a loop, so a run that
 iterates more often can be charged more than `cu_cost_exact`. Show the warning
-with the price. It never blocks approval, and `job_status` keeps reporting the
-approved quote rather than the final charge.
+with the price. It never blocks approval.
+
+`job_status` keeps reporting the approved quote as `cu_cost_exact`, not the
+final charge. For a saved workflow job it also returns the same three fields.
+The saved record does not keep the loop count, so after a restart `loop_steps`
+is `null` and `quote_may_understate` is true.
 
 Approval is bound to the current scene revision, file, credential and project.
 It is consumed before local persistence and the single paid dispatch. A timeout

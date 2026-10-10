@@ -14,7 +14,7 @@ import pytest
 
 from scenario.core.audio_waveform import EnvelopeBuilder, WaveformCanceled, WaveformError
 from scenario.core.jobs import audio_decode
-from scenario.core.jobs.local_render import LocalRenderError, RenderCancelled
+from scenario.core.jobs.local_render import LocalRenderError, LocalRenderTimeout, RenderCancelled
 from tests.unit.test_audio_waveform import blocks, tone
 
 RATE = 8000
@@ -154,13 +154,10 @@ def test_a_failed_child_without_a_report_is_unreadable(monkeypatch, spec, worksp
 
 def test_timeout_cancellation_and_cleanup(monkeypatch, spec, workspace):
     directory, source = workspace
-    clock = iter([100.0, 100.0 + audio_decode.DECODE_TIMEOUT])
-    monkeypatch.setattr(audio_decode, "time", SimpleNamespace(monotonic=lambda: next(clock)))
     child = install(monkeypatch, Child())
-    child.raise_after = LocalRenderError("Local capture timed out; inspect retained frames")
+    child.raise_after = LocalRenderTimeout("Local capture timed out; inspect retained frames")
     with pytest.raises(WaveformError, match="timed out"):
         decode(spec, workspace)
-    monkeypatch.setattr(audio_decode, "time", SimpleNamespace(monotonic=lambda: 100.0))
     child.raise_after = RenderCancelled("Local capture cancelled")
     with pytest.raises(WaveformCanceled):
         decode(spec, workspace)
@@ -170,6 +167,24 @@ def test_timeout_cancellation_and_cleanup(monkeypatch, spec, workspace):
     with pytest.raises(WaveformCanceled):
         audio_decode.decode(source, directory, spec, cancel=cancel)
     assert len(child.calls) == 2
+
+
+@pytest.mark.parametrize(
+    "code,message", [("unsupported", "not supported"), (None, "could not decode")]
+)
+def test_a_child_failing_after_the_timeouts_length_is_not_a_timeout(
+    monkeypatch, spec, workspace, code, message
+):
+    # _run polls every 0.1 s, so a child can exit with a failure after the
+    # timeout's length has passed without being stopped. Only a child still
+    # running at the deadline timed out; elapsed time alone decides nothing.
+    clock = iter(100.0 + step * audio_decode.DECODE_TIMEOUT for step in range(100))
+    monkeypatch.setattr(audio_decode, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    child = install(monkeypatch, Child(error=code))
+    child.raise_after = LocalRenderError("Local media process failed; inspect its retained log")
+    with pytest.raises(WaveformError, match=message) as error:
+        decode(spec, workspace)
+    assert "timed out" not in str(error.value)
 
 
 def test_cancellation_during_a_successful_child_publishes_nothing(monkeypatch, spec, workspace):

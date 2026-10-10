@@ -162,9 +162,10 @@ Envelopes accept up to 600 seconds, eight channels and 192 kHz. The child holds
 at most 64 Mi decoded samples, which covers ten minutes of 48 kHz stereo; longer,
 faster or wider audio fails instead of being truncated. A decode times out after
 60 seconds. Cancellation, retirement and the timeout terminate the child, which
-is killed if it has not exited three seconds later. The envelope is cached as a
-sidecar keyed by the saved receipt, so a later session reads it without decoding
-again.
+is killed if it has not exited three seconds later. Only a child still running at
+the deadline reports a timeout; one that exits with a failure keeps the reason it
+reported, however long it took. The envelope is cached as a sidecar keyed by
+the saved receipt, so a later session reads it without decoding again.
 
 The session builds the decoder specification on Blender's main thread from
 `bpy.app.binary_path` and the installed worker. Without a usable executable,

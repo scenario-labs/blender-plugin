@@ -275,8 +275,9 @@ def test_actual_child_is_reaped_on_timeout_or_cancellation(monkeypatch, tmp_path
 
     monkeypatch.setattr(render.subprocess, "Popen", record)
     started = time.monotonic()
+    expected = render.RenderCancelled if cancelled else render.LocalRenderTimeout
     try:
-        with pytest.raises(render.LocalRenderError, match="cancelled|timed out"):
+        with pytest.raises(expected, match="cancelled" if cancelled else "timed out"):
             render._run(
                 [sys.executable, "-c", "import time; time.sleep(60)"],
                 log=tmp_path / "child.log",
@@ -289,6 +290,18 @@ def test_actual_child_is_reaped_on_timeout_or_cancellation(monkeypatch, tmp_path
             timer.join()
     assert time.monotonic() - started < 5
     assert len(children) == 1 and children[0].poll() is not None
+
+
+def test_a_child_that_exits_with_a_failure_is_not_a_timeout(tmp_path):
+    with pytest.raises(render.LocalRenderError, match="process failed") as error:
+        render._run(
+            [sys.executable, "-c", "raise SystemExit(3)"],
+            log=tmp_path / "child.log",
+            env=dict(os.environ),
+            timeout=30,
+            cancel=threading.Event(),
+        )
+    assert not isinstance(error.value, render.LocalRenderTimeout)
 
 
 def test_pre_cancelled_command_does_not_spawn(monkeypatch, tmp_path):

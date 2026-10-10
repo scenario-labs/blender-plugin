@@ -192,9 +192,11 @@ rules, online-access predicate and receipt verification, with per-request caps o
 `work/preview-*` directory of the preview cache, not in `shared-results`, and the
 directory is removed after publication or failure. The URL is not persisted.
 Downloaded bytes are accepted only when their content is a supported image or
-video container, and a still only within its pixel bound. Local image and audio
-previews make no transfer; they copy the saved file while rehashing it against
-its receipt.
+video container, and a still only within its pixel bound. A preview transfer
+that does not complete, including one redirected to another host, is fetched
+again by the preview scheduler's bounded polling window; each call is still one
+attempt with the same-host redirect rule. Local image and audio previews make no
+transfer; they copy the saved file while rehashing it against its receipt.
 
 `download` also accepts an optional `cancel` event, checked with online
 permission before each connection and chunk. Preview transfers pass their lane

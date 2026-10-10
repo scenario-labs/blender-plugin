@@ -382,20 +382,24 @@ immutable target per selected asset with a download receipt, keyed by scope,
 request, asset, MIME type and receipt. Unknown or malformed asset selections fail
 before any work.
 
-The [preview lane](#application-owned-workers) runs three commands with the cache
+The [preview lane](#application-owned-workers) runs four commands with the cache
 root supplied by the application. `prepare_result_previews(work, root=...)`
 rechecks that each target still holds the same receipt, reads verified cache
 entries, issues private decode copies for images and audio, and reads server
 preview metadata once per batch through the adapter's `assets.get_bulk`, whatever
 the batch size. Available stills and clips are downloaded with the configured
 result downloader and its storage hosts, passing the task's cancellation event.
-Without online access those renditions report `offline`; no other request is
-made. Receipts are checked again before the batch returns, and every issued copy
-is removed if the batch fails, is canceled or reaches an inactive coordinator.
-`finish_result_preview` validates and caches Blender's decoded output for an
-owned request; `discard_result_preview` removes an unused copy. None of these
-commands transitions a job, changes its revision, claims application or submits
-work. See [result previews](RESULT_PREVIEWS.md) for renditions, limits and the
+A transfer that does not complete is reported `pending` until the work item's
+final poll, then `failed`; bytes that fail their receipt or content checks fail
+at once. Without online access those renditions report `offline`; no other
+request is made. Receipts are checked again before the batch returns, and every
+issued copy is removed if the batch fails, is canceled or reaches an inactive
+coordinator. `finish_result_preview` validates and caches Blender's decoded
+output for an owned request; `discard_result_preview` removes an unused copy.
+`maintain_result_previews(root=...)` only sweeps abandoned work directories and
+evicts cache entries beyond the budget, without reading a job or the network.
+None of these commands transitions a job, changes its revision, claims
+application or submits work. See [result previews](RESULT_PREVIEWS.md) for renditions, limits and the
 polling window.
 
 ## Durable application claims

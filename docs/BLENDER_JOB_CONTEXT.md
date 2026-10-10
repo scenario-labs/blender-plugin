@@ -428,7 +428,7 @@ by a captured origin: they work after a scene switch or restart and never grant
 scene or application authority.
 
 The existing session maintenance timer, and `reap_retired` in headless loops,
-call `service_previews` to collect lane results and queue due polls. Preview
+call `service_previews` to collect results and queue due polls or cache maintenance. Preview
 tasks are not session completions, so `drain` never returns them. `deactivate`
 closes the scheduler and cancels its lane work, but an SDK metadata read already
 in flight cannot be interrupted. The timer therefore shuts a retired session

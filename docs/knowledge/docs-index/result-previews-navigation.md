@@ -12,7 +12,7 @@
     "limits": "Checked that the index links the saved-result preview guide. Navigation only; it does not certify the guide's claims or product behavior.",
     "sources": {
       "docs/index.md": "26272e94f12b329f5425c09e2fa100246a4952e61bf1a88553fabe52fd4486dd",
-      "docs/RESULT_PREVIEWS.md": "35ef9cccba24345e154799254d49c91904462091b86587fe2f41594214a018bb"
+      "docs/RESULT_PREVIEWS.md": "102ea49d6781bcb082c894bd37b555d341105cfc12b424aed534713571e6b42c"
     }
   }
 }

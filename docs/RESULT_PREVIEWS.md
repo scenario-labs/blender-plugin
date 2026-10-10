@@ -55,9 +55,19 @@ declared type, must be PNG, JPEG or WebP for a still and MP4 or WebM for a clip.
 Blender will decode stills on its main thread, so the byte cap alone does not
 bound decode memory. A still must also declare at most 4096 pixels per side in
 its PNG `IHDR` chunk, JPEG start-of-frame segment or WebP `VP8`, `VP8L` or
-`VP8X` header; the checked dimensions are stored in its sidecar. A host outside
-the policy, an oversized, unsupported or dimensionless file, or a metadata
-mismatch fails that rendition with a sanitized reason and caches nothing.
+`VP8X` header; the checked dimensions are stored in its sidecar.
+
+A failed transfer is not a final answer: storage may not serve a new preview on
+its first request, for example by redirecting to another host. Any failure of
+the transfer itself leaves the rendition `pending` for the
+[polling window](#polling-window): a redirect to another host or a host outside
+the policy, a connection error or timeout, a status other than 200 such as a
+5xx, and a chunked, incomplete or oversized body. The downloader still makes one
+attempt per call and follows only the same bounded same-host redirects, and
+each attempt stays within its byte cap. Bytes that arrive but no longer match
+their download receipt, are not a supported format, or lack bounded dimensions,
+and a metadata mismatch, fail the rendition at once. Either way the reason is
+sanitized and nothing is cached.
 
 Server previews are bound to the saved asset identity and receipt digest. Their
 bytes are produced by the service, not derived from the saved file, so they are
@@ -85,11 +95,14 @@ late outcome cannot undo it.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since
-it opened, and the next online poll resumes it instead of starting a new one.
-Metadata read failures stay `pending` with the same backoff and become `failed`
-at the window's end, as do repeated lane task failures. No result state is
-persisted in `jobs.sqlite3`: the window starts in memory, and the `missing`
-marker is what prevents a new window after a restart.
+it opened, and the next online poll resumes it instead of starting a new one. A
+transfer stopped because online access was turned off also reports `offline`.
+Metadata read failures and transfers that did not complete stay `pending` with
+the same backoff and become `failed` at the window's end, as do repeated lane
+task failures. A transfer that keeps failing therefore makes at most nine
+attempts in one window. Unlike `missing`, `failed` writes no marker. No result
+state is persisted in `jobs.sqlite3`: the window starts in memory, and the
+`missing` marker is what prevents a new window after a restart.
 
 The backoff applies only to `pending` and `offline` renditions. A rendition
 that was not sent with a batch, because the decode limit below held it back or
@@ -137,11 +150,17 @@ Reads accept only a regular, nonsymlink file whose size, digest and signature
 match its sidecar; anything else is a cache miss. Publication never replaces a
 valid entry. At most every ten minutes the lane removes abandoned work
 directories older than a day and evicts the least recently used entries beyond
-512 MiB, keeping entries used in the last minute. A ready status can therefore
-outlive its file; an explicit retry reads or fetches it again. Only removed bytes
-count toward the budget: an entry the system refuses to delete, such as a file
-another process holds open on Windows, leaves the next oldest entry to go
-instead and is tried again on the next pass. The cache is safe to delete, even
+512 MiB, keeping entries used in the last minute. That pass normally starts a
+preview batch. Once every rendition has settled no batch comes, so when previews
+were written since the last pass, the scheduler queues a maintenance-only lane
+command on the same ten-minute cadence. It reads no job record and makes no
+network request, and it evicts only beyond the budget. A cache that writes took
+past 512 MiB is therefore brought back toward it within about ten minutes of the
+previous pass, whether or not more previews are requested. A ready status can
+outlive its evicted file; an explicit retry reads or fetches it again. Only
+removed bytes count toward the budget: an entry the system refuses to delete,
+such as a file another process holds open on Windows, leaves the next oldest
+entry to go instead and is tried again on the next pass. The cache is safe to delete, even
 while Blender runs: each lane command recreates the root as a private directory
 when its parent still exists.
 
@@ -178,6 +197,7 @@ See the [job context contract](BLENDER_JOB_CONTEXT.md#saved-result-preview-owner
 
 These are offline contracts with synthetic SDK and storage fixtures. Which asset
 kinds receive server thumbnails or previews, their sizes and dimensions, signed
-URL lifetime and hosts, their timing after a job succeeds, and how `get_bulk`
-reports a deleted asset are not established by live evidence. Blender-side decoding, the user interface, MCP parity and native
+URL lifetime and hosts, where a first request may redirect, their timing after a
+job succeeds, and how `get_bulk` reports a deleted asset are not established by
+live evidence. Blender-side decoding, the user interface, MCP parity and native
 desktop acceptance remain open under #189, #65 and #66.

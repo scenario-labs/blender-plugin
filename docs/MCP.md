@@ -678,6 +678,16 @@ selected credential-bound store. All cloud rows expose empty `local_files`; use
 and explicit result preparation/approval. Matching is refreshed even when the
 cloud page was loaded before a local remote-job acknowledgement.
 
+Each row's `kind` is `image`, `video`, `3d`, `material`, `audio` or `unknown`.
+A row matched to saved results uses their recorded media types: a mesh, video or
+audio file outranks accompanying images, and images with PBR map roles beyond a
+base color form a material. A prototype cache record keeps its recorded kind.
+Otherwise the model's lane in the loaded catalog names the row, including when
+the catalog loads after the history page. `unknown` means no saved result or
+catalog record describes the row yet, or its model has no generation lane; it
+never stands for an image. The cloud job list returns result asset IDs without
+their media types.
+
 `job_status`, `wait_for_job` and the old `import_result` lookup prefer a matching
 scoped record to an old unscoped cache. `import_result` rejects direct application
 of both saved jobs and prototype cache entries. Ambiguous remote IDs require a

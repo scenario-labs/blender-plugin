@@ -4,6 +4,10 @@
 
 from dataclasses import dataclass, field
 
+# A row neither saved results nor the model catalog describe. Never guess image.
+UNKNOWN_KIND = "unknown"
+_MESH_MEDIA_TYPES = frozenset({"application/x-ply"})
+
 
 @dataclass
 class HistoryEntry:
@@ -47,13 +51,41 @@ def resolve_prompts(jobs, texts):
     return jobs
 
 
+def result_kind(assets):
+    """The kind that saved result media types establish, or None.
+
+    A mesh, clip or sound outranks the preview images and maps that accompany
+    it. Images carrying documented PBR map roles beyond a base color form a
+    material; other images are an image result.
+    """
+    media = {asset.media_type for asset in assets}
+    image_roles = {item.texture_role for item in assets if item.media_type.startswith("image/")}
+    if any(item.startswith("model/") or item in _MESH_MEDIA_TYPES for item in media):
+        return "3d"
+    for kind in ("video", "audio"):
+        if any(item.startswith(kind + "/") for item in media):
+            return kind
+    if image_roles - {None, "base"}:
+        return "material"
+    return "image" if image_roles else None
+
+
 def entries_from_jobs(jobs, local_records, kinds=None, *, shared_records=()):
+    """Project cloud model jobs into history rows, newest first.
+
+    `kinds` maps model IDs to catalog kinds. A row's kind comes from its legacy
+    record, then its saved result media, then the catalog, else UNKNOWN_KIND.
+    """
     kinds = kinds or {}
     local_by_job = {r.job_id: r for r in local_records if r.job_id}
     shared_by_job = {}
+    saved_assets = {}
     for record in shared_records:
         if record.remote_job_id:
             shared_by_job.setdefault(record.remote_job_id, []).append(record.intent.request_id)
+            saved_assets.setdefault(record.remote_job_id, []).extend(
+                item.asset for item in record.results
+            )
     entries = []
     for job in jobs:
         if job.get("jobType") != "custom":
@@ -69,10 +101,15 @@ def entries_from_jobs(jobs, local_records, kinds=None, *, shared_records=()):
         prompt = inp.get("prompt")
         if is_prompt_asset(prompt):
             prompt = local.meta.get("prompt") if local else ""
+        kind = (
+            local.kind
+            if local
+            else result_kind(saved_assets.get(job_id, ())) or kinds.get(model_id) or UNKNOWN_KIND
+        )
         entries.append(
             HistoryEntry(
                 job_id=job_id,
-                kind=(local.kind if local else kinds.get(model_id, "image")),
+                kind=kind,
                 model_id=model_id,
                 prompt=str(prompt or (local.meta.get("prompt") if local else "") or ""),
                 status=(job.get("status") or "").lower(),

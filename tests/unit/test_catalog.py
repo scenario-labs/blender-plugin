@@ -4,7 +4,7 @@ import json
 
 from conftest import FIXTURES
 
-from scenario.core.api.catalog import ModelRecord, models_for_lane
+from scenario.core.api.catalog import ModelRecord, model_kind, models_for_lane
 
 
 def load(name):
@@ -63,3 +63,20 @@ def test_models_for_lane_orders_curated_first_and_drops_deprecated():
     assert image[-1] == "model_zeta"
     assert [r.id for r in models_for_lane("material", records)] == ["model_patina"]
     assert [r.id for r in models_for_lane("video", records)] == ["model_video"]
+
+
+def test_model_kind_names_the_most_specific_lane_of_any_catalog_record():
+    def kind(model_id, *caps, tags=()):
+        record = {"id": model_id, "name": model_id, "capabilities": list(caps), "tags": list(tags)}
+        return model_kind(ModelRecord.from_api(record))
+
+    assert kind("model_patina-material", "txt2img", "img2img") == "material"
+    assert kind("model_mesh", "img23d", "img2img") == "3d"
+    assert kind("model_retexture", "3d23d") == "3d"
+    assert kind("model_sfx", "video2audio") == "audio"
+    assert kind("model_clip", "img2video", "img2img") == "video"
+    assert kind("model_edit", "video2video") == "video"
+    assert kind("model_still", "img2img") == "image"
+    # Lane lists drop deprecated and trained records; the kind they produce is unchanged.
+    assert kind("model_old", "img23d", tags=("deprecated:model_new",)) == "3d"
+    assert kind("model_llm", "txt2txt", "img2txt") is None

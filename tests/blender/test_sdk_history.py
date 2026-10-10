@@ -341,6 +341,27 @@ class SDKHistoryTests(unittest.TestCase):
         self.assertFalse(self.runtime.state.history_loading)
         self.assertEqual(self.runtime.state.history_token, "page-two")
 
+    def test_history_before_the_catalog_reports_unknown_then_the_catalog_kind(self):
+        from test_model_picker import FakeLayout
+
+        self.history.refresh()
+        self.deliver()
+        self.assertFalse(self.runtime.state.records)
+        self.assertEqual(self.tools.list_generations({})["generations"][0]["kind"], "unknown")
+        # The catalog arrives after the page. The 3D mode filter can leave the
+        # model out of the displayed lane list without changing what it produces.
+        record = submodule("core.api.catalog").ModelRecord.from_api(
+            {"id": "fixture-model", "name": "Fixture mesh", "capabilities": ["img23d"]}
+        )
+        self.runtime.state.records[record.id] = record
+        self.runtime.state.lane_models["3d"] = []
+        self.assertEqual(self.tools.list_generations({})["generations"][0]["kind"], "3d")
+        layout = FakeLayout()
+        submodule("blender.panels").draw_history(layout, bpy.context)
+        icons = [call[2].get("icon") for node in layout.walk() for call in node.named("label")]
+        self.assertIn("MESH_DATA", icons)
+        self.assertEqual(len(self.calls), 2)
+
     def test_empty_page_is_loaded_once_and_mcp_does_not_start_repeated_reads(self):
         self.page = {"jobs": []}
         first = self.tools.list_generations({})

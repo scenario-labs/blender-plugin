@@ -431,8 +431,9 @@ add persisted fields if adopted; each is deferred rather than guessed here:
 - Each result's parent asset and file name, for exact binding of multi-file 3D
   packages ([#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
 
-Live skybox results must also confirm `metadata.type`, `originalMimeType` and an
-`originalFileUrl` host inside the storage policy; see
+Live skybox results must also confirm `metadata.type`, `originalMimeType`, an
+`originalFileUrl` host inside the storage policy and a `Content-Length` on the
+original's storage response; see
 [declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection).
 Once candidate builds have written schema 10 stores, adopting any of these needs
 its own version and upgrade rather than a new reading of schema 10 rows.
@@ -444,8 +445,9 @@ both keys, even when they hold the defaults. `source: asset` is the asset's own
 file (`url`). `source: original` is a server-declared original (`originalFileUrl`)
 saved instead of an image preview. Only the OpenEXR labels `image/x-exr` and
 `image/aces` qualify, and the saved media type is the original's. Originals carry
-no size metadata, so `expected_size` stays unknown and the receipt digest records
-the bytes. Radiance HDR, mesh, splat, audio and video originals keep the asset's
+no size metadata, so `expected_size` stays unknown; the download instead requires
+the storage response's `Content-Length`, and the receipt digest records the
+bytes. Radiance HDR, mesh, splat, audio and video originals keep the asset's
 own file. `projection: equirectangular` is set only when Scenario's
 `metadata.type` declares a 360 image (`skybox-base-360`, `upscale-skybox` or
 `skybox-hdri`); `skybox-3d` and every other value stay `None`. The store rejects

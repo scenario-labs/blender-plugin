@@ -135,6 +135,7 @@ class ResultCommandTests(unittest.TestCase):
         originals = {
             "allowed": "https://storage.example.invalid/hdr?signed=fixture",
             "elsewhere": "https://elsewhere.example.invalid/hdr?signed=fixture",
+            "unbounded": "https://storage.example.invalid/unbounded?signed=fixture",
         }
 
         def respond(request):
@@ -173,9 +174,13 @@ class ResultCommandTests(unittest.TestCase):
         connection.request.side_effect = lambda _method, target, **_kwargs: requested.append(target)
 
         def response():
+            # An original has no size metadata: only a declared length bounds its body.
+            length = None if requested[-1].startswith("/unbounded") else str(len(body))
             stream = io.BytesIO(body)
             stream.status = 200
-            stream.getheader = lambda _key, default=None: default
+            stream.getheader = lambda key, default=None: (
+                length if key == "Content-Length" and length is not None else default
+            )
             return stream
 
         connection.getresponse.side_effect = response
@@ -235,10 +240,11 @@ class ResultCommandTests(unittest.TestCase):
                     ready = workers.download_results(
                         "allowed", expected_revision=records["allowed"].revision
                     ).result(timeout=10)
-                    with self.assertRaises(results.ResultError):
-                        workers.download_results(
-                            "elsewhere", expected_revision=records["elsewhere"].revision
-                        ).result(timeout=10)
+                    for name in ("elsewhere", "unbounded"):
+                        with self.assertRaises(results.ResultError):
+                            workers.download_results(
+                                name, expected_revision=records[name].revision
+                            ).result(timeout=10)
                 finally:
                     workers.shutdown()
             asset = ready.results[0].asset
@@ -249,12 +255,14 @@ class ResultCommandTests(unittest.TestCase):
             )
             self.assertTrue(asset.name.endswith(".exr"))
             self.assertEqual(ready.results[0].receipt.sha256, hashlib.sha256(body).hexdigest())
-            self.assertEqual(requested, ["/hdr?signed=fixture"])
+            self.assertEqual(requested, ["/hdr?signed=fixture", "/unbounded?signed=fixture"])
             self.assertEqual(
-                [call.args[0] for call in https.call_args_list], ["storage.example.invalid"]
+                [call.args[0] for call in https.call_args_list], ["storage.example.invalid"] * 2
             )
-            rejected = store.get("elsewhere")
-            self.assertEqual(rejected.state, storage.JobState.DOWNLOAD_FAILED)
-            self.assertIsNone(rejected.results[0].receipt)
+            for name in ("elsewhere", "unbounded"):
+                rejected = store.get(name)
+                self.assertEqual(rejected.state, storage.JobState.DOWNLOAD_FAILED)
+                self.assertIsNone(rejected.results[0].receipt)
+            self.assertEqual(len(list(root.rglob("*.exr"))), 1)
             self.assertEqual(storage.JobStore(root / "jobs.sqlite3", scope).get("allowed"), ready)
             self.assertNotIn(b"signed=", (root / "jobs.sqlite3").read_bytes())

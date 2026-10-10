@@ -884,13 +884,23 @@ def _mock_storage(monkeypatch, length=None):
 
 
 def test_original_transfer_uses_the_storage_policy_downloader(setup, monkeypatch):
-    coordinator, store, current, _, assets, _, _, _ = setup
+    coordinator, store, current, _, assets, _, _, root = setup
     hdri(assets)
+    # The original has no size metadata, so its response must declare its length.
     https, requested = _mock_storage(monkeypatch)
     coordinator._results._downloader = ResultDownloader(
         StoragePolicy(frozenset({"storage.example.invalid"})), online_access=lambda: True
     )
-    result = coordinator.download_results("request", expected_revision=current.revision)
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=current.revision)
+    failed = store.get("request")
+    assert failed.state == JobState.DOWNLOAD_FAILED
+    assert all(item.receipt is None for item in failed.results)
+    assert requested == ["/asset-one-original?signed=private"]
+    assert not [path for path in root.rglob("*") if path.is_file()]
+    # The same resume command retries it; an exact Content-Length completes it.
+    https, requested = _mock_storage(monkeypatch, len(DATA))
+    result = coordinator.download_results("request", expected_revision=failed.revision)
     assert result.state == JobState.READY
     assert requested == ["/asset-one-original?signed=private", "/asset-two?signed=initial"]
     assert {call.args[0] for call in https.call_args_list} == {"storage.example.invalid"}

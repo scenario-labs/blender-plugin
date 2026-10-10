@@ -219,7 +219,7 @@ def test_invalid_response_cleans_staging(headers, tmp_path, storage):
 def test_stream_without_length_is_still_bounded(tmp_path, storage):
     storage[0].getresponse.return_value = Response(b"x" * 25, headers={})
     with pytest.raises(transfers.TransferError, match="byte limit"):
-        downloader(max_bytes=20).download(URL, root=tmp_path, name="x")
+        downloader(max_bytes=20).download(URL, root=tmp_path, name="x", expected_size=20)
     assert not list(tmp_path.iterdir())
 
 
@@ -351,9 +351,15 @@ def test_eof_closes_socket_before_atomic_publication(tmp_path, storage):
 
 
 @pytest.mark.parametrize(
-    "declared,valid", [(str(len(DATA)), True), (str(len(DATA) + 1), False), (None, True)]
+    "declared,expected,valid",
+    [
+        (str(len(DATA)), None, True),
+        (str(len(DATA) + 1), None, False),
+        # A close-delimited body needs a known size; see the cut-short test below.
+        (None, len(DATA), True),
+    ],
 )
-def test_real_http_response_framing(declared, valid, tmp_path, storage):
+def test_real_http_response_framing(declared, expected, valid, tmp_path, storage):
     import http.client
 
     headers = f"Content-Length: {declared}\r\n" if declared is not None else ""
@@ -364,11 +370,42 @@ def test_real_http_response_framing(declared, valid, tmp_path, storage):
     response.begin()
     storage[0].getresponse.return_value = response
     if valid:
-        result = downloader().download(URL, root=tmp_path, name="x")
+        result = downloader().download(URL, root=tmp_path, name="x", expected_size=expected)
         assert result.size == len(DATA)
         assert (tmp_path / "x").read_bytes() == DATA
     else:
         with pytest.raises(transfers.TransferError, match="incomplete"):
+            downloader().download(URL, root=tmp_path, name="x", expected_size=expected)
+        assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    "declared,body,error",
+    [
+        # A close-delimited body that ends early reads like a complete one.
+        (None, DATA[:7], "complete byte count"),
+        (len(DATA), DATA[:7], "incomplete"),
+        (len(DATA), DATA, None),
+    ],
+)
+def test_unknown_size_needs_a_declared_length_to_detect_a_cut_short_body(
+    declared, body, error, tmp_path, storage
+):
+    import http.client
+
+    headers = f"Content-Length: {declared}\r\n" if declared is not None else ""
+    wire = b"HTTP/1.1 200 OK\r\nConnection: close\r\n" + headers.encode() + b"\r\n" + body
+    socket = Mock()
+    socket.makefile.return_value = io.BytesIO(wire)
+    response = http.client.HTTPResponse(socket)
+    response.begin()
+    storage[0].getresponse.return_value = response
+    if error is None:
+        result = downloader().download(URL, root=tmp_path, name="x")
+        assert (result.size, result.sha256) == (len(DATA), hashlib.sha256(DATA).hexdigest())
+        assert (tmp_path / "x").read_bytes() == DATA
+    else:
+        with pytest.raises(transfers.TransferError, match=error):
             downloader().download(URL, root=tmp_path, name="x")
         assert not list(tmp_path.iterdir())
 
@@ -502,18 +539,24 @@ def test_cleanup_errors_do_not_mask_control_exception(tmp_path, storage):
         original_close()
 
 
-@pytest.mark.parametrize("headers", [{}, {"Content-Length": "20"}])
-def test_per_request_limit_bounds_stream_and_headers(tmp_path, storage, headers):
+@pytest.mark.parametrize(
+    "headers,error", [({}, "byte limit"), ({"Content-Length": "20"}, "size is invalid")]
+)
+def test_per_request_limit_bounds_stream_and_headers(tmp_path, storage, headers, error):
     storage[0].getresponse.return_value = Response(b"x" * 20, headers=headers)
-    with pytest.raises(transfers.TransferError):
-        downloader(max_bytes=100).download(URL, root=tmp_path, name="x", max_bytes=10)
+    with pytest.raises(transfers.TransferError, match=error):
+        downloader(max_bytes=100).download(
+            URL, root=tmp_path, name="x", max_bytes=10, expected_size=10
+        )
     assert not list(tmp_path.iterdir())
 
 
 def test_per_request_limit_cannot_expand_storage_policy(tmp_path, storage):
     storage[0].getresponse.return_value = Response(b"x" * 20, headers={})
-    with pytest.raises(transfers.TransferError):
-        downloader(max_bytes=10).download(URL, root=tmp_path, name="x", max_bytes=100)
+    with pytest.raises(transfers.TransferError, match="byte limit"):
+        downloader(max_bytes=10).download(
+            URL, root=tmp_path, name="x", max_bytes=100, expected_size=10
+        )
     assert not list(tmp_path.iterdir())
 
 

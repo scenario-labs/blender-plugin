@@ -61,8 +61,14 @@ Staging uses a private temporary subdirectory and
 publication in the same filesystem. A filesystem without hard-link support fails
 closed. Directory metadata durability after sudden power loss is not guaranteed.
 
-An optional expected byte count and SHA256 are checked before publication. The
-returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
+An optional expected byte count and SHA256 are checked before publication. A
+call without an expected byte count needs a valid `Content-Length` instead, and
+the streamed body must match it. A close-delimited body that ends early reads
+exactly like a complete one, and Python's TLS layer also reports a peer close
+without `close_notify` as the end of data, so a response with neither bound is
+rejected as incomplete: nothing is published and no receipt is returned. With a
+known expected size, a body without `Content-Length` must still match that size.
+The returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
 [job store](JOB_STORAGE.md) can persist this receipt; `verify_download` rehashes it
 before explicit recovery or Blender application. Verification accepts only a
 regular nonsymlink file with the saved size/digest, enforces a byte cap and checks
@@ -183,8 +189,12 @@ The extension selects only the OpenEXR labels: when an image asset declares
 size: originals publish no size metadata. The download fetches `originalFileUrl`
 through the same storage policy, online check, redirect rules and atomic
 publication, with a 128 MiB cap matching the World file limit instead of a size
-match. The receipt digest then binds the saved bytes. Radiance (`.hdr`), mesh,
-splat, audio and video originals keep the asset's own file and size.
+match. Because no size is known, the storage response must declare a valid
+`Content-Length` within that cap and the body must match it. A response without
+one ends in `download_failed` with nothing published and no receipt, and the same
+resume command can retry it. The receipt digest then binds the saved bytes.
+Radiance (`.hdr`), mesh, splat, audio and video originals keep the asset's own
+file and size.
 
 A declared EXR original without a usable `originalFileUrl` fails before any
 manifest is saved, so a retry can still choose the original; the JPEG preview is
@@ -207,11 +217,12 @@ whose primaries it refuses stays saved, and the JPEG preview is not kept as a
 fallback. Image import accepts `image/x-exr` but not yet `image/aces`, so an
 ACES-labelled original is offered for World application and inspection only.
 The offline and installed-ZIP tests use mocked storage responses. A live HDRi run
-must still confirm `metadata.type`, the original's host, size and color labelling
-before the release freezes this behavior. An `originalFileUrl` host outside the
-storage policy makes each such job end in `download_failed`, where earlier builds
-saved the JPEG preview; that needs a reviewed storage policy change, never a host
-derived from another URL.
+must still confirm `metadata.type`, the original's host, size, `Content-Length`
+header and color labelling before the release freezes this behavior. An
+`originalFileUrl` host outside the storage policy, or an original served without
+`Content-Length`, makes each such job end in `download_failed`, where earlier
+builds saved the JPEG preview; that needs a reviewed storage policy or transport
+change, never a host derived from another URL or an unbounded body.
 
 ## Local Film media measurement
 

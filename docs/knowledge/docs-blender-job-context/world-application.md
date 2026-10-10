@@ -8,10 +8,10 @@
     "path": "docs/BLENDER_JOB_CONTEXT.md",
     "coverage": "inherited",
     "reviewed_at": "2026-10-09",
-    "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied. The explicit JobSession command's binding of the selected saved media type to the actual PNG, JPEG or OpenEXR container was reviewed with native JPEG and mismatch cases.",
+    "limits": "Explicit JobSession World application was reviewed against owned verification, original-context checks, core claims, exact receipt-bound decoding and installed native failure/rollback/persistence cases. Other lifecycle, component, format and restoration claims retain prior evidence. One selected asset completes the job; there is no per-asset journal or atomic blend-file save. Active UI/MCP, authoritative account/project discovery, production storage policy, undo/recovery UX and live acceptance remain separate; no human approval is implied. The explicit JobSession command's binding of the selected saved media type to the actual PNG, JPEG or OpenEXR container was reviewed with native JPEG and mismatch cases. Scoped 2026-10-10 check of the Render Video first-frame handoff, not a full re-review: JobSession adds verified_result, which consumes one verification for an approved destination without an application claim; existing application, receipt and World methods are unchanged. The claims above still hold; the review date and base revision are unchanged.",
     "sources": {
       "scenario/blender/world_application.py": "341b67665ec8be9201c3191559d47a31421aae5726bc2ea06b134f8245876895",
-      "scenario/blender/job_session.py": "aa6b64633ca02992f355436eb3601147fa1a7457234c1e795f417a46a851b8eb",
+      "scenario/blender/job_session.py": "fc196b52049308278d50e25f9208edcbef3a872b9398f02af50b12dfe8e76ff2",
       "tests/blender/test_session_results.py": "e87afd949fda187702ddac63c0c52f2597fead62c171e2f2afcc9ab217defcf8"
     },
     "scope": "world-application",

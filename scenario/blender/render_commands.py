@@ -10,7 +10,16 @@ from dataclasses import replace
 from ..core.api.catalog import RENDER_LANES
 from ..core.api.errors import ScenarioError
 from ..core.schema.params import validate
-from . import generation, params_ui, props, reference_form, render_lanes, render_references, runtime
+from . import (
+    first_frame_handoff,
+    generation,
+    params_ui,
+    props,
+    reference_form,
+    render_lanes,
+    render_references,
+    runtime,
+)
 
 _FIELDS = {
     "look": ("prompt", str),
@@ -57,6 +66,15 @@ def _reference_key(scene, lane, ref):
     return hashlib.sha256(json.dumps(value).encode()).hexdigest()
 
 
+def _source_result(ref):
+    """Provenance of a slot handed from a saved result, found again in this scope."""
+    source = first_frame_handoff.provenance(ref)
+    if source is None:
+        return None
+    saved = first_frame_handoff.saved_source(runtime.state.job_store, ref) is not None
+    return {"request_id": source["request_id"], "asset_id": source["asset_id"], "saved": saved}
+
+
 def inspect(scene, lane):
     state = lane_state(scene, lane)
     schema = generation.schema_for(state.model_id)
@@ -75,6 +93,7 @@ def inspect(scene, lane):
                 "asset_id": ref.asset_id if ref.source == "ASSET" else "",
                 "upload_id": ref.get(reference_form._REQUEST, ""),
                 "upload_marked": bool(ref.get(reference_form._MARKER)),
+                "source_result": _source_result(ref),
             }
         )
     result = generation.build_request(scene, lane, for_estimate=True)

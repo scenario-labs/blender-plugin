@@ -5,6 +5,8 @@
 import pytest
 
 from scenario.core.jobs.result_metadata import (
+    IMAGE_SIGNATURE_TYPES,
+    image_signature_matches,
     original_media_type,
     panorama_projection,
     texture_role,
@@ -100,3 +102,35 @@ def test_exr_originals_replace_only_image_previews(original):
 )
 def test_other_originals_keep_the_asset_file(original):
     assert original_media_type({"mimeType": "image/jpeg", "originalMimeType": original}) is None
+
+
+PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
+JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
+WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 "
+
+
+@pytest.mark.parametrize(
+    "head,media_type", [(PNG, "image/png"), (JPEG, "image/jpeg"), (WEBP, "image/webp")]
+)
+def test_still_image_signatures_match_their_saved_media_type(head, media_type):
+    assert image_signature_matches(head, media_type)
+    assert media_type in IMAGE_SIGNATURE_TYPES
+    for other in IMAGE_SIGNATURE_TYPES - {media_type}:
+        assert not image_signature_matches(head, other)
+
+
+@pytest.mark.parametrize(
+    "head,media_type",
+    [
+        (PNG[:11], "image/png"),  # truncated before a full container header
+        (b"RIFF\x24\x00\x00\x00WAVEfmt ", "image/webp"),  # RIFF that is not WebP
+        (b"\xff\xd8\x00\x00" + JPEG[4:], "image/jpeg"),  # SOI without a marker
+        (PNG, "image/exr"),  # formats outside the still-image handoff
+        (PNG, "image/gif"),
+        (PNG, None),
+        ("\x89PNG\r\n\x1a\n0000", "image/png"),  # text, not bytes
+        (b"", "image/png"),
+    ],
+)
+def test_mismatched_truncated_or_unsupported_images_are_refused(head, media_type):
+    assert not image_signature_matches(head, media_type)

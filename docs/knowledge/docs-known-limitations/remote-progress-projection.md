@@ -10,7 +10,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-12",
     "base_revision": "4ca693cb8f0e02a5c27c12d39bedbbc166b4e725",
-    "limits": "Reviewed that readings and bindings live only in ModelJobs memory and view meta, that unknown and zero fractions draw no percentage, and that restarted views need an explicit refresh or resume before a reading exists. Which providers report intermediate fractions, desktop review and other platforms are not established.",
+    "limits": "Reviewed that readings and bindings live only in ModelJobs memory and view meta, that unknown and zero fractions draw no percentage, and that restarted views need an explicit refresh or resume before a reading exists. Which providers report intermediate fractions, desktop review and other platforms are not established. Scoped 2026-10-11 check of the Render Video first-frame handoff, not a full re-review: ModelJobs adds the use_first_frame action, its single-use approval, the verify_first_frame command and the session-local first_frame status field; polling, delivery predicates, progress projection, bindings and other actions are unchanged. The claims above still hold; the review date and base revision are unchanged.",
     "sources": {
       "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5",
       "scenario/blender/model_jobs.py": "d297562e1684d2d7576bc4af5378c0059a783f5744070672168bc5b5ed84738b",

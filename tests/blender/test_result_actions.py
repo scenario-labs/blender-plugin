@@ -25,6 +25,7 @@ ACTIONS = (
     "apply_material",
     "apply_mesh",
     "apply_mesh_source",
+    "use_first_frame",
     "recover_blockout",
 )
 ASSETS = {
@@ -33,6 +34,7 @@ ASSETS = {
     "sound": "audio/mpeg",
     "mesh": "model/gltf-binary",
 }
+STILL = {**ASSETS, "still": "image/png"}
 
 
 class Layout:
@@ -74,7 +76,7 @@ class ResultActionTests(unittest.TestCase):
         self.enterContext(patch.object(self.runtime, "state", self.runtime.RuntimeState()))
         self.runtime.state.job_context_id = "fixture-context"
 
-    def view(self, state, actions, **meta):
+    def view(self, state, actions, assets=ASSETS, **meta):
         record = submodule("core.jobs.records").JobRecord(
             local_id="fixture-request",
             lane="model",
@@ -82,8 +84,8 @@ class ResultActionTests(unittest.TestCase):
             model_id="fixture-model",
             body={},
             status="in-progress",
-            asset_ids=list(ASSETS),
-            asset_types=dict(ASSETS),
+            asset_ids=list(assets),
+            asset_types=dict(assets),
         )
         record.meta.update(
             {
@@ -106,7 +108,8 @@ class ResultActionTests(unittest.TestCase):
             jobs = SimpleNamespace(recovery=SimpleNamespace(current=lambda *_, r=review: r))
             self.runtime.state.blockout_jobs = jobs
             for action in ACTIONS:
-                for item in self.recovery.result_actions(self.view("applied", (action,))):
+                view = self.view("applied", (action,), STILL, first_frame_assets=("still",))
+                for item in self.recovery.result_actions(view):
                     if item.operator is None:
                         continue
                     category, name = item.operator.split(".")
@@ -133,6 +136,7 @@ class ResultActionTests(unittest.TestCase):
                 "scenario.apply_saved_mesh",
                 "scenario.read_saved_blockout",
                 "scenario.use_saved_blockout",
+                "scenario.use_saved_first_frame",
             },
         )
         enum = bpy.ops.scenario.recover_job.get_rna_type().properties["action"].enum_items

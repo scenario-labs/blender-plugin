@@ -661,6 +661,93 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _refusal(context_id, error):
+    """A first-frame refusal in native words; the facade's context reason names MCP steps."""
+    if context_id != runtime.state.job_context_id:
+        return "The connection changed; inspect saved jobs again"
+    return error.reason
+
+
+class SCENARIO_OT_use_saved_first_frame(bpy.types.Operator):
+    bl_idname = "scenario.use_saved_first_frame"
+    bl_label = "Use as video first frame"
+    bl_description = (
+        "Review one saved image as the Render Video first frame without uploading or generating"
+    )
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    model_label: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    input_label: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    file_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    replaced_file: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    enables_first_frame: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_first_frame_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                self.asset_id,
+            )
+        except ScenarioError as error:
+            # Refusals name what to change: the model, its input or the existing slot.
+            self.report({"ERROR"}, _refusal(self.context_id, error))
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not review the first frame; inspect the saved job again")
+            return {"CANCELLED"}
+        self._jobs = jobs
+        target = approval.target
+        self.application_id, self.scene_name = approval.identifier, approval.scene_name
+        self.model_label, self.input_label = target.model_label, target.input_label
+        self.file_name = approval.asset.name
+        self.replaced_file = bpy.path.basename(target.previous_path)
+        self.enables_first_frame = not target.previous_enabled
+        return context.window_manager.invoke_props_dialog(
+            self, width=520, title="Use as video first frame", confirm_text="Use as first frame"
+        )
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        layout.label(text="Form: Render Video")
+        layout.label(text=f"Model: {self.model_label}")
+        layout.label(text=f"Input: {self.input_label}")
+        layout.label(text=f"Image: {self.file_name} (saved result)", icon="IMAGE_DATA")
+        layout.label(text="Use the saved Scenario asset; nothing is uploaded.")
+        layout.label(text="No new generation; the blend stores no file path.")
+        if self.replaced_file:
+            layout.label(text=f"Replace the chosen first-frame file: {self.replaced_file}")
+        if self.enables_first_frame:
+            layout.label(text="Turn on the video first frame.")
+        layout.label(text="Invalidate the Render Video and Prompt Spark prices.")
+        layout.label(text="Remove the first-frame slot to undo this.")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except ScenarioError as error:
+            self.report({"ERROR"}, f"First frame was not set: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "First frame was not set; review the saved image and form again")
+            return {"CANCELLED"}
+        runtime.set_message("Verifying the saved image for the Render Video first frame")
+        return {"FINISHED"}
+
+
 def result_actions(record):
     """Describe one view's saved-job controls from in-memory state, without I/O."""
     review = None
@@ -698,6 +785,7 @@ CLASSES = (
     SCENARIO_OT_apply_saved_world,
     SCENARIO_OT_apply_saved_material,
     SCENARIO_OT_apply_saved_mesh,
+    SCENARIO_OT_use_saved_first_frame,
 )
 
 

@@ -300,7 +300,7 @@ def _draw_rendering_style(layout, context, lane, lane_state, schema):
 
 
 def _draw_first_frame(box, lane_state, schema):
-    from . import panels, render_references
+    from . import first_frame_handoff, panels, render_references
 
     existing = render_references.slot(lane_state, render_references.FIRST_FRAME)
     row = box.row(align=True)
@@ -321,6 +321,9 @@ def _draw_first_frame(box, lane_state, schema):
             # Say where the image goes before it is uploaded and while it is used.
             box.label(text=_FIRST_FRAME_REASONS[route["reason"]][1], icon="INFO")
             box.label(text=f"Sent as image 1 of {route['label']}")
+    # Read-only: the slot's provenance only, never the saved job or its file.
+    if any(first_frame_handoff.provenance(ref) is not None for _, ref in existing):
+        box.label(text="From a saved result", icon="FILE_REFRESH")
 
 
 def draw_render_image_lane(layout, context):

@@ -71,6 +71,7 @@ class RuntimeState:
         self.history_loading = False
         self.history_loaded = False
         self.history_error = ""
+        self.history_older_error = ""
         self.history_cursors = set()
         self.history_saved_ids = None
         self.mcp = None
@@ -499,6 +500,7 @@ def sync_catalog_context():
             state.history_loading = False
             state.history_loaded = False
             state.history_error = ""
+            state.history_older_error = ""
             state.history_cursors.clear()
             state.history_saved_ids = None
             state.connection_request = None

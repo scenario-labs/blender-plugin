@@ -424,7 +424,10 @@ saved asset, as for other per-asset controls. Normal, height and other texture
 maps, EXR files and results that are not downloaded get no button, and the
 button is hidden, never drawn disabled, while the job has other work pending.
 The 520 px confirmation titled **Use as video first frame** names the scene,
-the Render Video form, model, input and saved image. It states that the saved
+the Render Video form, model, input and saved image. When the model can't use an
+exact first frame with the scene clip, or has no first-frame input, two lines
+under the input say so and that the image is sent as image 1 of that input, as
+the form does under **First frame** once a frame is chosen. It states that the saved
 Scenario asset is reused with nothing uploaded, no new generation and no file
 path stored in the blend, and lists which chosen first-frame file it replaces
 and whether it turns the first frame on only when they apply. It says the Render

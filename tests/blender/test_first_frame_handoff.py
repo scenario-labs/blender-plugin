@@ -749,6 +749,30 @@ class FirstFrameHandoffTests(unittest.TestCase):
         operator.cancel(fake, context)
         self.assertEqual(owner._application_approvals, {})
 
+    def test_native_dialog_says_when_the_frame_becomes_reference_image_1(self):
+        request_id = self.saved_image()
+        lane = self.render_video(SEEDANCE, "fixture-render-seedance")
+        operator, fake, context = self.native_operator(request_id)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        start = labels.index("Input: Reference Images")
+        self.assertEqual(
+            labels[start : start + 3],
+            [
+                "Input: Reference Images",
+                "No exact first frame with the scene clip",
+                "Sent as image 1 of Reference Images",
+            ],
+        )
+        fixed = [label for label in labels if not label.startswith(("Scene:", "Image:"))]
+        self.assertLessEqual(max(len(label) for label in fixed), 59)
+        operator.cancel(fake, context)
+        self.assertEqual(self.first_frames(lane), [])
+        self.assertEqual(self.runtime.state.model_jobs._application_approvals, {})
+
     def test_native_review_reports_the_refusal_reason_without_an_approval(self):
         request_id = self.saved_image()
         self.render_video(NO_IMAGE, "fixture-render-no-image")

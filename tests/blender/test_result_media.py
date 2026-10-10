@@ -443,6 +443,39 @@ class ResultMediaTests(unittest.TestCase):
         self.media.controller.poll()
         self.assertEqual(self.copies(), [])
 
+    def test_a_player_that_exits_after_a_file_load_releases_its_copy(self):
+        view = self.saved([("clip", "clip.mp4", "video/mp4", MP4)])
+        self.play(view, "play_in_blender:clip")
+        self.media._file_load(None)
+        self.assertEqual(len(self.copies()), 1)  # Its player still reads it.
+        # The player exits before any timer tick reaps it; unregistering then
+        # must not mistake it for a running player and leave its copy behind.
+        self.players[-1].code = 0
+        self.media.controller.shutdown()
+        self.assertEqual(self.copies(), [])
+
+    def test_the_update_timer_survives_file_loads(self):
+        # Blender drops nonpersistent timers on a file load, which would leave a
+        # running animation player unreaped. Background Blender registers none.
+        registered = []
+        timers = SimpleNamespace(
+            is_registered=lambda function: False,
+            unregister=lambda function: None,
+            register=lambda function, **options: registered.append((function, options)),
+        )
+        app = SimpleNamespace(background=False, timers=timers)
+        with patch.object(self.media, "bpy", SimpleNamespace(app=app)):
+            self.media._start_timer()
+        self.assertEqual(
+            registered,
+            [
+                (
+                    self.media._tick,
+                    {"first_interval": self.media.LOADING_INTERVAL, "persistent": True},
+                )
+            ],
+        )
+
     # -- waveform -------------------------------------------------------------
 
     def test_waveform_decodes_offline_and_draws_from_cached_state(self):

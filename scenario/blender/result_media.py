@@ -530,8 +530,11 @@ class MediaController:
         return changed
 
     def retire(self):
-        """Forget the selection and pending play; remove copies no player uses."""
+        """Forget the selection and pending play; remove copies no running player uses."""
         _main_thread()
+        # An animation player that exited since the last timer tick no longer
+        # pins its copy, so that copy is removed here too.
+        self._reap()
         if self.selection is not None:
             self.cancel_waveform()
             self.selection = None
@@ -582,10 +585,11 @@ def _start_timer():
     if bpy.app.background:
         return
     # A terminal state may have left a one-second timer pending; restart it at
-    # the loading cadence.
+    # the loading cadence. Persistent: a file load would otherwise drop the
+    # timer while an animation player still runs, and its copy would outlive it.
     if bpy.app.timers.is_registered(_tick):
         bpy.app.timers.unregister(_tick)
-    bpy.app.timers.register(_tick, first_interval=LOADING_INTERVAL)
+    bpy.app.timers.register(_tick, first_interval=LOADING_INTERVAL, persistent=True)
 
 
 @persistent

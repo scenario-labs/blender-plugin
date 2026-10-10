@@ -117,15 +117,18 @@ stay in that copy's work directory and are removed with it.
 **Play** and **Play in Blender** copy one verified saved video or audio result
 into a private, read-only file under `cache/media-playback` and open that copy,
 never the saved file, in the system player or a separate Blender animation
-player. That player's environment omits `SCENARIO_`, `PYTHON` and proxy
-variables, so it never receives your Scenario credentials. Up to four copies
+player. The animation player's environment omits `SCENARIO_`, `PYTHON` and
+proxy variables, so it never receives your Scenario credentials. Up to four copies
 or 1 GiB are kept for reuse; the rest, and every copy when the connection
 changes, a file loads or the extension is disabled, are removed unless a running
 animation player reads one. A copy left behind, for example one a player still
 read when the extension was disabled or a Windows player held open, is removed
 once a day old by the next Play. The system
-player is your operating system's default application; what it records, such as
-recent files, is outside the extension's control.
+player is your operating system's default application, opened through Blender's
+`wm.path_open`; what it records, such as recent files, is outside the extension's
+control. On Windows and Linux it can inherit Blender's environment, including
+`SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when Credentials > Environment
+supplies them.
 Capture/export staging and thumbnails also use the extension's user state/cache
 directories. Explicit local output tools can write to the configured Output
 Folder, normally `~/Downloads/Scenario`.

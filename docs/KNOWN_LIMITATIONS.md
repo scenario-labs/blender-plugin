@@ -284,12 +284,15 @@ establish live generation or full render-lane desktop acceptance.
 - Play first copies the saved file, up to 512 MiB, on the preview lane, so a
   large file waits for its copy and queues behind server thumbnail polls and
   waveform decodes there. Up to four copies or 1 GiB are kept for reuse, plus any
-  copy a running animation player reads. Windows refuses to delete a copy a player
-  still holds open; it is removed by a later day's sweep. Whether Blender's
-  animation player plays a video's soundtrack, behavior without a default player
-  (for example Linux without `xdg-open`) and sandboxed Blender packages are
-  unverified. Without a usable executable path, Play in Blender fails with an
-  explicit error.
+  copy a running animation player reads. The system player is not tracked: an
+  eviction, connection change, file load or disabling the extension can remove a
+  copy it still has open, and on Windows and Linux it can inherit Blender's
+  environment, including credentials from Credentials > Environment. Windows
+  refuses to delete a copy a player still holds open; it is removed by a later
+  day's sweep. Whether Blender's animation player plays a video's soundtrack,
+  behavior without a default player (for example Linux without `xdg-open`) and
+  sandboxed Blender packages are unverified. Without a usable executable path,
+  Play in Blender fails with an explicit error.
 - Each waveform starts a separate offline Blender process: a one-second file took
   0.65 to 0.9 seconds end to end on macOS arm64 with Blender 5.0.1 to 5.2.1.
   Windows and Linux start-up, antivirus interference and sandboxed Blender

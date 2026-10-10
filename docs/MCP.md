@@ -583,7 +583,9 @@ that slot without canceling or deleting its saved upload. Repeated preparation
 refuses an occupied slot, including uncertain uploads. Inspect saved progress
 before explicitly replacing a snapshot. A model change requires removing its
 old references first. `style_assets` replaces only unmarked style references;
-marked uploads require explicit removal. Optional scalar parameters accept null
+marked uploads require explicit removal. When the style input also takes the
+scene capture or an enabled first frame sent as a reference image, it keeps
+one slot free for each that is not prepared yet. Optional scalar parameters accept null
 to disable them; invalid edits fail before changing the form. Final quotes still
 validate conditional and one-of schema requirements, and refuse two file inputs
 whose descriptions say they can't be combined. That guard reads description

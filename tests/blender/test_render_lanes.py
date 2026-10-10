@@ -296,6 +296,59 @@ class RenderLanesTests(unittest.TestCase):
             self.assertEqual(len(self.video_lane.references), 1)
             self.assertEqual(self.video_lane.references[0].asset_id, "first-frame")
 
+    def test_mcp_styles_keep_room_for_a_first_frame_sent_as_reference_image_1(self):
+        # An exclusive first frame joins the style images' input, so a full style
+        # list must leave it a slot until it is uploaded, as for the scene capture.
+        references = submodule("blender.render_references")
+        commands = submodule("blender.render_commands")
+        path = str(FIXTURES / "patina-copper-512" / "albedo.png")
+        for model_id in ("model_bytedance-seedance-2-0", "model_minimax-h3"):
+            with self.subTest(model=model_id):
+                self.video_lane.references.clear()
+                self.video_lane.first_frame_path = ""
+                self.video_lane.use_first_frame = True
+                self.video_lane.model_id = model_id
+                schema = self.generation.schema_for(model_id)
+                style = self.render_lanes.style_input("render_video", schema)
+                target = references.target("render_video", schema, references.FIRST_FRAME)
+                self.assertIs(style, target)
+                full = [f"style-{n}" for n in range(style.max_length)]
+                for settings in (
+                    {"first_frame_path": path, "style_assets": full},
+                    {"use_first_frame": True, "first_frame_path": path, "style_assets": full},
+                ):
+                    with self.assertRaisesRegex(ValueError, "Not enough space"):
+                        commands.configure(self.scene, "render_video", settings)
+                    self.assertEqual(
+                        (self.video_lane.first_frame_path, len(self.video_lane.references)),
+                        ("", 0),
+                    )
+                # A disabled first frame keeps no slot.
+                commands.configure(
+                    self.scene,
+                    "render_video",
+                    {"first_frame_path": path, "use_first_frame": False, "style_assets": full},
+                )
+                commands.configure(self.scene, "render_video", {"style_assets": []})
+                with self.assertRaisesRegex(ValueError, "Not enough space"):
+                    commands.configure(
+                        self.scene,
+                        "render_video",
+                        {"use_first_frame": True, "style_assets": full},
+                    )
+                commands.configure(
+                    self.scene, "render_video", {"use_first_frame": True, "style_assets": full[1:]}
+                )
+                with patch.object(references.reference_form, "start", return_value=None):
+                    references.prepare(bpy.context, "render_video", references.FIRST_FRAME)
+                first = references.slot(self.video_lane, references.FIRST_FRAME)
+                self.assertEqual([ref.param_name for _, ref in first], [style.name])
+                # The uploaded first frame counts as occupied, not twice.
+                commands.configure(self.scene, "render_video", {"style_assets": full[1:]})
+                with self.assertRaisesRegex(ValueError, "Not enough space"):
+                    commands.configure(self.scene, "render_video", {"style_assets": full})
+                self.assertEqual(len(self.video_lane.references), style.max_length)
+
     def test_lane_tabs_have_no_generations_or_mcp(self):
         props = submodule("blender.props")
         ids = [item[0] for item in props.LANE_ITEMS]

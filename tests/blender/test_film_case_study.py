@@ -36,7 +36,13 @@ for obj in bpy.data.objects:
     leftovers += [k for k in obj.keys() if k.startswith("scenario")
                   and k not in {"scenario_role", "scenario_primitive", "scenario_asset_policy",
                                 "scenario_hero_id", "scenario_reference_task"}]
-paths = bpy.utils.blend_paths(absolute=False, packed=False, local=False)
+# Blender 5 keeps the extension's registered settings apart from custom properties.
+system = []
+for collection in (bpy.data.scenes, bpy.data.objects, bpy.data.materials, bpy.data.images):
+    for owner in collection:
+        group = owner.bl_system_properties_get(do_create=False)
+        system += [k for k in (group.keys() if group is not None else ()) if "scenario" in k]
+paths =bpy.utils.blend_paths(absolute=False, packed=False, local=False)
 strips = review.sequence_editor.strips_all
 sounds = [s for s in strips if s.type == "SOUND"]
 render_paths = sorted({scene.render.filepath for scene in bpy.data.scenes})
@@ -55,6 +61,7 @@ report = {
     "images": {i.name: [i.filepath, i.packed_file is not None] for i in bpy.data.images
                if i.type == "IMAGE"},
     "leftovers": leftovers,
+    "system": system,
     "render_paths": render_paths,
     "fake_users": all(scene.use_fake_user for scene in bpy.data.scenes),
     "sound_strips": sorted(
@@ -172,6 +179,13 @@ class FilmCaseStudyTests(unittest.TestCase):
     def remove(scene):
         if scene in tuple(bpy.data.scenes):
             bpy.data.scenes.remove(scene)
+
+    @staticmethod
+    def clear_lanes(scenes):
+        for scene in scenes:
+            if scene in tuple(bpy.data.scenes):
+                scene.scenario.image.references.clear()
+                scene.scenario.image.concept_job = ""
 
     def sources(self):
         return self.tools.film_case_study_sources({"production_id": self.production})
@@ -291,6 +305,24 @@ class FilmCaseStudyTests(unittest.TestCase):
         sound.volume = 0.25
         sound.keyframe_insert("volume", frame=1)
         timing = [sound.name, 0.25, "keep me", sound.frame_final_start, sound.frame_final_end]
+        # Composer settings saved on bundled scenes are registered properties, which
+        # Blender 5 stores apart from custom ones: a reference upload's request and
+        # asset, a concept job and a local reference file.
+        lanes = []
+        for owner in (shot, self.review):
+            lane = owner.scenario.image
+            lane.concept_job = f"lane-concept-job-{owner.name}"
+            reference = lane.references.add()
+            reference.asset_id = f"lane-reference-asset-{owner.name}"
+            reference.filepath = str(self.media.root / "lane-reference" / "reference.png")
+            reference["_scenario_reference_request"] = f"lane-reference-request-{owner.name}"
+            lanes.append(owner)
+            self.private |= {
+                lane.concept_job,
+                reference.asset_id,
+                reference["_scenario_reference_request"],
+            }
+        self.addCleanup(self.clear_lanes, lanes)
         bpy.context.view_layer.update()
         before = self.state()
         status = self.mcp_prepare()
@@ -376,6 +408,7 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertTrue(all(report["resolved"]), report)
         self.assertTrue(report["sounds"] and all(report["sounds"]), report)
         self.assertEqual(report["leftovers"], [])
+        self.assertEqual(report["system"], [])
         self.assertEqual(report["render_paths"], ["//render/"])
         self.assertTrue(report["fake_users"])
         self.assertEqual(report["sound_strips"], [timing])
@@ -713,6 +746,28 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(self.staging(), [])
         self.assert_offline()
 
+    def test_contents_that_change_after_preparing_refuse_the_build(self):
+        self.build_timeline()
+        status = self.mcp_prepare(name="Changed.zip")
+        texture = next(
+            Path(image.filepath_raw)
+            for image in bpy.data.images
+            if image.packed_file is None and image.filepath_raw.endswith("hero-texture.jpg")
+        )
+        # A media file the confirmation counted grows without touching any scene.
+        with texture.open("ab") as stream:
+            stream.write(b"\0")
+        before = self.state()
+        result = self.approve(status)
+        self.assertEqual(result["phase"], "ERROR")
+        self.assertIn("changed after it was prepared", result["error"])
+        self.assertEqual(before, self.state())
+        self.assertFalse((self.folder / "Changed.zip").exists())
+        self.assertEqual(self.staging(), [])
+        with self.assertRaisesRegex(ValueError, "fresh ready"):
+            self.approve(status)
+        self.assert_offline()
+
     def test_unportable_data_is_refused_with_a_reason(self):
         editor = self.review.sequence_editor
         sound = next(strip for strip in editor.strips_all if strip.type == "SOUND").sound
@@ -731,6 +786,23 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertIn("movie clips", row["blocked_reason"])
         (source,) = [item for item in result["sources"] if item["scene"] == self.review.name]
         self.assertEqual(source["blocked_reason"], "")
+        shot.active_clip = None
+        # Linked data, such as the Essentials brushes a scene references once a
+        # sculpt or paint mode was used in it, is refused until it is made local.
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        material = bpy.data.materials.new("Case linked material")
+        bpy.data.libraries.write(str(folder / "linked.blend"), {material})
+        bpy.data.materials.remove(material)
+        with bpy.data.libraries.load(str(folder / "linked.blend"), link=True) as (_, target):
+            target.materials = ["Case linked material"]
+        (linked,) = target.materials
+        library = linked.library
+        self.addCleanup(bpy.data.libraries.remove, library)
+        hero = next(obj for obj in shot.objects if obj.get("scenario_role") == "hero")
+        hero.data.materials.append(linked)
+        self.addCleanup(hero.data.materials.pop)
+        (row,) = [item for item in self.sources()["timelines"] if item["scene"] == timeline.name]
+        self.assertIn("Make linked or overridden data local", row["blocked_reason"])
         self.assertEqual(self.commands._reviews, {})
 
     def test_panel_and_studio_draw_only_read_cached_status(self):

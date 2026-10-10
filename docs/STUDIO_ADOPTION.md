@@ -333,8 +333,9 @@ The adaptation keeps the working file unchanged: an offline child rewrites a
 private snapshot instead of temporarily rewriting and restoring the user's own
 paths and packing state. It also rebuilds sound strips whose hidden paths Blender
 cannot otherwise rewrite, removes Scenario properties that identify jobs, assets
-or productions, verifies the written library in a second child and packs one ZIP
-saved with the video export's approval, verification and never-overwrite publish.
+or productions and the extension's saved settings, verifies the written library in
+a second child and packs one ZIP saved with the video export's approval,
+verification and never-overwrite publish.
 The ledger keeps the maintainer-approved scope: titles, kinds, models, provenance,
 saved states, exact quoted costs and result media types, without the request, job,
 asset, project or team identifiers, URLs or paths the source ledger kept. Studio's

@@ -1145,16 +1145,19 @@ explicit approval before `export_film_case_study(review_id, approved_destination
 sending that destination verbatim.
 
 Building needs Object Mode with the recipe scene selected and the chosen scenes
-unchanged since preparation. Offline Blender children rewrite a private snapshot
-into a portable library with bundle-relative media and without Scenario
-identifiers, then verify it; the archive adds the sanitized recipe, production
-ledger, manifest and opening guide and is saved without overwriting. The ledger
-keeps quoted costs but no credentials, URLs, service identifiers or local paths.
-Poll `film_case_study_review` for the stage, percentage, `sha256` and size. Its
-actions cancel (the destination stays absent), discard private staging (a saved
-archive stays), and after a failed save `prepare_republish` then `republish` with
-the returned `pending_destination`; a re-publish copies the verified archive and
-never builds again. Case studies and video exports share one export thread.
+unchanged since preparation; if the scene, media or ledger counts, the media bytes
+or the quoted total shown by preparation changed, the approval is consumed and
+nothing is written. Offline Blender children rewrite a private snapshot into a
+portable library with bundle-relative media and without Scenario identifiers or
+the extension's saved settings, then verify it; the archive adds the sanitized
+recipe, production ledger, manifest and opening guide and is saved without
+overwriting. The ledger keeps quoted costs but no credentials, URLs, service
+identifiers or local paths. Poll `film_case_study_review` for the stage,
+percentage, `sha256` and size. Its actions cancel (the destination stays absent),
+discard private staging (a saved archive stays), and after a failed save
+`prepare_republish` then `republish` with the returned `pending_destination`; a
+re-publish copies the verified archive and never builds again. Case studies and
+video exports share one export thread.
 
 These four local commands have no platform equivalent, make no service call and
 spend nothing. They share the

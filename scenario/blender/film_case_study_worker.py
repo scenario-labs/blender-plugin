@@ -11,8 +11,10 @@ an offline, factory-startup child that never imports or registers the extension.
 ``bundle`` points every external file reference at the bundle's Media folder,
 rebuilds sound strips so no earlier path stays in them, repacks packed images
 under neutral names, removes Scenario properties that identify jobs, assets or
-productions and writes the chosen scenes as a data library. ``verify`` opens that
-library and reports its scenes, file references and remaining properties.
+productions, removes the extension's saved settings (composer lanes and their
+references, Film and workflow forms) and writes the chosen scenes as a data
+library. ``verify`` opens that library and reports its scenes, file references and
+remaining properties.
 """
 
 import json
@@ -144,15 +146,44 @@ def _ids(bpy):
                 yield item.collection
 
 
+def _scenario(key):
+    return key.lower().lstrip("_").startswith("scenario")
+
+
 def _private(owner):
     keys = []
     for key in list(owner.keys()):
         value = owner[key]
-        if key.lower().startswith("scenario") and not (
-            key in KEEP and isinstance(value, (str, int, float))
-        ):
+        if _scenario(key) and not (key in KEEP and isinstance(value, (str, int, float))):
             keys.append(key)
     return keys
+
+
+def _settings(owner):
+    """The extension's registered settings, which Blender 5 stores apart from custom ones.
+
+    Unregistered here, they still travel with the data: composer lanes keep reference
+    uploads' request and asset IDs, concept jobs and local paths; the Film form keeps
+    its production and raw recipe. None of it is needed to open the review.
+    """
+    group = owner.bl_system_properties_get(do_create=False)
+    if group is None:
+        return None, []
+    return group, [key for key in group.keys() if _scenario(key)]
+
+
+def _remove(owner):
+    for key in _private(owner):
+        del owner[key]
+    group, keys = _settings(owner)
+    for key in keys:
+        del group[key]
+
+
+def _leftovers(owner, label):
+    return [f"{label}:{key}" for key in _private(owner)] + [
+        f"{label} setting:{key}" for key in _settings(owner)[1]
+    ]
 
 
 def _plain(value):
@@ -306,11 +337,9 @@ def _bundle(bpy, spec):
         _overwrite(scene.render, "filepath", "//render/", FILE_FILLER)
         editor = scene.sequence_editor
         for strip in tuple(editor.strips_all) if editor is not None else ():
-            for key in _private(strip):
-                del strip[key]
+            _remove(strip)
     for owner in _ids(bpy):
-        for key in _private(owner):
-            del owner[key]
+        _remove(owner)
     for scene in scenes:
         for layer in scene.view_layers:
             layer.update()
@@ -329,11 +358,11 @@ def _verify(bpy, spec):
     every = sorted(path for path, count in every.items() for _ in range(max(0, count)))
     leftovers = []
     for owner in _ids(bpy):
-        leftovers += [type(owner).__name__ + ":" + key for key in _private(owner)]
+        leftovers += _leftovers(owner, type(owner).__name__)
     for scene in bpy.data.scenes:
         editor = scene.sequence_editor
         for strip in tuple(editor.strips_all) if editor is not None else ():
-            leftovers += ["Strip:" + key for key in _private(strip)]
+            leftovers += _leftovers(strip, "Strip")
     missing = [
         path
         for path in paths

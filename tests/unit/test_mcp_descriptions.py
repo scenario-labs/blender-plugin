@@ -217,6 +217,8 @@ def test_film_case_study_descriptions_state_the_archive_and_privacy_contract():
     assert "a destination still inside the Output Folder" in approve
     assert "no credentials, URLs, service identifiers or local paths" in approve
     assert "No upload, generation or spending" in approve
+    assert "quoted total shown by prepare_film_case_study changed" in approve
+    assert "the extension's saved settings" in approve
     review = descriptions["film_case_study_review"]
     assert "own destination approval" in review and "never builds again" in review
     assert "pending_destination, inside the Output Folder" in review

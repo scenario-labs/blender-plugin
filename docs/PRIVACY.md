@@ -133,11 +133,13 @@ verified. The archive contains the chosen scenes, copies of the media they use,
 the recipe without its project, credentials or URLs, and a production ledger with
 titles, models, saved states and quoted costs but no credentials, URLs, request,
 job, asset, upload, project or team identifiers or local paths. Scenario
-properties naming jobs, assets or productions are removed from the scenes, and the
-export refuses a bundle that still holds a known private identifier, extension
-storage or a source media folder. Model IDs, scene and object names, other custom
-properties and unused bytes Blender keeps from earlier settings can remain; review a
-bundle before sharing it.
+properties naming jobs, assets or productions and the extension's saved settings
+(composer lanes with their reference uploads and local reference paths, Film and
+workflow forms) are removed from the bundled data, and the export refuses a
+bundle that still holds a known private identifier, extension storage or a source
+media folder. Model IDs, scene and object names, other custom properties and
+unused bytes Blender keeps from earlier settings can remain; review a bundle
+before sharing it.
 Scene properties, imported media and prompts can be saved in your `.blend` file.
 Older `state/jobs.json` or model-cache files may remain from the prototype; local
 record inspection does not resume their cloud jobs or migrate their ownership.

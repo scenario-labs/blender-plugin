@@ -208,8 +208,9 @@ travel before any approval. The bundled
 edits only that snapshot in an offline child: it fills each rewritten path field
 completely before setting its bundle-relative value, rebuilds sound strips so
 their hidden paths are relative, repacks packed images and removes Scenario
-properties that name jobs, assets or productions; a second child reopens and
-reports the written library. Media copies, checks, private scans and the archive
-run in bpy-free core code on the session-owned export thread. See the
-[bundle contract](../FILM_PLAN.md#portable-case-study-bundle). Drawing reads cached
-status; desktop interaction remains pending.
+properties that name jobs, assets or productions together with the extension's
+registered settings, which Blender 5 stores apart from custom properties; a second
+child reopens and reports the written library. Media copies, checks, private scans
+and the archive run in bpy-free core code on the session-owned export thread. See
+the [bundle contract](../FILM_PLAN.md#portable-case-study-bundle). Drawing reads
+cached status; desktop interaction remains pending.

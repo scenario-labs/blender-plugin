@@ -36,6 +36,10 @@ STALE = (
     "The Film recipe, review, timeline or shot scenes, frame or connection changed, or a"
     " scene was selected again; prepare the case study again"
 )
+CHANGED = (
+    "The case-study scenes, media or ledger changed after it was prepared; prepare the"
+    " case study again"
+)
 TIMELINE = "editable_shot_plan"
 _BLOCKED_STRIPS = frozenset({"MOVIECLIP", "MASK"})
 # Movies first, so a movie also read as sound keeps its movie name.
@@ -115,7 +119,7 @@ def _markers(owner):
     """Identifier-like values of Scenario properties the bundle removes."""
     found = set()
     for key in owner.keys():
-        if not key.lower().startswith("scenario") or key in KEEP:
+        if not key.lower().lstrip("_").startswith("scenario") or key in KEEP:
             continue
         for value in _values(owner[key]):
             if 12 <= len(value) <= 256 and not any(c.isspace() or ord(c) < 32 for c in value):
@@ -531,10 +535,16 @@ class FilmCaseStudyCommands(FilmExportCommands):
         return self.status(review.identifier)
 
     def _snapshot(self, review):
-        """Write the private snapshot and specification on the main thread."""
+        """Write the private snapshot and specification on the main thread.
+
+        The approval covers the counts, size and ledger shown when preparing; a media
+        file or saved job that changed without touching a scene refuses the build.
+        """
         timeline = review.timeline
         collected = _collect(self._roots(review), timeline.scene if timeline else None)
         names, texts, markers = self._documents(review, collected)
+        if self._summary(review, collected, texts) != review.summary:
+            raise ValueError(CHANGED)
         directory = Path(tempfile.mkdtemp(prefix=local_case_study.STAGING_PREFIX, dir=self._root()))
         try:
             root = directory / local_case_study.BUNDLE

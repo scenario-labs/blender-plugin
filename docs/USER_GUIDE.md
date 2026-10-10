@@ -836,8 +836,12 @@ Model IDs stay in the recipe, including a private trained model's. Blender can k
 fragments of earlier settings in unused parts of a `.blend` file, so review a bundle
 before publishing it widely. Unsupported data, such as linked libraries, movie
 clips, packed sound strip audio or image sequences, is reported before you approve.
+A scene where you used a sculpt or paint mode links Blender's Essentials brushes
+and is reported as linked data until you make those brushes local.
 The same rules as video export apply to changes before saving, cancelling, copying
-after a failed save and discarding private files; one export or case study runs at
+after a failed save and discarding private files; if a media file or a saved job
+changes the counts, size or ledger shown when you chose the file, saving stops and
+asks you to prepare the case study again; one export or case study runs at
 a time. See the [case-study contract](FILM_PLAN.md#portable-case-study-bundle).
 Desktop interaction for these controls has not been verified.
 

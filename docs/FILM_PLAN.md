@@ -1239,7 +1239,9 @@ allowed only in the timeline. Linked or overridden data, movie clips, cache file
 volumes, clip or mask strips, packed sound strip audio, sound strip modifiers or
 retiming, image sequences, movie or tiled textures, multi-file packed images,
 missing media, more than 2,000 media files or 16 GiB of them, and more than 256
-scenes are refused with a reason before any approval.
+scenes are refused with a reason before any approval. A scene in which a sculpt or
+paint mode was used references Blender's linked Essentials brushes, so it is
+refused as linked data until those brushes are made local.
 
 Approval writes a private snapshot of the chosen scenes on the main thread, with
 absolute media paths, and stamps every external movie, sound, image, image strip
@@ -1250,11 +1252,15 @@ rebuilds sound strips so their hidden legacy path is relative too (keeping timin
 settings, their own properties, animation and drivers), repacks packed images
 under neutral `//Packed/` names, renames packed fonts and sounds the same way,
 sets each scene's output path to `//render/` and removes Scenario properties that
-name a job, asset or production while keeping descriptive tags. Rewritten path
-fields are filled completely before their final value, so an earlier path is not
-left in their unused bytes. It writes the scenes as an uncompressed data library
-with fake users. A second offline child reopens that library and reports its
-scenes, file references and remaining Scenario properties; the export requires
+name a job, asset or production while keeping descriptive tags. It also removes
+the extension's saved settings from every bundled data block: Blender 5 stores
+registered properties apart from custom ones, and composer lanes keep reference
+uploads' request and asset IDs, concept jobs and local reference paths, while the
+Film form keeps its production and raw recipe. Rewritten path fields are filled
+completely before their final value, so an earlier path is not left in their
+unused bytes. It writes the scenes as an uncompressed data library with fake
+users. A second offline child reopens that library and reports its scenes, file
+references and remaining Scenario properties and settings; the export requires
 exactly the chosen scenes, only bundle-relative Media references that exist,
 neutral packed names, no libraries and no private properties. The library and
 every document are scanned for the production, credential scope, request, job,
@@ -1289,11 +1295,15 @@ continuity audit, the `.blend` and media sizes and SHA-256 receipts and the
 opening steps, which the guide repeats with extraction and privacy notes.
 
 A ready case study binds the recipe, review, timeline and shot scenes' captured
-origins; the video export's invalidations apply to each of them. A running export
-keeps its snapshot. `JobSession.film_case_study` (`FilmCaseStudyCommands`) keeps
-at most eight session-local handles and one open case study per review scene.
-Video exports and case studies share the session's single export thread: while
-one runs, approving the other refuses without consuming it.
+origins; the video export's invalidations apply to each of them. Approval also
+recounts the scenes, media files and bytes and the ledger's approved tasks, priced
+tasks and quoted total; if any differs from what preparation showed, for example
+because a media file or a saved job changed without touching a scene, the approval
+is consumed and nothing is written. A running export keeps its snapshot.
+`JobSession.film_case_study` (`FilmCaseStudyCommands`) keeps at most eight
+session-local handles and one open case study per review scene. Video exports and
+case studies share the session's single export thread: while one runs, approving
+the other refuses without consuming it.
 
 Local MCP uses `film_case_study_sources(production_id)` for the context, sources,
 timelines, `default_directory` and `default_name`. `prepare_film_case_study`

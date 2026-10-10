@@ -77,15 +77,13 @@ def _fields(schema: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(required, dict):
             for condition in ("ifDefined", "ifNotDefined"):
                 siblings = required.get(condition)
+                # A nonblank name the schema does not declare is valid: parse_schema
+                # treats that sibling as never defined, as the service does.
                 if siblings is not None and (
                     not isinstance(siblings, dict)
-                    or any(not isinstance(name, str) for name in siblings)
+                    or any(not isinstance(name, str) or not name.strip() for name in siblings)
                 ):
                     raise ValueError("Conditional requirements must name sibling inputs")
-                if siblings is not None and any(name not in names for name in siblings):
-                    raise ValueError(
-                        f"{field['name']}: conditional requirement names an unknown input"
-                    )
     return raw
 
 

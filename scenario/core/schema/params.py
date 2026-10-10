@@ -72,6 +72,10 @@ def _is_conditional(description):
     return any(marker in text for marker in CONDITIONAL_MARKERS)
 
 
+def _names_input(name):
+    return isinstance(name, str) and bool(name.strip())
+
+
 def _parse_required(raw):
     if isinstance(raw, bool):
         return raw, (), ()
@@ -137,15 +141,25 @@ def parse_schema(record):
         )
     prompt_name = next((s.name for s in specs if s.is_prompt), None)
     by_name = {s.name: s for s in specs}
+    for spec in specs:
+        # The service validates only the inputs it declares, and a public schema can omit a hidden input that a rule
+        # still names. Nothing can set such a sibling: ifDefined never applies and ifNotDefined always does. Blank
+        # names are dropped here for panel drawing; strict form preparation refuses them before any SDK dispatch.
+        if any(_names_input(name) and name not in by_name for name in spec.required_if_not_defined):
+            spec.required_always = True
+        spec.required_if_defined = tuple(
+            name for name in spec.required_if_defined if name in by_name
+        )
+        spec.required_if_not_defined = tuple(
+            name for name in spec.required_if_not_defined if name in by_name
+        )
     one_of = []
     # Explicit either/or from the schema: `required: {ifNotDefined: {sibling: ...}}` means "at least one of this
     # input and its named siblings" (Cartwheel: a 3D character mesh OR a reference image).
     # Each distinct group is required. Overlapping groups are not interchangeable:
     # (a OR b) AND (b OR c) cannot be weakened to (a OR b OR c).
     for spec in specs:
-        # Panel drawing uses this parser directly. Ignore unknown siblings here;
-        # strict form preparation rejects them before any SDK dispatch.
-        siblings = {name for name in spec.required_if_not_defined if name in by_name}
+        siblings = set(spec.required_if_not_defined)
         if not siblings:
             continue
         members = {spec.name, *siblings}

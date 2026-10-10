@@ -7,7 +7,7 @@ below come from the commits that first added each file, not a recent API refresh
 
 | Path | Contents and source | Recorded |
 | --- | --- | --- |
-| `models/*.json` | Eighteen model records from `GET /models/{id}` | 2026-08-28 and 2026-08-29 |
+| `models/*.json` | Nineteen model records from `GET /models/{id}` | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini 2026-10-10 |
 | `models_list_page1.json` | Five public models from `GET /models?privacy=public&pageSize=5` | 2026-08-28 |
 | `patina-copper-512/model_record.json` | Model record from `GET /models/model_patina-material` | 2026-08-28 |
 | `patina-copper-512/dryrun_response.json` | Estimate from `POST /models/model_patina-material/inferences?dryRun=true` | 2026-08-28 |
@@ -135,7 +135,7 @@ It skips dot-prefixed directories, including private recorder staging left by an
 interrupted process; those files are not part of the published fixture inventory.
 
 The normal recorder uses the shared SDK adapter and the pinned SDK's public
-`models.with_raw_response.retrieve/list` methods. It reads all eighteen model
+`models.with_raw_response.retrieve/list` methods. It reads all nineteen model
 records named in `MODEL_IDS` and one public page of five models, using the
 explicit test credential pair and optional project from the environment. It
 reconstructs each detail's `model` wrapper around the adapter's complete model
@@ -156,8 +156,13 @@ process kill can leave a `.recording-*` directory to inspect and remove. These
 staging directories are ignored by Git and excluded from offline cleanup and
 fixture hygiene checks; a later cleanup cannot publish or legitimize their files.
 
-No fixture refresh or provenance file is included in this change. Real endpoint
-acceptance and maintainer confirmation of media rights remain under #9.
+No full fixture refresh or provenance file has been committed. The Seedance 2.0
+Mini record was added alone on 2026-10-10: one detail read through the same
+adapter `model` read and `write_fixture` scrub, without regenerating the other
+records, the list page or `PROVENANCE.json`. Its public schema keeps a
+first-frame rule naming a last-frame input that the schema does not declare.
+Real endpoint acceptance and maintainer confirmation of media rights remain
+under #9.
 
 Live recording requires explicitly selected test credentials and authorization;
 see [contributor configuration](../../CONTRIBUTING.md#environment-variables).

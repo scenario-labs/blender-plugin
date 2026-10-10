@@ -51,6 +51,11 @@ def forbid_network(monkeypatch):
             {"referenceImages": ["reference"]},
         ),
         ("model_rodin-hyper3d-bang", {"model": "mesh"}, {"prompt": "bronze"}),
+        (
+            "model_bytedance-seedance-2-0",
+            {"prompt": "fixture", "lastFrameImage": "last"},
+            {"image": "first"},
+        ),
     ],
 )
 def test_captured_requirements_match_pure_preparation_and_sdk_before_dispatch(name, invalid, valid):
@@ -140,6 +145,33 @@ def test_nested_inputs_keep_conditional_rules_and_array_paths():
         prepare_run("base", schema, {"clips": [{"last": "last"}]})
     payload = {"clips": [{"first": "first", "last": "last"}]}
     assert prepare_run("base", schema, payload)[1] == payload
+
+
+def test_nested_inputs_check_named_siblings_within_each_item():
+    # Each item declares only these inputs, so names it lacks are never
+    # defined within an item: ifDefined never applies, ifNotDefined always does.
+    schema = {
+        "parameters": [
+            {
+                "name": "clips",
+                "type": "inputs_array",
+                "inputs": [
+                    {"name": "first", "type": "file", "required": {"ifDefined": {"last": {}}}},
+                    {
+                        "name": "note",
+                        "type": "string",
+                        "required": {"ifNotDefined": {"caption": {}}},
+                    },
+                ],
+            }
+        ]
+    }
+    payload = {"clips": [{"note": "a"}, {"note": "b", "first": "first"}]}
+    assert prepare_run("base", schema, payload)[1] == payload
+    with pytest.raises(ValueError, match=r"Clips \[2\]: Note is required"):
+        prepare_run("base", schema, {"clips": [{"note": "a"}, {"first": "first"}]})
+    with pytest.raises(ValueError, match="unknown parameter"):
+        prepare_run("base", schema, {"clips": [{"note": "a", "last": "last"}]})
 
 
 def lora_route():
@@ -361,26 +393,140 @@ def test_malformed_fields_fail_consistently_before_sdk_dispatch(fields):
             adapter.estimate_model({"id": "base", "type": "custom", "inputs": fields}, {})
 
 
+def quoting_adapter(calls):
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, json={"creativeUnitsCost": 1})
+
+    return SDKAdapter(
+        Credentials("fixture-key", "fixture-secret"),
+        online=lambda: True,
+        transport=httpx.MockTransport(respond),
+    )
+
+
+def test_captured_mini_first_frame_rule_naming_an_undeclared_input_never_applies():
+    # Seedance 2.0 Mini's public schema keeps the first-frame rule that names
+    # lastFrameImage but does not declare that input. Nothing can set it, so
+    # the rule never applies, and the model must still be priced.
+    record = model("model_bytedance-seedance-2-0-mini")
+    schema = {"parameters": record["inputs"]}
+    image = next(field for field in record["inputs"] if field["name"] == "image")
+    assert set(image["required"]) == {"ifDefined"}
+    assert set(image["required"]["ifDefined"]) == {"lastFrameImage"}
+    assert "lastFrameImage" not in {field["name"] for field in record["inputs"]}
+    parsed = parse_schema(SimpleNamespace(parameters=record["inputs"], ui_config={}))
+    spec = parsed.by_name("image")
+    assert (spec.required_always, spec.required_if_defined, spec.required_if_not_defined) == (
+        False,
+        (),
+        (),
+    )
+    assert parsed.one_of == []
+    original = copy.deepcopy(record)
+    calls = []
+    with quoting_adapter(calls) as adapter:
+        for parameters in ({"prompt": "fixture"}, {"prompt": "fixture", "image": "first"}):
+            assert validate(parsed.specs, parameters, parsed.one_of) == []
+            assert not validate_parameters(schema, parameters)
+            target, payload = prepare_run(record["id"], schema, parameters)
+            quote = adapter.estimate_model(record, parameters)
+            assert (quote.target_id, quote.payload) == (target, payload)
+            assert json.loads(calls[-1].content) == payload
+            assert dict(calls[-1].url.params) == {"dryRun": "true"}
+        assert len(calls) == 2
+        # The undeclared input stays unavailable rather than being invented.
+        with pytest.raises(ValueError, match="unknown parameter"):
+            adapter.estimate_model(record, {"prompt": "fixture", "lastFrameImage": "last"})
+        assert len(calls) == 2
+    assert record == original
+
+
+@pytest.mark.parametrize("parameters", [{}, {"prompt": "fixture"}])
+def test_if_defined_naming_an_undeclared_input_never_applies(parameters):
+    fields = [
+        {"name": "prompt", "type": "string", "label": "Prompt", "prompt": True},
+        {"name": "image", "type": "file", "required": {"ifDefined": {"lastFrameImage": {}}}},
+    ]
+    parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    spec = parsed.by_name("image")
+    assert not spec.required_always and spec.required_if_defined == ()
+    assert validate(parsed.specs, parameters, parsed.one_of) == []
+    assert prepare_run("base", {"parameters": fields}, parameters) == ("base", parameters)
+    calls = []
+    with quoting_adapter(calls) as adapter:
+        quote = adapter.estimate_model(
+            {"id": "base", "type": "custom", "inputs": fields}, parameters
+        )
+        assert quote.payload == parameters == json.loads(calls[0].content)
+        assert len(calls) == 1
+
+
+def veo_shaped_fields():
+    # Synthetic, shaped like a live video-extension schema: the prompt is
+    # required unless a first-frame image is set, and no image input exists.
+    return [
+        {
+            "name": "prompt",
+            "type": "string",
+            "label": "Prompt",
+            "prompt": True,
+            "required": {"ifNotDefined": {"image": {"message": "Provide an image or a prompt"}}},
+        },
+        {"name": "video", "type": "file", "kind": "video", "required": {"always": True}},
+        {"name": "generateAudio", "type": "boolean", "default": True, "required": {"always": True}},
+    ]
+
+
+def test_if_not_defined_naming_an_undeclared_input_always_applies():
+    fields = veo_shaped_fields()
+    schema = {"parameters": fields}
+    parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
+    spec = parsed.by_name("prompt")
+    assert spec.required_always and spec.required_if_not_defined == ()
+    assert parsed.one_of == []
+    body = {"video": "clip", "generateAudio": True}
+    assert validate(parsed.specs, body, parsed.one_of) == ["Prompt is required"]
+    assert validate_parameters(schema, {"video": "clip"}) == ["Prompt is required."]
+    record = {"id": "base", "type": "custom", "inputs": fields}
+    calls = []
+    with quoting_adapter(calls) as adapter:
+        for parameters in ({"video": "clip"}, {"video": "clip", "prompt": "  "}):
+            with pytest.raises(ValueError, match="Prompt is required"):
+                prepare_run("base", schema, parameters)
+            with pytest.raises(ValueError, match="Prompt is required"):
+                adapter.estimate_model(record, parameters)
+        assert calls == []
+        parameters = {"video": "clip", "prompt": "fixture"}
+        target, payload = prepare_run("base", schema, parameters)
+        assert payload == {**parameters, "generateAudio": True}
+        quote = adapter.estimate_model(record, parameters)
+        assert (quote.target_id, quote.payload) == (target, payload)
+        assert json.loads(calls[0].content) == payload
+        assert len(calls) == 1
+
+
 @pytest.mark.parametrize("condition", ["ifDefined", "ifNotDefined"])
-@pytest.mark.parametrize("sibling", ["missing", "", " "])
-def test_unknown_siblings_render_but_fail_closed_before_dispatch(condition, sibling):
+@pytest.mark.parametrize("sibling", ["", " "])
+def test_blank_sibling_names_render_but_fail_closed_before_dispatch(condition, sibling):
     fields = [{"name": "dependent", "type": "file", "required": {condition: {sibling: {}}}}]
     parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
     assert parsed.by_name("dependent") is not None
+    assert not parsed.by_name("dependent").required_always
     assert validate(parsed.specs, {}, parsed.one_of) == []
-    with pytest.raises(ValueError, match="unknown input"):
+    with pytest.raises(ValueError, match="must name sibling inputs"):
         prepare_run("base", {"parameters": fields}, {})
     with SDKAdapter(
         Credentials("key", "secret"),
         online=lambda: True,
-        transport=httpx.MockTransport(lambda r: pytest.fail("Unknown sibling reached REST")),
+        transport=httpx.MockTransport(lambda r: pytest.fail("Blank sibling reached REST")),
     ) as adapter:
-        with pytest.raises(ValueError, match="unknown input"):
+        with pytest.raises(ValueError, match="must name sibling inputs"):
             adapter.estimate_model({"id": "base", "type": "custom", "inputs": fields}, {})
 
 
 @pytest.mark.parametrize("condition", ["ifDefined", "ifNotDefined"])
-def test_ui_parser_keeps_known_requirements_alongside_unknown_siblings(condition):
+def test_declared_siblings_keep_their_rule_beside_undeclared_ones(condition):
     fields = [
         {
             "name": "dependent",
@@ -389,11 +535,31 @@ def test_ui_parser_keeps_known_requirements_alongside_unknown_siblings(condition
         },
         {"name": "known", "type": "file"},
     ]
+    schema = {"parameters": fields}
     parsed = parse_schema(SimpleNamespace(parameters=fields, ui_config={}))
-    invalid = {"known": "asset"} if condition == "ifDefined" else {}
-    assert validate(parsed.specs, invalid, parsed.one_of)
-    assert validate(parsed.specs, {"dependent": "asset"}, parsed.one_of) == []
+    spec = parsed.by_name("dependent")
+    assert "missing" not in spec.required_if_defined + spec.required_if_not_defined
     assert all("missing" not in group for group in parsed.one_of)
+    if condition == "ifDefined":
+        # The declared sibling still triggers the rule; the undeclared one never does.
+        assert not spec.required_always and spec.required_if_defined == ("known",)
+        rejected = [{"known": "asset"}]
+        accepted = [{}, {"dependent": "asset"}, {"dependent": "asset", "known": "asset"}]
+    else:
+        # The undeclared sibling is never set, so the input is always required,
+        # even when the declared sibling is set.
+        assert spec.required_always
+        rejected = [{}, {"known": "asset"}]
+        accepted = [{"dependent": "asset"}, {"dependent": "asset", "known": "asset"}]
+    for values in rejected:
+        assert validate(parsed.specs, values, parsed.one_of)
+        assert validate_parameters(schema, values)
+        with pytest.raises(ValueError, match="dependent is required|Dependent is required"):
+            prepare_run("base", schema, values)
+    for values in accepted:
+        assert validate(parsed.specs, values, parsed.one_of) == []
+        assert not validate_parameters(schema, values)
+        assert prepare_run("base", schema, values) == ("base", values)
 
 
 @pytest.mark.parametrize("condition,trigger", [("ifDefined", True), ("ifNotDefined", None)])

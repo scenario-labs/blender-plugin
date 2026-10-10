@@ -43,6 +43,25 @@ def blocked_token(code):
     return match.group(0) if match else None
 
 
+def _agent_traceback(exc, limit=4):
+    """Format exc and its chain with the agent's frames only.
+
+    This module's own frames (run_python, the sys.exit guard) would show the installed
+    extension's absolute path, which names the user's home and Blender profile.
+    """
+    report = traceback.TracebackException(type(exc), exc, exc.__traceback__)
+    pending, seen = [report], set()
+    while pending:
+        item = pending.pop()
+        if item is None or id(item) in seen:
+            continue
+        seen.add(id(item))
+        frames = [frame for frame in item.stack if frame.filename != __file__]
+        item.stack = traceback.StackSummary.from_list(frames[:limit])
+        pending += [item.__cause__, item.__context__]
+    return "".join(report.format())
+
+
 def run_python(code):
     """Execute code with bpy and an empty result dict preloaded. Returns result, stdout, stderr and error."""
     import bpy
@@ -66,7 +85,7 @@ def run_python(code):
                 compile(code, "<scenario-mcp>", "exec"), namespace
             )  # gated by a preference; this is the tool's purpose
     except Exception as exc:  # returned to the agent, never raised into Blender
-        error = f"{type(exc).__name__}: {exc}\n{traceback.format_exc(limit=4)}"
+        error = f"{type(exc).__name__}: {exc}\n{_agent_traceback(exc)}"
     finally:
         sys.exit = saved_exit
     result = namespace.get("result")

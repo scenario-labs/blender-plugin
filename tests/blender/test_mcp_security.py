@@ -80,3 +80,58 @@ class McpSecurityTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.tools.screenshot_viewport({})
         self.assertEqual(set(Path(tempfile.gettempdir()).glob("scenario-mcp-*")), before)
+
+    def test_installed_tool_failures_return_sanitized_text(self):
+        protocol = submodule("mcp.protocol")
+        capture = submodule("blender.capture")
+        registry = submodule("blender.mcp_service").build_registry()
+        installed = str(Path(protocol.__file__).resolve().parents[1])
+        private = os.path.join(tempfile.gettempdir(), "scenario-mcp-fixture", "private.png")
+
+        def call(name, arguments):
+            response = protocol.handle_message(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": arguments},
+                },
+                registry,
+                {"name": "fixture", "version": "0"},
+            )
+            self.assertTrue(response["result"]["isError"], response)
+            text = response["result"]["content"][0]["text"]
+            self.assertNotIn("Traceback", text)
+            self.assertNotIn(installed, text)
+            self.assertNotIn(tempfile.gettempdir(), text)
+            return text
+
+        self.assertTrue(bpy.app.background)
+        self.assertEqual(
+            call("object_detail", {"name": "Nope"}), "ValueError: No object named 'Nope'"
+        )
+        self.assertEqual(
+            call("screenshot_viewport", {}), "RuntimeError: Screenshots need the Blender GUI"
+        )
+        prefs = submodule("prefs").get_prefs()
+        original = prefs.mcp_allow_python
+        try:
+            prefs.mcp_allow_python = False
+            self.assertEqual(
+                call("execute_python", {"code": "result['value'] = 1"}),
+                "PermissionError: Python execution is disabled in Scenario preferences "
+                "(MCP > Allow connected agents to run Python)",
+            )
+        finally:
+            prefs.mcp_allow_python = original
+        # A conversion and a file read fail inside installed tool frames; their messages name
+        # local paths, so the client receives fixed text and the console keeps the traceback.
+        self.assertEqual(
+            call("set_frame", {"frame": private}),
+            "ValueError: set_frame failed unexpectedly; see the Blender console",
+        )
+        with patch.object(capture, "capture_still", return_value=None):
+            self.assertEqual(
+                call("render_still", {}),
+                "FileNotFoundError: render_still failed unexpectedly; see the Blender console",
+            )

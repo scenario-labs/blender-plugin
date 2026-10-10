@@ -366,6 +366,19 @@ client to inspect the operation before retrying. This does not cancel remote
 jobs or establish whether an HTTP client's independent timeout happened before
 or after dispatch.
 
+A failed tool call returns an `isError` result with one line, `Type: message`,
+and no traceback. The message is returned only when the extension wrote it: a
+validation error or refusal raised by the tool or by extension code it calls,
+or one of the extension's own error classes. A failure raised by the operating
+system, Blender or a library can name local paths or service details, so the
+client receives `Type: <tool> failed unexpectedly; see the Blender console`
+instead. The full traceback goes to the `scenario.mcp` console log, at error
+level for unexpected failures and at debug level for the others.
+`execute_python` errors keep a traceback of the agent's code but omit the
+frames of the extension's own sandbox module, which would show its installed
+path. Frames of code that the agent's code called, such as Blender's modules,
+remain.
+
 With Python enabled, a connected agent can run arbitrary Python with your user's
 permissions. The blocklist in `scenario/mcp/sandbox.py` is a guard rail, not a
 security boundary. The token can be copied into client configuration files and,
@@ -449,6 +462,9 @@ No credentials, service requests or registry writes are needed for cold reads.
 - **Catalog is still loading:** retry after loading completes and inspect the
   extension's status for credential or service errors. This is separate from the
   local MCP bearer token.
+- **A tool reports `failed unexpectedly`:** open Blender's system console; the
+  `scenario.mcp` error log has the traceback. Set Log Level to Debug in Scenario
+  Preferences to also log tracebacks of ordinary validation failures.
 - **Call times out:** a modal dialog or long-running main-thread tool can delay
   other requests. Check status before repeating any action that may spend credits
   or modify the scene. `wait_for_job` leaves the main thread available while

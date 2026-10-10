@@ -508,6 +508,43 @@ class LibraryOrganizationTests(unittest.TestCase):
             [("POST", "/v1/collections"), ("PUT", "/v1/collections/created-1/assets")],
         )
 
+    def test_new_collection_joins_a_list_already_at_the_load_bound(self):
+        # A bound of 2 with pages of 2 stands for 200 loaded collections.
+        with (
+            patch.object(self.module, "COLLECTION_PAGE", 2),
+            patch.object(self.module, "MAX_COLLECTIONS", 2),
+        ):
+            self.collections()
+            self.assertFalse(self.owner.more_collections())
+            self.refresh()
+            self.organize("asset-b", action="CREATE", collection_name="Hero props")
+            self.assertEqual(self.apply()["result"]["state"], "VERIFIED")
+            self.assertEqual(
+                [row["collection_id"] for row in self.owner.collections],
+                ["props", "sets", "created-1"],
+            )
+            self.assertIn("In 1 collection: Hero props", self.draw().texts())
+            self.assertFalse(self.owner.more_collections())
+            self.assertEqual(
+                bpy.ops.scenario.library_collection_filter(collection_id="created-1"),
+                {"FINISHED"},
+            )
+            self.settle()
+        self.assertEqual(self.owner.filters, ("", False, "created-1"))
+        self.assertEqual([row["asset_id"] for row in self.owner.assets], ["asset-b"])
+
+    def test_finished_reviews_leave_no_bookkeeping_behind(self):
+        self.refresh()
+        self.organize("asset-b", action="ADD_TAGS", tags="first")
+        self.assertEqual(self.apply()["result"]["state"], "VERIFIED")
+        first = self.owner.review_id
+        self.organize("asset-b", action="ADD_TAGS", tags="second")
+        self.assertEqual(self.apply()["result"]["state"], "VERIFIED")
+        self.assertNotEqual(self.owner.review_id, first)
+        # Rows were updated once per result; the view keeps nothing of the replaced review.
+        self.assertEqual(self.row("asset-b")["tags"], ["first", "second"])
+        self.assertNotIn(first, repr(vars(self.owner)))
+
     def test_closing_and_reopening_studio_during_apply_keeps_the_card(self):
         self.refresh()
         self.organize("asset-b", action="ADD_TAGS", tags="prop")

@@ -1417,7 +1417,9 @@ HTTP status, Unconfirmed, Not sent or Not verified. An unconfirmed card says to
 refresh and inspect; nothing is resent automatically. A finished, refused,
 unchanged, unsent or expired card offers **Dismiss**. Rows take the tags and memberships Scenario
 read back. A row that left the browsed collection stays marked "No longer in this
-collection; refresh" until the next Refresh rather than disappearing.
+collection; refresh" until the next Refresh rather than disappearing. A verified
+new collection joins the loaded collections, even when 200 are already loaded,
+so **Browse** and the dropdown offer it.
 
 Organize is disabled for pages loaded with Public assets, while a Library page is
 loading and while a change applies. Preparing another review discards a card that
@@ -1432,10 +1434,10 @@ reviews expire after 10 minutes.
 
 Installed tests cover operator registration, the dynamic collection enum with
 `OperatorProperties`, read-only drawing, public and busy pages, dialog cancel,
-Apply gating and single use, row updates, filtered-row refresh marks, the card
-across Studio redraws during Apply, connection and file retirement, sanitized
-refusals, online access off, a review bound filled by agent reviews and
-narrow-width wrapping. Physical desktop evidence is pending: focus, typing
+Apply gating and single use, row updates, filtered-row refresh marks, a new
+collection joining a list at the load bound, the card across Studio redraws
+during Apply, connection and file retirement, sanitized refusals, online access
+off, a review bound filled by agent reviews and narrow-width wrapping. Physical desktop evidence is pending: focus, typing
 (including Unicode and IME tags), Escape and dismissal, viewport shortcuts after
 the dialog, a small window and alternate DPI will be collected later in an
 unlocked session and remain tracked under

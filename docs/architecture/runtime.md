@@ -685,10 +685,11 @@ pure core module. The maintenance pump polls the shared owner before the Library
 view, so a finished review reaches the card on the same tick. A finished result
 updates loaded rows once from the read-back records: tags and memberships come
 from Scenario, and a row that left the browsed collection is marked for refresh
-rather than removed. A verified new collection joins the loaded list. Retirement
-on a credential, Project ID or file change drops the view with the session and
-its reviews. See [the UI contract](../UI_STYLE.md#library-organization); physical
-desktop and live acceptance remain pending.
+rather than removed. A verified new collection joins the loaded list, even when
+200 are already loaded. Retirement on a credential, Project ID or file change
+drops the view with the session and its reviews. See
+[the UI contract](../UI_STYLE.md#library-organization); physical desktop and live
+acceptance remain pending.
 
 ## Workflow Library reference bindings
 

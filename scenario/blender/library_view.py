@@ -93,7 +93,8 @@ class LibraryView:
         self.review_id = None
         self.review = None
         self.review_label = ""
-        self.synced = set()
+        # The review whose read-back already updated rows; only the shown review syncs.
+        self.synced_review_id = None
         self.stale = set()
 
     def current(self):
@@ -445,9 +446,9 @@ class LibraryView:
         if (
             status.phase == Phase.FINISHED
             and status.result is not None
-            and status.review_id not in self.synced
+            and status.review_id != self.synced_review_id
         ):
-            self.synced.add(status.review_id)
+            self.synced_review_id = status.review_id
             self._update_rows(status.request, status.result)
 
     def _update_rows(self, request, result):
@@ -470,9 +471,9 @@ class LibraryView:
             created
             and result.create_outcome == Outcome.VERIFIED
             and self.collections_loaded
-            and len(self.collections) < MAX_COLLECTIONS
             and all(row["collection_id"] != created for row in self.collections)
         ):
+            # MAX_COLLECTIONS bounds reads; a collection created here joins even at that bound.
             self.collections.append(
                 {
                     "collection_id": created,

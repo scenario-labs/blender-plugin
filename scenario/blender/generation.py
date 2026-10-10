@@ -494,6 +494,7 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     seeded = params_ui.sync_params(lane_state, schema, model_id)
     if props.lane_of(lane_state) == "panorama":
         seeded |= _apply_contract_settings(lane_state, schema, model_id, previous)
+    trained_models.sync_bounds(lane_state)  # strength fields follow the base's declared range
     # Seeded values skip their RNA callbacks: re-arm this form's price and let a
     # seeded model duration drive the camera path, as an edit would.
     if seeded or lane_state.estimate_state == "IDLE":
@@ -575,6 +576,11 @@ def build_request(scene, lane, for_estimate=False):
 
         references = active_references(lane_state)
     if error := scope_error(lane_state, references=references):
+        return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
+    from . import trained_defaults
+
+    # A form with no explicit choice takes the project default; it never prices the base alone.
+    if error := trained_defaults.blocking_reason(lane_state):
         return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     schema = schema_for(model_id)
     if schema is None:
@@ -955,6 +961,10 @@ def request_meta(context, lane, request=None):
         "prompt": lane_state.prompt,
         "model_name": record.name if record else lane_state.model_id,
     }
+    if len(lane_state.trained):
+        # Job views name the LoRAs or composition with the base ("FLUX.1 Dev · LoRA (+1)").
+        meta["model_name"] = trained_models.selection_label(lane_state, meta["model_name"])
+        meta["trained_models"] = trained_models.selection_meta(lane_state)
     if lane == "material":
         meta["target_objects"] = [o.name for o in context.selected_objects if o.type == "MESH"]
     if request is not None:

@@ -409,7 +409,9 @@ class ModelPickerTests(unittest.TestCase):
                 before = (lane_state.model_id, lane_state.model_key)
                 root = FakeLayout()
                 panels.draw_model_row(root, lane_state, lane)  # the sidebar/render/Edit 3D row
-                (box,) = root.children
+                # The Model box; Image and Render Image add their Trained models box after it.
+                box = root.children[0]
+                self.assertEqual(len(root.children), 2 if lane == "image" else 1)
                 status = [{"text": expected, "icon": "EXPERIMENTAL"}] if expected else []
                 self.assertEqual(
                     [call[2] for call in box.named("label")],
@@ -423,7 +425,7 @@ class ModelPickerTests(unittest.TestCase):
                 ]
                 self.assertEqual(len(experimental), len(status))
                 # A status, not a block: the picker button stays and drawing changes nothing.
-                buttons = [call[1][0] for node in root.walk() for call in node.named("operator")]
+                buttons = [call[1][0] for node in box.walk() for call in node.named("operator")]
                 self.assertEqual(buttons, ["scenario.pick_model"])
                 self.assertEqual((lane_state.model_id, lane_state.model_key), before)
 

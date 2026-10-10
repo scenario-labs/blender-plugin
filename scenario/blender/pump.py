@@ -14,6 +14,7 @@ ACTIVE_INTERVAL = 0.25
 IDLE_INTERVAL = 0.6
 _running = False
 _job_rows = None  # what job views last drew; compared each tick, never persisted
+_failures = {}  # step -> the last exception type it reported
 
 
 def start():
@@ -63,6 +64,15 @@ def _process():
         and runtime.credentials().valid
     ):
         generation.request_catalog()
+    from . import trained_defaults
+
+    # Forms without an explicit choice take the scope's project default before any price.
+    try:
+        changed |= trained_defaults.apply_pending()
+    except Exception as error:  # never let it stop pricing; report each new failure once
+        if type(error).__name__ != _failures.get("defaults"):
+            _failures["defaults"] = type(error).__name__
+            log.exception("applying project defaults failed")
     now = props.clock()
     # A quote binds to the selected scene, and the job session refuses any
     # other origin. Other scenes keep their pending request until selected.

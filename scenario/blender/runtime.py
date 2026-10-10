@@ -66,6 +66,8 @@ class RuntimeState:
         self.trained_loaded = False
         self.trained_error = ""
         self.trained_scans = {}  # lane -> progress of its lazy base-description reads
+        # Saved lane defaults read through model_defaults for drawing (trained_defaults.Cache).
+        self.trained_defaults = None
         self.catalog_credentials = None
         self.catalog_project_id = None
         self.retired_catalogs = []

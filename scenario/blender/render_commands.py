@@ -19,6 +19,7 @@ from . import (
     render_lanes,
     render_references,
     runtime,
+    trained_defaults,
     trained_models,
 )
 
@@ -44,6 +45,7 @@ def request(scene, lane, model_id, parameters=None):
     state = lane_state(scene, lane)
     if parameters is not None and parameters != {}:
         raise ScenarioError(0, "Configure render_form first; render quotes use its prepared inputs")
+    trained_defaults.apply_pending((scene,))  # the GUI pump's step, for headless MCP too
     if state.model_id != model_id:
         raise ValueError("The render model changed; configure render_form and estimate again")
     result = generation.build_request(scene, lane, for_estimate=True)
@@ -78,6 +80,7 @@ def _source_result(ref):
 
 def inspect(scene, lane):
     state = lane_state(scene, lane)
+    trained_defaults.apply_pending((scene,))  # the GUI pump's step, for headless MCP too
     schema = generation.schema_for(state.model_id)
     styles = render_lanes.style_input(lane, schema) if schema else None
     values, enabled = params_ui.collect_values(state, schema) if schema else ({}, {})

@@ -30,6 +30,7 @@ __all__ = [
     "picks_from_payload",
     "runs",
     "saved_ids",
+    "selection_label",
     "strength",
 ]
 
@@ -196,6 +197,22 @@ def merged(current, choice, *, same_base):
             current[index] = tuple(choice)
             return current
     return [*current, tuple(choice)]
+
+
+LABEL_SEPARATOR = " · "
+
+
+def selection_label(base_name, names):
+    """A base model and its trained choice in one short label: "Base · LoRA (+n)".
+
+    `names` lists the chosen LoRAs or the composition in form order; the first
+    one is named and the others are counted, so a compact chip stays compact.
+    """
+    names = [name for name in names if name]
+    if not names:
+        return base_name
+    extra = f" (+{len(names) - 1})" if len(names) > 1 else ""
+    return f"{base_name}{LABEL_SEPARATOR}{names[0]}{extra}"
 
 
 def concepts(record):

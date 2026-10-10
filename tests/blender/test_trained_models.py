@@ -627,10 +627,11 @@ class TrainedModelTests(unittest.TestCase):
         before = [(slot.model_id, round(slot.scale, 4)) for slot in self.lane.trained]
         submodule("blender.panels").draw_model_row(root, self.lane, "image")
         labels = [call[2] for node in root.walk() for call in node.named("label")]
-        self.assertIn({"text": "Studio LoRA (strength 0.8)", "icon": "SHADERFX"}, labels)
-        self.assertIn(
-            {"text": f"{self.lane.trained[1].name} (strength 1.25)", "icon": "SHADERFX"}, labels
-        )
+        # The Trained models section under the Model row names each LoRA above its strength.
+        self.assertIn({"text": "Studio LoRA", "icon": "SHADERFX"}, labels)
+        self.assertIn({"text": self.lane.trained[1].name, "icon": "SHADERFX"}, labels)
+        strengths = [call[1][1] for node in root.walk() for call in node.named("prop")]
+        self.assertEqual(strengths.count("scale"), 2)
         removes = [
             call
             for node in root.walk()
@@ -813,6 +814,7 @@ class TrainedModelTests(unittest.TestCase):
             self.assertEqual(result, {"FINISHED"})
 
         def choices():
+            """The rows of the Trained models section under the Model row, one per choice."""
             root = picker_tests.FakeLayout()
             panels.draw_model_row(root, self.lane, "image")
             return [
@@ -820,6 +822,7 @@ class TrainedModelTests(unittest.TestCase):
                 for node in root.walk()
                 for call in node.named("label")
                 if call[2].get("icon") in ("GROUP", "SHADERFX")
+                and call[2].get("text") != "Trained models"
             ]
 
         self.trained.clear()  # the connection's trained list has not arrived yet
@@ -827,9 +830,12 @@ class TrainedModelTests(unittest.TestCase):
         (slot,) = self.lane.trained
         self.assertEqual((slot.kind, slot.has_scale), ("composition", False))
         self.assertEqual(choices(), [{"text": f"{COMPOSITION} (composition)", "icon": "GROUP"}])
-        # LoRAs from the stack still wait as LoRAs with the strength the job sent.
+        # LoRAs from the stack still wait with the strength the job sent; the section
+        # draws its strength field once the list names them LoRAs.
         reload({"prompt": PROMPT, "loras": [LORA_A], "lorasScale": [0.3]})
-        self.assertEqual(choices(), [{"text": f"{LORA_A} (strength 0.3)", "icon": "SHADERFX"}])
+        self.assertEqual(choices(), [{"text": LORA_A, "icon": "SHADERFX"}])
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.kind, slot.has_scale, round(slot.scale, 4)), ("", True, 0.3))
         # The delivered list names the composition; it still sends no strength.
         reload({"prompt": PROMPT, "modelId": COMPOSITION})
         self.assertTrue(

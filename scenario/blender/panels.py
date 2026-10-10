@@ -309,9 +309,36 @@ def form_takes_prompt(lane_state, lane):
     return schema is None or bool(schema.prompt_name)
 
 
+def model_chip_parts(lane_state):
+    """(base, first trained name, how many more) for the composer's model chip; read-only."""
+    record = runtime.state.records.get(lane_state.model_id)
+    if record is None or not len(lane_state.trained):
+        return model_button_text(lane_state), "", 0
+    from . import trained_models
+
+    names = [trained_models.slot_name(slot) for slot in lane_state.trained]
+    return record.name, names[0], len(names) - 1
+
+
+def model_chip_category(lane_state, lane):
+    """The picker chip the composer's model chip opens: Trained when the form has a trained choice."""
+    from . import trained_models
+
+    if lane in trained_models.LANES and len(lane_state.trained):
+        from ..core.api.model_filter import TRAINED_CATEGORY
+
+        return TRAINED_CATEGORY
+    return "all"
+
+
 def model_button_text(lane_state):
+    """The model chip label: the base, followed by the trained choice as "Base · LoRA (+n)"."""
     record = runtime.state.records.get(lane_state.model_id)
     if record is not None:
+        if len(lane_state.trained):
+            from . import trained_models
+
+            return trained_models.selection_label(lane_state, record.name)
         return record.name
     if not runtime.online():
         return "Online access disabled"

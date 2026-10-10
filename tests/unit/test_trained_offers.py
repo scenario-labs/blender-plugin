@@ -311,3 +311,13 @@ def test_saved_ids_count_a_payload_s_trained_models_without_a_valid_slot():
         (None, {"loras": [LORA_A]}),
     ):
         assert read(raw, saved) == [], (raw, saved)
+
+
+def test_selection_label_names_the_first_trained_model_and_counts_the_rest():
+    assert trained_offers.selection_label("FLUX.1 Dev", []) == "FLUX.1 Dev"
+    assert trained_offers.selection_label("FLUX.1 Dev", ["", ""]) == "FLUX.1 Dev"
+    assert trained_offers.selection_label("FLUX.1 Dev", ["Studio"]) == "FLUX.1 Dev \u00b7 Studio"
+    assert (
+        trained_offers.selection_label("FLUX.1 Dev", ["Studio", "Ink", "Grain"])
+        == "FLUX.1 Dev \u00b7 Studio (+2)"
+    )

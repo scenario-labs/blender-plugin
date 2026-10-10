@@ -905,8 +905,8 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
 def draw_model_row(layout, lane_state, lane):
     """A "Model" section (like Clip to render / Camera path): a header, then a wide button opening the picker
     (its icon next to the model name) and the native dropdown at the right as a fallback. A model offering an
-    unaccepted capability adds its read-only experimental status below, and the LoRAs or composition chosen
-    through the Trained chip follow, each with a remove button."""
+    unaccepted capability adds its read-only experimental status below. The Image and Render Image forms then
+    show their "Trained models" section: the chosen LoRAs with strengths, Add and the project default."""
     box = layout.box()
     box.label(text="Model", icon="NODE_MATERIAL")
     record = runtime.state.records.get(lane_state.model_id)
@@ -923,7 +923,9 @@ def draw_model_row(layout, lane_state, lane):
     status = capability_status.model_status(record.capabilities) if record is not None else ""
     if status:
         box.label(text=status, icon="EXPERIMENTAL")
-    trained_models.draw_selection(box, lane_state, lane)
+    from . import trained_section
+
+    trained_section.draw(layout, lane_state, lane)
 
 
 CLASSES = (ScenarioPickerItem, SCENARIO_UL_models, SCENARIO_OT_pick_model)

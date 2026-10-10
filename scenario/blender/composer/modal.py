@@ -251,8 +251,14 @@ def _open_dialog(context, scene, state, kind):
         # showing it would swap the card for the pill while the picker is open.
         if _card_fits_with_sidebar(context):
             _open_sidebar(context)
+        lane = state.generation_lane(scene)
         try:
-            bpy.ops.scenario.pick_model("INVOKE_DEFAULT", lane=state.generation_lane(scene))
+            bpy.ops.scenario.pick_model(
+                "INVOKE_DEFAULT",
+                lane=lane,
+                # a form with LoRAs or a composition opens on the Trained chip
+                category=panels.model_chip_category(scene.scenario.lane_state(lane), lane),
+            )
         except (RuntimeError, AttributeError):
             # No dialog in this context: a sidebar opened above still holds the model chooser.
             pass

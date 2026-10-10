@@ -38,6 +38,7 @@ STRIP_CHIP_PAD = 10  # unscaled room on each side of a strip chip's label
 STRIP_TITLE = 32  # characters of the prompt the strip's line keeps
 # Saved states with nothing left to follow; the strip's "+N more" counts the lane's other jobs.
 SETTLED_STATES = frozenset({"applied", "canceled", "failed"})
+STRENGTH_HINT = "Edit LoRA strength in the sidebar or Studio"
 
 
 def _shader_get():
@@ -482,9 +483,10 @@ def status_note(lane_state):
     if error:
         return error
     visible = getattr(runtime, "message_visible", None)
-    if callable(visible):
-        return visible() or ""
-    return runtime.state.last_message or ""
+    message = (visible() if callable(visible) else runtime.state.last_message) or ""
+    if not message and any(slot.has_scale for slot in lane_state.trained):
+        return STRENGTH_HINT  # the compact chip names LoRAs; strengths live in the full form
+    return message
 
 
 def _prompt_field(pr, field, focused, lane, scale, placeholder=None):
@@ -616,7 +618,15 @@ def draw_composer():
         else:
             _prompt_field(layout.prompt_rect, state.field, state.focused, lane, scale)
         mr = layout.model_rect
-        model_name = panels.model_button_text(lane_state)
+        base, trained, extra = panels.model_chip_parts(lane_state)
+        blf.size(FONT, font_px)
+        model_name = cl.fit_model_label(
+            base,
+            trained,
+            extra,
+            mr.w - cl.CHIP_TEXT_INSET * scale,
+            lambda value: blf.dimensions(FONT, value)[0],
+        )  # a long LoRA name is shortened before the count of further LoRAs
         _chip(mr, model_name, scale, font_px, hovered=(state.hover == ("model",)))
         note_x = mr.right + 10 * scale
         if layout.settings_rect is not None:

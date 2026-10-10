@@ -90,6 +90,45 @@ def tab_label(lane, max_width, measure):
     return clip_label(LANE_SHORT_LABELS.get(lane, full), max_width, measure)
 
 
+CHIP_SEPARATOR = " · "
+
+
+def _shorten(text, fits):
+    """The longest prefix of `text` plus an ellipsis for which `fits` holds, or ""."""
+    for end in range(len(text) - 1, 0, -1):
+        candidate = text[:end].rstrip() + ELLIPSIS
+        if fits(candidate):
+            return candidate
+    return ""
+
+
+def fit_model_label(base, trained, extra, max_width, measure):
+    """The model chip label "Base · LoRA (+n)" shortened to `max_width`.
+
+    The trained name is shortened first and the base name next, so the count of
+    further LoRAs stays readable. `measure(text)` returns a width in the same
+    unit as `max_width`. Without a trained name the base is returned unchanged,
+    for the caller's usual clipping.
+    """
+    if not trained:
+        return base
+    suffix = f" (+{extra})" if extra else ""
+
+    def label(left, right):
+        return f"{left}{CHIP_SEPARATOR}{right}{suffix}"
+
+    full = label(base, trained)
+    if measure(full) <= max_width:
+        return full
+    short = _shorten(trained, lambda name: measure(label(base, name)) <= max_width)
+    if short:
+        return label(base, short)
+    short_base = _shorten(base, lambda name: measure(label(name, ELLIPSIS)) <= max_width)
+    if short_base:
+        return label(short_base, ELLIPSIS)
+    return full
+
+
 @dataclass
 class Rect:
     x: float

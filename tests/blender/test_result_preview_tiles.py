@@ -349,6 +349,18 @@ class ResultPreviewTileTests(unittest.TestCase):
         captions = [tile.caption for tile in self.tiles.controller.tiles["request"]]
         self.assertEqual(captions, ["Albedo (3)", "Normal (1)", "Height (2)", "Metallic (4)"])
 
+    def test_roughness_and_smoothness_maps_are_captioned_by_their_roles(self):
+        # A roughness map from a 3D texture set once fell back to "Image (N)".
+        maps = [
+            (f"map-{role}", f"{role}.png", "image/png", png(8, 8), role)
+            for role in ("roughness", "smoothness")
+        ]
+        with online_access(False):
+            self.saved(maps)
+            self.settle(lambda: [self.status(index=i) for i in range(2)] == ["ready"] * 2)
+        captions = [tile.caption for tile in self.tiles.controller.tiles["request"]]
+        self.assertEqual(captions, ["Roughness (1)", "Smoothness (2)"])
+
     def test_undecodable_saved_image_reports_a_failure_with_retry(self):
         with online_access(False):
             view = self.saved([("image", "result.png", "image/png", corrupt_png(64, 32))])

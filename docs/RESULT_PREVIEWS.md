@@ -258,8 +258,10 @@ second, or every tenth of a second while it has work, and never inside drawing:
   `~/.thumbnails/large` outside the extension's user data.
 - **Tiles.** Drawing reads only the tiles it precomputed: the icon or the
   result kind's placeholder, a caption numbered like the saved-job controls,
-  a status line while preparing, waiting, offline or unavailable, and a
-  **Retry preview (N)** button after a missing, failed or unreadable preview.
+  which names a texture map by its stored role (`ROLE_LABEL` in
+  `core.jobs.result_previews` has a label for every role in `TEXTURE_ROLES`)
+  and any other result by its kind, a status line while preparing, waiting,
+  offline or unavailable, and a **Retry preview (N)** button after a missing, failed or unreadable preview.
   Retry clears the missing marker and opens a new polling window.
 - **Lifetime.** A connection, project or file change, and unregistering the
   extension, release the icons and tiles. A status read after that belongs to

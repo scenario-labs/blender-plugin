@@ -46,6 +46,19 @@ RENDITIONS = (STILL, CLIP, ENVELOPE)
 REVIEW = "review"
 # Most review assets one request may track: a step lists at most 50.
 REVIEW_ASSET_LIMIT = 50
+# Preview caption label of every texture role result_metadata assigns, so no
+# map is captioned by its kind alone; a unit test checks the keys match.
+ROLE_LABEL = {
+    "base": "Texture",
+    "albedo": "Albedo",
+    "normal": "Normal",
+    "smoothness": "Smoothness",
+    "roughness": "Roughness",
+    "metallic": "Metallic",
+    "height": "Height",
+    "ao": "AO",
+    "edge": "Edge",
+}
 PREVIEW_EDGE = 256
 # Server stills are decoded on Blender's main thread later: bound pixels, not
 # only bytes, so a small compressed file cannot declare a huge decode.

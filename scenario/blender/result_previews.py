@@ -41,6 +41,7 @@ from bpy.props import StringProperty
 
 from ..core.jobs.result_previews import (
     PREVIEW_EDGE,
+    ROLE_LABEL,
     STILL,
     STILL_MAX_BYTES,
     PreviewError,
@@ -64,16 +65,6 @@ IDLE_INTERVAL = 0.5
 _SAVED_STATES = frozenset(state.value for state in PREVIEW_STATES)
 KIND_ICON = {"image": "IMAGE_DATA", "video": "FILE_MOVIE", "3d": "MESH_DATA", "audio": "SPEAKER"}
 KIND_LABEL = {"image": "Image", "video": "Video", "3d": "Model", "audio": "Audio"}
-ROLE_LABEL = {
-    "base": "Texture",
-    "albedo": "Albedo",
-    "normal": "Normal",
-    "smoothness": "Smoothness",
-    "metallic": "Metallic",
-    "height": "Height",
-    "ao": "AO",
-    "edge": "Edge",
-}
 _PRIMARY_ROLES = frozenset({"base", "albedo"})
 _SECONDARY_MODELS = frozenset({"model/obj"})
 _LOADING = {

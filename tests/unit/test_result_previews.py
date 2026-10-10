@@ -25,6 +25,7 @@ from scenario.core.audio_waveform import EnvelopeBuilder, WaveformCanceled, Wave
 from scenario.core.jobs import result_previews as previews
 from scenario.core.jobs import transfers
 from scenario.core.jobs.coordinator import JobCoordinator
+from scenario.core.jobs.result_metadata import TEXTURE_ROLES, texture_role
 from scenario.core.jobs.results import ResultError
 from scenario.core.jobs.store import (
     JobIntent,
@@ -266,6 +267,14 @@ def test_preview_kinds_and_default_renditions():
     assert previews.renditions(None) == ()
     assert previews.is_local("image", STILL) and previews.is_local("audio", ENVELOPE)
     assert not previews.is_local("video", STILL)
+
+
+def test_every_texture_role_has_a_caption_label():
+    # A role without a label would caption its map with the kind's "Image".
+    assert set(previews.ROLE_LABEL) == TEXTURE_ROLES
+    assert all(isinstance(label, str) and label for label in previews.ROLE_LABEL.values())
+    record = {"mimeType": "image/png", "metadata": {"type": "3d-texture-roughness"}}
+    assert previews.ROLE_LABEL[texture_role(record)] == "Roughness"
 
 
 def test_key_binds_scope_request_asset_and_receipt(env):

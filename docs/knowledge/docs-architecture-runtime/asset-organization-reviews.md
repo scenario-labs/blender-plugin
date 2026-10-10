@@ -17,9 +17,9 @@
       "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
       "scenario/blender/job_session.py": "e2e6533c21e38805235a9929c8725445dfca9abbe14f085ddf73c1d3bfc9ef42",
       "scenario/blender/runtime.py": "33d32a4f1f672715f6caf752a44ab11f2bb44c3b5e15aa8ad50cba5c0242659e",
-      "scenario/mcp/tools_scenario.py": "aaf9b83134f6367f096b1205c5cb4cfffdbd53ba6a33d2630f1d32650d92d593",
+      "scenario/mcp/tools_scenario.py": "79d6bfc51b06fba53b870739220068822ae4df0aac3c45d4d68b755794d34356",
       "tests/blender/test_organization_session.py": "a1b663c4e83c3028696c5ae64f06596aff85e78de5d7670d2e2a1323124de346",
-      "tests/blender/test_asset_organization.py": "3d4e5c2d92b5c07941e546ddd9bcbb985c54f0296aba86e7de32fc1a73132fca"
+      "tests/blender/test_asset_organization.py": "bf758ad6d9dd86af04b173e4e4eec85ffc9f708e7be4205bae9039201d593269"
     }
   }
 }

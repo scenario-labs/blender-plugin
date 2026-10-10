@@ -518,14 +518,17 @@ coercing them, and the description carries no scope or credential identity.
 The Image and Render Image forms use the owner through
 [`trained_defaults`](../scenario/blender/trained_defaults.py) on the main thread
 ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)). It reads each
-lane's state once per owner `context_id` into a cache that drawing only reads;
-**Save** and **Clear** pass the `context_id` and revision drawn on their buttons,
-so a stale or foreign review is refused and the cache is read again. Only `stack`
-and `composition` defaults are written. A form with no explicit choice in the
-scope takes its lane default once the routes check against fresh descriptions;
-otherwise its price stays blocked with the reason, never falling back to the base
-model. An unreadable row is reported for its lane and left unchanged. Local MCP
-tools do not read or write defaults yet.
+lane's state once per owner `context_id` into a cache that drawing only reads, so
+a default another Blender session saves later is read after the selection changes
+or a write is refused. **Save** and **Clear** pass the `context_id` and revision
+drawn on their buttons, so a stale or foreign review is refused and the cache is
+read again. Only `stack` and `composition` defaults are written. A form with no
+explicit choice in the scope takes its lane default once the routes check against
+fresh descriptions and the form lists its base; otherwise its price stays blocked
+with the reason, never falling back to the base model. An unreadable row is
+reported for its lane and left unchanged. Local MCP has no tool to read, save or
+clear defaults yet; `render_form` inspection and render quotes apply a Render
+Image form's default the way the GUI pump does.
 
 ### Upgrade from schema 9
 

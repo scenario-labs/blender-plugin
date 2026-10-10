@@ -434,9 +434,9 @@ a project default is checked with the same `apply` against the selected
 connection's descriptions and trained list before it changes a form. When a
 form's default names a base whose description is not loaded yet, the existing
 model-description read loads it (`SDKAdapter.model`,
-`models.with_raw_response.retrieve` with the selected project), once at a time and
-not again after a recorded failure; the quote then reads every chosen model again
-as above. Defaults live in the local job store, not in the service.
+`models.with_raw_response.retrieve` with the selected project), at most once per
+base and selection, never while one is pending and not again after a recorded
+failure; the quote then reads every chosen model again as above. Defaults live in the local job store, not in the service.
 
 Every call here is an existing public SDK 2.2.0 method; there is no new SDK method,
 raw fallback, SDK extension, SDK issue or dependency change. Offline and installed

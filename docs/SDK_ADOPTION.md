@@ -216,7 +216,9 @@ amplification. `SDKAdapter.model` raises `AdapterUnavailable` for HTTP 403 or
 404 with fixed text that names the status, and `SDKCatalog` keeps that status
 on its `ScenarioError`. Form and MCP description reads show that text. The job
 coordinator's metadata and quote reads call `SDKAdapter.model` directly and
-receive the same text as an `AdapterError`.
+receive the same text as an `AdapterError`, except a quote's reads of the models
+a request names, which report a `RouteQuoteError` (see
+[trained-model routes](#trained-model-routes)).
 
 Every operation here is a public SDK 2.2.0 method, so there is no raw fallback,
 SDK issue or dependency change. Offline transport tests establish serialization,
@@ -278,18 +280,18 @@ What the reads show:
 - Composition concepts are LoRA IDs with scales between 0 and 1. A concept LoRA
   that is not in the public list was still readable by ID.
 
-The service's answers to validation probes on FLUX.1 Dev, compared with today's
-shared form preparation (`forms.prepare_run`) on the captured schema:
+The service's answers to validation probes on FLUX.1 Dev, compared with what
+the client now does before quoting (see [trained-model routes](#trained-model-routes)):
 
-| Probe | Service dry run | `prepare_run` |
+| Probe | Service dry run | Client before quoting |
 | --- | --- | --- |
-| LoRA type outside `modelTypes`, or a composition in `loras` | HTTP 400 naming the model and the allowed types | Accepts |
-| Unknown model ID | HTTP 404 | Accepts |
-| 7 LoRAs where 6 are allowed | HTTP 400 | Rejects |
-| Strength 3 where the maximum is 2 | HTTP 400 | Rejects |
-| Strength -0.5 where the minimum is 0 | Accepted | Rejects |
-| Two LoRAs with one strength | Accepted | Rejects |
-| LoRAs without `lorasScale` | Accepted; the strength the service then applies is unknown | Accepts and adds none |
+| LoRA type outside `modelTypes`, or a composition in `loras` | HTTP 400 naming the model and the allowed types | Refuses after a fresh read |
+| Unknown model ID | HTTP 404 | Refuses after a fresh read |
+| 7 LoRAs where 6 are allowed | HTTP 400 | Refuses |
+| Strength 3 where the maximum is 2 | HTTP 400 | Refuses |
+| Strength -0.5 where the minimum is 0 | Accepted | Refuses |
+| Two LoRAs with one strength | Accepted | Refuses |
+| LoRAs without `lorasScale` | Accepted; the strength the service then applies is unknown | Refuses: no base declares a default strength |
 
 LoRA and composition selections did not change the FLUX.1 Dev quote, whose
 `loras` input declares `costImpact: false`; the Kontext LoRA raised the Kontext
@@ -301,13 +303,84 @@ same price as the minimal request, after adding the schema defaults.
 For [#97](https://github.com/scenario-labs/blender-plugin/issues/97), routing
 may therefore offer LoRA stacks and single LoRAs through a base model's
 `lorasComponent`, and compositions through its `modelIdInput`. Direct trained
-IDs stay disabled and the `estimate_model` gate is unchanged. Client checks must
-cover model types, existence, the strength minimum and strength alignment, which
-the service does not all enforce, and a missing strength needs an explicit
-policy because no default is declared. A dry run is not a paid run: result
-quality, how the service combines `modelId` with `loras` (the schema text says
-`loras` overrides a composition's LoRAs) and private-model behavior remain
-unverified.
+IDs stay disabled and the `estimate_model` gate is unchanged. The service does
+not enforce model types, existence, the strength minimum or strength alignment
+in every case, and no base declares a default strength;
+[trained-model routes](#trained-model-routes) records the client policy. A dry
+run is not a paid run: result quality, how the service combines `modelId` with
+`loras` (the schema text says `loras` overrides a composition's LoRAs) and
+private-model behavior remain unverified.
+
+## Trained-model routes
+
+[trained_routes](../scenario/core/api/trained_routes.py) derives every route
+from the base model's own REST record: `uiConfig.lorasComponent` names the
+inputs, and their `modelTypes`, `maxLength`/`minLength` and scale `min`, `max`
+and `default` bound the selection. Nothing comes from model names, remote-MCP
+`run_with` metadata or a type table. The route kinds are the ones the
+[captured dry runs](#trained-model-rest-contracts) accepted:
+
+| Route | Payload | Client policy |
+| --- | --- | --- |
+| Stack | LoRA IDs in `modelInput`, one strength each in `scaleInput` | Every type in `modelInput.modelTypes`, within the item limits, each LoRA once, one strength per LoRA within the declared bounds |
+| Composition | One composition ID in `modelIdInput` | Alone, without `modelInput`; its type in `modelIdInput.modelTypes`; each concept LoRA readable, trained and in `modelInput.modelTypes` |
+
+Policies where the client is stricter than the captured service answers:
+
+- **No invented strength.** A LoRA without a strength takes the scale input's
+  declared default, or the request is refused with "provide a strength for each
+  LoRA". The former 1.0 fallback in `forms.prepare_run` is removed. No captured
+  base declares a default.
+- **A LoRA in `modelIdInput` is refused.** The service accepts it, but then
+  applies a strength nobody chose; the message asks for the LoRA in the stack
+  with a strength.
+- **No composition with a stack.** The service accepts both, but its schema
+  says `loras` overrides the composition's own LoRAs.
+- **Direct trained IDs stay refused.** `SDKAdapter.estimate_model` still
+  refuses a trained target, as the captured HTTP 400 answers require.
+
+`forms.prepare_run` reads the LoRA inputs only from `uiConfig.lorasComponent`,
+which `SDKAdapter` now passes with each model or workflow schema
+(`forms.record_schema`). A malformed component refuses only a request that sets
+a model or number-array input, so a changed LoRA slot cannot block ordinary
+generations. A selection made only by schema defaults, including a default a
+form echoes back, is the service's own and is left unchanged. `SDKAdapter.prepare_model` and `prepare_workflow` return the
+exact target and payload that `estimate_model` and `estimate_workflow` would
+quote, without a request.
+
+Before any dry run, `JobCoordinator._quote` prepares the payload, then reads
+every model the caller chose in a `model` or `model_array` input (a value other
+than empty or the schema default) again with `SDKAdapter.model` (`models.with_raw_response.retrieve`, selected
+project in the query), composition concepts included. Reads are sequential,
+deduplicated and bounded at 16 per quote, and the scene origin is rechecked
+before each one. A deleted or inaccessible model (`AdapterUnavailable`, HTTP 403
+or 404), an untrained one, a type the input does not accept, a LoRA in
+`modelIdInput`, a composition whose concept LoRAs the stack would not accept,
+or a strength policy failure raises `RouteQuoteError`, a `QuoteError`. So does
+a chosen model in an input whose declared `modelTypes` is malformed, before any
+reference read, rather than accepting every type. Item limits and strength
+bounds stay form validation errors, as before. Nothing is
+quoted, dispatched or persisted. Model and workflow quotes get the same
+check; workflow `lorasComponent` inputs have no captured contract, so the check
+only restricts them. The coordinator then quotes as before and refuses the
+quote if its target or payload differs from the checked one. The durable intent
+keeps the base model as target, and its payload hash covers the LoRA IDs,
+strengths and composition ID.
+
+`RouteQuoteError` text names input labels and positions, such as "Flux LoRA [2]
+is not available to the selected credentials or project (HTTP 404)", never a
+model ID, name or service reply. The sidebar estimate status shows it instead of
+the generic price error, and local MCP `estimate_cost` returns it as the tool
+error. `apply`, `compatibility` and `compatible_bases` build and explain
+selections for later picker, sidebar and MCP surfaces; no surface lists trained
+models or offers strength controls yet.
+
+Every call here is an existing public SDK 2.2.0 method; there is no raw
+fallback, SDK extension, SDK issue or dependency change. Offline tests compare
+the policy with every captured dry run and exercise the coordinator through the
+real SDK and a socket-free `MockTransport`. Private LoRAs and compositions, paid
+results, the Z-Image and Qwen slots and workflow LoRA inputs remain unverified
+against the service.
 
 ## Model acceptance commands
 
@@ -608,8 +681,9 @@ neither mechanism grants spending authorization. Online permission is
 checked before every request, including every catalog page. Blender callers must
 supply a predicate reflecting their actual online-access permission.
 
-Custom-model records must explicitly declare `type=custom`; trained-model
-routing remains unavailable until its REST schema contract is established.
+Custom-model records must explicitly declare `type=custom`; a trained model is
+never the quoted target and runs only through a base model's
+[trained-model routes](#trained-model-routes).
 The adapter uses the same pure payload preparation as form callers: validate
 explicit input types first, merge actual defaults and mandatory routing, then
 validate the final values and each conditional/either-or clause. Overlapping
@@ -623,11 +697,13 @@ model descriptions can still render. Strict form preparation and SDK estimation
 reject those schemas before dispatch; known sibling relationships remain enforced
 in both paths.
 
-The pure LoRA/composition routing helper retains required base-model wiring and
-existing scale alignment behavior. Its sanitized remote-MCP projection and
-synthetic composition tests do not establish REST routing, universal strength
-bounds, catalog discovery, model selection UI or paid execution. Remote-MCP
-`run_with` metadata is not silently assumed to exist in REST. Upload/job dependency contracts
+The pure LoRA/composition routing helper retains required base-model wiring for
+its synthetic remote-MCP tests; strengths follow the policy in
+[trained-model routes](#trained-model-routes), so a wired LoRA without one is
+refused rather than given 1.0. That projection and its composition tests do not
+establish REST routing, catalog discovery, model selection UI or paid
+execution. Remote-MCP `run_with` metadata is not silently assumed to exist in
+REST. Upload/job dependency contracts
 are mapped above; multipart metadata commands use the adapter as described in
 [SDK_UPLOADS.md](SDK_UPLOADS.md). Signed result downloads have a standalone
 [transport primitive](RESULT_TRANSFERS.md). Upload byte transfer, durable claims,

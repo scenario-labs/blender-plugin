@@ -27,6 +27,7 @@ class SDKEstimateTests(unittest.TestCase):
         self.manager = self.enterContext(isolated_manager())
         self.addCleanup(self.runtime.state.reset)
         self.calls = []
+        self.trained = {}
         self.expected_project = None
         self.response = b'{"creativeUnitsCost":1.1234567890123456789,"costDetails":{"base":1.25,"nested":{"parts":[0.5,2]}}}'
         self.model = {
@@ -43,6 +44,11 @@ class SDKEstimateTests(unittest.TestCase):
             self.calls.append(request)
             self.assertEqual(request.url.params.get("projectId"), self.expected_project)
             if request.method == "GET":
+                model_id = request.url.path.rsplit("/", 1)[1]
+                if model_id in self.trained:
+                    return httpx.Response(200, json={"model": self.trained[model_id]})
+                if model_id != self.model["id"]:
+                    return httpx.Response(404, json={"reason": "not found"})
                 return httpx.Response(200, json={"model": self.model})
             expected = {"dryRun": "true"}
             if self.expected_project is not None:
@@ -259,3 +265,112 @@ class SDKEstimateTests(unittest.TestCase):
         self.deliver()
         self.assertFalse(self.runtime.state.estimates)
         self.assertFalse(self.runtime.state.estimate_origins)
+
+    def use_lora_base(self):
+        """A base whose REST schema declares LoRA inputs, shaped like the captured FLUX.1 Dev."""
+        self.model = {
+            **self.model,
+            "inputs": [
+                *self.model["inputs"],
+                {
+                    "name": "modelId",
+                    "label": "LoRA or Composition Model",
+                    "type": "model",
+                    "modelTypes": ["flux.1-lora", "flux.1-composition"],
+                    "default": "",
+                },
+                {
+                    "name": "loras",
+                    "label": "Flux LoRA",
+                    "type": "model_array",
+                    "modelTypes": ["flux.1-lora"],
+                    "maxLength": 6,
+                    "default": [],
+                },
+                {
+                    "name": "lorasScale",
+                    "label": "LoRA Scale",
+                    "type": "number_array",
+                    "min": 0,
+                    "max": 2,
+                },
+            ],
+            "uiConfig": {
+                "lorasComponent": {
+                    "label": "Model",
+                    "modelInput": "loras",
+                    "scaleInput": "lorasScale",
+                    "modelIdInput": "modelId",
+                }
+            },
+        }
+        record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([record], [record])
+        self.trained["fixture-lora"] = {
+            "id": "fixture-lora",
+            "type": "flux.1-lora",
+            "status": "trained",
+        }
+
+    def test_a_refused_lora_shows_its_reason_without_pricing_in_ui_and_mcp(self):
+        self.use_lora_base()
+        reason = "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
+        item = self.lane.params["modelId"]
+        item.enabled = True
+        item.str_value = "fixture-lora"
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        self.assertEqual(self.lane.estimate_error, reason)
+        self.assertFalse(self.runtime.state.estimates)
+        registry = submodule("blender.mcp_service").build_registry()
+        server = submodule("mcp.server").McpServer(
+            "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
+        )
+        message = {
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "estimate_cost",
+                "arguments": {
+                    "model_id": self.model["id"],
+                    "parameters": {"prompt": "a teapot", "modelId": "fixture-lora"},
+                },
+            },
+        }
+        with ThreadPoolExecutor(max_workers=1) as worker:
+            result = worker.submit(server.handle, message)
+            deadline = time.monotonic() + 5
+            while not result.done() and time.monotonic() < deadline:
+                server.process_pending()
+                time.sleep(0.001)
+            response = result.result(1)
+        self.assertTrue(response["result"]["isError"], response)
+        self.assertIn(f"RouteQuoteError: {reason}", response["result"]["content"][0]["text"])
+        self.assertFalse([call for call in self.calls if call.method == "POST"])
+        # Each quote read the base and the referenced model, then stopped.
+        self.assertEqual(
+            [call.url.path.rsplit("/", 1)[1] for call in self.calls],
+            ["fixture-price", "fixture-lora"] * 2,
+        )
+
+    def test_a_missing_model_is_explained_and_other_failures_stay_generic(self):
+        self.use_lora_base()
+        item = self.lane.params["modelId"]
+        item.enabled = True
+        item.str_value = "fixture-missing"
+        self.response = b"{}"
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        self.assertEqual(
+            self.lane.estimate_error,
+            "LoRA or Composition Model is not available to the selected credentials or project "
+            "(HTTP 404). Remove it or choose another model.",
+        )
+        del self.trained["fixture-lora"]
+        item.str_value = ""
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "ERROR")
+        self.assertEqual(self.lane.estimate_error, "Could not confirm this price; estimate again")

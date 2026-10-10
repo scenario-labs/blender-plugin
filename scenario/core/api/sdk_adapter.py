@@ -19,7 +19,7 @@ from decimal import Decimal
 from urllib.parse import urlsplit
 from weakref import WeakValueDictionary
 
-from ..schema.forms import prepare_run
+from ..schema.forms import prepare_run, record_schema
 from .sdk_extensions import SDKResourceExtensions
 from .user_agent import user_agent_string
 
@@ -181,9 +181,14 @@ def _upload_record(raw, identifier=None):
     return record
 
 
-def _prepare(identifier, fields, parameters):
-    """Use the shared pure form preparation and conditional requirements."""
-    return prepare_run(identifier, {"parameters": fields}, parameters)
+def _prepare(operation, record, parameters):
+    """Use the shared pure form preparation, conditional requirements and LoRA inputs.
+
+    The schema carries the record's `uiConfig`, so `lorasComponent` names the
+    LoRA inputs and their strength policy applies.
+    """
+    identifier = _identifier(record.get("id"))
+    return prepare_run(identifier, record_schema(operation, record), parameters)
 
 
 def _client(credentials, base_url, timeout, transport):
@@ -749,23 +754,26 @@ class SDKAdapter:
     def workflows(self, *, privacy="private", max_pages=100):
         return self._catalog("workflows", privacy, max_pages)
 
-    def estimate_model(self, model, parameters):
+    def prepare_model(self, model, parameters):
+        """Return the exact (target, payload) `estimate_model` would quote; no request.
+
+        A trained record is never a target: captured dry runs reject
+        /generate/custom/{trainedId}, so LoRAs and compositions run only
+        through a base model's `lorasComponent` inputs.
+        """
         if model.get("type") != "custom" or model.get("parentModelId") or model.get("runs_as"):
             raise ValueError("Trained-model routing requires a verified REST schema contract")
-        identifier = _identifier(model.get("id"))
-        fields = model.get("inputs")
-        if fields is None:
-            fields = model.get("parameters")
-        target, payload = _prepare(identifier, fields, parameters)
-        return self._estimate("model", target, payload)
+        return _prepare("model", model, parameters)
+
+    def prepare_workflow(self, workflow, parameters):
+        """Return the exact (target, payload) `estimate_workflow` would quote; no request."""
+        return _prepare("workflow", workflow, parameters)
+
+    def estimate_model(self, model, parameters):
+        return self._estimate("model", *self.prepare_model(model, parameters))
 
     def estimate_workflow(self, workflow, parameters):
-        identifier = _identifier(workflow.get("id"))
-        fields = workflow.get("inputs_definition")
-        if fields is None:
-            fields = workflow.get("inputs")
-        target, payload = _prepare(identifier, fields, parameters)
-        return self._estimate("workflow", target, payload)
+        return self._estimate("workflow", *self.prepare_workflow(workflow, parameters))
 
     def estimate_prompt(self, parameters):
         """Quote a bounded Prompt Spark request through the public SDK method.

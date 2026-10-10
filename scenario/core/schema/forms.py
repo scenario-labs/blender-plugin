@@ -7,10 +7,94 @@ from __future__ import annotations
 import math
 import re
 from copy import deepcopy
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
 from .params import parse_schema, validate_requirements
+
+
+class RouteError(ValueError):
+    """A LoRA or composition selection that cannot run, with safe, actionable text.
+
+    The text names schema labels and positions only: never a model ID, model
+    name, service reply or URL.
+    """
+
+
+_COMPONENT_CHANGED = (
+    "This model's LoRA inputs changed or are malformed. Refresh the model and choose its "
+    "LoRAs again."
+)
+
+
+@dataclass(frozen=True)
+class LoraComponent:
+    """Input names a REST schema declares in `uiConfig.lorasComponent`."""
+
+    label: str
+    model_input: str
+    scale_input: str
+    model_id_input: str | None = None
+
+    @property
+    def names(self):
+        return tuple(
+            name for name in (self.model_input, self.scale_input, self.model_id_input) if name
+        )
+
+
+def lora_component(schema: dict[str, Any]) -> LoraComponent | None:
+    """Return the schema's declared LoRA inputs, or None when it declares none.
+
+    Only `uiConfig.lorasComponent` names LoRA inputs; no input is recognized
+    by its name. `modelInput` must name a `model_array` input, `scaleInput` a
+    `number_array` input and the optional `modelIdInput` a `model` input.
+    Raises RouteError for a malformed component.
+    """
+    ui = schema.get("uiConfig") if isinstance(schema, dict) else None
+    raw = ui.get("lorasComponent") if isinstance(ui, dict) else None
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise RouteError(_COMPONENT_CHANGED)
+    types = {field["name"]: field.get("type") for field in _fields(schema)}
+    expected = [(raw.get("modelInput"), "model_array"), (raw.get("scaleInput"), "number_array")]
+    if raw.get("modelIdInput") is not None:
+        expected.append((raw.get("modelIdInput"), "model"))
+    for name, kind in expected:
+        if not isinstance(name, str) or not name or types.get(name) != kind:
+            raise RouteError(_COMPONENT_CHANGED)
+    if len({name for name, _ in expected}) != len(expected):
+        raise RouteError(_COMPONENT_CHANGED)
+    label = raw.get("label")
+    return LoraComponent(
+        label.strip() if isinstance(label, str) and label.strip() else "LoRAs",
+        raw["modelInput"],
+        raw["scaleInput"],
+        raw.get("modelIdInput"),
+    )
+
+
+def record_schema(operation: str, record: dict[str, Any]) -> dict[str, Any]:
+    """The form schema of one REST model or workflow record: inputs and uiConfig.
+
+    Models keep `inputs` (or the older `parameters`); workflows keep
+    `inputs_definition` (or `inputs`). A missing list stays None so form
+    preparation reports it.
+    """
+    if not isinstance(record, dict):
+        raise ValueError("A current input schema is required")
+    if operation == "model":
+        primary, fallback = "inputs", "parameters"
+    elif operation == "workflow":
+        primary, fallback = "inputs_definition", "inputs"
+    else:
+        raise ValueError("Unsupported generation operation")
+    fields = record.get(primary)
+    if fields is None:
+        fields = record.get(fallback)
+    return {"parameters": fields, "uiConfig": record.get("uiConfig")}
 
 
 def display_label(name: str) -> str:
@@ -352,10 +436,113 @@ def _route(model_id, schema):
     return _model_identity(arguments.get("model_id", model_id)), arguments
 
 
+def _finite_number(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _label(field):
+    return str(field.get("label") or display_label(field["name"]))
+
+
+def chosen_inputs(schema: dict[str, Any], parameters: dict[str, Any]) -> set[str]:
+    """Names the caller set to a value other than empty or the schema's own default.
+
+    A form may echo declared defaults back as parameters; those values remain
+    the service's own choice, like the defaults form preparation adds.
+    """
+    fields = {field["name"]: field for field in _fields(schema)}
+    return {
+        name
+        for name, value in parameters.items()
+        if not _empty(value)
+        and not (name in fields and "default" in fields[name] and value == fields[name]["default"])
+    }
+
+
+def _component_in_use(schema, parameters):
+    """Whether the caller chose any input a malformed LoRA component could name."""
+    chosen = chosen_inputs(schema, parameters)
+    return any(
+        field["name"] in chosen and field.get("type") in {"model", "model_array", "number_array"}
+        for field in _fields(schema)
+    )
+
+
+def _align_lora_scales(component, fields, selected, values):
+    """Apply the strength policy to a LoRA selection named by `selected` inputs.
+
+    `selected` holds the caller's chosen parameters plus any mandatory wiring.
+    A selection supplied only by schema defaults, added here or echoed by a
+    form, is the service's own and is left unchanged. No strength is invented:
+    a LoRA without a strength takes the scale input's declared default, or the
+    request is refused.
+    """
+    if not any(name in selected for name in component.names):
+        return
+    model, scale = fields[component.model_input], fields[component.scale_input]
+    loras = values.get(component.model_input, [])
+    if component.model_id_input and not _empty(values.get(component.model_id_input)) and loras:
+        raise RouteError(
+            f"Use {_label(fields[component.model_id_input])} on its own, or remove it to stack "
+            f"{_label(model)} with strengths."
+        )
+    if not isinstance(loras, list) or any(not isinstance(item, str) for item in loras):
+        return  # Final validation reports the malformed value.
+    scales = selected.get(component.scale_input)
+    if not loras:
+        if isinstance(scales, list) and scales:
+            raise RouteError(
+                f"{_label(scale)}: choose a LoRA in {_label(model)} for each strength."
+            )
+        return
+    chosen = selected.get(component.model_input)
+    # Merging mandatory wiring drops repeats, so check the caller's own list too.
+    repeated = (
+        isinstance(chosen, list)
+        and all(isinstance(item, str) for item in chosen)
+        and len(set(chosen)) != len(chosen)
+    )
+    if repeated or len(set(loras)) != len(loras):
+        raise RouteError(f"{_label(model)}: choose each LoRA once.")
+    default = scale.get("default")
+    per_item = default if _finite_number(default) else None
+    missing = RouteError(f"{_label(scale)}: provide a strength for each LoRA in {_label(model)}.")
+    if scales is None:
+        if isinstance(default, list) and len(default) == len(loras):
+            # An empty caller value may have replaced the copied default.
+            values[component.scale_input] = deepcopy(default)
+            return
+        if per_item is None:
+            raise missing
+        values[component.scale_input] = [per_item] * len(loras)
+        return
+    if not isinstance(scales, list):
+        return  # Final validation reports the malformed value.
+    mismatch = RouteError(
+        f"{_label(scale)}: provide one strength for each LoRA in {_label(model)}."
+    )
+    if isinstance(chosen, list) and chosen and chosen != loras:
+        # Mandatory wiring added LoRAs: align the caller's strengths by LoRA.
+        if len(scales) != len(chosen):
+            raise mismatch
+        by_id = dict(zip(chosen, scales, strict=True))
+        if any(item not in by_id for item in loras) and per_item is None:
+            raise missing
+        values[component.scale_input] = [by_id.get(item, per_item) for item in loras]
+    elif len(scales) != len(loras):
+        raise mismatch
+
+
 def prepare_run(
     model_id: str, schema: dict[str, Any], parameters: dict[str, Any]
 ) -> tuple[str, dict[str, Any]]:
-    """Validate form values and preserve mandatory LoRA/composition call wiring."""
+    """Validate form values and preserve mandatory LoRA/composition call wiring.
+
+    LoRA inputs are the ones the schema's `uiConfig.lorasComponent` names. A
+    LoRA selection needs one strength per LoRA, or the scale input's declared
+    default, and cannot be combined with a model in `modelIdInput`. A malformed
+    component refuses only a request that sets a model or number-array input.
+    """
     target, arguments = _route(model_id, schema)
     # Check explicit user values before merging so invalid arrays cannot be
     # silently replaced. Defaults and mandatory wiring may supply missing fields;
@@ -363,25 +550,28 @@ def prepare_run(
     errors = _parameter_errors(schema, parameters, complete=False)
     if errors:
         raise ValueError("\n".join(errors))
+    try:
+        component = lora_component(schema)
+    except RouteError:
+        if _component_in_use(schema, parameters):
+            raise
+        component = None
+    fields = {field["name"]: field for field in _form_fields(schema)[0]}
     values = schema_defaults(schema)
     values.update(deepcopy(parameters))
-    for field in _form_fields(schema)[0]:
-        name = field["name"]
+    for name, field in fields.items():
         if name in values and _optional_omitted(field, values[name]):
             values.pop(name)
     required = arguments.get("parameters", {})
-    original_loras = values.get("loras", [])
-    original_scales = values.get("lorasScale")
     if isinstance(required, dict):
         values = _merge_wiring(values, required)
-    if isinstance(original_loras, list) and isinstance(original_scales, list) and "loras" in values:
-        if not original_loras and len(original_scales) == len(values["loras"]):
-            values["lorasScale"] = original_scales
-        elif len(original_scales) != len(original_loras):
-            raise ValueError("LoRA scales: provide one weight for each supplied LoRA.")
-        else:
-            scale_by_id = dict(zip(original_loras, original_scales, strict=False))
-            values["lorasScale"] = [scale_by_id.get(item, 1.0) for item in values["loras"]]
+    if component is not None:
+        # Mandatory wiring selects too; the caller's own values take precedence so
+        # the caller's strengths stay aligned with the caller's LoRAs.
+        chosen = chosen_inputs(schema, parameters)
+        selected = dict(required) if isinstance(required, dict) else {}
+        selected.update((name, value) for name, value in parameters.items() if name in chosen)
+        _align_lora_scales(component, fields, selected, values)
     errors = validate_parameters(schema, values)
     if errors:
         raise ValueError("\n".join(errors))

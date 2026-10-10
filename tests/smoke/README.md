@@ -5,8 +5,9 @@ store and result transfers as the adopted runtime. The former Image, Material,
 Video and image-to-3D entry points now share one quote/submit/resume implementation.
 The generic entry point also supports audio. No smoke runs in ordinary tests or
 PR CI. The aggregate suite and protected workflow below implement the shared
-budget path for [#40](https://github.com/scenario-labs/blender-plugin/issues/40);
-environment setup and authorized hosted/live acceptance remain pending.
+budget path for [#40](https://github.com/scenario-labs/blender-plugin/issues/40),
+including a [monthly plan](#monthly-plan) with a fixed total cap. Live
+reference-upload and monthly-run acceptance remain pending.
 
 These commands verify service round-trips and saved result receipts. They do not
 establish native UI/MCP interaction, scene application, playback quality, Film
@@ -333,16 +334,59 @@ The paid job waits for the `smoke` environment approval, then reads that policy
 again before using any Scenario credential. An API error fails closed.
 
 Configure the [maintainer prerequisites](../../docs/MAINTAINERS.md#smoke-lane)
-first. Manual dispatch requires `max_cu`; its default is zero and fails before
-execution. Monthly dispatch uses the repository variable `SMOKE_MAX_TOTAL_CU`;
-missing or zero also fails. Admission validates and freezes the cap into a job
-output. The approval job name and execution use that same value, so environment
-variables cannot change it after review. Approving means authorizing the private
-plan, configured test scope and displayed total cap, including the exact input
-files/hashes when using version 2. Hosted input paths are relative to the checked-out
-repository; use reviewed fixtures and preserve their licenses. Decline if these
-inputs or authorization are unclear.
+first. Admission validates one plan and one total cap and freezes both into job
+outputs. The approval job name shows them, and execution uses those same values,
+so later inputs or environment variables cannot change them after review:
+
+- The monthly schedule always runs the [committed monthly plan](#monthly-plan)
+  with the fixed 40 CU total cap, `MONTHLY_MAX_CU` in `tools/smoke_ci.py`. It
+  reads no dispatch input or repository variable; changing the plan or the cap
+  takes a reviewed commit.
+- A manual dispatch chooses `plan`: `monthly` (the default) or `private`, the
+  `SMOKE_PLAN_JSON` environment secret. Its `max_cu` defaults to `40`; a zero,
+  empty or malformed cap fails before execution. Only a `private` dispatch
+  receives the private plan secret.
+
+Approving means authorizing the displayed plan, the configured test scope and the
+displayed total cap, including the exact input files/hashes of a version-2 plan.
+`budget-run` quotes every case before the first submission; when the exact total
+exceeds the cap, it exits 3 and submits nothing. Hosted input paths are relative
+to the checked-out repository; use reviewed fixtures and preserve their licenses.
+Decline if these inputs or authorization are unclear.
 The job never prints the plan, account/project, asset/job IDs or raw exceptions.
+
+### Monthly plan
+
+[`monthly-plan.json`](monthly-plan.json) is a public version-2 plan for the test
+key's default scope (`project_id` is `null`). It holds no asset or project ID,
+and the schedule needs no private plan secret. It keeps one image case and adds
+the cheapest checks that still cover the upload and download paths:
+
+| Case | Model and size | Covers |
+| --- | --- | --- |
+| `image` | `model_google-gemini-3-1-flash`, 512, one output | Upload of the committed reference image, then image generation and download |
+| `material` | `model_patina-material`, 512 x 512, all five maps | Multi-file texture download and every map-role check |
+| `audio` | `model_google-gemini-3-8-flash-lite-tts`, one short sentence | Audio download and the audio media-type check |
+
+Video and 3D stay in the private plan: the private plan's current video and 3D
+cases each quote above the monthly cap, so its dispatch needs an explicit higher
+`max_cu`.
+
+Each run uploads the reference image again before quoting. Uploads spend no CU,
+but every run leaves one imported asset in the test scope. If the reference file
+is missing or its bytes differ from the recorded digest, input preparation stops
+before any upload, quote or submission. A configured `SCENARIO_TEST_PROJECT_ID`
+does not match the plan's `null` project, so the run also stops before any
+service request; keep the default scope or commit a matching plan.
+
+When a price change pushes the exact total above 40 CU, the monthly run exits 3
+and submits nothing. Re-quote the plan with the
+[reference input commands](#prepare-reference-inputs), which never submit, then
+trim a case or raise `MONTHLY_MAX_CU` in a reviewed change. The cap applies per
+run. Manual dispatches are separate authorizations and share no monthly ledger,
+and the workflow configures no provider-side project budget. GitHub disables a
+public repository's schedules after 60 days without activity; re-enable the
+workflow from the Actions tab.
 
 Before any service request, GnuPG must encrypt and decrypt a test file using a
 private temporary home. The workflow preserves only `smoke-recovery.gpg`, an

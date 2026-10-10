@@ -1,0 +1,58 @@
+{
+  "schema_version": 2,
+  "project_id": null,
+  "inputs": [
+    {
+      "name": "reference",
+      "file": "tests/fixtures/synthetic/reference-toadstool-512.png",
+      "sha256": "b70e8debff0ba0fc7dd8823a9a38229600e3fd7b8f22a1a32c490b4310182e02",
+      "kind": "image",
+      "content_type": "image/png"
+    }
+  ],
+  "cases": [
+    {
+      "name": "image",
+      "result_kind": "image",
+      "model": "model_google-gemini-3-1-flash",
+      "parameters": {
+        "prompt": "Restyle this toadstool as a hand-painted watercolor illustration on a plain white background",
+        "referenceImages": [
+          {
+            "$input": "reference"
+          }
+        ],
+        "aspectRatio": "1:1",
+        "resolution": "512",
+        "numOutputs": 1
+      }
+    },
+    {
+      "name": "material",
+      "result_kind": "material",
+      "model": "model_patina-material",
+      "parameters": {
+        "prompt": "A seamless matte blue ceramic tile material",
+        "enablePromptExpansion": false,
+        "width": 512,
+        "height": 512,
+        "maps": [
+          "basecolor",
+          "normal",
+          "roughness",
+          "metalness",
+          "height"
+        ]
+      }
+    },
+    {
+      "name": "audio",
+      "result_kind": "audio",
+      "model": "model_google-gemini-3-8-flash-lite-tts",
+      "parameters": {
+        "text": "Monthly smoke check.",
+        "language": "en-US"
+      }
+    }
+  ]
+}

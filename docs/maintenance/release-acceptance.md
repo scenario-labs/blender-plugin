@@ -114,9 +114,10 @@ Complete these checks on the corrected candidate before releasing:
    follow-up added and read back required `ci-ok` while preserving all other
    protections (#45), and configured the protected `smoke` environment (#40).
    The authorized five-lane hosted run and decrypted completed-result recovery
-   passed. Its version-1 plan has no new reference uploads. Scheduled spending
-   remains disabled. See the [maintainer record](../MAINTAINERS.md#smoke-lane)
-   for hosted-run evidence and the remaining scope.
+   passed. Its version-1 plan has no new reference uploads. Scheduled runs now
+   use the committed monthly plan with a fixed 40 CU cap; none has run yet. See
+   the [maintainer record](../MAINTAINERS.md#smoke-lane) for hosted-run evidence
+   and the remaining scope.
 6. Validate the actual release-please 0.10.0 artifact, then complete the published
    checksum/provenance, extension index and native HTTPS installation checks at
    their proper release stage. This 0.9.9 candidate is not a published release.
@@ -450,7 +451,7 @@ source and ZIP identities.
 | Retained lanes | Existing image, material, GLB, video and audio outputs pass native application on the current candidate; the grayscale material failure is corrected by #340. These checks do not exercise the full approval journey. | Complete integrated native capture/upload/estimate/submission/application and retained render/edit/Film checks under #68 with explicit paid authorization where needed. |
 | Recovery and switching | Synthetic tests cover lost acknowledgement, stale quotes, scope changes and application claims. | Candidate-level UI/MCP parity, cancellation/restart races and failed download/import journeys with recorded outcomes under #65/#68. |
 | GPU, motion and audio | Human motion/audio review of the existing outputs is accepted; candidate native media insertion passes. Sustained candidate playback is unverified. | Complete native rendering/playback and sustained GPU/audio stability checks under #68; preserve the bounded human review above. |
-| Paid CI | The protected `smoke` environment, maintainer reviewer, main-only policy and private secrets are configured. Zero-cap admission rejects execution; the approved hosted run produced five `READY` jobs and 16 receipt-verified files. Downloaded recovery decryption and offline resume passed without changing saved jobs. Scheduled spending remains disabled. | Reference-upload and uncertain-job acceptance remain separate from this version-1 generation/completed-result recovery plan. Provider-side monthly budgeting and recurring allowance need a separate decision under #40. |
+| Paid CI | The protected `smoke` environment, maintainer reviewer, main-only policy and private secrets are configured. Zero-cap admission rejects execution; the approved hosted run produced five `READY` jobs and 16 receipt-verified files. Downloaded recovery decryption and offline resume passed without changing saved jobs. Scheduled runs use the committed image/material/audio monthly plan with a fixed 40 CU cap. | Reference-upload, uncertain-job and first monthly-run acceptance remain separate from this version-1 generation/completed-result recovery plan. No provider-side project budget is configured. |
 | Required checks | `ci-ok`, `pr-title` and `commits` are required after the 2026-10-09 update. Readback confirms other integrity rules and the separate review ruleset are unchanged. CodeQL and code-quality protection remain enforced. A deliberately invalid title failed its required check while GitHub reported the administration PR blocked; the conventional title was restored. | Complete #45's documentation review/merge and verify the final PR checks; do not drop existing protections. |
 | Final release artifact | The current corrected 0.9.9 ZIP passes exact-artifact native application and synthetic update/restart on all three macOS Blender versions. | Validate release-please's exact 0.10.0 ZIP, licenses, provenance/checksum and extension index; exercise public native installation/update under #36/#68 and the release procedure. |
 

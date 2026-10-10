@@ -245,18 +245,23 @@ privately outside Git. Environment secrets are:
 - `SCENARIO_TEST_API_KEY` and `SCENARIO_TEST_API_SECRET`.
 - Optional `SCENARIO_TEST_PROJECT_ID`; blank is the key's default scope.
 - `SMOKE_PLAN_JSON`, following the [private suite format](../tests/smoke/README.md#one-aggregate-budget-for-a-suite).
+  Only a manual dispatch that selects the `private` plan receives it.
 - `SMOKE_RECOVERY_PASSPHRASE`, a randomly generated secret of at least 32 characters,
   retained privately for decrypting artifacts after rotation.
 
-The repository variable `SMOKE_MAX_TOTAL_CU` remains unset, so scheduled runs have
-no positive allowance and fail admission before the protected job. A manual
-validation run is separately budget-authorized; it does not enable recurring spend.
-Set that repository variable only after agreeing on the monthly
-scheduled plan and per-run aggregate allowance. It has no positive default.
+On 2026-10-10 the maintainer set the monthly allowance at 40 CU per scheduled
+run. The schedule runs the committed
+[monthly plan](../tests/smoke/README.md#monthly-plan) with that fixed cap,
+`MONTHLY_MAX_CU` in `tools/smoke_ci.py`; both change only through a reviewed
+commit. The workflow no longer reads the repository variable `SMOKE_MAX_TOTAL_CU`,
+which stays unset. A manual dispatch defaults to the monthly plan and a 40 CU cap;
+selecting the private plan, or a higher cap, is its own budget decision. API
+readback on 2026-10-10 again shows the required reviewer and exactly the `main`
+policy, so the monthly plan needs no further repository setting.
 Configure any provider-side project/monthly budget separately; the workflow's cap
 is per run, and manual runs do not share a monthly ledger. The approval job shows
-the cap frozen by admission. Review that amount and the configured private plan
-and scope before approving. Version-2 plans also authorize exact input files and
+the plan and cap frozen by admission. Review them and the configured scope before
+approving. Version-2 plans also authorize exact input files and
 hashes from the checked-out repository; the protected job stages them privately
 and uploads through shared durable commands before quoting. Approval covers
 those uploads even if model validation or the cap later prevents generation.
@@ -286,8 +291,10 @@ none of the configured secret values, saved job/asset identities or signed queri
 This version-1 plan exercises generation, polling, download and completed-result
 recovery. It does not establish version-2 reference uploads, uncertain remote-job
 recovery, Blender application, physical interaction or media-quality acceptance.
-No provider-side monthly budget was configured or recurring allowance authorized.
-Keep those remaining #40/#68 scopes separate from the completed hosted check.
+No provider-side monthly budget was configured. The 40 CU monthly allowance
+above came later and has no scheduled run yet; the first approved monthly run is
+separate acceptance. Keep those remaining #40/#68 scopes separate from the
+completed hosted check.
 
 ## Project and labels
 
@@ -332,7 +339,7 @@ These tasks retain their existing owner issues. Read back the result and update
 this guide after an authorized change; do not treat the checklist as permission
 to perform it.
 
-- [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Reference-upload acceptance and any future provider-side monthly budget/recurring allowance remain separate; scheduled spending is disabled.
+- [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Scheduled runs use the committed monthly plan with a fixed 40 CU cap. Reference-upload acceptance, the first approved monthly run and any provider-side budget remain separate.
 - [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
 - [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.

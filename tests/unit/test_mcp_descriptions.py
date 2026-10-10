@@ -24,6 +24,8 @@ EXPECTED = {
         "estimate_workflow",
         "run_workflow",
         "discard_workflow_estimate",
+        "workflow_job_steps",
+        "decide_workflow_step",
         "prepare_film_composition",
         "film_composition_review",
         "estimate_film_composition",
@@ -370,3 +372,66 @@ def test_prompt_estimates_offer_only_native_lanes_with_a_prompt_field():
     }
     assert ("blender.props", "GENERATION_LANES", "NATIVE_LANES") in imports
     assert ("core.api.catalog", "GENERATION_LANES", "LANES") in imports
+
+
+def test_workflow_step_tools_require_the_users_explicit_choice():
+    assignments, calls = specs("tools_scenario")
+    tools = {call.args[0].value: call for call in calls}
+    descriptions = {name: call.args[1].value for name, call in tools.items()}
+    decide = descriptions["decide_workflow_step"]
+    for text in (
+        "Send one decision the user explicitly chose",
+        "receiving their explicit choice; never decide automatically, by default or on the "
+        "user's behalf",
+        "Rejecting stops the workflow and is the only way to stop one",
+        "completed steps stay charged",
+        "the charge after a decision is not live-verified against the approved price",
+        "one request follows and is never retried",
+        "Never repeat an uncertain decision until the step is shown waiting again",
+        "refused before any request",
+        "outcome (applied, refused, uncertain or not_sent)",
+    ):
+        assert text in decide, text
+    steps = descriptions["workflow_job_steps"]
+    for text in ("decides nothing", "never signed URLs", "stays paused", "blocked_reason"):
+        assert text in steps, text
+    # Every other surface that mentions a waiting step points to the same tools.
+    for name in ("run_workflow", "job_status"):
+        assert "decide_workflow_step" in descriptions[name], name
+        assert "explicit choice" in descriptions[name], name
+    assert "no local MCP tool sends" not in descriptions["job_status"]
+    assert (
+        "interactive approval/selection nodes are not supported" not in descriptions["run_workflow"]
+    )
+    assert (
+        "A workflow job cannot be canceled: cancel returns an explanation and sends nothing"
+        in descriptions["recover_local_job"]
+    )
+    schema = ast.literal_eval(tools["decide_workflow_step"].args[2].args[0])
+    required = ast.literal_eval(tools["decide_workflow_step"].args[2].args[1])
+    assert required == [
+        "context_id",
+        "request_id",
+        "expected_revision",
+        "node_id",
+        "review_id",
+        "action",
+    ]
+    assert schema["action"]["enum"] == ["approve", "select", "reject"]
+    assert schema["selected_indices"]["items"] == {"type": "integer", "minimum": 0}
+    assert schema["expected_revision"] == {"type": "integer", "minimum": 0}
+    assert ast.literal_eval(tools["decide_workflow_step"].args[4]) == {"destructiveHint": True}
+    assert ast.literal_eval(tools["workflow_job_steps"].args[4]) == {"readOnlyHint": True}
+    assert ast.literal_eval(tools["workflow_job_steps"].args[2].args[1]) == [
+        "context_id",
+        "request_id",
+    ]
+
+
+def test_server_instructions_require_explicit_workflow_step_decisions():
+    from scenario.mcp.protocol import INSTRUCTIONS
+
+    assert (
+        "Decide waiting workflow steps (workflow_job_steps, decide_workflow_step) only with "
+        "the user's explicit choice." in INSTRUCTIONS
+    )

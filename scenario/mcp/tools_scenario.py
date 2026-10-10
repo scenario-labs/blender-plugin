@@ -15,6 +15,7 @@ from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
 from ..core.jobs.result_metadata import ORIGINAL_MEDIA_TYPES
+from ..core.jobs.workflow_nodes import BLOCKED
 from ..core.scene import panorama_contract
 from ..core.scene.panorama import describe_world_media
 from ..core.schema.params import build_body, validate
@@ -549,13 +550,124 @@ def run_workflow(args):
         "state": view.status,
         # A missing count is unknown coverage, never proof that there is no loop.
         **workflow_quote_notice(view.meta.get("workflow_loop_steps")),
-        "note": "One workflow submission saved. Inspect job_status; never repeat uncertain work. Results require explicit application. General workflow cancellation is unavailable. job_status cu_cost_exact stays the approved quote, not the final charge.",
+        "note": "One workflow submission saved. Inspect job_status; never repeat uncertain work. "
+        "Results require explicit application. A running workflow cannot be canceled. When "
+        "job_status reports awaiting_decision, show workflow_job_steps to the user and send only "
+        "their explicit choice with decide_workflow_step; reject stops the workflow. job_status "
+        "cu_cost_exact stays the approved quote, not the final charge.",
     }
 
 
 def discard_workflow_estimate(args):
     runtime.ensure_model_jobs().discard_workflow_quote(args["quote_id"])
     return {"discarded": True}
+
+
+# What a caller should do after each decision outcome; ModelJobs.decision_outcome.
+_DECISION_NOTES = {
+    "applied": "Scenario accepted the decision. The job continues, or stops after reject; "
+    "follow it with job_status or wait_for_job.",
+    "refused": "Scenario refused the decision, so it was not applied. Read decision_error and "
+    "the steps below; any new decision needs the user's explicit choice again.",
+    "uncertain": "The decision may have been applied. Never repeat it: call workflow_job_steps "
+    "and decide again only if the step is shown waiting again and the user chooses again.",
+    "not_sent": "Nothing was sent to Scenario: a check failed first or the job had already "
+    "finished. Read state, decision_error and the steps below; any new decision needs the "
+    "user's explicit choice again.",
+}
+
+
+def _step_reference(args):
+    context_id, request_id = args.get("context_id"), args.get("request_id")
+    if (
+        not isinstance(context_id, str)
+        or not context_id
+        or not isinstance(request_id, str)
+        or not request_id
+    ):
+        raise ValueError("Use the context_id and request_id returned by list_local_jobs")
+    return context_id, request_id
+
+
+def _workflow_steps(jobs, request_id):
+    """One saved workflow job's waiting steps from the shared projection, never with URLs."""
+    status = jobs.status(request_id)
+    record = jobs.store.get(request_id)
+    if status is None or record is None or status["local_id"] != request_id:
+        raise ScenarioError(0, "The saved workflow job changed; inspect list_local_jobs again")
+    return {
+        "context_id": runtime.state.job_context_id,
+        "request_id": request_id,
+        "workflow_id": record.intent.target_id,
+        "revision": status["revision"],
+        "state": status["status"],
+        "remote_status": status["remote_status"],
+        "cu_cost_exact": status["cu_cost_exact"],
+        "awaiting_decision": status["awaiting_decision"],
+        "steps": [
+            {**step, "blocked_reason": BLOCKED.get(step["blocked"])}
+            for step in status["pending_steps"]
+        ],
+        "decision_error": status["decision_error"],
+        "delivery_paused": status["delivery_paused"],
+        "error": status["error"],
+    }
+
+
+def _check_step_context(jobs, message):
+    runtime.sync_catalog_context()
+    if runtime.state.model_jobs is not jobs or not jobs.session.active:
+        raise ScenarioError(0, message)
+
+
+def workflow_job_steps(args):
+    context_id, request_id = _step_reference(args)
+    jobs, task = runtime.read_workflow_steps(context_id, request_id)
+    if task is None:
+        return _workflow_steps(jobs, request_id)
+
+    def finish(_):
+        _check_step_context(jobs, "The job context changed while reading steps; inspect it again")
+        return _workflow_steps(jobs, request_id)
+
+    return DeferredTool(lambda: _wait_workflow(task), finish)
+
+
+def decide_workflow_step(args):
+    context_id, request_id = _step_reference(args)
+    revision = args.get("expected_revision")
+    if type(revision) is not int or revision < 0:
+        raise ValueError("expected_revision must be a nonnegative integer")
+    node_id, review_id = args.get("node_id"), args.get("review_id")
+    if not all(isinstance(value, str) and value for value in (node_id, review_id)):
+        raise ValueError("Use the node_id and review_id returned by workflow_job_steps")
+    action = args.get("action")
+    if action not in ("approve", "select", "reject"):
+        raise ValueError("action must be approve, select or reject")
+    jobs, task = runtime.decide_workflow_step(
+        context_id,
+        request_id,
+        revision,
+        node_id,
+        review_id,
+        action,
+        args.get("selected_indices"),
+    )
+
+    def finish(_):
+        outcome = jobs.decision_outcome(task)
+        _check_step_context(
+            jobs,
+            f"The job context changed during the decision (outcome: {outcome}); never repeat "
+            "it, inspect the job again in its connection",
+        )
+        return {
+            "outcome": outcome,
+            **_workflow_steps(jobs, request_id),
+            "note": _DECISION_NOTES[outcome],
+        }
+
+    return DeferredTool(lambda: _wait_workflow(task), finish)
 
 
 def film_recipe(args):
@@ -1179,9 +1291,19 @@ def job_status(args):
 
 
 def recover_local_job(args):
-    jobs, task = runtime.control_model_job(
-        args["context_id"], args["request_id"], args["expected_revision"], args["action"]
-    )
+    from ..blender.model_jobs import WorkflowCancelUnavailable
+
+    try:
+        jobs, task = runtime.control_model_job(
+            args["context_id"], args["request_id"], args["expected_revision"], args["action"]
+        )
+    except WorkflowCancelUnavailable as error:
+        raise ScenarioError(
+            0,
+            f"{error.reason}. Nothing was sent. When job_status reports awaiting_decision, show "
+            "workflow_job_steps to the user and, only with their explicit approval to stop the "
+            "workflow, send decide_workflow_step with action reject",
+        ) from None
     if task is None:
         return jobs.status(args["request_id"])
     return _finish_recovery(jobs, task, args["request_id"])
@@ -1934,7 +2056,7 @@ SPECS = (
             "Args: workflow_id, quote_id and approved_cost are required; parameters must match estimate_workflow's original parameters. approved_cost must be its exact cu_cost_exact string.\n"
             "Returns: local_id, saved state, loop_steps, quote_may_understate, cost_warning and note; use job_status, wait_for_job and explicit result application. job_status cu_cost_exact remains the approved quote, not the final charge.\n"
             'Example: {"workflow_id": "workflow-example", "quote_id": "approved-quote", "parameters": {"prompt": "a cup"}, "approved_cost": "1.25"}.\n'
-            "Consumes the quote before persistence. Never repeat an uncertain submission; inspect saved jobs. Closing views does not stop it. No automatic scene import. General workflow cancellation and interactive approval/selection nodes are not supported here.\n"
+            "Consumes the quote before persistence. Never repeat an uncertain submission; inspect saved jobs. Closing views does not stop it. No automatic scene import. A running workflow cannot be canceled. Waiting approval and selection steps are read with workflow_job_steps and decided only with the user's explicit choice through decide_workflow_step; rejecting a step stops the workflow.\n"
             "Platform equivalent: workflow_run."
         ),
         _schema(
@@ -1960,6 +2082,62 @@ SPECS = (
         ),
         _schema({"quote_id": {"type": "string"}}, ["quote_id"]),
         discard_workflow_estimate,
+    ),
+    ToolSpec(
+        "workflow_job_steps",
+        (
+            "Read a saved workflow job's waiting approval and selection steps again so the user can review them; decides nothing.\n"
+            "Args:\n"
+            "  - context_id: required string, current context from list_local_jobs.\n"
+            "  - request_id: required string, the saved workflow job's request_id.\n"
+            "Returns: context_id, request_id, workflow_id, revision, state, remote_status, cu_cost_exact (the job's approved price), awaiting_decision, steps, decision_error, delivery_paused and error. Each step has node_id, type (user-approval or user-selection), iteration_index, loop_node_id, depends_on, review_asset_ids (at most 50 of review_asset_total), items (a selection's frozen candidates: asset IDs or texts per item_kind), min, max, actions (the decisions that may be sent), blocked, blocked_reason and review_id; never signed URLs.\n"
+            'Example: {"context_id": "from-list", "request_id": "from-list"}.\n'
+            "A remote job is retrieved once more, or the read already in flight is awaited; a job no longer remote returns without a request and with no steps. An automatically polled job stays polled and a paused or restarted job stays paused. Requires Online Access for a remote job; unknown and non-workflow jobs are rejected. Each call is one more status read, so follow a job with job_status or wait_for_job and call this only to review steps before a decision. Show each step, its review assets or items and the approved price to the user before decide_workflow_step. A selection blocked as loop (it feeds a ForEach loop, a nested workflow or an unlisted node type, which the approved price may not cover) or unsupported offers only reject; unidentified offers nothing. Review assets and candidates are asset IDs only; no preview is downloaded.\n"
+            "Platform equivalent: job_get, reading the workflow flow through the shared SDK jobs.retrieve."
+        ),
+        _schema(
+            {"context_id": {"type": "string"}, "request_id": {"type": "string"}},
+            ["context_id", "request_id"],
+        ),
+        workflow_job_steps,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "decide_workflow_step",
+        (
+            "Send one decision the user explicitly chose for a waiting workflow step: approve, select items or reject.\n"
+            "Args:\n"
+            "  - context_id: required string, current context from list_local_jobs or workflow_job_steps.\n"
+            "  - request_id: required string, the saved workflow job's request_id.\n"
+            "  - expected_revision: required nonnegative integer, the revision returned by workflow_job_steps.\n"
+            "  - node_id: required string, the step's node_id.\n"
+            "  - review_id: required string, the step's review_id; a changed step needs review again.\n"
+            "  - action: required string listed in the step's actions: approve or reject for user-approval, select or reject for user-selection.\n"
+            "  - selected_indices: integer array, select only: unique zero-based indices into the step's items, from min to max of them, sent in the given order.\n"
+            "Returns: outcome (applied, refused, uncertain or not_sent) and note, plus the workflow_job_steps fields read after the decision.\n"
+            'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 3, "node_id": "from-steps", "review_id": "from-steps", "action": "select", "selected_indices": [2, 0]}.\n'
+            "Call only after showing the step, its review assets or items and the job's approved price to the user and receiving their explicit choice; never decide automatically, by default or on the user's behalf. Approving or selecting lets the job run its remaining steps, which spend credits; the charge after a decision is not live-verified against the approved price. Rejecting stops the workflow and is the only way to stop one; completed steps stay charged, and a rejected ForEach iteration cascades to its surrounding loop instead, so trust the refreshed state. The job is retrieved first and the step must be unchanged; one request follows and is never retried. Never repeat an uncertain decision until the step is shown waiting again; refused and not_sent decisions need a fresh review. Invalid picks, a blocked action, a changed step or revision, a stale context, a command in flight and disabled Online Access are refused before any request.\n"
+            "Platform equivalent: workflow_approve or workflow_reject for approval steps; SDK workflows.user_approval and the documented user-selection endpoint through the shared adapter."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "node_id": {"type": "string"},
+                "review_id": {"type": "string"},
+                "action": {"type": "string", "enum": ["approve", "select", "reject"]},
+                "selected_indices": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 0},
+                    "uniqueItems": True,
+                    "maxItems": 50,
+                },
+            },
+            ["context_id", "request_id", "expected_revision", "node_id", "review_id", "action"],
+        ),
+        decide_workflow_step,
+        {"destructiveHint": True},
     ),
     ToolSpec(
         "prepare_film_composition",
@@ -2663,7 +2841,7 @@ SPECS = (
             "  - action: refresh, resume, cancel, recover_download or retry_receipt.\n"
             "Returns: saved status, revision, available actions and delivery error if any.\n"
             'Example: {"context_id":"from-list","request_id":"from-list","expected_revision":2,"action":"resume"}.\n'
-            "Refresh reads once; resume polls and downloads without automatic import. Cancel is listed only after a refresh confirms a running inference job, the only job type Scenario documents as cancellable; it requests cancellation once and observes the actual outcome. Other jobs are refused without a request and keep running. recover_download verifies interrupted local receipts without network calls. retry_receipt saves an already completed import without repeating it and requires the same live owner. Stale contexts/revisions and uncertain submissions are rejected.\n"
+            "Refresh reads once; resume polls and downloads without automatic import. Cancel is listed only after a refresh confirms a running inference job, the only job type Scenario documents as cancellable; it requests cancellation once and observes the actual outcome. Other jobs are refused without a request and keep running. A workflow job cannot be canceled: cancel returns an explanation and sends nothing; with the user's approval, reject a waiting step through decide_workflow_step instead. recover_download verifies interrupted local receipts without network calls. retry_receipt saves an already completed import without repeating it and requires the same live owner. Stale contexts/revisions and uncertain submissions are rejected.\n"
             "Platform equivalent: jobs.retrieve, jobs.trigger_action and assets.retrieve through the shared SDK, plus local receipt recovery."
         ),
         _schema(
@@ -2965,7 +3143,7 @@ SPECS = (
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
-            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, source, projection, downloaded), actions, images and mesh_sources. A result's source is asset, or original when a declared OpenEXR original was saved instead of its preview (size unknown); projection is equirectangular only when Scenario declares a 360 image, never inferred. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. review_step only marks a workflow job waiting for a decision; it is not a recover_local_job action, and no local MCP tool sends that decision yet. Mesh source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Saved workflow jobs also return loop_steps, quote_may_understate and cost_warning: cu_cost_exact stays the approved quote, which may cover only one loop pass when quote_may_understate is true; loop_steps is null when this session did not record the definition's loop count. import_units classifies saved model results without reading files: key (the asset_id for prepare_result_application), format (glb, gltf, fbx, obj, ply, spz or splat), kind (mesh, splat, or ply until its bytes are read), primary (first in display order; the others are alternates), importable (true for every listed format in this release), members (asset_id, role and media_type) and glTF resources; import_findings lists saved files left out with a reason code. model_import summarizes this session's last import of the job (unit, format, members, dropped_references, frame_rate_mismatch and splat: points_total, points_kept, step, axes and spz_extensions, or null for a mesh) and is null after undo history changes; spz_extensions true means the SPZ may declare other storage axes. Unknown jobs raise ValueError.\n"
+            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, source, projection, downloaded), actions, images and mesh_sources. A result's source is asset, or original when a declared OpenEXR original was saved instead of its preview (size unknown); projection is equirectangular only when Scenario declares a 360 image, never inferred. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. review_step marks a workflow job waiting for a decision: read it with workflow_job_steps and send only the user's explicit choice with decide_workflow_step; it is not a recover_local_job action. Mesh source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Saved workflow jobs also return loop_steps, quote_may_understate and cost_warning: cu_cost_exact stays the approved quote, which may cover only one loop pass when quote_may_understate is true; loop_steps is null when this session did not record the definition's loop count. import_units classifies saved model results without reading files: key (the asset_id for prepare_result_application), format (glb, gltf, fbx, obj, ply, spz or splat), kind (mesh, splat, or ply until its bytes are read), primary (first in display order; the others are alternates), importable (true for every listed format in this release), members (asset_id, role and media_type) and glTF resources; import_findings lists saved files left out with a reason code. model_import summarizes this session's last import of the job (unit, format, members, dropped_references, frame_rate_mismatch and splat: points_total, points_kept, step, axes and spz_extensions, or null for a mesh) and is null after undo history changes; spz_extensions true means the SPZ may declare other storage axes. Unknown jobs raise ValueError.\n"
             "Shared jobs also return the same advisory in-memory projection as the native Jobs views, never persisted: lane is the model lane that submitted the job in this Blender session (null for workflow, Film, restarted and recovered jobs; it grants no destination). While a known remote job is active, remote_status is its latest validated Scenario status (pending, queued, warming-up, in-progress or finalizing), progress is the reported fraction from 0 to 1 or null when missing or invalid, remote_observed_at is that reading's UTC time and remote_stale is true when automatic polling is not keeping it current (delivery paused, Online Access off or a refresh overdue). All four are null otherwise. Only in-progress and finalizing fractions measure generation; the native Jobs views show a percentage only for those statuses above 0. Providers may keep progress at 0 until completion, so it is never a time estimate. delivery_paused is true while delivery waits for explicit review or recovery. delivery_active is true while this Blender session still advances the job by itself (submission, polling, download or an automatic image import); prepare no result application while it is true. delivery_offline is true while Blender's Online Access is disabled and holds a step this session would take by itself: status polling, or the download of a finished model or workflow job's results; delivery_active is then false, nothing is sent and the job resumes by itself once the user allows Online Access. It is false for paused, restarted and settled jobs and for finished Prompt Spark, Translate and Blockout jobs, whose text is read without a download.\n"
             "Workflow jobs also return awaiting_decision, true while the last retrieval in this session showed a waiting user-approval or user-selection step and no decision is being sent (delivery_active is then false), and pending_steps: node_id, type, iteration_index, loop_node_id, depends_on, review_asset_ids (at most 50 of review_asset_total), items (a selection's frozen candidates: asset IDs or texts per item_kind), min, max, actions, blocked, links_complete and review_id, never signed URLs. actions lists the decisions that may be sent. blocked is null, loop (the selection feeds a ForEach loop, a nested workflow or a node type the API reference does not list, which the approved price may not cover), unverified (the links between the workflow's steps could not be read and the workflow contains such a node, so the selection may feed it), unsupported (unreadable candidates or limits) or unidentified (no sendable node ID); loop, unverified and unsupported leave only reject, unidentified leaves none. Step links come from the job and, while a step waits, from the workflow's definition, read once per waiting period; links_complete is false when some links are still unknown, so depends_on and review_asset_ids may be incomplete. reject stops the workflow and is the only workflow cancellation. decision_error reports why the last decision was refused, not sent or is uncertain; never repeat an uncertain decision until the step is shown again. While a step waits, status refreshes every 15 seconds.\n"
             'Example: {"job_id": "job_example"}.\n'

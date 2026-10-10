@@ -88,6 +88,8 @@ STALE_GRACE = 2 * POLL_INTERVAL
 # re-signs up to 50 candidate URLs, and only a decision moves the job on.
 STEP_POLL_INTERVAL = 15.0
 DECIDE = "decide_workflow_node"
+# What happened to one finished decision command; see ModelJobs.decision_outcome.
+DECISION_OUTCOMES = ("applied", "refused", "uncertain", "not_sent")
 # Saved states this session never advances by itself; READY is settled too
 # unless an automatic image import is still pending.
 _SETTLED = frozenset(
@@ -115,6 +117,22 @@ _DISPLAY_STATUS = {
     JobState.SUCCEEDED: "awaiting-download",
     JobState.APPLIED: "success",
 }
+
+
+class WorkflowCancelUnavailable(ScenarioError):
+    """A running workflow cannot be cancelled; nothing is sent.
+
+    Scenario documents job cancellation for inference jobs only and has no
+    workflow cancellation endpoint. Rejecting a waiting approval or selection
+    step through ModelJobs.decide is the only way to stop a workflow.
+    """
+
+    def __init__(self):
+        super().__init__(
+            0,
+            "Scenario cannot cancel a running workflow: it finishes or pauses at its next "
+            "approval or selection step, and rejecting a waiting step is the only way to stop it",
+        )
 
 
 def downloads_results(record):
@@ -932,6 +950,60 @@ class ModelJobs:
             return projection.steps if projection is not None else ()
         return {key: value.steps for key, value in self._steps.items() if value.steps}
 
+    def read_steps(self, request_id):
+        """Queue one retrieval of a saved workflow job's waiting steps; UI and MCP share it.
+
+        Unlike the Refresh status control, this keeps how the job is delivered:
+        an automatically polled job stays polled, and a paused or restarted
+        job stays paused until a decision or an explicit resume. A command
+        already in flight for the job, an automatic refresh or a decision, is
+        returned instead of queuing another retrieval. A saved workflow job
+        that is no longer `remote` has no waiting step, so nothing is read and
+        None is returned. Completion is projected by `poll` like any refresh.
+        """
+        record = self.store.get(request_id)
+        if record is None or record.intent.operation != "workflow":
+            raise ScenarioError(0, "Only saved workflow jobs have approval or selection steps")
+        if record.state != JobState.REMOTE or record.remote_job_id is None:
+            return None
+        if not self.session.active:
+            raise ScenarioError(0, "The job context changed; inspect saved jobs again")
+        pending = self._commands.get(request_id)
+        if pending is not None:
+            return pending[1]
+        if request_id in self.submissions:
+            raise ScenarioError(0, "Wait for the current job command to finish before reading")
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access before contacting Scenario")
+        view = self._view(record)
+        task = self.session.refresh_remote(request_id, expected_revision=record.revision)
+        self._commands[request_id] = ("refresh_remote", task)
+        view.meta["recovery_actions"] = ()
+        return task
+
+    @staticmethod
+    def decision_outcome(task):
+        """Classify one finished decision command from its task; changes nothing.
+
+        "applied": Scenario accepted the decision and the job was read again.
+        "refused": Scenario answered HTTP 4xx, so the decision was not accepted.
+        "uncertain": it may have been applied; never repeat it until the step
+        is shown waiting again. "not_sent": a check before sending failed, the
+        command was abandoned, or the job had already finished, so nothing was
+        sent. `poll` still owns the completion and its decision error text.
+        """
+        if not task.done():
+            raise ScenarioError(0, "The decision is still being sent; inspect the job again")
+        try:
+            snapshot = task.result()
+        except DecisionRefused:
+            return "refused"
+        except DecisionUncertain:
+            return "uncertain"
+        except Exception:
+            return "not_sent"
+        return "applied" if getattr(snapshot, "sent", False) else "not_sent"
+
     def decide(
         self, request_id, expected_revision, node_id, review_id, action, selected_indices=None
     ):
@@ -1203,6 +1275,9 @@ class ModelJobs:
     def control(self, request_id, expected_revision, action):
         """Explicit recovery never reconstructs a quote or approves another import."""
         record = self.store.get(request_id)
+        if action == "cancel" and record is not None and record.intent.operation == "workflow":
+            # Explain why rather than refuse generically: no request can stop it.
+            raise WorkflowCancelUnavailable()
         if (
             action == "cancel"
             and record is not None

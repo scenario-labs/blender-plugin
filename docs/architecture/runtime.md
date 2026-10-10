@@ -684,8 +684,10 @@ or automatic import. Native workflow controls below now share those commands.
 The same polling projects waiting approval and selection steps, and
 [`ModelJobs.decide`](../BLENDER_JOB_CONTEXT.md#waiting-workflow-steps) sends one
 reviewed decision through the shared session; rejecting a waiting step is the
-only workflow cancellation. Native and MCP decision controls, cancelling a
-running step and live output acceptance remain open under #64/#65/#66/#68.
+only workflow cancellation. Local MCP `workflow_job_steps` and
+`decide_workflow_step` read the steps again and send one reviewed decision
+through the same entry. Native decision controls, cancelling a running step and
+live output acceptance remain open under #64/#65/#66/#68.
 
 
 ## Explicit expanded native view

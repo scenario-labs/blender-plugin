@@ -432,6 +432,9 @@ single-action claim and authoritative status polling. A canceled acknowledgement
 an uncertain response remains recoverable by refreshing the known ID without
 replaying the action. A running workflow cannot be canceled; rejecting a
 [waiting workflow step](#waiting-workflow-steps) is the only way to stop one.
+`ModelJobs.control` answers `cancel` on a workflow job with
+`WorkflowCancelUnavailable`, which says so, before its revision and action
+checks and without queuing a command.
 
 Cancellation, refresh and recovery inspection deliberately do not require the
 old scene/target to remain available. This allows explicit cancellation and
@@ -897,8 +900,24 @@ A waiting step does not advance by itself. Until a decision is queued, the job
 is not counted by the `delivery_active` predicate, so `wait_for_job` returns at
 once and `delivery_offline` stays false; MCP `job_status` reports `awaiting_decision`,
 sanitized `pending_steps` and `decision_error`. After a restart, steps appear
-only after an explicit **Refresh status** or **Resume download**. No native
-control or MCP tool sends a decision yet.
+only after an explicit read: **Refresh status**, **Resume download** or
+`read_steps`.
+
+`ModelJobs.read_steps(request_id)` is the shared entry that reads a saved
+workflow job's steps again; `runtime.read_workflow_steps` adds the context token
+check. A job no longer `remote` returns None without a request. Otherwise it
+requires an active session, no submission in flight and Online Access, then
+queues one `refresh_remote` retrieval whose completion `poll` projects like any
+refresh. A command already in flight for the job, an automatic refresh or a
+decision, is returned instead of queuing another. Unlike **Refresh status**, it
+leaves the delivery mode unchanged: an automatically polled job is not paused,
+and a paused or restarted job is not resumed. `ModelJobs.decision_outcome(task)`
+classifies a finished decision task as `applied`, `refused`, `uncertain` or
+`not_sent` without draining its completion, which `poll` still owns.
+
+MCP `workflow_job_steps` and `decide_workflow_step` call these entries and
+`runtime.decide_workflow_step`; see [workflow step decisions](MCP.md#workflow-step-decisions).
+No native control sends a decision yet.
 
 ## Explicit recovered Image application
 

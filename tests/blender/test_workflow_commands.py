@@ -853,3 +853,340 @@ class WorkflowCommandTests(unittest.TestCase):
         self.assertEqual(step["actions"], ["approve", "reject"])
         self.assertNotIn("https", json.dumps(step))
         self.assertEqual(len(self.definition_reads()), 1)
+
+    # Local MCP workflow step tools: the same projection and decision entry.
+
+    def job_reads(self):
+        return sum(1 for request in self.calls if "/jobs/" in request.url.path)
+
+    def step_args(self, local_id, **changes):
+        return {
+            "context_id": self.tools.list_local_jobs({})["context_id"],
+            "request_id": local_id,
+            **changes,
+        }
+
+    def mcp_decide(self, local_id, node_id, action, picks=None, **changes):
+        steps = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        step = next(row for row in steps["steps"] if row["node_id"] == node_id)
+        args = self.step_args(
+            local_id,
+            expected_revision=steps["revision"],
+            node_id=node_id,
+            review_id=step["review_id"],
+            action=action,
+        )
+        if picks is not None:
+            args["selected_indices"] = picks
+        return self.finish(self.tools.decide_workflow_step({**args, **changes}))
+
+    def test_mcp_steps_are_read_again_without_changing_delivery(self):
+        local_id = self.paused_workflow(self.approval(), self.selection())
+        owner = self.runtime.state.model_jobs
+        reads = self.job_reads()
+        pending = self.tools.workflow_job_steps(self.step_args(local_id))
+        self.assertIn(local_id, owner._commands)
+        result = self.finish(pending)
+        self.assertEqual(self.job_reads(), reads + 1)
+        record = self.store.get(local_id)
+        self.assertEqual(result["request_id"], local_id)
+        self.assertEqual(result["workflow_id"], self.workflow["id"])
+        self.assertEqual((result["revision"], result["state"]), (record.revision, "remote"))
+        self.assertEqual(result["cu_cost_exact"], "0.1234567890123456789")
+        self.assertTrue(result["awaiting_decision"])
+        self.assertEqual([row["node_id"] for row in result["steps"]], ["check", "pick"])
+        approval, selection = result["steps"]
+        self.assertEqual(approval["review_asset_ids"], ["asset-render"])
+        self.assertEqual(selection["items"], ["asset-a", "asset-b", "asset-c"])
+        self.assertEqual(selection["actions"], ["select", "reject"])
+        self.assertIsNone(selection["blocked_reason"])
+        # The same projection as job_status, plus the blocked explanation only.
+        status = self.tools.job_status({"job_id": local_id})
+        self.assertEqual(
+            [{**row, "blocked_reason": None} for row in status["pending_steps"]], result["steps"]
+        )
+        text = json.dumps(result)
+        self.assertNotIn("https", text)
+        self.assertNotIn("Signature", text)
+        # Reading keeps an automatically polled job polled.
+        self.assertFalse(result["delivery_paused"])
+        self.assertNotIn(local_id, owner._paused)
+        # An automatic refresh already in flight is awaited, not repeated.
+        owner._next_poll[local_id] = 0.0
+        owner.poll()
+        _, automatic = owner._commands[local_id]
+        _, task = self.runtime.read_workflow_steps(self.runtime.state.job_context_id, local_id)
+        self.assertIs(task, automatic)
+        task.result(5)
+        owner.poll()
+        self.assertEqual(self.job_reads(), reads + 2)
+        self.assertFalse(self.decisions)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_mcp_steps_after_restart_keep_the_job_paused_until_a_decision(self):
+        local_id = self.paused_workflow(self.approval())
+        self.runtime.state.reset()
+        owner = self.runtime.ensure_model_jobs()
+        result = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        self.assertEqual([row["node_id"] for row in result["steps"]], ["check"])
+        self.assertTrue(result["awaiting_decision"])
+        # Reading neither resumes polling nor downloads anything.
+        self.assertTrue(result["delivery_paused"])
+        self.assertIn(local_id, owner._paused)
+
+        def proceed(request):
+            self.waiting(self.approval("success"))
+
+        self.decision_reply = proceed
+        decided = self.mcp_decide(local_id, "check", "approve")
+        self.assertEqual(decided["outcome"], "applied")
+        self.assertFalse(decided["delivery_paused"])
+        self.assertNotIn(local_id, owner._paused)
+        self.assertEqual(len(self.decisions), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_mcp_decisions_report_each_outcome(self):
+        def accept(request):
+            self.waiting(self.approval("success"))
+
+        def refuse(request):
+            self.waiting(self.approval("success"))
+            return httpx.Response(409, json={"message": "private detail"})
+
+        def unavailable(request):
+            return httpx.Response(503, json={"message": "private detail"})
+
+        def lost(request):
+            raise httpx.ReadTimeout("private fixture timeout", request=request)
+
+        for reply, outcome, error in (
+            (accept, "applied", None),
+            (refuse, "refused", "Scenario refused this decision"),
+            (unavailable, "uncertain", "Decision outcome unknown"),
+            (lost, "uncertain", "Decision outcome unknown"),
+        ):
+            with self.subTest(outcome=outcome, reply=reply.__name__):
+                self.decision_reply = None
+                local_id = self.paused_workflow(self.approval())
+                sent = len(self.decisions)
+                self.decision_reply = reply
+                result = self.mcp_decide(local_id, "check", "approve")
+                self.assertEqual(result["outcome"], outcome)
+                self.assertIn(result["outcome"], submodule("blender.model_jobs").DECISION_OUTCOMES)
+                self.assertEqual(len(self.decisions), sent + 1)
+                if error is None:
+                    self.assertIsNone(result["decision_error"])
+                    self.assertEqual(result["steps"], [])
+                    self.assertIn("accepted", result["note"])
+                else:
+                    self.assertTrue(result["decision_error"].startswith(error))
+                    self.assertNotIn("private", json.dumps(result))
+                if outcome == "uncertain":
+                    self.assertIn("Never repeat it", result["note"])
+                self.assertFalse(result["delivery_paused"])
+                self.assertEqual(result["state"], "remote")
+
+    def test_mcp_decision_for_a_job_finished_meanwhile_is_not_sent(self):
+        local_id = self.paused_workflow(self.approval())
+        steps = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        self.waiting(self.approval("failure"), status="failure")
+        result = self.finish(
+            self.tools.decide_workflow_step(
+                self.step_args(
+                    local_id,
+                    expected_revision=steps["revision"],
+                    node_id="check",
+                    review_id=steps["steps"][0]["review_id"],
+                    action="approve",
+                )
+            )
+        )
+        self.assertEqual(result["outcome"], "not_sent")
+        self.assertEqual(result["state"], "failed")
+        self.assertEqual(result["steps"], [])
+        self.assertIn("Nothing was sent", result["note"])
+        self.assertFalse(self.decisions)
+
+    def test_mcp_selection_keeps_the_given_order_and_reject_stops_the_workflow(self):
+        local_id = self.paused_workflow(self.selection())
+        result = self.mcp_decide(local_id, "pick", "select", [2, 0])
+        self.assertEqual(result["outcome"], "applied")
+        self.assertEqual(json.loads(self.decisions[0].content)["selectedIndices"], [2, 0])
+        local_id = self.paused_workflow(self.selection())
+
+        def stop(request):
+            self.waiting(self.selection("rejected"), status="canceled")
+
+        self.decision_reply = stop
+        result = self.mcp_decide(local_id, "pick", "reject")
+        self.assertEqual(result["outcome"], "applied")
+        self.assertEqual(result["state"], "canceled")
+        self.assertFalse(result["awaiting_decision"])
+        self.assertEqual(self.store.get(local_id).state.value, "canceled")
+        self.assertEqual(
+            json.loads(self.decisions[1].content),
+            {"action": "reject", "nodeId": "pick", "workflowJobId": "workflow-job"},
+        )
+
+    def test_mcp_invalid_or_stale_decisions_are_refused_before_any_request(self):
+        loop = {
+            "id": "loop",
+            "type": "for-each",
+            "status": "pending",
+            "inputs": [{"name": "items", "ref": {"node": "pick"}}],
+        }
+        blocked = self.paused_workflow(self.selection(), loop)
+        steps = self.finish(self.tools.workflow_job_steps(self.step_args(blocked)))
+        self.assertEqual(steps["steps"][0]["blocked"], "loop")
+        self.assertEqual(steps["steps"][0]["actions"], ["reject"])
+        self.assertIn("ForEach loop", steps["steps"][0]["blocked_reason"])
+        with self.assertRaisesRegex(Exception, "ForEach loop"):
+            self.tools.decide_workflow_step(
+                self.step_args(
+                    blocked,
+                    expected_revision=steps["revision"],
+                    node_id="pick",
+                    review_id=steps["steps"][0]["review_id"],
+                    action="select",
+                    selected_indices=[0],
+                )
+            )
+        local_id = self.paused_workflow(self.selection())
+        steps = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        review = steps["steps"][0]["review_id"]
+        valid = self.step_args(
+            local_id,
+            expected_revision=steps["revision"],
+            node_id="pick",
+            review_id=review,
+            action="select",
+            selected_indices=[0],
+        )
+        cases = (
+            ({"selected_indices": [0, 1, 2]}, "Select 1 to 2 items"),
+            ({"selected_indices": []}, "Select 1 to 2 items"),
+            ({"selected_indices": [3]}, "listed candidates"),
+            ({"selected_indices": [0, 0]}, "at most once"),
+            ({"selected_indices": [True]}, "integer indices"),
+            ({"selected_indices": None}, "list of indices"),
+            ({"action": "approve"}, "decision this workflow"),
+            ({"action": "reject"}, "Only a selection"),
+            ({"review_id": "0" * 64}, "step changed"),
+            ({"node_id": "missing"}, "step changed"),
+            ({"expected_revision": steps["revision"] + 1}, "job changed"),
+            ({"expected_revision": True}, "nonnegative integer"),
+            ({"action": "cancel"}, "approve, select or reject"),
+            ({"context_id": "stale-context"}, "context changed"),
+            ({"request_id": ""}, "returned by list_local_jobs"),
+            ({"review_id": 7}, "returned by workflow_job_steps"),
+        )
+        for changes, message in cases:
+            with self.subTest(changes=changes), self.assertRaisesRegex(Exception, message):
+                self.tools.decide_workflow_step({**valid, **changes})
+        with patch.object(self.runtime.state.model_jobs, "_online", return_value=False):
+            with self.assertRaisesRegex(Exception, "Allow Online Access"):
+                self.tools.decide_workflow_step(valid)
+            with self.assertRaisesRegex(Exception, "Allow Online Access"):
+                self.tools.workflow_job_steps(self.step_args(local_id))
+        self.assertFalse(self.decisions)
+        self.assertNotIn(local_id, self.runtime.state.model_jobs._commands)
+
+    def test_mcp_steps_reject_other_jobs_and_read_nothing_for_finished_ones(self):
+        local_id = self.paused_workflow(self.approval())
+        reads = self.job_reads()
+        for args, message in (
+            ({"request_id": "unknown-request"}, "Only saved workflow jobs"),
+            ({"context_id": "stale-context"}, "context changed"),
+            ({"context_id": ""}, "returned by list_local_jobs"),
+        ):
+            with self.subTest(args=args), self.assertRaisesRegex(Exception, message):
+                self.tools.workflow_job_steps(self.step_args(local_id, **args))
+        self.assertEqual(self.job_reads(), reads)
+        # A failed job settles without a download, so no other read can follow.
+        self.waiting(self.approval("failure"), status="failure")
+        self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        reads = self.job_reads()
+        self.assertEqual(self.store.get(local_id).state.value, "failed")
+        result = self.tools.workflow_job_steps(self.step_args(local_id))
+        self.assertIsInstance(result, dict)
+        self.assertEqual((result["state"], result["steps"]), ("failed", []))
+        self.assertFalse(result["awaiting_decision"])
+        self.assertEqual(self.job_reads(), reads)
+
+    def test_workflow_cancel_explains_rejection_and_sends_nothing(self):
+        local_id = self.paused_workflow()
+        running = self.store.get(local_id)
+        owner = self.runtime.state.model_jobs
+        calls = len(self.calls)
+        args = self.step_args(local_id, expected_revision=running.revision, action="cancel")
+        with self.assertRaisesRegex(Exception, "cannot cancel a running workflow") as caught:
+            self.tools.recover_local_job(args)
+        self.assertIn("decide_workflow_step with action reject", str(caught.exception))
+        self.assertIn("Nothing was sent", str(caught.exception))
+        self.assertEqual(len(self.calls), calls)
+        # Native callers share the typed explanation, also for a waiting step.
+        self.waiting(self.approval())
+        owner._next_poll[local_id] = 0.0
+        self.settle()
+        self.assertTrue(owner.steps(local_id))
+        model_jobs = submodule("blender.model_jobs")
+        calls = len(self.calls)
+        for revision in (running.revision, running.revision + 1):
+            with self.subTest(revision=revision):
+                with self.assertRaises(model_jobs.WorkflowCancelUnavailable):
+                    owner.control(local_id, revision, "cancel")
+        self.assertEqual(len(self.calls), calls)
+        self.assertNotIn(local_id, owner._commands)
+        self.assertEqual(self.store.get(local_id), running)
+        self.assertFalse(self.decisions)
+
+    def test_mcp_and_native_decisions_share_one_projection(self):
+        local_id = self.paused_workflow(self.approval())
+
+        def refuse(request):
+            self.waiting(self.approval("success"))
+            return httpx.Response(400, json={"message": "private detail"})
+
+        # A native decision's refusal is what MCP then reports.
+        self.decision_reply = refuse
+        owner, task = self.decide(local_id, "check", "approve")
+        with self.assertRaisesRegex(Exception, "refused this decision"):
+            task.result(5)
+        owner.poll()
+        result = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        self.assertTrue(result["decision_error"].startswith("Scenario refused this decision"))
+        self.assertEqual(result["steps"], [])
+        # An MCP decision is what the native projection and rows then show.
+        self.decision_reply = None
+        local_id = self.paused_workflow(self.approval())
+        rows = submodule("blender.job_recovery").result_actions(owner.views[local_id])
+        self.assertEqual(rows[0].action, "review_step")
+
+        def accept(request):
+            self.waiting(self.approval("success"))
+
+        self.decision_reply = accept
+        self.assertEqual(self.mcp_decide(local_id, "check", "approve")["outcome"], "applied")
+        self.assertEqual(owner.steps(local_id), ())
+        rows = submodule("blender.job_recovery").result_actions(owner.views[local_id])
+        self.assertNotIn("review_step", [row.action for row in rows])
+        self.assertEqual(len(self.decisions), 2)
+
+    def test_context_change_during_an_mcp_decision_reports_its_outcome(self):
+        local_id = self.paused_workflow(self.approval())
+        steps = self.finish(self.tools.workflow_job_steps(self.step_args(local_id)))
+        pending = self.tools.decide_workflow_step(
+            self.step_args(
+                local_id,
+                expected_revision=steps["revision"],
+                node_id="check",
+                review_id=steps["steps"][0]["review_id"],
+                action="reject",
+            )
+        )
+        pending.run()
+        self.prefs.project_id = "another-project"
+        self.project = "another-project"
+        with self.assertRaisesRegex(Exception, r"outcome: applied\); never repeat"):
+            pending.finish(None)
+        self.assertEqual(len(self.decisions), 1)

@@ -29,6 +29,7 @@ INSTRUCTIONS = (
     "To add library assets to or remove them from collections, change their tags or create a collection, "
     "call prepare_asset_organization, show the review and call apply_asset_organization only after explicit approval; "
     "never repeat an unconfirmed change. "
+    "Decide waiting workflow steps (workflow_job_steps, decide_workflow_step) only with the user's explicit choice. "
     "For other platform-wide work (collection rename or deletion, training, workflow authoring, usage) "
     "use the mcp.scenario.com server when it is connected."
 )

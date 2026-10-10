@@ -437,6 +437,21 @@ def control_model_job(context_id, request_id, expected_revision, action):
     return jobs, task
 
 
+def read_workflow_steps(context_id, request_id):
+    """Shared native/MCP entry that reads a saved workflow job's waiting steps again.
+
+    Returns the owner and the retrieval task, or None when the job is no longer
+    `remote` and has no waiting step to read.
+    """
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    task = jobs.read_steps(request_id)
+    if request_id in jobs.views:
+        show_job_views((jobs.views[request_id],))
+    return jobs, task
+
+
 def decide_workflow_step(
     context_id, request_id, expected_revision, node_id, review_id, action, selected_indices=None
 ):

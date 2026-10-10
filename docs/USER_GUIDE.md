@@ -907,7 +907,10 @@ prices and approval handles do not survive restart. Jobs keep their existing
 durable recovery. This page runs existing workflows; it does not author graphs
 or cancel running workflows. When a workflow waits at an approval or selection
 step, its Jobs row shows **Workflow waits for your decision** and checks for
-changes every 15 seconds; deciding that step from Blender is not available yet.
+changes every 15 seconds. Native controls to decide that step are not available
+yet. A connected agent can read the step and send a decision through the local
+MCP; its tool guidance requires your explicit choice first. Rejecting a step
+stops the workflow.
 Native desktop interaction, including workflow uploads, and live workflow
 acceptance are still pending.
 

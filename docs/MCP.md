@@ -44,7 +44,8 @@ resume/download, known model-job cancellation, interrupted-download reconciliati
 or pending import-receipt retry. `cancel` appears in `actions` only after a refresh
 in the current context reported a running `inference` job, the only type Scenario
 documents as cancellable; for any other job it is refused without a request and
-the job keeps running, matching the native Jobs panel. Resuming a restarted job does not import it into
+the job keeps running, matching the native Jobs panel. A workflow job cannot be canceled: `cancel`
+returns that explanation and sends nothing. Resuming a restarted job does not import it into
 the current scene. Shared `wait_for_job` waits without blocking Blender's main
 thread and returns when delivery finishes, needs review, is held by disabled
 Online Access, or reaches its timeout.
@@ -110,8 +111,10 @@ the review assets may be incomplete. Rejecting stops the
 workflow and is the only workflow cancellation. `decision_error` explains the
 last refused, unsent or uncertain decision; never repeat an uncertain one until
 the step is shown again. The `review_step` action marks a waiting step; it is
-not a `recover_local_job` action, and no local MCP tool sends a decision yet.
-See [waiting workflow steps](BLENDER_JOB_CONTEXT.md#waiting-workflow-steps).
+not a `recover_local_job` action. Read the steps with `workflow_job_steps` and send
+only the user's explicit choice with `decide_workflow_step`; see
+[workflow step decisions](#workflow-step-decisions) and
+[waiting workflow steps](BLENDER_JOB_CONTEXT.md#waiting-workflow-steps).
 
 To import recovered PNG/EXR results, call `prepare_result_application` with the
 current context, request and revision, then show its destination and image list
@@ -381,6 +384,8 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_workflow` | Request a free exact workflow price bound to the selected scene and connection. | `workflow_id`*: string<br>`parameters`: object | - |
 | `run_workflow` | Approve one unchanged workflow estimate and persist its identity before paid dispatch. | `workflow_id`*: string<br>`parameters`: object<br>`quote_id`*: string<br>`approved_cost`*: string | - |
 | `discard_workflow_estimate` | Discard one ready unsubmitted workflow approval without changing saved jobs. | `quote_id`*: string | - |
+| `workflow_job_steps` | Read a saved workflow job's waiting approval and selection steps again so the user can review them; decides nothing. | `context_id`*: string<br>`request_id`*: string | read-only annotation |
+| `decide_workflow_step` | Send one decision the user explicitly chose for a waiting workflow step: approve, select items or reject. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`node_id`*: string<br>`review_id`*: string<br>`action`*: string (['approve', 'select', 'reject'])<br>`selected_indices`: array | destructive annotation |
 | `prepare_film_composition` | Inspect saved Film media and prepare a final or previs composition without spending. | `context_id`*: string<br>`production_id`*: string<br>`mode`: string (['final', 'previs'])<br>`score_task_id`: string | - |
 | `film_composition_review` | Inspect, cancel or discard a session-local Film composition review. | `review_id`*: string<br>`action`: string (['status', 'cancel', 'discard']) | - |
 | `estimate_film_composition` | Request the exact server price for one READY verified Film composition. | `review_id`*: string | read-only annotation |
@@ -546,6 +551,7 @@ behavior interchangeable. Remote names below were checked against the
 | Organization outcome or discard | `asset_organization_status(context_id, review_id, action)` | Local session review; `collection_get` and `asset_get` read service state |
 | Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
 | Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
+| Waiting workflow steps | `workflow_job_steps(context_id, request_id)`, then `decide_workflow_step(context_id, request_id, expected_revision, node_id, review_id, action, selected_indices)` with the user's explicit choice | `job_get`; `workflow_approve` and `workflow_reject` for approval steps; no hosted selection tool is listed |
 | Collection rename/delete, model collections, tag listing, training, workflow authoring and usage | Use the hosted server | Discover operations in the hosted tool reference |
 
 Connect both when needed: use the local setup above for Blender and the
@@ -1173,11 +1179,54 @@ same polling, download, explicit application and restart recovery as model jobs.
 Workflow results are never automatically imported. `discard_workflow_estimate`
 releases only a ready local approval, leaving saved jobs unchanged.
 
-A running workflow step cannot be canceled. `job_status` reports waiting approval
-and selection steps, but no local MCP tool decides them yet; rejecting such a
-step is the only way to stop a workflow. Workflow authoring, the expanded Studio
-form and live provider/output acceptance remain incomplete. Do not infer live
-compatibility from the synthetic installed command tests.
+A running workflow step cannot be canceled: `recover_local_job` `cancel` on a
+workflow job returns that explanation and sends nothing. Rejecting a waiting
+approval or selection step is the only way to stop a workflow. Workflow
+authoring, native decision controls, the expanded Studio form and live
+provider/output acceptance remain incomplete. Do not infer live compatibility
+from the synthetic installed command tests.
+
+### Workflow step decisions
+
+When `job_status` or `wait_for_job` reports `awaiting_decision`, call
+`workflow_job_steps` with the context and request ID from `list_local_jobs`. For
+a `remote` workflow job it retrieves the job once more through the shared
+session, or waits for the read or decision already in flight. It returns the
+saved revision and state, the job's approved `cu_cost_exact` and the waiting
+steps in the `pending_steps` form, with `blocked_reason` text for a blocked step.
+A job no longer `remote` returns without a request and with no steps. The read
+keeps how the job is delivered: an automatically polled job stays polled, and a
+paused or restarted job stays paused, so its steps appear without resuming
+downloads. It needs Online Access for a `remote` job. Each call is one more
+status read, so follow the job with `job_status` or `wait_for_job` and call it
+only to review steps before a decision.
+
+Show each step to the user with its review asset IDs or candidate items, its
+bounds and the approved price. `decide_workflow_step` then sends only the user's
+explicit choice: `approve` or `reject` for an approval, `select` with zero-based
+`selected_indices` or `reject` for a selection. It needs the step's `review_id`
+and the job's `expected_revision`. A changed step, revision or context, an action
+the step does not list, picks outside its bounds, a command already in flight
+or disabled Online Access is refused before any request. The decision takes the
+shared `ModelJobs.decide` path: the job is retrieved again, the step must be
+unchanged, and one request follows that is never retried. Picks are sent in the
+given order. Review assets and candidates are asset IDs only; no preview or
+signed URL is returned.
+
+`outcome` is `applied` when Scenario accepted the decision and the job was read
+again, `refused` for an HTTP 4xx reply, `uncertain` when the decision may have
+been applied, and `not_sent` when a check failed before sending or the job had
+already finished. The result also carries the steps read after the decision and
+`decision_error`. Never repeat an uncertain decision: read the steps again and
+decide only if the step is shown waiting again and the user chooses again.
+
+Rejecting stops the workflow, and completed steps stay charged. The API reference
+says a rejected ForEach iteration cascades to the surrounding loop instead, so
+the refreshed state is authoritative. Approving or selecting lets the remaining
+steps run and spend credits; the charge after a decision is not live-verified
+against the approved price. A selection that feeds a ForEach loop, a nested
+workflow or an unlisted node type stays blocked, with only `reject`, until live
+evidence shows that charge stays within the approved price.
 
 
 ## Asset library metadata

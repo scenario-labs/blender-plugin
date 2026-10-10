@@ -285,11 +285,21 @@ class AudioPreviewTests(unittest.TestCase):
         self.select(1)
         self.assertEqual(self.ready().status, "READY")
 
-    def test_queued_outcome_cannot_publish_after_loading_deadline(self):
+    def test_only_an_outcome_finished_before_the_deadline_publishes(self):
+        # Blender's timer can run after the deadline; the reader's finish time decides.
         self.select()
-        self.worker().join(5)
+        self.worker().join(30)
         selected = self.preview.controller.selection
         with patch.object(self.preview, "monotonic", return_value=selected.deadline + 1):
+            self.preview.controller.poll()
+        self.assertEqual(selected.status, "READY")
+        self.assertEqual(selected.waveform.channels, 1)
+        # A reader that finishes at or after its deadline never publishes.
+        release, _ = self.blocked_read()
+        selected = self.preview.controller.selection
+        with patch.object(self.preview, "monotonic", return_value=selected.deadline):
+            release.set()
+            self.worker().join(30)
             self.preview.controller.poll()
         self.assertEqual(selected.status, "ERROR")
         self.assertIn("timed out", selected.message)
@@ -297,6 +307,33 @@ class AudioPreviewTests(unittest.TestCase):
         self.assertIsNone(self.preview.controller._previews)
         self.select(1)
         self.assertEqual(self.ready().status, "READY")
+
+    def test_shutdown_cancels_and_waits_for_a_running_decoder(self):
+        # Python abandons daemon readers at exit, so unregistering, which Blender
+        # also does on exit, must let each one stop its offline child first. This
+        # stand-in for the child process runs until it is canceled.
+        canceled = submodule("core.jobs.local_render").RenderCancelled
+        started, stopped = threading.Event(), []
+
+        def run(command, *, cancel, **options):
+            started.set()
+            if not cancel.wait(10):
+                raise AssertionError("Shutdown did not cancel the decoder")
+            time.sleep(0.2)  # Like terminating the child, which the wait must cover.
+            stopped.append(threading.current_thread())
+            raise canceled("Local capture cancelled")
+
+        self.enterContext(patch.object(self.decoder, "_run", side_effect=run))
+        self.select()
+        self.assertTrue(started.wait(10))
+        (reader,) = self.preview.controller._readers
+        self.preview.controller.shutdown()
+        self.assertFalse(reader.thread.is_alive())
+        self.assertEqual(stopped, [reader.thread])
+        self.assertEqual(self.preview.controller._readers, [])
+        self.assertIsNone(self.preview.controller.selection)
+        cache = Path(self.runtime.paths().cache_dir) / "audio-preview"
+        self.assertEqual(list(cache.iterdir()), [])
 
     def test_reader_start_failure_is_terminal_sanitized_and_retryable(self):
         with patch.object(threading.Thread, "start", side_effect=RuntimeError("private detail")):

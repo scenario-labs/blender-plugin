@@ -118,11 +118,14 @@ establish live generation or full render-lane desktop acceptance.
   Cancellation terminates the decoder process and discards late completion; it
   cannot interrupt an operating-system filesystem call. A spare worker lets
   another preview proceed while one canceled check is stuck. Loading expires
-  after 30 seconds, checked by Blender's timer. If both workers remain occupied,
-  a new preview times out with retry/restart guidance; capacity becomes available
-  only when a worker actually exits. The UI remains usable. Terminal previews
-  check context invalidation once per second rather than at the loading timer's
-  ten checks per second.
+  after 30 seconds, checked by Blender's timer; a waveform that a worker
+  finished before then still displays when that timer runs late. If both
+  workers remain occupied, a new preview times out with retry/restart guidance;
+  capacity becomes available only when a worker actually exits. The UI remains
+  usable. Terminal previews check context invalidation once per second rather
+  than at the loading timer's ten checks per second. Disabling the extension or
+  quitting Blender cancels its workers and waits up to five seconds for them to
+  stop their decoder processes.
 - Prompt helpers lack an explicit generic/model-contextual Spark preference
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme

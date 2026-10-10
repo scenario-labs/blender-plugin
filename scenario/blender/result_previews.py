@@ -11,9 +11,9 @@ side and runs on the main thread only, in its own timer, never while drawing:
   panels show. It contacts nothing itself; the scheduler's lane reads
   Scenario's metadata and downloads server stills while Online Access allows.
 - It decodes each issued image copy into a PNG of at most 256 pixels per side,
-  which the lane validates and caches. The decode loads the copy into a
-  temporary ``bpy.data.temp_data()`` block, so the open file, its undo history
-  and its dependency graph never see it.
+  which the lane validates and caches. The shared ``preview_decode`` helper
+  loads the copy into a temporary ``bpy.data.temp_data()`` block, so the open
+  file, its undo history and its dependency graph never see it.
 - It builds preview icons from verified cache files only, rehashed against the
   cache entry right before the same temporary decode, in its own
   ``bpy.utils.previews`` collection. It never calls
@@ -25,10 +25,8 @@ generates, downloads a result, applies, spends or changes the scene or the job
 store, and a late status from a retired connection is never shown.
 """
 
-import array
 import hashlib
 import logging
-import math
 import os
 import stat
 import textwrap
@@ -41,7 +39,6 @@ import bpy
 from bpy.app.handlers import persistent
 from bpy.props import StringProperty
 
-from ..core.jobs.local_render import LocalRenderError, blender_path
 from ..core.jobs.result_previews import (
     PREVIEW_EDGE,
     STILL,
@@ -54,6 +51,7 @@ from ..core.jobs.result_previews import (
 from ..core.jobs.results import PREVIEW_STATES, ResultError
 from ..core.jobs.workers import WorkerError
 from . import runtime
+from .preview_decode import PreviewDecodeError, decode
 
 _log = logging.getLogger("scenario")
 # Previews are kept for the first jobs of each list the panels draw: Jobs rows
@@ -126,90 +124,6 @@ class _Job:
     revision: int
     targets: tuple
     message: str = ""
-
-
-class StillDecodeError(RuntimeError):
-    """Blender could not decode a preview image; the message is sanitized."""
-
-
-def _fit(width, height, edge):
-    """Fit within ``edge`` pixels per side, never upscaling."""
-    scale = min(1.0, edge / max(width, height))
-    return max(1, round(width * scale)), max(1, round(height * scale))
-
-
-def _encode(value):
-    """Linear scene value to an sRGB display value, clamped to [0, 1]."""
-    if not value > 0.0:  # Also NaN.
-        return 0.0
-    if value >= 1.0:
-        return 1.0
-    if value <= 0.0031308:
-        return value * 12.92
-    return 1.055 * math.pow(value, 1 / 2.4) - 0.055
-
-
-def _scaled(data, path, edge, limit, output, scene):
-    """Decode one file in a temporary block; every reference stays in this frame."""
-    image = data.images.load(path, check_existing=False)
-    try:
-        width, height = image.size
-        if not image.has_data or not limit(width, height):
-            return None
-        size = _fit(width, height, edge)
-        if size != (width, height):
-            image.scale(*size)
-        if output is not None:
-            image.save_render(output, scene=scene)
-            return size, None
-        pixels = array.array("f", bytes(4 * size[0] * size[1] * 4))
-        image.pixels.foreach_get(pixels)
-        if image.is_float:
-            # High bit-depth files load as linear floats; icons hold display bytes.
-            for index in range(len(pixels)):
-                if index % 4 != 3:
-                    pixels[index] = _encode(pixels[index])
-        return size, pixels
-    finally:
-        data.images.remove(image)
-        del image
-
-
-def _decode(path, edge, limit, *, output=None):
-    """Decode ``path`` fitted to ``edge`` without touching the open file's data.
-
-    ``bpy.data.temp_data()`` is a separate block freed on exit. A Python object
-    that still refers to it afterwards would crash Blender, so the image and
-    scene references live in ``_scaled``'s frame, and a failure is recorded
-    and raised only after the block is gone, without a traceback that keeps
-    them. With ``output``, the fitted image is written there as an 8-bit RGBA
-    PNG through the Standard view transform instead of returning its pixels.
-    """
-    try:
-        source = blender_path(path)
-        output = None if output is None else blender_path(output)
-    except LocalRenderError:
-        raise StillDecodeError("Preview paths are too long for Blender on this system") from None
-    result, failed = None, False
-    with bpy.data.temp_data() as data:
-        scene = None
-        try:
-            if output is not None:
-                scene = data.scenes.new("Scenario preview")
-                settings = scene.render.image_settings
-                settings.file_format = "PNG"
-                settings.color_mode = "RGBA"
-                settings.color_depth = "8"
-                scene.view_settings.view_transform = "Standard"
-                scene.view_settings.look = "None"
-            result = _scaled(data, source, edge, limit, output, scene)
-        except Exception:
-            failed = True
-        scene = None
-        del data
-    if failed or result is None:
-        raise StillDecodeError("Blender could not decode this preview")
-    return result
 
 
 def _verified(preview, root):
@@ -380,10 +294,8 @@ class PreviewController:
         request = requests[0]
         if request not in self._decoded:
             try:
-                _decode(
-                    request.source, request.max_edge, bounded_local_image, output=request.output
-                )
-            except StillDecodeError as error:
+                decode(request.source, request.max_edge, bounded_local_image, output=request.output)
+            except PreviewDecodeError as error:
                 scheduler.discard_decode(request, reason=str(error))
                 return True
             self._decoded.add(request)
@@ -417,15 +329,15 @@ class PreviewController:
             path = _verified(preview, scheduler.root)
             try:
                 if path is None:
-                    raise StillDecodeError("The cached preview changed or was removed; use Retry")
-                size, pixels = _decode(
+                    raise PreviewDecodeError("The cached preview changed or was removed; use Retry")
+                size, pixels = decode(
                     path, PREVIEW_EDGE, lambda w, h: 1 <= w <= 4096 and 1 <= h <= 4096
                 )
                 icon_id = self._icon(key, size, pixels)
-            except (StillDecodeError, RuntimeError, TypeError, ValueError) as error:
+            except (PreviewDecodeError, RuntimeError, TypeError, ValueError) as error:
                 message = (
                     str(error)
-                    if isinstance(error, StillDecodeError)
+                    if isinstance(error, PreviewDecodeError)
                     else "The preview could not be displayed"
                 )
                 self._icon_failures[key] = message

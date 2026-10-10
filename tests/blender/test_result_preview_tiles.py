@@ -297,6 +297,10 @@ class ResultPreviewTileTests(unittest.TestCase):
     # -- saved images ---------------------------------------------------------
 
     def test_saved_image_decodes_outside_the_open_file_into_a_cached_icon(self):
+        # Image copies and icons use the shared temporary decode, not a copy of it.
+        helper = submodule("blender.preview_decode")
+        self.assertIs(self.tiles.decode, helper.decode)
+        self.assertIs(self.tiles.PreviewDecodeError, helper.PreviewDecodeError)
         with online_access(False):
             view = self.saved([("image", "result.png", "image/png", png(640, 320))])
             dirty = bpy.data.is_dirty

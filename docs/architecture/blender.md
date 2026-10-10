@@ -67,7 +67,9 @@ file first: `limit` sees the dimensions only after Blender has loaded the whole
 image, so callers check the format and declared dimensions before decoding.
 [Workflow review previews](../RESULT_PREVIEWS.md#workflow-review-assets) decode
 their icons with it after verifying the cached file, its format and its declared
-dimensions; no other UI or MCP path uses it yet.
+dimensions, and the
+[automatic result preview](../RESULT_PREVIEWS.md#automatic-previews-in-blender)
+controller decodes its image copies and icons with it; no MCP path uses it.
 
 ## Scene application
 

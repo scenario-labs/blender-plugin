@@ -238,6 +238,7 @@ second, or every tenth of a second while it has work, and never inside drawing:
   It asks for stills only, so it never starts an audio envelope decode or
   fetches a clip.
 - **Image decoding.** It decodes the oldest issued image copy, one per tick,
+  with the shared [temporary preview decode](architecture/blender.md#temporary-preview-decoding)
   inside `bpy.data.temp_data()`, a separate data block freed right after. The
   open file, its undo history, dependency graph and data counts never see the
   image. The decoded size must stay within the same 8192-pixel bounds; the
@@ -250,7 +251,8 @@ second, or every tenth of a second while it has work, and never inside drawing:
   pixels per side. It builds at most one icon per tick, none in a tick that
   decoded an image copy, in its own `bpy.utils.previews` collection from the
   decoded pixels, and releases the least recently used icons beyond 64 that no
-  tile draws. High bit-depth files are converted from linear to sRGB values.
+  tile draws. High bit-depth files are unpremultiplied and converted from linear
+  to sRGB values, so semi-transparent pixels keep straight colors.
   It never calls `ImagePreviewCollection.load`: measured with a temporary home
   on Blender 5.1.2, that call wrote the loaded image's thumbnail to
   `~/.thumbnails/large` outside the extension's user data.

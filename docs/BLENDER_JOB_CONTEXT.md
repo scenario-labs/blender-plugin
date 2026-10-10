@@ -560,13 +560,15 @@ persistent timer requests the still rendition of a few downloaded results for
 the first saved jobs that Jobs and Generations draw, reading each saved record
 once per revision; it never requests envelopes or clips. It answers
 `decode_requests` one per tick, decoding the private copy inside
-`bpy.data.temp_data()` and passing the PNG to `finish_decode`, or calling
-`discard_decode` with a reason. It builds icons only from rehashed cache files,
-in its own preview collection. It binds its tiles to the context token and
-session it requested them in: a different token or session, `retire_jobs`, a
-file load and unregistering release its icons and tiles, so a late status is
-never drawn. Background Blender registers no timer, so headless loops decode no
-images and their decode requests expire.
+`bpy.data.temp_data()` with the shared
+[temporary preview decode](architecture/blender.md#temporary-preview-decoding),
+which leaves captured origins current, and passing the PNG to `finish_decode`,
+or calling `discard_decode` with a reason. It builds icons only from rehashed
+cache files, in its own preview collection. It binds its tiles to the context
+token and session it requested them in: a different token or session,
+`retire_jobs`, a file load and unregistering release its icons and tiles, so a
+late status is never drawn. Background Blender registers no timer, so headless
+loops decode no images and their decode requests expire.
 
 ## Explicit saved-result World application
 

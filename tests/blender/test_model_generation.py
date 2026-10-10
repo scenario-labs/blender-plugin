@@ -2083,6 +2083,18 @@ class ModelGenerationTests(unittest.TestCase):
             [{"parameter": "image", "kind": "panorama", "required": True, "max": 1}],
         )
         self.assertNotIn("contract", self.tools.list_models({"lane": "image"})["models"][0])
+        # The lane is offered where a model request is built, never for a native
+        # prompt field it does not have yet.
+        lanes = {
+            spec.name: spec.input_schema["properties"]["lane"]["enum"]
+            for spec in self.tools.SPECS
+            if spec.name in {"list_models", "estimate_cost", "generate", "estimate_prompt"}
+        }
+        for name in ("list_models", "estimate_cost", "generate"):
+            self.assertIn("panorama", lanes[name], name)
+        self.assertNotIn("panorama", lanes["estimate_prompt"])
+        with self.assertRaisesRegex(self.request_error, "valid prompt field"):
+            self.tools.estimate_prompt({"lane": "panorama", "action": "GENERATE"})
         self.assertEqual(self.paid, [])
 
     def test_mcp_environment_lane_refuses_models_without_a_verified_contract(self):

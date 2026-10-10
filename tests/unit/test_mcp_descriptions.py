@@ -313,7 +313,35 @@ def test_panorama_lane_contract_is_described_where_agents_choose_and_spend():
     assert "Lane panorama accepts only list_models(lane=panorama) models" in estimate
     assert "saved, downloaded 360 result of this account and project" in estimate
     assert "A changed model schema fails closed" in estimate
+    # The unknown-size cap fits only references up to 4096 pixels wide.
+    assert "at most 2 for a reference of unknown size, which fits a 2:1 panorama" in estimate
+    assert "4096 pixels wide, and an upscaled result is not upscaled again" in estimate
     generate = descriptions["generate"]
     assert "edit3d or panorama" in generate
     assert "Panorama results never change a World automatically" in generate
     assert "prepare_result_application(purpose=world)" in generate
+
+
+def test_prompt_estimates_offer_only_native_lanes_with_a_prompt_field():
+    _, calls = specs("tools_scenario")
+    lanes = {}
+    for call in calls:
+        properties = call.args[2].args[0]
+        for key, value in zip(properties.keys, properties.values, strict=True):
+            if isinstance(key, ast.Constant) and key.value == "lane":
+                enum = dict(zip(value.keys, value.values, strict=True))
+                lanes[call.args[0].value] = ast.unparse(
+                    next(v for k, v in enum.items() if k.value == "enum")
+                )
+    assert lanes["estimate_prompt"] == "list(NATIVE_LANES)"
+    for name in ("list_models", "estimate_cost", "generate"):
+        assert lanes[name] == "list(LANES)", name
+    tree = ast.parse((ROOT / "scenario/mcp/tools_scenario.py").read_text())
+    imports = {
+        (node.module, alias.name, alias.asname)
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    }
+    assert ("blender.props", "GENERATION_LANES", "NATIVE_LANES") in imports
+    assert ("core.api.catalog", "GENERATION_LANES", "LANES") in imports

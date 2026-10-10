@@ -8,6 +8,7 @@ from dataclasses import asdict
 import bpy
 
 from ..blender import generation, runtime
+from ..blender.props import GENERATION_LANES as NATIVE_LANES
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
@@ -2653,7 +2654,8 @@ SPECS = (
         'Get the exact server price for New, Rewrite or Translate on the current scene\'s native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged.\nExample: {"lane": "image", "action": "REWRITE"}.\nPlatform equivalent: prompt_spark for prompt generation; translation uses SDK generate.translate.',
         _schema(
             {
-                "lane": {"type": "string", "enum": list(LANES)},
+                # Only native lanes have a prompt field; MCP-only lanes have none.
+                "lane": {"type": "string", "enum": list(NATIVE_LANES)},
                 "action": {"type": "string", "enum": ["GENERATE", "REWRITE", "TRANSLATE"]},
             },
             ["action"],
@@ -2769,7 +2771,7 @@ SPECS = (
             "Args:\n"
             "  - model_id: required string, the model identifier.\n"
             "  - parameters: optional object, model parameters including Scenario asset ids for file inputs. Omit for render lanes: prepare render_form first; pricing uses its native scene prompt and uploaded snapshots.\n"
-            "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id. Lane panorama accepts only list_models(lane=panorama) models and applies their contract: locked values (a different value is refused), lane defaults when unset, 2:1 sizes and reference rules. A panorama-kind reference must be the asset_id of a saved, downloaded 360 result of this account and project (job_status projection equirectangular, source asset); other asset IDs are refused. Upscale factors stay within the 32-megapixel World limit, at most 2 for a reference of unknown size. A changed model schema fails closed.\n"
+            "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id. Lane panorama accepts only list_models(lane=panorama) models and applies their contract: locked values (a different value is refused), lane defaults when unset, 2:1 sizes and reference rules. A panorama-kind reference must be the asset_id of a saved, downloaded 360 result of this account and project (job_status projection equirectangular, source asset); other asset IDs are refused. Upscale factors are capped for the 32-megapixel World limit: at most 2 for a reference of unknown size, which fits a 2:1 panorama up to 4096 pixels wide, and an upscaled result is not upscaled again. A changed model schema fails closed.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
             "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"

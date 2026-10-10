@@ -723,9 +723,11 @@ same contract to the parameters before the exact quote:
   `projection: equirectangular` and `source: asset`. Other asset IDs, OpenEXR
   originals and results without a declared projection are refused, never assumed
   to be panoramas.
-- The upscale factor must keep the result within the 32-megapixel World limit.
-  The saved reference's pixel size is not stored, so the factor is at most 2,
-  and an upscaled result cannot be upscaled again here.
+- The upscale factor is capped for the 32-megapixel World limit. The saved
+  reference's pixel size is not stored, so the factor is at most 2, which fits a
+  2:1 panorama up to 4096 pixels wide, and an upscaled result cannot be upscaled
+  again here. Flux and HY World output sizes are unverified; a larger reference
+  could still exceed the limit, and World application then refuses the result.
 - A model schema that no longer has an input the contract depends on, or no
   longer accepts a locked value, fails with "This panorama model's contract
   changed; update the extension".
@@ -734,6 +736,8 @@ Quotes, single-use approval, durable submission and recovery are the same as in
 the other model lanes. Panorama jobs never import an image or change a World by
 themselves: apply a saved result with `prepare_result_application(purpose="world")`
 and [explicit approval](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval).
+The lane has no native prompt field yet, so `estimate_prompt` does not offer it;
+pass the prompt in `parameters`.
 The contracts come from recorded model records and zero-spend dry-run quotes;
 output formats, dimensions, asset layout and the HDR original's host are
 unverified until an authorized paid run under

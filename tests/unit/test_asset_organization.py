@@ -12,8 +12,16 @@ to the SDK adapter.
 import json
 import socket
 
+import httpx
 import pytest
-from organization_service import PRIVATE, URL, OrganizationService, asset, collection
+from organization_service import (
+    ALREADY_MEMBERS,
+    PRIVATE,
+    URL,
+    OrganizationService,
+    asset,
+    collection,
+)
 
 from scenario.core.api.sdk_adapter import MAX_COLLECTION_ASSETS, MAX_TAG_CHANGES
 from scenario.core.jobs.organization import (
@@ -382,6 +390,224 @@ def test_refused_membership_confirmed_by_read_back_is_rejected(service):
     assert "Asset or collection not found in the selected connection" in result.message
     assert PRIVATE not in result.message
     assert result.outcomes[0].status == 404
+
+
+ADD_PATH = "/v1/collections/props/assets"
+
+
+def add_writes(service):
+    return [body["assetIds"] for method, path, body in service.writes if path == ADD_PATH]
+
+
+def join_props(service, *identifiers):
+    """Another client adds these assets to the collection."""
+    for identifier in identifiers:
+        service.assets[identifier]["collectionIds"].append("props")
+
+
+def test_synthetic_service_refuses_adds_as_one_transaction(service):
+    # The fake models the observed backend: a re-add or more than 49 IDs is a
+    # 400 that writes nothing; it never silently accepts a re-add.
+    client = httpx.Client(transport=httpx.MockTransport(service), base_url=URL)
+    params = {"projectId": "project"}
+    refused = client.put(
+        "/collections/props/assets", params=params, json={"assetIds": ["asset-c", "asset-b"]}
+    )
+    assert refused.status_code == 400
+    assert refused.json()["reason"] == ALREADY_MEMBERS
+    assert service.assets["asset-c"]["collectionIds"] == []
+    many = [f"asset-{index}" for index in range(50)]
+    too_many = client.put("/collections/props/assets", params=params, json={"assetIds": many})
+    assert too_many.status_code == 400
+    assert service.assets["asset-a"]["collectionIds"] == []
+    client.close()
+
+
+def test_member_added_after_review_is_skipped_and_the_rest_sent_again(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    assert snapshot.request_count == 1
+    join_props(service, "asset-a")
+    service.events.clear()
+    result = owner.execute(snapshot, guarded(service.events))
+    assert add_writes(service) == [["asset-a", "asset-c"], ["asset-c"]]
+    assert service.events == [
+        "guard",
+        f"PUT {ADD_PATH}",
+        "POST /v1/assets/get-bulk",
+        "guard",
+        f"PUT {ADD_PATH}",
+        "POST /v1/assets/get-bulk",
+    ]
+    assert states(result) == [("asset-a", Outcome.VERIFIED), ("asset-c", Outcome.VERIFIED)]
+    assert result.state == ResultState.VERIFIED
+    assert result.requests_sent == 2
+    assert result.message.endswith(
+        "Already in the collection: 1 of 2 assets; the rest were sent again"
+    )
+    assert ALREADY_MEMBERS not in result.message
+    assert PRIVATE not in result.message
+
+
+def test_every_target_already_a_member_sends_no_further_write(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    join_props(service, "asset-a", "asset-c")
+    guard = guarded()
+    result = owner.execute(snapshot, guard)
+    assert add_writes(service) == [["asset-a", "asset-c"]]
+    assert len(guard.calls) == 1
+    assert result.state == ResultState.VERIFIED
+    assert result.requests_sent == 1
+    assert result.message.endswith("All 2 assets were already in the collection")
+    assert "sent again" not in result.message
+
+
+def test_one_asset_already_added_is_verified_with_one_request(service):
+    # The native Library reviews one asset: a refusal it explains needs no resend.
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-c"], collection_id="props")
+    )
+    join_props(service, "asset-c")
+    result = owner.execute(snapshot, guarded())
+    assert add_writes(service) == [["asset-c"]]
+    assert states(result) == [("asset-c", Outcome.VERIFIED)]
+    assert result.outcomes[0].status is None
+    assert result.requests_sent == 1
+    assert result.message == (
+        "Scenario confirmed every change. The asset was already in the collection"
+    )
+
+
+def test_another_add_refusal_reason_is_not_sent_again(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    service.fault("PUT", ADD_PATH, 400)
+    result = owner.execute(snapshot, guarded())
+    assert len(add_writes(service)) == 1
+    assert states(result) == [("asset-a", Outcome.REJECTED), ("asset-c", Outcome.REJECTED)]
+    assert {outcome.status for outcome in result.outcomes} == {400}
+    assert result.state == ResultState.REJECTED
+    assert result.requests_sent == 1
+    assert "rejected this organization change (HTTP 400)" in result.message
+
+
+def test_already_member_refusal_the_read_back_cannot_explain_is_kept(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    service.fault("PUT", ADD_PATH, "already-members")
+    result = owner.execute(snapshot, guarded())
+    assert len(add_writes(service)) == 1
+    assert states(result) == [("asset-a", Outcome.REJECTED), ("asset-c", Outcome.REJECTED)]
+    assert result.state == ResultState.REJECTED
+    assert result.requests_sent == 1
+    assert "some are already in the collection (HTTP 400)" in result.message
+    assert PRIVATE not in result.message
+
+
+def test_failed_read_after_an_already_member_refusal_sends_nothing_more(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    join_props(service, "asset-a")
+    service.fault("POST", "/v1/assets/get-bulk", 500)
+    result = owner.execute(snapshot, guarded())
+    assert len(add_writes(service)) == 1
+    assert states(result) == [("asset-a", Outcome.VERIFIED), ("asset-c", Outcome.REJECTED)]
+    assert result.state == ResultState.PARTIAL
+    assert result.requests_sent == 1
+    assert "some are already in the collection (HTTP 400)" in result.message
+
+
+def test_repeated_concurrent_adds_stop_after_three_requests():
+    service = OrganizationService(
+        assets=[asset(f"asset-{name}") for name in "acde"],
+        collections=[collection("props", "Props")],
+    )
+    racing = ["asset-a", "asset-c", "asset-d"]
+
+    def other_client(request):
+        if request.method == "PUT" and racing:
+            join_props(service, racing.pop(0))
+
+    owner = OrganizationCommands(service.adapter())
+    snapshot = owner.snapshot(
+        request(
+            "add_to_collection",
+            asset_ids=["asset-a", "asset-c", "asset-d", "asset-e"],
+            collection_id="props",
+        )
+    )
+    service.gate = other_client
+    result = owner.execute(snapshot, guarded())
+    assert add_writes(service) == [
+        ["asset-a", "asset-c", "asset-d", "asset-e"],
+        ["asset-c", "asset-d", "asset-e"],
+        ["asset-d", "asset-e"],
+    ]
+    assert result.requests_sent == 3
+    assert states(result) == [
+        ("asset-a", Outcome.VERIFIED),
+        ("asset-c", Outcome.VERIFIED),
+        ("asset-d", Outcome.VERIFIED),
+        ("asset-e", Outcome.REJECTED),
+    ]
+    assert result.state == ResultState.PARTIAL
+    assert "after 3 requests" in result.message
+
+
+def test_guard_failure_before_the_resend_stops_it(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    join_props(service, "asset-a")
+    guard = guarded(fail_at=2)
+    result = owner.execute(snapshot, guard)
+    assert len(add_writes(service)) == 1
+    assert len(guard.calls) == 2
+    assert states(result) == [("asset-a", Outcome.VERIFIED), ("asset-c", Outcome.REJECTED)]
+    assert result.state == ResultState.PARTIAL
+    assert result.requests_sent == 1
+    assert "connection changed; later changes were not sent" in result.message
+    assert result.message.endswith("Already in the collection: 1 of 2 assets")
+
+
+def test_uncertain_resend_is_unconfirmed_and_never_sent_again(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    join_props(service, "asset-a")
+    service.fault("PUT", ADD_PATH, None, "timeout")
+    result = owner.execute(snapshot, guarded())
+    assert add_writes(service) == [["asset-a", "asset-c"], ["asset-c"]]
+    assert states(result) == [("asset-a", Outcome.VERIFIED), ("asset-c", Outcome.UNCONFIRMED)]
+    assert result.state == ResultState.UNCONFIRMED
+    assert result.requests_sent == 2
+    assert "nothing is resent" in result.message
+
+
+def test_removal_is_never_sent_again_after_a_refusal(service):
+    owner = commands(service)
+    snapshot = owner.snapshot(
+        request("remove_from_collection", asset_ids=["asset-b"], collection_id="props")
+    )
+    service.fault("DELETE", ADD_PATH, "already-members")
+    result = owner.execute(snapshot, guarded())
+    assert [entry[:2] for entry in service.writes] == [("DELETE", ADD_PATH)]
+    assert states(result) == [("asset-b", Outcome.REJECTED)]
+    assert result.requests_sent == 1
 
 
 def test_online_access_off_sends_nothing(service):

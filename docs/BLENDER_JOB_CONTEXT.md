@@ -504,7 +504,7 @@ read, returning a review ID. `poll` moves finished worker outcomes into the
 calls it, and MCP can wait on `task(review_id)` off the main thread before
 polling. `status` and `discard` return a JSON-safe projection without URLs,
 owner IDs or service text, including the per-asset change, the number of writes
-apply may send and the no-credit, no-undo notice. `apply` consumes a READY
+apply sends when each succeeds and the no-credit, no-undo notice. `apply` consumes a READY
 review once; if the command cannot even be queued, the review returns to READY
 because nothing was sent. `collections` and `take_collections` read one page
 of collections without thumbnails or owner IDs.

@@ -23,7 +23,12 @@ PRIVATE = "private-service-text"
 
 
 class Service:
-    """Collections, memberships and tags behind the SDK 2.2.0 wire forms."""
+    """Collections, memberships and tags behind the SDK 2.2.0 wire forms.
+
+    An add is one transaction, as the service was observed to behave: a re-add
+    or more than 49 assets refuses the whole request with a 400 and writes
+    nothing.
+    """
 
     def __init__(self):
         self.assets = {
@@ -77,6 +82,14 @@ class Service:
         if len(parts) == 2 and parts[0] == "collections":
             return httpx.Response(200, json={"collection": self.collections[parts[1]]})
         if len(parts) == 3 and parts[0] == "collections":
+            if method == "PUT" and len(body["assetIds"]) > 49:
+                reason = "You can not add more than 49 assets at once."
+                return httpx.Response(400, json={"reason": reason, "detail": PRIVATE})
+            if method == "PUT" and any(
+                parts[1] in self.assets[i]["collectionIds"] for i in body["assetIds"]
+            ):
+                reason = "One or more assets are already part of the collection"
+                return httpx.Response(400, json={"reason": reason, "detail": PRIVATE})
             for identifier in body["assetIds"]:
                 members = self.assets[identifier]["collectionIds"]
                 if method == "PUT" and parts[1] not in members:

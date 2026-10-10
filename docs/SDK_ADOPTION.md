@@ -877,7 +877,9 @@ and still needs authorized live evidence:
 
 The shared [organization review commands](JOB_COORDINATOR.md#asset-organization-commands)
 call these methods through the coordinator, its workers and the JobSession
-review owner, with a guard before each write and a `get_bulk` read-back. No
+review owner, with a guard before each write and a `get_bulk` read-back. After
+`AlreadyMembers`, they send only the assets read back as not yet members, within
+three add requests per review. No
 local MCP tool or native Library control calls them yet. User-facing
 confirmation and live acceptance remain under
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64),

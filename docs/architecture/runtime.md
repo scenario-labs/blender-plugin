@@ -633,8 +633,9 @@ reads. Collection and tag changes use the separate organization reviews below.
 ## Shared asset organization reviews
 
 [organization.py](../../scenario/core/jobs/organization.py) holds the pure,
-bpy-free contract: validated requests, fresh snapshots, guarded single writes,
-read-back classification and the review state machine. The coordinator and
+bpy-free contract: validated requests, fresh snapshots, guarded writes that are
+never resent after an uncertain outcome, read-back classification and the
+review state machine. The coordinator and
 existing workers run it through the selected SDK adapter, and
 [asset_organization.py](../../scenario/blender/asset_organization.py) gives the
 native Library and local MCP one session-owned entry point. The runtime

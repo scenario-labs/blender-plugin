@@ -494,7 +494,16 @@ accepts only an unused snapshot of its own scope, once.
 `OrganizationCommands.execute` calls the active-context guard immediately before
 every write and never after the last one, so deactivation stops later writes
 and still reports those already sent. Membership changes send one request for
-the assets that need it. Tag changes send one non-strict request per asset in
+the assets that need it. As the [adapter guide](SDK_ADOPTION.md#asset-organization-writes)
+records, the service was observed (not yet checked live here) to refuse a whole
+add, writing nothing, when any asset is already a member, which another client
+can cause after the snapshot; the adapter raises `AlreadyMembers` for that
+refusal only.
+One `get_bulk` read then drops the assets now in the collection and, after the
+guard, sends the others again, within `ADD_ATTEMPTS` (three) add requests per
+review. A failed read, a refusal the read cannot explain, any other outcome or
+the bound stops it, and the result message counts the assets that were already
+members. Tag changes send one non-strict request per asset in
 order: a definite rejection continues with the next independent asset, while
 the first uncertain outcome, disabled online access or a failed guard stops
 further writes and leaves the rest NOT_SENT. A create repeats the exact-name
@@ -511,7 +520,8 @@ not show (for example a dropped DELETE body), NOT_SENT for writes never sent and
 UNVERIFIED when the read failed or omitted the asset. A created collection is
 read back by ID. The result is VERIFIED, PARTIAL, UNCONFIRMED or REJECTED.
 `execute` raises `OrganizationNotSent` only when nothing was sent, and nothing
-is ever replayed: the user prepares a new review after inspecting.
+is replayed after an uncertain outcome: the user prepares a new review after
+inspecting.
 
 `deactivate()` clears issued snapshots and the uncertain create names; queued
 organization commands are cancelled unsent with other queued work. Nothing is

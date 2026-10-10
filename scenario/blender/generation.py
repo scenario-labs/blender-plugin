@@ -19,6 +19,7 @@ from ..core.api.catalog import (
     models_for_lane,
 )
 from ..core.api.errors import ScenarioError
+from ..core.jobs.coordinator import RouteQuoteError
 from ..core.scene import capture_plan
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
 from . import params_ui, props, runtime
@@ -894,15 +895,22 @@ def process_model_jobs():
             lane_state.estimate_cu = float(estimate.cost)
             lane_state.estimate_state = "READY"
             lane_state.estimate_error = ""
-        except Exception:
+        except Exception as error:
             jobs.quotes.pop(ticket.identifier, None)
             # Source/transport details can contain private inputs. Keep failures
             # actionable without copying arbitrary exception text into the UI.
+            # A refused LoRA or composition carries fixed text naming only
+            # input labels and positions.
+            message = (
+                str(error)
+                if isinstance(error, RouteQuoteError)
+                else "Could not confirm this price; estimate again"
+            )
             try:
                 lane_state = ticket.scene.scenario.lane_state(ticket.lane)
                 if lane_state.estimate_key == key:
                     lane_state.estimate_state = "ERROR"
-                    lane_state.estimate_error = "Could not confirm this price; estimate again"
+                    lane_state.estimate_error = message
             except ReferenceError:
                 pass  # A removed scene cannot receive its old quote.
 

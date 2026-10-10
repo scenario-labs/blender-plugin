@@ -17,9 +17,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from scenario.core.api import catalog
-from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
-from scenario.core.schema.forms import prepare_run
+from scenario.core.api import catalog, trained_routes
+from scenario.core.api.sdk_adapter import AdapterUnavailable, Credentials, SDKAdapter
+from scenario.core.schema.forms import prepare_run, record_schema
 from tools import capture_trained_contracts as capture
 
 TRAINED = Path(__file__).resolve().parents[1] / "fixtures/models/trained"
@@ -80,19 +80,72 @@ SERVER_CHECKS = {
     ),
     "check_unknown_model": (404, "Model model_FIXTUREMISSING0000000000 not found"),
 }
-# What today's shared form preparation does with each probe, before any quote.
-# It checks item limits, scale bounds and scale alignment, but not model types
-# or model existence; the route PR adds those checks and updates these rows.
-LOCAL_PREPARATION = {
-    "check_without_scale": None,
-    "check_scale_count_mismatch": "LoRA scales: provide one weight for each supplied LoRA.",
+# What the shared preparation and the quote-time reference check do with each
+# captured request, before any quote: None means both accept it. The service
+# accepts several of these; the client refuses them on purpose.
+LOCAL_OUTCOMES = {
+    "base_only": None,
+    "stack_one": None,
+    "stack_two": None,
+    "stack_flux2": None,
+    "kontext_reference_only": None,
+    "stack_kontext": None,
+    # Accepted by the service, which then applies a strength nobody chose.
+    "model_id_lora": (
+        "LoRA or Composition Model is a LoRA. Add it to Flux LoRA with a strength instead."
+    ),
+    "composition": None,
+    "composition_unlisted_concept": None,
+    # Accepted by the service, but its schema says `loras` overrides the
+    # composition's own LoRAs.
+    "composition_with_loras": (
+        "Use LoRA or Composition Model on its own, or remove it to stack Flux LoRA with strengths."
+    ),
+    "check_without_scale": "LoRA Scale: provide a strength for each LoRA in Flux LoRA.",
+    "check_scale_count_mismatch": "LoRA Scale: provide one strength for each LoRA in Flux LoRA.",
     "check_scale_below_min": "LoRA Scale [1]: minimum is 0.",
     "check_scale_above_max": "LoRA Scale [1]: maximum is 2.",
     "check_over_item_limit": "Flux LoRA: use at most 6 items.",
-    "check_incompatible_type": None,
-    "check_composition_in_loras": None,
-    "check_unknown_model": None,
+    "check_incompatible_type": (
+        "Flux LoRA [1] is a flux.2-dev-lora model; Flux LoRA accepts flux.1-lora."
+    ),
+    "check_composition_in_loras": (
+        "Flux LoRA [1] is a flux.1-composition model; Flux LoRA accepts flux.1-lora."
+    ),
+    "check_unknown_model": (
+        "Flux LoRA [1] is not available to the selected credentials or project (HTTP 404). "
+        "Remove it or choose another model."
+    ),
 }
+
+
+def _captured_read(model_id):
+    """Answer a reference read from the captured records only.
+
+    A composition concept is answered from its recorded type and readability.
+    The capture did not record a concept's status; a readable concept LoRA is
+    taken as trained here.
+    """
+    if model_id in PUBLIC:
+        return PUBLIC[model_id]
+    for role, rows in CONTRACTS["catalog"]["compositionConcepts"].items():
+        concepts = PUBLIC[capture.PUBLIC_TRAINED[role]]["concepts"]
+        for concept, row in zip(concepts, rows, strict=True):
+            if concept["modelId"] == model_id and row["readable"]:
+                return {"id": model_id, "type": row["type"], "status": "trained"}
+    raise AdapterUnavailable(404)
+
+
+def _local_outcome(case):
+    """Prepare and check one captured request as a quote would, without a request."""
+    base = BASES[case["target"]]
+    schema = record_schema("model", base)
+    try:
+        _, payload = prepare_run(case["target"], schema, case["body"])
+        trained_routes.check_references(schema, payload, _captured_read, names=case["body"])
+    except ValueError as error:
+        return str(error)
+    return None
 
 
 def _inputs(base_id):
@@ -266,11 +319,17 @@ def test_accepted_routes_quote_exactly_through_the_existing_adapter_path(name):
     cost = Decimal(str(case["reply"]["creativeUnitsCost"]))
     assert cost > 0
     quote = case["adapterQuote"]
-    assert "rejected" not in quote
+    if "rejected" in quote:
+        # A capture made with the client policy records its refusal of a
+        # request the service accepts.
+        assert quote["rejected"] == LOCAL_OUTCOMES[name]
+        return
     assert Decimal(str(quote["reply"]["creativeUnitsCost"])) == cost
+    if LOCAL_OUTCOMES[name] is not None:
+        return  # Recorded before the client policy; see the local outcome test.
     # The shared form preparation keeps the selection and only adds defaults.
     target, payload = prepare_run(
-        case["target"], {"parameters": BASES[case["target"]]["inputs"]}, case["body"]
+        case["target"], record_schema("model", BASES[case["target"]]), case["body"]
     )
     assert target == case["target"]
     assert {key: payload[key] for key in case["body"]} == case["body"]
@@ -298,19 +357,20 @@ def test_server_validation_of_lora_inputs(name):
         assert case["reply"] == {"reason": reason}
 
 
-@pytest.mark.parametrize("name", sorted(LOCAL_PREPARATION))
-def test_local_preparation_compared_with_the_server(name):
+def test_every_captured_request_has_a_local_outcome():
+    assert set(LOCAL_OUTCOMES) == {
+        name for name, case in CASES.items() if case["route"] != "direct"
+    }
+
+
+@pytest.mark.parametrize("name", sorted(LOCAL_OUTCOMES))
+def test_local_policy_compared_with_the_server(name):
     case = CASES[name]
-    expected = LOCAL_PREPARATION[name]
-    schema = {"parameters": BASES[FLUX1]["inputs"]}
+    expected = LOCAL_OUTCOMES[name]
+    assert _local_outcome(case) == expected
     if expected is None:
-        _, payload = prepare_run(FLUX1, schema, case["body"])
-        # No strength is invented when the selection gives none.
-        assert payload.get("lorasScale") == case["body"].get("lorasScale")
-    else:
-        with pytest.raises(ValueError) as error:
-            prepare_run(FLUX1, schema, case["body"])
-        assert str(error.value) == expected
+        # Every request the client accepts was accepted by the service too.
+        assert case["status"] == 269
 
 
 def test_reference_inputs_and_identifiers_are_placeholders():

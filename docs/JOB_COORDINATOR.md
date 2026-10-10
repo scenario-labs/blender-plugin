@@ -475,7 +475,7 @@ The coordinator and its existing worker queue expose `models`, `model`,
 `workflows` and `workflow` through the same selected SDK adapter. Late metadata
 is rejected after context deactivation. Detail retrieval must return the exact
 requested identity. These commands do not create another catalog client/cache,
-start another pool, or route trained models through an unverified REST path.
+start another pool, or quote a trained model as the generation target.
 
 `quote_model` and `quote_workflow` take the origin captured with input values
 before estimation. Workers copy finite JSON parameters at admission. Each quote
@@ -485,6 +485,18 @@ are checked before work, after metadata retrieval and after estimation. A scene
 change during those calls cannot turn a late estimate into a current quote.
 The returned `OriginQuote` holds the original scope/origin and immutable SDK
 estimate; it is ephemeral and does not yet create a durable job intent.
+
+Between metadata retrieval and estimation, the quote prepares the exact payload
+without a request. It then reads every model the caller chose in a `model` or
+`model_array` input (a value other than empty or the schema default) again
+through the same adapter, including the LoRAs of a chosen composition. The
+reads are bounded at 16 per quote and recheck the active context and origin
+before each request. A deleted or inaccessible (HTTP 403 or 404), untrained or
+incompatible model, or a LoRA selection without a strength for each LoRA,
+raises `RouteQuoteError` before any dry run: nothing is quoted, dispatched or
+persisted. Its text names input labels and positions only. The estimate must
+then carry the checked target and payload. Routes and their policy are
+described in [trained-model routes](SDK_ADOPTION.md#trained-model-routes).
 
 After the user chooses it, `prepare_quote` accepts only that context's unchanged,
 unconsumed quote, checks its origin again and persists one PREPARED intent.

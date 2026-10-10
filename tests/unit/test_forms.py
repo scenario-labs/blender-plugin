@@ -76,8 +76,8 @@ def test_required_file_array_and_nested_fields():
     assert not validate_parameters(schema, {"references": ["asset_ok"], "segments": [{"start": 0}]})
 
 
-def test_lora_wiring_survives_default_empty_list_and_merges_additional_loras():
-    from scenario.core.schema.forms import prepare_run
+def test_lora_wiring_takes_caller_strengths_or_a_declared_default_never_an_invented_one():
+    from scenario.core.schema.forms import RouteError, prepare_run
 
     schema = {
         "runs_as": "lora",
@@ -86,6 +86,7 @@ def test_lora_wiring_survives_default_empty_list_and_merges_additional_loras():
             {"name": "loras", "type": "model_array", "default": []},
             {"name": "lorasScale", "type": "number_array"},
         ],
+        "uiConfig": {"lorasComponent": {"modelInput": "loras", "scaleInput": "lorasScale"}},
         "run_with": {
             "required_arguments": {
                 "model_id": "model_base",
@@ -94,18 +95,49 @@ def test_lora_wiring_survives_default_empty_list_and_merges_additional_loras():
         },
     }
     original = deepcopy(schema)
-    assert prepare_run("model_selected", schema, {"prompt": "stone"}) == (
+    # A wired LoRA without a strength is refused rather than given 1.0.
+    with pytest.raises(RouteError, match="provide a strength for each LoRA"):
+        prepare_run("model_selected", schema, {"prompt": "stone"})
+    with pytest.raises(RouteError, match="provide a strength for each LoRA"):
+        prepare_run(
+            "model_selected",
+            schema,
+            {"prompt": "stone", "loras": ["model_other"], "lorasScale": [0.4]},
+        )
+    assert prepare_run("model_selected", schema, {"prompt": "stone", "lorasScale": [0.6]}) == (
         "model_base",
-        {"prompt": "stone", "loras": ["model_selected"]},
+        {"prompt": "stone", "loras": ["model_selected"], "lorasScale": [0.6]},
     )
+    assert schema == original
+    # The scale input's declared default fills only the LoRAs the caller left without one.
+    schema["parameters"][2]["default"] = 0.75
     _, values = prepare_run(
         "model_selected",
         schema,
         {"prompt": "stone", "loras": ["model_other"], "lorasScale": [0.4]},
     )
     assert values["loras"] == ["model_selected", "model_other"]
-    assert values["lorasScale"] == [1.0, 0.4]
-    assert schema == original
+    assert values["lorasScale"] == [0.75, 0.4]
+
+
+def test_lora_inputs_are_recognized_from_the_lora_component_not_by_name():
+    from scenario.core.schema.forms import prepare_run
+
+    fields = [
+        {"name": "loras", "type": "model_array"},
+        {"name": "lorasScale", "type": "number_array"},
+    ]
+    payload = {"loras": ["model_one", "model_two"], "lorasScale": [0.4]}
+    assert prepare_run("base", {"parameters": fields}, payload) == ("base", payload)
+    with pytest.raises(ValueError, match="one strength for each LoRA"):
+        prepare_run(
+            "base",
+            {
+                "parameters": fields,
+                "uiConfig": {"lorasComponent": {"modelInput": "loras", "scaleInput": "lorasScale"}},
+            },
+            payload,
+        )
 
 
 def test_composition_wiring_cannot_be_lost_or_retargeted():

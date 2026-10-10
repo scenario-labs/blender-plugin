@@ -15,8 +15,9 @@ from enum import StrEnum
 from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
 
+from ..api import trained_routes
 from ..api.sdk_adapter import Estimate, SDKAdapter
-from ..schema.forms import _fields, is_file_field
+from ..schema.forms import RouteError, _fields, chosen_inputs, is_file_field, record_schema
 from . import local_render
 from .film_finishing import (
     CompositionDraft,
@@ -45,6 +46,14 @@ from .uploads import UploadCommands, UploadError
 
 class QuoteError(ValueError):
     """The current request no longer matches an active, unexpired quote."""
+
+
+class RouteQuoteError(QuoteError):
+    """A LoRA, composition or other model the request names cannot run.
+
+    Raised before any dry run, so nothing is quoted, dispatched or spent. The
+    text is fixed and safe to show: input labels and positions, no IDs or names.
+    """
 
 
 @dataclass(frozen=True, eq=False)
@@ -885,7 +894,16 @@ class JobCoordinator:
             record = self._metadata(operation, identifier)
             with self._request_guard(origin):
                 self._validate_composition(composition)
+            try:
+                prepared = getattr(self._adapter, f"prepare_{operation}")(record, snapshot)
+            except RouteError as error:
+                raise RouteQuoteError(str(error)) from None
+            self._check_references(operation, record, snapshot, prepared[1], origin)
             estimate = getattr(self._adapter, f"estimate_{operation}")(record, snapshot)
+            if (estimate.target_id, estimate.payload) != prepared:
+                raise QuoteError(
+                    "The request changed while its models were checked; estimate again"
+                )
         with self._request_guard(origin):
             self._validate_composition(composition)
             bindings = self._mesh_bindings(operation, record, estimate.payload)
@@ -893,6 +911,30 @@ class JobCoordinator:
             self._quotes[id(quote)] = quote
             self._bound_estimates[estimate] = True
             return quote
+
+    def _check_references(self, operation, record, parameters, payload, origin):
+        """Fresh-read every model the caller chose before any dry run.
+
+        Values equal to a schema default are the service's own and are not
+        read. Each read uses the selected credentials and project and is
+        bounded by trained_routes.MAX_REFERENCE_READS. A deleted, inaccessible,
+        untrained or incompatible model raises RouteQuoteError, so nothing is
+        quoted.
+        """
+
+        def read(model_id):
+            with self._request_guard(origin):
+                pass
+            return self._metadata("model", model_id)
+
+        schema = record_schema(operation, record)
+        try:
+            names = chosen_inputs(schema, parameters)
+            trained_routes.check_references(schema, payload, read, names=names)
+        except RouteError as error:
+            raise RouteQuoteError(str(error)) from None
+        with self._request_guard(origin):
+            pass
 
     def prepare_quote(self, quote):
         """Persist one chosen quote without rebinding it to a newer scene revision."""

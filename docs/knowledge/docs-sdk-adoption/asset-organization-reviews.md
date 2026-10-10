@@ -8,17 +8,19 @@
     "path": "docs/SDK_ADOPTION.md",
     "scope": "asset-organization-reviews",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-12",
-    "base_revision": "3acb9625dc28bc74a6b764163ce6a6ca27144528",
-    "limits": "Reviewed only the service inventory row, the adapter coverage sentence and the closing paragraph of the asset organization section: the shared organization commands call the adapter methods through the coordinator, its workers and the JobSession review owner, with a guard before each write and a get_bulk read-back, and after AlreadyMembers send only the assets read back as not yet members, within three add requests per review; the local MCP organization tools prepare, apply and inspect those reviews and make no direct SDK call; no native Library control calls them. No SDK method, raw exception or dependency changed; the owner's collection page slot fix adds no SDK call. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No native Library control, desktop interaction or release acceptance is claimed.",
+    "reviewed_at": "2026-10-11",
+    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "limits": "Reviewed only the service inventory row, the adapter coverage sentence and the closing paragraph of the asset organization section: the shared organization commands call the adapter methods through the coordinator, its workers and the JobSession review owner, with a guard before each write and a get_bulk read-back, and after AlreadyMembers send only the assets read back as not yet members, within three add requests per review; the local MCP organization tools and the native Library controls prepare, apply and inspect those reviews and make no direct SDK call. No SDK method, raw exception or dependency changed. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No desktop interaction or release acceptance is claimed.",
     "sources": {
-      "docs/SDK_ADOPTION.md": "70f6ee714592ceca97172e76340dbe69f85bc1bfcff65a42a555784d87b2e071",
+      "docs/SDK_ADOPTION.md": "71ee6168dc61b35dd899591df77a77faf405d9abf9562366f0a8f2fc6b1d96fa",
       "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
-      "scenario/core/jobs/coordinator.py": "54e97b2ff7a51e563dfff542ccf0f579ce2324393491840bf10efb78939307e9",
-      "scenario/blender/asset_organization.py": "b0e59563ab508d0382b8a4a846becdfbb7600664ae72bb8f452c2d2f58a2f647",
-      "scenario/mcp/tools_scenario.py": "c3597642a8199cde05d1346120532681f7138572e3edf523fa3788489b5f3b3c",
-      "scenario/blender/library_view.py": "4ce0e8ca5a402136d7b5e2dbbe5b0f24f2b5480ed81afb3782c38252b3a65039",
-      "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5"
+      "scenario/core/jobs/coordinator.py": "bd23cca7936171f99803eb3e79d9979c0312e8e69ff1feeed4c497c3f1f00229",
+      "scenario/blender/asset_organization.py": "597a1026ad96d07f563f54ff2651591dc9c9fc4bf6a3f19bee5bf43509ada7ce",
+      "scenario/mcp/tools_scenario.py": "ac814890e57891397e7f124fb6e12568144ef858e05356028a73e03b03bde94e",
+      "scenario/blender/library_view.py": "128d5f59000c37e6ddce965fbe2c1f61da7d6e55a45a33661ba8a13baf20cc14",
+      "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5",
+      "scenario/core/ui/library_organization.py": "79ce2541b2ec332797e64c56a436e917f7431b9e96e45866d2b7abb413aabd20",
+      "tests/blender/test_library_organization.py": "54dc4032b89c4849760280aced9e784855552fb8296f61e6c0a6128bdc4c1653"
     }
   }
 }

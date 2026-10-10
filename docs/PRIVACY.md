@@ -29,6 +29,12 @@ limits of its current controls. It does not replace Scenario's service policies.
   HTTP Basic `Authorization` header over TLS. They identify the extension with
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;
   they do not forward the Scenario API key/secret header.
+- Studio > Library reads collection names and counts only when you choose
+  **Load collections**. Confirming **Organize** reads the chosen asset's tags and
+  memberships and the target collection or matching names; after you review the
+  change and choose **Apply**, it sends that asset ID with the tags or collection
+  name you entered. The change uses no
+  credits and Blender Undo does not reverse it.
 - An agent connected to the local MCP server can request scene information,
   captures, uploads and paid generations on your behalf. It can also change
   the collection membership and tags of your Scenario assets or create a

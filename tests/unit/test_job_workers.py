@@ -578,3 +578,27 @@ def test_preview_control_exception_retires_the_owner(setup, monkeypatch):
         owner.refresh_remote("request", expected_revision=1)
     owner.shutdown()
     assert owner.stopped
+
+
+def test_audio_envelope_decodes_run_on_the_preview_lane_and_can_be_canceled(setup, monkeypatch):
+    owner, coordinator, _, prepare, entered, release, _, _ = setup()
+    started, threads = threading.Event(), []
+
+    def decode(request, *, root, waveform, cancel):
+        threads.append(threading.current_thread())
+        started.set()
+        # The real command terminates its offline Blender child once signaled.
+        assert cancel.wait(5), "Cancellation did not reach the decode"
+        return (request, root, waveform)
+
+    monkeypatch.setattr(coordinator, "decode_result_preview", decode)
+    running = submit(owner, prepare())
+    assert entered.wait(2)
+    task = owner.decode_result_preview("request", root="/private-root", waveform="decoder")
+    assert started.wait(2)
+    assert threads[0].name == "ScenarioPreview" and not owner.previews_idle
+    owner.cancel_preview(task)
+    assert task.result(2) == ("request", "/private-root", "decoder")
+    assert not running.done()
+    release.set()
+    assert running.result(2).state == JobState.REMOTE

@@ -3,15 +3,19 @@
 """Installed session previews: dedicated lane, private cache and no scene mutation."""
 
 import hashlib
+import io
 import json
+import math
 import os
 import struct
 import tempfile
 import threading
 import time
 import unittest
+import wave
 import zlib
 from pathlib import Path
+from unittest.mock import patch
 
 import bpy
 import httpx
@@ -43,6 +47,20 @@ def png(width, height):
         + chunk(b"IDAT", zlib.compress(rows))
         + chunk(b"IEND", b"")
     )
+
+
+def tone(seconds=0.25, rate=8000, amplitude=0.5):
+    """Synthetic mono PCM: a 200 Hz tone generated here, never recorded media."""
+    frames = int(seconds * rate)
+    values = [
+        round(32767 * amplitude * math.sin(2 * math.pi * 200 * frame / rate))
+        for frame in range(frames)
+    ]
+    stream = io.BytesIO()
+    with wave.open(stream, "wb") as sound:
+        sound.setparams((1, 2, rate, 0, "NONE", "not compressed"))
+        sound.writeframes(struct.pack(f"<{frames}h", *values))
+    return stream.getvalue()
 
 
 class SessionPreviewTests(unittest.TestCase):
@@ -275,3 +293,82 @@ class SessionPreviewTests(unittest.TestCase):
         thread.start()
         thread.join()
         self.assertEqual(len(errors), 1)
+
+    def offline_session(self):
+        self.session.shutdown()
+        self.session = self.new_session(
+            preview_waveform=submodule("blender.runtime").waveform_spec()
+        )
+        self.assertIsNotNone(self.session.result_previews._waveform)
+
+    def watched_decode(self):
+        """Wrap the real offline decode to record its thread, start and outcome."""
+        decoder = submodule("core.jobs.audio_decode")
+        original, entered, record = decoder.decode, threading.Event(), []
+
+        def decode(*args, **kwargs):
+            record.append(threading.current_thread().name)
+            entered.set()
+            try:
+                return original(*args, **kwargs)
+            except Exception as error:
+                record.append(type(error).__name__)
+                raise
+
+        self.enterContext(patch.object(decoder, "decode", side_effect=decode))
+        return entered, record
+
+    def cached_envelopes(self):
+        """Envelope sidecars, listed through the cache's canonical root.
+
+        Below a deep extension profile, such as a Windows CI runner's, entry
+        directories exceed MAX_PATH. The cache writes them through Windows'
+        extended namespace; enumerating the plain spelling would find nothing.
+        """
+        return list(self.transfers._root(self.cache).joinpath("v1").rglob("envelope.json"))
+
+    def test_audio_envelope_decodes_in_an_offline_child_on_the_lane(self):
+        self.offline_session()
+        record = self.ready([("asset-sound", "audio/wav", tone())])
+        _, calls = self.watched_decode()
+        self.session.result_previews.request("request")
+        ready = self.previews.PreviewState.READY
+        self.settle(lambda: self.status("asset-sound", "envelope").state == ready)
+        envelope = self.status("asset-sound", "envelope").preview.envelope
+        self.assertEqual((envelope.sample_rate, envelope.channels), (8000, 1))
+        self.assertAlmostEqual(envelope.seconds, 0.25)
+        self.assertAlmostEqual(envelope.overall_peak, 0.5, delta=0.01)
+        self.assertAlmostEqual(envelope.overall_rms, 0.5 / math.sqrt(2), delta=0.01)
+        self.assertEqual(calls, ["ScenarioPreview"])
+        self.assertFalse(any((self.cache / "work").glob("preview-*")))
+        self.assertEqual(len(self.cached_envelopes()), 1)
+        self.assertEqual(self.session.result_previews.decode_requests(), ())
+        self.assertSceneUnchanged()
+        self.assertEqual(self.store.get("request"), record)
+
+    def test_audio_envelope_without_a_blender_executable_fails_explicitly(self):
+        self.ready([("asset-sound", "audio/wav", tone())])
+        _, calls = self.watched_decode()
+        self.session.result_previews.request("request")
+        failed = self.previews.PreviewState.FAILED
+        self.settle(lambda: self.status("asset-sound", "envelope").state == failed)
+        self.assertIn("executable", self.status("asset-sound", "envelope").reason)
+        self.assertEqual(calls, [])
+        self.settle(lambda: not any((self.cache / "work").glob("preview-*")))
+
+    def test_retirement_terminates_a_running_offline_decode_without_blocking(self):
+        self.offline_session()
+        self.ready([("asset-sound", "audio/wav", tone(seconds=2.0))])
+        entered, calls = self.watched_decode()
+        self.session.result_previews.request("request")
+        self.settle(entered.is_set)
+        self.session.deactivate()
+        started = time.monotonic()
+        self.module.reap_retired()
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.settle(lambda: self.session not in self.module._session_snapshot())
+        self.assertTrue(self.session._workers.stopped)
+        self.assertEqual(calls, ["ScenarioPreview", "WaveformCanceled"])
+        self.assertFalse(any((self.cache / "work").glob("preview-*")))
+        self.assertEqual(self.cached_envelopes(), [])
+        self.assertSceneUnchanged()

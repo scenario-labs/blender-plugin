@@ -739,6 +739,13 @@ class ResultCommands:
             pass
         return previews.finish_decode(previews.PreviewCache(root), request, envelope=envelope)
 
+    def decode_preview(self, request, *, root, waveform, cancel):
+        """Decode an owned audio envelope request in an offline Blender child and cache it."""
+        self._owned_preview(request)
+        with self._guard():
+            pass
+        return previews.decode_envelope(previews.PreviewCache(root), request, waveform, cancel)
+
     def discard_preview(self, request, *, root):
         """Remove an unused decode request's private copy without caching anything."""
         self._owned_preview(request)

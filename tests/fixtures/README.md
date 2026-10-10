@@ -27,12 +27,18 @@ No `PROVENANCE.json` has been generated for a new recording run.
 
 ## Generated audio fixtures
 
-Audio waveform tests generate their own PCM sample bytes at runtime in
-`tests/unit/test_audio_waveform.py` and `tests/blender/test_audio_preview.py`.
-Those synthetic signals contain no provider output, recording or third-party
-media; they are first-party GPL test code and leave no committed audio files.
-They cover 8/16/24/32-bit mono/stereo and malformed, missing, oversized and
-unsupported input. Human listening acceptance remains separate under #68.
+Audio waveform tests generate their own signals at runtime. The unit tests
+`tests/unit/test_audio_waveform.py` and `test_audio_decode.py` use synthetic
+sample lists. The native `tests/blender/test_audio_preview.py` and
+`test_result_previews.py` write 16-bit PCM WAV tones, and
+`tests/blender/test_waveform_worker.py` writes WAV, MP3, Ogg Vorbis, FLAC and
+Matroska AAC tones with Blender's audio module. The waveform decoder tests also
+read the documented synthetic `audio-silence.mp3`, `audio-silence.ogg` and
+`film-four-seconds-audio.mp4`, copying the latter as an M4A. Those signals
+contain no provider output, recording or third-party media; they are
+first-party GPL test code and leave no new committed audio files. They cover
+PCM and compressed, mono and stereo, silent, undecodable, too long, canceled and
+timed-out input. Human listening acceptance remains separate under #68.
 
 ## Synthetic video fixture
 

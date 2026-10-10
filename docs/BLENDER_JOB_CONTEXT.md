@@ -427,6 +427,14 @@ scheduler only while the session is active and configured; otherwise it raises
 by a captured origin: they work after a scene switch or restart and never grant
 scene or application authority.
 
+The optional `preview_waveform` argument is the
+[offline audio decoder](RESULT_PREVIEWS.md#offline-audio-envelopes)
+specification. The runtime resolves it on the main thread from
+`bpy.app.binary_path` and the installed `waveform_worker.py`, or passes `None`
+when Blender has no usable executable; audio envelopes then fail with that
+reason. The decoder runs in a separate process started from the preview lane, so
+it neither touches this Blender's data nor holds its Python lock.
+
 The existing session maintenance timer, and `reap_retired` in headless loops,
 call `service_previews` to collect results and queue due polls or cache maintenance. Preview
 tasks are not session completions, so `drain` never returns them. `deactivate`
@@ -436,8 +444,9 @@ down only once its preview lane is idle as well as its tracked tasks are done:
 the session stays registered meanwhile, and the main thread never joins
 preview I/O. After `shutdown` joins the workers, it removes private copies still
 owned by outstanding decode requests. Extension disable or exit calls `shutdown`
-directly and still waits for a running preview command. Worker threads cannot
-call these methods.
+directly and still waits for a running preview command; a running audio decode
+is signaled first, so its process is terminated, or killed three seconds later.
+Worker threads cannot call these methods.
 
 ## Explicit saved-result World application
 

@@ -60,6 +60,7 @@ BASELINE = (
     "test_job_session",
     "test_session_results",
     "test_result_previews",
+    "test_waveform_worker",
     "test_session_uploads",
     "test_film_capture",
     "test_film_composition_controls",

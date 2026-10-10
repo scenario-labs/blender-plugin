@@ -550,7 +550,7 @@ GitHub state reviewed on 2026-10-07 is separate from candidate acceptance:
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
 | #37 | Closed for the native update repository foundation. Exact 0.10.0 public delivery and update evidence still belong to #36/#68. |
 | #36, #39, #40, #45 | Open. Required-check settings and the protected hosted five-lane smoke/recovery check are verified; their documentation review/merge and remaining scoped acceptance are separate. Publication/provenance administration and action pinning retain their own gates. |
-| #189 | Open. A local PCM WAV waveform preview exists; broader audio preview and native listening acceptance are not complete. |
+| #189 | Open. Prototype results have a local waveform preview, and saved shared audio gets receipt-keyed envelopes from an offline Blender decoder; no shared-result view, Play controls or native listening acceptance yet. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md) and obtain current-candidate sustained desktop evidence under #68; closure alone supplies no new runtime evidence. |
 
 Read-only administration checks found no open **CodeQL** alerts. The six open

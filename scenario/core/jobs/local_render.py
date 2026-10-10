@@ -31,6 +31,10 @@ class RenderCancelled(LocalRenderError):
     pass
 
 
+class LocalRenderTimeout(LocalRenderError):
+    """The owned child was still running at its deadline and was stopped."""
+
+
 def blender_path(path):
     """Keep Python's extended storage namespace out of Blender's path boundary."""
     value = str(path)
@@ -214,7 +218,7 @@ def _run(command, *, log, env, timeout, cancel, stdout=None):
                     if cancel.is_set():
                         raise RenderCancelled("Local capture cancelled; inspect retained frames")
                     if time.monotonic() >= deadline:
-                        raise LocalRenderError("Local capture timed out; inspect retained frames")
+                        raise LocalRenderTimeout("Local capture timed out; inspect retained frames")
                     _check_diagnostics(log, stdout)
                     cancel.wait(0.1)
                 # The child can finish writing and exit between polling checks.

@@ -5,9 +5,10 @@
 previews of downloaded saved results for the shared runtime. They are bpy-free.
 Previews are read-only: they never submit, spend, apply, resolve a scene origin or
 write the job store. This runtime layer has no user interface or local MCP tool
-yet. Blender-side decoding, display, playback and waveform drawing are follow-up
-work under [#189](https://github.com/scenario-labs/blender-plugin/issues/189) and
-[#66](https://github.com/scenario-labs/blender-plugin/issues/66).
+yet. Audio envelopes are decoded in an owned offline Blender process, described
+below. Blender-side image decoding, display, playback and waveform drawing are
+follow-up work under [#189](https://github.com/scenario-labs/blender-plugin/issues/189)
+and [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
 ## Sources by result type
 
@@ -92,12 +93,14 @@ download in that final poll is polled again too, because its outcome does not
 show whether the window's end caused it.
 
 A retry queues every rendition of the result at once, except unsupported ones
-and decoded previews being published, and withdraws their outstanding decode
-requests, so the snapshot it returns and later `status` reads report the retry
-rather than the old outcome. When that result's batch is already on the lane,
-the forced fetch waits for it. The pump that collects the batch applies its
-late outcome and queues the renditions again in the same call, so that outcome
-is never reported as settled and cannot undo the retry.
+and previews the lane is already decoding or publishing, such as an audio
+envelope whose offline decode is running. It withdraws their outstanding decode
+requests, including an envelope still waiting for room on the lane, so the
+snapshot it returns and later `status` reads report the retry rather than the
+old outcome. When that result's batch is already on the lane, the forced fetch
+waits for it. The pump that collects the batch applies its late outcome and
+queues the renditions again in the same call, so that outcome is never reported
+as settled and cannot undo the retry.
 
 Without online access, renditions report `offline` and are checked every five
 seconds. An offline poll pauses the window, keeping the time already used since
@@ -122,17 +125,54 @@ new private `work/preview-*` directory of the cache, rehashing it against its
 receipt while copying, and checks the copy's container signature. The copy has
 a canonical name, never the provider's file name. Sources are capped at 128 MiB
 for images and 256 MiB for audio. The scheduler keeps at most four such decode
-requests outstanding and fails one after 120 seconds without a result.
+requests outstanding, including running audio decodes, and fails a request that
+waits 120 seconds for a decoder.
 
-Blender decodes the request later on its main thread. For a still it writes a
-PNG of at most 256 pixels per side to the request's `output`. Publication checks
-the PNG signature, header checksum, dimensions and a 4 MiB size limit before
-caching it. For audio,
-[`EnvelopeBuilder`](../scenario/core/audio_waveform.py) reduces interleaved decoded
-float samples to 10 ms blocks and then to at most 1024 RMS and peak bins. It
-accepts up to 600 seconds, eight channels and 192 kHz, clamps samples to full
-scale, rejects non-finite values and never reads files. Every finished or
-discarded request removes its private copy.
+Blender decodes an image request later on its main thread: it writes a PNG of
+at most 256 pixels per side to the request's `output`. Publication checks the
+PNG signature, header checksum, dimensions and a 4 MiB size limit before caching
+it. Every finished or discarded request removes its private copy.
+
+## Offline audio envelopes
+
+Blender's audio module holds Python's global interpreter lock for an entire
+decode. Measured on macOS arm64 with Blender 5.0.1, 5.1.2 and 5.2.1, decoding ten
+minutes of MP3, Ogg Vorbis or AAC stereo on a worker thread paused the main
+thread for 0.4 to 0.55 seconds. An audio request is therefore decoded by
+[`audio_decode`](../scenario/core/jobs/audio_decode.py) in a separate Blender
+process, never on a thread of the user's Blender. The scheduler queues one lane
+command per request as soon as the batch returns it; audio requests are never
+listed by `decode_requests`, which is for Blender's main thread.
+
+The lane starts the session's Blender executable with `--offline-mode`,
+`--factory-startup`, `--disable-autoexec`, `--background` and `-noaudio`, a new
+disposable profile and temporary directory, and the environment that local
+capture uses, without `SCENARIO_`, `BLENDER_`, `PYTHON` or proxy variables.
+The standalone [`waveform_worker.py`](../scenario/blender/waveform_worker.py)
+does not load the extension. Blender's audio module and its ffmpeg readers decode
+the private copy from its start, without seeking: WAV, MP3, Ogg, FLAC, M4A and
+AAC are the accepted saved types. Numpy then writes one sum of squares and one
+peak of samples clamped to full scale per 10 ms block, and a header with the
+sample rate, channel count and frame count. Failures use a fixed vocabulary:
+unreadable, unsupported rate or channels, no samples, too long or non-finite
+samples. The process's log is never read and is removed with its directory.
+
+[`EnvelopeBuilder`](../scenario/core/audio_waveform.py) checks each block against
+its frame count before folding the blocks into 256 RMS and peak bins: finite
+values, peaks within full scale and a root mean square no louder than its peak.
+Envelopes accept up to 600 seconds, eight channels and 192 kHz. The child holds
+at most 64 Mi decoded samples, which covers ten minutes of 48 kHz stereo; longer,
+faster or wider audio fails instead of being truncated. A decode times out after
+60 seconds. Cancellation, retirement and the timeout terminate the child, which
+is killed if it has not exited three seconds later. Only a child still running at
+the deadline reports a timeout; one that exits with a failure keeps the reason it
+reported, however long it took. The envelope is cached as a sidecar keyed by
+the saved receipt, so a later session reads it without decoding again.
+
+The session builds the decoder specification on Blender's main thread from
+`bpy.app.binary_path` and the installed worker. Without a usable executable,
+for example when Blender runs as a Python module, envelopes fail with an explicit
+reason instead of waiting. A failed decode caches nothing; Retry decodes again.
 
 ## Cache
 
@@ -178,8 +218,12 @@ downloads therefore never occupy the job workers used by remote refresh, result
 downloads and submissions, and never use the single local media slot.
 Deactivation cancels queued previews and signals the running one. A storage
 transfer stops at its next permission check once signaled, before publishing
-anything; an SDK metadata read cannot be interrupted and finishes or times out
-under the client policy. `JobWorkers.previews_idle` reports when no preview
+anything; an audio decode terminates its child within about 0.1 seconds, or kills
+it after three more; an SDK metadata read cannot be interrupted and finishes or
+times out under the client policy. An audio decode occupies the lane for its
+duration, so later server polls wait behind it: 0.65 to 0.9 seconds for a
+one-second file and about 1.7 seconds for ten minutes on macOS arm64, at most
+the 60-second timeout. `JobWorkers.previews_idle` reports when no preview
 command is queued or running. Shutdown joins the lane with the other workers.
 
 `ResultPreviewScheduler` runs on its owner thread, normally Blender's main
@@ -205,5 +249,12 @@ These are offline contracts with synthetic SDK and storage fixtures. Which asset
 kinds receive server thumbnails or previews, their sizes and dimensions, signed
 URL lifetime and hosts, where a first request may redirect, their timing after a
 job succeeds, and how `get_bulk` reports a deleted asset are not established by
-live evidence. Blender-side decoding, the user interface, MCP parity and native
-desktop acceptance remain open under #189, #65 and #66.
+live evidence. The installed-ZIP native tests decode synthetic WAV, MP3, Ogg,
+FLAC, Matroska AAC and MP4 AAC files in the offline child and exercise its
+failures, cancellation and timeout. They passed on Blender 5.0.1, 5.1.2 and 5.2.1
+locally on macOS arm64 and in hosted CI on Linux x64 and Windows x64 runners.
+Provider audio files, child start-up time and antivirus behavior on real Windows
+and Linux desktops, macOS x64 and sandboxed Blender packages are not covered.
+The timing figures above are macOS arm64 measurements only. Blender-side image
+decoding, the user interface, MCP parity and native desktop acceptance remain
+open under #189, #65 and #66.

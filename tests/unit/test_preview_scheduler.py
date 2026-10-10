@@ -163,7 +163,7 @@ def test_persistent_transfer_failure_settles_failed_at_the_window_end(lane, monk
     url = f"{CDN}/model.png?Signature=preview-secret"
     service.assets["asset-model"] = asset_record("asset-model", "model/gltf-binary", thumbnail=url)
     connection = _storage(service, monkeypatch)
-    connection.getresponse.side_effect = lambda: _redirect()
+    connection.getresponse.side_effect = _redirect
     scheduler.request("request")
     start, polls = clock.now, []
     for _ in range(420):

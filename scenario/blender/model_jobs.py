@@ -856,16 +856,18 @@ class ModelJobs:
         """Whether a submission or a job command for this request is still running.
 
         `actions` offers nothing for such a job until it finishes, including during
-        each automatic status refresh. Reads memory only, so drawing code may call it.
+        each automatic status refresh, except a prepared job's local cancellation.
+        Reads memory only, so drawing code may call it.
         """
         return request_id in self.submissions or request_id in self._commands
 
     def imports_automatically(self, request_id):
         """Whether this session imports the job's ready Image results without another review.
 
-        True from an Image lane submission until that import is applied, canceled or
-        handed to an explicit action. A paused import stays true, so callers also read
-        the view's error. Reads memory only.
+        True from an Image lane submission until the job is canceled or handed to an
+        explicit action. It stays true after the automatic import applies and while
+        that import is paused, so callers also read the saved state and the view's
+        error. Reads memory only.
         """
         return request_id in self._automatic_application
 

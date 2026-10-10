@@ -17,7 +17,7 @@
       "scenario/blender/studio.py": "b674510e46115ccf72131903ba416d8c6349641ad8b0190a8550942b7a6b3469",
       "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5",
       "tests/blender/test_model_generation.py": "505d6e569450a339535038db01c26484550a6bfd0bc0c1dffb1d35d207da8df9",
-      "scenario/blender/model_jobs.py": "cbc0f42f69be5533efb2c22c5582f3a90f6d87d1ed873aa86ee124bd3743410d",
+      "scenario/blender/model_jobs.py": "2f1d9b1f4dfd70898c47590a8b55c76af8f60e2377692e36c85138a4a3187377",
       "scenario/core/jobs/records.py": "afe8476e1232d525de1039a43bc68e8c28c1680fee8fadcacde12285e4c67125",
       "tests/blender/helpers.py": "d3a77292bc65b1421a98c470ed3c0ba531eeb5e2d83dc1c2fb2c11b426703f73",
       "tests/blender/test_prompt_tools.py": "a9c04c117248f0630d8a9f02af2df95357904fae5ae767e260a97d0531d9a10b",

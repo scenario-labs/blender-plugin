@@ -588,7 +588,8 @@ shows its own job or no tray.
   edit keeps focus and both texts and dispatches nothing.
 - The job offers no action while an automatic status refresh or another command
   runs. The tray keeps showing the actions it last offered for the same saved
-  revision instead of blinking every poll, but only Inspect dispatches then;
+  revision instead of blinking every poll, but then only the chips that open the
+  job card (**Inspect**, **Apply... (N)** and **Reuse... (N)**) dispatch;
   another chip answers *The job is updating; try again in a moment*.
 - The cross hides that job's tray for its scene and form. The job continues in
   Jobs; a newer job there shows the tray again, and loading a file forgets
@@ -604,8 +605,8 @@ shows its own job or no tray.
 Drawing reads ModelJobs' in-memory views and bindings only: it creates no job
 owner or session, reads no saved job and writes no scene, WindowManager or job
 state. Its only writes are the composer's Python display caches (the drawn
-signature per region, dismissals and the held actions), which a file load
-clears. Drawing and the modal share one geometry, so a chip is hit where it is
+signature per region and the held actions); dismissals, which the modal
+records, are Python only too, and a file load clears all three. Drawing and the modal share one geometry, so a chip is hit where it is
 drawn; a press on the tray's background drags the composer, and a double-click
 there resets its placement.
 

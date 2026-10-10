@@ -319,6 +319,8 @@ class ComposerJobStripTests(unittest.TestCase):
         job = shown.geometry.job
         self.assertIn("Applied", shown.line)
         self.assertEqual(job.status.tone, "done")
+        # The automatic import stays recorded once applied; the saved state decides the wording.
+        self.assertTrue(self.runtime.state.model_jobs.imports_automatically(view.local_id))
         # A saved PNG can be imported again or set as World: one choice opens the card.
         reuse = [item.action for item in job.actions if item.group == "apply"]
         self.assertEqual(reuse, ["import_images", "apply_world"])

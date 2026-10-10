@@ -319,7 +319,7 @@ class ResultMediaTests(unittest.TestCase):
                 ("sound", "sound.wav", "audio/wav", tone()),
             ]
         )
-        with patch.dict(os.environ, {"SCENARIO_API_KEY": "fixture-secret"}):
+        with patch.dict(os.environ, {"SCENARIO_API_KEY": "launch-key"}):
             self.play(view, "play_in_blender:clip")
         (player,) = self.players
         binary, flag, path = player.command

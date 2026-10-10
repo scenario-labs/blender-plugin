@@ -133,3 +133,33 @@ def test_raster_draws_peak_bars_rms_cores_and_a_silent_center_line():
 def test_raster_rejects_invalid_input(value, options):
     with pytest.raises(WaveformError):
         audio.raster(value, **options)
+
+
+def test_fold_merges_adjacent_levels_and_keeps_short_envelopes():
+    envelope = AudioEnvelope(
+        2.0, 8000, 1, (0.1, 0.3, 0.2, 0.4, 0.0), (0.2, 0.5, 0.3, 0.9, 0.0), 0.25, 0.9
+    )
+    rms, peaks = audio.fold(envelope, 2)
+    # Bins 0-1 and 2-4 merge: RMS as root mean square, peaks as maxima.
+    assert rms == (round(math.sqrt((0.01 + 0.09) / 2), 6), round(math.sqrt(0.2 / 3), 6))
+    assert peaks == (0.5, 0.9)
+    assert all(level <= peak for level, peak in zip(rms, peaks, strict=True))
+    assert audio.fold(envelope, 5) == audio.fold(envelope, 256) == (envelope.rms, envelope.peaks)
+    for bins in (0, 1025, 2.0, True):
+        with pytest.raises(WaveformError, match="bins"):
+            audio.fold(envelope, bins)
+    with pytest.raises(WaveformError, match="envelope"):
+        audio.fold(envelope.to_dict(), 4)
+
+
+def test_fold_of_a_built_envelope_stays_close_to_building_fewer_bins():
+    rate = 8000
+    builder = EnvelopeBuilder(rate, 1)
+    builder.add(tone(rate, 4.0, 0.5) + [0.0] * rate * 2)
+    full = builder.finish(bins=256)
+    again = EnvelopeBuilder(rate, 1)
+    again.add(tone(rate, 4.0, 0.5) + [0.0] * rate * 2)
+    direct = again.finish(bins=8)
+    rms, peaks = audio.fold(full, 8)
+    assert peaks == direct.peaks
+    assert all(math.isclose(a, b, abs_tol=0.01) for a, b in zip(rms, direct.rms, strict=True))

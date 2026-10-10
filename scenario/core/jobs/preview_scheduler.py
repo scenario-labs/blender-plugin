@@ -19,7 +19,9 @@ previews were written, an idle scheduler queues a maintenance-only lane command
 on the same cadence, so the cache budget does not wait for the next poll.
 Audio envelope copies are decoded by a lane command that runs an owned offline
 Blender process; image copies wait for Blender's main thread through
-``decode_requests``.
+``decode_requests``. ``watch`` signals a wait on another thread, such as a local
+MCP request, once results stop changing by themselves; their statuses are still
+read on the owner thread.
 """
 
 import math
@@ -44,9 +46,12 @@ MAINTAIN_SECONDS = 600.0
 NO_WAVEFORM = "Audio waveforms need Blender's executable"
 CANCELED = "Preview decoding was canceled; use Retry"
 ENTRY_LIMIT = 256
+WATCH_LIMIT = 8
 # Renditions that the next lane batch must resolve.
 _ACTIVE = frozenset({State.QUEUED, State.PENDING, State.OFFLINE})
 _SETTLED = frozenset({State.READY, State.MISSING, State.FAILED, State.UNSUPPORTED})
+# States that change no further without Online Access or an explicit request.
+QUIET = _SETTLED | {State.OFFLINE}
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,29 @@ class PreviewStatus:
 
     def get(self, rendition):
         return dict(self.renditions).get(rendition)
+
+
+class PreviewWatch:
+    """Tells any thread when watched results have no rendition still in progress.
+
+    In progress means queued, pending or decoding. An offline rendition waits
+    for Online Access, so it counts as quiet. The scheduler's owner thread sets
+    the signal while it pumps, and on close; statuses must still be read there.
+    """
+
+    __slots__ = ("_event", "keys")
+
+    def __init__(self, keys):
+        self.keys = keys
+        self._event = threading.Event()
+
+    def wait(self, timeout=None):
+        """Whether the watched results became quiet within ``timeout`` seconds."""
+        return self._event.wait(timeout)
+
+    @property
+    def quiet(self):
+        return self._event.is_set()
 
 
 class _Entry:
@@ -170,6 +198,7 @@ class ResultPreviewScheduler:
         # leaves the canceled or restarted rendition state alone.
         self._canceled = set()
         self._discards = []
+        self._watches = []
         self._maintained = None
         # A maintenance-only lane command, and whether previews were written to
         # the cache since the last pass, which may have taken it over budget.
@@ -381,6 +410,49 @@ class ResultPreviewScheduler:
             raise RuntimeError("Use result previews from their owning thread")
         entry = self._entries.get((request_id, asset_id, review is True))
         return None if entry is None else self._snapshot(entry)
+
+    def quiet(self, request_id, asset_id):
+        """Whether no rendition of this result is queued, pending or decoding; no I/O."""
+        if threading.current_thread() is not self._owner:
+            raise RuntimeError("Use result previews from their owning thread")
+        return self._quiet((request_id, asset_id))
+
+    def _quiet(self, key):
+        # A result never requested, or forgotten once settled, has nothing in progress.
+        entry = self._entries.get(key)
+        return entry is None or all(status.state in QUIET for status in entry.states.values())
+
+    def watch(self, request_id, asset_ids):
+        """A signal for a wait off the owner thread, set once these results are quiet.
+
+        The owner thread reads their statuses afterwards and calls ``unwatch``.
+        Closing the scheduler sets every signal, so no wait outlives it.
+        """
+        self._check()
+        if len(self._watches) >= WATCH_LIMIT:
+            raise previews.PreviewError("Too many preview waits are open; try again shortly")
+        watch = PreviewWatch(tuple((request_id, asset_id) for asset_id in asset_ids))
+        self._watches.append(watch)
+        self._notify()
+        return watch
+
+    def unwatch(self, watch):
+        """Forget a watch; also safe after the scheduler closed."""
+        if threading.current_thread() is not self._owner:
+            raise RuntimeError("Use result previews from their owning thread")
+        if watch in self._watches:
+            self._watches.remove(watch)
+
+    def _notify(self):
+        for watch in tuple(self._watches):
+            if all(self._quiet(key) for key in watch.keys):
+                self._watches.remove(watch)
+                watch._event.set()
+
+    def _release_watches(self):
+        for watch in self._watches:
+            watch._event.set()
+        self._watches.clear()
 
     def decode_requests(self):
         """Outstanding image copies awaiting Blender-side decoding, oldest first.
@@ -671,6 +743,12 @@ class ResultPreviewScheduler:
             raise RuntimeError("Use result previews from their owning thread")
         if self._closed:
             return False
+        try:
+            return self._advance()
+        finally:
+            self._notify()
+
+    def _advance(self):
         now = self._clock()
         changed = False
         if self._task is not None and self._task.done():
@@ -720,6 +798,7 @@ class ResultPreviewScheduler:
         if threading.current_thread() is not self._owner:
             raise RuntimeError("Use result previews from their owning thread")
         self._closed = True
+        self._release_watches()
         for task in (self._task, self._maintenance, *self._publishing):
             if task is not None:
                 self._workers.cancel_preview(task)
@@ -729,6 +808,7 @@ class ResultPreviewScheduler:
         if threading.current_thread() is not self._owner:
             raise RuntimeError("Use result previews from their owning thread")
         self._closed = True
+        self._release_watches()
         requests = [request for request, _ in self._issued.values()]
         requests += list(self._publishing.values())
         requests += [request for _, request in self._discards]

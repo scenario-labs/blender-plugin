@@ -437,6 +437,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `blockout_plan_status` | Inspect a prepared saved-plan review or discard its finished approval handle. Args: context_id, review_id, optional discard. Returns: state, scene, elements, groups, replaces_plan, error; discarded state when requested. Never generates or changes a scene. | `context_id`*: string<br>`review_id`*: string<br>`discard`: boolean | read-only annotation |
 | `apply_blockout_plan` | Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build plan separately. Never spends or builds geometry. | `context_id`*: string<br>`review_id`*: string | destructive annotation |
 | `read_model_text` | Read one explicitly selected complete text asset from a successful saved model job, including after restart. Obtain context_id and revision from list_local_jobs and asset_id from job_status results. Returns: request_id, asset_id and bounded full text. Never spends, parses a plan, applies to the scene or substitutes a truncated preview. Args: context_id, request_id, expected_revision, asset_id. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`*: string | read-only annotation |
+| `inspect_result_previews` | Inspect the previews of a downloaded saved job's results, as the native preview tiles and Waveform control show them, without generating, spending, applying or changing the scene or saved job. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`envelope`: boolean<br>`action`: string (['inspect', 'retry', 'cancel'])<br>`bins`: integer<br>`wait`: number | read-only annotation |
 | `estimate_prompt` | Get the exact server price for New, Rewrite or Translate on the current scene's native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged. | `lane`: string (enum: see tools/list)<br>`action`*: string (['GENERATE', 'REWRITE', 'TRANSLATE']) | read-only annotation |
 | `approve_prompt` | Spend the explicitly approved exact price once for a quote from estimate_prompt. Args: quote_id and approved_cost (the unchanged decimal string). Returns: request_id and queued state. Queues one durable submission; never retry an uncertain outcome. The shared runtime updates only the unchanged original prompt field. Inspect list_local_jobs for recovery. | `quote_id`*: string<br>`approved_cost`*: string | destructive annotation |
 | `read_prompt_result` | Read full text from a saved successful prompt or translation job without generating, spending or applying it. Args: context_id, request_id and expected_revision from list_local_jobs; refresh a known remote job's status first if necessary. Returns: prompts; old scene origins are readable but are never silently applied to the current scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
@@ -548,6 +549,7 @@ behavior interchangeable. Remote names below were checked against the
 | Recover a cloud result | `recover_cloud_job`, then explicit saved-result approval | No Blender scene access |
 | Prompt assistance | `estimate_prompt(lane, action)` then `approve_prompt(quote_id, approved_cost)`; same native prompt field and exact-price approval | `prompt_spark` for generation; SDK `generate.translate` for English translation |
 | Saved prompt text | `read_prompt_result(context_id, request_id, expected_revision)` | `job_get` and `asset_get`; read-only recovery without Blender mutation |
+| Saved result previews | `inspect_result_previews(context_id, request_id, expected_revision, asset_id)`, read-only states, still metadata and waveform envelopes | `asset_get` and `asset_display` for Scenario's preview images; local stills and envelopes have no platform equivalent |
 | Inspect scene | `scene_summary`, `object_detail`, `datablocks_summary`, `blender_api_help` | Local only |
 | Change scene | `select_objects`, `set_frame`, `camera_path`, `execute_python` | Local only |
 | Capture scene | `screenshot_viewport`, `render_still` | Local only |
@@ -805,6 +807,44 @@ output formats, dimensions, asset layout and the HDR original's host are
 unverified until an authorized paid run under
 [#98](https://github.com/scenario-labs/blender-plugin/issues/98). The Image and
 Render Image lanes still list these models as before.
+
+## Saved result previews
+
+`inspect_result_previews` reports the previews that the native Jobs and
+Generations tiles and the saved-job **Waveform** control show, from the same
+session [preview scheduler](RESULT_PREVIEWS.md#local-mcp-inspection). Pass
+`context_id`, `request_id` and `expected_revision` from `list_local_jobs` for a
+job whose results are downloaded (`ready`, `applying`, `apply_failed` or
+`applied`). Without `asset_id` it inspects the same at most four results the
+tiles show, and `more_results` counts the other downloaded results with a
+preview kind; pass one `asset_id` from `job_status` for any of them, which
+returns `more_results: 0`. Each
+result keeps the tile's 1-based `number` and `caption`, such as `Audio (2)`.
+
+A still is Scenario's preview image for video, 3D and audio results
+(`source: scenario`) or a small PNG decoded from a verified saved image
+(`source: local`). Requesting a Scenario still reads asset metadata and
+downloads the image while Online Access allows, polling for about five minutes
+when it is missing; with Online Access disabled it reports `offline` and sends
+nothing. Only an interactive Blender decodes image stills: in background
+Blender their `decode` state fails after 120 seconds. `envelope: true` with one
+audio `asset_id` decodes its waveform envelope in an offline Blender process
+from the verified saved file, with no service request; a ready envelope returns
+its duration, sample rate, channels, a `silent` flag and up to `bins` RMS and
+peak levels from 0 to 1, merged from its 256 cached levels (fewer for audio
+shorter than 2.56 seconds). Envelopes and ready stills are cached by receipt, so
+inspecting again, including after a restart, needs no new decode.
+
+`action: retry` prepares one result's previews again and clears a `missing`
+marker, like **Retry preview (N)**; `action: cancel` stops its local decoding,
+like the waveform's **Cancel**, and fails unfinished local renditions until a
+retry. A `wait` of up to 60 seconds returns once no returned rendition is
+`queued`, `pending` or `decode`; `in_progress` is `true` when the wait expired
+first. `offline` renditions end the wait, because they change only when the
+user allows Online Access. The tool returns state, sizes, dimensions and levels
+only: never image bytes, cache or result paths, signed URLs or the saved file.
+It never generates, spends, applies, writes the saved job or changes the scene,
+and no local MCP tool opens a system or Blender player.
 
 ## Captured mesh input history
 

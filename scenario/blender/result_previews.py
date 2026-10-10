@@ -203,16 +203,34 @@ def _rank(item):
     return 0
 
 
-def _targets(record):
+def _label(item):
+    """A saved result's texture role, or else its kind, without its number."""
+    label = ROLE_LABEL.get(item.asset.texture_role)
+    return label or KIND_LABEL.get(preview_kind(item.asset.media_type), "Result")
+
+
+def caption(item, number):
+    """A saved result's tile caption, with its 1-based position among the job's results.
+
+    It reads as status lines and saved-job controls name the result, ``Albedo (3)``;
+    the tile draws the number first.
+    """
+    return f"{_label(item)} ({number})"
+
+
+def tile_targets(record):
     """Every previewable downloaded result of one saved record, ranked and numbered
-    like its controls; the pager draws them ``TILE_LIMIT`` at a time."""
+    like its controls.
+
+    Primary results come first; the pager draws them ``TILE_LIMIT`` at a time.
+    Local MCP inspects all of them when it names none.
+    """
     chosen = []
     for index, item in enumerate(record.results, 1):
         kind = preview_kind(item.asset.media_type)
         if item.receipt is None or kind is None:
             continue
-        label = ROLE_LABEL.get(item.asset.texture_role) or KIND_LABEL[kind]
-        target = _Target(item.asset.asset_id, index, label, kind)
+        target = _Target(item.asset.asset_id, index, _label(item), kind)
         chosen.append((_rank(item), index, target))
     chosen.sort(key=lambda value: value[:2])
     return tuple(target for _, _, target in chosen)
@@ -324,7 +342,7 @@ class PreviewController:
                 try:
                     if fresh:
                         record = store.get(request_id)
-                        job = _Job(revision, () if record is None else _targets(record))
+                        job = _Job(revision, () if record is None else tile_targets(record))
                     # Only the drawn page is requested; the pager requests others.
                     visible, _ = self._visible(request_id, job.targets)
                     missing = [
@@ -526,10 +544,7 @@ class PreviewController:
         job = self._jobs.get(request_id)
         if job is None or not any(target.asset_id == asset_id for target in job.targets):
             raise RetryRefused("This saved result is no longer shown; inspect saved jobs")
-        prefix = f"{request_id}/{asset_id}/"
-        for key in tuple(self._icon_failures):
-            if key.startswith(prefix):
-                del self._icon_failures[key]
+        self.forget_failures(request_id, asset_id)
         from .job_session import OriginUnavailable
 
         try:
@@ -574,6 +589,18 @@ class PreviewController:
         self._update_tiles(scheduler, 0)
         self._busy = True
         return True
+
+    def forget_failures(self, request_id, asset_id):
+        """Build one result's icon again on its next ready status, as Retry does.
+
+        A retry from local MCP calls this too, so the tile does not keep an
+        icon failure from before the retry.
+        """
+        _main_thread()
+        prefix = f"{request_id}/{asset_id}/"
+        for key in tuple(self._icon_failures):
+            if key.startswith(prefix):
+                del self._icon_failures[key]
 
     def retire(self):
         """Forget tiles, pages, requests and icons of the current connection."""

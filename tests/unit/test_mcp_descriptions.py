@@ -73,6 +73,7 @@ EXPECTED = {
         "estimate_blockout",
         "approve_blockout",
         "read_model_text",
+        "inspect_result_previews",
         "prepare_blockout_plan",
         "blockout_plan_status",
         "apply_blockout_plan",

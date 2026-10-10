@@ -5,8 +5,9 @@
 ``EnvelopeBuilder`` reduces decoded samples to 10 ms sum-of-squares and peak
 blocks, then folds them into bounded RMS and peak bins. ``add`` accepts samples
 and ``add_blocks`` accepts blocks that an owned decoder process already reduced;
-both are checked against the frame count before they are folded. Nothing here
-reads files or decodes audio: see ``core.jobs.audio_decode`` for the decoder.
+both are checked against the frame count before they are folded. ``fold``
+merges a finished envelope into fewer levels for local MCP. Nothing here reads
+files or decodes audio: see ``core.jobs.audio_decode`` for the decoder.
 """
 
 import array
@@ -288,6 +289,32 @@ class EnvelopeBuilder:
             level(sum(self._sums), self._frames),
             max(peaks),
         )
+
+
+def fold(envelope, bins):
+    """At most ``bins`` RMS and peak levels, merging adjacent envelope bins in order.
+
+    Peaks merge as maxima. RMS levels merge as the root mean square of the
+    merged bins, weighting each bin equally: ``finish`` gives every bin the
+    same number of 10 ms blocks, give or take one, so this approximates the
+    level of the merged samples. An envelope with ``bins`` or fewer levels is
+    returned as it is.
+    """
+    if not isinstance(envelope, AudioEnvelope):
+        raise WaveformError("Provide a decoded audio envelope")
+    if type(bins) is not int or not 1 <= bins <= ENVELOPE_MAX_BINS:
+        raise WaveformError("Use from 1 to 1024 envelope bins")
+    total = len(envelope.rms)
+    if total <= bins:
+        return envelope.rms, envelope.peaks
+    rms, peaks = [], []
+    for index in range(bins):
+        start, end = index * total // bins, (index + 1) * total // bins
+        levels = envelope.rms[start:end]
+        square = sum(map(operator.mul, levels, levels)) / len(levels)
+        rms.append(min(1.0, round(math.sqrt(square), 6)))
+        peaks.append(max(envelope.peaks[start:end]))
+    return tuple(rms), tuple(peaks)
 
 
 def raster(envelope, *, width=256, height=96):

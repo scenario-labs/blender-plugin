@@ -10,8 +10,9 @@ control, which draws audio envelopes decoded in an owned offline Blender process
 described below, **Play**, which opens
 [private player copies](#private-player-copies) made on the same lane, and
 [automatic previews](#automatic-previews-in-blender), which show stills in Jobs,
-Generations and the Studio pages that reuse them. Local MCP has no saved-result
-preview tool yet, and clips are fetched but not displayed; both remain under
+Generations and the Studio pages that reuse them.
+[Local MCP](#local-mcp-inspection) reports the same states, still metadata and
+envelopes. Clips are fetched but not displayed; they remain under
 [#189](https://github.com/scenario-labs/blender-plugin/issues/189) and
 [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
@@ -287,6 +288,30 @@ Measured with generated files on macOS arm64 Blender 5.1.2, a decode took about
 25 ms for a 2048-pixel PNG, 0.1 s for a 4096-pixel JPEG and 0.2 s at 8192 by
 4096 pixels; real photographs can take longer.
 
+## Local MCP inspection
+
+The local MCP tool
+[`inspect_result_previews`](MCP.md#saved-result-previews) uses the session's
+scheduler on Blender's main thread, like the native controls. It checks the
+context token and the saved job's revision and state, then requests the same
+renditions they do: the still of the results the tiles choose, or of one named
+result, and the audio envelope only when asked, as **Waveform** does. `retry`
+and `cancel` call the scheduler's `retry` and `cancel`; a retry also clears the
+preview controller's icon failure for that result, so its tile builds the icon
+again. Responses copy states, reasons, dimensions, sizes and envelope levels
+from the immutable status snapshots, folding an envelope's levels with
+`audio_waveform.fold`; they never include a cache path, decode request, signed
+URL or image bytes.
+
+A bounded wait uses the scheduler's `watch`. It returns a signal the HTTP thread
+waits on while Blender's main thread keeps pumping; `pump` sets it once none of
+the watched results has a rendition `queued`, `pending` or `decode`, `offline`
+ones included, because they change only when Online Access returns. Statuses are
+then read again on the main thread, after checking that the context token and
+session are unchanged. At most eight waits are open per scheduler, and closing
+it releases them. Nothing here starts a player: local MCP has no tool that opens
+a saved result in a system or Blender player.
+
 ## Cache
 
 The runtime passes `cache/result-previews` under Blender's extension user
@@ -401,20 +426,21 @@ command is queued or running. Shutdown joins the lane with the other workers.
 thread, and performs no network I/O or preview cache work. `request` reads saved
 receipts from the local job store, `request_review` reads the saved workflow
 job, and `release` removes leftover private copies after the lane stops.
-`request`, `request_review`, `retry`, `cancel`, `status`, `decode_requests`,
-`finish_decode` and `discard_decode` are its interface; `retry` and `status`
-take `review=True` for a review asset. Status snapshots are immutable and safe
-to read while drawing. `request(..., renditions=...)` limits a request to some
-renditions of a result: the Waveform control asks for the local envelope only,
-so it never polls Scenario for a still. `cancel` stops one result's local
-decoding: an issued request is discarded, a running decode is signaled, which
-terminates its child, and a copy an in-flight batch is preparing is discarded
-when that batch returns. Its unfinished local renditions fail as canceled until
-`retry`, including one waiting to poll again after a failed lane batch; server
-stills keep polling. A retry after `cancel` reports the envelope queued at once,
-even while its canceled child is still stopping or a still poll for the same
-result is on the lane, so the Waveform control keeps loading instead of reading
-the canceled outcome. It sends at most one batch of up to 32 assets at a time.
+`request`, `request_review`, `retry`, `cancel`, `status`, `quiet`, `watch`,
+`unwatch`, `decode_requests`, `finish_decode` and `discard_decode` are its
+interface; `retry` and `status` take `review=True` for a review asset. Status
+snapshots are immutable and safe to read while drawing. `request(...,
+renditions=...)` limits a request to some renditions of a result: the Waveform
+control asks for the local envelope only, so it never polls Scenario for a
+still. `cancel` stops one result's local decoding: an issued request is
+discarded, a running decode is signaled, which terminates its child, and a copy
+an in-flight batch is preparing is discarded when that batch returns. Its
+unfinished local renditions fail as canceled until `retry`, including one
+waiting to poll again after a failed lane batch; server stills keep polling. A
+retry after `cancel` reports the envelope queued at once, even while its
+canceled child is still stopping or a still poll for the same result is on the
+lane, so the Waveform control keeps loading instead of reading the canceled
+outcome. It sends at most one batch of up to 32 assets at a time.
 
 `JobSession(preview_root=...)` exposes it as `result_previews` while the session
 is active. The session's existing maintenance timer, and `reap_retired` in
@@ -454,6 +480,8 @@ recording layouts. The same desktop passes showed their tiles loading and ready
 in Jobs and ready in Generations and Studio, and the last one showed **Retry
 preview (N)** preparing a still again after its cached file was removed during
 preparation, in the sidebar at UI scales 1.0 and 2.0; Online Access disabled and
-Studio at UI scale 2.0 were not exercised there. Clip display, MCP parity and
-native desktop acceptance, including of the review previews, remain open under
-#189, #65 and #66.
+Studio at UI scale 2.0 were not exercised there. Local MCP inspection has
+installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 with the
+same kind of synthetic fixtures and the real offline audio decoder. Clip display
+and native desktop acceptance, including of the review previews, remain open
+under #189, #65 and #66.

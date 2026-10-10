@@ -608,7 +608,10 @@ prepare a preview image; Blender checks for about five minutes while Online
 Access allows it, then shows the result's icon with **Retry preview (N)**. With
 Online Access disabled, image previews still appear and the others wait.
 Previews never generate, spend or change your scene, and they are kept in the
-disposable `result-previews` cache.
+disposable `result-previews` cache. Connected agents read the same preview
+states and audio waveforms through the local MCP
+[`inspect_result_previews`](MCP.md#saved-result-previews) tool; no agent tool
+opens a player.
 
 For a completed cloud model job without a saved record, choose **Save for
 recovery**. This reads the job into local saved history without downloading files

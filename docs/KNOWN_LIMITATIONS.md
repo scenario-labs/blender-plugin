@@ -286,7 +286,8 @@ establish live generation or full render-lane desktop acceptance.
   desktop evidence yet, which remains
   [#189](https://github.com/scenario-labs/blender-plugin/issues/189), #66 and
   [#68](https://github.com/scenario-labs/blender-plugin/issues/68) work. Local MCP
-  cannot read waveform envelopes yet, and no MCP tool launches a player. See the
+  `inspect_result_previews` reads the same envelope as bounded levels, without
+  an image, and no MCP tool launches a player. See the
   [supported limits](USER_GUIDE.md#audio).
 - Play first copies the saved file, up to 512 MiB, on the preview lane, so a
   large file waits for its copy and queues behind server thumbnail polls and
@@ -352,13 +353,14 @@ establish live generation or full render-lane desktop acceptance.
   on Blender's main thread, one image per timer tick: about 0.1 s for a
   4096-pixel JPEG and 0.2 s at 8192 by 4096 pixels on macOS arm64, longer for
   real photographs and on slower machines. Background Blender decodes no image
-  previews, and local MCP cannot read previews yet. Desktop evidence is
-  partial: physical passes on macOS arm64 Blender 5.1.2 showed tiles loading and
-  ready in Jobs and ready in Generations and Studio at UI scale 1.0, and, in the
-  sidebar at UI scales 1.0 and 2.0, **Retry preview (N)** after a cached still
-  was removed during preparation, number-first captions and status lines
-  wrapped by measured width. Online Access disabled, Studio at UI scale 2.0 and
-  other platforms were not exercised
+  previews, so local MCP inspection in background Blender reports image stills
+  as failed after 120 seconds; it returns preview states and metadata, never
+  the image itself. Desktop evidence is partial: physical passes on macOS arm64
+  Blender 5.1.2 showed tiles loading and ready in Jobs and ready in Generations
+  and Studio at UI scale 1.0, and, in the sidebar at UI scales 1.0 and 2.0,
+  **Retry preview (N)** after a cached still was removed during preparation,
+  number-first captions and status lines wrapped by measured width. Online
+  Access disabled, Studio at UI scale 2.0 and other platforms were not exercised
   ([#66](https://github.com/scenario-labs/blender-plugin/issues/66),
   [#68](https://github.com/scenario-labs/blender-plugin/issues/68)).
 - Prompt helpers lack an explicit generic/model-contextual Spark preference

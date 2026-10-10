@@ -572,6 +572,17 @@ token and session it requested them in: a different token or session,
 late status is never drawn. Background Blender registers no timer, so headless
 loops decode no images and their decode requests expire.
 
+Local MCP [`inspect_result_previews`](MCP.md#saved-result-previews) uses the
+same scheduler from Blender's main thread. It checks the context token, saved
+revision and previewable state, requests the stills of the results the preview
+controller's `tile_targets` chooses, or of one named result, and an envelope
+only when asked, and calls the scheduler's `retry` or `cancel` for one result;
+a retry also calls the controller's `forget_failures`. A bounded wait takes a
+scheduler `watch`, which the maintenance timer or headless loop sets while
+pumping and `deactivate` releases. The HTTP thread waits on it; the final
+statuses are read on the main thread only if the context token and session are
+unchanged.
+
 ## Explicit saved-result World application
 
 `apply_world(completion, asset_id=...)` consumes an owned `verify_results`

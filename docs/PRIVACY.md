@@ -32,7 +32,9 @@ limits of its current controls. It does not replace Scenario's service policies.
   without a request. Test connection requests one
   public-model list page with at most one model to verify model access; it does
   not discover account or project identity. Refresh cloud and Older in Generations retrieve job
-  history and prompt text; connected agents can request history too.
+  history and prompt text; connected agents can request history too. Local
+  MCP `inspect_result_previews` requests the same previews for any downloaded
+  saved job an agent names, with the same reads.
 - Scenario API requests authenticate with your selected key/secret pair using an
   HTTP Basic `Authorization` header over TLS. They identify the extension with
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;

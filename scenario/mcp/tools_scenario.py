@@ -3,17 +3,30 @@
 """MCP tools that talk to Scenario through the add-on: catalog, cost, generate, results into the scene."""
 
 import json
+import math
+import time
 from dataclasses import asdict
 from pathlib import Path
 
 import bpy
 
 from ..blender import generation, runtime
+from ..blender import result_previews as preview_tiles
 from ..blender.props import GENERATION_LANES as NATIVE_LANES
+from ..core import audio_waveform
 from ..core.api.catalog import GENERATION_LANES as LANES
 from ..core.api.catalog import models_for_lane
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
+from ..core.jobs.result_previews import (
+    ENVELOPE,
+    STILL,
+    PreviewError,
+    PreviewState,
+    is_local,
+    preview_kind,
+)
+from ..core.jobs.results import PREVIEW_STATES, ResultError
 from ..core.jobs.workflow_nodes import BLOCKED
 from ..core.scene import panorama_contract
 from ..core.scene.panorama import describe_world_media
@@ -1180,6 +1193,185 @@ def read_model_text(args):
         }
 
     return DeferredTool(task.result, finish)
+
+
+PREVIEW_ACTIONS = ("inspect", "retry", "cancel")
+PREVIEW_WAIT_SECONDS = 60
+PREVIEW_BINS = (8, 256, 64)  # Minimum, maximum and default envelope levels returned.
+
+
+def _preview_rendition(kind, rendition, status, bins):
+    """One rendition's state and cached metadata; never a path, URL or image bytes."""
+    value = {"state": status.state.value}
+    if status.reason:
+        value["reason"] = status.reason
+    preview = status.preview if status.state == PreviewState.READY else None
+    if rendition == ENVELOPE:
+        envelope = None if preview is None else preview.envelope
+        if envelope is not None:
+            rms, peaks = audio_waveform.fold(envelope, bins)
+            value.update(
+                seconds=envelope.seconds,
+                sample_rate=envelope.sample_rate,
+                channels=envelope.channels,
+                silent=envelope.silent,
+                overall_rms=envelope.overall_rms,
+                overall_peak=envelope.overall_peak,
+                bins=len(rms),
+                rms=list(rms),
+                peaks=list(peaks),
+            )
+        return value
+    value["source"] = "local" if is_local(kind, rendition) else "scenario"
+    if preview is not None:
+        value.update(
+            media_type=preview.media_type,
+            width=preview.width,
+            height=preview.height,
+            size=preview.size,
+        )
+    return value
+
+
+def _preview_args(args):
+    context_id, request_id = args.get("context_id"), args.get("request_id")
+    revision, asset_id = args.get("expected_revision"), args.get("asset_id")
+    action, envelope = args.get("action", "inspect"), args.get("envelope", False)
+    bins, wait = args.get("bins", PREVIEW_BINS[2]), args.get("wait", 0)
+    if not isinstance(context_id, str) or not context_id or not isinstance(request_id, str):
+        raise ValueError("Use the context_id and request_id returned by list_local_jobs")
+    if type(revision) is not int or revision < 0:
+        raise ValueError("expected_revision must be a nonnegative integer")
+    if asset_id is not None and (not isinstance(asset_id, str) or not asset_id):
+        raise ValueError("asset_id must be a saved result's asset ID from job_status")
+    if action not in PREVIEW_ACTIONS:
+        raise ValueError(f"action must be one of {PREVIEW_ACTIONS}")
+    if type(envelope) is not bool:
+        raise ValueError("envelope must be a boolean")
+    if type(bins) is not int or not PREVIEW_BINS[0] <= bins <= PREVIEW_BINS[1]:
+        raise ValueError("bins must be an integer from 8 to 256")
+    if (
+        type(wait) not in (int, float)
+        or not math.isfinite(wait)
+        or not 0 <= wait <= PREVIEW_WAIT_SECONDS
+    ):
+        raise ValueError("wait must be a finite number of seconds from 0 to 60")
+    if asset_id is None and (action != "inspect" or envelope):
+        raise ValueError("Choose one asset_id for an envelope, retry or cancel")
+    return context_id, request_id, revision, asset_id, action, envelope, bins, wait
+
+
+def inspect_result_previews(args):
+    from ..blender.job_session import OriginUnavailable
+
+    context_id, request_id, revision, asset_id, action, envelope, bins, wait = _preview_args(args)
+    session = runtime.ensure_job_session()
+    if context_id != runtime.state.job_context_id:
+        raise ScenarioError(0, "The saved-job context changed; list local jobs again")
+    record = runtime.state.job_store.get(request_id)
+    if record is None or record.revision != revision:
+        raise ScenarioError(0, "The saved job changed; list local jobs again")
+    if record.state not in PREVIEW_STATES:
+        raise ScenarioError(0, "Download the saved result before previewing it")
+    positions = {item.asset.asset_id: number for number, item in enumerate(record.results, 1)}
+    if asset_id is None:
+        # The same results the native preview tiles show for this job.
+        chosen = [target.number for target in preview_tiles.tile_targets(record)]
+        more = sum(
+            item.receipt is not None and preview_kind(item.asset.media_type) is not None
+            for item in record.results
+        ) - len(chosen)
+    else:
+        if asset_id not in positions:
+            raise ScenarioError(0, "Choose a saved result asset from this job")
+        chosen, more = [positions[asset_id]], 0
+        item = record.results[chosen[0] - 1]
+        if item.receipt is None:
+            raise ScenarioError(0, "Choose a downloaded saved result of this job")
+        if envelope and preview_kind(item.asset.media_type) != "audio":
+            raise ScenarioError(0, "Choose a downloaded saved audio result for its envelope")
+    asset_ids = [record.results[number - 1].asset.asset_id for number in chosen]
+    try:
+        scheduler = session.result_previews
+    except OriginUnavailable:
+        raise ScenarioError(0, "Result previews are unavailable for this connection") from None
+    canceled = None
+    try:
+        if action == "cancel":
+            canceled = scheduler.cancel(request_id, asset_id)
+        elif asset_ids:
+            # Stills as the native tiles request them; the envelope as Waveform does.
+            scheduler.request(
+                request_id,
+                asset_ids=asset_ids,
+                renditions=(STILL, ENVELOPE) if envelope else (STILL,),
+            )
+            if action == "retry":
+                scheduler.retry(request_id, asset_id)
+                preview_tiles.controller.forget_failures(request_id, asset_id)
+    except (PreviewError, ResultError) as error:
+        raise ScenarioError(0, str(error)) from None
+    if action == "cancel" and canceled is None:
+        raise ScenarioError(0, "No preview of this saved result is being prepared")
+
+    def respond():
+        results = []
+        for number in chosen:
+            item = record.results[number - 1]
+            kind = preview_kind(item.asset.media_type)
+            status = scheduler.status(request_id, item.asset.asset_id)
+            renditions = {}
+            for rendition, current in () if status is None else status.renditions:
+                renditions[rendition] = _preview_rendition(kind, rendition, current, bins)
+            results.append(
+                {
+                    "asset_id": item.asset.asset_id,
+                    "number": number,
+                    "caption": preview_tiles.caption(item, number),
+                    "media_type": item.asset.media_type,
+                    "kind": kind,
+                    "renditions": renditions,
+                }
+            )
+        return {
+            "context_id": context_id,
+            "request_id": request_id,
+            "revision": record.revision,
+            "in_progress": not all(scheduler.quiet(request_id, value) for value in asset_ids),
+            "more_results": more,
+            "results": results,
+        }
+
+    if not wait or all(scheduler.quiet(request_id, value) for value in asset_ids):
+        return respond()
+    try:
+        watch = scheduler.watch(request_id, asset_ids)
+    except PreviewError as error:
+        raise ScenarioError(0, str(error)) from None
+    server = runtime.state.mcp
+    deadline = time.monotonic() + wait
+
+    def run():
+        # The HTTP thread only waits; the main thread pumps the scheduler.
+        while not watch.wait(min(0.1, max(0.0, deadline - time.monotonic()))):
+            if (
+                time.monotonic() >= deadline
+                or not session.active
+                or (server is not None and not server.running)
+            ):
+                return
+
+    def finish(_):
+        scheduler.unwatch(watch)
+        if (
+            runtime.state.job_session is not session
+            or not session.active
+            or runtime.state.job_context_id != context_id
+        ):
+            raise ScenarioError(0, "The saved-job context changed while waiting; inspect it again")
+        return respond()
+
+    return DeferredTool(run, finish)
 
 
 def list_local_jobs(args):
@@ -3078,6 +3270,38 @@ SPECS = (
             ["context_id", "request_id", "expected_revision", "asset_id"],
         ),
         read_model_text,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "inspect_result_previews",
+        (
+            "Inspect the previews of a downloaded saved job's results, as the native preview tiles and Waveform control show them, without generating, spending, applying or changing the scene or saved job.\n"
+            "Args:\n"
+            "  - context_id, request_id, expected_revision: required, from list_local_jobs; the job must be ready, applying, apply_failed or applied.\n"
+            "  - asset_id: optional, one result from job_status results. Without it, the same at most four downloaded results the native tiles show: video, audio, embedded models and base color or untagged images first.\n"
+            "  - envelope: optional boolean, default false. Also decode this audio result's waveform envelope from its verified saved file in an offline Blender process, like Waveform; requires asset_id.\n"
+            "  - action: inspect (default), retry (prepare asset_id's previews again and clear a missing marker, like Retry preview) or cancel (stop asset_id's local decoding, like the waveform's Cancel).\n"
+            "  - bins: optional integer from 8 to 256, default 64, the envelope levels returned.\n"
+            "  - wait: optional seconds from 0 to 60, default 0. Waits off Blender's main thread until no returned preview is queued, pending or decoding.\n"
+            "Returns: context_id, request_id, revision, in_progress, more_results (without asset_id, the other downloaded results with a preview kind; otherwise 0) and results[] with asset_id, number, caption, media_type, kind and renditions. Each rendition has state (queued, pending, offline, decode, ready, missing, failed or unsupported) and reason when set. A still adds source (local or scenario); a ready one adds media_type, width, height and size. A ready envelope adds seconds, sample_rate, channels, silent, overall_rms, overall_peak, bins and rms and peaks levels from 0 to 1. Never returns image bytes, file paths or URLs.\n"
+            "Video, 3D and audio stills are Scenario's preview images, read while Online Access allows (offline otherwise; nothing is sent) and polled for about five minutes when missing. Image stills and envelopes use only verified saved files; only an interactive Blender decodes image stills. No tool launches a player.\n"
+            'Example: {"context_id": "current-context", "request_id": "saved-request", "expected_revision": 4, "asset_id": "asset_audio", "envelope": true, "wait": 10}.\n'
+            "Platform equivalent: asset_get and asset_display for Scenario's preview images; envelopes are local."
+        ),
+        _schema(
+            {
+                "context_id": {"type": "string"},
+                "request_id": {"type": "string"},
+                "expected_revision": {"type": "integer", "minimum": 0},
+                "asset_id": {"type": "string"},
+                "envelope": {"type": "boolean"},
+                "action": {"type": "string", "enum": ["inspect", "retry", "cancel"]},
+                "bins": {"type": "integer", "minimum": 8, "maximum": 256},
+                "wait": {"type": "number", "minimum": 0, "maximum": 60},
+            },
+            ["context_id", "request_id", "expected_revision"],
+        ),
+        inspect_result_previews,
         {"readOnlyHint": True},
     ),
     ToolSpec(

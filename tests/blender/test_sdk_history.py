@@ -363,6 +363,90 @@ class SDKHistoryTests(unittest.TestCase):
         self.assertIsNone(self.runtime.state.history_token)
         self.assertEqual(self.calls[2].url.params["paginationToken"], "page-two")
 
+    def drawn_history(self):
+        from test_model_picker import FakeLayout
+
+        layout = FakeLayout()
+        submodule("blender.panels").draw_history(layout, bpy.context)
+        labels = [call[2].get("text") for node in layout.walk() for call in node.named("label")]
+        operators = [call[1][0] for node in layout.walk() for call in node.named("operator")]
+        return labels, operators
+
+    def test_history_draws_every_loaded_row_after_older_pages(self):
+        # Live shape: one page listed 22 generations, the older page 8 more.
+        self.page = {
+            "jobs": [job(f"job-{index}", f"prompt {index}") for index in range(30)],
+            "nextPaginationToken": "page-two",
+        }
+        self.history.refresh()
+        self.deliver()
+        labels, operators = self.drawn_history()
+        self.assertEqual([f"prompt {index}" for index in range(30)], labels[::2])
+        self.assertIn("scenario.history_older", operators)
+        self.page = {"jobs": [job(f"job-{index}", f"prompt {index}") for index in range(30, 38)]}
+        self.assertTrue(self.history.older())
+        self.deliver()
+        labels, operators = self.drawn_history()
+        self.assertEqual([f"prompt {index}" for index in range(38)], labels[::2])
+        self.assertNotIn("scenario.history_older", operators)
+
+    def test_page_without_generations_keeps_older_history_reachable(self):
+        # Uploads, workflow runs and mesh previews can fill a page without a generation.
+        self.page = {
+            "jobs": [
+                {**job(f"job-{kind}"), "jobType": kind}
+                for kind in ("upload", "workflow", "mesh-preview-rendering")
+            ],
+            "nextPaginationToken": "page-two",
+        }
+        self.history.refresh()
+        self.deliver()
+        self.assertTrue(self.runtime.state.history_loaded)
+        self.assertFalse(self.runtime.state.history)
+        labels, operators = self.drawn_history()
+        self.assertEqual(operators, ["scenario.history_older"])
+        self.assertTrue(any("older" in (text or "") for text in labels), labels)
+        self.page = {"jobs": [job("job-older", "older prompt")]}
+        self.assertTrue(self.history.older())
+        self.deliver()
+        self.assertEqual([e.job_id for e in self.runtime.state.history], ["job-older"])
+
+    def test_mcp_reports_rows_beyond_limit_and_reads_older_pages(self):
+        self.page = {
+            "jobs": [job(f"job-{index}", f"prompt {index}") for index in range(22)],
+            "nextPaginationToken": "page-two",
+        }
+        self.tools.list_generations({"refresh": True})
+        self.deliver()
+        first = self.tools.list_generations({})
+        self.assertEqual(len(first["generations"]), 20)
+        self.assertEqual(first["more_loaded"], 2)
+        self.assertIs(first["older_page"], True)
+        whole = self.tools.list_generations({"limit": 22})
+        self.assertEqual(whole["generations"][-1]["job_id"], "job-21")
+        self.assertNotIn("more_loaded", whole)
+        self.page = {"jobs": [job("job-older", "older prompt")]}
+        requested = self.tools.list_generations({"older": True})
+        self.assertEqual(requested["generations"], [])
+        self.assertIn("older", requested["note"])
+        self.deliver()
+        older = self.tools.list_generations({"limit": 30})
+        self.assertEqual(older["generations"][-1]["job_id"], "job-older")
+        self.assertNotIn("older_page", older)
+        self.assertEqual(self.calls[-1].url.params["paginationToken"], "page-two")
+        with self.assertRaisesRegex(ValueError, "No older cloud history"):
+            self.tools.list_generations({"older": True})
+
+    def test_mcp_rejects_non_boolean_older_or_combined_paging_without_reading(self):
+        for value in ("true", 1, None, [], {}):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "older must be a boolean"):
+                    self.tools.list_generations({"older": value})
+        with self.assertRaisesRegex(ValueError, "refresh or older"):
+            self.tools.list_generations({"refresh": True, "older": True})
+        self.assertFalse(self.calls)
+        self.assertFalse(self.runtime.state.history_loading)
+
     def test_ui_and_mcp_refresh_share_a_pending_read(self):
         with patch.object(self.manager, "fetch_history") as fetch:
             self.history.refresh()

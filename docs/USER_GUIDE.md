@@ -429,7 +429,9 @@ review, read and review it again. Recovery reads never generate another plan.
 
 ### Generations
 This session's results appear first, followed by cloud history with prompt, kind,
-price, status and asset identity. **Load older** pages back in time.
+price, status and asset identity. **Load older** pages back in time and keeps
+every loaded row visible. Uploads, workflow runs and mesh preview renders are
+not listed; when a page holds only those, use **Load older** to continue.
 
 For a job saved by this extension's shared runtime, choose **Inspect saved jobs**.
 Use its explicit recovery controls to resume a download, then review the selected
@@ -466,6 +468,9 @@ see the reference for token configuration and online-access requirements.
 ## Apply a saved panorama to World
 
 For a saved PNG, JPEG or OpenEXR result, choose **Set panorama as World (N)**.
+N is the result's position in the job, the same number as its import button.
+Material maps, such as the PBR maps that come with a 3D model or a texture set,
+are not offered.
 Confirm the scene, current World and the selected file's declared format. The
 image must be a supported 2:1 panorama whose actual format matches that saved
 declaration; Blender uses it as an equirectangular environment, packs it and

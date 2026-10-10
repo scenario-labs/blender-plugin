@@ -72,7 +72,9 @@ See [model import](MESH_APPLICATION.md#explicit-saved-glb-import)
 for bounds and recovery. This never replaces an existing mesh.
 
 For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
-`prepare_result_application`; show the scene, current World and returned `format`
+`prepare_result_application`. A result whose saved metadata declares a texture
+role is a material map and is refused; `job_status` omits `apply_world` when every
+supported image is one. Show the scene, current World and returned `format`
 before approval. `format` states the saved media type's declared format, such as
 `JPEG (LDR)` or an OpenEXR whose ACES AP0 primaries use ACES2065-1; restoration
 returns `null`. The same apply command verifies and packs a supported 2:1 PNG,
@@ -329,7 +331,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
 | `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
-| `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`refresh`: boolean | read-only annotation |
+| `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`older`: boolean<br>`refresh`: boolean | read-only annotation |
 <!-- tools:end -->
 
 ## Security model
@@ -398,7 +400,7 @@ behavior interchangeable. Remote names below were checked against the
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
 | Reference upload | `upload_reference(path, kind)` or `capture_reference(source)`, then `reference_upload_status(context_id, reference_id)` until imported | `upload_asset`, `upload_asset_complete` for an existing file |
 | Saved upload recovery | `list_reference_uploads`, then `recover_reference_upload(context_id, request_id, expected_revision, action)` | Known-upload status retrieval; local cancellation/cleanup have no platform equivalent |
-| History | `list_generations(limit)` | `jobs_list` |
+| History | `list_generations(limit)`, then `list_generations(older)` for older pages | `jobs_list` |
 | Recover a cloud result | `recover_cloud_job`, then explicit saved-result approval | No Blender scene access |
 | Prompt assistance | `estimate_prompt(lane, action)` then `approve_prompt(quote_id, approved_cost)`; same native prompt field and exact-price approval | `prompt_spark` for generation; SDK `generate.translate` for English translation |
 | Saved prompt text | `read_prompt_result(context_id, request_id, expected_revision)` | `job_get` and `asset_get`; read-only recovery without Blender mutation |
@@ -671,6 +673,12 @@ Undo; MCP consumers retain the same scope and destination guards without a
 promise of native Undo for direct tool calls.
 
 ## Cloud history and scoped saved results
+
+`list_generations` returns at most `limit` loaded rows, newest first. It never
+truncates silently: `more_loaded` counts loaded rows beyond `limit`, and
+`older_page: true` means an older cloud page exists. Call with `older: true`,
+then again without it, to append that page. A page skips uploads, workflow runs
+and mesh preview renders, so it can list fewer rows than the service returned.
 
 `list_generations` returns `local_request_ids` for cloud rows matched to the
 selected credential-bound store. All cloud rows expose empty `local_files`; use

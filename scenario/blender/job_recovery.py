@@ -6,7 +6,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
-from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
+from ..core.scene.panorama import describe_world_media
 from . import runtime
 from .media_application import MEDIA_TYPES
 from .model_application import MODEL_MEDIA_TYPE
@@ -717,21 +717,18 @@ def draw_controls(layout, record):
             operator.expected_revision = record.meta["saved_revision"]
             continue
         if action in {"apply_world", "restore_world"}:
-            identifiers = (
-                [""]
+            # Number a panorama by its position among all results, as import buttons do.
+            candidates = set(record.meta.get("world_assets", ()))
+            buttons = (
+                [("Restore previous World", "")]
                 if action == "restore_world"
                 else [
-                    key
-                    for key in record.asset_ids
-                    if record.asset_types.get(key) in WORLD_MEDIA_TYPES
+                    (f"Set panorama as World ({index})", key)
+                    for index, key in enumerate(record.asset_ids, 1)
+                    if key in candidates
                 ]
             )
-            for index, asset_id in enumerate(identifiers, 1):
-                label = (
-                    "Restore previous World"
-                    if action == "restore_world"
-                    else f"Set panorama as World ({index})"
-                )
+            for label, asset_id in buttons:
                 operator = layout.operator("scenario.apply_saved_world", text=label)
                 operator.context_id, operator.request_id = (
                     runtime.state.job_context_id,

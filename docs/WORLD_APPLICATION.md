@@ -223,8 +223,14 @@ preserves the previous World. An unrelated ordinary image fails locally without
 replacing anything. No automatic download or generation retry follows failure.
 
 The action is offered by supported image media type, not a claim that every
-image is panoramic. The confirmation explicitly chooses equirectangular use;
-actual 2:1 dimensions and supported container checks occur during application.
+image is panoramic. A result whose saved metadata declares a texture role, such
+as the albedo, normal, roughness or metallic map of a 3D package or a texture
+set, is a material map: neither the button nor MCP World preparation offers it.
+N is the result's position among all of the job's results, the number that
+**Import model (N)** and the strip actions use. The confirmation explicitly
+chooses equirectangular use; actual 2:1 dimensions and supported container checks
+occur during application. The saved job does not record image dimensions, so an
+ordinary image without a texture role is still offered and fails locally.
 PNG and JPEG remain LDR, and an accepted EXR does not prove measured HDR range or
 seamless content. Known application failure, including a media type that does not
 match the actual container, is reported with panorama requirements and keeps the

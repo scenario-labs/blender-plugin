@@ -15,6 +15,10 @@ EXPECTED = {
     "tools_scenario": {
         "list_assets",
         "search_assets",
+        "list_collections",
+        "prepare_asset_organization",
+        "apply_asset_organization",
+        "asset_organization_status",
         "list_workflows",
         "workflow_schema",
         "estimate_workflow",
@@ -187,3 +191,40 @@ def test_job_tools_advertise_both_reference_spellings_without_requiring_legacy_i
         assert schema.func.id == "_schema"
         assert {"job_id", "id"} <= property_names(schema.args[0], assignments)
         assert len(schema.args) == 1 or ast.literal_eval(schema.args[1]) == []
+
+
+def test_organization_tools_review_before_one_unrepeated_write():
+    from scenario.core.jobs.organization import MAX_COLLECTION_ASSETS, MAX_TAG_CHANGES, Operation
+
+    _, calls = specs("tools_scenario")
+    found = {call.args[0].value: call for call in calls}
+    annotations = {
+        name: ast.literal_eval(found[name].args[4])
+        for name in (
+            "list_collections",
+            "prepare_asset_organization",
+            "apply_asset_organization",
+            "asset_organization_status",
+        )
+    }
+    assert annotations == {
+        "list_collections": {"readOnlyHint": True},
+        "prepare_asset_organization": {"readOnlyHint": True},
+        "apply_asset_organization": {"destructiveHint": True},
+        "asset_organization_status": {"readOnlyHint": True},
+    }
+    prepare = found["prepare_asset_organization"]
+    for text in ("explicit approval", "uses no credits", "Blender Undo", "without sending it"):
+        assert text in prepare.args[1].value, text
+    schema = ast.literal_eval(prepare.args[2].args[0])
+    assert schema["operation"]["enum"] == [operation.value for operation in Operation]
+    assert schema["asset_ids"]["maxItems"] == MAX_COLLECTION_ASSETS
+    assert schema["add_tags"]["maxItems"] == schema["remove_tags"]["maxItems"] == MAX_TAG_CHANGES
+    assert ast.literal_eval(prepare.args[2].args[1]) == ["operation"]
+    apply = found["apply_asset_organization"].args[1].value
+    for text in ("Never repeat UNCONFIRMED", "asset_organization_status", "no automatic retry"):
+        assert text in apply, text
+    for name in ("apply_asset_organization", "asset_organization_status"):
+        assert ast.literal_eval(found[name].args[2].args[1]) == ["context_id", "review_id"]
+    status = found["asset_organization_status"].args[1].value
+    assert "Never sends an organization write" in status

@@ -4,9 +4,11 @@
 
 `scenario-blender` connects an agent to the open Blender scene and generation
 into that scene. The hosted server at `mcp.scenario.com` provides platform-wide
-operations such as collections, training, workflow authoring and usage.
+operations such as collection management, training, workflow authoring and usage.
 Local workflow discovery and approved execution use the same saved-job session
-as model generation. Connect either
+as model generation. Local [asset organization](#asset-organization) reviews
+collection membership and tag changes for library assets in Blender's selected
+connection before sending them. Connect either
 or both according to the task; they have separate authentication and capabilities.
 
 The local server accepts MCP JSON-RPC over HTTP at
@@ -274,6 +276,10 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | --- | --- | --- | --- |
 | `list_assets` | Read one asset-library page using the selected credentials and optional project scope. | `public`: boolean<br>`page_size`: integer<br>`pagination_token`: string<br>`collection_id`: string | read-only annotation |
 | `search_assets` | Search asset-library metadata through the shared SDK session. | `query`*: string<br>`public`: boolean<br>`limit`: integer<br>`offset`: integer | read-only annotation |
+| `list_collections` | Read one page of Scenario collections in Blender's selected credential and optional project scope. | `page_size`: integer<br>`pagination_token`: string | read-only annotation |
+| `prepare_asset_organization` | Read the current tags and collection memberships of library assets and prepare one reviewed collection or tag change, without sending it. | `operation`*: string (['add_to_collection', 'remove_from_collection', 'update_tags', 'create_collection'])<br>`asset_ids`: array<br>`collection_id`: string<br>`collection_name`: string<br>`add_tags`: array<br>`remove_tags`: array | read-only annotation |
+| `apply_asset_organization` | Apply one READY organization review once, after the user explicitly approved its shown change. | `context_id`*: string<br>`review_id`*: string | destructive annotation |
+| `asset_organization_status` | Inspect an organization review, including an apply whose call timed out, or discard a review that is not applying. | `context_id`*: string<br>`review_id`*: string<br>`action`: string (['status', 'discard']) | read-only annotation |
 | `list_workflows` | List workflows in the selected credential/project scope without spending. | `privacy`: string (['private', 'public'])<br>`query`: string<br>`offset`: integer<br>`limit`: integer | read-only annotation |
 | `workflow_schema` | Read a workflow's declared input definitions without spending. | `workflow_id`*: string | read-only annotation |
 | `estimate_workflow` | Request a free exact workflow price bound to the selected scene and connection. | `workflow_id`*: string<br>`parameters`: object | - |
@@ -407,9 +413,12 @@ behavior interchangeable. Remote names below were checked against the
 | Capture scene | `screenshot_viewport`, `render_still` | Local only |
 | Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
 | Asset library metadata | `list_assets`, `search_assets` | SDK `assets.list` and `search.asset_search`; no hosted tool-name equivalence asserted here |
+| Collections | `list_collections(page_size, pagination_token)` | `collections_list` |
+| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back |
+| Organization outcome or discard | `asset_organization_status(context_id, review_id, action)` | Local session review; `collection_get` and `asset_get` read service state |
 | Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
 | Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
-| Collections, training, workflow authoring and usage | Use the hosted server | Discover operations in the hosted tool reference |
+| Collection rename/delete, model collections, tag listing, training, workflow authoring and usage | Use the hosted server | Discover operations in the hosted tool reference |
 
 Connect both when needed: use the local setup above for Blender and the
 [hosted server setup](https://mcp.scenario.com/docs) for Scenario-wide work.
@@ -846,3 +855,71 @@ generate, apply results or change collection/tag organization. Returned asset ID
 can be used in supported model/workflow parameters before a fresh exact quote.
 Scene/session changes reject stale delivery; an explicit retry repeats only a
 read. Native Library presentation and integrated attachment remain pending.
+
+## Asset organization
+
+`list_collections` reads one page of collections in the selected credential and
+project scope. Rows contain `collection_id`, name, asset and model counts and
+`updated_at`; thumbnail URLs and owner IDs are omitted. Continue with the
+returned `next_pagination_token`; no cursor is followed automatically.
+
+To change organization, call `prepare_asset_organization` with one operation:
+
+| Operation | Arguments | Change applied after approval |
+| --- | --- | --- |
+| `add_to_collection` | `asset_ids`, `collection_id` | One request adds the assets that are not yet members |
+| `remove_from_collection` | `asset_ids`, `collection_id` | One request removes the assets that are members |
+| `update_tags` | `asset_ids`, `add_tags` and/or `remove_tags` | One non-strict tag request per asset that still differs |
+| `create_collection` | `collection_name`, optional `asset_ids` | One create, then one request adding the assets |
+
+Use 1 to 49 unique asset IDs (optional only for a create). Tags and names are
+exact single-line labels; a tag list holds at most 30 unique tags without commas,
+and a tag cannot be added and removed together. See the
+[command contract](JOB_COORDINATOR.md#asset-organization-commands) for every
+validation rule. Preparation reads each asset's current tags and memberships with
+one bulk read, plus the target collection or, for a create, an exact-name lookup.
+It sends no write. The review lists each asset's change and `request_count`, the
+most writes apply may send. A missing asset, an existing exact collection name
+(returned in `existing_collection_ids`) or a name whose earlier create in this
+session had an unknown outcome makes the review `REJECTED`. A request with nothing
+to change is `UNCHANGED`. `project_id` is the Project ID override, or `null` for
+the key's own scope.
+
+Show the review to the user before applying. Organization changes are immediate
+Scenario account metadata: they use no credits and Blender Undo does not reverse
+them. A `READY` review expires after 10 minutes and applies once through
+`apply_asset_organization(context_id, review_id)`. Each write is sent once with
+no automatic retry. The first uncertain tag write stops the remaining assets,
+which stay `NOT_SENT`. The assets are then read back: each outcome is `VERIFIED`,
+`REJECTED` (with the HTTP status), `UNCONFIRMED`, `NOT_SENT` or `UNVERIFIED`, and
+the result is `VERIFIED`, `PARTIAL`, `UNCONFIRMED` or `REJECTED`. Never repeat
+unconfirmed work. Inspect the assets with `list_assets`, then prepare a new review
+only if the change is still wanted; it reads the current state first and sends
+only what still differs.
+
+After a timeout or error from `apply_asset_organization`, even one saying the
+tool was not executed, call `asset_organization_status` first. The server can
+report a delivery timeout after the apply was already queued; the status shows
+whether the review is still `READY` (nothing was queued), applying or finished.
+A change continues in Blender after a client timeout, and a review never applies
+twice. `action: discard` releases a review that is not applying; nothing is sent.
+
+Reviews belong to the selected connection, not to a scene: undo and scene
+switches keep them. Loading a file, changing credentials or the Project ID, or a
+reset discards them and replaces `context_id`, so the old context is rejected. A
+write already in flight keeps its effect, later writes are refused, and the old
+apply reports an unknown outcome instead of a result. With online access off,
+nothing is sent. One review applies at a time per session, and at most 32 are
+kept. Public library assets are not blocked locally; the service decides.
+
+These tools use the shared [session reviews](BLENDER_JOB_CONTEXT.md#asset-organization-reviews)
+and the SDK methods listed in [asset organization writes](SDK_ADOPTION.md#asset-organization-writes),
+with no raw API fallback. Collection rename and deletion, model collections and
+tag listing are not provided locally. Name uniqueness, re-adding an existing
+member, DELETE body survival through the production edge, tag normalization and
+service limits are unverified live; a tag the service normalizes reads back as
+`UNCONFIRMED`. Native Library controls, desktop interaction and live acceptance
+remain under [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
+[#65](https://github.com/scenario-labs/blender-plugin/issues/65),
+[#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
+[#68](https://github.com/scenario-labs/blender-plugin/issues/68).

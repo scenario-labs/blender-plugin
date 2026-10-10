@@ -95,6 +95,7 @@ class ResultActionTests(unittest.TestCase):
                 "recovery_actions": tuple(actions),
                 # ModelJobs projects the World candidates it found in saved metadata.
                 "world_assets": ("panorama",),
+                "import_units": (("mesh", "glb", True),),
                 **meta,
             }
         )
@@ -159,7 +160,7 @@ class ResultActionTests(unittest.TestCase):
             [
                 "Add video strip (2)",
                 "Add audio strip (3)",
-                "Import model (4)",
+                "Import GLB model (4)",
                 "Set panorama as World (1)",
                 "Apply to captured source (4)",
                 "Save import receipt",

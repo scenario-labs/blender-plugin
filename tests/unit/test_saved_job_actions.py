@@ -24,6 +24,9 @@ JOB = (("context_id", CONTEXT), ("request_id", "request"), ("expected_revision",
 
 
 def view(actions=(), state="remote", assets=(), **meta):
+    # ModelJobs projects import units from the manifest; GLBs stand in here.
+    glbs = [asset_id for asset_id, media_type in assets if media_type == "model/gltf-binary"]
+    units = tuple((asset_id, "glb", index == 0) for index, asset_id in enumerate(glbs))
     return SimpleNamespace(
         local_id="request",
         asset_ids=[asset_id for asset_id, _ in assets],
@@ -33,6 +36,7 @@ def view(actions=(), state="remote", assets=(), **meta):
             "saved_revision": 7,
             "saved_state": state,
             "recovery_actions": tuple(actions),
+            "import_units": units,
             **meta,
         },
     )
@@ -191,8 +195,8 @@ def test_media_and_model_controls_number_every_saved_asset():
     assert rows(items) == [
         asset("import_media", media, "Add video strip (1)", "clip"),
         asset("import_media", media, "Add audio strip (3)", "sound"),
-        asset("import_model", model, "Import model (4)", "mesh"),
-        asset("import_model", model, "Import model (6)", "variant"),
+        asset("import_model", model, "Import GLB model (4)", "mesh"),
+        asset("import_model", model, "Import alternate: GLB (6)", "variant"),
         asset("apply_mesh", mesh, "Apply mesh edit (4)", "mesh", original_source=False),
         asset("apply_mesh", mesh, "Apply mesh edit (6)", "variant", original_source=False),
         asset(
@@ -211,6 +215,44 @@ def test_media_and_model_controls_number_every_saved_asset():
         ),
         AWAITING,
     ]
+
+
+def test_model_imports_follow_the_projected_units_in_classified_order():
+    assets = (
+        ("texture", "image/png"),
+        ("material", "model/mtl"),
+        ("obj", "model/obj"),
+        ("fbx", "application/vnd.autodesk.fbx"),
+        ("gltf", "model/gltf+json"),
+        ("ply", "model/ply"),
+        ("glb", "model/glb"),
+    )
+    units = (
+        ("glb", "glb", True),
+        ("gltf", "gltf", False),
+        ("fbx", "fbx", False),
+        ("obj", "obj", False),
+        ("ply", "ply", False),
+        # Unknown formats or keys never become controls.
+        ("splat", "spz", False),
+        ("missing", "obj", False),
+    )
+    subject = view(("import_model",), "ready", assets, import_units=units)
+    model = "scenario.import_saved_model"
+    assert rows(sja.describe(subject, CONTEXT, TYPES)) == [
+        asset("import_model", model, "Import GLB model (7)", "glb"),
+        asset("import_model", model, "Import alternate: glTF (5)", "gltf"),
+        asset("import_model", model, "Import alternate: FBX (4)", "fbx"),
+        asset("import_model", model, "Import alternate: OBJ (3)", "obj"),
+        asset("import_model", model, "Import alternate: PLY (6)", "ply"),
+        AWAITING,
+    ]
+    # A primary that this release cannot import leaves only alternates.
+    alternates = view(("import_model",), "ready", assets, import_units=units[1:2])
+    assert [item.label for item in sja.describe(alternates, CONTEXT, TYPES)][:1] == [
+        "Import alternate: glTF (5)"
+    ]
+    assert sja.describe(view(("import_model",), "applied", assets), CONTEXT, TYPES)[1:] == ()
 
 
 def test_applied_results_show_reuse_only_with_a_reuse_action():

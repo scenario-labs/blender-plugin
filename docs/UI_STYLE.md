@@ -302,8 +302,9 @@ short wording. Drawing reads the status and changes nothing.
   by the sidebar and Studio lanes, Render Image/Video and Edit 3D; the viewport
   composer's model chip does not show it. These models can be submitted and
   results stay in saved jobs; provider behavior and result handling are not
-  accepted. Generic Import is offered by file type, so a returned GLB or media
-  file may import, but motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
+  accepted. Generic Import is offered by file type, so a returned model (GLB,
+  glTF, FBX, OBJ or mesh PLY) or media file may import, but motion and
+  transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 
 Installed native tests assert the registered header preset draw call, the Studio
 line, the picker status and the Model row status. Physical placement in a desktop
@@ -605,11 +606,16 @@ Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
 
 ## Saved static model confirmation
 
-Show **Import static model (N)** for each supported GLB result. The confirmation
+Show one import control for each supported GLB result, labelled as in
+[Saved model package review](#saved-model-package-review). The confirmation
 names the selected scene and cursor coordinates, states that it adds one model
 group with packed textures, preserves existing objects/selection, and excludes
-rigged, animated and external-file GLBs. A changed cursor or scene requires fresh
+external-file GLBs. A changed cursor or scene requires fresh
 approval. Drawing only reads prepared values.
+
+The screenshot and acceptance below predate saved package import and show the
+earlier wording. The current controls are described in
+[Saved model package review](#saved-model-package-review).
 
 ![Native static model confirmation shows the selected scene cursor and supported import limits](images/saved-model-approval.png)
 
@@ -623,6 +629,28 @@ a distinct bundle identifier and local ad-hoc signature for window targeting,
 with vendor executable code and the extension ZIP unchanged. Synthetic tests
 and desktop evidence do not establish paid provider acceptance, rig/animation or
 in-place editing, other OS desktop behavior, release readiness or #263 resolution.
+
+## Saved model package review
+
+Each importable unit of a saved job gets one control from the shared
+descriptors: **Import <format> model (N)** for the primary unit and
+**Import alternate: <format> (N)** for the others, in classified order, with
+GLB, glTF, FBX, OBJ or PLY as the format and N counting every saved file. A
+splat or unsupported model is not drawn. The 480 px review adds a **Selected**
+line naming the saved files and whether they are the primary or an alternate
+result (for example `Selected: OBJ + MTL + 1 map (alternate result)`), then the
+cursor, the new group, packed textures and preserved selection. Format lines
+follow: GLB and glTF keep scene FPS and the timeline, FBX packs embedded textures,
+rejects external texture files and keeps the file's clip timing, OBJ leaves out
+maps that were not saved, and PLY imports meshes only. A last line says the files
+are checked again first. Every line stays within 66 characters, the longest line
+the earlier 480 px desktop capture showed. Drawing only reads the prepared
+values; cancel discards the approval.
+
+Installed native tests on macOS arm64 Blender 5.1.2 check the labels drawn for a
+job with a GLB alias and an OBJ package, the review lines, read-only drawing and
+cancel. Physical desktop evidence of this dialog, its fit at other sizes and DPI,
+and viewport interaction after a non-GLB import is pending.
 
 ## Saved panorama approval and restoration
 
@@ -1000,7 +1028,9 @@ unchanged. Earlier screenshots retain their original artifact provenance.
 
 ## Animated model import interaction
 
-The shared saved-result button is **Import model**. Its review names the scene
+The shared saved-result button was **Import model** in this capture; it is now
+named by format, as in [Saved model package review](#saved-model-package-review).
+Its review names the scene
 and cursor and explains a new group, packed textures, preserved selection,
 retained rigs/clips and unchanged timeline. Drawing remains read-only. The
 [import contract](MESH_APPLICATION.md#rigged-and-animated-model-import) describes

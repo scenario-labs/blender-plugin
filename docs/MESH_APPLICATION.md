@@ -104,9 +104,9 @@ no OAuth or paid cloud acceptance is implied.
 
 ## Explicit saved GLB import
 
-The shared saved-job path can import one explicitly selected
-`model/gltf-binary` result into a new **Scenario Model** collection and parent
-group. It places the model's world-space bottom center at the approved 3D cursor,
+The shared saved-job path can import one explicitly selected GLB result
+(`model/gltf-binary`, or its `model/glb` alias) into a new **Scenario Model**
+collection and parent group. It places the model's world-space bottom center at the approved 3D cursor,
 retains the imported hierarchy and materials, packs embedded images, and leaves
 existing objects, selection, active object and viewport shading unchanged. It
 does not replace an existing source mesh or implement the edit policies above.
@@ -121,15 +121,18 @@ and node transform/morph-weight animations. Limits are 256 MiB of file bytes,
 8 MiB of JSON, 10,000 nodes, 10 million accessor entries, 128 skins, 128 animation
 clips and 10,000 total joints or animation channels. This is a bounded policy
 preflight, not a complete glTF validator or proof against every expensive decoder
-input; Blender validates geometry and textures. JSON glTF, FBX, OBJ, splats,
-multiple scenes, external files and pointer-based animation need separate
-integration; [package classification](#saved-3d-package-classification) is its
-first, unwired step. Unsupported downloads remain available. REMESH, UV, RETEXTURE and PARTS
-keep the default static-only preflight; RIG uses the bounded skin policy below.
+input; Blender validates geometry and textures. JSON glTF, FBX, OBJ and mesh PLY
+results import through the [saved package path](#saved-model-package-import);
+splats, multiple scenes, external files and pointer-based animation remain
+unsupported. Unsupported downloads remain available. REMESH, UV, RETEXTURE and
+PARTS keep the default static-only preflight; RIG uses the bounded skin policy
+below. In-place edits and Film shots still accept only `model/gltf-binary`.
 
-[`model_application.apply_model`](../scenario/blender/model_application.py)
-rehashes the exact local receipt, writes a private snapshot and imports into a
-disposable scene with scene extras and selection changes disabled. Publication
+[`model_application.apply_model`](../scenario/blender/model_application.py),
+which Film shots use, rehashes the exact local receipt, writes a private snapshot
+and imports into a disposable scene with scene extras and selection changes
+disabled. The saved-job command reaches the same importer through the package
+path below, so its GLB preflight now runs before the claim. Publication
 moves only the new objects into a new destination group. Embedded images remain
 packed after temporary files are removed. Failures remove only newly created
 data and verify the final datablock sets, including staging scenes and shape keys.
@@ -140,11 +143,15 @@ warning and may leave a temporary file, but preserves a completed packed import.
 Copying, hashing and decoding are synchronous on the main thread, so large models
 can pause Blender. There is no automatic blend save.
 
-Native **Import model (N)** and MCP `prepare_result_application` with
-`asset_id` capture the scene revision and exact cursor. Approval is consumed once;
-worker verification and destination revalidation precede the durable claim.
-The current scene must be local and in Object Mode both at preparation and after
-verification. Rejection before the claim leaves a ready job ready.
+Native **Import GLB model (N)** or **Import alternate: GLB (N)** and MCP
+`prepare_result_application` with the unit's `asset_id` capture the scene
+revision and exact cursor. Approval is consumed once; worker verification,
+destination revalidation and the main-thread snapshot preflight precede the
+durable claim. The current scene must be local and in Object Mode both at
+preparation and after verification. Rejection before the claim, including a
+receipt that changed after verification or a GLB that fails its preflight,
+leaves a ready job ready and a completed job without a new local claim. Only a
+failure after the claim records a failed application.
 A moved cursor, changed scene/file/context or stored revision requires review
 again. Completed jobs can import another saved model under a separate local
 claim after fresh approval. An interrupted original or local `applying` claim
@@ -161,15 +168,17 @@ native operator, so Blender records no operator Undo step for it. The model
 command therefore records Blender history itself, under the same conditions as
 [saved mesh edits](#native-undo-for-saved-mesh-edits): a desktop window, Global
 Undo enabled and at least two undo steps. The extension does not change
-preferences, and background application creates no desktop history. The first
-checkpoint, **Before Scenario model import**, follows destination validation and
-precedes staging. It holds the latest scene, including changes no operator
-recorded. The second, **Scenario model import**, follows publication and staging
-scene removal. Neither contains the staging scene. One Undo removes only the new
-group and its data and keeps the user's earlier steps; Redo restores the group.
-Only the saved-result command records these checkpoints. A Film shot build imports
-its heroes through the same primitive without them, so history never holds a
-partially built shot; the build keeps its own Undo behavior.
+preferences, and background application creates no desktop history.
+`import_snapshot` records both checkpoints for every saved model format. The
+first, **Before Scenario model import**, follows the snapshot preflight, the claim
+and destination revalidation, and precedes staging. It holds the latest scene,
+including changes no operator recorded. The second, **Scenario model import**,
+follows publication and staging scene removal. Neither contains the staging
+scene. One Undo removes only the new group and its data and keeps the user's
+earlier steps; Redo restores the group. Only the saved-result command records
+these checkpoints. A Film shot build imports its heroes through `apply_model`,
+which records none, so history never holds a partially built shot; the build
+keeps its own Undo behavior.
 
 A failed initial checkpoint stops before staging. The claim then fails like other
 known import failures, so the job can be reviewed again. A failed final checkpoint
@@ -219,8 +228,8 @@ for the exact packaged desktop check and its limits.
 
 [`model_formats.classify_packages`](../scenario/core/scene/model_formats.py)
 groups a saved job's results into ordered import units without Blender, files or
-network access. It is groundwork for non-GLB saved model import: no UI, MCP tool,
-session or importer uses it yet, and the GLB import above is unchanged.
+network access. The [saved package import](#saved-model-package-import) offers and
+claims these units; the Film and in-place mesh-edit paths do not use them.
 
 Inputs are URL-free manifest facts typed by the pinned SDK 2.2.0
 [asset response](https://docs.scenario.com/api/python/resources/assets/methods/retrieve):
@@ -307,8 +316,75 @@ Until it lands, every stored manifest uses the stricter rules without lineage;
 binding and generated-output ordering apply only when a caller supplies it.
 Undocumented provider file names are never used. Tests cover synthetic manifests and
 files only. Provider package shapes, SPZ versions and glTF delivery need live
-evidence; import, approval, claims and status remain integration work under #65, and
-this primary/alternate ordering is not a #99 edit policy.
+evidence, and this primary/alternate ordering is not a #99 edit policy.
+
+## Saved model package import
+
+A saved job's GLB, JSON glTF, FBX, OBJ and mesh PLY import units can each be
+imported as a new **Scenario Model** group at the approved cursor. Native saved-job
+controls list one **Import <format> model (N)** button for the primary unit and
+**Import alternate: <format> (N)** for the others, in the classified order; N
+counts every saved file. MCP `job_status` reports every unit in `import_units`,
+with `importable`, `primary`, its members and roles, glTF candidate resources and
+`import_findings` for files left out. SPZ, `.splat` and other splat units are
+listed but not offered in this release. Nothing is imported automatically.
+
+The review captures the scene revision and cursor like the GLB command above. The
+dialog and MCP approval name the format, the saved files (for example
+`OBJ + MTL + 2 maps`), primary or alternate, and format-specific limits. After
+worker verification, [`prepare_snapshot`](../scenario/blender/model_application.py)
+runs on the main thread before the claim. It opens every member without following
+links, requires the exact receipt size and SHA-256, and writes canonical names into
+a private directory under the extension's user `model-import` folder:
+
+- GLB is checked by `inspect_glb`; JSON glTF by `inspect_gltf_json`, which binds
+  buffers and images only to this job's saved files and rewrites their URIs.
+- OBJ is streamed through `rewrite_obj` and its bound MTL through `rewrite_mtl`;
+  every map the MTL can reference is copied beside it. Missing or unsupported
+  references are dropped and counted.
+- FBX must be binary and needs Blender's bundled FBX add-on; a disabled add-on
+  stops before any file is written.
+- PLY must be a mesh by the same rule as worker splat preparation; Gaussian splat
+  PLY files stop with the saved file kept.
+- Map and glTF image bytes must start like PNG, JPEG or WebP.
+
+A failure removes the snapshot and raises before the claim: the saved job, its
+local application list and the scene are unchanged, and the Jobs row says
+**Nothing was imported** with the reason. Blender's FBX, OBJ and PLY operators
+need a window context, as do rigged glTF imports, so an explicitly windowless caller
+is rejected at this step; ordinary background sessions keep an off-screen window.
+Snapshot copying and hashing are synchronous on the main thread, bounded by 256 MiB
+per file and 512 MiB per package.
+
+The claim follows, as for GLB: a ready job's claim covers the whole job, and a
+completed job's reuse claim names every member read, unit key first. Then
+`import_snapshot` imports into a disposable staging scene. glTF and GLB use the importer and timing
+above. FBX uses the bundled `import_scene.fbx` without image search, OBJ uses
+`wm.obj_import` with mesh validation and both make imported material names unique.
+PLY uses `wm.ply_import`. Selection made by these importers stays in staging.
+Every new image must be packed by the importer (embedded FBX or glTF data) or load
+from the snapshot directory itself; anything else, including an FBX texture at an
+absolute path or an OBJ placeholder, fails the import and rolls back. Accepted
+images are packed and their file paths cleared. The FBX importer sets the file's
+frame rate on the staging scene: clips keep that timing and the destination scene
+keeps its own, and `model_import.frame_rate_mismatch` reports when they differ.
+Publication matches the GLB group and records `scenario_assets` with the member
+list on the root. Failure removes only new objects, meshes, materials, images,
+curves, textures, actions and the staging scene, then verifies the datablock sets.
+Receipt-only retry, reuse claims and session cleanup are shared with the GLB path.
+MCP status keeps a session-local `model_import` summary (unit, format, members,
+dropped references and frame-rate mismatch) until undo history changes. Newly
+downloaded `model/glb`, Autodesk FBX `application/*` and `model/mtl` results keep
+`.glb`, `.fbx` and `.mtl` local name extensions instead of `.bin`; saved names never
+change, and import uses canonical snapshot names, not local ones.
+
+Native tests build an OBJ with its MTL and PNG, an FBX with an embedded texture, a
+separate glTF with its buffer and a mesh PLY with Blender's own exporters, then
+rename them to the provider's legacy package convention. They cover placement,
+preserved selection, packed images, dropped maps, external FBX textures, a disabled
+FBX add-on, splat PLY and SPZ refusal, changed bytes before the claim, windowless
+callers, rollback and every member in reuse claims. Provider package shapes still
+need live evidence; splat units wait for their point-cloud builder.
 
 ## Captured source and verified saved-mesh command
 

@@ -106,15 +106,24 @@ The independent media file must remain available to the blend file. See
 [saved media application](BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application)
 for size, rollback and persistence limits.
 
-For a self-contained GLB, the same `asset_id` argument returns `kind: model` and the
-approved `cursor` instead of a media frame. Show its scene and cursor before
-approval. The importer adds one new model group and packs embedded textures;
-it leaves current selection intact. The cursor is rechecked before the durable
-claim. Rigs, weights and node/morph animation clips stay in the new group.
-Timing uses the current scene FPS, with unchanged frame and timeline range.
-External-file, pointer-animation and non-GLB results remain unsupported.
-See [model import](MESH_APPLICATION.md#explicit-saved-glb-import)
-for bounds and recovery. This never replaces an existing mesh.
+For a saved model, pass the `key` of one importable entry in `job_status`
+`import_units` as `asset_id`. The approval returns `kind: model`, the `format`
+(glb, gltf, fbx, obj or ply), whether it is the `primary` result or an alternate,
+its `members` with their roles and media types, glTF candidate `resources` and the
+approved `cursor` instead of a media frame. Show the scene, cursor, format and
+files before approval. Every member is rehashed into a private copy before the
+durable claim; a changed or unsupported package leaves the saved job unchanged
+(ready, or applied for a reuse) with an error that starts with
+`Nothing was imported`. The importer adds one new model group, packs textures
+from the package and leaves current selection intact. The cursor
+is rechecked before the claim, and a reuse claim lists every member. GLB and glTF
+rigs, weights and node/morph clips stay in the new group with the current scene
+FPS. FBX clips keep the file's frame rate and `model_import.frame_rate_mismatch`
+reports a different scene FPS; `model_import.dropped_references` counts OBJ and MTL
+references left out. External-file, pointer-animation and splat results remain
+unsupported. See [model import](MESH_APPLICATION.md#explicit-saved-glb-import) and
+[package import](MESH_APPLICATION.md#saved-model-package-import) for bounds and
+recovery. This never replaces an existing mesh.
 
 For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
 `prepare_result_application`. A result whose saved metadata declares a texture
@@ -459,7 +468,7 @@ behavior interchangeable. Remote names below were checked against the
 | Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
 | Review saved Image import | `prepare_result_application(context_id, request_id, expected_revision)` | Local destination capture; show the returned scene and images for approval |
 | Review one saved video/audio strip | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/frame capture; show returned destination for approval |
-| Review one saved GLB | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Local scene/cursor capture; show the returned destination for approval |
+| Review one saved model | `prepare_result_application(context_id, request_id, expected_revision, asset_id)` | Pass an `import_units` key; local scene/cursor capture; show the returned format, files and destination for approval |
 | Review panorama World or restore | `prepare_result_application(context_id, request_id, expected_revision, purpose, asset_id)` | Use `world` with one PNG/JPEG/OpenEXR asset and show its `format`, or `restore_world` for the retained session handle |
 | Apply approved saved results | `apply_result_application(context_id, application_id)` | Local verified import or strip insertion into the captured destination; no platform call |
 | Wait | `wait_for_job(job_id or id, timeout)`, one job without blocking Blender | `jobs_wait` |
@@ -560,8 +569,9 @@ or authorize scene application. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
-asset and scene/frame approval above. Embedded GLBs use the corresponding
-scene/cursor approval; in-place editing is separate. `import_result` rejects
+asset and scene/frame approval above. Saved GLB, glTF, FBX, OBJ and mesh PLY
+units use the corresponding scene/cursor approval; in-place editing is separate.
+`import_result` rejects
 direct cached-file import, including prototype records, with guidance for scoped
 recovery and explicit destination approval. It requires complete selected
 credentials to inspect the saved store. Read-only inspection of any prototype record
@@ -573,7 +583,7 @@ experimental. `estimate_cost` and `generate` describe this status and accept
 them like other models, and `list_models` returns the picker's status text in
 each entry's `capability_status` (empty otherwise), named apart from the
 server's model status. Their results stay in saved jobs.
-`prepare_result_application` imports a returned GLB or media file by file type
+`prepare_result_application` imports a returned model or media file by file type
 only; motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 
 ### Preparing Render Image and Render Video

@@ -27,6 +27,7 @@ from helpers import (
     scanline_exr,
     submodule,
     temp_credentials,
+    textured_model_exports,
 )
 
 
@@ -63,6 +64,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.remote_progress = None  # omitted from job reads unless a test sets it
         self.result_bytes = b""
         self.result_media_type = "image/png"
+        # Optional per-asset results: asset ID -> (media type, bytes, metadata).
+        self.asset_files = {}
         self.before_images = set(bpy.data.images)
         self.download_error = False
         self.cancel_calls = []
@@ -95,7 +98,9 @@ class ModelGenerationTests(unittest.TestCase):
                         "jobType": self.job_type,
                         "metadata": {
                             "input": {"modelId": self.model["id"]},
-                            "assetIds": list(getattr(self, "result_assets", ["result-image"])),
+                            "assetIds": list(
+                                self.asset_files or getattr(self, "result_assets", ["result-image"])
+                            ),
                         },
                     }
                     if self.remote_progress is not None:
@@ -103,6 +108,21 @@ class ModelGenerationTests(unittest.TestCase):
                     return httpx.Response(200, json={"job": job})
                 if "/assets/" in request.url.path:
                     asset_id = request.url.path.rsplit("/", 1)[-1]
+                    if asset_id in self.asset_files:
+                        media_type, data, metadata = self.asset_files[asset_id]
+                        return httpx.Response(
+                            200,
+                            json={
+                                "asset": {
+                                    "id": asset_id,
+                                    "status": "success",
+                                    "mimeType": media_type,
+                                    "metadata": metadata,
+                                    "properties": {"size": len(data)},
+                                    "url": f"https://cdn.cloud.scenario.com/{asset_id}",
+                                }
+                            },
+                        )
                     return httpx.Response(
                         200,
                         json={
@@ -167,12 +187,23 @@ class ModelGenerationTests(unittest.TestCase):
             if self.download_error:
                 raise OSError("synthetic private transfer failure")
             response = Mock(status=200)
+            body = {"data": self.result_bytes}
+            body["stream"] = io.BytesIO(body["data"])
+
+            def request(method, target, headers=None):
+                # Per-asset fixtures are served by their URL path; others share one body.
+                asset_id = target.split("?", 1)[0].rsplit("/", 1)[-1]
+                if asset_id in self.asset_files:
+                    body["data"] = self.asset_files[asset_id][1]
+                    body["stream"] = io.BytesIO(body["data"])
+
             response.getheader.side_effect = lambda name, default=None: (
-                str(len(self.result_bytes)) if name == "Content-Length" else default
+                str(len(body["data"])) if name == "Content-Length" else default
             )
-            response.read1.side_effect = io.BytesIO(self.result_bytes).read1
+            response.read1.side_effect = lambda *args: body["stream"].read1(*args)
             connection = Mock()
             connection.sock.fileno.return_value = 1
+            connection.request.side_effect = request
             connection.getresponse.return_value = response
             self.downloads.append(connection)
             return connection
@@ -2561,7 +2592,7 @@ class ModelGenerationTests(unittest.TestCase):
         before = set(bpy.data.objects)
         with patch.object(
             submodule("blender.job_session"),
-            "apply_model",
+            "import_snapshot",
             side_effect=AssertionError("Repeated import"),
         ):
             status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
@@ -2754,6 +2785,292 @@ class ModelGenerationTests(unittest.TestCase):
             status = self.finish_application(self.prepare_model(request_id))
         self.assertEqual(status["status"], "applied", status)
         self.assertEqual(len(status["objects"]), 2)
+
+    def recovered_package(self, files):
+        """Save one finished job whose results are (media type, bytes, metadata) by asset ID."""
+        module = submodule("blender.model_application")
+        names = module._PACKAGE_DATA
+        before = {name: {value.name for value in getattr(bpy.data, name)} for name in names}
+
+        def cleanup():
+            for name in names:
+                if name == "images":
+                    continue  # Existing fixture cleanup owns images after session shutdown.
+                values = getattr(bpy.data, name)
+                for value in tuple(values):
+                    if value.name not in before[name]:
+                        values.remove(value, do_unlink=True)
+
+        self.addCleanup(cleanup)
+        self.asset_files, self.remote_status = dict(files), "success"
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_scene(bpy.context.scene)
+        self.deliver_results()
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
+        return result["local_id"]
+
+    def package_exports(self):
+        return textured_model_exports(Path(self.enterContext(tempfile.TemporaryDirectory())))
+
+    def obj_package(self):
+        """A legacy OBJ package beside a GLB alias: OBJ, MTL with a missing map, albedo."""
+        from helpers import FIXTURES
+
+        exports = self.package_exports()
+        obj = exports["obj"].read_text().replace("mtllib cube.mtl", "mtllib result-obj.mtl")
+        mtl = exports["mtl"].read_text().replace("map_Kd tex.png", "map_Kd result-obj_albedo.png")
+        glb = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        return self.recovered_package(
+            {
+                "result-obj": ("model/obj", obj.encode(), {"type": "txt23d"}),
+                "result-mtl": (
+                    "model/mtl",
+                    (mtl + "map_Pm result-obj_metallic.png\n").encode(),
+                    {"type": "3d-texture-mtl"},
+                ),
+                "result-albedo": (
+                    "image/png",
+                    exports["png"].read_bytes(),
+                    {"type": "3d-texture-albedo"},
+                ),
+                "result-glb": ("model/glb", glb, {"type": "txt23d"}),
+            }
+        )
+
+    def prepare_package(self, request_id, key):
+        args = self.recovery_args(request_id, "import_model")
+        del args["action"]
+        args["asset_id"] = key
+        return self.tools.prepare_result_application(args)
+
+    def saved_file(self, request_id, asset_id):
+        item = next(i for i in self.store.get(request_id).results if i.asset.asset_id == asset_id)
+        (path,) = self.runtime.paths().state_dir.rglob(item.receipt.name)
+        return path
+
+    def test_obj_package_imports_and_reuses_with_every_member_claimed(self):
+        request_id = self.obj_package()
+        owner = self.runtime.state.model_jobs
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            [unit["key"] for unit in status["import_units"]], ["result-glb", "result-obj"]
+        )
+        glb, obj = status["import_units"]
+        self.assertEqual((glb["format"], glb["primary"], glb["importable"]), ("glb", True, True))
+        self.assertEqual((obj["format"], obj["primary"], obj["kind"]), ("obj", False, "mesh"))
+        members = [
+            {"asset_id": "result-obj", "role": "model", "media_type": "model/obj"},
+            {"asset_id": "result-mtl", "role": "material", "media_type": "model/mtl"},
+            {"asset_id": "result-albedo", "role": "albedo", "media_type": "image/png"},
+        ]
+        self.assertEqual(obj["members"], members)
+        self.assertEqual(status["import_findings"], [])
+        # A model/glb result imports as a new group; in-place mesh edits stay GLB-typed.
+        self.assertIn("import_model", status["actions"])
+        self.assertNotIn("apply_mesh", status["actions"])
+        recovery = submodule("blender.job_recovery")
+        labels = [
+            item.label
+            for item in recovery.result_actions(owner.views[request_id])
+            if item.action == "import_model"
+        ]
+        self.assertEqual(labels, ["Import GLB model (4)", "Import alternate: OBJ (1)"])
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        approval = self.prepare_package(request_id, "result-obj")
+        self.assertEqual((approval["kind"], approval["format"]), ("model", "obj"))
+        self.assertFalse(approval["primary"])
+        self.assertEqual(approval["members"], members)
+        self.assertIn("dropped_references", approval["note"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(
+            status["model_import"],
+            {
+                "unit": "result-obj",
+                "format": "obj",
+                "members": ["result-obj", "result-mtl", "result-albedo"],
+                "dropped_references": 1,
+                "frame_rate_mismatch": False,
+            },
+        )
+        (name,) = status["objects"]
+        root = bpy.data.objects[name].parent
+        self.assertEqual(root["scenario_assets"], "result-obj,result-mtl,result-albedo")
+        approval = self.prepare_package(request_id, "result-obj")
+        self.assertTrue(approval["reuse"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["local_applications"][-1]["state"], "applied")
+        self.assertEqual(
+            status["local_applications"][-1]["asset_ids"],
+            ["result-obj", "result-mtl", "result-albedo"],
+        )
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+
+    def test_package_member_changed_after_verification_keeps_the_job_unclaimed(self):
+        request_id = self.obj_package()
+        approval = self.prepare_package(request_id, "result-obj")
+        record, objects = self.store.get(request_id), set(bpy.data.objects)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        path = self.saved_file(request_id, "result-mtl")
+        path.write_bytes(path.read_bytes() + b"# changed after verification\n")
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"].startswith("Nothing was imported:"), status["error"])
+        self.assertEqual((status["local_applications"], status["model_import"]), ([], None))
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(set(bpy.data.objects), objects)
+
+    def test_obj_package_import_is_one_native_undo_step(self):
+        # Every saved format imports through import_snapshot, which records the
+        # same two checkpoints as the GLB import.
+        request_id = self.obj_package()
+        module = submodule("blender.model_application")
+        history = self.model_history()
+        scene_name = bpy.context.scene.name
+
+        def scene():
+            # History replaces RNA wrappers; resolve the scene again by name.
+            restored = bpy.data.scenes[scene_name]
+            bpy.context.window.scene = restored
+            return restored
+
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+        scene()["unrecorded_user_edit"] = "kept"
+        before = {obj.name for obj in bpy.data.objects}
+        approval = self.prepare_package(request_id, "result-obj")
+        pushes = []
+        push = module._undo_push
+
+        def record_push(message):
+            pushes.append(message)
+            push(message)
+
+        with history, patch.object(module, "_undo_push", side_effect=record_push):
+            status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(pushes, ["Before Scenario model import", "Scenario model import"])
+        after = {obj.name for obj in bpy.data.objects}
+        # The new group's root empty and the OBJ mesh.
+        self.assertEqual(len(after - before), 2)
+        record = self.store.get(request_id)
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, before)
+        self.assertEqual(scene().get("unrecorded_user_edit"), "kept")
+        self.assertEqual(self.store.get(request_id), record)
+
+        self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, after)
+        self.assertFalse(
+            any(item.name.startswith("Scenario import staging") for item in bpy.data.scenes)
+        )
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+
+    def test_changed_glb_after_verification_now_stays_ready_before_a_claim(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        record = self.store.get(request_id)
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        path = self.saved_file(request_id, "result-image")
+        path.write_bytes(path.read_bytes() + b"changed")
+        status = deferred.finish(result)
+        # The preflight runs before the claim: no apply_failed transition is recorded.
+        self.assertEqual(status["status"], "ready", status)
+        self.assertIn("changed", status["error"])
+        self.assertEqual(self.store.get(request_id), record)
+
+    def test_fbx_package_reports_a_scene_frame_rate_mismatch_without_retiming(self):
+        exports = self.package_exports()
+        request_id = self.recovered_package(
+            {"result-fbx": ("application/vnd.autodesk.fbx", exports["fbx"].read_bytes(), {})}
+        )
+        scene = bpy.context.scene
+        scene.render.fps, scene.render.fps_base = 30, 1.0
+        approval = self.prepare_package(request_id, "result-fbx")
+        self.assertEqual((approval["format"], approval["primary"]), ("fbx", True))
+        self.assertIn("frame_rate_mismatch", approval["note"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertTrue(status["model_import"]["frame_rate_mismatch"])
+        self.assertEqual((scene.render.fps, scene.render.fps_base), (30, 1.0))
+        images = [
+            image
+            for name in status["objects"]
+            for slot in bpy.data.objects[name].material_slots
+            for node in slot.material.node_tree.nodes
+            if node.type == "TEX_IMAGE"
+            for image in (node.image,)
+        ]
+        self.assertTrue(images)
+        self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
+
+    def test_splat_and_unsupported_results_are_listed_but_never_offered(self):
+        request_id = self.recovered_package(
+            {
+                "result-spz": ("model/spz", b"\x1f\x8b" + bytes(30), {"type": "img2splat"}),
+                "result-stl": ("model/stl", b"solid fixture\n", {}),
+            }
+        )
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            [(u["key"], u["format"], u["importable"]) for u in status["import_units"]],
+            [("result-spz", "spz", False)],
+        )
+        self.assertEqual(
+            status["import_findings"], [{"asset_id": "result-stl", "reason": "unsupported-format"}]
+        )
+        self.assertNotIn("import_model", status["actions"])
+        for key in ("result-spz", "result-stl"):
+            with self.subTest(key=key), self.assertRaises(self.request_error):
+                self.prepare_package(request_id, key)
+
+    def test_native_package_review_names_the_files_and_cancel_discards(self):
+        request_id = self.obj_package()
+        args = self.recovery_args(request_id, "import_model")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-obj",
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        self.assertIn(fake.application_id, owner._application_approvals)
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared text.
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertIn("Selected: OBJ + MTL + 1 map (alternate result)", labels)
+        self.assertIn("Leave out maps that were not saved with this job.", labels)
+        # The existing 480 px model dialog was verified with 66-character lines.
+        self.assertLessEqual(max(len(label) for label in labels), 66)
+        recovery = submodule("blender.job_recovery")
+        for lines in recovery.MODEL_REVIEW.values():
+            self.assertLessEqual(max(len(line) for line in lines), 66)
+        operator.cancel(fake, context)
+        self.assertNotIn(fake.application_id, owner._application_approvals)
+        objects = set(bpy.data.objects)
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(set(bpy.data.objects), objects)
+        self.assertEqual(len(self.paid), 1)
 
     def recovered_panorama(self, *, jpeg=False, media_type=None, data=None, width=8, height=4):
         before_worlds = set(bpy.data.worlds)

@@ -1063,6 +1063,20 @@ def recover_local_job(args):
     return _finish_recovery(jobs, task, args["request_id"])
 
 
+# Format limits named in a model import approval.
+_MODEL_NOTES = {
+    "glb": "Rigs and node animation clips are retained using scene FPS; external-file GLBs are unsupported.",
+    "gltf": "External buffers and images bind only to this job's saved files listed in resources; "
+    "any other reference stops the import. Rigs and node animation clips use scene FPS.",
+    "fbx": "Embedded textures are packed; an FBX that references external texture files is rejected. "
+    "Animation clips keep the file's frame rate; model_import.frame_rate_mismatch reports a scene FPS difference. "
+    "Requires Blender's bundled FBX add-on and a window context.",
+    "obj": "MTL maps bind only to this job's saved maps; other map and library references are dropped "
+    "and counted in model_import.dropped_references.",
+    "ply": "Only a mesh PLY imports; a Gaussian splat PLY stops before any change.",
+}
+
+
 def prepare_result_application(args):
     purpose = args.get("purpose", "import")
     if purpose in {"mesh_edit", "mesh_source"}:
@@ -1214,6 +1228,10 @@ def prepare_result_application(args):
             args["asset_id"],
         )
         if approval.kind == "model":
+            unit = approval.unit
+            media = {item.asset.asset_id: item.asset.media_type for item in approval.record.results}
+            roles = {unit.key: "model", unit.material: "material"}
+            roles.update({asset_id: slot for slot, asset_id in unit.textures})
             return {
                 "context_id": args["context_id"],
                 "application_id": approval.identifier,
@@ -1224,10 +1242,19 @@ def prepare_result_application(args):
                 "scene": approval.scene_name,
                 "asset_id": approval.asset_id,
                 "kind": "model",
+                "format": unit.format.value,
+                "primary": unit.primary,
+                "members": [
+                    {"asset_id": asset_id, "role": roles[asset_id], "media_type": media[asset_id]}
+                    for asset_id in unit.members
+                ],
+                "resources": list(unit.resources),
                 "cursor": list(approval.cursor),
-                "note": "Approve importing this one embedded GLB into a new group with its bottom at the cursor. "
-                "Existing objects, selection and timeline stay unchanged. Rigs and node animation clips are retained using scene FPS; external-file GLBs are unsupported. "
-                "Nothing has been imported; changed destinations require review again.",
+                "note": "Approve importing this saved model into a new group with its bottom at the cursor. "
+                "Existing objects, selection and timeline stay unchanged. Every listed file is rehashed into a private copy before the import is claimed; "
+                "a changed or unsupported file stops it with the saved job unchanged. "
+                + _MODEL_NOTES[unit.format.value]
+                + " Nothing has been imported; changed destinations require review again.",
             }
         return {
             "context_id": args["context_id"],
@@ -2325,13 +2352,13 @@ SPECS = (
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
             "  - purpose: import (default), material, world, restore_world, mesh_edit, mesh_source or video_first_frame; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id. video_first_frame binds one downloaded PNG, JPEG or WebP colour result (job_status action use_first_frame) to the current scene's Render Video first frame by reusing its saved asset ID; it requires asset_id, a loaded Render Video model with an image input and no existing first-frame slot. The frame goes where render_form first_frame_route says.\n"
-            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip, embedded GLB model or video_first_frame image. Omit for PNG/EXR image import.\n"
+            "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or video_first_frame image, or the key of one importable unit from job_status import_units for a GLB, glTF, FBX, OBJ or mesh PLY model. Omit for PNG/EXR image import.\n"
             "  - mesh_policy: REMESH (default) replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant. RIG preserves source geometry, UVs and materials and attaches matching weights and one rig with clips; it requires exact indexed geometry and rejects morphs/mesh animation.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
             "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, cursor or World format, and note. video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources and cursor, or World format, and note. video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model cursor, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model format, files and cursor, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -2371,9 +2398,9 @@ SPECS = (
             "Args:\n"
             "  - context_id: required string, context from prepare_result_application.\n"
             "  - application_id: required string, single-use approval handle from prepare_result_application.\n"
-            "Returns: saved job status, revision, images, imported object names, materials and any delivery error.\n"
+            "Returns: saved job status, revision, images, imported object names, materials, model_import and any delivery error.\n"
             'Example: {"context_id": "from-prepare", "application_id": "from-prepare"}.\n'
-            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. World replacement or restoration changes only the approved scene World with guarded owned-data cleanup. Material assignment changes only the approved mesh slot to a new packed material; it preserves old materials and other slots. Mesh edit replaces only the captured target under its prepared policy, placement and Keep original choice. A video first frame rehashes the saved image against its receipt, then binds its saved asset ID to the unchanged Render Video form without an upload, a local path or a saved-job change; status first_frame reports bound or failed, and the next quote needs a fresh estimate_cost. This performs no generation, downloads or file save. Never repeat an uncertain import; inspect the saved job.\n"
+            "Call only after explicit destination approval. Verification runs off the main thread; application rechecks the captured scene/file revision and media frame or model cursor. Media uses a persistent private file; video omits embedded audio and scene timing is unchanged. Changed contexts or records require fresh review. World replacement or restoration changes only the approved scene World with guarded owned-data cleanup. Material assignment changes only the approved mesh slot to a new packed material; it preserves old materials and other slots. Mesh edit replaces only the captured target under its prepared policy, placement and Keep original choice. A video first frame rehashes the saved image against its receipt, then binds its saved asset ID to the unchanged Render Video form without an upload, a local path or a saved-job change; status first_frame reports bound or failed, and the next quote needs a fresh estimate_cost. A model import rehashes every member into a private copy before its claim: a changed or unsupported package leaves the saved job unchanged (ready, or applied for a reuse) with an error starting with Nothing was imported; a reuse claim of a completed job names every member read. This performs no generation, downloads or file save. Never repeat an uncertain import; inspect the saved job.\n"
             "Platform equivalent: none; this applies saved results locally in Blender."
         ),
         _schema(
@@ -2644,7 +2671,7 @@ SPECS = (
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
-            "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned GLB or media file by file type only.\n"
+            "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"
             "Platform equivalent: model_run with dry_run."
         ),
         _schema(
@@ -2670,7 +2697,7 @@ SPECS = (
             "  - approved_cost: required, the exact cu_cost_exact string explicitly approved by the user.\n"
             "Returns: local_id, status, lane, model_id and note. All model jobs poll and download through the shared session. Only the Image lane imports verified PNG/EXR images automatically into the unchanged origin. Other lanes stop at saved ready results; their scene application remains separate. Render lanes require explicit render_form uploads and separate Prompt Spark approval when enabled with an empty look. No capture, upload or Spark submission occurs during generate.\n"
             'Example: {"lane": "image", "model_id": "model_example", "parameters": {"prompt": "a wooden crate"}, "quote_id": "quote_from_estimate", "approved_cost": "1.25"}.\n'
-            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned GLB or media file by file type only.\n"
+            "Do not call before estimate_cost and explicit spending approval. Do not repeat a timed-out submission. Use prepare_result_application for saved-result imports. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"
             "Platform equivalent: model_run."
         ),
         _schema(
@@ -2695,7 +2722,7 @@ SPECS = (
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
-            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, source, projection, downloaded), actions, images and mesh_sources. A result's source is asset, or original when a declared OpenEXR original was saved instead of its preview (size unknown); projection is equirectangular only when Scenario declares a 360 image, never inferred. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. Mesh source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Saved workflow jobs also return loop_steps, quote_may_understate and cost_warning: cu_cost_exact stays the approved quote, which may cover only one loop pass when quote_may_understate is true; loop_steps is null when this session did not record the definition's loop count. Unknown jobs raise ValueError.\n"
+            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, source, projection, downloaded), actions, images and mesh_sources. A result's source is asset, or original when a declared OpenEXR original was saved instead of its preview (size unknown); projection is equirectangular only when Scenario declares a 360 image, never inferred. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download and retry_receipt map to recover_local_job. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. Mesh source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Saved workflow jobs also return loop_steps, quote_may_understate and cost_warning: cu_cost_exact stays the approved quote, which may cover only one loop pass when quote_may_understate is true; loop_steps is null when this session did not record the definition's loop count. import_units classifies saved model results without reading files: key (the asset_id for prepare_result_application), format (glb, gltf, fbx, obj, ply, spz or splat), kind, primary (first in display order; the others are alternates), importable (GLB, glTF, FBX, OBJ and PLY in this release; splats are not), members (asset_id, role and media_type) and glTF resources; import_findings lists saved files left out with a reason code. model_import summarizes this session's last import of the job (unit, format, members, dropped_references, frame_rate_mismatch) and is null after undo history changes. Unknown jobs raise ValueError.\n"
             "Shared jobs also return the same advisory in-memory projection as the native Jobs views, never persisted: lane is the model lane that submitted the job in this Blender session (null for workflow, Film, restarted and recovered jobs; it grants no destination). While a known remote job is active, remote_status is its latest validated Scenario status (pending, queued, warming-up, in-progress or finalizing), progress is the reported fraction from 0 to 1 or null when missing or invalid, remote_observed_at is that reading's UTC time and remote_stale is true when automatic polling is not keeping it current (delivery paused, Online Access off or a refresh overdue). All four are null otherwise. Only in-progress and finalizing fractions measure generation; the native Jobs views show a percentage only for those statuses above 0. Providers may keep progress at 0 until completion, so it is never a time estimate. delivery_paused is true while delivery waits for explicit review or recovery. delivery_active is true while this Blender session still advances the job by itself (submission, polling, download or an automatic image import); prepare no result application while it is true. delivery_offline is true while Blender's Online Access is disabled and holds a step this session would take by itself: status polling, or the download of a finished model or workflow job's results; delivery_active is then false, nothing is sent and the job resumes by itself once the user allows Online Access. It is false for paused, restarted and settled jobs and for finished Prompt Spark, Translate and Blockout jobs, whose text is read without a download.\n"
             'Example: {"job_id": "job_example"}.\n'
             "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"

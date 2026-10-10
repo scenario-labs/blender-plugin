@@ -80,6 +80,17 @@ def test_ext_for_mime():
     assert config.ext_for_mime("image/vnd.radiance") == "hdr"
 
 
+def test_model_media_type_aliases_name_new_local_files_by_format():
+    from scenario.core.scene.model_formats import FORMAT_MEDIA_TYPES, MATERIAL_MEDIA_TYPES
+
+    extensions = {"glb": "glb", "gltf": "gltf", "fbx": "fbx", "obj": "obj"}
+    extensions.update(ply="ply", spz="spz", splat="splat")
+    for fmt, media_types in FORMAT_MEDIA_TYPES.items():
+        for media_type in media_types:
+            assert config.ext_for_mime(media_type) == extensions[fmt.value], media_type
+    assert [config.ext_for_mime(media_type) for media_type in MATERIAL_MEDIA_TYPES] == ["mtl"]
+
+
 def test_output_filename_is_readable_and_unique():
     when = dt.datetime(2026, 8, 28, 9, 30, 5)
     name = config.output_filename(

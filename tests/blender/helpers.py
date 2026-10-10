@@ -321,6 +321,98 @@ def animated_glb(*, clips=2, morph=True, node_transform=False):
     )
 
 
+def textured_model_exports(directory, *, fps=24):
+    """Export one textured, animated cube with Blender's own exporters.
+
+    Returns paths of a binary FBX with an embedded texture, an FBX that names
+    the texture by absolute path, an OBJ with its MTL, a separate glTF with its
+    buffer, a binary mesh PLY and the PNG texture. All scratch data is removed.
+    """
+    import bmesh
+
+    directory = pathlib.Path(directory)
+    names = ("objects", "meshes", "materials", "images", "scenes", "actions", "collections")
+    before = {name: set(getattr(bpy.data, name)) for name in names}
+    window = bpy.context.window
+    previous = window.scene, window.view_layer
+    scene = bpy.data.scenes.new("Export fixture")
+    scene.render.fps, scene.render.fps_base = fps, 1.0
+    layer = scene.view_layers[0]
+    try:
+        window.scene, window.view_layer = scene, layer
+        mesh = bpy.data.meshes.new("Fixture cube")
+        shape = bmesh.new()
+        shape.loops.layers.uv.new()
+        bmesh.ops.create_cube(shape, size=2.0, calc_uvs=True)
+        shape.to_mesh(mesh)
+        shape.free()
+        image = bpy.data.images.new("tex", width=4, height=4)
+        image.pixels[:] = [0.75, 0.25, 0.125, 1.0] * 16
+        image.file_format = "PNG"
+        image.filepath_raw = str(directory / "tex.png")
+        image.save()
+        material = bpy.data.materials.new("Fixture material")
+        material.use_nodes = True
+        node = material.node_tree.nodes.new("ShaderNodeTexImage")
+        node.image = image
+        principled = material.node_tree.nodes["Principled BSDF"]
+        material.node_tree.links.new(node.outputs["Color"], principled.inputs["Base Color"])
+        mesh.materials.append(material)
+        obj = bpy.data.objects.new("Fixture cube", mesh)
+        scene.collection.objects.link(obj)
+        obj.location = (0.0, 0.0, 0.0)
+        obj.keyframe_insert("location", frame=1)
+        obj.location = (2.0, 0.0, 0.0)
+        obj.keyframe_insert("location", frame=fps)
+        obj.location = (0.0, 0.0, 0.0)
+        obj.select_set(True, view_layer=layer)
+        layer.objects.active = obj
+        paths = {
+            "fbx": directory / "cube.fbx",
+            "external_fbx": directory / "external.fbx",
+            "obj": directory / "cube.obj",
+            "mtl": directory / "cube.mtl",
+            "gltf": directory / "cube.gltf",
+            "bin": directory / "cube.bin",
+            "ply": directory / "cube.ply",
+            "png": directory / "tex.png",
+        }
+        # The window already shows the scratch scene. A context override as well
+        # crashes the glTF exporter's depsgraph evaluation on Blender 5.1.
+        bpy.ops.export_scene.fbx(
+            filepath=str(paths["fbx"]),
+            use_selection=True,
+            path_mode="COPY",
+            embed_textures=True,
+        )
+        bpy.ops.export_scene.fbx(
+            filepath=str(paths["external_fbx"]),
+            use_selection=True,
+            path_mode="ABSOLUTE",
+            embed_textures=False,
+            bake_anim=False,
+        )
+        bpy.ops.wm.obj_export(filepath=str(paths["obj"]), export_selected_objects=True)
+        bpy.ops.export_scene.gltf(
+            filepath=str(paths["gltf"]),
+            export_format="GLTF_SEPARATE",
+            use_selection=True,
+            use_active_scene=True,
+            export_animations=False,
+        )
+        bpy.ops.wm.ply_export(
+            filepath=str(paths["ply"]), export_selected_objects=True, ascii_format=False
+        )
+        return paths
+    finally:
+        window.scene, window.view_layer = previous
+        bpy.data.scenes.remove(scene)
+        for name in names:
+            values = getattr(bpy.data, name)
+            for value in set(values) - before[name]:
+                values.remove(value, do_unlink=True)
+
+
 def draw_job_panels():
     """Draw the real Jobs header, Jobs and Generations panels into recording layouts.
 

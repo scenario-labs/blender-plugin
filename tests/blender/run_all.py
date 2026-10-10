@@ -36,6 +36,7 @@ BASELINE = (
     "test_apply_image",
     "test_apply_material",
     "test_apply_3d",
+    "test_model_packages",
     "test_splat_snapshots",
     "test_apply_video",
     "test_mesh_application",

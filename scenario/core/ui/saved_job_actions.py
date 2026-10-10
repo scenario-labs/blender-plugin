@@ -55,13 +55,17 @@ SINGLE_APPLY = {
 NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
 # The Render Video first-frame review; ModelJobs projects its accepted assets.
 FIRST_FRAME_OPERATOR = "scenario.use_saved_first_frame"
+# Display names of the saved model formats `import_model` can offer.
+MODEL_FORMATS = {"glb": "GLB", "gltf": "glTF", "fbx": "FBX", "obj": "OBJ", "ply": "PLY"}
 
 
 @dataclass(frozen=True, eq=False)
 class ResultTypes:
     """Saved media types each application accepts; owned by the Blender modules.
 
-    It holds a mapping, so it compares and hashes by identity.
+    `model` is the GLB type that saved mesh edits accept. New-group model
+    imports come from the view's classified import units instead. It holds a
+    mapping, so it compares and hashes by identity.
     """
 
     model: str
@@ -138,6 +142,32 @@ def _blockout(review, job):
     return (read,)
 
 
+def _import_units(view, action, job):
+    """One control per importable unit, in classified order; the first is primary.
+
+    `view.meta["import_units"]` holds (key, format, primary) rows that ModelJobs
+    projects from the saved manifest. Numbering counts every saved asset.
+    """
+    numbers = {asset_id: index for index, asset_id in enumerate(view.asset_ids, 1)}
+    items = []
+    for key, fmt, primary in view.meta.get("import_units", ()):
+        if key not in numbers or fmt not in MODEL_FORMATS:
+            continue
+        name = MODEL_FORMATS[fmt]
+        label = f"Import {name} model" if primary else f"Import alternate: {name}"
+        items.append(
+            SavedJobAction(
+                f"{action}:{key}",
+                action,
+                "apply",
+                f"{label} ({numbers[key]})",
+                operator="scenario.import_saved_model",
+                properties=(*job, ("asset_id", key)),
+            )
+        )
+    return tuple(items)
+
+
 def _describe_action(action, view, job, result_types, review):
     def is_model(media_type):
         return media_type == result_types.model
@@ -188,14 +218,7 @@ def _describe_action(action, view, job, result_types, review):
             (("original_source", source),),
         )
     if action == "import_model":
-        return _per_asset(
-            view,
-            action,
-            "scenario.import_saved_model",
-            lambda index, _: f"Import model ({index})",
-            is_model,
-            job,
-        )
+        return _import_units(view, action, job)
     if action == "import_media":
         return _per_asset(
             view,

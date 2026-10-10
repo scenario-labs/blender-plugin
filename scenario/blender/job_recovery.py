@@ -287,10 +287,44 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
         return {"FINISHED"}
 
 
+# Format-specific review lines for the saved model confirmation.
+MODEL_REVIEW = {
+    "glb": (
+        "Use scene FPS; keep timeline range and current frame.",
+        "Keep rigs and animation clips; external-file GLBs are unsupported.",
+    ),
+    "gltf": (
+        "Use scene FPS; keep timeline range and current frame.",
+        "Read only this job's saved buffers and images.",
+    ),
+    "fbx": (
+        "Pack embedded textures; external texture files stop the import.",
+        "Keep clips at the file's frame rate; keep the scene timeline.",
+    ),
+    "obj": ("Leave out maps that were not saved with this job.",),
+    "ply": ("Import a PLY mesh; a Gaussian splat PLY stops before any change.",),
+}
+
+
+def unit_summary(unit):
+    """Describe one import unit's saved files, e.g. "OBJ + MTL + 2 maps"."""
+    name = saved_job_actions.MODEL_FORMATS.get(unit.format.value, unit.format.value.upper())
+    parts = [name]
+    if unit.material is not None:
+        parts.append("MTL")
+    count = len(unit.textures)
+    if count:
+        parts.append(f"{count} map" if count == 1 else f"{count} maps")
+    if unit.resources:
+        count = len(unit.resources)
+        parts.append(f"up to {count} saved file" if count == 1 else f"up to {count} saved files")
+    return " + ".join(parts)
+
+
 class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     bl_idname = "scenario.import_saved_model"
     bl_label = "Import saved model"
-    bl_description = "Review one saved GLB model and its scene/cursor destination"
+    bl_description = "Review one saved model and its scene/cursor destination"
 
     context_id: StringProperty(options={"HIDDEN"})
     request_id: StringProperty(options={"HIDDEN"})
@@ -300,6 +334,9 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     destination_cursor: FloatVectorProperty(size=3, options={"HIDDEN", "SKIP_SAVE"})
+    model_format: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    model_summary: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_primary: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         try:
@@ -316,21 +353,28 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             )
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.destination_cursor = approval.cursor
+            self.model_format = approval.unit.format.value
+            self.model_summary = unit_summary(approval.unit)
+            self.is_primary = approval.unit.primary
         except Exception:
             self.report({"ERROR"}, "Could not prepare model import; inspect the saved result")
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=480)
 
     def draw(self, context):
-        self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
         if self.is_reuse:
-            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        choice = "primary result" if self.is_primary else "alternate result"
+        layout.label(text=f"Selected: {self.model_summary} ({choice})")
         position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
-        self.layout.label(text=f"Place model bottom at cursor: {position}")
-        self.layout.label(text="Import one GLB into a new group; pack its textures.")
-        self.layout.label(text="Keep existing objects and selection unchanged.")
-        self.layout.label(text="Use scene FPS; keep timeline range and current frame.")
-        self.layout.label(text="Keep rigs and animation clips; external-file GLBs are unsupported.")
+        layout.label(text=f"Place model bottom at cursor: {position}")
+        layout.label(text="Import into a new group; pack its textures.")
+        layout.label(text="Keep existing objects and selection unchanged.")
+        for line in MODEL_REVIEW.get(self.model_format, ()):
+            layout.label(text=line)
+        layout.label(text="Files are checked again first; a change stops the import.")
 
     def cancel(self, context):
         jobs = getattr(self, "_jobs", None)

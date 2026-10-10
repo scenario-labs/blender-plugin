@@ -3,9 +3,9 @@
 """Explicit experimental status for model capabilities whose result handling is not accepted.
 
 Display only: a status never blocks a model. Its jobs still run and their results
-stay in saved jobs. Generic import is offered by file type, so a returned GLB or
-media file may be imported, but speech-to-text and video-to-motion handling has
-not been accepted (#190).
+stay in saved jobs. Generic import is offered by file type, so a returned model
+(GLB, glTF, FBX, OBJ or mesh PLY) or media file may be imported, but
+speech-to-text and video-to-motion handling has not been accepted (#190).
 """
 
 UNACCEPTED_CAPABILITIES = {"audio2txt": "speech-to-text", "video23d": "video-to-motion"}

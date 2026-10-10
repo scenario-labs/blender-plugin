@@ -30,7 +30,7 @@ def test_status_names_only_unaccepted_capabilities(capabilities, expected):
 
 
 def test_status_claims_acceptance_only_not_missing_application():
-    # Generic import is offered by file type, so a returned GLB or media file
+    # Generic import is offered by file type, so a returned model or media file
     # may still import; the status must not claim it cannot be applied.
     for capability in UNACCEPTED_CAPABILITIES:
         status = model_status([capability]).lower()

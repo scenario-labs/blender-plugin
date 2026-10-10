@@ -106,11 +106,14 @@ for newly generated shared jobs.
 ## Saved models
 
 [`model_application.py`](../../scenario/blender/model_application.py) stages one
-receipt-bound embedded GLB in a disposable scene, then publishes a new
-collection/group at an approved cursor. It preserves the original selection and
-packs embedded textures, retains rigs and node/morph animation clips, and keeps
-the destination timeline unchanged. The [model guide](../MESH_APPLICATION.md#explicit-saved-glb-import)
-details supported containers, bounded synchronous work and rollback. Existing
+receipt-bound embedded GLB, or one saved GLB, glTF, FBX, OBJ or mesh PLY package
+snapshot rehashed on the main thread before its claim, in a disposable scene, then
+publishes a new collection/group at an approved cursor. It preserves the original
+selection, packs only textures embedded in or read from the package, retains rigs
+and node/morph animation clips, and keeps the destination timeline unchanged. The
+[model guide](../MESH_APPLICATION.md#explicit-saved-glb-import) and its
+[package section](../MESH_APPLICATION.md#saved-model-package-import) detail
+supported containers, bounded synchronous work and rollback. Existing
 `mesh_application.py` remains the separate explicit in-place mesh/UV primitive;
 importing a new GLB does not establish those edit workflows.
 

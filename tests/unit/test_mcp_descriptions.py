@@ -153,7 +153,7 @@ def test_experimental_paths_are_explicit_without_removing_tools():
         assert "are experimental" in description, name
         assert "results stay in saved jobs" in description, name
         assert "motion and transcription handling is not accepted" in description, name
-        assert "imports a returned GLB or media file by file type only" in description, name
+        assert "imports a returned model or media file by file type only" in description, name
         assert "without Blender application" not in description, name
         for capability in UNACCEPTED_CAPABILITIES:
             assert f"({capability})" in description, (name, capability)

@@ -741,7 +741,9 @@ free of `bpy`: it turns one projected view into ordered descriptors with the
 label, icon, operator and operator properties (the context token, then either
 the request ID and observed revision or a ready Blockout review ID, and any
 asset, purpose or action). Each operator descriptor
-keeps the `ModelJobs.actions` name that MCP `job_status` reports. The sidebar
+keeps the `ModelJobs.actions` name that MCP `job_status` reports. `import_model`
+draws one control per importable unit that `ModelJobs` projected into the view,
+in classified order, instead of one per GLB media type. The sidebar
 Jobs and Generations panels, and the Studio Jobs and Results pages that reuse
 them, draw through `job_recovery.draw_controls`; a future surface such as the
 compact composer can dispatch the same descriptors. Presence means enabled:
@@ -1058,19 +1060,31 @@ kept.
 
 ## Explicit saved model application
 
-`prepare_model_application` captures one saved GLB asset, the current scene
-revision and cursor location. Native **Import model** and MCP's generic
-asset preparation share `apply_saved_result`; media remains frame-bound and
-models are cursor-bound. The existing worker verifies all saved receipts;
-`apply_recovered_model` rechecks the destination and atomically claims application
-before the main-thread staged import. `retry_model_receipt` persists only the
-known outcome and shutdown clears pending handles. Model status includes names
-of its retained imported objects for this session; names do not authorize replay
-or locate replacement targets after restart.
+`prepare_model_application` captures one importable unit of the saved job (GLB,
+JSON glTF, FBX, OBJ with its MTL and maps, or mesh PLY), keyed by its primary
+file's asset ID, with the current scene revision and cursor location. `ModelJobs`
+classifies the saved manifest once per saved revision with
+[`classify_packages`](MESH_APPLICATION.md#saved-3d-package-classification) and
+projects the importable units into the view, so drawing reads no store or file.
+Native **Import <format> model** and **Import alternate: <format>** controls and
+MCP's generic asset preparation share `apply_saved_result`; media remains
+frame-bound and models are cursor-bound. The existing worker verifies all saved
+receipts. `apply_recovered_model` rechecks the destination, reclassifies the
+verified record and builds the unit's private snapshot on the main thread before
+it claims application; a rejected snapshot raises `ModelPreflightError`, which
+leaves the saved job unchanged and pauses delivery with **Nothing was imported**.
+A completed job's reuse claim lists every member the import read.
+`retry_model_receipt` persists only the known outcome and shutdown clears pending
+handles. Model status includes names of its retained imported objects, the
+`import_units` and `import_findings` classification and the session-local
+`model_import` summary; names do not authorize replay or locate replacement
+targets after restart.
 
-See [model import](MESH_APPLICATION.md#explicit-saved-glb-import)
-for format, allocation, placement, rollback and remaining edit-policy limits.
-Neither this approval nor the importer calls Scenario or submits generation.
+See [model import](MESH_APPLICATION.md#explicit-saved-glb-import) and
+[package import](MESH_APPLICATION.md#saved-model-package-import) for formats,
+allocation, placement, rollback and remaining edit-policy limits. In-place mesh
+edits and Film shots still use only `model/gltf-binary` results. Neither this
+approval nor the importer calls Scenario or submits generation.
 
 ## Recovered panorama destination and restoration
 

@@ -152,7 +152,7 @@ retry the action once it is available.
 From top to bottom:
 
 - **Account strip**: the connection or credential status, a refresh button for the model list and a shortcut to the preferences. Project overrides are selected in Preferences; browser sign-in and account discovery remain subject to the [known limitations](KNOWN_LIMITATIONS.md).
-- **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. A speech-to-text or video-to-motion model shows **Experimental: speech-to-text not accepted** or **Experimental: video-to-motion not accepted** in the picker and below the Model button. You can still estimate and generate, and the result stays in saved jobs. Import is offered by file type, so a returned GLB or media file may import, but motion and transcription handling has not been accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)). Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
+- **Model**: a button showing the current model. It opens the model picker, laid out like Scenario's "Choose a Model": modality tabs (Image, Video, Audio, 3D) and the web app's category chips (Image: All, Generate, Edit, Expand, Upscale, Vectorize, Remove Background, Tools; Video: All, Generate, Edit, Lipsync, Upscale, Reframe, Remove Background, Tools; Audio: All, Speech, Music, SFX, Tools; 3D: All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts), a search field, the list with thumbnails and the description of the highlighted model. Availability depends on the selected credentials and the model catalog. See the [known limitations](KNOWN_LIMITATIONS.md) for trained/custom-model integration boundaries. A speech-to-text or video-to-motion model shows **Experimental: speech-to-text not accepted** or **Experimental: video-to-motion not accepted** in the picker and below the Model button. You can still estimate and generate, and the result stays in saved jobs. Import is offered by file type, so a returned model (GLB, glTF, FBX, OBJ or mesh PLY) or media file may import, but motion and transcription handling has not been accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)). Picking a model of another modality switches to that lane. The small arrow next to the button is the plain dropdown.
 - **Prompt**: its own box, like Scenario's. The prompt lives in the field; drag the small size control in the header to make the box taller. Below it, three equal full-width buttons with Scenario's icons: **New** (dice, Prompt Spark writes a prompt for the model), **Rewrite** (sparkles, Prompt Spark improves yours), and **Translate** (to English). Each helper first requests a free server price. Review the CU amount below the row, then click **Approve New prompt**, **Approve Rewrite** or **Approve Translate** to submit once. The background result updates only the original, unchanged prompt field; changing its text, model, scene or credentials prevents stale delivery. An uncertain submission stays in saved jobs for inspection and must not be repeated. The trash button confirms before clearing the prompt and is disabled when it is empty.
 - **References**: one box per file input the model accepts (image, video, audio, 3D), with a thumbnail per file. Add offers File, Viewport still, Camera still, Viewport clip, Camera clip and Render Result. Choose **Upload reference** to capture and upload a still or clip before pricing. For an empty 3D input, **Upload selected mesh** exports and uploads the current selection. Render forms provide **Capture and upload scene** and, for a chosen video first frame, **Upload first frame**. Generate never captures or uploads implicitly.
 - **Parameters**: built from the model's own schema. A checkbox in front of an optional parameter means "send this value"; unchecked, Scenario uses its default. `(cost)` marks parameters that change the price.
@@ -257,21 +257,33 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
 
 ### 3D
 
-For newly generated shared jobs, choose **Import model (N)** for one
-saved GLB. Confirm the scene and cursor position. The importer adds a new group
-with its bottom center at that cursor, retains the model hierarchy/materials,
-packs embedded textures and preserves your current objects and selection.
-One selected result consumes the job's application claim; variants and maps stay
-saved. A changed cursor or scene requires a new confirmation.
+For newly generated shared jobs, choose the **Import <format> model (N)** button,
+such as **Import GLB model (1)**, for the job's primary model, or an
+**Import alternate: <format> (N)** button for another saved format or variant. The review names the scene,
+cursor position and the saved files it reads, such as `OBJ + MTL + 2 maps`.
+Confirm it, and the importer adds a new group with its bottom center at that
+cursor, retains the model hierarchy/materials, packs its textures and preserves
+your current objects and selection. One selected result consumes the job's
+application claim; other files stay saved. A changed cursor or scene requires a
+new confirmation.
+
+Saved GLB, glTF, FBX, OBJ and mesh PLY results are supported. An OBJ uses only
+its saved MTL and texture maps; maps the job did not save are left out. A glTF
+reads only the job's saved buffers and images. An FBX packs its embedded textures;
+one that points at texture files elsewhere is rejected, and its clips keep the
+file's frame rate even when your scene uses another. A PLY holding Gaussian splats
+is not imported yet, and splat results (SPZ, `.splat`) have no import button. Every
+file is checked again before anything changes: if one changed or is unsupported,
+the job says **Nothing was imported** and stays as it was.
 
 This path accepts GLBs with one scene and embedded files, up to 256 MiB. It keeps
 rigs, skin weights, shape keys and node animation clips. The first clip is active;
 other clips are retained in muted NLA tracks. Clip timing uses your scene frame
 rate, with time zero at frame zero. Your current frame and timeline range stay
 unchanged; adjust the range yourself to play the full clip. External files,
-pointer-based animation, other model formats and replacing an existing mesh are
-not supported by this new import action. Large models may briefly pause Blender
-while loading.
+pointer-based animation, splats and replacing an existing mesh are not supported
+by this new import action. Large models and packages (up to 256 MiB per file and
+512 MiB per package) may briefly pause Blender while loading.
 
 In desktop Blender with Global Undo enabled and at least two undo steps, the
 import is its own Undo step. One Undo removes only the imported group and keeps
@@ -279,9 +291,9 @@ your earlier steps; Redo brings the import back. Undo History lists it as
 **Scenario model import**, after a **Before Scenario model import** checkpoint
 that keeps any change not yet in history. Blender's history limits still apply.
 Undo does not reset the saved job or reverse a generation charge, and Redo does
-not generate again. To import the saved file again after Undo, choose
-**Import model (N)** and confirm the review. Save the blend file yourself after
-import.
+not generate again. To import the saved file again after Undo, choose the same
+import button, such as **Import GLB model (N)**, and confirm the review. Save the
+blend file yourself after import.
 
 ![One saved triangle model imported beside existing geometry at the approved Blender cursor](images/saved-model-result.png)
 

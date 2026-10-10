@@ -49,7 +49,13 @@ from .material_application import (
 from .media_application import MediaApplicationError, apply_media
 from .mesh_result_application import MeshResultApplicationError, apply_saved_mesh
 from .mesh_result_application import validate_request as validate_mesh_request
-from .model_application import ModelApplicationError, apply_model
+from .model_application import (
+    ModelApplicationError,
+    import_plan,
+    import_snapshot,
+    importable,
+    prepare_snapshot,
+)
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
 
@@ -1345,7 +1351,13 @@ class JobSession:
         return AppliedMedia(record, application)
 
     def apply_recovered_model(self, completion, *, destination, asset_id, cursor):
-        """Apply one selected asset to the approved scene/cursor after verification."""
+        """Import one saved model unit at the approved scene/cursor after verification.
+
+        `asset_id` is the unit key classified from the verified record. Every
+        member is rehashed into a private snapshot before the claim, so a changed
+        or unsupported package raises ModelPreflightError and leaves the saved job
+        and the scene unchanged. A reuse claim of a completed job names every member read.
+        """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed model verification from this session")
@@ -1358,33 +1370,39 @@ class JobSession:
         validate_model_destination(scene, cursor)
         if tuple(scene.cursor.location) != cursor:
             raise OriginUnavailable("The destination cursor changed; review it again")
-        selected = [
-            (item, path)
-            for item, path in zip(verified.record.results, verified.paths, strict=True)
-            if item.asset.asset_id == asset_id
-        ]
-        if len(selected) != 1:
-            raise OriginUnavailable("Select one saved model asset")
-        item, path = selected[0]
-        del self._issued[id(completion)]
-        claim = self._claim_saved_application(verified, destination, "model", (asset_id,))
         try:
-            application = apply_model(scene, item, path, cursor=cursor, history=True)
-        except ModelApplicationError:
+            unit = import_plan(verified.record).unit(asset_id)
+        except ValueError:
+            unit = None
+        if unit is None or not importable(unit):
+            raise OriginUnavailable("Select one importable saved model")
+        files = {
+            item.asset.asset_id: (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+        }
+        del self._issued[id(completion)]
+        snapshot = prepare_snapshot(unit, files)
+        try:
+            claim = self._claim_saved_application(verified, destination, "model", snapshot.members)
             try:
-                self._coordinator.fail_application(claim)
+                application = import_snapshot(scene, snapshot, cursor=cursor, history=True)
+            except ModelApplicationError:
+                try:
+                    self._coordinator.fail_application(claim)
+                except Exception:
+                    raise ModelResultUncertain() from None
+                raise
             except Exception:
                 raise ModelResultUncertain() from None
-            raise
-        except Exception:
-            raise ModelResultUncertain() from None
-        try:
-            record = self._coordinator.complete_application(claim)
-        except Exception:
-            outcome = ModelResultUncertain(application)
-            self._model_receipts[outcome] = (claim, application)
-            raise outcome from None
-        return AppliedModel(record, application)
+            try:
+                record = self._coordinator.complete_application(claim)
+            except Exception:
+                outcome = ModelResultUncertain(application)
+                self._model_receipts[outcome] = (claim, application)
+                raise outcome from None
+            return AppliedModel(record, application)
+        finally:
+            snapshot.cleanup()
 
     def apply_recovered_mesh(
         self,

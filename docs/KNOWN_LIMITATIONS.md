@@ -148,6 +148,16 @@ establish live generation or full render-lane desktop acceptance.
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.
   Other image results, such as WebP, or JPEG and ACES-labelled OpenEXR outside
   World, stay saved with the job without import.
+- Saved GLB, JSON glTF, FBX, OBJ and mesh PLY results import as a new group, but
+  package binding without persisted asset lineage is conservative: several OBJ or
+  glTF files, several MTLs or several maps for one slot stay unbound and are
+  reported, so such a job imports untextured or not at all. An FBX that references
+  external texture files is rejected (Blender's importer may read that file before
+  the rollback), and an animated FBX keeps the file's frame rate when the scene
+  uses another. ASCII FBX, ksplat, sog, STL and USD results are not imported.
+  Snapshot copying and hashing are synchronous on the main thread. Provider
+  package shapes, including whether glTF JSON is delivered at all, need live
+  evidence (#65).
 - Saved Gaussian splats (SPZ v2/v3, 3DGS PLY and .splat) can be decoded off the
   main thread, but no saved-job import control uses this yet (#65). SPZ v4 (ZSTD),
   the pre-release v1 and compressed splat PLY files cannot be decoded; their files
@@ -173,8 +183,8 @@ establish live generation or full render-lane desktop acceptance.
   offering `video23d` or `audio2txt` show a visible experimental status in the
   picker, the Model row and `list_models`; the viewport composer's model chip
   does not show it. They can be submitted; provider behavior and result handling
-  are not accepted. Generic import by file type may still bring in a returned GLB
-  or media file.
+  are not accepted. Generic import by file type may still bring in a returned
+  model (GLB, glTF, FBX, OBJ or mesh PLY) or media file.
 
 ## Interface and capture
 

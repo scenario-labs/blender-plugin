@@ -239,8 +239,8 @@ explicit role-bound slots. Native saved-job controls and local MCP can also
 hand one downloaded saved PNG, JPEG or WebP result to the Render Video
 first-frame slot by reusing its asset ID, without an upload or a stored file
 path; see the
-[handoff command](../BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame). Saved video/audio, GLB models, material maps and supported
-mesh edits use explicit destination approval through the shared session; their
+[handoff command](../BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame). Saved video/audio, GLB, glTF, FBX, OBJ and mesh PLY
+models, material maps and supported mesh edits use explicit destination approval through the shared session; their
 format and target limits are described below and in the application guides.
 Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
 reference lifecycle through both forms and MCP. They stage private snapshots;
@@ -289,12 +289,17 @@ For supported video/audio, **Add video/audio strip** and MCP
 scene/frame for approval. The shared command verifies local receipts and claims
 application before inserting one strip. Receipt retry never repeats insertion;
 see [saved media application](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application).
-The same asset-selected MCP approval and **Import model** support one
-self-contained GLB at the captured cursor. Import stages in a disposable
-scene, preserves existing selection and packs its textures. Rigs, weights and
-node/morph animation clips remain in the new group; timing uses scene FPS without
-changing the current frame or timeline range. Its separate durable claim/receipt
-recovery follows the same session; in-place rig/animation transfer remains open.
+The same asset-selected MCP approval and the per-unit **Import <format> model**
+controls support one classified import unit at the captured cursor: a
+self-contained GLB, a JSON glTF with its saved buffers and images, a binary FBX,
+an OBJ with its saved MTL and maps, or a mesh PLY. The main thread rehashes every
+member into a private snapshot before the claim, then imports it in a disposable
+scene, preserves existing selection and packs textures only from the package. GLB
+and glTF rigs, weights and node/morph animation clips remain in the new group;
+timing uses scene FPS without changing the current frame or timeline range, while
+FBX clips keep the file's rate. Its separate durable claim, which lists every
+member for a reuse, and receipt recovery follow the same session; in-place
+rig/animation transfer and splat import remain open.
 Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
 World replacement, with a separate guarded restore in the current session.
 Application refuses a file whose container differs from its saved media type;
@@ -352,7 +357,7 @@ and environments.
 | Origin and stale-result protection | [JobSession](../../scenario/blender/job_session.py) binds entry points to the selected credentials/project and captured scene/target. Restart recovery uses fresh context and destination approval. | Saved names or IDs cannot restore live scene authority; see the [context contract](../BLENDER_JOB_CONTEXT.md). |
 | Result downloads | [ModelJobs](../../scenario/blender/model_jobs.py) drives saved manifests, bounded transfers and explicit interrupted-download recovery for model lanes. [Transfers](../RESULT_TRANSFERS.md) retain verified receipts and configured storage hosts. | Only admitted Image jobs automatically apply supported images to their original scene; other model results need explicit destination approval. Unsupported formats and uncertain states remain saved for inspection. |
 | Result previews | [Result previews](../RESULT_PREVIEWS.md) give the selected [JobSession](../../scenario/blender/job_session.py) a main-thread scheduler and the [workers](../../scenario/core/jobs/workers.py)' dedicated preview lane. Server stills and clips use SDK asset metadata and the result transfer policy; images and audio get verified private decode copies; an owned offline Blender process decodes audio copies into receipt-keyed RMS envelopes; entries are cached under extension user data. | Blender-side image decoding, UI, MCP parity and live thumbnail coverage remain under #189/#66; no view schedules previews yet. |
-| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, GLB, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. The native and MCP Render Video first-frame handoff is a form binding: it verifies the saved image but takes no claim and leaves the job state unchanged. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. Desktop interaction with the native first-frame control is not yet recorded. |
+| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, saved model package, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. The native and MCP Render Video first-frame handoff is a form binding: it verifies the saved image but takes no claim and leaves the job state unchanged. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. Desktop interaction with the native first-frame control is not yet recorded. |
 | Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
 | Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Generation and workflow forms attach through guarded bindings; native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Live upload/result journeys remain open. |
 | Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained/custom-model discovery and verified routing remain under #97. |

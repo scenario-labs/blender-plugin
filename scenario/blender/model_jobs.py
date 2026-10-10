@@ -19,6 +19,7 @@ from ..core.jobs import progress
 from ..core.jobs.coordinator import CancellationUnsupported, RemoteSnapshot, cancellable_job
 from ..core.jobs.records import JobRecord
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
+from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, model_format
 from ..core.scene.panorama import world_candidate
 from ..core.ui.costs import workflow_quote_notice
 from . import first_frame_handoff
@@ -38,7 +39,13 @@ from .mesh_application import capture_target as capture_mesh_target
 from .mesh_application import validate_target as validate_mesh_target
 from .mesh_result_application import MeshEditApplication, MeshResultApplicationError
 from .mesh_result_application import validate_request as validate_mesh_request
-from .model_application import MODEL_MEDIA_TYPE
+from .model_application import (
+    MODEL_MEDIA_TYPE,
+    ModelApplication,
+    ModelPreflightError,
+    import_plan,
+    importable,
+)
 from .model_application import validate_destination as validate_model_destination
 from .world_application import PanoramaError, WorldApplicationError
 
@@ -189,6 +196,8 @@ class MediaApplicationApproval:
 
 @dataclass(frozen=True)
 class ModelApplicationApproval:
+    """One reviewed import unit; `asset_id` is its key, the primary member's ID."""
+
     identifier: str
     record: StoredJob
     destination: JobOrigin
@@ -196,6 +205,7 @@ class ModelApplicationApproval:
     asset_id: str
     cursor: tuple
     kind: str = "model"
+    unit: object = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -278,6 +288,8 @@ class ModelJobs:
         self._cancellable = {}
         self._first_frame_destinations = {}
         self._first_frames = {}
+        self._plans = {}
+        self._model_imports = {}
         self.cloud_reads = {}
         self._cloud_read_owner = object()
 
@@ -566,9 +578,7 @@ class ModelJobs:
                         asset_id=model.asset_id,
                         cursor=model.cursor,
                     )
-                    _remember(
-                        self._objects, request_id, applied.application.objects, bpy.data.objects
-                    )
+                    self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
                 elif command == "verify_media":
                     self.session.apply_recovered_media(
@@ -634,6 +644,9 @@ class ModelJobs:
                     request_id,
                     "Mesh application stopped; inspect the saved GLB, source and edit policy",
                 )
+            except ModelPreflightError as error:
+                # Rejected before the claim: the saved job and the scene are unchanged.
+                self._pause(request_id, f"Nothing was imported: {error}")
             except MediaResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -687,6 +700,7 @@ class ModelJobs:
             view.meta["first_frame_assets"] = tuple(
                 item.asset.asset_id for item in first_frame_handoff.eligible_assets(record)
             )
+            view.meta["import_units"] = self._unit_rows(record)
             self._project_remote(request_id, record, view, online=online)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
@@ -838,6 +852,31 @@ class ModelJobs:
             self._paused.add(request_id)
         return self.views[request_id]
 
+    def _plan(self, record):
+        """Classify saved results once per saved revision; reads no files."""
+        request_id = record.intent.request_id
+        cached = self._plans.get(request_id)
+        if cached is not None and cached[0] == record.revision:
+            return cached[1]
+        try:
+            plan = import_plan(record)
+        except ValueError:
+            plan = None
+        self._plans[request_id] = (record.revision, plan)
+        return plan
+
+    def _units(self, record):
+        plan = self._plan(record)
+        return plan.units if plan is not None else ()
+
+    def _unit_rows(self, record):
+        """Importable units for drawing: (key, format, primary) in classified order."""
+        return tuple(
+            (unit.key, unit.format.value, unit.primary)
+            for unit in self._units(record)
+            if importable(unit)
+        )
+
     def actions(self, record):
         """Return available explicit controls, without changing saved state."""
         request_id = record.intent.request_id
@@ -878,8 +917,11 @@ class ModelJobs:
             actions.append("import_media")
         if self._confirmed_cancellable(record):
             actions.append("cancel")
+        if reusable and any(importable(unit) for unit in self._units(record)):
+            actions.append("import_model")
+        # In-place mesh edits stay on the GLB media type they were accepted for.
         if reusable and any(item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results):
-            actions.extend(("import_model", "apply_mesh"))
+            actions.append("apply_mesh")
             if (
                 len(record.intent.mesh_sources) == 1
                 and len(record.intent.mesh_sources[0].mesh_source.objects) == 1
@@ -1083,6 +1125,7 @@ class ModelJobs:
         return ticket
 
     def prepare_model_application(self, request_id, expected_revision, scene, asset_id):
+        """Capture one import unit's destination; `asset_id` is the unit key."""
         record = self.store.get(request_id)
         if (
             type(expected_revision) is not int
@@ -1092,12 +1135,12 @@ class ModelJobs:
         ):
             raise ScenarioError(0, "The saved model changed; inspect the job again")
         selected = [
-            item
-            for item in record.results
-            if item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
+            unit for unit in self._units(record) if unit.key == asset_id and importable(unit)
         ]
         if len(selected) != 1:
-            raise ScenarioError(0, "Choose one supported saved GLB asset")
+            raise ScenarioError(
+                0, "Choose one GLB, glTF, FBX, OBJ or PLY model from this job's import units"
+            )
         if len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Complete or cancel an existing application review first")
         if scene != bpy.context.scene:
@@ -1111,6 +1154,7 @@ class ModelJobs:
             scene.name,
             asset_id,
             tuple(scene.cursor.location),
+            unit=selected[0],
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
@@ -1123,6 +1167,15 @@ class ModelJobs:
             # Receipt-only retry must keep the original history revision.
         else:
             _remember(self._objects, request_id, application.objects, bpy.data.objects)
+            if isinstance(application, ModelApplication):
+                summary = {
+                    "unit": application.members[0] if application.members else None,
+                    "format": application.format,
+                    "members": list(application.members),
+                    "dropped_references": application.dropped_references,
+                    "frame_rate_mismatch": application.frame_rate_mismatch,
+                }
+                self._model_imports[request_id] = (self.session.history_revision, summary)
 
     @staticmethod
     def _mesh_options(target, policy, placement, keep_original):
@@ -1439,8 +1492,14 @@ class ModelJobs:
 
     def prepare_asset_application(self, request_id, expected_revision, scene, asset_id):
         record = self.store.get(request_id)
+        # Any model-family file routes to model review, which accepts only unit keys.
         if record is not None and any(
-            item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
+            item.asset.asset_id == asset_id
+            and (
+                model_format(item.asset.media_type) is not None
+                or item.asset.media_type in MATERIAL_MEDIA_TYPES
+                or item.asset.media_type.startswith("model/")
+            )
             for item in record.results
         ):
             return self.prepare_model_application(request_id, expected_revision, scene, asset_id)
@@ -1579,6 +1638,47 @@ class ModelJobs:
             "rig": application.rig.name if application.rig in objects else None,
         }
 
+    def _model_import_status(self, request_id):
+        saved = self._model_imports.get(request_id)
+        if saved is None or saved[0] != self.session.history_revision:
+            # Like mesh edits, retire the summary once history may have replaced it.
+            return None
+        return dict(saved[1])
+
+    def _import_units_status(self, record):
+        plan = self._plan(record)
+        if plan is None:
+            return [], []
+        media = {item.asset.asset_id: item.asset.media_type for item in record.results}
+        units = []
+        for unit in plan.units:
+            roles = {unit.key: "model"}
+            if unit.material is not None:
+                roles[unit.material] = "material"
+            roles.update({asset_id: slot for slot, asset_id in unit.textures})
+            units.append(
+                {
+                    "key": unit.key,
+                    "format": unit.format.value,
+                    "kind": unit.kind.value,
+                    "primary": unit.primary,
+                    "importable": importable(unit),
+                    "members": [
+                        {
+                            "asset_id": asset_id,
+                            "role": roles.get(asset_id, "model"),
+                            "media_type": media.get(asset_id),
+                        }
+                        for asset_id in unit.members
+                    ],
+                    "resources": list(unit.resources),
+                }
+            )
+        findings = [
+            {"asset_id": finding.asset_id, "reason": finding.reason} for finding in plan.findings
+        ]
+        return units, findings
+
     def status(self, reference):
         self.poll()
         matches = [
@@ -1597,6 +1697,7 @@ class ModelJobs:
             notice = workflow_quote_notice(view.meta.get("workflow_loop_steps") if view else None)
         reading = view.meta.get("remote") if view is not None else None
         binding = self._bindings.get(record.intent.request_id)
+        units, findings = self._import_units_status(record)
         return {
             **notice,
             "local_id": record.intent.request_id,
@@ -1658,6 +1759,10 @@ class ModelJobs:
             else None,
             "mesh_edit": self._mesh_status(record.intent.request_id),
             "first_frame": dict(self._first_frames.get(record.intent.request_id) or {}) or None,
+            # Classified from the saved manifest; nothing here authorizes an import.
+            "import_units": units,
+            "import_findings": findings,
+            "model_import": self._model_import_status(record.intent.request_id),
             "objects": [
                 obj.name
                 for obj in self._objects.get(record.intent.request_id, ())

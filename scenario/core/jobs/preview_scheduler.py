@@ -8,9 +8,12 @@ loop. ``request`` reads saved receipts from the local job store, and ``release``
 removes leftover private copies after the lane has stopped. Cache reads, private
 copies, SDK metadata reads and downloads all run as tasks on the dedicated
 preview lane of ``JobWorkers``; job refresh and downloads never wait for them.
-Server previews can appear minutes after a result is saved, so missing ones are
-polled with backoff for a bounded window of online time, then marked missing
-until an explicit retry.
+Server previews can appear minutes after a result is saved, so missing ones,
+and transfers that did not complete, are polled with backoff for a bounded
+window of online time, then marked missing or failed until an explicit retry.
+Cache maintenance runs with a batch at most every ``MAINTAIN_SECONDS``; after
+previews were written, an idle scheduler queues a maintenance-only lane command
+on the same cadence, so the cache budget does not wait for the next poll.
 """
 
 import math
@@ -145,6 +148,10 @@ class ResultPreviewScheduler:
         self._publishing = {}
         self._discards = []
         self._maintained = None
+        # A maintenance-only lane command, and whether previews were written to
+        # the cache since the last pass, which may have taken it over budget.
+        self._maintenance = None
+        self._written = False
         self._closed = False
 
     def _check(self):
@@ -423,6 +430,8 @@ class ResultPreviewScheduler:
                     self._issued[id(item.request)] = (item.request, now)
                 pending |= item.state == State.PENDING
                 offline |= item.state == State.OFFLINE
+                # A cache hit counts too: the pass it triggers only evicts over budget.
+                self._written |= item.state == State.READY
             if offline:
                 # Pause the polling window: time without online access does not
                 # consume it, and the next online poll resumes it.
@@ -455,6 +464,7 @@ class ResultPreviewScheduler:
                 status = RenditionStatus(State.FAILED, reason=reason)
             else:
                 status = RenditionStatus(State.READY, preview)
+                self._written = True
             self._set(request, status)
 
     def _consume_discards(self):
@@ -520,6 +530,10 @@ class ResultPreviewScheduler:
         if any(task.done() for task in self._publishing):
             self._consume_publications()
             changed = True
+        if self._maintenance is not None and self._maintenance.done():
+            # A stored lane outcome, as in _apply_batch: a failed pass is not
+            # retried early; the next one is due after the usual interval.
+            self._maintenance = None
         self._consume_discards()
         if self._issued:
             before = len(self._issued)
@@ -527,8 +541,8 @@ class ResultPreviewScheduler:
             changed |= len(self._issued) != before
         if self._task is None:
             batch = self._next_batch(now)
+            maintain = self._maintained is None or now - self._maintained >= MAINTAIN_SECONDS
             if batch:
-                maintain = self._maintained is None or now - self._maintained >= MAINTAIN_SECONDS
                 try:
                     self._task = self._workers.prepare_result_previews(
                         [work for _, work in batch], root=self._root, maintain=maintain
@@ -536,10 +550,19 @@ class ResultPreviewScheduler:
                 except WorkerError:
                     return changed
                 if maintain:
-                    self._maintained = now
+                    self._maintained, self._written = now, False
                 self._batch = tuple(batch)
                 for entry, _ in batch:
                     entry.inflight, entry.force = True, False
+            elif maintain and self._written and self._maintenance is None:
+                # No batch may come to maintain the cache once every rendition
+                # has settled, so previews written since the last pass get a
+                # maintenance-only command: no job read or network request.
+                try:
+                    self._maintenance = self._workers.maintain_result_previews(root=self._root)
+                except WorkerError:
+                    return changed
+                self._maintained, self._written = now, False
         return changed
 
     def close(self):
@@ -547,7 +570,7 @@ class ResultPreviewScheduler:
         if threading.current_thread() is not self._owner:
             raise RuntimeError("Use result previews from their owning thread")
         self._closed = True
-        for task in (self._task, *self._publishing):
+        for task in (self._task, self._maintenance, *self._publishing):
             if task is not None:
                 self._workers.cancel_preview(task)
 
@@ -571,5 +594,5 @@ class ResultPreviewScheduler:
         self._issued.clear()
         self._publishing.clear()
         self._discards.clear()
-        self._task, self._batch = None, ()
+        self._task, self._batch, self._maintenance = None, (), None
         self._entries.clear()

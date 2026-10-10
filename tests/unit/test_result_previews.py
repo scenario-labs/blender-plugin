@@ -706,10 +706,14 @@ def test_cancellation_and_retirement_leave_no_private_copies(env):
     canceled.set()
     with pytest.raises(previews.PreviewCanceled):
         run(env, work(env, "request", [STILL]), cancel=canceled)
+    with pytest.raises(previews.PreviewCanceled):
+        env.coordinator.maintain_result_previews(root=env.cache, cancel=canceled)
     items = work(env, "request", [STILL])
     env.coordinator.deactivate()
     with pytest.raises(ResultError, match="inactive"):
         run(env, items)
+    with pytest.raises(ResultError, match="inactive"):
+        env.coordinator.maintain_result_previews(root=env.cache, cancel=threading.Event())
     assert work_directories(env) == []
 
 

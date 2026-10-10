@@ -14,7 +14,7 @@ from unittest.mock import patch
 import bpy
 import httpx
 import test_session_uploads as fixture_module
-from helpers import submodule
+from helpers import FRAME_NOTIFYING, recording_context, submodule
 
 
 class ReferenceUploadTests(unittest.TestCase):
@@ -430,6 +430,98 @@ class ReferenceUploadTests(unittest.TestCase):
                             self.assertEqual(status["state"], "imported", status)
                     self.assertEqual(capture.RenderSettings.snapshot(scene), before)
                     self.assertEqual(set(self.fixture.root.glob("reference-*")), directories)
+
+    def gui_capture(self, source, writes):
+        """Capture as the GUI would, with a scene that records property writes."""
+        capture = submodule("blender.capture")
+        originals = {
+            name: getattr(capture, name) for name in ("capture_still", "capture_playblast")
+        }
+
+        def runner(mode, context, current):
+            if mode == "animation":
+                # A blocking OpenGL animation leaves the last rendered frame current.
+                current.frame_set(current.frame_end)
+            Path(current.render.filepath).write_bytes(b"data")
+
+        def recorded(name):
+            def call(context, *args, **kwargs):
+                return originals[name](
+                    recording_context(context, writes), *args, **kwargs, runner=runner
+                )
+
+            return call
+
+        kind, suffix, content_type = (
+            ("video", ".mp4", "video/mp4")
+            if source.endswith("_CLIP")
+            else ("image", ".png", "image/png")
+        )
+        self.typed_source(kind, suffix, content_type)
+        self.fixture.remote.update(originalFileName="reference" + suffix)
+        with (
+            patch.object(
+                self.module,
+                "bpy",
+                SimpleNamespace(context=bpy.context, app=SimpleNamespace(background=False)),
+            ),
+            patch.object(capture, "capture_still", side_effect=recorded("capture_still")),
+            patch.object(capture, "capture_playblast", side_effect=recorded("capture_playblast")),
+        ):
+            return self.tools.capture_reference({"source": source})
+
+    def scene_camera(self):
+        scene = self.fixture.scene
+        camera_data = bpy.data.cameras.new("Reference camera")
+        camera = bpy.data.objects.new("Reference camera", camera_data)
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        self.addCleanup(lambda: bpy.data.cameras.remove(camera_data))
+        self.addCleanup(lambda: bpy.data.objects.remove(camera, do_unlink=True))
+        bpy.context.view_layer.update()
+
+    def test_gui_frame_notifier_after_capture_keeps_upload_origin(self):
+        job_session = submodule("blender.job_session")
+        scene = self.fixture.scene
+        self.scene_camera()
+        scene.frame_start, scene.frame_end = 1, 100
+        scene.use_preview_range = True
+        scene.frame_preview_start, scene.frame_preview_end = 8, 12
+        scene.frame_set(4)
+        for source, preview in (
+            ("CAMERA", False),
+            ("CAMERA", True),
+            ("CAMERA_CLIP", False),
+            ("CAMERA_CLIP", True),
+        ):
+            with self.subTest(source=source, preview=preview):
+                scene.use_preview_range = preview
+                bpy.context.view_layer.update()
+                writes = []
+                result = self.gui_capture(source, writes)
+                if FRAME_NOTIFYING.intersection(writes):
+                    # Blender's window manager runs this frame update after the
+                    # capture returns; background mode never processes notifiers.
+                    job_session._frame_change_pre(scene)
+                self.settle()
+                status = self.tools.reference_upload_status(result)
+                self.assertEqual(status["state"], "imported", status)
+                self.assertEqual((scene.frame_current, scene.use_preview_range), (4, preview))
+
+    def test_frame_change_after_capture_still_stops_upload_before_network(self):
+        scene = self.fixture.scene
+        self.scene_camera()
+        scene.frame_set(4)
+        for source in ("CAMERA", "CAMERA_CLIP"):
+            with self.subTest(source=source):
+                result = self.gui_capture(source, [])
+                scene.frame_set(scene.frame_current + 1)
+                self.settle()
+                status = self.tools.reference_upload_status(result)
+                self.assertNotEqual(status["state"], "imported", status)
+                self.assertTrue(status["error"], status)
+        self.assertEqual(self.fixture.calls, [])
+        self.fixture.uploader.upload.assert_not_called()
 
     def test_capture_preconditions_do_not_send_or_leave_temporary_files(self):
         for source in ("MESH", "VIEWPORT_CLIP", "CAMERA_CLIP"):

@@ -59,6 +59,16 @@ class PreviewCanceled(PreviewError):
     """The preview lane task was canceled; partial work was discarded."""
 
 
+class PreviewUnavailable(PreviewError):
+    """A server preview transfer did not complete; poll again within the window.
+
+    Covers every failure of the storage transfer itself, such as a redirect to
+    another host, a connection error or an incomplete or oversized body. Bytes
+    that arrive and then fail their receipt, format or dimension checks are a
+    definitive ``PreviewError`` instead.
+    """
+
+
 class PreviewState(StrEnum):
     QUEUED = "queued"
     READY = "ready"
@@ -808,15 +818,22 @@ def fetch(cache, downloader, target, rendition, source, cancel=None):
     """Download one server still or clip with the bounded result transfer, then cache it.
 
     ``cancel`` stops the transfer at its next permission check, so retirement
-    does not wait for a whole clip. A still must declare at most
-    ``STILL_MAX_EDGE`` pixels per side before it is cached.
+    does not wait for a whole clip. A transfer that does not complete raises
+    ``PreviewUnavailable`` so the caller can poll again; the downloader's
+    one-attempt and same-host redirect policy is unchanged. A still must
+    declare at most ``STILL_MAX_EDGE`` pixels per side before it is cached.
     """
     source_asset_id, url = source
     directory = cache.workspace()
     try:
-        receipt = downloader.download(
-            url, root=directory, name="preview.bin", max_bytes=_CAPS[rendition], cancel=cancel
-        )
+        try:
+            receipt = downloader.download(
+                url, root=directory, name="preview.bin", max_bytes=_CAPS[rendition], cancel=cancel
+            )
+        except TransferError:
+            if cancel is not None and cancel.is_set():
+                raise PreviewCanceled("Preview preparation was canceled") from None
+            raise PreviewUnavailable("The preview download did not complete") from None
         path = downloader.verify(directory, receipt)
         with _open_regular(path) as stream:
             head = stream.read(16)
@@ -846,9 +863,9 @@ def fetch(cache, downloader, target, rendition, source, cancel=None):
             **details,
         )
     except TransferError:
-        if cancel is not None and cancel.is_set():
-            raise PreviewCanceled("Preview preparation was canceled") from None
-        raise PreviewError("The preview download did not complete; use Retry") from None
+        # Only verification raises here: the staged bytes no longer match the
+        # receipt the transfer just returned, which another poll cannot repair.
+        raise PreviewError("The downloaded preview does not match its receipt; use Retry") from None
     except OSError:
         raise PreviewError("The preview download could not be checked") from None
     finally:

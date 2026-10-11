@@ -208,7 +208,8 @@ class SavedJobActionTests(unittest.TestCase):
         store = self.runtime.state.job_store
         expected_labels = {
             "prepared": ["Cancel prepared job"],
-            "remote": ["Refresh status", "Resume download", "Cancel generation"],
+            # Cancel stays hidden until an owned refresh confirms an inference job.
+            "remote": ["Refresh status", "Resume download"],
         }
         for key, labels in expected_labels.items():
             with self.subTest(key=key):

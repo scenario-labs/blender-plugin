@@ -135,8 +135,9 @@ a rejected request. `publish_film_export` applies the same destination policy.
 Capture and review preparation keep their separate local slot on the shared
 workers. `cancel_film_export` signals the child; session retirement cancels it,
 and shutdown waits at most five seconds for the thread before workers and the
-coordinator close. A thread still blocked on file access keeps the session owned
-until the reaper finds it finished; its late outcome is never delivered.
+coordinator close. A thread still blocked on file access keeps the session owned,
+including its saved-result preview copies, until the reaper finds it finished;
+its late outcome is never delivered.
 Completions drain as `local_export` outcomes; `deliver_local_export` consumes one
 without resolving a scene, because export never mutates Blender data. Like the
 asset library, workflow catalog and cloud read deliveries, it refuses once the

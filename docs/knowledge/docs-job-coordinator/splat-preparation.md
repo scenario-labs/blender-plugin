@@ -8,7 +8,7 @@
     "scope": "splat-preparation",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Inspected coordinator registration of the preparation's verification ticket, single-use claims, deactivation, cancellation before each receipt hash and between decoding chunks, changed-record or changed-file rejection, mesh PLY routing and fail-closed non-mesh PLY layouts, and JobWorkers admission through the shared local-operation slot. Offline unit tests cover these commands with synthetic receipts and a service transport that fails on any request. One receipt's hash is not interrupted. JobSession, UI and MCP wiring, scene application and live acceptance are not established.",
     "sources": {
       "scenario/core/jobs/coordinator.py": "3b759a4026a244cdfe8e1db2915338eb1333aba2d324e929a62f3b7d8392fe2d",

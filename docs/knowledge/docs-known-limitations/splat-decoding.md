@@ -8,7 +8,7 @@
     "scope": "splat-decoding",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Checked the limitation against the decoder version checks, compressed splat PLY rejection, the SPZ extension flag that is kept while extension records are not read, the absence of saved-job splat import controls (saved-job controls cover GLB models, images, World panoramas and audio or video media only) and the prototype point-cloud presentation. No native desktop review, provider file or live acceptance; this topic covers only the splat bullet.",
     "sources": {
       "scenario/core/scene/splats.py": "a8462e1b261ffe3c56eb4476cf457bd19c29147ff1306460863254669907a1ad",

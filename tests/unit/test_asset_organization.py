@@ -835,6 +835,21 @@ def test_apply_is_single_use_and_one_change_applies_at_a_time(service):
     assert reviews.status(second).phase == Phase.READY
 
 
+def test_finished_reviews_keep_their_outcome_instead_of_being_discarded(service):
+    reviews = OrganizationReviews()
+    verified, unknown = ready_review(service, reviews), ready_review(service, reviews)
+    snapshot = reviews.begin_apply(verified)
+    reviews.finished(verified, commands(service).execute(snapshot, guarded()))
+    reviews.begin_apply(unknown)
+    reviews.unknown(unknown, "The connection closed")
+    for review_id in (verified, unknown):
+        with pytest.raises(ReviewUnavailable, match="cannot be discarded"):
+            reviews.discard(review_id)
+        assert reviews.status(review_id).phase == Phase.FINISHED
+    assert review_payload(reviews.status(verified))["result"]["state"] == "VERIFIED"
+    assert "outcome is unknown" in reviews.status(unknown).message
+
+
 def test_bounded_reviews_evict_only_finished_or_discarded_entries(service):
     reviews = OrganizationReviews(limit=2)
     built = request("update_tags", asset_ids=["asset-a"], add_tags=["new"])

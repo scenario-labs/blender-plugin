@@ -96,8 +96,8 @@ establish live generation or full render-lane desktop acceptance.
 - Automatic Image-lane import and saved image and material application
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.
-  Other image results, such as WebP, or JPEG outside World, stay saved with the
-  job without import.
+  Other image results, such as WebP, or JPEG and ACES-labelled OpenEXR outside
+  World, stay saved with the job without import.
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.

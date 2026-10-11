@@ -163,6 +163,12 @@ def test_dialog_choices_map_to_shared_prepare_arguments(action, fields, expected
     [
         ("ADD", {"collection_id": organizing.NO_COLLECTION}, "Load collections"),
         ("REMOVE", {"collection_id": ""}, "Load collections"),
+        (
+            "ADD",
+            {"collection_id": organizing.NO_COLLECTION, "collections_loaded": True},
+            "no collections yet; choose New collection and add",
+        ),
+        ("REMOVE", {"collection_id": "", "collections_loaded": True}, "nothing to remove"),
         ("ADD_TAGS", {"tags": " , "}, "at least one tag"),
         ("ADD_TAGS", {"tags": "line\nbreak"}, "control"),
         ("ADD_TAGS", {"tags": LONG + "x"}, "at most 200"),
@@ -190,6 +196,27 @@ def test_dialog_problem_waits_for_typed_text_and_requires_loaded_collections():
     assert problem("CREATE", has_collections=False, **common) == ""
     assert "control" in problem("ADD_TAGS", has_collections=False, **{**common, "tags": "a\tb"})
     assert problem("CREATE", has_collections=False, **{**common, "collection_name": "Ok"}) == ""
+
+
+def test_dialog_problem_names_a_connection_without_collections_once_they_are_loaded():
+    problem = organizing.dialog_problem
+    common = {"collection_id": "", "collection_name": "", "tags": ""}
+    added = problem("ADD", has_collections=False, collections_loaded=True, **common)
+    assert "no collections yet" in added and "New collection and add" in added
+    assert "Load collections" not in added
+    removed = problem("REMOVE", has_collections=False, collections_loaded=True, **common)
+    assert "nothing to remove" in removed and "Load collections" not in removed
+    chosen = {**common, "collection_id": "props"}
+    assert problem("ADD", has_collections=True, collections_loaded=True, **chosen) == ""
+    assert organizing.collection_placeholder(False) == "Load collections in Library first"
+    assert organizing.collection_placeholder(True) == "No collections yet"
+
+
+def test_review_pointer_names_the_asset_within_the_card_width():
+    assert organizing.review_pointer("Asset-B") == "Organization review under Asset-B"
+    pointer = organizing.review_pointer("a" * 200)
+    assert len(pointer) == organizing.WIDTH
+    assert pointer.startswith("Organization review under a") and pointer.endswith("…")
 
 
 def test_card_actions_follow_the_review_phase():

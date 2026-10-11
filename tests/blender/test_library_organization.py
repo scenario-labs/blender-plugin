@@ -26,7 +26,12 @@ ICONS = frozenset(bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"
 
 
 class LibraryService(test_asset_organization.Service):
-    """Adds explicit asset pages, filtered by collection, to the organization fake."""
+    """Adds explicit asset pages, filtered by collection, to the organization fake.
+
+    ``next_token``, when set, is returned as every asset page's continuation.
+    """
+
+    next_token = None
 
     def route(self, method, path, body, request):
         if path == "/v1/assets" and method == "GET":
@@ -36,7 +41,10 @@ class LibraryService(test_asset_organization.Service):
                 for item in self.assets.values()
                 if wanted is None or wanted in item["collectionIds"]
             ]
-            return httpx.Response(200, json={"assets": rows})
+            page = {"assets": rows}
+            if self.next_token is not None:
+                page["nextPaginationToken"] = self.next_token
+            return httpx.Response(200, json=page)
         return super().route(method, path, body, request)
 
 
@@ -337,6 +345,139 @@ class LibraryOrganizationTests(unittest.TestCase):
         labels = [text for text, _, _ in layout.buttons("scenario.library_organization_apply")]
         self.assertEqual(labels, ["Apply"])
         self.assert_public(texts)
+
+    def test_card_opens_under_the_organized_row_or_at_the_top_when_it_is_not_listed(self):
+        self.collections()
+        self.refresh()
+        cls, operator, context, _ = self.dialog("asset-b", action="ADD_TAGS", tags="prop")
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.assertIn("under the asset", operator.report.call_args.args[1])
+        self.settle()
+        self.assertEqual(self.owner.review["phase"], "READY", self.owner.review["message"])
+        texts = self.draw().texts()
+        # The card follows the row where Organize was chosen, so the page above it
+        # keeps its place and the card opens next to the pointer.
+        card = texts.index("Organization review")
+        self.assertLess(texts.index("Collections"), texts.index("Asset-B"))
+        self.assertLess(texts.index("Asset-B"), card)
+        self.assertLess(card, texts.index("Asset-C"))
+        # A line at the top points to it, for example after reopening Studio.
+        pointer = texts.index("Organization review under Asset-B")
+        self.assertLess(pointer, texts.index("Collections"))
+        # Browsing a collection without that asset draws the card at the top again.
+        self.assertEqual(
+            bpy.ops.scenario.library_collection_filter(collection_id="props"), {"FINISHED"}
+        )
+        self.settle()
+        self.assertEqual([row["asset_id"] for row in self.owner.assets], ["asset-a"])
+        texts = self.draw().texts()
+        self.assertLess(texts.index("Organization review"), texts.index("Collections"))
+        self.assertNotIn("Organization review under Asset-B", texts)
+        self.assertIn("Asset: Asset-B", texts)
+        self.assertEqual(self.owner.review["phase"], "READY")
+        self.assertEqual(self.service.writes, [])
+
+    def test_controls_that_start_a_read_stay_enabled_while_it_runs(self):
+        """Blender 5.0 and 5.1 keep a hovered button's disabled look until the pointer
+        leaves it, so a control disabled by its own read still looked unavailable once
+        the read had finished. This checks the drawn state; the hover needs a desktop.
+        """
+        self.service.next_token = "page-2"
+        with patch.object(self.module, "COLLECTION_PAGE", 2):
+            self.collections()
+        self.refresh()
+        reads = len(self.service.requests)
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def hold(request):
+            if request.method == "GET" and request.url.path in {"/v1/assets", "/v1/collections"}:
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("Test did not release the read")
+
+        self.service.gate = hold
+        self.assertEqual(bpy.ops.scenario.library_page(direction="NEXT"), {"FINISHED"})
+        self.assertTrue(entered.wait(5))
+        with patch.object(self.module, "COLLECTION_PAGE", 2):
+            self.assertEqual(bpy.ops.scenario.library_collections(direction="MORE"), {"FINISHED"})
+        layout = self.draw()
+
+        def enabled(idname, text=None):
+            return [
+                active
+                for label, active, _ in layout.buttons(idname)
+                if text is None or label == text
+            ]
+
+        self.assertIn("Loading assets…", layout.texts())
+        self.assertIn("Loading collections…", layout.texts())
+        self.assertEqual(enabled("scenario.library_page", "Refresh"), [True])
+        self.assertEqual(enabled("scenario.library_page", "Previous"), [False])
+        self.assertEqual(enabled("scenario.library_page", "Next"), [True])
+        self.assertEqual(enabled("scenario.library_collections", "Load collections"), [True])
+        self.assertEqual(enabled("scenario.library_collections", "More"), [True])
+        self.assertEqual(enabled("scenario.library_collection_filter"), [True, True])
+        # Organize still waits for the page that replaces these rows.
+        self.assertEqual(enabled("scenario.library_organize"), [False, False, False])
+        # A second click is refused and sends nothing.
+        for direction in ("REFRESH", "NEXT"):
+            self.assertEqual(bpy.ops.scenario.library_page(direction=direction), {"CANCELLED"})
+        for direction in ("LOAD", "MORE"):
+            self.assertEqual(
+                bpy.ops.scenario.library_collections(direction=direction), {"CANCELLED"}
+            )
+        self.assertEqual(
+            bpy.ops.scenario.library_collection_filter(collection_id="props"), {"CANCELLED"}
+        )
+        self.assertEqual(self.view.collection, "")
+        self.service.next_token = None
+        release.set()
+        self.settle()
+        self.assertEqual(self.owner.index, 1)
+        self.assertEqual(len(self.owner.collections), 3)
+        self.assertEqual(len(self.service.requests), reads + 2)
+        layout = self.draw()
+        self.assertNotIn("Loading assets…", layout.texts())
+        self.assertNotIn("Loading collections…", layout.texts())
+        self.assertEqual(enabled("scenario.library_page", "Refresh"), [True])
+        self.assertEqual(enabled("scenario.library_page", "Previous"), [True])
+        self.assertEqual(enabled("scenario.library_page", "Next"), [False])
+        self.assertEqual(enabled("scenario.library_collections", "More"), [False])
+        self.assertEqual(enabled("scenario.library_organize"), [True, True, True])
+        self.assertEqual(self.service.writes, [])
+
+    def test_dialog_explains_a_connection_without_collections(self):
+        self.refresh()
+        cls, operator, context, _ = self.dialog("asset-a", action="ADD")
+        self.assertEqual(self.module._collections(operator, context), self.module._NO_COLLECTIONS)
+        cls.draw(operator, context)
+        self.assertIn("Load collections in Library first", " ".join(operator.layout.texts()))
+        self.service.collections.clear()
+        self.collections()
+        self.assertIn("No collections in this connection", self.draw().texts())
+        for action, expected in (
+            ("ADD", "choose New collection and add to create one"),
+            ("REMOVE", "nothing to remove"),
+        ):
+            with self.subTest(action=action):
+                cls, operator, context, _ = self.dialog("asset-a", action=action)
+                items = self.module._collections(operator, context)
+                self.assertEqual(items, self.module._NONE_YET)
+                self.assertEqual(items[0][1], "No collections yet")
+                cls.draw(operator, context)
+                problems = [text for text, icon in operator.layout.labels() if icon == "ERROR"]
+                texts = " ".join(operator.layout.texts())
+                self.assertIn(expected, texts)
+                self.assertNotIn("Load collections", texts)
+                self.assertEqual(len(problems), 1)
+                self.assertTrue(problems[0].startswith("This connection has no collections"))
+                # OK explains the same thing and prepares nothing.
+                self.assertEqual(cls.execute(operator, context), {"CANCELLED"})
+                self.assertIn(expected, operator.report.call_args.args[1])
+        self.assertIsNone(self.owner.review)
+        self.assertEqual(self.session.asset_organization.reviews._reviews, {})
+        self.assertEqual(self.service.writes, [])
 
     def test_long_labels_wrap_to_the_narrow_card_width(self):
         self.service.collections["props"]["name"] = "Collection " + "n" * 190

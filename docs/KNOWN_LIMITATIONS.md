@@ -243,9 +243,11 @@ establish live generation or full render-lane desktop acceptance.
   service was observed to behave; the review then reads the asset back as
   verified without another request. This is not yet checked live from this
   repository. DELETE body survival through the production edge, name uniqueness,
-  tag normalization and service limits are unverified live. Physical desktop focus,
-  typing (including Unicode and IME tags), dismissal, small-window and alternate-DPI
-  checks are pending under
+  tag normalization and service limits are unverified live. On macOS, Japanese
+  IME composition did not start in the Organize dialog's Tags field, as in
+  Blender's own text fields, where pasting the text worked. Apply on a desktop,
+  and the card placement and read-enabled controls described in the UI contract,
+  still need a physical desktop check under
   [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
 ## Verification

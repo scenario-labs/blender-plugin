@@ -108,14 +108,35 @@ def connection_label(project_id):
     return clip("Project: " + (project_id or "API key default scope"))
 
 
-def request_arguments(action, asset_id, *, collection_id="", collection_name="", tags=""):
+def review_pointer(label):
+    """Top-of-page line naming the asset whose review card is drawn under its row."""
+    return clip("Organization review under " + str(label))
+
+
+def collection_placeholder(loaded):
+    """Collection menu text when there is nothing to choose."""
+    return "No collections yet" if loaded else "Load collections in Library first"
+
+
+def missing_collection(action, *, loaded):
+    """Why Add or Remove has no collection: none loaded yet, or none in the connection."""
+    if not loaded:
+        return "Load collections in Library first, then organize again"
+    if action == "REMOVE":
+        return "This connection has no collections, so there is nothing to remove"
+    return "This connection has no collections yet; choose New collection and add to create one"
+
+
+def request_arguments(
+    action, asset_id, *, collection_id="", collection_name="", tags="", collections_loaded=False
+):
     """Map one native dialog choice to shared prepare arguments.
 
     Raises ValueError with UI-safe text; validation is the shared contract's.
     """
     if action in {"ADD", "REMOVE"}:
         if not collection_id or collection_id == NO_COLLECTION:
-            raise ValueError("Load collections in Library and choose one")
+            raise ValueError(missing_collection(action, loaded=collections_loaded))
         operation = (
             Operation.ADD_TO_COLLECTION if action == "ADD" else Operation.REMOVE_FROM_COLLECTION
         )
@@ -135,10 +156,12 @@ def request_arguments(action, asset_id, *, collection_id="", collection_name="",
     raise ValueError("Choose an organization action")
 
 
-def dialog_problem(action, *, has_collections, collection_id, collection_name, tags):
+def dialog_problem(
+    action, *, has_collections, collection_id, collection_name, tags, collections_loaded=False
+):
     """Explain why OK would be refused, without flagging a field not yet typed."""
     if action in {"ADD", "REMOVE"} and not has_collections:
-        return "Load collections in Library first, then organize again"
+        return missing_collection(action, loaded=collections_loaded)
     if action in {"ADD_TAGS", "REMOVE_TAGS"} and not tags.strip():
         return ""
     if action == "CREATE" and not collection_name.strip():
@@ -150,6 +173,7 @@ def dialog_problem(action, *, has_collections, collection_id, collection_name, t
             collection_id=collection_id,
             collection_name=collection_name,
             tags=tags,
+            collections_loaded=collections_loaded,
         )
     except ValueError as error:
         return str(error)

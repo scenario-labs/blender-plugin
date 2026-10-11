@@ -93,6 +93,8 @@ class LibraryView:
         self.review_id = None
         self.review = None
         self.review_label = ""
+        # The organized asset; its row draws the card when it is on the shown page.
+        self.review_asset_id = None
         # The review whose read-back already updated rows; only the shown review syncs.
         self.synced_review_id = None
         self.stale = set()
@@ -389,6 +391,7 @@ class LibraryView:
             collection_id=collection_id,
             collection_name=collection_name,
             tags=tags,
+            collections_loaded=self.collections_loaded,
         )
         owner = self.session.asset_organization
         try:
@@ -398,6 +401,7 @@ class LibraryView:
         previous = self.review_id
         self.review_id, self.review = review_id, None
         self.review_label = str(asset.get("name") or asset_id)
+        self.review_asset_id = asset_id
         if previous is not None:
             self._release(previous)
         self._sync_review()
@@ -424,8 +428,14 @@ class LibraryView:
         if self.applying():
             raise ValueError("A change that is being applied cannot be discarded")
         self._release(review_id)
-        self.review_id = self.review = None
+        self.review_id = self.review = self.review_asset_id = None
         self.review_label = ""
+
+    def review_row(self):
+        """The shown page's row for the card's asset, or None to draw the card on top."""
+        if self.review is None:
+            return None
+        return next((row for row in self.assets if row["asset_id"] == self.review_asset_id), None)
 
     def _release(self, review_id):
         try:
@@ -635,16 +645,23 @@ class SCENARIO_OT_library_collection_filter(bpy.types.Operator):
 @dataclass
 class OrganizeMenu:
     items: list
+    # Collections were loaded when the dialog opened, so an empty list means none exist.
+    loaded: bool = False
 
 
 _organize_menus = WeakValueDictionary()
-_NO_COLLECTIONS = [(organizing.NO_COLLECTION, "Load collections in Library first", "")]
+_NO_COLLECTIONS = [(organizing.NO_COLLECTION, organizing.collection_placeholder(False), "")]
+_NONE_YET = [(organizing.NO_COLLECTION, organizing.collection_placeholder(True), "")]
 
 
 def _collections(self, context):
     # Blender passes OperatorProperties here, not the Python operator instance.
     menu = _organize_menus.get(self.menu_id)
-    return menu.items if menu is not None and menu.items else _NO_COLLECTIONS
+    if menu is None:
+        return _NO_COLLECTIONS
+    if menu.items:
+        return menu.items
+    return _NONE_YET if menu.loaded else _NO_COLLECTIONS
 
 
 class SCENARIO_OT_library_organize(bpy.types.Operator):
@@ -671,7 +688,7 @@ class SCENARIO_OT_library_organize(bpy.types.Operator):
             self._owner = owner
             self._asset_label = str(asset.get("name") or asset["asset_id"])
             self._connection = organizing.connection_label(owner.session.scope.project_id)
-            self._menu = OrganizeMenu(owner.collection_choices())
+            self._menu = OrganizeMenu(owner.collection_choices(), owner.collections_loaded)
             self.menu_id = uuid.uuid4().hex
             _organize_menus[self.menu_id] = self._menu
             if self._menu.items:
@@ -700,6 +717,7 @@ class SCENARIO_OT_library_organize(bpy.types.Operator):
         problem = organizing.dialog_problem(
             self.action,
             has_collections=bool(self._menu.items),
+            collections_loaded=self._menu.loaded,
             collection_id=self.collection_id,
             collection_name=self.collection_name,
             tags=self.tags,
@@ -728,7 +746,7 @@ class SCENARIO_OT_library_organize(bpy.types.Operator):
         except Exception as error:
             self.report({"WARNING"}, safe_message(error, _SAFE_FAILURE))
             return {"CANCELLED"}
-        self.report({"INFO"}, "Review the change in Studio > Library before applying it")
+        self.report({"INFO"}, "Review the change under the asset; nothing is sent until Apply")
         return {"FINISHED"}
 
 
@@ -800,13 +818,14 @@ def _draw_review(layout, owner):
 def _draw_collections(layout, owner, view):
     box = layout.box()
     box.label(text="Collections", icon="OUTLINER_COLLECTION")
+    # A read never disables the control that started it: Blender 5.0 and 5.1 keep
+    # the hovered button's disabled look after the read ends, until the pointer
+    # leaves it. A second click is refused and the loading line shows progress.
     row = box.row(align=True)
     busy = owner is not None and owner.collections_task is not None
-    load = row.row(align=True)
-    load.enabled = not busy
-    load.operator("scenario.library_collections", text="Load collections").direction = "LOAD"
+    row.operator("scenario.library_collections", text="Load collections").direction = "LOAD"
     more = row.row(align=True)
-    more.enabled = owner is not None and not busy and owner.more_collections()
+    more.enabled = owner is not None and owner.more_collections()
     more.operator("scenario.library_collections", text="More").direction = "MORE"
     if owner is None:
         return
@@ -824,9 +843,7 @@ def _draw_collections(layout, owner, view):
             text += f" ({count})"
         line = box.row()
         line.label(text=text, icon="CHECKMARK" if item["collection_id"] == browsed else "NONE")
-        browse = line.row()
-        browse.enabled = owner.task is None
-        browse.operator("scenario.library_collection_filter", text="Browse").collection_id = item[
+        line.operator("scenario.library_collection_filter", text="Browse").collection_id = item[
             "collection_id"
         ]
     if owner.collections_next is not None and not owner.more_collections():
@@ -842,9 +859,8 @@ def draw(layout, context):
     box.prop(view, "query")
     box.prop(view, "collection")
     owner = controls()
-    row = box.row()
-    row.enabled = owner is None or owner.task is None
-    row.operator("scenario.library_page", text="Refresh", icon="FILE_REFRESH").direction = "REFRESH"
+    # Page reads leave Refresh, Previous and Next enabled, as in the Collections box.
+    box.operator("scenario.library_page", text="Refresh", icon="FILE_REFRESH").direction = "REFRESH"
     if owner is None:
         box.label(text="Refresh to load assets in the selected connection")
         _draw_collections(layout, None, view)
@@ -860,16 +876,23 @@ def draw(layout, context):
         box.label(text="Filters changed; refresh to update these results")
     row = box.row(align=True)
     prev = row.row(align=True)
-    prev.enabled = not changed and owner.task is None and owner.index > 0
+    prev.enabled = not changed and owner.index > 0
     prev.operator("scenario.library_page", text="Previous").direction = "PREVIOUS"
     nex = row.row(align=True)
-    nex.enabled = not changed and owner.task is None and owner.next_cursor is not None
+    nex.enabled = not changed and owner.next_cursor is not None
     nex.operator("scenario.library_page", text="Next").direction = "NEXT"
     if owner.filters is not None and not owner.assets:
         box.label(text="No assets on this page")
     if owner.filters is not None and owner.filters[1]:
         box.label(text="Organize is unavailable for Public assets")
-    _draw_review(layout, owner)
+    # The card opens under the row where Organize was chosen: the page above it
+    # keeps its place, so it appears next to the pointer instead of above the
+    # scrolled view. A page without that asset draws it here instead.
+    under = owner.review_row()
+    if under is not None:
+        box.label(text=organizing.review_pointer(owner.review_label), icon="TRIA_DOWN")
+    else:
+        _draw_review(layout, owner)
     _draw_collections(layout, owner, view)
     names = owner.collection_names()
     organize = not owner.organize_block()
@@ -890,6 +913,8 @@ def draw(layout, context):
         change = row.row(align=True)
         change.enabled = organize
         change.operator("scenario.library_organize", text="Organize").asset_id = asset["asset_id"]
+        if asset is under:
+            _draw_review(layout, owner)
 
 
 CLASSES = (

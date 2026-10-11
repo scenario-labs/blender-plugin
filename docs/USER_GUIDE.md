@@ -893,10 +893,12 @@ first page.
 To change one asset, choose **Organize** on its row. Pick an action: Add to
 collection or Remove from collection (choose a loaded collection), Add tags or
 Remove tags (type tags separated by commas), or New collection and add (type an
-unused exact name). Choose **OK** to prepare a review; nothing is sent yet.
-Studio's Library page then shows a review card with the asset's current and
-resulting state and the number of requests. Choose **Apply** to send the change
-once, or **Discard** to drop it. A review expires after 10 minutes.
+unused exact name). If Load collections found none, the dialog says so; use New
+collection and add to create the first one. Choose **OK** to prepare a review;
+nothing is sent yet. A review card then opens under the asset's row, with the
+asset's current and resulting state and the number of requests; a line near the
+top of the Library page points to it. Choose **Apply** to send the change once,
+or **Discard** to drop it. A review expires after 10 minutes.
 
 After Apply, the card shows what Scenario reports when the asset is read back:
 **Verified**, **Refused** (with the HTTP status), **Unconfirmed**, **Not sent**
@@ -910,7 +912,9 @@ automatically; organize it again only if the change is still needed. A row remov
 until you refresh.
 
 Organize is unavailable for Public assets, while a page is loading and while a
-change is being applied. A new review replaces a card that is not applying.
+change is being applied. Refresh, Next, Previous, Load collections, More and
+Browse stay available while their read runs; clicking again only reports that
+the read is still running. A new review replaces a card that is not applying.
 Closing Studio does not stop a change; reopen it to see the result. Changing
 credentials, the Project ID or the open file clears the Library and its reviews.
 With Online Access off, nothing is sent. A connected agent can make the same

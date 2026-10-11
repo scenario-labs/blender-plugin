@@ -1547,7 +1547,8 @@ class JobSession:
         _main_thread()
         self.deactivate()
         try:
-            # Join the cancelled export thread before the coordinator closes.
+            # Wait a bounded time for the cancelled export before the coordinator
+            # closes; a thread blocked on file access keeps this session owned.
             self._exports.shutdown()
             self._workers.shutdown()
         finally:

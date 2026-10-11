@@ -112,14 +112,17 @@ origins. `LocalExportResult` carries the published receipt with the selected
 scope and the origins its command received: an initial export checked both
 before reserving, while a re-publish carries the caller's values as given. It
 grants no scene, upload or spend authority. Deactivation forgets issued staged
-exports.
+exports, and a render that finishes afterwards registers none.
 
 `LocalExportWorker` runs these commands on its own named thread, one at a time
 per owner, instead of the bounded `JobWorkers` queue. A multi-hour export
 therefore never holds a polling/download worker or the capture/review local media
 slot. It refuses a relative destination before starting the thread. Deactivation
-cancels the running export and reaps its child; shutdown joins the thread before
-the coordinator closes. See the
+cancels the running export and reaps its child. Shutdown waits at most
+`EXPORT_STOP_TIMEOUT` (five seconds) in total for the daemon thread before the
+coordinator closes. A read blocked on an unresponsive mount leaves it running
+with a logged warning and `stopped` false; at its next cancellation check it stops
+before starting a child or replacing the placeholder. See the
 [export contract](FILM_PLAN.md#offline-film-video-export-primitive).
 
 ## Film model task quotes

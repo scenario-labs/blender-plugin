@@ -4,10 +4,12 @@
 
 import hashlib
 import json
+import logging
 import ntpath
 import os
 import sys
 import threading
+import time
 import unicodedata
 from contextlib import nullcontext
 from dataclasses import replace
@@ -19,7 +21,7 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs import local_export as export
-from scenario.core.jobs import local_render, mp4_inspection
+from scenario.core.jobs import local_render, mp4_inspection, workers
 from scenario.core.jobs.coordinator import JobCoordinator, LocalExportResult
 from scenario.core.jobs.store import JobOrigin, JobScope, JobStore
 from scenario.core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker, WorkerError
@@ -457,6 +459,23 @@ def test_progress_parsing_reads_only_a_bounded_tail(tmp_path):
 def test_invalid_spec_rejected_before_work(spec, change):
     with pytest.raises(ValueError):
         replace(spec, **change)
+
+
+def test_default_dimension_is_blenders_truncated_size_rounded_down_to_even(spec):
+    resolutions = (64, 65, 99, 127, 129, 633, 1079, 1080, 1918, 1920, 2160, 3840, 4096, 8192)
+    for resolution in resolutions:
+        for percentage in range(1, 101):
+            truncated = resolution * percentage // 100
+            size = export.default_dimension(resolution, percentage)
+            assert size % 2 == 0 and truncated - size in (0, 1)
+            if truncated >= 64:
+                assert size >= 64
+            if 64 <= size <= 4096:
+                # Every in-range default is a size the specification accepts.
+                assert replace(spec, width=size, height=size).width == size
+    # 1920x1080 at 33% truncates to an odd 633 wide; the default asks for 632.
+    assert (export.default_dimension(1920, 33), export.default_dimension(1080, 33)) == (632, 356)
+    assert export.default_dimension(65, 100) == export.default_dimension(131, 50) == 64
 
 
 def test_spec_media_and_duration_bounds(spec, media):
@@ -998,6 +1017,67 @@ def test_cancel_and_retirement_release_the_placeholder(monkeypatch, tmp_path, ow
     assert seen["placeholder"] and not (tmp_path / "Review.mp4").exists()
 
 
+class BlockedMedia:
+    """``os`` for the export module whose media reads ignore cancellation until released."""
+
+    def __init__(self):
+        self.entered, self.release = threading.Event(), threading.Event()
+
+    def __getattr__(self, name):
+        return getattr(os, name)
+
+    def fdopen(self, fd, *args, **kwargs):
+        stream, blocked = os.fdopen(fd, *args, **kwargs), self
+
+        class Stream:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                stream.close()
+
+            def fileno(self):
+                return stream.fileno()
+
+            def read(self, size=-1):
+                # Like a kernel read on a dead mount, the cancel event cannot end it.
+                blocked.entered.set()
+                assert blocked.release.wait(10)
+                return stream.read(size)
+
+        return Stream()
+
+
+def test_shutdown_is_bounded_while_a_media_read_blocks(monkeypatch, tmp_path, owner, spec, caplog):
+    coordinator, exports = owner()
+    media = BlockedMedia()
+    monkeypatch.setattr(export, "os", media)
+    monkeypatch.setattr(workers, "EXPORT_STOP_TIMEOUT", 0.2)
+    destination = tmp_path / "Review.mp4"
+    task = exports.export_film(spec, destination, origin=ORIGIN, source_origin=SOURCE)
+    try:
+        assert media.entered.wait(5)
+        (thread,) = exports._threads
+        assert thread.daemon and destination.exists()
+        # The session retires its coordinator before shutting the export owner down.
+        coordinator.deactivate()
+        started = time.monotonic()
+        with caplog.at_level(logging.WARNING, logger="scenario.jobs"):
+            exports.shutdown()
+        assert time.monotonic() - started < 0.2 + 2
+        assert "still blocked on file access" in caplog.text
+        assert thread.is_alive() and not exports.stopped and not task.done()
+    finally:
+        media.release.set()
+    # The late finish observes the cancellation: no child, state or publication.
+    with pytest.raises(local_render.RenderCancelled):
+        task.result(5)
+    thread.join(5)
+    assert exports.stopped
+    assert not destination.exists() and not coordinator._staged_exports
+    assert not (spec.directory / "started.json").exists()
+
+
 @pytest.mark.parametrize("late", [False, True])
 def test_origin_change_before_reservation_and_inactive_owner_before_publish(
     monkeypatch, tmp_path, owner, spec, late
@@ -1023,6 +1103,8 @@ def test_origin_change_before_reservation_and_inactive_owner_before_publish(
         with pytest.raises(export.ExportPublishCancelled, match="inactive") as caught:
             task.result(5)
         assert caught.value.staged.path.exists()
+        # A render that finishes after retirement leaves no re-publishable state.
+        assert not coordinator._staged_exports
     assert not destination.exists()
 
 

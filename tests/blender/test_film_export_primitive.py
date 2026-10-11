@@ -123,11 +123,15 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.snapshot(width=65)
 
-    def test_default_size_truncates_like_blender_output(self):
+    def test_default_size_truncates_like_blender_output_then_rounds_down_to_even(self):
         render = self.review.render
         render.resolution_x, render.resolution_y = 1918, 1080
         render.resolution_percentage = 33
         # Blender renders (1918 * 33) // 100 = 632; rounding would ask for 633.
+        spec = self.snapshot()
+        self.assertEqual((spec.width, spec.height), (632, 356))
+        # 1920 at 33% truncates to an odd 633, which H.264 cannot encode.
+        render.resolution_x = 1920
         spec = self.snapshot()
         self.assertEqual((spec.width, spec.height), (632, 356))
 
@@ -456,6 +460,50 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         self.assertEqual(list(self.output.iterdir()), [])
         self.session._exports.shutdown()
         self.assertTrue(self.session._exports.stopped)
+
+    def test_bounded_shutdown_keeps_a_blocked_export_owned_until_it_finishes(self):
+        origin, source = self.origins()
+        spec = self.snapshot(audio=False)
+        destination = self.output / "Blocked.mp4"
+        workers = submodule("core.jobs.workers")
+        entered, release = threading.Event(), threading.Event()
+        hash_media = self.export._hash_media
+
+        def blocked(*args):
+            # Like a read on an unresponsive mount, the cancel event cannot end it.
+            entered.set()
+            release.wait(60)
+            return hash_media(*args)
+
+        with (
+            patch.object(self.export, "_hash_media", side_effect=blocked),
+            patch.object(workers, "EXPORT_STOP_TIMEOUT", 0.2),
+        ):
+            task = self.session.export_film(spec, destination, origin=origin, source_origin=source)
+            try:
+                self.assertTrue(entered.wait(30))
+                started = time.monotonic()
+                with self.assertLogs("scenario.jobs", "WARNING"):
+                    self.session.shutdown()
+                self.assertLess(time.monotonic() - started, 5)
+                # The session keeps ownership while its export thread is alive.
+                self.assertFalse(task.done() or self.session._exports.stopped)
+                self.assertIn(self.session, self.module._session_snapshot())
+                self.assertEqual([pending for pending, _ in self.session._pending], [task])
+            finally:
+                release.set()
+            deadline = time.monotonic() + 30
+            while not task.done():
+                self.assertLess(time.monotonic(), deadline, "Blocked export did not finish")
+                time.sleep(0.05)
+        # The late finish sees the cancellation; the reaper then releases the session.
+        with self.assertRaises(self.render.RenderCancelled):
+            task.result()
+        self.module.reap_retired()
+        self.assertNotIn(self.session, self.module._session_snapshot())
+        self.assertEqual(self.session._pending, [])
+        self.assertFalse((spec.directory / "started.json").exists())
+        self.assertEqual(list(self.output.iterdir()), [])
 
     @unittest.skipUnless(os.name == "nt", "Windows extended-path regression")
     def test_deep_windows_staging_fails_before_snapshot(self):

@@ -943,7 +943,8 @@ below is a session command only.
 one live local sequencer scene to a private blend snapshot on Blender's main
 thread, in Object Mode. It rejects scene, movie-clip and mask strips, requires an
 integer frame rate from 1 to 120 and defaults to the scene's frame range, output
-size (truncating the resolution percentage as Blender's own output does) and
+size (truncating the resolution percentage as Blender's own output does, then
+rounding each side down to the even size H.264 needs) and
 whether any sound strip is audible: not muted itself, by its sequencer channel or
 by an enclosing meta strip or that strip's channel. It synchronizes
 that scene's own view layers before `libraries.write`, which avoids the Blender
@@ -1048,9 +1049,16 @@ are current before reserving the destination. A later scene edit does not cancel
 the export, because the snapshot and media stamps bind the bytes. Owner
 retirement (credential or project change, file load or extension disable) cancels
 the export, reaps the child and releases the placeholder; retirement after
-rendering keeps the staged output unpublished. `drain` returns a `local_export`
-completion, and `deliver_local_export` consumes it without resolving a scene,
-only while the session is active.
+rendering keeps the staged output unpublished. Session shutdown waits at most five
+seconds in total for the cancelled export thread, enough to reap a child. A media
+or destination read blocked on an unresponsive mount cannot be interrupted, so the
+daemon thread is then left running with a logged warning and the session stays
+owned until the reaper finds it finished. That late finish stops at its next
+cancellation check: it starts no child, registers no staged export and replaces no
+placeholder unless that final rename was already under way. If Blender exits
+first, the empty placeholder can remain. `drain` returns a
+`local_export` completion, and `deliver_local_export` consumes it without
+resolving a scene, only while the session is active.
 `publish_film_export` re-publishes only a staged export issued by the same owner,
 without rendering; it checks the active owner but not the origins its caller
 passes, which the receipt carries as given. `ExportTask.progress()` reports the media, render, verify and
@@ -1071,13 +1079,16 @@ including after the copy and during the final hash, container, ffprobe and Blend
 decode mismatches, media changes, output inventory and size, bounded progress
 parsing, environment scrubbing,
 reused snapshots, path-free staging errors, owned-thread admission independent of
-the shared workers and owner retirement. Installed tests run a real child export
+the shared workers, owner retirement, a late render after retirement and a
+bounded shutdown while a media read blocks. Installed tests run a real child export
 of a synthetic 64x64, 48-frame review with Blender's decode check on every
 platform, and the ffprobe check where it is installed. They also cover session
 delivery, mid-render retirement, copy-only re-publishing, channel and meta strip
-audio defaults, the truncated default size, the distinct-file media budget, the
-8-bit encoder setting, session refusal of a foreign Blender or worker and of
-relative, private, existing and non-portable destinations before any work. A build without an H.264 or AAC
+audio defaults, the truncated, even default size, the distinct-file media budget,
+the 8-bit encoder setting, a bounded session shutdown that keeps a blocked export
+owned until the reaper releases it, session refusal of a foreign Blender or worker
+and of relative, private, existing and non-portable destinations before any work.
+A build without an H.264 or AAC
 encoder is not exercised. Native/MCP export controls, the Studio case-study
 bundle, human playback review and Windows/Linux desktop evidence remain separate.
 Export makes no Scenario request, spends nothing and writes no job record.

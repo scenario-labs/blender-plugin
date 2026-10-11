@@ -109,6 +109,15 @@ def media_stamp(path):
     return ExportMedia(path, info.st_size, info.st_mtime_ns, info.st_dev, info.st_ino)
 
 
+def default_dimension(resolution, percentage):
+    """Truncate the percentage scale as Blender's output does, then round down to even.
+
+    H.264 4:2:0 needs even dimensions; a truncated 64 or more never drops below 64.
+    """
+    size = resolution * percentage // 100
+    return size - size % 2
+
+
 def _same(media, info):
     return (info.st_size, info.st_mtime_ns, info.st_dev, info.st_ino) == (
         media.size,

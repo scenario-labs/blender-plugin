@@ -3,13 +3,18 @@
 """Bounded application-owned workers for the shared job commands, without bpy."""
 
 import json
+import logging
 import os
 import threading
+import time
 from collections import deque
 from concurrent.futures import Future
 from pathlib import Path
 
 from .coordinator import JobCoordinator, QuoteError, _payload
+
+# A cancelled export terminates its child within about 0.1 s and kills it 3 s later.
+EXPORT_STOP_TIMEOUT = 5.0
 
 
 def _snapshot(payload):
@@ -549,7 +554,7 @@ class LocalExportWorker:
 
     A multi-hour local encode never occupies a polling/download worker or the
     capture/review media slot. At most one export or re-publish runs per owner.
-    Deactivation cancels it and reaps its child; shutdown joins its thread.
+    Deactivation cancels it and reaps its child; shutdown waits a bounded time.
     """
 
     def __init__(self, coordinator: JobCoordinator):
@@ -605,6 +610,8 @@ class LocalExportWorker:
                 target=self._run,
                 args=(task, cancel, command, args, kwargs),
                 name="ScenarioFilmExport",
+                # A read blocked on an unresponsive mount must not keep Blender open.
+                daemon=True,
             )
             thread.start()
             self._threads.append(thread)
@@ -637,11 +644,23 @@ class LocalExportWorker:
                 self._cancel.set()
 
     def shutdown(self):
-        """Cancel and join the owned export thread; the child is reaped before it exits."""
+        """Cancel the owned export thread, then wait at most ``EXPORT_STOP_TIMEOUT`` seconds.
+
+        Cancellation reaps the child, but a media or destination read blocked in
+        the kernel cannot be interrupted. Such a thread is left running with a
+        warning and ``stopped`` stays false until it finishes. At its next
+        cancellation check it stops before starting a child or replacing the
+        destination placeholder.
+        """
         with self._lock:
             threads = tuple(self._threads)
         if threading.current_thread() in threads:
             raise WorkerError("An export thread cannot join its own owner")
         self.deactivate()
+        deadline = time.monotonic() + EXPORT_STOP_TIMEOUT
         for thread in threads:
-            thread.join()
+            thread.join(max(0.0, deadline - time.monotonic()))
+        if any(thread.is_alive() for thread in threads):
+            logging.getLogger("scenario.jobs").warning(
+                "A cancelled Film export thread is still blocked on file access"
+            )

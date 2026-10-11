@@ -14,7 +14,13 @@ from pathlib import Path
 
 import bpy
 
-from ..core.jobs.local_export import MAX_MEDIA, ExportSpec, LocalExportError, media_stamp
+from ..core.jobs.local_export import (
+    MAX_MEDIA,
+    ExportSpec,
+    LocalExportError,
+    default_dimension,
+    media_stamp,
+)
 from ..core.jobs.local_render import RenderSpec, blender_path, digest, media_tools
 from ..core.jobs.transfers import _root
 
@@ -184,9 +190,9 @@ def export_snapshot(
         "frame_start": scene.frame_start if frame_start is None else frame_start,
         "frame_end": scene.frame_end if frame_end is None else frame_end,
         "fps": render.fps,
-        # Blender's own output size truncates the percentage scale.
-        "width": render.resolution_x * percentage // 100 if width is None else width,
-        "height": render.resolution_y * percentage // 100 if height is None else height,
+        # Blender's truncated output size, rounded down to the even size H.264 needs.
+        "width": default_dimension(render.resolution_x, percentage) if width is None else width,
+        "height": default_dimension(render.resolution_y, percentage) if height is None else height,
         "audio": _audible(scene) if audio is None else audio,
         "media": _export_media(scene),
         "timeout": timeout,

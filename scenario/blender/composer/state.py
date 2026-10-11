@@ -98,6 +98,15 @@ class ComposerState:
         self.focused = False
         self.dragging = False
 
+    def type_text(self, scene, text):
+        """Type `text` at the caret as typed keys would: it replaces a selection and is committed to the lane.
+
+        A prompt without focus takes it at its last caret, or at the end when its lane prompt changed since."""
+        if not self.focused:
+            self.sync_from_lane(scene)
+        self.field.insert(text)
+        return self.commit_to_lane(scene)
+
     def flush_focused_prompt(self, scene):
         """Leave text focus only after committing to the unchanged original form."""
         if not self.focused:

@@ -150,6 +150,45 @@ def _open_dialog(context, scene, state, kind):
     _open_settings(context, state.lane_for(scene))
 
 
+def _open_text_field(operator, context, state):
+    """Open Blender's own text field over the focused prompt: input methods compose only in native fields.
+
+    The composer keeps focus underneath; the popover's text is typed at the prompt's caret when it is confirmed.
+    """
+    from .text_field import PANEL
+
+    state.dragging = False
+    try:
+        context.window_manager.scenario_composer_text = ""
+        bpy.ops.wm.call_panel(name=PANEL, keep_open=False)
+    except (RuntimeError, AttributeError) as error:
+        operator.report(
+            {"WARNING"},
+            f"Could not open a text field for the prompt ({error}); use the sidebar's Prompt field",
+        )
+
+
+def _untyped_event(operator, context, state, event):
+    """An event whose type Python cannot name; None when it is a key with text, handled like any key.
+
+    Blender gives input-method composition (Japanese, Chinese, Korean) no Python type and no text, and shows
+    and finishes it only in its own text fields. A composition this prompt cannot read would otherwise stay
+    pending and land in the next native text field that opens (an Outliner rename, say), so a focused
+    prompt hands it to that field at once.
+    """
+    if state.drag_mode is not None:
+        return {"RUNNING_MODAL"}
+    if not state.focused:
+        return {"PASS_THROUGH"}
+    if event.value != "PRESS":
+        return {"RUNNING_MODAL"}
+    if event.unicode:
+        return None
+    _open_text_field(operator, context, state)
+    _redraw(context)
+    return {"RUNNING_MODAL"}
+
+
 class SCENARIO_OT_composer_modal(bpy.types.Operator):
     bl_idname = "scenario.composer_modal"
     bl_label = "Scenario composer"
@@ -266,6 +305,10 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             except RuntimeError as error:
                 state.focused = state.dragging = False
                 self.report({"WARNING"}, str(error))
+        if not event.type:  # read once: each read of a type outside Python's enum logs a warning
+            handled = _untyped_event(self, context, state, event)
+            if handled is not None:
+                return handled
         if state.drag_mode is not None:
             if event.type == "MOUSEMOVE":
                 state.mouse = (event.mouse_region_x, event.mouse_region_y)
@@ -419,6 +462,11 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             # Another window or a tool loaded a model without a prompt into this form: write nothing.
             state.focused = state.dragging = False
             self.report({"WARNING"}, cl.NO_PROMPT)
+            _redraw(context)
+            return {"RUNNING_MODAL"}
+        if event.type == "F2":
+            # like Blender's F2 rename, a native text field (where input methods compose) types into the prompt
+            _open_text_field(self, context, state)
             _redraw(context)
             return {"RUNNING_MODAL"}
         if event.type == "BACK_SPACE":

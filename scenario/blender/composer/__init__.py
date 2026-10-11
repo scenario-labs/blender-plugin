@@ -1,11 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Floating composer: registration, draw handler lifecycle, keymap and breaker."""
+
 import logging
 
 import bpy
 
 from .. import runtime
+from . import text_field
 from .breaker import Breaker
 from .modal import SCENARIO_OT_composer_modal
 from .state import ComposerState
@@ -20,7 +22,9 @@ def _on_trip(reason):
     # runs INSIDE the POST_PIXEL draw callback: only record; defer the teardown (removing this very handler and
     # writing preferences) to a one-shot timer so it happens on the next main-loop iteration, outside the draw pass
     log.error("composer disabled: %s", reason)
-    runtime.set_message(f"Floating composer disabled after an error ({reason}); re-enable it in Preferences")
+    runtime.set_message(
+        f"Floating composer disabled after an error ({reason}); re-enable it in Preferences"
+    )
 
     def _teardown():
         remove_handler()
@@ -47,14 +51,14 @@ def add_handler():
     if _breaker is None:
         _breaker = Breaker("composer", on_trip=_on_trip)
     _breaker.reset()
-    _handler = bpy.types.SpaceView3D.draw_handler_add(_draw, (), 'WINDOW', 'POST_PIXEL')
+    _handler = bpy.types.SpaceView3D.draw_handler_add(_draw, (), "WINDOW", "POST_PIXEL")
 
 
 def remove_handler():
     global _handler
     if _handler is not None:
         try:
-            bpy.types.SpaceView3D.draw_handler_remove(_handler, 'WINDOW')
+            bpy.types.SpaceView3D.draw_handler_remove(_handler, "WINDOW")
         except ValueError:
             pass
         _handler = None
@@ -67,7 +71,7 @@ def set_enabled(enabled):
         remove_handler()
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
+            if area.type == "VIEW_3D":
                 area.tag_redraw()
 
 
@@ -76,7 +80,10 @@ def save_layout():
     state, prefs = runtime.state.composer, runtime.prefs()
     if state is None or prefs is None:
         return False
-    prefs.composer_offset_x, prefs.composer_offset_y = float(state.offset[0]), float(state.offset[1])
+    prefs.composer_offset_x, prefs.composer_offset_y = (
+        float(state.offset[0]),
+        float(state.offset[1]),
+    )
     prefs.composer_width = int(state.width or 0)
     return True
 
@@ -86,7 +93,10 @@ def load_layout():
     state, prefs = runtime.state.composer, runtime.prefs()
     if state is None or prefs is None:
         return False
-    state.offset = (float(getattr(prefs, "composer_offset_x", 0.0)), float(getattr(prefs, "composer_offset_y", 0.0)))
+    state.offset = (
+        float(getattr(prefs, "composer_offset_x", 0.0)),
+        float(getattr(prefs, "composer_offset_y", 0.0)),
+    )
     width = int(getattr(prefs, "composer_width", 0) or 0)
     state.width = width if width > 0 else None
     return True
@@ -102,7 +112,9 @@ def _load_pre(*args):
 class SCENARIO_OT_composer_reset_layout(bpy.types.Operator):
     bl_idname = "scenario.composer_reset_layout"
     bl_label = "Reset composer placement"
-    bl_description = "Put the floating composer back at the bottom centre of the viewport with its default width"
+    bl_description = (
+        "Put the floating composer back at the bottom centre of the viewport with its default width"
+    )
 
     def execute(self, context):
         state = runtime.state.composer
@@ -112,15 +124,16 @@ class SCENARIO_OT_composer_reset_layout(bpy.types.Operator):
         save_layout()
         for window in context.window_manager.windows:
             for area in window.screen.areas:
-                if area.type == 'VIEW_3D':
+                if area.type == "VIEW_3D":
                     area.tag_redraw()
-        return {'FINISHED'}
+        return {"FINISHED"}
 
 
 def register():
     global _keymap
     bpy.utils.register_class(SCENARIO_OT_composer_modal)
     bpy.utils.register_class(SCENARIO_OT_composer_reset_layout)
+    text_field.register()
     runtime.state.composer = ComposerState()
     runtime.state.composer_modal_running = False
     load_layout()
@@ -129,8 +142,13 @@ def register():
         add_handler()
     kc = bpy.context.window_manager.keyconfigs.addon if bpy.context.window_manager else None
     if kc is not None:
-        km = kc.keymaps.new(name="3D View", space_type='VIEW_3D')
-        _keymap = (km, km.keymap_items.new(SCENARIO_OT_composer_modal.bl_idname, 'MOUSEMOVE', 'ANY', head=True))
+        km = kc.keymaps.new(name="3D View", space_type="VIEW_3D")
+        _keymap = (
+            km,
+            km.keymap_items.new(
+                SCENARIO_OT_composer_modal.bl_idname, "MOUSEMOVE", "ANY", head=True
+            ),
+        )
     if _load_pre not in bpy.app.handlers.load_pre:
         bpy.app.handlers.load_pre.append(_load_pre)
 
@@ -148,5 +166,6 @@ def unregister():
             pass
         _keymap = None
     runtime.state.composer = None
+    text_field.unregister()
     bpy.utils.unregister_class(SCENARIO_OT_composer_reset_layout)
     bpy.utils.unregister_class(SCENARIO_OT_composer_modal)

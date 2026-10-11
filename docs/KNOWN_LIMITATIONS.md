@@ -131,6 +131,19 @@ establish live generation or full render-lane desktop acceptance.
 - The prototype composer and sidebar expose different controls. Model schema
   loading, long-prompt editing and compact/expanded behavior need the native
   acceptance in [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
+- Input methods (IME) cannot compose in the composer prompt. Blender composes
+  only in its own text fields and gives add-ons neither the composition text nor
+  a Python type for its composition events, so the composer receives raw keys
+  (romaji, for example). F2 in the focused prompt opens a native text field
+  whose text is added at the caret; composition events reaching the focused
+  prompt open the same field, so the composition no longer stays pending for the
+  next native field. Inspected Blender 5.0.1, 5.1.2 and 5.2.1 macOS source ends
+  input-method state only after a text edit that received a composition. After
+  another edit, such as an Outliner rename cancelled with Esc, selecting an input
+  method can route keys to it while no field is editing; by that reading, letter
+  keys then miss viewport shortcuts too. Installed tests simulate these events;
+  physical composition, candidate-window placement and other platforms' input
+  methods remain unverified under #66.
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
 - Downloaded audio has an explicit local waveform preview in Generations.

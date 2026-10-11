@@ -136,10 +136,13 @@ def missing_workflow_steps(jobs, limit=24, *, attempted=()):
 def workflow_cost(job, rows, children, _path=()):
     """A finished run's own charge plus each step's; None if any is unknown.
 
-    Steps that are themselves workflow runs are summed recursively, to a bound.
+    Steps that are themselves workflow runs are summed recursively, to a bound;
+    one still running may charge more steps, so it leaves the total unknown.
     """
     identifier = job.get("jobId")
     if identifier in _path or len(_path) >= NESTING_LIMIT:
+        return None
+    if str(job.get("status") or "").lower() not in TERMINAL:
         return None
     total = _step_cost(job)
     for step in _step_ids(job, children):
@@ -237,7 +240,8 @@ def entries_from_jobs(jobs, local_records, kinds=None, *, shared_records=(), rel
         except (AttributeError, TypeError, ValueError):
             cost, malformed = None, True  # Only this row's cost becomes unavailable.
         if workflow:
-            # A running workflow has not charged every step yet.
+            # A running workflow has not charged every step yet. Malformed own
+            # billing stays unavailable at any status: the run could never be priced.
             cost = workflow_cost(job, rows, children) if status in TERMINAL else None
         prompt = inp.get("prompt")
         if is_prompt_asset(prompt):

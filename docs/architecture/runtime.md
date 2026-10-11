@@ -382,12 +382,12 @@ those needing the fewest reads first, so one large loop cannot starve the other
 runs on the page; a run that does not fit gets no reads, since a partial read
 could not price it. A second pass reads the missing steps of nested runs that the
 first pass found, within the same 24 reads, and never retries an identifier.
-A failed or malformed step read, a cycle, nesting deeper than four runs or
-nesting that would need a third pass leaves the run's cost unavailable instead
-of reporting 0; a running workflow shows no cost yet. Step rows name their run
-so the total is not counted twice. Malformed billing on a listed row makes only
-that row's cost unavailable; malformed metadata still fails the page. Drawing
-performs no reads.
+A failed or malformed step read, a nested run still running, a cycle, nesting
+deeper than four runs or nesting that would need a third pass leaves the run's
+cost unavailable instead of reporting 0; a running workflow shows no cost yet.
+Step rows name their run so the total is not counted twice. Malformed billing on
+a listed row makes only that row's cost unavailable; malformed metadata still
+fails the page. Drawing performs no reads.
 
 The existing worker queue delivers pages to both the GUI and headless MCP.
 Connection identity and request keys reject superseded results and errors;

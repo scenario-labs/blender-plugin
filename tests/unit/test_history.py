@@ -302,6 +302,20 @@ def test_nested_workflow_runs_are_bounded_and_cycles_are_unavailable():
     assert entries["job_x"].cost_unavailable and entries["job_x"].cu_cost is None
 
 
+def test_a_nested_run_still_running_leaves_its_finished_parent_unpriced():
+    inner = workflow_run("job_inner", ["job_a"], status="in-progress")
+    inner["metadata"]["workflowJobId"] = "job_outer"
+    outer = workflow_run("job_outer", ["job_inner"], status="canceled")
+    jobs = [step("job_a", "job_inner", 1), inner, outer]
+    entries = {e.job_id: e for e in history.entries_from_jobs(jobs, [])}
+    # The inner run may still charge more steps, so the parent total is not final.
+    assert entries["job_outer"].cu_cost is None and entries["job_outer"].cost_unavailable
+    assert entries["job_inner"].cu_cost is None and not entries["job_inner"].cost_unavailable
+    inner["status"] = "SUCCESS"
+    entries = {e.job_id: e for e in history.entries_from_jobs(jobs, [])}
+    assert entries["job_outer"].cu_cost == 2.75 and not entries["job_outer"].cost_unavailable
+
+
 def test_missing_steps_are_bounded_unique_and_read_only_for_runs_that_fit():
     runs = [workflow_run(f"job_run{i}", [f"job_{i}_{j}" for j in range(10)]) for i in range(5)]
     missing = history.missing_workflow_steps(runs, limit=24)

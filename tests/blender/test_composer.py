@@ -1075,6 +1075,8 @@ class ComposerSideRegionTests(unittest.TestCase):
         ctx = self._context(sidebar=False)
         state = self.state_mod.ComposerState()
         state.expanded = True
+        # Drawing the card synchronizes it from the form its Generate submits.
+        state.sync_from_lane(scene)
         layout = self.modal._layout(ctx, state)
         point = self._centre(layout.generate_rect)
         self.assertEqual(layout.hit(*point), ("generate",))
@@ -1344,9 +1346,19 @@ class ComposerEditFormTests(unittest.TestCase):
         return shown
 
     def press(
-        self, kind=None, key=None, text="", expect=("RUNNING_MODAL",), tab=None, value="PRESS"
+        self,
+        kind=None,
+        key=None,
+        text="",
+        expect=("RUNNING_MODAL",),
+        tab=None,
+        value="PRESS",
+        when=0.0,
     ):
-        """Deliver one composer click (on `kind` or a lane `tab`) or one key press to the real modal handler."""
+        """Deliver one composer click (on `kind` or a lane `tab`) or one key press to the real modal handler.
+
+        `when` is the press time the composer reads; presses at the same point less than Blender's double-click
+        time apart pair into a double-click, as real input does."""
         self.runtime.state.composer_modal_running = True
         context = SimpleNamespace(scene=self.scene, region=MagicMock())
         event = SimpleNamespace(
@@ -1365,8 +1377,10 @@ class ComposerEditFormTests(unittest.TestCase):
         with (
             patch.object(self.modal, "_layout") as layout,
             patch.object(self.modal, "_caret_index", return_value=0),
+            patch.object(self.modal, "_now", return_value=when),
         ):
             layout.return_value.hit.return_value = hit
+            layout.return_value.scale = 1.0
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
         self.assertEqual(result, set(expect))
         return operator
@@ -1702,6 +1716,29 @@ class ComposerEditFormTests(unittest.TestCase):
         self.assertIn("Esc", operator.report.call_args.args[1])
         self.assert_prompts_unchanged()
         self.assertEqual(self.drawn().fields, ["a teapot"])
+
+    def test_real_double_clicks_keep_the_replaced_form_and_no_prompt_rules(self):
+        # Blender hands the modal both presses of a real double-click as plain presses; the composer pairs them.
+        self.focus_text_form()
+        self.press("prompt", when=10.0)
+        self.press("prompt", when=10.1)
+        # The pair selects a word of the original text and adopts nothing from the form that replaced it.
+        self.assertTrue(self.composer.focused)
+        self.assertEqual(self.composer.field.selected_text(), "a")
+        self.assertTrue(self.composer.form_replaced(self.scene))
+        self.assert_prompts_unchanged()
+        self.press(key="ESC")
+        self.assertFalse(self.composer.focused)
+        self.retopology()
+        self.assertEqual(self.drawn().fields, ["This model takes no prompt"])
+        first = self.press("prompt", when=20.0)
+        second = self.press("prompt", when=20.1)
+        # The first press explains the field; the paired second press neither focuses it nor repeats that.
+        self.assertFalse(self.composer.focused)
+        first.report.assert_called_once()
+        second.report.assert_not_called()
+        self.press(key="S", text="s", expect=("PASS_THROUGH",))
+        self.assertEqual((self.three_d.prompt, self.edit3d.prompt), ("a teapot", ""))
 
     def test_focused_prompt_leaves_when_its_model_stops_taking_a_prompt(self):
         self.drawn()

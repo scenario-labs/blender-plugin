@@ -251,9 +251,13 @@ def test_organization_tools_review_before_one_unrepeated_write():
         "asset_organization_status",
         "Assets already in the collection are skipped",
         "sent again within a fixed bound",
+        # A NOT_SENT apply and an unknown FINISHED outcome both return result null.
+        "NOT_SENT with result null",
+        "result null when the outcome is unknown",
     ):
         assert text in apply, text
     assert "sent once" not in apply
+    assert "FINISHED or NOT_SENT and result {" not in apply
     for name in ("apply_asset_organization", "asset_organization_status"):
         assert ast.literal_eval(found[name].args[2].args[1]) == ["context_id", "review_id"]
     status = found["asset_organization_status"].args[1].value

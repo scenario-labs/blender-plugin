@@ -17,7 +17,7 @@
       "scenario/core/jobs/coordinator.py": "bd23cca7936171f99803eb3e79d9979c0312e8e69ff1feeed4c497c3f1f00229",
       "scenario/core/jobs/workers.py": "de3b329922285bac44f7837f21049bd18a3fb7e0d03ba1044b66f196d87c8aea",
       "scenario/core/api/sdk_adapter.py": "784ac9f7f7c071291086eef894a4bcb3d895e53b8b26a233efea2d119f395765",
-      "scenario/mcp/tools_scenario.py": "9397f121a88365b8a4605447630701ae2a14a74dee747be274cc6a4e1bad0830",
+      "scenario/mcp/tools_scenario.py": "6e4a3b38ae75521eea54daed93e2a8612dbf49b33eea8de968d084fd84260c99",
       "tests/unit/test_asset_organization.py": "095cea215498e2e6ca6ba987ed06b7bcfd2a877a0d0c475463c9b9cb4f3f7a93",
       "tests/unit/organization_service.py": "0db133ded5cf6c9c105ad5f7ac55d9d5d5b32f77d5b57007d5bc72e627808222",
       "tests/unit/test_job_coordinator.py": "6915564ac4b7ee0d34ae40afcc916527ad43a0007734964d2ba8fe960f4b033a",

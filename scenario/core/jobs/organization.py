@@ -939,11 +939,6 @@ class OrganizationReviews:
                 raise ReviewUnavailable(
                     "An organization change that is being applied cannot be discarded"
                 )
-            if review.phase == Phase.FINISHED:
-                # Writes were sent: keep the outcome rather than relabel it unsent.
-                raise ReviewUnavailable(
-                    "A finished organization change keeps its outcome and cannot be discarded"
-                )
             review.phase = Phase.DISCARDED
             review.message = "Discarded"
             return self.status(review_id)

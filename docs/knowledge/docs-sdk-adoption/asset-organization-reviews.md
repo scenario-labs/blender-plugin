@@ -13,7 +13,7 @@
     "limits": "Reviewed only the service inventory row, the adapter coverage sentence and the closing paragraph of the asset organization section: the shared organization commands call the adapter methods through the coordinator, its workers and the JobSession review owner, with a guard before each write and a get_bulk read-back, and after AlreadyMembers send only the assets read back as not yet members, within three add requests per review; no local MCP tool or native Library control calls them. No SDK method, raw exception or dependency changed. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No native Library or local MCP control, desktop interaction or release acceptance is claimed.",
     "sources": {
       "docs/SDK_ADOPTION.md": "3eb2f6a43b99f64c8427617107019360d88cd1cd66138fb26ccab3d72b32b684",
-      "scenario/core/jobs/organization.py": "f6db3dcc4502aef9186fb456fa0983277f6a9b753e4556eded0e2df91a4547c7",
+      "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
       "scenario/core/jobs/coordinator.py": "756f6e4fbbacd158ce3527ac251cd878514008ff800c225038225dd8f49eb4a8",
       "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
       "scenario/mcp/tools_scenario.py": "e85b856e5a82acc83e8cf9096af20fbc180d7729e5db3d16e589a940559f60e4",

@@ -574,8 +574,9 @@ of collections without thumbnails or owner IDs.
 
 A review moves from PREPARING to READY, UNCHANGED (nothing to change) or
 REJECTED, then from READY to APPLYING and FINISHED or NOT_SENT; it can also be
-EXPIRED, or DISCARDED unless it is APPLYING or FINISHED, so a sent write keeps
-its outcome. A READY review expires after 10 minutes. At most 32 reviews
+DISCARDED or EXPIRED. Any review except an APPLYING one can be discarded; a
+discarded FINISHED review keeps its result, which still describes what Scenario
+changed. A READY review expires after 10 minutes. At most 32 reviews
 are kept, evicting only finished or discarded ones, and only one review applies
 at a time per session. A worker failure after apply is reported as an unknown,
 unconfirmed outcome, never as unsent. Undo and scene switches keep reviews.

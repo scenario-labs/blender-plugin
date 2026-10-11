@@ -247,7 +247,8 @@ def test_preview_kinds_and_default_renditions():
     assert previews.preview_kind("video/webm") == "video"
     assert previews.preview_kind("model/gltf-binary") == "3d"
     assert previews.preview_kind("application/x-ply") == "3d"
-    for value in ("model/mtl", "text/plain", "image/gif", None):
+    # A saved ACES-labelled OpenEXR original is not previewed yet, as in image import.
+    for value in ("model/mtl", "text/plain", "image/gif", "image/aces", None):
         assert previews.preview_kind(value) is None
     assert previews.renditions("image") == (STILL,)
     assert previews.renditions("audio") == (STILL, ENVELOPE)

@@ -131,12 +131,22 @@ def _redirect():
     return Response(b"", status=302, headers={"Location": "https://images.example.invalid/t"})
 
 
-def test_cross_host_redirect_is_polled_again_until_storage_serves_the_still(lane, monkeypatch):
+def _undeclared_length():
+    # Previews have no expected size, so the downloader needs a declared length.
+    return Response(JPEG, headers={})
+
+
+@pytest.mark.parametrize(
+    "first", [_redirect, _undeclared_length], ids=["cross-host-redirect", "undeclared-length"]
+)
+def test_incomplete_transfer_is_polled_again_until_storage_serves_the_still(
+    lane, monkeypatch, first
+):
     service, clock, scheduler = lane.env, lane.clock, lane.scheduler
     ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
     url = f"{CDN}/still.jpg?Signature=preview-secret"
     service.assets["asset-video"] = asset_record("asset-video", "video/mp4", thumbnail=url)
-    connection = _storage(service, monkeypatch, _redirect(), Response(JPEG))
+    connection = _storage(service, monkeypatch, first(), Response(JPEG))
     scheduler.request("request")
     drive(scheduler)
     first = state(lane, "asset-video")
@@ -151,7 +161,7 @@ def test_cross_host_redirect_is_polled_again_until_storage_serves_the_still(lane
     ready = state(lane, "asset-video")
     assert ready.state == State.READY and ready.preview.path.read_bytes() == JPEG
     assert len(service.calls) == 2 and connection.request.call_count == 2
-    # Only the configured storage host was contacted; the redirect was not followed.
+    # Only the configured storage host was contacted; a redirect was not followed.
     assert {call.args[0] for call in transfers.http.client.HTTPSConnection.call_args_list} == {
         "cdn.cloud.scenario.com"
     }

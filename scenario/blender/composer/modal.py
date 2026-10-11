@@ -179,6 +179,8 @@ def _untyped_event(operator, context, state, event):
     first update); a dead key sends one, then its release or the key with the accented character, so the
     field opens on the second press only. A key Blender cannot name that carries text is typed.
     """
+    if event.value == "PRESS":
+        state.presses.reset()  # a key between two clicks, named or not: no double-click
     if state.drag_mode is not None:
         state.untyped_press = False
         return {"RUNNING_MODAL"}
@@ -240,7 +242,9 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         runtime.state.composer_modal_running = False
         state = runtime.state.composer
         if state is not None:
+            # the next session starts over: no double-click, no composition run with a press from this one
             state.presses.reset()
+            state.untyped_press = False
             state.hover = None
             state.dragging = False
             if state.drag_mode is not None:

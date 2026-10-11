@@ -1069,6 +1069,55 @@ class ComposerSideRegionTests(unittest.TestCase):
             self._clicks(operator, ctx, third, (10.0 + 2 * quick,))
             self.assertEqual((save.call_count, state.offset), (1, saved))
 
+    def test_an_untyped_key_between_two_clicks_starts_over_and_a_click_ends_a_composition_run(self):
+        # A dead key or an input-method event reaches the modal with no Python type: between two clicks
+        # it is a key like any other, and a click between two such presses is no composition either.
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        scene.scenario.lane_state("image").prompt = "hello world"
+        ctx = self._context(sidebar=False)
+        ctx.window_manager = SimpleNamespace(scenario_composer_text="")  # the popover opens empty
+        quick = self._double_click_seconds() / 2
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        state.sync_from_lane(scene)
+        point, index = self._word_point(ctx, state)
+        call_panel = mock.Mock(return_value={"INTERFACE"})
+        ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            operator = self._operator()
+            self._clicks(operator, ctx, point, (10.0,))
+            self.assertTrue(state.focused)
+            # a dead key's press and release between the two clicks: two caret presses, no selection
+            self._event(operator, ctx, "", "PRESS", point)
+            self._event(operator, ctx, "", "RELEASE", point)
+            self._clicks(operator, ctx, point, (10.0 + quick,))
+            self.assertIsNone(state.field.selection)
+            self.assertEqual(state.field.caret, index)
+            # an untyped press, a click in the prompt, another untyped press: no text field
+            self._event(operator, ctx, "", "PRESS", point)
+            self._clicks(operator, ctx, point, (20.0,))
+            self._event(operator, ctx, "", "PRESS", point)
+            call_panel.assert_not_called()
+            # a modal session that ends forgets both runs
+            operator._finish(ctx)
+            self._event(operator, ctx, "", "PRESS", point)
+            call_panel.assert_not_called()
+            self.assertTrue(state.focused)
+            self._clicks(operator, ctx, point, (30.0,))
+            operator._finish(ctx)
+            self._clicks(operator, ctx, point, (30.0 + quick,))
+            self.assertIsNone(state.field.selection)
+            # the same context opens the popover on two untyped presses in a row
+            self._event(operator, ctx, "", "PRESS", point)
+            self._event(operator, ctx, "", "PRESS", point)
+            call_panel.assert_called_once()
+        operator.report.assert_not_called()
+        self.assertEqual(scene.scenario.lane_state("image").prompt, "hello world")
+
     def test_a_double_click_on_generate_submits_once(self):
         scene = bpy.context.scene
         scene.scenario.lane = "image"
@@ -1146,6 +1195,7 @@ class ComposerSideRegionTests(unittest.TestCase):
             oskey=False,
             alt=False,
             unicode=unicode,
+            is_repeat=False,
         )
         return self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
 

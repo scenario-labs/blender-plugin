@@ -411,11 +411,14 @@ drawing a pre-edit it cannot receive.
   no text: its start, then its first update. A dead key sends one such press,
   then its release or the key carrying the accented character, so the popover
   opens on the second press only. A release, a placement drag, an untyped event
-  without focus or any named or text-carrying press in between starts the count
-  again. A key repeat (a held key) does not count: Blender never marks
-  input-method events as repeats. In an input mode that commits each key, the
-  first key's text arrives in that second press, which the composer consumes, so
-  that character is lost.
+  without focus, any named or text-carrying press in between (a click included)
+  or the end of the composer's modal session starts the count again. Each
+  untyped press is also a key between two clicks, so it starts
+  [double-click](#double-click) pairing over, as any other key does. A key
+  repeat (a held key) does not count: Blender never marks input-method events
+  as repeats. In an input mode that commits each key, the first key's text
+  arrives in that second press, which the composer consumes, so that character
+  is lost.
 - An untyped key that carries text (French ù, for example) is typed like a named
   key: without Ctrl, Cmd or Alt, at the caret. The modal reads each event's type
   once and handles an untyped event without reading it again, so each untyped
@@ -425,8 +428,11 @@ drawing a pre-edit it cannot receive.
 
 Installed tests drive the modal with synthetic untyped, dead-key and F2 events
 (the popover call stubbed), set the field property and draw the panel into a
-recording layout. Physical composition, dead keys, candidate-window placement and
-focus after the popover have not been checked on a desktop; they remain under #66.
+recording layout. Another installed test sends a dead key between two clicks in
+the prompt, a click between two untyped presses and the end of a modal session
+between presses, and checks that neither a double-click nor the popover follows.
+Physical composition, dead keys, candidate-window placement and focus after the
+popover have not been checked on a desktop; they remain under #66.
 
 ## What Blender cannot do (so we do not fake it)
 

@@ -418,11 +418,12 @@ class SDKHistoryTests(unittest.TestCase):
         self.assertNotIn("scenario.history_older", operators)
 
     def test_page_without_generations_keeps_older_history_reachable(self):
-        # Uploads, workflow runs and mesh previews can fill a page without a generation.
+        # Uploads and mesh previews can fill a page without a generation; workflow
+        # runs are listed with their step totals.
         self.page = {
             "jobs": [
                 {**job(f"job-{kind}"), "jobType": kind}
-                for kind in ("upload", "workflow", "mesh-preview-rendering")
+                for kind in ("upload", "mesh-preview-rendering")
             ],
             "nextPaginationToken": "page-two",
         }

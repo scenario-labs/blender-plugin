@@ -435,8 +435,8 @@ review, read and review it again. Recovery reads never generate another plan.
 ### Generations
 This session's results appear first, followed by cloud history with prompt, kind,
 price, status and asset identity. **Load older** pages back in time and keeps
-every loaded row visible. Uploads, workflow runs and mesh preview renders are
-not listed; when a page holds only those, use **Load older** to continue.
+every loaded row visible. Uploads and mesh preview renders are not listed;
+when a page holds only those, use **Load older** to continue.
 
 A price includes add-on fees, such as quality checks, charged on top of the
 generation. A workflow run shows the total of its steps. If a step cannot be

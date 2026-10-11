@@ -400,7 +400,7 @@ MCP refresh requests reuse a pending history read instead of starting more worke
 The MCP `refresh` argument accepts only JSON booleans; other types fail before
 starting or delivering history work.
 
-Each page keeps only model inference (`custom`) jobs; uploads, workflow runs and
+Each page keeps model inference (`custom`) jobs and workflow runs; uploads and
 mesh preview renders are skipped locally, so a page can list fewer rows than it
 read, or none. The panel draws every loaded row, keeps **Load older** while a
 cursor remains, and says so when a page listed no generation. MCP

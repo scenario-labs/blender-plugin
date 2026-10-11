@@ -706,8 +706,8 @@ then again without it, to append that page. If that read fails, the next call
 still returns the loaded rows and `older_page`, with `older_error` and a note:
 retry with `older: true`, which reuses the cursor as **Load older** does. Only a
 repeated cursor asks for `refresh: true`, which restarts paging. A page skips
-uploads, workflow runs and mesh preview renders, so it can list fewer rows than
-the service returned.
+uploads and mesh preview renders, so it can list fewer rows than the service
+returned.
 
 `list_generations` returns `local_request_ids` for cloud rows matched to the
 selected credential-bound store. All cloud rows expose empty `local_files`; use

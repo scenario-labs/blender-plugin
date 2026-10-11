@@ -654,7 +654,7 @@ def draw_history(layout, context, shown_ids=()):
         layout.label(text="Could not inspect saved jobs; refresh history", icon="ERROR")
         return
     if not runtime.state.history:
-        # Uploads, workflow runs or previews can fill a page; older pages may list generations.
+        # Uploads or mesh preview renders can fill a page; older pages may list generations.
         layout.label(text="No generations on this page; load older", icon="INFO")
     saved_ids = cached_ids | {
         view.job_id

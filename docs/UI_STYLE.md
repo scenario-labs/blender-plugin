@@ -854,14 +854,17 @@ saved-job controls, in Jobs, Generations and the Studio pages that reuse them:
 at most four per job, primary results first (video, audio, embedded model, base
 color or untagged image), then other maps. Each tile is the preview icon or,
 until it is ready, the result kind's built-in icon at the same size, with a
-caption numbered like the saved-job controls: **Video (1)**, **Albedo (3)**.
-Below the tiles, one information line per distinct status names the waiting
-tiles: preparing, waiting for Scenario, or `Preview paused while online access
-is disabled`. A missing, failed or unreadable preview gets an `ERROR` line with
-its reason and an explicit **Retry preview (N)** button; nothing retries after
-the polling window without that click. Previews are read-only and open no
-confirmation; Retry's tooltip says nothing is generated, applied, spent or
-changed in the scene. Shared image rows no longer load a draw-time thumbnail.
+caption that starts with the number of its saved-job controls: **(1) Video**,
+**(3) Albedo**. Blender keeps the start of a caption that does not fit, so a
+narrow sidebar clips the role before the number. Below the tiles, one
+information line per distinct status names the waiting tiles as the controls
+do, such as **Video (1)**: preparing, waiting for Scenario, or `Preview paused
+while online access is disabled`. A missing, failed or unreadable preview gets
+an `ERROR` line with its reason and an explicit **Retry preview (N)** button;
+nothing retries after the polling window without that click. Previews are
+read-only and open no confirmation; Retry's tooltip says nothing is generated,
+applied, spent or changed in the scene. Shared image rows no longer load a
+draw-time thumbnail.
 
 Icon size and wrap columns follow the region width divided by
 `preferences.system.ui_scale` (1 when background Blender reports 0). Drawing
@@ -871,9 +874,10 @@ happen in the controller's timer, outside drawing.
 
 Installed exact-ZIP tests on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 draw
 tiles through recording layouts with file and store reads refused, and through
-the real Jobs panel. Physical input, focus, viewport interaction and screenshots
-at UI scales 1.0 and 2.0 are not yet recorded; they remain #66 and #68
-acceptance.
+the real Jobs panel. They check that each caption starts with its number and
+that the number with an ellipsis fits the tile's icon width in Blender's UI
+font. Physical input, focus, viewport interaction and screenshots at UI scales
+1.0 and 2.0 are not yet recorded; they remain #66 and #68 acceptance.
 
 ## Saved static model confirmation
 

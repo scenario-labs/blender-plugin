@@ -89,24 +89,39 @@ class Tile:
     """One drawn preview: its icon when ready, otherwise the kind's placeholder.
 
     ``number`` is the result's 1-based position among the job's saved assets,
-    as in its saved-job controls; ``asset_id`` is empty for a job-level note.
+    as in its saved-job controls; ``label`` names its texture role or kind;
+    ``asset_id`` is empty for a job-level note.
     """
 
     asset_id: str
     number: int
-    caption: str
+    label: str
     kind: str
     status: str  # "ready", "loading", "waiting", "offline" or "unavailable"
     message: str = ""
     icon_id: int = 0
     retry: bool = False
 
+    @property
+    def caption(self):
+        """The result as status lines and saved-job controls name it: ``Albedo (3)``."""
+        return f"{self.label} ({self.number})" if self.asset_id else self.label
+
+    @property
+    def title(self):
+        """The text under the tile, number first: ``(3) Albedo``.
+
+        Blender keeps the start of a label that does not fit, so a narrow
+        column shortens the label and keeps the number of its controls.
+        """
+        return f"({self.number}) {self.label}"
+
 
 @dataclass(frozen=True)
 class _Target:
     asset_id: str
     number: int
-    caption: str
+    label: str
     kind: str
 
 
@@ -155,7 +170,7 @@ def _targets(record):
         if item.receipt is None or kind is None:
             continue
         label = ROLE_LABEL.get(item.asset.texture_role) or KIND_LABEL[kind]
-        target = _Target(item.asset.asset_id, index, f"{label} ({index})", kind)
+        target = _Target(item.asset.asset_id, index, label, kind)
         chosen.append((_rank(item), index, target))
     chosen.sort(key=lambda value: value[:2])
     return tuple(target for _, _, target in chosen[:TILE_LIMIT])
@@ -301,7 +316,7 @@ class PreviewController:
         """One tile from the scheduler's I/O-free status; may build one icon."""
         status = scheduler.status(request_id, target.asset_id)
         current = None if status is None else status.get(STILL)
-        base = target.asset_id, target.number, target.caption, target.kind
+        base = target.asset_id, target.number, target.label, target.kind
         if current is None:
             return Tile(*base, "loading", _LOADING[PreviewState.QUEUED]), budget
         state = current.state
@@ -531,7 +546,7 @@ def draw(layout, record):
             column.template_icon(
                 icon_value=tile.icon_id or _builtin(KIND_ICON[tile.kind]), scale=icon_scale
             )
-            column.label(text=tile.caption)
+            column.label(text=tile.title)
     columns = max(12, int((width - 60) / 7))
     pending = {}
     for tile in tiles:

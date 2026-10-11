@@ -329,7 +329,7 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertEqual(self.downloads, [])
         calls = self.draw(view)
         self.assertIn(("icon", tile.icon_id or self.tiles._builtin("IMAGE_DATA"), ANY), calls)
-        self.assertIn(("label", "Image (1)", "NONE"), calls)
+        self.assertIn(("label", "(1) Image", "NONE"), calls)
         self.assertFalse([call for call in calls if call[0] == "operator"])
 
     def test_material_maps_show_base_color_first_and_at_most_four(self):
@@ -360,6 +360,48 @@ class ResultPreviewTileTests(unittest.TestCase):
             self.settle(lambda: [self.status(index=i) for i in range(2)] == ["ready"] * 2)
         captions = [tile.caption for tile in self.tiles.controller.tiles["request"]]
         self.assertEqual(captions, ["Roughness (1)", "Smoothness (2)"])
+
+    def test_tile_captions_put_the_number_first_so_a_narrow_column_keeps_it(self):
+        # In the sidebar at its default width, "Model (1)" and "Model (2)" were
+        # clipped to "Model ..." and lost the number their controls show.
+        import blf
+
+        assets = [
+            ("glb", "model.glb", "model/gltf-binary", b"glTF" + b"\x00" * 16),
+            ("obj", "model.obj", "model/obj", b"o cube\n"),
+            ("albedo", "albedo.png", "image/png", png(8, 8), "albedo"),
+            ("normal", "normal.png", "image/png", png(8, 8), "normal"),
+        ]
+        settled = ["offline", "ready", "offline", "ready"]  # Server stills wait offline.
+        with online_access(False):
+            view = self.saved(assets)
+            self.settle(lambda: [self.status(index=i) for i in range(4)] == settled)
+        tiles = self.tiles.controller.tiles["request"]
+        # Status lines name results as the saved-job controls do.
+        self.assertEqual(
+            [tile.caption for tile in tiles], ["Model (1)", "Albedo (3)", "Model (2)", "Normal (4)"]
+        )
+        calls = self.draw(view)
+        drawn = [
+            (call[2], following[1])
+            for call, following in zip(calls, calls[1:], strict=False)
+            if call[0] == "icon" and following[0] == "label"
+        ]
+        self.assertEqual(
+            [title for _, title in drawn], ["(1) Model", "(3) Albedo", "(2) Model", "(4) Normal"]
+        )
+        texts = [call[1] for call in calls if call[0] == "label"][len(drawn) :]
+        self.assertEqual(
+            " ".join(texts), "Model (1), Model (2): Preview paused while online access is disabled"
+        )
+        # Blender keeps the start of a label that does not fit and clips the
+        # rest, so the number survives while it fits under the tile's icon in
+        # the UI font: 20 units per icon scale step at UI scale 1.
+        blf.size(0, bpy.context.preferences.ui_styles[0].widget.points)
+        for scale, title in drawn:
+            number = title.split(" ", 1)[0]
+            self.assertLess(blf.dimensions(0, f"{number}…")[0], 20 * scale, title)
+        self.assertLess(blf.dimensions(0, "(99)…")[0], 20 * 2.5)  # The smallest tiles.
 
     def test_undecodable_saved_image_reports_a_failure_with_retry(self):
         with online_access(False):
@@ -467,7 +509,7 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertEqual(self.requests, [])
         texts = [call[1] for call in self.draw(view) if call[0] == "label"]
         # The caption under the placeholder, then the status wrapped to the sidebar.
-        self.assertEqual(texts[0], "Video (1)")
+        self.assertEqual(texts[0], "(1) Video")
         self.assertEqual(
             " ".join(texts[1:]), "Video (1): Preview paused while online access is disabled"
         )

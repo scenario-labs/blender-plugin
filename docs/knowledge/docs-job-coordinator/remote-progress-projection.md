@@ -9,7 +9,7 @@
     "scope": "remote-progress-projection",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Reviewed that refresh_remote commits only terminal states and returns the existing RemoteSnapshot for an active status without a store write, and that progress.observe reads its status and progress without retaining the raw response. A unit test with the real SDK and a mock transport shows an active refresh keeps the saved record and revision and that no database file contains the fraction or status. The Blender projection is reviewed under BLENDER_JOB_CONTEXT; no live service response is claimed.",
     "sources": {
       "scenario/core/jobs/coordinator.py": "2abac8aa7823376d38aa8d585f5328f87a4c4330868c9e55c294563db526b8a8",

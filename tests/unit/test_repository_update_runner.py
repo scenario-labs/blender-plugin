@@ -410,6 +410,7 @@ def test_same_version_previous_code_becomes_the_test_predecessor(
             "scene_preserved": True,
             "project_scope_preserved": True,
             "workflow_references_preserved": False,
+            "workflow_uploads_preserved": False,
             "service_requests": 0,
             "store_schema": {"before": schemas[0], "after": schemas[1]},
             "schema_10_state": "before-update"

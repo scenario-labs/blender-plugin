@@ -130,8 +130,13 @@ owned asset sampled, including OBJ/MTL files with stale byte counts, both URLs
 served identical bytes. A manifest saved from a default response keeps the same
 MIME type and size, so a failed download resumes without regeneration. Cloud
 history prompt previews and Library pages read metadata only and keep the
-default request. This does not establish Blender import of every large panorama,
-provider format guarantees or HDRI originals.
+default request. Reads for a
+[declared OpenEXR original](#declared-hdr-originals-and-360-projection) send the
+same flag and still download `originalFileUrl`; the flag changes only the `url`
+used by asset-file manifests. This does not establish Blender import of every
+large panorama, provider format guarantees or HDRI originals: a live HDRi run
+must also confirm that the flag leaves `originalMimeType` and `originalFileUrl`
+unchanged.
 
 ## Integration still required
 

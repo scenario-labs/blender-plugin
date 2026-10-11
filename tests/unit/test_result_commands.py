@@ -906,6 +906,10 @@ def test_declared_exr_original_is_saved_instead_of_its_preview(setup, tmp_path, 
     assert downloader.calls[1][0] == assets["asset-two"]["url"]
     assert downloader.calls[1][2:] == (len(DATA), None)
     assert all(request.method == "GET" for request in calls)
+    # Untransformed reads still leave a declared original on originalFileUrl.
+    asset_reads = [request for request in calls if request.url.path.startswith("/v1/assets/")]
+    assert len(asset_reads) == 4
+    assert all(request.url.params.get("originalAssets") == "true" for request in asset_reads)
     assert JobStore(tmp_path / "jobs.sqlite3", store.scope).get("request") == result
     saved = (tmp_path / "jobs.sqlite3").read_bytes()
     assert b"signed=" not in saved and b"private fixture" not in saved

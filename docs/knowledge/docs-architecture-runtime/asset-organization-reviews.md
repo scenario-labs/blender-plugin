@@ -9,7 +9,7 @@
     "scope": "asset-organization-reviews",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Reviewed the runtime-map claims: the pure bpy-free contract, including guarded writes that are never resent after an uncertain outcome (the one bounded resend after an already-member add refusal is described in the command contract), coordinator and worker execution through the selected adapter, the session-owned entry point, pump polling independent of an open view, connection-scoped session-local reviews kept across undo and scene switches and retired on file load or credential or project change, and no job, upload or store schema change and no spending. The library-reads paragraph now points to these reviews. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No native Library or local MCP control, desktop interaction or release acceptance is claimed.",
     "sources": {
       "docs/architecture/runtime.md": "208ff76537fb782fb7215196855004b7ec148ded4b5e516990a67abc0334d2c3",

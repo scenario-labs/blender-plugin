@@ -9,7 +9,7 @@
     "scope": "asset-organization-reviews",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Reviewed only the service inventory row, the adapter coverage sentence and the closing paragraph of the asset organization section: the shared organization commands call the adapter methods through the coordinator, its workers and the JobSession review owner, with a guard before each write and a get_bulk read-back, and after AlreadyMembers send only the assets read back as not yet members, within three add requests per review; no local MCP tool or native Library control calls them. No SDK method, raw exception or dependency changed. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No native Library or local MCP control, desktop interaction or release acceptance is claimed.",
     "sources": {
       "docs/SDK_ADOPTION.md": "e0adef0ee973be767007ac6b5f136d002f434159a3dbb84912773a55e23c0516",

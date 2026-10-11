@@ -348,8 +348,10 @@ No session, UI, MCP or Blender importer uses this command yet. The point-cloud
 builder, which must create fresh Geometry Nodes and material data instead of the
 prototype's reuse of any material named "Scenario Splat", and saved mesh imports
 remain under #65. Live evidence must still confirm provider MIME types, SPZ
-versions, axis conventions and whether a 3D asset's `url` serves its original
-bytes; SDK 2.2.0 documents `original_file_url` for some replaced 3D assets.
+versions, axis conventions and whether the `url` saved from an
+[untransformed asset read](#untransformed-result-assets) serves a 3D asset's
+original bytes; SDK 2.2.0 documents `original_file_url` for some replaced 3D
+assets.
 
 ## Saved-result preview transfers
 

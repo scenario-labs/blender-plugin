@@ -706,9 +706,10 @@ the imported asset into the unchanged scene, workflow, schema, kind, marker and
 input value, after a fresh origin check, through `workflow_references.bind_asset`.
 That shared binding writes the same scope digest and canonical value as Library
 attachment, so existing pricing checks reject edited or cross-connection values.
-Stale, failed or retired bindings keep the marker and an inspectable error; saved
-uploads attach only through a separate single-use confirmation in the shared
-inspection view. Any scene edit, frame change or undo makes JobSession refuse the
+Stale, failed or retired bindings, including one whose upload **Upload again**
+abandoned, keep the marker and an inspectable error; saved uploads, including that
+restart's new upload, attach only through a separate single-use confirmation in
+the shared inspection view. Any scene edit, frame change or undo makes JobSession refuse the
 upload's next initialization, part or completion admission, and the ticket stops.
 The exception to keeping the marker is a stopped ticket that `ReferenceUploads`
 reports as never having reached Scenario (failed staging, a refused admission

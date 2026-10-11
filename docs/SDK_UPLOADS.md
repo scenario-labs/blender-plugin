@@ -636,6 +636,8 @@ binding as Library workflow references and removes the marker. Explicit **Cancel
 still marked for it, matched through the facade's marker-to-ticket ledger, which
 survives undo, or through that recorded request after reopening or a connection
 change. A blend file saved before the first observation has no request link.
+A failed, canceled or abandoned record ends delivery with an error and keeps the
+marker; the new upload that **Upload again** sends is not bound to the input.
 **Stop waiting** releases any marked input without a running delivery: it removes
 the marker and request link, keeps values and leaves the saved record untouched.
 Saved uploads use the shared inspection view with a workflow destination:

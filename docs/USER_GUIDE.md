@@ -786,8 +786,8 @@ until you change the input, load another workflow or upload into it again.
 Changing credentials or project, opening a file or restarting Blender also
 clears it.
 Otherwise, and when you edit that
-input, load another workflow, undo or reopen the file during an upload, nothing
-attaches automatically; undo also stops an upload that is still sending. An input
+input, load another workflow, undo, reopen the file or choose **Upload again**
+for it during an upload, nothing attaches automatically; undo also stops an upload that is still sending. An input
 that stays marked shows **Saved upload: inspect before continuing**. Choose
 **Inspect uploads** to attach an imported upload with **Use this reference**, or
 to cancel one that never started with **Cancel preparation**, which usually also

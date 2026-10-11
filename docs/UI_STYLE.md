@@ -1624,8 +1624,8 @@ the marker and empties the input. Drawing stays read-only.
 Installed synthetic tests cover these guards, including missing and unreadable
 files, failed staging, an object move and a frame change after staging on an array
 that already holds a value, cancellation of a waiting, undo-restored or
-retired-connection marker, **Stop waiting** after an upload stopped mid-transfer,
-undo around an upload and a background **Render result** upload, plus shared MCP
+retired-connection marker, **Stop waiting** after an upload stopped mid-transfer
+or that **Upload again** abandoned, undo around an upload and a background **Render result** upload, plus shared MCP
 pricing of an uploaded asset ID and selected-mesh provenance at quote time. Native
 interaction proof (file browser and confirmation from the Studio popup, viewport
 and camera captures, rendering with F12 before **Render result**, DPI and IME) and

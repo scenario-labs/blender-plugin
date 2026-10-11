@@ -13,11 +13,11 @@
     "sources": {
       "scenario/core/ui/composer_layout.py": "c624fa1cd59b3fa1180b5b4d5881bd32307744b3e6eb6496903d45b6ca87d66c",
       "scenario/blender/composer/draw.py": "db9ce841a722d8b7761786bd1ea44c6a1d7e189ce0673560d5e604f35a78c0cf",
-      "scenario/blender/composer/modal.py": "72554933af0043e7bc7a5e2a402f5720cc6ba6f28cd2420bca6cddbe55f2a8e4",
+      "scenario/blender/composer/modal.py": "061055e5328c24a7b8aa30d7fdbd861bf4b1bf9a35bfb5f456e5336c5b2f81f0",
       "scenario/blender/composer/state.py": "b03073dc712fbb1a5386ba17b9d2c73c0bb6d7d91f2f79cd633a1218296da56f",
       "scenario/blender/popover.py": "7366e3dd7f5ad9414d9ad9e3246c072beef207f6edfbc6705488210fa1dbee35",
       "tests/unit/test_composer_layout.py": "97974826a4fd7502ff901e047c0bd38ca3740bcc762815db0bbfc95846dd4895",
-      "tests/blender/test_composer.py": "8e90fb0fcc24aaba0ab68c25975e01b8e1a9f01e44bbfb6b048fd7069b79c9b9",
+      "tests/blender/test_composer.py": "81e17f5c4152384002d11c5ea34e56a0a55faa358b322d2e6df23c9a86146abe",
       "tests/unit/test_composer_strip_layout.py": "fbcaa79e3a91b8925ea6d861992ddf5dd2f45e8f4725df64ce1aeb639f2aee5a"
     }
   }

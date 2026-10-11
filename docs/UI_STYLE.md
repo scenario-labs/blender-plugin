@@ -318,20 +318,23 @@ pairs presses itself, by Blender's rule. A press completes a double-click when
 it lands on the same composer target as the previous press, less than Blender's
 double-click time preference after it (350 ms by default) and within the
 composer's 4 px drag threshold times the UI scale. Another key or button
-pressed in between, a drag that moves the composer, or a press outside it
-starts over, and a completed pair is spent, so a third quick press is a plain
-press again. Time is taken when the composer handles each press, since Python
-events carry no timestamp. A click that changes the layout under the pointer
-(the pill expanding into the card) never pairs with the next press. On any
-other control the second press of a double-click does nothing more, so a
-double-click on Generate submits once.
+pressed in between (Escape, which cancels a held press, included), a drag or
+resize past that threshold, or a press outside it starts over, and a completed
+pair is spent, so a third quick press is a plain press again. The resize grip
+follows the pointer from its first move, but jitter within the threshold while
+the button is held keeps the press. Time is taken when the composer handles
+each press, since Python events carry no timestamp. A click that changes the
+layout under the pointer (the pill expanding into the card) never pairs with
+the next press. On any other control the second press of a double-click does
+nothing more, so a double-click on Generate submits once.
 
 Installed tests send the composer's modal what Blender really delivers, two
 press and release pairs at pinned times, and check the word selection, the
-reset, the timing and distance limits, the presses that start over and the
-single submission. Unit tests cover the pairing rule itself. Physical
-double-clicks on Blender 5.1.2 macOS selected nothing and reset nothing before
-this change; a physical recheck remains under #66.
+reset, the timing and distance limits, jitter on the resize corner, the presses
+that start over (Escape included) and the single submission. Unit tests cover
+the pairing rule itself. Physical double-clicks on Blender 5.1.2 macOS selected
+nothing and reset nothing before this change; a physical recheck remains
+under #66.
 
 ## What Blender cannot do (so we do not fake it)
 

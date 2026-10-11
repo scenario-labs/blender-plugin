@@ -921,6 +921,83 @@ class ComposerSideRegionTests(unittest.TestCase):
                     save.assert_not_called()
                 self.assertIsNone(state.drag_mode)
 
+    def test_a_double_click_on_the_resize_corner_survives_jitter_within_the_drag_threshold(self):
+        # The grip follows the pointer from the first move, with no pending state, so the mouse moves a
+        # real click reports while the button is held must not forget the press unless they leave the
+        # drag threshold, as the card background's pending drag already allows.
+        ctx = self._context(sidebar=False)
+        quick = self._double_click_seconds() / 2
+        saved = (-120.0, 80.0)
+        threshold = (
+            self.cl.DRAG_THRESHOLD * self.modal._layout(ctx, self.state_mod.ComposerState()).scale
+        )
+        jitter = threshold - 1
+        cases = (
+            ((), True),
+            (((1, 0), (jitter, -jitter), (0, 1)), True),  # jitter while the first press is held
+            (((threshold, 0), (0, 0)), False),  # a resize, even one brought back, is no click
+        )
+        for moves, resets in cases:
+            with self.subTest(moves=moves):
+                state = self.state_mod.ComposerState()
+                state.expanded, state.offset, state.width = True, saved, 600
+                press = self._centre(self.modal._layout(ctx, state).resize_rect)
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.modal, "_save_layout") as save,
+                ):
+                    operator = self._operator()
+                    with mock.patch.object(self.modal, "_now", return_value=10.0):
+                        self._event(operator, ctx, "LEFTMOUSE", "PRESS", press)
+                        self.assertEqual(state.drag_mode, "resize")
+                        point = press
+                        for dx, dy in moves:
+                            point = (press[0] + dx, press[1] + dy)
+                            self._event(operator, ctx, "MOUSEMOVE", "NOTHING", point)
+                        self._event(operator, ctx, "LEFTMOUSE", "RELEASE", point)
+                    self.assertEqual(self.modal._layout(ctx, state).hit(*press), ("resize",))
+                    self._clicks(operator, ctx, press, (10.0 + quick,))
+                if resets:
+                    self.assertEqual((state.offset, state.width), ((0.0, 0.0), None))
+                    save.assert_called_with()  # the reset is stored after any jitter's resize
+                else:
+                    self.assertEqual(state.offset, saved)
+                    self.assertAlmostEqual(state.width, 600)  # stored as drawn by the resize
+                    save.assert_called_once_with()  # by the resize release only
+                self.assertIsNone(state.drag_mode)
+
+    def test_escape_ends_the_press_so_the_next_click_never_pairs_with_it(self):
+        # Escape cancels a press held on the card background, its corner or the pill. A later click on
+        # the same spot within Blender's double-click time is a new first click: it neither resets the
+        # placement nor gets swallowed as the second half of a double-click.
+        ctx = self._context(sidebar=False)
+        quick = self._double_click_seconds() / 2
+        saved = (-120.0, 80.0)
+        for target in ("drag", "resize", "expand"):
+            with self.subTest(target=target):
+                state = self.state_mod.ComposerState()
+                state.expanded, state.offset, state.width = target != "expand", saved, 600
+                layout = self.modal._layout(ctx, state)
+                if target == "resize":
+                    point = self._centre(layout.resize_rect)
+                else:
+                    point = self._grab_point(layout)[0]
+                self.assertEqual(layout.hit(*point), (target,))
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.modal, "_save_layout") as save,
+                ):
+                    operator = self._operator()
+                    with mock.patch.object(self.modal, "_now", return_value=10.0):
+                        self._event(operator, ctx, "LEFTMOUSE", "PRESS", point)
+                        self._event(operator, ctx, "ESC", "PRESS", point)
+                        self.assertIsNone(state.drag_mode)
+                        self._event(operator, ctx, "LEFTMOUSE", "RELEASE", point)
+                    self._clicks(operator, ctx, point, (10.0 + quick,))
+                self.assertEqual((state.offset, state.width), (saved, 600))
+                self.assertTrue(state.expanded)  # a click on the pill still expands it
+                save.assert_not_called()
+
     def test_only_two_presses_on_one_target_with_nothing_between_make_a_double_click(self):
         ctx = self._context(sidebar=False)
         quick = self._double_click_seconds() / 4

@@ -7,8 +7,8 @@
     "path": "docs/PRIVACY.md",
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-10",
-    "base_revision": "fb699b8555f7cee62147794516cc7aaa224864f7",
+    "reviewed_at": "2026-10-11",
+    "base_revision": "72723f02a97a7226b1c697c31d8124b77ac92c86",
     "limits": "Inspected where the decoder's request, disposable profile, temporary files, log and outputs are written and removed, the scrubbed child environment, offline mode, the cached envelope sidecar and the prototype preview's cache/audio-preview directories, including the sweep of abandoned decode directories older than a day. The prototype preview reads the downloaded file in place after a regular-file check. No network access, credential or signed URL reaches the child; this does not audit other cache users.",
     "sources": {
       "scenario/core/jobs/audio_decode.py": "45d1cc7aa8964ad0b7014bf28a23f3d3a46e336eee4770581e79a8aa293d0064",
@@ -17,7 +17,7 @@
       "scenario/core/jobs/result_previews.py": "b08399a5f91362d9ccffa7ac615088f8dcd8c66984f86736245daca529dae741",
       "scenario/core/jobs/local_render.py": "259ec65d914e12b8a8dce009ea68a07f4ab3ca1007a232a63a2c43fb64e5daaf",
       "scenario/blender/audio_preview.py": "e77b8d21f7733322b9714a17ff8b982d24cd993e5702e6b0403d7b5b3ddfbb22",
-      "scenario/blender/runtime.py": "286974e2a90e4776de71d081651a88424c543573add3ed125b072ad47c524883"
+      "scenario/blender/runtime.py": "c9b8c98af5796ac40f7baaf89813b15fa46f5cea7bc68c56a00e414a143a046a"
     }
   }
 }

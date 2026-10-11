@@ -10,7 +10,9 @@ PILL_WIDTH, PILL_HEIGHT = 320, 44
 CARD_WIDTH, CARD_HEIGHT = 820, 132
 TAB_HEIGHT, ROW_GAP, PAD = 24, 8, 12
 GENERATE_WIDTH, MODEL_WIDTH, COLLAPSE_SIZE, SETTINGS_WIDTH = 190, 200, 20, 84
-RESIZE_SIZE, MIN_CARD_WIDTH, MIN_PILL_WIDTH, MIN_VISIBLE, DRAG_THRESHOLD = 16, 420, 200, 40, 4
+RESIZE_SIZE, MIN_CARD_WIDTH, MIN_PILL_WIDTH, DRAG_THRESHOLD = 16, 420, 200, 4
+# Blender's default double-click time, for a caller whose preferences cannot say
+DOUBLE_CLICK_MS = 350
 LANE_ORDER = ("image", "video", "3d", "material", "render_image", "render_video")
 LANE_LABELS = {
     "image": "Image",
@@ -244,6 +246,37 @@ class TextField:
         if self.caret < start:
             start = self.caret
         return start, min(len(self.text), start + width_chars)
+
+
+class DoubleClick:
+    """Pairs the two presses of a double-click on one composer target.
+
+    Blender hands a modal operator the second press of a double-click as a plain press: only key maps see the
+    double-click value. The composer therefore pairs presses itself, by Blender's rule: the second press completes a
+    double-click when it lands within `threshold` px of the first, less than `interval` seconds after it. It must
+    also hit the same target, so a click that changes the layout (the pill expanding into the card) never pairs with
+    the press that follows. A completed pair is spent, so a third press starts over."""
+
+    def __init__(self):
+        self.last = None  # (time, x, y, target) of the previous unpaired press
+
+    def press(self, target, x, y, time, interval, threshold):
+        """Record a press on `target` (a hit tuple; None outside the composer); True when it completes a pair."""
+        last = self.last
+        paired = (
+            target is not None
+            and last is not None
+            and last[3] == target
+            and 0.0 <= time - last[0] < interval
+            and abs(x - last[1]) <= threshold
+            and abs(y - last[2]) <= threshold
+        )
+        self.last = None if paired or target is None else (time, x, y, target)
+        return paired
+
+    def reset(self):
+        """Forget the previous press: another key or button was pressed, or the composer moved."""
+        self.last = None
 
 
 @dataclass
@@ -481,21 +514,24 @@ def clamp_width(width, region_w, scale=1.0, expanded=True, insets=(0.0, 0.0)):
 
 
 def clamp_offset(offset, size, region_w, region_h, scale=1.0, insets=(0.0, 0.0)):
-    """Clamp a move of a `size`-wide/high box from its default bottom-centre spot in the uncovered span.
+    """Clamp a move of a `size`-wide/high box from its default bottom-centre spot so the whole box stays reachable.
 
-    At least MIN_VISIBLE px stay inside a bare region edge. A side region (toolbar, sidebar) drawn over this one is a
-    hard edge instead: the box never slides under it, so the controls next to it stay clickable."""
+    The box stays wholly inside the span the side regions (toolbar, sidebar) leave uncovered and inside the region
+    height: a bare viewport edge stops it like a side region does, so a saved offset never pushes the card's minus
+    button or Generate out of the viewport, and the box never slides under a side region.
+
+    A box wider than that span (only the pill at its minimum width in a narrower span) keeps its right side, where
+    the card has its minus button and Generate and the pill its Generate label, at the span's right edge and runs
+    past the left one. A box taller than the region (only the pill in a shorter region) keeps its bottom edge in."""
     s = float(scale or 1.0)
     w, h = size
     insets = _edge_insets(region_w, insets)
     left, right = insets
-    keep = MIN_VISIBLE * s
     base_x, base_y = _base_x(region_w, w, insets), MARGIN * s
-    lo = left if left > 0 else keep - w
-    hi = region_w - right - w if right > 0 else region_w - keep
+    hi_x = region_w - right - w
     ox, oy = offset
-    x = _clamp(base_x + ox, lo, hi)
-    y = _clamp(base_y + oy, keep - h, region_h - keep)
+    x = _clamp(base_x + ox, min(left, hi_x), hi_x)
+    y = _clamp(base_y + oy, 0.0, region_h - h)
     return (x - base_x, y - base_y)
 
 
@@ -512,8 +548,7 @@ def pill_placement(
     it. The caller keeps its expanded choice and width, so the card comes back as soon as there is room.
 
     The pill narrows to MIN_PILL_WIDTH with its margins kept; a narrower span then takes the margins, and a span
-    narrower than MIN_PILL_WIDTH still gets a pill that wide (from the toolbar edge, else ending at the sidebar
-    edge, as the offset clamps)."""
+    narrower than MIN_PILL_WIDTH still gets a pill that wide, ending at the span's right edge as the offset clamps."""
     s = float(scale or 1.0)
     margin = MARGIN * s
     insets = _edge_insets(region_w, insets)

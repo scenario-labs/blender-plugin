@@ -255,9 +255,9 @@ nothing.
   overwriting that text and a warning is reported.
 - The pill narrows to its minimum of 200 px times the UI scale while keeping its
   margins. A narrower span then eats into the margins. In a span narrower than
-  the minimum itself, the pill keeps that minimum width from the toolbar edge
-  and runs under the sidebar; without an overlapping toolbar it ends at the
-  sidebar edge instead.
+  the minimum itself, the pill keeps that minimum width and ends at the right
+  edge of the span, the sidebar edge when one is open, with its Generate label;
+  it runs under the toolbar or past the viewport's left edge instead.
 - The model chip opens the model picker and shows the sidebar, which holds the
   rest of the lane's form. When showing the sidebar would leave the card no
   room, the chip opens the picker alone, so the card does not give way to the
@@ -270,21 +270,25 @@ nothing.
   the measured text width, so Image and Video can keep their full labels beside
   R-Img. Only a short label that still does not fit is clipped with an ellipsis,
   as a last resort and never below its first character, so a tab is never blank.
-- A saved or dragged offset stops at a toolbar or sidebar edge, so Generate and
-  the minus button stay clickable. A bare viewport edge keeps the earlier rule:
-  at least 40 px of a dragged composer stay visible at 1x UI scale (the minimum
-  scales with it).
+- A saved or dragged offset keeps the whole pill or card inside the viewport,
+  between any toolbar and sidebar: it stops at a bare viewport edge as it does
+  at a side-region edge, so Generate and the minus button stay in view. The
+  pill and the card share one offset, so a pill moved against an edge expands
+  into a card against that same edge, and a card parked at the sidebar stays
+  whole when the sidebar closes and the card widens. Only the drawn placement
+  is clamped; the saved offset is kept until the next move.
 - A move or resize starts from the placement as drawn. A composer parked past an
-  edge before the sidebar opened therefore follows the pointer at once instead of
-  waiting for it to cover the hidden excess. Releasing a move stores the drawn
-  offset, and releasing a resize also stores the drawn width; Esc during the drag
-  restores the saved placement.
+  edge (a sidebar that opened, or a viewport that shrank) therefore follows the
+  pointer at once instead of waiting for it to cover the hidden excess.
+  Releasing a move stores the drawn offset, and releasing a resize also stores
+  the drawn width; Esc during the drag restores the saved placement.
 - Drawing and hit testing share one layout, so every control is drawn exactly
   where a click reaches it.
 
 Only the side regions are avoided so far. Horizontal regions drawn over the
-viewport are not: the asset shelf along the bottom (in Pose Mode, for example)
-and transparent headers can still cover the composer or its default spot.
+viewport are not: the asset shelf along the bottom (in Pose Mode, for example),
+the tool header and a transparent header along the top can still cover part of
+the composer or its default spot.
 
 Installed tests cover these rules with synthetic overlapping regions, including
 the modal's move, resize and release handlers with the sidebar opened and
@@ -293,9 +297,41 @@ viewport one pixel too short for the card at scales 1, 2 and 4, the model
 chip's choice to show the sidebar or not, and the background viewport's real
 regions. A physical macOS Blender 5.2.1 check at
 that scale found the card running under the sidebar and blank or ambiguous tab
-labels, which motivated the pill fallback and the short labels. Repeating
-physical desktop drags and screenshots with the sidebar open remains a separate
+labels, which motivated the pill fallback and the short labels. A physical
+Blender 5.1.2 check found the minus button and Generate past the bare right
+edge after the pill had been moved right and expanded, and after a card parked
+at the sidebar widened when the sidebar closed in a 1018 x 671 pt window, which
+motivated the whole-composer clamp. Installed tests drive both cases through
+the modal. Repeating physical desktop drags and screenshots remains a separate
 acceptance check under #66.
+
+### Double-click
+
+A double-click on the card background or its resize corner puts the composer
+back at its default place and width, and a double-click in the prompt selects
+the word (or the run of spaces) under the pointer, so typing replaces it.
+
+Blender never hands a modal operator a double-click: before calling it, the
+window manager turns the second press into a plain press (only key maps see the
+double-click value), in Blender 5.0, 5.1 and 5.2 alike. The composer therefore
+pairs presses itself, by Blender's rule. A press completes a double-click when
+it lands on the same composer target as the previous press, less than Blender's
+double-click time preference after it (350 ms by default) and within the
+composer's 4 px drag threshold times the UI scale. Another key or button
+pressed in between, a drag that moves the composer, or a press outside it
+starts over, and a completed pair is spent, so a third quick press is a plain
+press again. Time is taken when the composer handles each press, since Python
+events carry no timestamp. A click that changes the layout under the pointer
+(the pill expanding into the card) never pairs with the next press. On any
+other control the second press of a double-click does nothing more, so a
+double-click on Generate submits once.
+
+Installed tests send the composer's modal what Blender really delivers, two
+press and release pairs at pinned times, and check the word selection, the
+reset, the timing and distance limits, the presses that start over and the
+single submission. Unit tests cover the pairing rule itself. Physical
+double-clicks on Blender 5.1.2 macOS selected nothing and reset nothing before
+this change; a physical recheck remains under #66.
 
 ## What Blender cannot do (so we do not fake it)
 

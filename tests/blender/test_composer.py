@@ -442,12 +442,12 @@ class ComposerSideRegionTests(unittest.TestCase):
         sidebar_x = self._sidebar_x(opened)
         state = self.state_mod.ComposerState()
         state.expanded, state.width = True, 500
-        # sidebar closed: drag the card to the bare right edge, where only MIN_VISIBLE px remain
+        # sidebar closed: drag the card to the bare right edge, where the whole card stops
         press, kind = self._grab_point(self.modal._layout(closed, state))
         self._drag(closed, state, press, kind, ((5000, 0),))
         parked = self.modal._layout(closed, state)
-        keep = self.cl.MIN_VISIBLE * parked.scale
-        self.assertAlmostEqual(parked.card_rect.x, closed.region.width - keep)
+        self.assertAlmostEqual(parked.card_rect.right, closed.region.width)
+        self._assert_reachable(parked, closed, closed.region.width)
         # N opens the sidebar: the card stops at its edge, Generate and minus clickable
         shown = self.modal._layout(opened, state)
         self.assertAlmostEqual(shown.card_rect.right, sidebar_x)
@@ -711,6 +711,8 @@ class ComposerSideRegionTests(unittest.TestCase):
         )
         pick = mock.Mock()
         ops = SimpleNamespace(scenario=SimpleNamespace(pick_model=pick))
+        # each call is a separate click: milliseconds apart on one state they would pair
+        state.presses.reset()
         with (
             mock.patch.object(self.runtime.state, "composer", state),
             mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
@@ -757,6 +759,273 @@ class ComposerSideRegionTests(unittest.TestCase):
         short = self._context(sidebar=False, preferences=self._preferences(1.0), height=100)
         self.assertFalse(self.draw.card_fits_with_sidebar(short))
 
+    # -- bare viewport edges -----------------------------------------------------
+    def test_a_pill_dragged_to_the_edge_expands_with_minus_and_generate_in_the_viewport(self):
+        # the physical case: the pill moved right shares its offset with the wider card, which ran
+        # past the bare right edge with its minus button and Generate until dragged back
+        ctx = self._context(sidebar=False)
+        state = self.state_mod.ComposerState()
+        pill = self.modal._layout(ctx, state)
+        press, kind = self._grab_point(pill)
+        self.assertEqual(kind, "expand")
+        with mock.patch.object(self.runtime.state, "composer", state):
+            operator = self._operator()
+            self._event(operator, ctx, "LEFTMOUSE", "PRESS", press)
+            for dx, dy in ((40, 10), (5000, 120)):
+                point = (press[0] + dx, press[1] + dy)
+                self._event(operator, ctx, "MOUSEMOVE", "NOTHING", point)
+            with mock.patch.object(self.modal, "_save_layout") as save:
+                self._event(operator, ctx, "LEFTMOUSE", "RELEASE", point)
+            save.assert_called_once_with()
+            moved = self.modal._layout(ctx, state)
+            self.assertFalse(state.expanded)
+            self.assertAlmostEqual(moved.pill_rect.right, ctx.region.width)
+            # a click on the moved pill expands the card, whole and inside the viewport
+            self._click(operator, ctx, self._centre(moved.pill_rect))
+        self.assertTrue(state.expanded)
+        card = self.modal._layout(ctx, state)
+        self.assertAlmostEqual(card.card_rect.right, ctx.region.width)
+        self._assert_reachable(card, ctx, ctx.region.width)
+        self.assertEqual(card, self.draw.composer_layout(ctx, state))
+
+    def test_a_saved_offset_keeps_minus_and_generate_in_the_viewport_once_the_sidebar_closes(self):
+        # an offset saved in a larger window: the card parked at the open sidebar widens when it
+        # closes, and the bare edge used to let its minus button and Generate run past it
+        opened = self._context(geometry=(self.AREA_X, 900, self.TOOLBAR_W, self.SIDEBAR_W))
+        closed = self._context(
+            sidebar=False, geometry=(self.AREA_X, 900, self.TOOLBAR_W, self.SIDEBAR_W)
+        )
+        state = self.state_mod.ComposerState()
+        state.expanded, state.offset = True, (81.5, 0.0)
+        shown = self.modal._layout(opened, state)
+        self.assertAlmostEqual(shown.card_rect.right, self._sidebar_x(opened))
+        self._assert_reachable(shown, opened, self._sidebar_x(opened))
+        wide = self.modal._layout(closed, state)
+        self.assertGreater(wide.card_rect.w, shown.card_rect.w)
+        self.assertAlmostEqual(wide.card_rect.right, closed.region.width)
+        self._assert_reachable(wide, closed, closed.region.width)
+        drawn = self._draw(closed, state)
+        for x, y, w, h in drawn:
+            self.assertGreaterEqual(min(x, y), 0)
+            self.assertLessEqual(x + w, closed.region.width)
+            self.assertLessEqual(y + h, closed.region.height)
+        self.assertEqual(state.offset, (81.5, 0.0))  # drawing and layout keep the saved offset
+
+    # -- double-click ----------------------------------------------------------
+    # Blender converts a double-click into a plain press before calling a modal operator
+    # (wm_event_modalkeymap_begin in Blender 5.0 to 5.2): only key maps see DOUBLE_CLICK. These
+    # tests send what the modal really receives, two PRESS/RELEASE pairs, at pinned times.
+
+    def _double_click_seconds(self):
+        return bpy.context.preferences.inputs.mouse_double_click_time / 1000.0
+
+    def _clicks(self, operator, context, point, times):
+        """A press and a release at `point` for each time in `times`, as Blender hands them to the modal."""
+        results = []
+        for when in times:
+            with mock.patch.object(self.modal, "_now", return_value=when):
+                results.append(self._event(operator, context, "LEFTMOUSE", "PRESS", point))
+                results.append(self._event(operator, context, "LEFTMOUSE", "RELEASE", point))
+        return results
+
+    def _word_point(self, context, state, word_end=5):
+        """A point over the second character of the prompt's first word, and the caret index there."""
+        layout = self.modal._layout(context, state)
+        pr = layout.prompt_rect
+        try:
+            font_px, _start, _end, x0 = self.draw.prompt_metrics(pr, state.field, layout.scale)
+        except Exception as err:  # blf without a font in some background builds
+            self.skipTest(f"blf unavailable: {err}")
+        import blf
+
+        blf.size(self.draw.FONT, font_px)
+        x = x0 + blf.dimensions(self.draw.FONT, "h")[0] + 1
+        point = (x, pr.y + pr.h / 2)
+        self.assertEqual(layout.hit(*point), ("prompt",))
+        index = self.modal._caret_index(context, state, layout, x)
+        self.assertTrue(0 < index < word_end, index)
+        return point, index
+
+    def _type(self, operator, context, text):
+        for char in text:
+            self._event(operator, context, char.upper(), "PRESS", (0, 0), unicode=char)
+
+    def test_the_blender_double_click_time_preference_exists(self):
+        self.assertGreater(bpy.context.preferences.inputs.mouse_double_click_time, 0)
+        self.assertEqual(
+            self.modal._double_click_seconds(bpy.context), self._double_click_seconds()
+        )
+        # a context without preferences (a stub) falls back to Blender's default
+        self.assertEqual(
+            self.modal._double_click_seconds(SimpleNamespace()), self.cl.DOUBLE_CLICK_MS / 1000.0
+        )
+
+    def test_a_double_click_in_the_prompt_selects_the_word_typing_replaces(self):
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        ctx = self._context(sidebar=False)
+        quick = self._double_click_seconds() / 2
+        for times, expected in (((10.0, 10.0 + quick), "X world"), ((10.0, 12.0), None)):
+            with self.subTest(times=times):
+                scene.scenario.lane_state("image").prompt = "hello world"
+                state = self.state_mod.ComposerState()
+                state.expanded = True
+                state.sync_from_lane(scene)
+                point, index = self._word_point(ctx, state)
+                with mock.patch.object(self.runtime.state, "composer", state):
+                    operator = self._operator()
+                    results = self._clicks(operator, ctx, point, times)
+                    self.assertEqual(results, [{"RUNNING_MODAL"}] * 4)
+                    self.assertTrue(state.focused)
+                    if expected:
+                        self.assertEqual(state.field.selected_text(), "hello")
+                    else:  # too slow: two caret presses, no selection
+                        self.assertIsNone(state.field.selection)
+                        self.assertEqual(state.field.caret, index)
+                    self._type(operator, ctx, "X")
+                text = scene.scenario.lane_state("image").prompt
+                self.assertEqual(
+                    text, expected or "hello world"[:index] + "X" + "hello world"[index:]
+                )
+
+    def test_a_double_click_on_the_card_background_resets_the_placement(self):
+        ctx = self._context(sidebar=False)
+        quick = self._double_click_seconds() / 2
+        threshold = self.cl.DRAG_THRESHOLD
+        cases = (
+            ((10.0, 10.0 + quick), (0, 0), True),
+            ((10.0, 10.0 + quick), (threshold, -threshold), True),  # a slight drift still pairs
+            ((10.0, 10.0 + 2 * quick + 0.01), (0, 0), False),  # past Blender's double-click time
+            ((10.0, 10.0 + quick), (threshold + 1, 0), False),  # moved beyond the threshold
+        )
+        for times, drift, resets in cases:
+            with self.subTest(times=times, drift=drift):
+                state = self.state_mod.ComposerState()
+                state.expanded, state.offset, state.width = True, (-120.0, 80.0), 600
+                press, kind = self._grab_point(self.modal._layout(ctx, state))
+                self.assertEqual(kind, "drag")
+                second = (press[0] + drift[0], press[1] + drift[1])
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.modal, "_save_layout") as save,
+                ):
+                    operator = self._operator()
+                    self._clicks(operator, ctx, press, times[:1])
+                    self.assertEqual(self.modal._layout(ctx, state).hit(*second), ("drag",))
+                    self._clicks(operator, ctx, second, times[1:])
+                if resets:
+                    self.assertEqual((state.offset, state.width), ((0.0, 0.0), None))
+                    save.assert_called_once_with()
+                else:
+                    self.assertEqual((state.offset, state.width), ((-120.0, 80.0), 600))
+                    save.assert_not_called()
+                self.assertIsNone(state.drag_mode)
+
+    def test_only_two_presses_on_one_target_with_nothing_between_make_a_double_click(self):
+        ctx = self._context(sidebar=False)
+        quick = self._double_click_seconds() / 4
+        saved = (-120.0, 80.0)
+
+        def card_state():
+            state = self.state_mod.ComposerState()
+            state.expanded, state.offset, state.width = True, saved, 600
+            return state
+
+        # a key pressed between the two clicks
+        state = card_state()
+        press, _kind = self._grab_point(self.modal._layout(ctx, state))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "_save_layout") as save,
+        ):
+            operator = self._operator()
+            self._clicks(operator, ctx, press, (10.0,))
+            self.assertEqual(
+                self._event(operator, ctx, "G", "PRESS", press, unicode="g"), {"PASS_THROUGH"}
+            )
+            self._clicks(operator, ctx, press, (10.0 + quick,))
+        self.assertEqual(state.offset, saved)
+        save.assert_not_called()
+        # a drag between the presses that brings the card back where it was
+        state = card_state()
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "_save_layout") as save,
+        ):
+            operator = self._operator()
+            with mock.patch.object(self.modal, "_now", return_value=10.0):
+                self._event(operator, ctx, "LEFTMOUSE", "PRESS", press)
+                self._event(operator, ctx, "MOUSEMOVE", "NOTHING", (press[0] + 30, press[1]))
+                self._event(operator, ctx, "MOUSEMOVE", "NOTHING", press)
+                self._event(operator, ctx, "LEFTMOUSE", "RELEASE", press)
+            self._clicks(operator, ctx, press, (10.0 + quick,))
+        self.assertEqual(state.offset, saved)  # stored as drawn by the drag, not reset
+        save.assert_called_once_with()  # by the drag release only
+        # the pill expanding under the pointer: its click and the next press hit different targets
+        state = self.state_mod.ComposerState()
+        state.offset = saved
+        pill = self._centre(self.modal._layout(ctx, state).pill_rect)
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "_save_layout") as save,
+        ):
+            operator = self._operator()
+            self._clicks(operator, ctx, pill, (10.0, 10.0 + quick))
+        self.assertTrue(state.expanded)
+        self.assertEqual(state.offset, saved)
+        save.assert_not_called()
+        # a completed pair is spent: a third quick press is a plain press again
+        state = card_state()
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "_save_layout") as save,
+        ):
+            operator = self._operator()
+            self._clicks(operator, ctx, press, (10.0, 10.0 + quick))
+            self.assertEqual(save.call_count, 1)
+            state.offset = saved
+            third = self._grab_point(self.modal._layout(ctx, state))[0]
+            self._clicks(operator, ctx, third, (10.0 + 2 * quick,))
+            self.assertEqual((save.call_count, state.offset), (1, saved))
+
+    def test_a_double_click_on_generate_submits_once(self):
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        ctx = self._context(sidebar=False)
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        layout = self.modal._layout(ctx, state)
+        point = self._centre(layout.generate_rect)
+        self.assertEqual(layout.hit(*point), ("generate",))
+        generate = mock.Mock()
+        ops = SimpleNamespace(scenario=SimpleNamespace(generate=generate))
+        quick = self._double_click_seconds() / 2
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+            mock.patch.object(self.modal.panels, "generate_enabled", return_value=True),
+        ):
+            operator = self._operator()
+            self._clicks(operator, ctx, point, (10.0, 10.0 + quick))
+            generate.assert_called_once_with(lane="image")
+            # two separate clicks still submit twice, as two clicks on a button do
+            self._clicks(operator, ctx, point, (20.0, 30.0))
+        self.assertEqual(generate.call_count, 3)
+
+    def test_a_double_click_value_from_a_direct_caller_still_resets(self):
+        ctx = self._context(sidebar=False)
+        state = self.state_mod.ComposerState()
+        state.expanded, state.offset = True, (-120.0, 80.0)
+        press, _kind = self._grab_point(self.modal._layout(ctx, state))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "_save_layout") as save,
+        ):
+            result = self._event(self._operator(), ctx, "LEFTMOUSE", "DOUBLE_CLICK", press)
+        self.assertEqual(result, {"RUNNING_MODAL"})
+        self.assertEqual(state.offset, (0.0, 0.0))
+        save.assert_called_once_with()
+
     # -- drag helpers ----------------------------------------------------------
     @staticmethod
     def _centre(rect):
@@ -781,6 +1050,21 @@ class ComposerSideRegionTests(unittest.TestCase):
         for name in ("_finish", "_drag_move", "_drag_release"):
             setattr(operator, name, getattr(cls, name).__get__(operator))
         return operator
+
+    def _event(self, operator, context, kind, value, point, unicode=""):
+        """One event through the modal's handler, as Blender hands it to a running modal operator."""
+        event = SimpleNamespace(
+            type=kind,
+            value=value,
+            mouse_region_x=point[0],
+            mouse_region_y=point[1],
+            shift=False,
+            ctrl=False,
+            oskey=False,
+            alt=False,
+            unicode=unicode,
+        )
+        return self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
 
     def _click(self, operator, context, point):
         """A left press and release at `point` without moving, through the modal's event handler."""

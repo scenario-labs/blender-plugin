@@ -1,5 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
+import pytest
+
 from scenario.core.ui import composer_layout as cl
 
 
@@ -234,13 +236,11 @@ def test_offset_moves_the_composer_and_is_clamped_to_keep_it_reachable():
         moved.prompt_rect.y == base.prompt_rect.y + 300.0
         and moved.generate_rect.x == base.generate_rect.x + 120.0
     )
-    # dragged far away: at least MIN_VISIBLE px stay inside the region
+    # dragged far away: the whole card stops at the region edges
     far = cl.pill_placement(1600, 900, expanded=True, offset=(5000.0, -5000.0))
-    assert far.card_rect.x == 1600 - cl.MIN_VISIBLE
-    assert far.card_rect.y == cl.MIN_VISIBLE - far.card_rect.h
+    assert far.card_rect.right == 1600 and far.card_rect.y == 0
     left = cl.pill_placement(1600, 900, expanded=True, offset=(-5000.0, 5000.0))
-    assert left.card_rect.x == cl.MIN_VISIBLE - left.card_rect.w
-    assert left.card_rect.y == 900 - cl.MIN_VISIBLE
+    assert left.card_rect.x == 0 and left.card_rect.top == 900
     # the collapsed pill shares the offset (same centre point), and clamps the same way
     pill = cl.pill_placement(1600, 900, expanded=False, offset=(120.0, 300.0))
     assert pill.pill_rect.y == cl.MARGIN + 300.0
@@ -346,9 +346,9 @@ def test_saved_width_and_offset_are_clamped_to_the_uncovered_span():
     assert left.card_rect.x == 56
     pill = cl.pill_placement(1600, 900, expanded=False, offset=(5000.0, 0.0), insets=INSETS)
     assert pill.pill_rect.right == SIDEBAR_X
-    # a bare region edge keeps the existing rule: MIN_VISIBLE px stay inside the region
+    # a bare region edge stops the card too
     bare = cl.pill_placement(1600, 900, expanded=True, offset=(-5000.0, 0.0), insets=(0, 300))
-    assert bare.card_rect.x == cl.MIN_VISIBLE - bare.card_rect.w
+    assert bare.card_rect.x == 0
     # an in-span offset moves the card from the span centre, the vertical clamp is unchanged
     moved = cl.pill_placement(1600, 900, expanded=True, offset=(120.0, 300.0), insets=INSETS)
     base = cl.pill_placement(1600, 900, expanded=True, insets=INSETS)
@@ -493,11 +493,16 @@ def test_the_pill_standing_in_for_the_card_moves_and_clamps_like_the_pill():
 
 
 def test_a_span_narrower_than_the_pill_keeps_the_pill_floor():
-    # room for neither the card nor the pill minimum: the pill keeps that floor from the toolbar edge
-    floor = cl.pill_placement(2477, 1600, expanded=True, scale=4.0, insets=(226.0, 1700.0))
-    assert not floor.expanded and floor.hit(*_center(floor.pill_rect)) == ("form",)
-    assert floor.pill_rect.w == cl.MIN_PILL_WIDTH * 4 and floor.pill_rect.x == 226
-    # without an overlapping toolbar it ends at the sidebar edge instead
+    # room for neither the card nor the pill minimum: the pill keeps that floor, ending at the
+    # sidebar edge with its Generate label, and runs under the toolbar instead
+    for offset in ((0.0, 0.0), (-5000.0, 0.0), (5000.0, 0.0)):
+        floor = cl.pill_placement(
+            2477, 1600, expanded=True, scale=4.0, offset=offset, insets=(226.0, 1700.0)
+        )
+        assert not floor.expanded and floor.hit(*_center(floor.pill_rect)) == ("form",)
+        assert floor.pill_rect.w == cl.MIN_PILL_WIDTH * 4
+        assert floor.pill_rect.right == 2477 - 1700 and floor.pill_rect.x < 226
+    # without an overlapping toolbar it ends at the sidebar edge too
     bare = cl.pill_placement(2477, 1600, expanded=True, scale=4.0, insets=(0.0, 1900.0))
     assert bare.pill_rect.w == cl.MIN_PILL_WIDTH * 4 and bare.pill_rect.right == 2477 - 1900
     # between the pill minimum and the card minimum the pill narrows to its minimum with its margins kept,
@@ -511,6 +516,112 @@ def test_a_span_narrower_than_the_pill_keeps_the_pill_floor():
     assert narrow.pill_rect.w == cl.MIN_PILL_WIDTH
     assert narrow.pill_rect.x >= 56 and narrow.pill_rect.right <= 700 - 400
     assert narrow.pill_rect.x - 56 < cl.MARGIN  # the margins give way before the minimum width
+
+
+def _assert_card_reachable(layout, lo, hi, region_h):
+    """The card lies wholly between `lo` and `hi` and inside the region height, and its minus button and
+    Generate take their clicks."""
+    card = layout.card_rect
+    assert lo <= card.x and card.right <= hi, (card, lo, hi)
+    assert 0 <= card.y and card.top <= region_h, (card, region_h)
+    for kind in ("collapse", "generate"):
+        rect = getattr(layout, f"{kind}_rect")
+        assert lo <= rect.x and rect.right <= hi and 0 <= rect.y and rect.top <= region_h
+        assert layout.hit(*_center(rect)) == (kind,)
+
+
+@pytest.mark.parametrize("scale", (1.0, 2.0, 4.0))
+def test_a_pill_moved_to_the_edge_expands_into_a_card_with_its_controls_in_the_viewport(scale):
+    # the physical case: the pill dragged right then up shares its offset with the wider card,
+    # which ran past the bare right edge with its minus button and Generate
+    s = scale
+    region_w, region_h = 1500 * s, 860 * s
+    for insets in ((0.0, 0.0), (44 * s, 0.0)):
+        span_right = region_w - insets[1]
+        base = _base(region_w, cl.PILL_WIDTH * s, insets)
+        right, left = span_right - cl.PILL_WIDTH * s - base, insets[0] - base
+        for offset in ((right, 60 * s), (left, 60 * s), (right, 5000.0), (left, -5000.0)):
+            pill = cl.pill_placement(region_w, region_h, False, s, offset=offset, insets=insets)
+            assert insets[0] <= pill.pill_rect.x and pill.pill_rect.right <= span_right
+            card = cl.pill_placement(region_w, region_h, True, s, offset=offset, insets=insets)
+            _assert_card_reachable(card, insets[0], span_right, region_h)
+            # collapsing again puts the pill back where it was: the saved offset is unchanged
+            again = cl.pill_placement(region_w, region_h, False, s, offset=offset, insets=insets)
+            assert again.pill_rect == pill.pill_rect
+
+
+def _base(region_w, w, insets):
+    left, right = insets
+    return left + (region_w - left - right - w) / 2
+
+
+def test_a_card_parked_at_the_sidebar_stays_in_the_viewport_once_the_sidebar_closes():
+    # the physical 1018 x 671 pt window at scale 2: a 1668 px viewport whose 561 px sidebar the
+    # card was parked against, its offset saved 81.5 px right of the default spot
+    s, region_w, region_h, toolbar, sidebar = 2.0, 1668, 1240, 90.0, 561.0
+    saved = (81.5, 0.0)
+    opened = cl.pill_placement(region_w, region_h, True, s, offset=saved, insets=(toolbar, sidebar))
+    assert opened.card_rect.right == region_w - sidebar
+    closed = cl.pill_placement(region_w, region_h, True, s, offset=saved, insets=(toolbar, 0.0))
+    assert closed.card_rect.w > opened.card_rect.w  # the default card widens again
+    assert closed.card_rect.right == region_w  # instead of 81.5 - 48 px past the bare edge
+    _assert_card_reachable(closed, toolbar, region_w, region_h)
+
+
+@pytest.mark.parametrize("scale", (1.0, 2.0, 4.0))
+def test_every_saved_placement_keeps_the_whole_composer_in_the_uncovered_span(scale):
+    s = scale
+    region_w, region_h = 1800 * s, 900 * s
+    insets_cases = ((0.0, 0.0), (56 * s, 0.0), (0.0, 300 * s), (56 * s, 300 * s))
+    offsets = [
+        (dx * s, dy * s)
+        for dx in (-5000, -700, -81.5, 0, 81.5, 700, 5000)
+        for dy in (-5000, -40, 0, 300, 5000)
+    ]
+    for insets in insets_cases:
+        lo, hi = insets[0], region_w - insets[1]
+        for width in (None, cl.MIN_CARD_WIDTH * s, 1200 * s, 5000 * s):
+            for offset in offsets:
+                card = cl.pill_placement(
+                    region_w, region_h, True, s, offset=offset, width=width, insets=insets
+                )
+                _assert_card_reachable(card, lo, hi, region_h)
+                pill = cl.pill_placement(region_w, region_h, False, s, offset=offset, insets=insets)
+                box = pill.pill_rect
+                assert lo <= box.x and box.right <= hi and 0 <= box.y and box.top <= region_h
+                assert pill.hit(*_center(box)) == ("expand",)
+
+
+def test_double_click_pairs_two_presses_on_one_target_within_time_and_distance():
+    target, interval, threshold = ("prompt",), 0.35, 4.0
+    clicks = cl.DoubleClick()
+    assert not clicks.press(target, 100, 50, 10.0, interval, threshold)
+    assert clicks.press(target, 103, 46, 10.2, interval, threshold)  # inside both limits
+    # the pair is spent: a third press starts over, and a fourth pairs with it
+    assert not clicks.press(target, 103, 46, 10.3, interval, threshold)
+    assert clicks.press(target, 103, 46, 10.4, interval, threshold)
+    # Blender's rule: strictly less than the double-click time
+    assert not clicks.press(target, 0, 0, 20.0, interval, threshold)
+    assert not clicks.press(target, 0, 0, 20.35, interval, threshold)
+    assert clicks.press(target, 0, 0, 20.5, interval, threshold)  # paired with the 20.35 press
+    # beyond the drag threshold on either axis
+    assert not clicks.press(target, 0, 0, 30.0, interval, threshold)
+    assert not clicks.press(target, 5, 0, 30.1, interval, threshold)
+    assert not clicks.press(
+        target, 5, 5, 30.2, interval, threshold
+    )  # 5 px below the previous press
+    # a different target never pairs: the pill expanding into the card under the pointer
+    assert not clicks.press(("expand",), 0, 0, 40.0, interval, threshold)
+    assert not clicks.press(("drag",), 0, 0, 40.1, interval, threshold)
+    assert clicks.press(("drag",), 0, 0, 40.2, interval, threshold)
+    # a press outside the composer, or a reset (another key, a drag), forgets the previous press
+    assert not clicks.press(target, 0, 0, 50.0, interval, threshold)
+    assert not clicks.press(None, 0, 0, 50.1, interval, threshold)
+    assert not clicks.press(target, 0, 0, 50.2, interval, threshold)
+    clicks.reset()
+    assert not clicks.press(target, 0, 0, 50.3, interval, threshold)
+    # a clock that went backwards never pairs
+    assert not clicks.press(target, 0, 0, 50.0, interval, threshold)
 
 
 def test_unusable_insets_are_ignored():

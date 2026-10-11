@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Interaction state of the floating composer, mirrored into the Scene lane state."""
 
-from ...core.ui.composer_layout import LANE_ORDER, TextField
+from ...core.ui.composer_layout import LANE_ORDER, DoubleClick, TextField
 
 COMPOSER_LANES = tuple(LANE_ORDER)
 
@@ -27,6 +27,8 @@ class ComposerState:
         self.drag_mode = None  # None | "pending" | "move" | "resize"
         self.drag_start = None  # dict(mouse, offset, width, kind) captured at the press
         self.moved = False
+        # pairs the presses of a double-click, which the modal only receives as presses
+        self.presses = DoubleClick()
 
     def lane_for(self, scene):
         """The composer drives the six generation lanes; other tabs (Generations, MCP, 3D tools) fall back to Image."""

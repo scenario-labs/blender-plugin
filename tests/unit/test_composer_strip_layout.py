@@ -178,9 +178,10 @@ def test_tray_stays_in_the_span_side_regions_leave_uncovered():
     layout = cl.pill_placement(1600, 900, expanded=True)
     narrowed = cl.strip_placement(layout, 1600, 900, spec, insets=(600.0, 600.0))
     assert narrowed.rect == cl.Rect(600.0, layout.card_rect.top + cl.STRIP_GAP, 400.0, 30.0)
+    # a card dragged past the bare left edge stops at it, and the tray with it
     off_left = cl.pill_placement(1600, 900, True, offset=(-5000.0, 0.0))
     bare = cl.strip_placement(off_left, 1600, 900, spec)
-    assert off_left.card_rect.x < 0 and bare.rect.x == 0
+    assert off_left.card_rect.x == 0 and bare.rect.x == 0
     assert cl.strip_placement(off_left, 1600, 900, spec, insets=None).rect == bare.rect
 
 
@@ -212,25 +213,26 @@ def test_tray_keeps_clear_of_headers_drawn_over_the_region(scale):
 
 
 @pytest.mark.parametrize("scale", SCALES)
-def test_tray_below_a_card_parked_under_the_headers_never_reaches_them(scale):
+def test_tray_below_a_card_parked_at_the_top_never_reaches_regions_over_it(scale):
     s = scale
     region_h = 900 * s
     spec = _spec(s, INSPECT)
-    # dragged up to its top clamp: only MIN_VISIBLE of the card stays in the region
+    # dragged up to its top clamp: the whole card stays in the region, its top at the region's
     parked = cl.pill_placement(2000, region_h, True, s, offset=(0.0, 1e6))
-    assert parked.card_rect.y == pytest.approx(region_h - cl.MIN_VISIBLE * s)
-    assert not cl.strip_placement(parked, 2000, region_h, spec).hidden
-    # header and tool header: the tray below the card would end 6 px (at 1x) inside them
+    assert parked.card_rect.top == pytest.approx(region_h)
+    # no room above it: the tray goes below the card
+    bare = cl.strip_placement(parked, 2000, region_h, spec)
+    assert bare.rect.top == pytest.approx(parked.card_rect.y - cl.STRIP_GAP * s)
+    # the header and tool header over the card's top row leave the tray below it clear of them
     headers = 52 * s
-    hidden = cl.strip_placement(parked, 2000, region_h, spec, vertical_insets=(0.0, headers))
+    below = cl.strip_placement(parked, 2000, region_h, spec, vertical_insets=(0.0, headers))
+    assert below.rect == bare.rect and below.rect.top <= region_h - headers
+    # a region reaching 6 px (at 1x) into that tray hides it
+    deep = region_h - bare.rect.top + 6 * s
+    hidden = cl.strip_placement(parked, 2000, region_h, spec, vertical_insets=(0.0, deep))
     assert hidden.hidden and hidden.rect is None and hidden.chip_rects == ()
     point = _center(parked.card_rect)
     assert cl.composer_hit(parked, hidden, *point) == parked.hit(*point)
-    # a header alone leaves room under it, so the tray stays below the card
-    header = 26 * s
-    below = cl.strip_placement(parked, 2000, region_h, spec, vertical_insets=(0.0, header))
-    assert below.rect.top == pytest.approx(parked.card_rect.y - cl.STRIP_GAP * s)
-    assert below.rect.top <= region_h - header
 
 
 @pytest.mark.parametrize("scale", SCALES)

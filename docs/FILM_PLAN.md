@@ -1085,9 +1085,9 @@ Export makes no Scenario request, spends nothing and writes no job record.
 ## Remaining integration and evidence
 
 Mixed-rate normalization, provider-specific preparation, native/MCP export
-controls for review scenes and the Studio case-study bundle remain separate work. Keep useful
-source capabilities and tests as those paths are connected; do not describe this
-helper adoption as a completed Film workflow.
+controls for review scenes and the Studio case-study bundle remain separate work.
+Keep useful source capabilities and tests as those paths are connected; do not
+describe this helper adoption as a completed Film workflow.
 
 [Shared Film job tests](../tests/unit/test_film_jobs.py) cover atomic competing
 reservations, committed-but-unacknowledged writes, uncertain submissions, scope

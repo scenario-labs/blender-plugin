@@ -18,14 +18,16 @@ the source:
 
 | Saved result | Still | Other renditions |
 | --- | --- | --- |
-| PNG, JPEG, WebP and OpenEXR images | Local decode request for the verified result | None |
+| PNG, JPEG, WebP and OpenEXR (`image/exr`, `image/x-exr`) images | Local decode request for the verified result | None |
 | Video | Server `thumbnail` | Server `preview` clip, only when requested |
 | 3D models, except MTL material libraries | Server `thumbnail` | Server `preview` turntable clip, only when requested |
 | WAV, MP3, OGG, FLAC, M4A and AAC audio | Server `thumbnail` when offered | Local RMS envelope from decoded samples |
 | Anything else | Unsupported | None |
 
 Image previews use the verified local bytes, not CDN transformation parameters,
-which are undocumented CDN behavior.
+which are undocumented CDN behavior. A saved `image/aces` original is OpenEXR
+too, but like image import, previews do not accept that label yet: it is
+unsupported.
 
 ## Server stills and clips
 
@@ -62,8 +64,9 @@ its first request, for example by redirecting to another host. Any failure of
 the transfer itself leaves the rendition `pending` for the
 [polling window](#polling-window): a redirect to another host or a host outside
 the policy, a connection error or timeout, a status other than 200 such as a
-5xx, and a chunked, incomplete or oversized body. The downloader still makes one
-attempt per call and follows only the same bounded same-host redirects, and
+5xx, a response without a valid `Content-Length` (a preview has no expected
+size), and a chunked, incomplete or oversized body. The downloader still makes
+one attempt per call and follows only the same bounded same-host redirects, and
 each attempt stays within its byte cap. Bytes that arrive but no longer match
 their download receipt, are not a supported format, or lack bounded dimensions,
 and a metadata mismatch, fail the rendition at once. Either way the reason is

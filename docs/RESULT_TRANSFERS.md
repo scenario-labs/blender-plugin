@@ -239,7 +239,9 @@ optional installed ffprobe and metadata-only timing guarantee.
 [Result previews](RESULT_PREVIEWS.md) reuse the session's configured downloader
 for server stills and clips: the same exact storage hosts, same-host redirect
 rules, online-access predicate and receipt verification, with per-request caps of
-8 MiB for a still and 64 MiB for a clip. Each transfer stages in a private
+8 MiB for a still and 64 MiB for a clip. A preview has no expected size, so, as
+for an original, its response must declare a valid `Content-Length` within that
+cap and the body must match it. Each transfer stages in a private
 `work/preview-*` directory of the preview cache, not in `shared-results`, and the
 directory is removed after publication or failure. The URL is not persisted.
 Downloaded bytes are accepted only when their content is a supported image or

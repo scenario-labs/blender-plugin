@@ -151,13 +151,14 @@ def _open_dialog(context, scene, state, kind):
 
 
 def _open_text_field(operator, context, state):
-    """Open Blender's own text field over the focused prompt: input methods compose only in native fields.
+    """Open Blender's own text field at the pointer for the focused prompt: input methods compose only there.
 
     The composer keeps focus underneath; the popover's text is typed at the prompt's caret when it is confirmed.
     """
     from .text_field import PANEL
 
     state.dragging = False
+    state.untyped_press = False
     try:
         context.window_manager.scenario_composer_text = ""
         bpy.ops.wm.call_panel(name=PANEL, keep_open=False)
@@ -169,21 +170,36 @@ def _open_text_field(operator, context, state):
 
 
 def _untyped_event(operator, context, state, event):
-    """An event whose type Python cannot name; None when it is a key with text, handled like any key.
+    """An event whose type Python cannot name, handled without reading its type again.
 
     Blender gives input-method composition (Japanese, Chinese, Korean) no Python type and no text, and shows
     and finishes it only in its own text fields. A composition this prompt cannot read would otherwise stay
     pending and land in the next native text field that opens (an Outliner rename, say), so a focused
-    prompt hands it to that field at once.
+    prompt hands it to that field. A composition starts with two such presses in a row (its start, then its
+    first update); a dead key sends one, then its release or the key with the accented character, so the
+    field opens on the second press only. A key Blender cannot name that carries text is typed.
     """
     if state.drag_mode is not None:
+        state.untyped_press = False
         return {"RUNNING_MODAL"}
     if not state.focused:
+        state.untyped_press = False
         return {"PASS_THROUGH"}
     if event.value != "PRESS":
+        state.untyped_press = False  # a key's release: a dead key, never part of a composition
         return {"RUNNING_MODAL"}
     if event.unicode:
-        return None
+        state.untyped_press = False
+        if not (event.ctrl or event.oskey or event.alt):
+            state.field.insert(event.unicode)
+            state.commit_to_lane(context.scene)
+            _redraw(context)
+        return {"RUNNING_MODAL"}
+    if event.is_repeat:
+        return {"RUNNING_MODAL"}  # a held key: Blender never marks input-method events as repeats
+    if not state.untyped_press:
+        state.untyped_press = True
+        return {"RUNNING_MODAL"}
     _open_text_field(operator, context, state)
     _redraw(context)
     return {"RUNNING_MODAL"}
@@ -306,9 +322,10 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 state.focused = state.dragging = False
                 self.report({"WARNING"}, str(error))
         if not event.type:  # read once: each read of a type outside Python's enum logs a warning
-            handled = _untyped_event(self, context, state, event)
-            if handled is not None:
-                return handled
+            return _untyped_event(self, context, state, event)
+        if event.value == "PRESS":
+            # a named key or button between two untyped presses: not a composition
+            state.untyped_press = False
         if state.drag_mode is not None:
             if event.type == "MOUSEMOVE":
                 state.mouse = (event.mouse_region_x, event.mouse_region_y)

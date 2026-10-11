@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Blender's own text field over the composer prompt, for input-method (IME) text.
+"""Blender's own text field for the composer prompt, for input-method (IME) text.
 
 Blender composes input-method text (Japanese, Chinese, Korean) only in its native UI text fields: Python receives
 no composition data, and its event types have no Python name. The composer opens this popover, like F2 rename,

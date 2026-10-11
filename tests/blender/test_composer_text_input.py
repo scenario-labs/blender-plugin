@@ -16,11 +16,12 @@ class _Event:
     """A modal event that counts reads of its type: Blender logs a warning for each read of a type
     outside its Python enum, which it reports as an empty string."""
 
-    def __init__(self, kind, value="PRESS", unicode="", **modifiers):
+    def __init__(self, kind, value="PRESS", unicode="", is_repeat=False, **modifiers):
         self._type = kind
         self.type_reads = 0
         self.value = value
         self.unicode = unicode
+        self.is_repeat = is_repeat
         self.mouse_region_x = self.mouse_region_y = 0
         for name in ("shift", "ctrl", "oskey", "alt"):
             setattr(self, name, modifiers.get(name, False))
@@ -93,46 +94,109 @@ class ComposerTextInputTests(unittest.TestCase):
         return result, call_panel, operator
 
     # -- the modal hands input-method composition to Blender's text field -------------------------
-    def test_composition_events_open_blenders_text_field_over_the_focused_prompt(self):
+    def test_a_composition_opens_blenders_text_field_on_its_second_untyped_press(self):
         # stored without running its update, as a file load would
         self.wm["scenario_composer_text"] = "left over"
-        event = _Event("")  # Blender's input-method composition events have no Python type
-        result, call_panel, operator = self._modal(event)
+        # A composition starts with two presses in a row that have no Python type and no text (its start, then
+        # its first update); a lone one may be a dead key, so the first press opens nothing.
+        start, update = _Event(""), _Event("")
+        result, call_panel, operator = self._modal(start)
+        self.assertEqual(result, {"RUNNING_MODAL"})
+        call_panel.assert_not_called()
+        self.assertEqual(start.type_reads, 1)  # one warning per event, not one per comparison
+        result, call_panel, operator = self._modal(update)
         self.assertEqual(result, {"RUNNING_MODAL"})
         call_panel.assert_called_once_with(name=PANEL, keep_open=False)
-        self.assertEqual(event.type_reads, 1)  # one warning per event, not one per comparison
+        self.assertEqual(update.type_reads, 1)
         self.assertEqual(self.wm.scenario_composer_text, "")  # the field opens empty
         self.assertTrue(self.state.focused)  # the text it adds goes to this prompt's caret
         self.assertFalse(self.state.dragging)
         self.assertEqual(self.lane_state.prompt, "hello world")
         operator.report.assert_not_called()
+        # the run starts again: one more untyped press opens nothing
+        result, call_panel, _ = self._modal(_Event(""))
+        call_panel.assert_not_called()
 
-    def test_untyped_events_without_composition_keep_their_handling(self):
-        # without focus the composer leaves them to Blender
+    def test_a_dead_key_types_its_accent_without_opening_the_text_field(self):
+        # A dead key (French ^, German acute) arrives as a press and a release with no Python type and no text;
+        # the next key carries the accented character.
+        for event in (
+            _Event(""),
+            _Event("", value="RELEASE"),
+            _Event("E", unicode="ê"),
+            _Event("E", value="RELEASE"),
+        ):
+            result, call_panel, _ = self._modal(event)
+            self.assertEqual(result, {"RUNNING_MODAL"})
+            call_panel.assert_not_called()
+        self.assertEqual(self.lane_state.prompt, "helloê world")
+        # a held dead key repeats its press without a release in between: repeats are not a composition
+        for event in (_Event(""), _Event("", is_repeat=True), _Event("", is_repeat=True)):
+            result, call_panel, _ = self._modal(event)
+            self.assertEqual(result, {"RUNNING_MODAL"})
+            call_panel.assert_not_called()
+        self._modal(_Event("", value="RELEASE"))
+        # a dead key followed by a named key, then another dead key, is not a composition either
+        for event in (_Event(""), _Event("SPACE", unicode="^"), _Event("")):
+            result, call_panel, _ = self._modal(event)
+            call_panel.assert_not_called()
+        self.assertEqual(self.lane_state.prompt, "helloê^ world")
+
+    def test_untyped_keys_with_text_are_typed_with_one_read_of_their_type(self):
+        # Some keys Blender cannot name still carry text (French ù, harness-injected characters).
+        event = _Event("", unicode="é")
+        result, call_panel, _ = self._modal(event)
+        self.assertEqual(result, {"RUNNING_MODAL"})
+        call_panel.assert_not_called()
+        self.assertEqual(event.type_reads, 1)
+        self.assertEqual(self.lane_state.prompt, "helloé world")
+        self.assertEqual(self.state.field.caret, 6)
+        # with Ctrl, Cmd or Alt the text is not typed, as for named keys; the event is still consumed
+        for modifier in ("ctrl", "oskey", "alt"):
+            event = _Event("", unicode="ù", **{modifier: True})
+            result, call_panel, _ = self._modal(event)
+            self.assertEqual(result, {"RUNNING_MODAL"})
+            call_panel.assert_not_called()
+            self.assertEqual(event.type_reads, 1)
+        self.assertEqual(self.lane_state.prompt, "helloé world")
+        # a key with text between two untyped presses ends the run: no text field
+        for event in (_Event(""), _Event("", unicode="ù"), _Event("")):
+            result, call_panel, _ = self._modal(event)
+            call_panel.assert_not_called()
+        self.assertEqual(self.lane_state.prompt, "helloéù world")
+
+    def test_untyped_events_without_focus_on_release_or_during_a_drag_open_nothing(self):
+        # without focus the composer leaves them to Blender, and the run of presses starts again
+        self._modal(_Event(""))
         self.state.focused = False
         event = _Event("")
         result, call_panel, _ = self._modal(event)
         self.assertEqual(result, {"PASS_THROUGH"})
         call_panel.assert_not_called()
         self.assertEqual(event.type_reads, 1)
-        # a release (the key up of a composed key) is consumed by a focused prompt and opens nothing
         self.state.focused = True
+        result, call_panel, _ = self._modal(_Event(""))
+        call_panel.assert_not_called()
+        # a release (the key up of a dead key) is consumed by a focused prompt and ends the run
         event = _Event("", value="RELEASE")
         result, call_panel, _ = self._modal(event)
         self.assertEqual(result, {"RUNNING_MODAL"})
         call_panel.assert_not_called()
         self.assertEqual(event.type_reads, 1)
-        # during a placement drag nothing else happens
+        # during a placement drag nothing else happens, and the drag ends the run
+        self._modal(_Event(""))
         self.state.begin_drag((0, 0), "drag")
         result, call_panel, _ = self._modal(_Event(""))
         self.assertEqual(result, {"RUNNING_MODAL"})
         call_panel.assert_not_called()
         self.state.cancel_drag()
-        # a key Blender cannot name that still carries text types it, as before
-        result, call_panel, _ = self._modal(_Event("", unicode="é"))
-        self.assertEqual(result, {"RUNNING_MODAL"})
+        result, call_panel, _ = self._modal(_Event(""))
         call_panel.assert_not_called()
-        self.assertEqual(self.lane_state.prompt, "helloé world")
+        # a named key press between two untyped presses ends the run too
+        self._modal(_Event("LEFT_ARROW"))
+        result, call_panel, _ = self._modal(_Event(""))
+        call_panel.assert_not_called()
+        self.assertEqual(self.lane_state.prompt, "hello world")
 
     def test_f2_opens_the_text_field_only_while_the_prompt_has_focus(self):
         result, call_panel, _ = self._modal(_Event("F2"))
@@ -146,6 +210,8 @@ class ComposerTextInputTests(unittest.TestCase):
 
     def test_a_text_field_that_cannot_open_reports_it(self):
         failing = mock.Mock(side_effect=RuntimeError("poll failed"))
+        self._modal(_Event(""), call_panel=failing)
+        failing.assert_not_called()
         result, call_panel, operator = self._modal(_Event(""), call_panel=failing)
         self.assertEqual(result, {"RUNNING_MODAL"})
         call_panel.assert_called_once()

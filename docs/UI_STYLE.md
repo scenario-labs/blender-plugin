@@ -403,19 +403,30 @@ drawing a pre-edit it cannot receive.
   starts editing, so a field holding the whole prompt would replace it with the
   first composed character. Enter types the field's text at the prompt's caret,
   replacing a selection, as typed keys would; the composer keeps its focus.
-- A composition event that reaches the focused prompt opens the same popover, so
-  the composition continues in a field that shows it. Left pending, it can land
-  in the next native text field that opens, such as an Outliner rename: Blender
-  5.1.2 and 5.2.1 insert a pending composition into a field on a click outside
-  it. The modal reads each event's type once, so such an event logs one warning
-  rather than one per comparison.
+- A composition that starts in the focused prompt opens the same popover, so it
+  continues in a field that shows it. Left pending, it can land in the next
+  native text field that opens, such as an Outliner rename: Blender 5.1.2 and
+  5.2.1 insert a pending composition into a field on a click outside it.
+- A composition starts with two presses in a row that have no Python type and
+  no text: its start, then its first update. A dead key sends one such press,
+  then its release or the key carrying the accented character, so the popover
+  opens on the second press only. A release, a placement drag, an untyped event
+  without focus or any named or text-carrying press in between starts the count
+  again. A key repeat (a held key) does not count: Blender never marks
+  input-method events as repeats. In an input mode that commits each key, the
+  first key's text arrives in that second press, which the composer consumes, so
+  that character is lost.
+- An untyped key that carries text (French ù, for example) is typed like a named
+  key: without Ctrl, Cmd or Alt, at the caret. The modal reads each event's type
+  once and handles an untyped event without reading it again, so each untyped
+  event logs one warning rather than one per comparison.
 - Drawing the popover reads the composer state and changes nothing. The field's
   update callback types the text and empties its window-manager property.
 
-Installed tests drive the modal with synthetic untyped and F2 events (the popover
-call stubbed), set the field property and draw the panel into a recording layout.
-Physical composition, candidate-window placement and focus after the popover have
-not been checked on a desktop; they remain under #66.
+Installed tests drive the modal with synthetic untyped, dead-key and F2 events
+(the popover call stubbed), set the field property and draw the panel into a
+recording layout. Physical composition, dead keys, candidate-window placement and
+focus after the popover have not been checked on a desktop; they remain under #66.
 
 ## What Blender cannot do (so we do not fake it)
 

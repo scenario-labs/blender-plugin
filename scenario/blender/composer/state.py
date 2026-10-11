@@ -29,6 +29,9 @@ class ComposerState:
         self.moved = False
         # pairs the presses of a double-click, which the modal only receives as presses
         self.presses = DoubleClick()
+        # A press with no Python type and no text reached the focused prompt, with no release or other press
+        # since. An input-method composition starts with two in a row; a dead key sends one, then its release.
+        self.untyped_press = False
 
     def lane_for(self, scene):
         """The composer drives the six generation lanes; other tabs (Generations, MCP, 3D tools) fall back to Image."""

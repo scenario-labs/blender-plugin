@@ -21,6 +21,7 @@
       "scenario/mcp/tools_scenario.py": "e85b856e5a82acc83e8cf9096af20fbc180d7729e5db3d16e589a940559f60e4",
       "tests/unit/test_saved_job_actions.py": "b0c8c88107f240d652b3c7497f76a2ad4b23cb997268d00599a0ae802c6588b2",
       "tests/blender/test_result_actions.py": "f9ef9207e0052aba850d165dfdefc05a09b2894fd59e8cb4d5c0e8172a65c1ad",
+      "tests/blender/test_runtime_jobs.py": "9cbc0a763541264ae1c3f291a7754c09755066f60dc11f03206ba1fe8f398cf3",
       "tests/blender/test_studio_view.py": "d65762fbbcf6ce9dd63356097697c30b9b22a8fb07bec0866c3ae64e79ad8c7c",
       "tests/blender/test_blockout_jobs.py": "fd189d4cb712d98acb24e944857088378d327cb59455d858d4cdf64fce41e37e",
       "tests/blender/run_all.py": "5fa3f8c12ade901f48a21021eba62e61cb80f8e2edac569f67c4f1c54960f195"

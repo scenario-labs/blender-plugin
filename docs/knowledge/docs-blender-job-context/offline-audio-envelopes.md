@@ -8,7 +8,7 @@
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Inspected the preview_waveform constructor argument, the runtime's main-thread waveform_spec resolution and its None fallback, and retirement and shutdown with a running decode. Installed-ZIP native tests for the waveform decoder, session previews and the prototype preview passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Windows and Linux rest on hosted CI, not on this review. The native retirement test terminates a real child without the main thread joining it; extension disable during a decode and packaged builds without an executable path were not exercised natively.",
     "sources": {
       "scenario/blender/job_session.py": "eca075ce7911e8aae4c5ee2746aaa8d4b1dcb6b40538723de437be4104948124",

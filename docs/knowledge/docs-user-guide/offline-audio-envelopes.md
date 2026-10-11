@@ -8,7 +8,7 @@
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Reviewed the prototype Generations preview after the PCM-only reader's retirement: worker-thread decoding through the offline child, before/after file stamps, envelope raster, the missing-executable refusal, Cancel terminating the decoder and the stated format and size limits. Installed-ZIP native tests for the waveform decoder, session previews and the prototype preview passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Windows and Linux rest on hosted CI, not on this review. Desktop drawing, UI scale and human listening were not reviewed; the inherited audio-preview topic keeps its older claims.",
     "sources": {
       "scenario/blender/audio_preview.py": "e77b8d21f7733322b9714a17ff8b982d24cd993e5702e6b0403d7b5b3ddfbb22",

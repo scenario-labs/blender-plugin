@@ -8,7 +8,7 @@
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Inspected where the decoder's request, disposable profile, temporary files, log and outputs are written and removed, the scrubbed child environment, offline mode, the cached envelope sidecar and the prototype preview's cache/audio-preview directories, including the sweep of abandoned decode directories older than a day. The prototype preview reads the downloaded file in place after a regular-file check. No network access, credential or signed URL reaches the child; this does not audit other cache users.",
     "sources": {
       "scenario/core/jobs/audio_decode.py": "45d1cc7aa8964ad0b7014bf28a23f3d3a46e336eee4770581e79a8aa293d0064",

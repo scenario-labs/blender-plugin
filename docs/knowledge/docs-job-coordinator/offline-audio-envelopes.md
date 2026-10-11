@@ -8,7 +8,7 @@
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
+    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
     "limits": "Inspected decode_result_preview from the workers' preview lane through the coordinator and result commands: early cancellation discards the copy, ownership and scope are checked, the copy is always removed, failures cache nothing and the task's cancellation event reaches the child process. Unit tests use a stand-in decoder; native coverage is in the result preview evidence. No job transition, revision change, network read or Scenario service call.",
     "sources": {
       "scenario/core/jobs/coordinator.py": "57ce1e03e38f9346452d9e71e2942b46bc44fdcccd17c695a4272affc74bce2d",

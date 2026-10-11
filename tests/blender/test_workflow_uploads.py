@@ -566,6 +566,65 @@ class WorkflowUploadTests(unittest.TestCase):
         self.assertTrue(self.upload("images").attached)
         self.assertEqual(json.loads(item.text), ["existing-asset", "uploaded-asset"])
 
+    def test_restarted_upload_stops_waiting_and_keeps_values(self):
+        fixture = self.fixture.fixture
+        item = self.populated()
+        binding = self.start("images")
+        ticket = binding.ticket
+        ticket.task.result(5)
+        self.owner.poll()  # Observes staging and admits initialization.
+        self.assertEqual(ticket.command, "initialize_upload")
+        ticket.task.result(5)  # Scenario now holds an incomplete upload.
+        # The edit makes the upload restartable. Selecting another scene before
+        # the next admission pauses the transfer without a ticket error, so
+        # only the abandoned record can tell this input to stop waiting.
+        self.scene_changes()[0]()
+        bpy.context.window.scene = fixture.previous
+        self.pump(binding)
+        record = ticket.record
+        self.assertEqual(record.state.value, "uploading")
+        self.assertIsNone(ticket.error)
+        self.assertFalse(binding.error)
+        self.assertIn(binding, self.owner.workflow_forms.values())
+        self.owner.inspect_saved()
+        action = self.owner.saved_actions[record.intent.request_id]
+        self.assertEqual(action.value, "restart_upload")
+        self.remote()
+        command = self.owner.recover(record.intent.request_id, record.revision, "restart")
+        command.task.result(5)
+        self.owner.poll()  # Abandons the original and delivers to the paused input.
+        self.assertEqual(self.owner.recovery_result(command).state.value, "abandoned")
+        self.assertEqual(ticket.record.state.value, "abandoned")
+        self.assertIsNone(ticket.error)
+        self.assertEqual(binding.error, "Upload finished without an asset; inspect saved progress")
+        self.assertFalse(binding.attached)
+        self.assertNotIn(binding, self.owner.workflow_forms.values())
+        self.assertEqual(self.owner.form_errors[-1], binding.error)
+        replacement = self.owner.references[command.reference_id]
+        if replacement.task is not None:
+            replacement.task.result(5)
+        bpy.context.window.scene = self.scene
+        self.owner.poll()  # The replacement belongs to its own scene, never this input.
+        self.assertNotEqual(replacement.record.intent.request_id, record.intent.request_id)
+        fixture.uploader.upload.assert_not_called()
+        self.assertTrue(item.get(self.ui.UPLOAD_MARKER))
+        self.assertEqual(item[self.ui.UPLOAD_REQUEST], record.intent.request_id)
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        with self.assertRaisesRegex(ValueError, "finish the reference upload"):
+            self.ui.parameters(self.form)
+        operators, labels = self.drawn("images")
+        self.assertEqual(
+            [identifier for identifier, _ in operators],
+            ["scenario.inspect_uploads", "scenario.release_workflow_upload"],
+        )
+        self.assertIn("Saved upload: inspect before continuing", labels)
+        self.uploads.stop_waiting(self.scene, "images", item[self.ui.UPLOAD_MARKER])
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        self.assertNotIn(self.ui.UPLOAD_REQUEST, item)
+        self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
+        saved = self.owner.session.inspect_upload(record.intent.request_id)
+        self.assertEqual(saved.state.value, "abandoned")
+
     def test_stopped_upload_note_survives_unrelated_undo_and_redo(self):
         restored = self.history()
         self.populated()

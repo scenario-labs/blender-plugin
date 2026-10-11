@@ -443,7 +443,13 @@ def _deliver_binding(owner, token, binding):
     if ticket.error:
         binding.error = ticket.error
         return
-    if record is not None and record.state in {UploadState.FAILED, UploadState.CANCELED}:
+    if record is not None and record.state in {
+        UploadState.FAILED,
+        UploadState.CANCELED,
+        UploadState.ABANDONED,
+    }:
+        # An abandoned upload never completes; its restart is a separate upload
+        # that this input does not wait for.
         binding.error = "Upload finished without an asset; inspect saved progress"
         return
     if binding.scene != bpy.context.scene:

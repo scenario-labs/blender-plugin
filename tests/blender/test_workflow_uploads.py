@@ -738,6 +738,44 @@ class WorkflowUploadTests(unittest.TestCase):
         self.assertNotIn(note, labels)
         self.assertIn("Upload a file or snapshot, use Library, or enter an asset ID", labels)
 
+    def test_library_attach_and_clear_retire_the_inputs_note(self):
+        binding = self.start("image")  # Recorded on the empty input's defaults.
+        binding.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(binding)
+        note = "The upload stopped before sending; nothing was uploaded"
+        item = self.form.inputs["image"]
+        empty = self.uploads._values(item)
+        self.assertIn(note, self.drawn("image")[1])
+        session = self.owner.session
+        approval = next(
+            x
+            for x in self.references.choices(bpy.context, session, "library-asset", "Cup", "image")
+            if x.param_name == "image"
+        )
+        self.references.attach(approval, session)
+        self.assertEqual(item.text, "library-asset")
+        cls = self.references.SCENARIO_OT_clear_workflow_reference
+        operator = SimpleNamespace(input_name="image", report=MagicMock())
+        context = SimpleNamespace(
+            scene=self.scene,
+            window_manager=SimpleNamespace(invoke_confirm=MagicMock(return_value={"FINISHED"})),
+        )
+        cls.invoke(operator, context, None)
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        # Clearing restores the exact values the note was recorded with.
+        self.assertEqual(self.uploads._values(item), empty)
+        self.assertNotIn(note, self.drawn("image")[1])
+        # Clearing alone also retires a note recorded on the input's current values.
+        binding = self.start("image")
+        binding.ticket.task.result(5)
+        self.scene_changes()[0]()
+        self.pump(binding)
+        self.assertIn(note, self.drawn("image")[1])
+        cls.invoke(operator, context, None)
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.assertNotIn(note, self.drawn("image")[1])
+
     def test_operator_keeps_its_undo_step_when_a_failed_start_keeps_the_marker(self):
         cls = self.uploads.SCENARIO_OT_upload_workflow_input
         notice = self.fixture.module.UploadNotStarted

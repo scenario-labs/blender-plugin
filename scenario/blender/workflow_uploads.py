@@ -189,10 +189,10 @@ def _remember(owner, scene, item, message):
     """Explain on the freed input, while it keeps these values, why nothing was sent.
 
     Undo and redo invalidate Python scene references but keep the scene's session
-    UID, so the note follows history until another upload targets the input. Each
-    input keeps only its latest note; notes on other inputs never evict it. The
-    loaded workflow and schema are recorded too, so a same-named input of another
-    workflow never shows it.
+    UID, so the note follows history until another upload targets the input, or an
+    attachment or Clear reference sets its values. Each input keeps only its latest
+    note; notes on other inputs never evict it. The loaded workflow and schema are
+    recorded too, so a same-named input of another workflow never shows it.
     """
     key = (scene.session_uid, item.name)
     owner.workflow_notices[key] = (_values(item), _workflow(scene), message)
@@ -206,6 +206,13 @@ def _workflow(scene):
 def _forget(owner, scene, name):
     """Retire the note of an input once a newer upload may have been admitted."""
     owner.workflow_notices.pop((scene.session_uid, name), None)
+
+
+def forget_note(scene, name):
+    """Retire the note once an attachment or Clear reference sets the input's values."""
+    owner = runtime.state.reference_uploads
+    if owner is not None:
+        _forget(owner, scene, name)
 
 
 def _notice(owner, scene, item):

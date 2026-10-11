@@ -104,6 +104,9 @@ def attach(approval, session):
     if _text(item, value) != approval.value:
         raise ValueError("The proposed reference value changed; review it again")
     _write(item, value, approval.scope)
+    from . import workflow_uploads
+
+    workflow_uploads.forget_note(approval.scene, item.name)
     return item
 
 
@@ -182,9 +185,11 @@ class SCENARIO_OT_clear_workflow_reference(bpy.types.Operator):
         for key in (workflow_controls.UPLOAD_MARKER, workflow_controls.UPLOAD_REQUEST):
             if key in item:
                 del item[key]
-        if token:
-            from . import workflow_uploads
+        from . import workflow_uploads
 
+        # Empty values could otherwise match a note recorded before an attachment.
+        workflow_uploads.forget_note(scene, self._input_name)
+        if token:
             # The admitted upload keeps running and remains in saved uploads.
             workflow_uploads.release(scene, self._input_name, token)
         self._scene = None

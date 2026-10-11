@@ -621,7 +621,8 @@ and leaves a note on the input. Each input keeps only its latest note, stored by
 the scene's session UID and input name, and shown only while the loaded workflow,
 its schema and the input's values match those it was recorded with. It survives
 undo and redo, notes on other inputs never evict it, and another upload admitted
-into the input retires it; a retry refused before admission keeps it. Notes live
+into the input retires it, as do a Library or saved-upload attachment to it and
+**Clear reference**; a retry refused before admission keeps it. Notes live
 only on the facade, so replacing it, as for its handles above, also drops them.
 The upload operator returns `FINISHED`
 whenever a new marker remains after a start failure, so its undo step is recorded.

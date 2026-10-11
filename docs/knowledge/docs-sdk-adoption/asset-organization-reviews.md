@@ -8,15 +8,15 @@
     "path": "docs/SDK_ADOPTION.md",
     "scope": "asset-organization-reviews",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-10",
-    "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
+    "reviewed_at": "2026-10-11",
+    "base_revision": "72723f02a97a7226b1c697c31d8124b77ac92c86",
     "limits": "Reviewed only the service inventory row, the adapter coverage sentence and the closing paragraph of the asset organization section: the shared organization commands call the adapter methods through the coordinator, its workers and the JobSession review owner, with a guard before each write and a get_bulk read-back, and after AlreadyMembers send only the assets read back as not yet members, within three add requests per review; no local MCP tool or native Library control calls them. No SDK method, raw exception or dependency changed. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No native Library or local MCP control, desktop interaction or release acceptance is claimed.",
     "sources": {
-      "docs/SDK_ADOPTION.md": "5b43d52c163b7ac22b52c3524894412956854bca537af84d77576bff4f244f62",
+      "docs/SDK_ADOPTION.md": "3eb2f6a43b99f64c8427617107019360d88cd1cd66138fb26ccab3d72b32b684",
       "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
-      "scenario/core/jobs/coordinator.py": "329f641b24e7cd23603d1eae840072006a080a03b2911dca44d17b8b9aa56e9a",
+      "scenario/core/jobs/coordinator.py": "756f6e4fbbacd158ce3527ac251cd878514008ff800c225038225dd8f49eb4a8",
       "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
-      "scenario/mcp/tools_scenario.py": "8613fe347b43421261f0462fe3972e777fffb6f35f17f9cd4a26d8b321d25331",
+      "scenario/mcp/tools_scenario.py": "e85b856e5a82acc83e8cf9096af20fbc180d7729e5db3d16e589a940559f60e4",
       "scenario/blender/library_view.py": "4ce0e8ca5a402136d7b5e2dbbe5b0f24f2b5480ed81afb3782c38252b3a65039"
     }
   }

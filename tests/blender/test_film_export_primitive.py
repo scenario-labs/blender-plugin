@@ -466,6 +466,7 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         spec = self.snapshot(audio=False)
         destination = self.output / "Blocked.mp4"
         workers = submodule("core.jobs.workers")
+        exports = self.session._exports
         entered, release = threading.Event(), threading.Event()
         hash_media = self.export._hash_media
 
@@ -475,19 +476,34 @@ class FilmExportPrimitiveTests(unittest.TestCase):
             release.wait(60)
             return hash_media(*args)
 
+        def reap(ticks=20):
+            # Drive the retirement timer's ticks; none may wait on the stuck thread.
+            for _ in range(ticks):
+                started = time.monotonic()
+                self.module.reap_retired()
+                self.assertLess(time.monotonic() - started, 1)
+
         with (
             patch.object(self.export, "_hash_media", side_effect=blocked),
-            patch.object(workers, "EXPORT_STOP_TIMEOUT", 0.2),
+            patch.object(workers, "EXPORT_STOP_TIMEOUT", 2.0),
+            patch.object(exports, "shutdown", wraps=exports.shutdown) as joins,
         ):
             task = self.session.export_film(spec, destination, origin=origin, source_origin=source)
             try:
                 self.assertTrue(entered.wait(30))
+                # A file load retires the session; its pending export holds off the reaper.
+                self.session.deactivate()
+                reap()
+                self.assertEqual(joins.call_count, 0)
                 started = time.monotonic()
                 with self.assertLogs("scenario.jobs", "WARNING"):
                     self.session.shutdown()
                 self.assertLess(time.monotonic() - started, 5)
-                # The session keeps ownership while its export thread is alive.
-                self.assertFalse(task.done() or self.session._exports.stopped)
+                # The session keeps ownership while its export thread is alive, and
+                # later timer ticks never wait on that thread again.
+                reap()
+                self.assertEqual(joins.call_count, 1)
+                self.assertFalse(task.done() or exports.stopped)
                 self.assertIn(self.session, self.module._session_snapshot())
                 self.assertEqual([pending for pending, _ in self.session._pending], [task])
             finally:
@@ -496,10 +512,13 @@ class FilmExportPrimitiveTests(unittest.TestCase):
             while not task.done():
                 self.assertLess(time.monotonic(), deadline, "Blocked export did not finish")
                 time.sleep(0.05)
-        # The late finish sees the cancellation; the reaper then releases the session.
-        with self.assertRaises(self.render.RenderCancelled):
-            task.result()
-        self.module.reap_retired()
+            # The late finish sees the cancellation; one reaper tick then releases
+            # the session with a single join of the finished thread.
+            with self.assertRaises(self.render.RenderCancelled):
+                task.result()
+            self.module.reap_retired()
+            self.assertEqual(joins.call_count, 2)
+        self.assertTrue(exports.stopped)
         self.assertNotIn(self.session, self.module._session_snapshot())
         self.assertEqual(self.session._pending, [])
         self.assertFalse((spec.directory / "started.json").exists())

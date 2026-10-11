@@ -1086,7 +1086,8 @@ platform, and the ffprobe check where it is installed. They also cover session
 delivery, mid-render retirement, copy-only re-publishing, channel and meta strip
 audio defaults, the truncated, even default size, the distinct-file media budget,
 the 8-bit encoder setting, a bounded session shutdown that keeps a blocked export
-owned until the reaper releases it, session refusal of a foreign Blender or worker
+owned until the reaper releases it without waiting on it at any earlier tick,
+session refusal of a foreign Blender or worker
 and of relative, private, existing and non-portable destinations before any work.
 A build without an H.264 or AAC
 encoder is not exercised. Native/MCP export controls, the Studio case-study

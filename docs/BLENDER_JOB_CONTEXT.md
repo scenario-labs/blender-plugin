@@ -137,7 +137,8 @@ workers. `cancel_film_export` signals the child; session retirement cancels it,
 and shutdown waits at most five seconds for the thread before workers and the
 coordinator close. A thread still blocked on file access keeps the session owned,
 including its saved-result preview copies, until the reaper finds it finished;
-its late outcome is never delivered.
+its late outcome is never delivered. The reaper skips a session while its export
+task is pending, so its timer ticks never wait on the blocked thread.
 Completions drain as `local_export` outcomes; `deliver_local_export` consumes one
 without resolving a scene, because export never mutates Blender data. Like the
 asset library, workflow catalog and cloud read deliveries, it refuses once the

@@ -8,14 +8,14 @@
     "path": "docs/SDK_ADOPTION.md",
     "scope": "remote-progress-projection",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-09",
-    "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
+    "reviewed_at": "2026-10-11",
+    "base_revision": "72723f02a97a7226b1c697c31d8124b77ac92c86",
     "limits": "Reviewed that progress uses SDKAdapter.job (jobs.with_raw_response.retrieve), already used by refresh_remote and cancel_remote, with no new request, endpoint, raw fallback or SDK issue. The offline SDK 2.2.0 contract shows the raw wrapper keeps a fractional progress, active status and statusHistory and that the parsed Job exposes progress and status; a unit test checks the SDK status literals equal the five active plus three terminal statuses. No live service response is claimed.",
     "sources": {
-      "scenario/core/api/sdk_adapter.py": "aa638824ce7af67c9b70d12b759f361ab88f41cb0bc7f39213f1ce1d3e8d39ff",
-      "scenario/core/jobs/coordinator.py": "a8b7efb39e74a1a34f350ff7274e2e714a06933383743744dd22e6e1b7d7096d",
+      "scenario/core/api/sdk_adapter.py": "43eb582d077677e2975c21e13cd3164b319c96f14a36988c6b9f04ca56124121",
+      "scenario/core/jobs/coordinator.py": "86d723261acb1fda7ef9718248be03c46de52cf6086277f15b673a46487551f5",
       "scenario/core/jobs/progress.py": "bf8bea9be0d1ba3c6ca7c2495fecf61eb67481ffb7499d1e30633cc154871af5",
-      "tests/unit/test_scenario_sdk_contract.py": "307f1650f460a41ddb748b1b3eb03610a1fecdfafa6cfaab6a4bdf71e3fa2154",
+      "tests/unit/test_scenario_sdk_contract.py": "39a1fba8e75fa08b895c46f84f63a641c06d04d008fe243ebcdc3e67e0ac5e32",
       "tests/unit/test_job_progress.py": "c6ab3586b2b9ae8f4abf957a36b066b20cb8f01259fda6d9db5c858b11204a17"
     }
   }

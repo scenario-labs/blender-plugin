@@ -1097,6 +1097,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
 
     def test_remote_cancel_rebinds_the_reading_to_the_cancel_request_revision(self):
+        # Only a documented inference job may be claimed for cancellation.
+        self.job_type = "inference"
         self.remote_progress = 0.4
         result = self.mcp_submit(self.mcp_quote())
         self.deliver_results()

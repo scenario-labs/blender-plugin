@@ -713,7 +713,9 @@ the generation.
 
 Automatic and explicit `refresh_remote`/`cancel_remote` completions already carry
 the coordinator's `RemoteSnapshot` from SDK `jobs.retrieve`. `ModelJobs._observe`
-is their single consumer: [`progress.observe`](../scenario/core/jobs/progress.py)
+is their single display consumer; the inference cancellation offer above reads
+the same completion on the delivery path, without draining it again.
+[`progress.observe`](../scenario/core/jobs/progress.py)
 turns an active snapshot into one `RemoteProgress` reading (status, fraction,
 UTC and monotonic time) bound to the record's remote job ID and saved revision.
 The fraction must be a finite number from 0 to 1; booleans, strings, missing,

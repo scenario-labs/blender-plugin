@@ -735,8 +735,10 @@ class ModelJobs:
     def _observe(self, request_id, snapshot):
         """Project one validated remote reading; terminal or other snapshots clear it.
 
-        This is the only consumer of refresh/cancel snapshots. Later remote
-        interpretations extend this hook instead of draining them separately.
+        This is the only display consumer of refresh/cancel snapshots;
+        `_observe_cancellation` reads the same completion for the cancel offer.
+        Later remote interpretations extend this hook instead of draining them
+        separately.
         """
         meta = self.views[request_id].meta
         try:

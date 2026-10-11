@@ -597,8 +597,10 @@ import into the current scene. An older cached copy cannot bypass its result app
 Saved jobs whose results are downloaded show previews above their controls, in
 Jobs, Generations and the Studio pages that reuse them, for at most four results
 each: video, audio and 3D results show Scenario's preview image, and images show
-a small copy decoded from the verified downloaded file. Previews appear for the
-first twelve jobs of Jobs and of Generations. Scenario can take a few minutes to
+a small copy decoded from the verified downloaded file. Each caption starts with
+the number its controls show, such as **(2) Model**, so a narrow sidebar shortens
+the name before the number. Previews appear for the first twelve jobs of Jobs
+and of Generations. Scenario can take a few minutes to
 prepare a preview image; Blender checks for about five minutes while Online
 Access allows it, then shows the result's icon with **Retry preview (N)**. With
 Online Access disabled, image previews still appear and the others wait.

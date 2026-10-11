@@ -4,7 +4,7 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest import mock
+from unittest.mock import Mock, patch
 
 import bpy
 from helpers import reset_scene, submodule
@@ -82,13 +82,13 @@ class ComposerTextInputTests(unittest.TestCase):
         self.wm.scenario_composer_text = ""
 
     def _modal(self, event, call_panel=None):
-        call_panel = call_panel or mock.Mock(return_value={"INTERFACE"})
-        operator = SimpleNamespace(report=mock.Mock())
+        call_panel = call_panel or Mock(return_value={"INTERFACE"})
+        operator = SimpleNamespace(report=Mock())
         ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
         with (
-            mock.patch.object(self.runtime.state, "composer", self.state),
-            mock.patch.object(self.modal, "_layout", return_value=self.layout),
-            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+            patch.object(self.runtime.state, "composer", self.state),
+            patch.object(self.modal, "_layout", return_value=self.layout),
+            patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
         ):
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, self.context, event)
         return result, call_panel, operator
@@ -209,7 +209,7 @@ class ComposerTextInputTests(unittest.TestCase):
         call_panel.assert_not_called()
 
     def test_a_text_field_that_cannot_open_reports_it(self):
-        failing = mock.Mock(side_effect=RuntimeError("poll failed"))
+        failing = Mock(side_effect=RuntimeError("poll failed"))
         self._modal(_Event(""), call_panel=failing)
         failing.assert_not_called()
         result, call_panel, operator = self._modal(_Event(""), call_panel=failing)
@@ -221,7 +221,7 @@ class ComposerTextInputTests(unittest.TestCase):
 
     # -- the text field's text goes into the prompt like typed keys ------------------------------
     def test_text_from_the_field_is_typed_at_the_prompt_caret(self):
-        with mock.patch.object(self.runtime.state, "composer", self.state):
+        with patch.object(self.runtime.state, "composer", self.state):
             self.wm.scenario_composer_text = "日本"
             self.assertEqual(self.state.field.text, "hello日本 world")
             self.assertEqual(self.state.field.caret, 7)
@@ -241,13 +241,13 @@ class ComposerTextInputTests(unittest.TestCase):
     def test_text_for_a_prompt_without_focus_goes_to_its_current_form(self):
         self.state.focused = False
         self.lane_state.prompt = "edited in the sidebar"
-        with mock.patch.object(self.runtime.state, "composer", self.state):
+        with patch.object(self.runtime.state, "composer", self.state):
             self.wm.scenario_composer_text = " 雪"
         self.assertEqual(self.lane_state.prompt, "edited in the sidebar 雪")
         self.assertFalse(self.state.focused)
 
     def test_text_without_a_composer_is_dropped_from_the_window_manager(self):
-        with mock.patch.object(self.runtime.state, "composer", None):
+        with patch.object(self.runtime.state, "composer", None):
             self.wm.scenario_composer_text = "orphan"
         self.assertEqual(self.wm.scenario_composer_text, "")
         self.assertEqual(self.lane_state.prompt, "hello world")
@@ -258,7 +258,7 @@ class ComposerTextInputTests(unittest.TestCase):
         self.assertIn("scenario_composer_text", bpy.types.WindowManager.bl_rna.properties)
         layout = _Recorder()
         panel = SimpleNamespace(layout=layout)
-        with mock.patch.object(self.runtime.state, "composer", self.state):
+        with patch.object(self.runtime.state, "composer", self.state):
             self.text_field.SCENARIO_PT_composer_text_field.draw(panel, bpy.context)
         props = [call for call in layout.calls if call[0] == "prop"]
         self.assertEqual(len(props), 1)

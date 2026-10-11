@@ -15,7 +15,7 @@
       "docs/SDK_ADOPTION.md": "e0adef0ee973be767007ac6b5f136d002f434159a3dbb84912773a55e23c0516",
       "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
       "scenario/core/jobs/coordinator.py": "bd23cca7936171f99803eb3e79d9979c0312e8e69ff1feeed4c497c3f1f00229",
-      "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
+      "scenario/blender/asset_organization.py": "3624f8cce6d0b4f57bccabd103b83495aa770e3aaf1a75523d8d6cd84e17c2ae",
       "scenario/mcp/tools_scenario.py": "a711332963d3f99d20c60b1439976d054655846af89ac51604c2a7cc6379b7cb",
       "scenario/blender/library_view.py": "4ce0e8ca5a402136d7b5e2dbbe5b0f24f2b5480ed81afb3782c38252b3a65039"
     }

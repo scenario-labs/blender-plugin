@@ -25,6 +25,7 @@ from .job_session import OriginUnavailable, SessionBusy, _main_thread
 
 _log = logging.getLogger("scenario.organization")
 _SAFE = (OrganizationError, AdapterError, QuoteError, WorkerError, OriginUnavailable, SessionBusy)
+_COLLECTIONS_FAILED = "Collections could not load; check the connection and try again"
 
 
 def safe_message(error, fallback="Scenario organization failed; refresh the Library to inspect"):
@@ -105,7 +106,13 @@ class AssetOrganization:
         completions = self.session.drain(task=task)
         if not completions:
             raise OrganizationError("Collections are still loading")
-        page = self.session.deliver_asset_organization(completions[0])
+        try:
+            page = self.session.deliver_asset_organization(completions[0])
+        except _SAFE:
+            raise
+        except Exception as error:
+            # As in poll(): unknown worker text never reaches the Library or MCP.
+            raise OrganizationError(_COLLECTIONS_FAILED) from error
         return {
             "collections": [collection_summary(record) for record in page["collections"]],
             "next_pagination_token": page["next_pagination_token"],

@@ -211,6 +211,24 @@ class OrganizationSessionTests(unittest.TestCase):
         self.assertIsNone(page["next_pagination_token"])
         self.assertNotIn("private", json.dumps(page))
 
+    def test_failed_collection_page_reports_only_safe_text(self):
+        api = submodule("core.api.sdk_adapter")
+        cases = (
+            # Unknown worker text is replaced, as poll() does for reviews.
+            (RuntimeError(PRIVATE), self.organization.OrganizationError, "Collections could not"),
+            # Text written for UI boundaries keeps its type and message.
+            (api.AdapterError("Could not reach Scenario"), api.AdapterError, "Could not reach"),
+        )
+        for error, kind, expected in cases:
+            with patch.object(api.SDKAdapter, "collection_page", side_effect=error):
+                task = self.owner.collections(page_size=10)
+                with self.assertRaises(type(error)):
+                    task.result(5)
+            with self.assertRaises(kind) as caught:
+                self.owner.take_collections(task)
+            self.assertIn(expected, str(caught.exception))
+            self.assertNotIn("private", str(caught.exception))
+
     def test_undo_and_scene_switch_keep_reviews(self):
         review_id = self.ready()
         self.module._history_pre(None)

@@ -570,7 +570,8 @@ owner IDs or service text, including the per-asset change, the number of writes
 apply sends when each succeeds and the no-credit, no-undo notice. `apply` consumes a READY
 review once; if the command cannot even be queued, the review returns to READY
 because nothing was sent. `collections` and `take_collections` read one page
-of collections without thumbnails or owner IDs.
+of collections without thumbnails or owner IDs; like `poll`, a failed read
+reports only text written for these surfaces, never the worker's own error text.
 
 A review moves from PREPARING to READY, UNCHANGED (nothing to change) or
 REJECTED, then from READY to APPLYING and FINISHED or NOT_SENT; it can also be

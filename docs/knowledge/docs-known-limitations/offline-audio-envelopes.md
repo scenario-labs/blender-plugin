@@ -8,7 +8,7 @@
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
-    "base_revision": "72723f02a97a7226b1c697c31d8124b77ac92c86",
+    "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
     "limits": "Reviewed the stated child start-up cost, missing-executable failure, two tracked readers, cancellation that terminates the decoder and the remaining filesystem-call limit. Also reviewed the deadline check against each reader's finish time, so an outcome finished before 30 s displays when Blender's timer runs late and a later one is discarded, and unregister's bounded wait of up to five seconds for readers to stop their decoders; the native shutdown test uses a stand-in for the child process that runs until canceled, and quitting Blender during a decode was not exercised. Start-up figures are local medians of five runs per version on macOS arm64, not test assertions. Installed-ZIP native tests for the waveform decoder, session previews and the prototype preview passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Windows and Linux rest on hosted CI, not on this review. Windows, Linux, antivirus and sandboxed packages are unmeasured.",
     "sources": {
       "scenario/blender/audio_preview.py": "e77b8d21f7733322b9714a17ff8b982d24cd993e5702e6b0403d7b5b3ddfbb22",
@@ -17,7 +17,7 @@
       "scenario/blender/waveform_worker.py": "184e6aea667e31e84fa46f68c61448c12714e52d39dfdaef40f56db3091a4e4a",
       "scenario/core/audio_waveform.py": "888c1c6a1c3ab5dfeb0f174c807290e399c856cf067bd37e6011f5e184edf18c",
       "scenario/core/jobs/preview_scheduler.py": "df19ea81e2b0afb1628ce345f0c45fa918f0d64195a3a37ed3360f95fb7e8e78",
-      "scenario/blender/runtime.py": "c9b8c98af5796ac40f7baaf89813b15fa46f5cea7bc68c56a00e414a143a046a",
+      "scenario/blender/runtime.py": "628771d9cdda2fad47c506a4e5571727103ec3b6549c289eb3a8571ba96fffe0",
       "tests/blender/test_waveform_worker.py": "b1fbfb74b8c75ef5366283ce32c97b23350bb1e81766891a2a7fab046b537aa5"
     }
   }

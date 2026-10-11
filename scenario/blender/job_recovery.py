@@ -746,9 +746,12 @@ class SCENARIO_OT_use_saved_first_frame(bpy.types.Operator):
         try:
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:
+            # A refusal before consumption, such as a retired connection, discards it too.
+            self.cancel(context)
             self.report({"ERROR"}, f"First frame was not set: {_refusal(self.context_id, error)}")
             return {"CANCELLED"}
         except Exception:
+            self.cancel(context)
             self.report({"ERROR"}, "First frame was not set; review the saved image and form again")
             return {"CANCELLED"}
         runtime.set_message("Verifying the saved image for the Render Video first frame")

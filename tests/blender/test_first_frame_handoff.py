@@ -802,6 +802,22 @@ class FirstFrameHandoffTests(unittest.TestCase):
         )
         self.assertEqual(owner._application_approvals, {})
 
+    def test_native_confirm_after_a_retired_connection_discards_the_review(self):
+        request_id = self.saved_image()
+        lane = self.render_video(FRAME_AND_CLIP)
+        operator, fake, context = self.native_operator(request_id)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        self.assertIn(fake.application_id, owner._application_approvals)
+        self.runtime.state.reset()  # a credential or project change retires the context
+        self.assertEqual(operator.execute(fake, context), {"CANCELLED"})
+        fake.report.assert_called_once_with(
+            {"ERROR"}, "First frame was not set: The connection changed; inspect saved jobs again"
+        )
+        self.assertEqual(owner._application_approvals, {})
+        self.assertEqual(self.first_frames(lane), [])
+
     def test_native_operator_consumes_an_mcp_approval_once(self):
         request_id = self.saved_image()
         lane = self.render_video(FRAME_AND_CLIP)

@@ -428,7 +428,7 @@ def test_organization_rejects_other_scope_and_issued_snapshots_apply_once(tmp_pa
     )
 
     service, adapter, coordinator = organization_owner(tmp_path)
-    try:
+    with adapter:
         other = replace(coordinator.scope, project_id="another-project")
         foreign = build_request(other, "update_tags", asset_ids=["asset-a"], add_tags=["x"])
         with pytest.raises(OrganizationError, match="selected connection"):
@@ -445,15 +445,13 @@ def test_organization_rejects_other_scope_and_issued_snapshots_apply_once(tmp_pa
         with pytest.raises(OrganizationNotSent):
             coordinator.organize(snapshot)
         assert len(service.writes) == 1
-    finally:
-        adapter.close()
 
 
 def test_deactivation_stops_later_organization_writes_and_clears_uncertain_names(tmp_path):
     from scenario.core.jobs.organization import Outcome, build_request
 
     service, adapter, coordinator = organization_owner(tmp_path)
-    try:
+    with adapter:
         built = build_request(
             coordinator.scope, "update_tags", asset_ids=["asset-a", "asset-b"], add_tags=["x"]
         )
@@ -474,5 +472,3 @@ def test_deactivation_stops_later_organization_writes_and_clears_uncertain_names
         assert not coordinator._organization._uncertain("Earlier name")
         with pytest.raises(QuoteError, match="inactive"):
             coordinator.organization_snapshot(built)
-    finally:
-        adapter.close()

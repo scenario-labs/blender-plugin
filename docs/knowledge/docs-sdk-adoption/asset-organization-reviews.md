@@ -12,11 +12,11 @@
     "base_revision": "7fb15252f747f52db24f7e659f8d5048241f803e",
     "limits": "Reviewed only the service inventory row, the adapter coverage sentence and the closing paragraph of the asset organization section: the shared organization commands call the adapter methods through the coordinator, its workers and the JobSession review owner, with a guard before each write and a get_bulk read-back, and after AlreadyMembers send only the assets read back as not yet members, within three add requests per review; the local MCP organization tools prepare, apply and inspect those reviews and make no direct SDK call; no native Library control calls them. No SDK method, raw exception or dependency changed. No live collection, tag or bulk request was made from this repository; the observed already-member 400 and one-transaction add, service name uniqueness, DELETE body survival, tag normalization and live limits remain unverified here. No native Library control, desktop interaction or release acceptance is claimed.",
     "sources": {
-      "docs/SDK_ADOPTION.md": "94007fff6ebc8c49def727974a11091cc55c3f4de7f63fcf4195b54cfaf0d6d7",
+      "docs/SDK_ADOPTION.md": "9f69574b72478e666c78866c021fc6978e08296465d1a79c5c420ed1d8f9b451",
       "scenario/core/jobs/organization.py": "69ad48086ff2b763c565a22bce2bf60e142afbc10e757c56d938daf2198fbeba",
       "scenario/core/jobs/coordinator.py": "bd23cca7936171f99803eb3e79d9979c0312e8e69ff1feeed4c497c3f1f00229",
       "scenario/blender/asset_organization.py": "553512e5363e7784a8b7f73b7578d4d670a877c65faf8f4c3d7c0d500fa40e51",
-      "scenario/mcp/tools_scenario.py": "f4e87186806f93466220ef04f7c2530f0532ded790d4a8754a2a5b81183db08a",
+      "scenario/mcp/tools_scenario.py": "9397f121a88365b8a4605447630701ae2a14a74dee747be274cc6a4e1bad0830",
       "scenario/blender/library_view.py": "4ce0e8ca5a402136d7b5e2dbbe5b0f24f2b5480ed81afb3782c38252b3a65039",
       "tests/blender/test_asset_organization.py": "b00e136dfcf7667b1d93bb54b3efc84c1643380e88e8524ea12238edb6e793d5"
     }

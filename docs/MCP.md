@@ -819,7 +819,9 @@ job whose results are downloaded (`ready`, `applying`, `apply_failed` or
 tiles show, and `more_results` counts the other downloaded results with a
 preview kind; pass one `asset_id` from `job_status` for any of them, which
 returns `more_results: 0`. Each
-result keeps the tile's 1-based `number` and `caption`, such as `Audio (2)`.
+result keeps the tile's 1-based `number` and `caption`, such as `Audio (2)`,
+which names it as status lines and saved-job controls do; the tile itself draws
+the number first, `(2) Audio`.
 
 A still is Scenario's preview image for video, 3D and audio results
 (`source: scenario`) or a small PNG decoded from a verified saved image

@@ -180,6 +180,18 @@ def dialog_problem(
     return ""
 
 
+def unavailable_card(shown, message):
+    """The card to show once its shared review is gone.
+
+    Another caller's prepare evicts only settled reviews from the shared bound,
+    and a settled review never changes again, so a settled card keeps its
+    outcome until dismissed. Any other card reports the review unavailable.
+    """
+    if shown is not None and shown.get("phase") in TERMINAL_PHASES:
+        return shown
+    return {"phase": "UNAVAILABLE", "message": message}
+
+
 def card_actions(phase):
     """Buttons a review card offers: Apply/Discard when READY, Dismiss when terminal."""
     if phase == "READY":

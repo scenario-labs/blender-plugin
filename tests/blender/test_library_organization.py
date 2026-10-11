@@ -831,6 +831,30 @@ class LibraryOrganizationTests(unittest.TestCase):
         self.assertIsNone(self.owner.review)
         self.assertEqual(self.service.writes, [])
 
+    def test_a_finished_card_stays_shown_after_an_agent_review_evicts_it(self):
+        self.refresh()
+        self.organize("asset-b", action="ADD_TAGS", tags="x")
+        self.assertEqual(self.apply()["result"]["state"], "VERIFIED")
+        card = self.owner.review_id
+        owner = self.session.asset_organization
+        # A bound of 1 stands for a full shared pool: the agent's prepare evicts
+        # the oldest settled review, which is the Library's finished card.
+        self.enterContext(patch.object(owner.reviews, "_limit", 1))
+        owner.prepare("update_tags", asset_ids=["asset-a"], add_tags=["agent"])
+        self.settle()
+        self.assertNotIn(card, owner.reviews._reviews)
+        self.assertEqual(self.owner.review_id, card)
+        self.assertEqual(self.owner.review["phase"], "FINISHED")
+        texts = self.draw().texts()
+        self.assertIn("Result: Verified by reading back", texts)
+        self.assertNotIn("This organization review is unavailable", " ".join(texts))
+        self.assertEqual(self.row("asset-b")["tags"], ["x"])
+        self.assertEqual(
+            bpy.ops.scenario.library_organization_discard(review_id=card), {"FINISHED"}
+        )
+        self.assertIsNone(self.owner.review)
+        self.assertEqual(len(self.service.writes), 1)
+
     def test_reviews_full_of_agent_reviews_explain_the_cause_and_keep_the_card(self):
         self.refresh()
         self.organize("asset-b", action="ADD_TAGS", tags="x")

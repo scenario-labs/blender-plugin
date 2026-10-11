@@ -1886,7 +1886,9 @@ clears the view and discards its reviews; a write already sent keeps its effect.
 Native and [local MCP](MCP.md#asset-organization) reviews share the same owner,
 so only one change applies at a time and they share its 32-review bound. When
 unapplied agent reviews fill it, Organize says so and prepares nothing; unapplied
-reviews expire after 10 minutes.
+reviews expire after 10 minutes. A full bound evicts only settled reviews, which
+never change again, so a settled card keeps its outcome until dismissed even
+after an agent's new review evicts the review behind it.
 
 Installed tests cover operator registration, the dynamic collection enum with
 `OperatorProperties`, read-only drawing, public and busy pages, dialog cancel,
@@ -1894,7 +1896,8 @@ Apply gating and single use, row updates, an asset added elsewhere before Apply
 (one request, Verified), filtered-row refresh marks, a new
 collection joining a list at the load bound, the card across Studio redraws
 during Apply, connection and file retirement, sanitized refusals, online access
-off, a review bound filled by agent reviews and narrow-width wrapping. They also
+off, a review bound filled by agent reviews, a finished card kept after an agent's
+review evicts it, and narrow-width wrapping. They also
 cover the card under the organized row and on top of a page without it, the
 controls that start a read staying enabled while it runs with repeated clicks
 refused, and the dialog text after a load finds no collections. These tests check

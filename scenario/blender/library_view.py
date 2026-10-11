@@ -450,7 +450,8 @@ class LibraryView:
         try:
             status = self.session.asset_organization.review(self.review_id)
         except ReviewUnavailable as error:
-            self.review = {"phase": "UNAVAILABLE", "message": str(error)}
+            # An evicted settled card keeps its final outcome until dismissed.
+            self.review = organizing.unavailable_card(self.review, str(error))
             return
         self.review = review_payload(status)
         if (

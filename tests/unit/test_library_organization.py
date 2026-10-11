@@ -353,6 +353,18 @@ def test_unknown_and_unavailable_reviews_never_claim_a_result():
     ]
 
 
+def test_a_settled_card_keeps_its_outcome_when_its_shared_review_is_evicted():
+    # Another caller's prepare evicts only settled reviews from the shared bound,
+    # and a settled review never changes again, so its card stays as shown.
+    for phase in ("UNCHANGED", "REJECTED", "FINISHED", "NOT_SENT", "EXPIRED"):
+        shown = {"phase": phase, "message": "Shown", "result": {"state": "VERIFIED"}}
+        assert organizing.unavailable_card(shown, "Gone; refresh") is shown
+    gone = {"phase": "UNAVAILABLE", "message": "Gone; refresh"}
+    for phase in ("PREPARING", "READY", "APPLYING"):
+        assert organizing.unavailable_card({"phase": phase}, "Gone; refresh") == gone
+    assert organizing.unavailable_card(None, "Gone; refresh") == gone
+
+
 def test_long_untrusted_labels_wrap_or_clip_to_the_card_width(service):
     name = "N" * 200
     service.collections["long"] = collection("long", name)

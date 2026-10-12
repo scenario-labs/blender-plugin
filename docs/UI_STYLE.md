@@ -421,8 +421,8 @@ operator is refused before `invoke` runs, even with a window, area and region
 override. No event-simulated GUI check (`--enable-event-simulate`) has run for
 this change, because it was prepared without opening a Blender window. Blender's
 window manager has therefore not yet been seen dropping the handler after an
-error, calling cancel on a file load or keeping the load handler across
-File > Revert in an interface session. The
+error, calling cancel on a file load or a closed window, or keeping the load
+handler across File > Revert in an interface session. The
 [#66 follow-up](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
 lists those event-simulated checks and the physical rechecks, with their
 expected results.

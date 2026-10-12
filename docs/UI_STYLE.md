@@ -213,16 +213,18 @@ other form shows it only when it holds a choice. Each chosen LoRA has a row with
 its name and a remove button, then a **Strength (min to max)** field bounded by
 the range the current base declares. Editing a strength clamps it to that range
 and reprices the form. Resetting the field to its default (Backspace over it)
-gives the base's declared default strength, or 1 when it declares none, rather
-than 0. Each LoRA keeps its own strength in form order, so removing one never
-shifts another's strength. When the base's description changes, the
-fields take its new range, but a strength outside it is kept and the price is
-blocked with the range until the user edits it; nothing changes silently.
+returns it to the start the picker gives a newly chosen LoRA, rather than 0: the
+LoRA's own strength, otherwise 0.75, within the base's range; a base's declared
+default does not move it. Each LoRA keeps its own strength in form order, so
+removing one never shifts another's strength. When the base's description
+changes, the fields take its new range, but a strength outside it is kept and
+the price is blocked with the range until the user edits it; nothing changes
+silently.
 
 A LoRA without a strength, such as an ID adopted from an earlier text field, gets
 a **Set strength** button when the base declares a range: the strength then starts
-at the visible start value and the price is requested again. A base that declares
-a default but no range shows **Strength: the base model's default (N)** and sends
+at that same start and the price is requested again. A base that declares a
+default but no range shows **Strength: the base model's default (N)** and sends
 that default. A request never adds a strength the user did not see. A composition
 row reads **Name (composition)** with its LoRAs and their own strengths listed
 read-only below it. The reason a choice cannot run is drawn in the box with

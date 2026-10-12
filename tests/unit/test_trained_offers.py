@@ -191,6 +191,30 @@ def test_a_lora_starts_at_its_own_declared_strength_within_the_base_range():
         assert trained_offers.strength(slot, raw).initial == trained_offers.DEFAULT_STRENGTH, raw
 
 
+def test_a_reset_strength_starts_where_a_newly_chosen_lora_does():
+    """The form's reset strength field without a base range uses the same start, unclamped."""
+    assert trained_offers.starting_strength() == trained_offers.DEFAULT_STRENGTH == 0.75
+    assert trained_offers.starting_strength(None) == 0.75
+    assert trained_offers.starting_strength(PUBLIC[KONTEXT_LORA]) == 0.75  # declares none
+    assert trained_offers.starting_strength(PUBLIC[LORA_A]) == 0.8
+    assert trained_offers.starting_strength(record(PUBLIC[LORA_A])) == 0.8
+    # Unbounded here: the field's update keeps it within the range the field kept.
+    assert trained_offers.starting_strength({"concepts": [{"modelId": "self", "scale": 7}]}) == 7
+    slot = LoraSlot.from_record(BASES[FLUX1])
+    narrow = deepcopy(BASES[FLUX1])
+    scale_input(narrow).update({"min": 0.78, "max": 1.5})
+    for base in (slot, LoraSlot.from_record(narrow)):
+        for raw in (
+            PUBLIC[LORA_A],
+            PUBLIC[KONTEXT_LORA],
+            {"concepts": [{"modelId": "self", "scale": 1.9}]},
+            {"concepts": [{"modelId": "self", "scale": float("nan")}]},
+        ):
+            start = trained_offers.starting_strength(raw)
+            bounded = min(max(start, base.scale_min), base.scale_max)
+            assert trained_offers.strength(base, raw).initial == bounded, raw
+
+
 def test_a_lora_needs_a_strength_control_or_a_declared_default():
     unbounded = deepcopy(BASES[FLUX1])
     scale_input(unbounded).pop("min")

@@ -31,7 +31,7 @@ from ..core.api.assets import download_file
 from ..core.api.catalog import PATINA_MODELS, TRAINED_COMPOSITION, TRAINED_LORA
 from ..core.api.errors import ScenarioError
 from ..core.ui import capability_status
-from . import generation, icons, runtime, trained_models
+from . import generation, icons, props, runtime, trained_models
 
 log = logging.getLogger("scenario.picker")
 
@@ -46,10 +46,10 @@ UNIT = 20  # one interface row in pixels at a UI scale of 1
 DIALOG_ROWS = 19
 RECENT_FILE = "recent_models.json"
 TRAINED = model_filter.TRAINED_CATEGORY
-# The picker strength's RNA default, which Blender's Reset to Default Value assigns.
-# No base declares it: its update replaces it with the highlighted LoRA's starting
-# strength (trained_offers.strength). A power of two, so 32-bit storage keeps it exact.
-STRENGTH_RESET = -(2.0**100)
+# The picker strength's RNA default, which Blender's Reset to Default Value assigns:
+# the form's strength fields use the same value. No base declares it: its update
+# replaces it with the highlighted LoRA's starting strength (trained_offers.strength).
+STRENGTH_RESET = props.STRENGTH_RESET
 _ctx = {
     "lane": "",
     "records": [],

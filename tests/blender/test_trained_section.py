@@ -110,6 +110,14 @@ class TrainedSectionTests(unittest.TestCase):
     def defaults(self):
         return submodule("blender.trained_defaults")
 
+    @property
+    def props(self):
+        return submodule("blender.props")
+
+    @property
+    def trained_offers(self):
+        return submodule("core.api.trained_offers")
+
     def section(self, lane="image", lane_state=None):
         root = RecordingLayout()
         lane_state = lane_state or self.scene.scenario.lane_state(lane)
@@ -189,13 +197,18 @@ class TrainedSectionTests(unittest.TestCase):
         body = self.body()
         self.assertEqual((body["loras"], body["lorasScale"]), ([LORA_A], [0.35]))
 
+    def add_unscaled(self, model_id, name):
+        """A LoRA without a strength, as an ID adopted from an earlier text field."""
+        slot = self.lane.trained.add()
+        slot.model_id, slot.kind, slot.lane, slot.name = model_id, "lora", "image", name
+        slot[self.trained.SCOPE] = self.trained.current_scope()
+
     def test_a_lora_without_strength_gets_one_only_by_an_explicit_action(self):
         self.load_catalog()
         self.open_trained()  # reads the FLUX.1 Dev description
         self.lane.model_id = FLUX1
-        slot = self.lane.trained.add()
-        slot.model_id, slot.kind, slot.lane, slot.name = LORA_A, "lora", "image", "Public LoRA"
-        slot[self.trained.SCOPE] = self.trained.current_scope()
+        self.add_unscaled(LORA_A, "Public LoRA")
+        slot = self.lane.trained[0]
         self.assertEqual(self.errors(), ["LoRA Scale: provide a strength for each LoRA."])
         root = self.section()
         self.assertNotIn("scale", [name for name, _text in root.props()])
@@ -206,11 +219,16 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertIn(("LoRA Scale: provide a strength for", "ERROR"), root.labels())
         self.lane.estimate_state = "READY"
         self.assertEqual(bpy.ops.scenario.trained_set_strength(lane="image", index=0), {"FINISHED"})
+        # It starts where a newly chosen LoRA does: this public LoRA's own strength.
         self.assertEqual(
-            (slot.has_scale, slot.fmin, slot.fmax, round(slot.scale, 4)), (True, 0.0, 2.0, 1.0)
+            (slot.has_scale, slot.fmin, slot.fmax, round(slot.scale, 4)), (True, 0.0, 2.0, 0.8)
         )
         self.assertEqual(self.lane.estimate_state, "PENDING")
-        self.assertEqual(self.body()["lorasScale"], [1.0])
+        self.assertEqual(self.body()["lorasScale"], [0.8])
+        self.add_unscaled(STUDIO_LORA, "Studio LoRA")  # its record declares no strength
+        self.assertEqual(bpy.ops.scenario.trained_set_strength(lane="image", index=1), {"FINISHED"})
+        self.assertEqual(round(self.lane.trained[1].scale, 4), 0.75)  # the web app's default
+        self.assertEqual(self.body()["lorasScale"], [0.8, 0.75])
         self.assertEqual(
             bpy.ops.scenario.trained_set_strength(lane="image", index=4), {"CANCELLED"}
         )
@@ -252,32 +270,85 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertEqual(round(slot.scale, 4), 1.2)
         self.assertEqual(self.body()["lorasScale"], [1.2])
 
-    def test_resetting_a_strength_gives_the_base_s_starting_strength(self):
+    def reset_scale(self, index):
+        """What Blender's Reset to Default Value (Backspace over the field) does: assign
+        the property's RNA default, which runs its update."""
+        slot = self.lane.trained[index]
+        slot.scale = type(slot).bl_rna.properties["scale"].default
+        return round(self.lane.trained[index].scale, 4)
+
+    def test_resetting_a_strength_returns_to_where_a_new_lora_starts(self):
         """Backspace over the field must not switch the LoRA off with a strength of 0.
 
-        Blender's Reset to Default Value assigns the property's RNA default and
-        runs its update, as the assignment below does.
+        It returns to the start the picker gives a newly chosen LoRA, as the
+        Scenario web app does: the LoRA's own strength, otherwise 0.75.
         """
         self.load_catalog()
         self.open_trained()
         self.pick(LORA_A, 0.35)
-        (slot,) = self.lane.trained
-        reset = type(slot).bl_rna.properties["scale"].default
+        self.open_trained()
+        self.pick(STUDIO_LORA, 1.3)
+        self.assertEqual(self.body()["lorasScale"], [0.35, 1.3])
+        # The picker shows each chosen LoRA's strength; its reset gives the LoRA's start.
+        self.open_trained()
+        rna = bpy.types.WindowManager.bl_rna.properties["scenario_picker_strength"]
+        self.assertEqual(rna.default, self.props.STRENGTH_RESET)
+        picker_starts = []
+        for model_id, current in ((LORA_A, 0.35), (STUDIO_LORA, 1.3)):
+            self.highlight(model_id)
+            self.assertEqual(round(self.wm.scenario_picker_strength, 4), current, model_id)
+            self.wm.scenario_picker_strength = rna.default
+            picker_starts.append(round(self.wm.scenario_picker_strength, 4))
+        # The public LoRA's own declared strength; the private one declares none: 0.75.
+        self.assertEqual(picker_starts, [0.8, 0.75])
         self.lane.estimate_state = "READY"
-        slot.scale = reset  # the captured FLUX.1 Dev base declares no default
-        self.assertEqual(round(slot.scale, 4), 1.0)
+        self.assertEqual(self.reset_scale(0), picker_starts[0])
         self.assertEqual(self.lane.estimate_state, "PENDING")
-        self.assertEqual(self.body()["lorasScale"], [1.0])
+        self.assertEqual(self.reset_scale(1), picker_starts[1])
+        self.assertEqual(self.body()["lorasScale"], [0.8, 0.75])
+        # A base's declared default fills an omitted strength; it does not move the start.
         declared = copy.deepcopy(self.details[FLUX1])
         for field in declared["inputs"]:
             if field["name"] == "lorasScale":
                 field["default"] = 0.6
         catalog = submodule("core.api.catalog")
         self.generation.set_models([catalog.ModelRecord.from_api(declared)], {}, mark_dirty=False)
-        slot.scale = 0.35
-        slot.scale = reset
-        self.assertEqual(round(slot.scale, 4), 0.6)
-        self.assertEqual(self.body()["lorasScale"], [0.6])
+        self.lane.trained[0].scale = 0.35
+        self.lane.trained[1].scale = 0.35
+        self.assertEqual((self.reset_scale(0), self.reset_scale(1)), (0.8, 0.75))
+        self.assertEqual(self.body()["lorasScale"], [0.8, 0.75])
+        # Without a lane to read the base from, the LoRA's own start still applies.
+        reset = self.props._reset_strength
+        self.assertEqual(
+            [reset(None, slot) for slot in self.lane.trained],
+            [0.8, self.trained_offers.DEFAULT_STRENGTH],
+        )
+
+    def test_a_reset_strength_stays_within_the_base_range(self):
+        scale = next(f for f in self.details[FLUX1]["inputs"] if f["name"] == "lorasScale")
+        scale.update({"min": 0.78, "max": 1.5})
+        plain = {**self.details[STUDIO_LORA], "id": "model_studio-plain", "name": "Plain LoRA"}
+        self.private.append(plain)
+        self.details[STUDIO_LORA]["concepts"] = [{"modelId": STUDIO_LORA, "scale": 1.9}]
+        self.load_catalog()
+        self.open_trained()
+        self.pick("model_studio-plain", 1.0)
+        self.open_trained()
+        self.pick(STUDIO_LORA, 1.0)
+        self.open_trained()
+        self.pick(LORA_A, 1.0)
+        self.assertEqual(self.body()["lorasScale"], [1.0, 1.0, 1.0])
+        self.assertEqual(
+            [self.reset_scale(index) for index in range(3)],
+            [0.78, 1.5, 0.8],  # 0.75 raised, its own 1.9 lowered, its own 0.8 within the range
+        )
+        self.assertEqual(self.body()["lorasScale"], [0.78, 1.5, 0.8])
+        # Set strength gives a LoRA without one the same bounded start.
+        self.lane.trained.clear()
+        self.add_unscaled(STUDIO_LORA, "Studio LoRA")
+        self.assertEqual(bpy.ops.scenario.trained_set_strength(lane="image", index=0), {"FINISHED"})
+        self.assertEqual(round(self.lane.trained[0].scale, 4), 1.5)
+        self.assertEqual(self.body()["lorasScale"], [1.5])
 
     def test_composition_concepts_are_listed_read_only(self):
         self.load_catalog()

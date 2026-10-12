@@ -308,29 +308,36 @@ class ScenarioParamValue(bpy.types.PropertyGroup):
     has_range: BoolProperty(default=False)
 
 
-# The strength's RNA default, which Blender's Reset to Default Value (Backspace
-# over the field) assigns. No base declares it: the update below replaces it with
-# the base's starting strength instead of a 0.0 that would switch the LoRA off.
-# A power of two, so 32-bit storage keeps it exact.
+# The RNA default of every LoRA strength field (the form's and the picker's), which
+# Blender's Reset to Default Value (Backspace over the field) assigns. No base
+# declares it: each update replaces it with the LoRA's starting strength instead
+# of a 0.0 that would switch the LoRA off. A power of two, so 32-bit storage keeps
+# it exact.
 STRENGTH_RESET = -(2.0**100)
 
 
-def _reset_strength(lane_state):
-    """The strength a reset LoRA gets: its base's declared default, otherwise 1.0."""
+def _reset_strength(lane_state, item):
+    """The strength a reset LoRA gets: the start a newly chosen one gets in the picker.
+
+    That is the LoRA's own declared strength, otherwise the Scenario web app's
+    default, within its base's declared range (trained_models.lora_strength).
+    Before the base is described, the update bounds it to the range the item kept.
+    """
     from ..core.api import trained_offers
     from . import trained_models
 
-    if lane_state is None:
-        return trained_offers.DEFAULT_STRENGTH
-    strength = trained_models.base_strength(lane_state.model_id)
-    return strength.initial if strength is not None else trained_offers.DEFAULT_STRENGTH
+    if lane_state is not None:
+        strength = trained_models.lora_strength(lane_state.model_id, item.model_id)
+        if strength is not None:
+            return strength.initial
+    return trained_offers.starting_strength(runtime.state.trained_records.get(item.model_id))
 
 
 def _on_trained_update(self, context):
     if self.has_scale:
         if self.scale == STRENGTH_RESET:
             # This assignment runs the callback once more, which bounds it and reprices.
-            self.scale = _reset_strength(_find_lane_state(context, self.lane, self))
+            self.scale = _reset_strength(_find_lane_state(context, self.lane, self), self)
             return
         value = min(max(self.scale, self.fmin), self.fmax)
         if value != self.scale:

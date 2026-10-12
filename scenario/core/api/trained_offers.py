@@ -31,6 +31,7 @@ __all__ = [
     "runs",
     "saved_ids",
     "selection_label",
+    "starting_strength",
     "strength",
 ]
 
@@ -71,9 +72,7 @@ def strength(slot, record=None):
     low, high = slot.scale_min, slot.scale_max
     if low is None or high is None or low > high:
         return None
-    declared = declared_strength(record) if record is not None else None
-    initial = DEFAULT_STRENGTH if declared is None else declared
-    initial = min(max(initial, low), high)
+    initial = min(max(starting_strength(record), low), high)
     return Strength(
         float(low), float(high), slot.scale_step, round(float(initial), STRENGTH_DIGITS)
     )
@@ -232,6 +231,18 @@ def concepts(record):
                 )
             )
     return pairs
+
+
+def starting_strength(record=None):
+    """Where a LoRA's strength starts before any base range applies.
+
+    The strength the trained `record` declares for itself, otherwise
+    DEFAULT_STRENGTH, as the Scenario web app does. strength() clamps it to a
+    base's declared range; a reset strength field without that range is bounded
+    by the range it kept.
+    """
+    declared = declared_strength(record) if record is not None else None
+    return DEFAULT_STRENGTH if declared is None else declared
 
 
 def declared_strength(record):

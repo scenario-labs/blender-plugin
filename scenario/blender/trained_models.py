@@ -526,9 +526,25 @@ def base_slot(model_id):
 
 
 def base_strength(model_id):
-    """The LoRA strength control a described base model declares, or None (read-only)."""
+    """The LoRA strength control a described base model declares, or None (read-only).
+
+    Its range is the base's; for where one LoRA's strength starts, use lora_strength.
+    """
     slot = base_slot(model_id)
     return trained_offers.strength(slot) if slot is not None else None
+
+
+def lora_strength(model_id, lora_id):
+    """One LoRA's strength control on a described base model, or None (read-only).
+
+    It starts where a newly chosen LoRA does in the picker: at the LoRA's own
+    declared strength, otherwise the Scenario web app's default, within the
+    base's declared range (trained_offers.strength).
+    """
+    slot = base_slot(model_id)
+    if slot is None:
+        return None
+    return trained_offers.strength(slot, runtime.state.trained_records.get(lora_id))
 
 
 def sync_bounds(lane_state):
@@ -549,7 +565,10 @@ def sync_bounds(lane_state):
 
 
 def set_strength(lane_state, index):
-    """Give a LoRA without a strength the visible starting strength of its base (#97).
+    """Give a LoRA without a strength the start a newly chosen one gets (#97).
+
+    That is its own declared strength, otherwise the Scenario web app's default,
+    within the base's declared range (lora_strength).
 
     An explicit action: a strength is never added to a request silently. Raises
     ScenarioError when the base declares no strength range.
@@ -559,7 +578,7 @@ def set_strength(lane_state, index):
     slot = lane_state.trained[index]
     if slot.kind != catalog.TRAINED_LORA:
         raise ScenarioError(0, "Only a LoRA takes a strength; a composition applies its own")
-    strength = base_strength(lane_state.model_id)
+    strength = lora_strength(lane_state.model_id, slot.model_id)
     if strength is None:
         raise ScenarioError(0, "This base model declares no strength range for its LoRAs")
     slot.fmin, slot.fmax = strength.minimum, strength.maximum

@@ -252,14 +252,17 @@ before OK whether your choice adds to or replaces what the form holds.
 The chosen LoRAs or composition appear in the **Trained models** box under the
 **Model** box, in the sidebar, in Studio and in Render Image. Each LoRA has its
 own **Strength** field, limited to the range the base model declares; drag it or
-type a value. A composition lists its own LoRAs and strengths, which you cannot
-change here. Use the remove button to drop one, or **Add LoRA or composition** to
-open the picker's Trained chip. A LoRA with no strength yet (for example one kept
-from an earlier version) shows **Set strength**; Blender never adds a strength you
-did not see. Each change requests a fresh price; the quote reads every chosen model
-again and refuses one that was deleted, is no longer accessible, changed type or
-is not trained, before any price is requested. A choice belongs to the
-credentials and project that made it: after switching either, choose it again.
+type a value. Resetting it (Backspace over the field) returns it to the strength
+a newly added LoRA starts at: its own strength, otherwise 0.75. A composition
+lists its own LoRAs and strengths, which you cannot change here. Use the remove
+button to drop one, or **Add LoRA or composition** to open the picker's Trained
+chip. A LoRA with no strength yet (for example one kept from an earlier version)
+shows **Set strength**, which starts at that same value; Blender never adds a
+strength you did not see. Each change requests a fresh price; the quote reads
+every chosen model again and refuses one that was deleted, is no longer
+accessible, changed type or is not trained, before any price is requested. A
+choice belongs to the credentials and project that made it: after switching
+either, choose it again.
 **Reload parameters** restores a generation's LoRAs or composition when they are
 still listed and says how many it could not restore. If the trained model list
 has not loaded yet, it keeps them all, shown by ID under **Model** (a composition

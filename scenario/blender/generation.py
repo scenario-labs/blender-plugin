@@ -389,8 +389,10 @@ def refresh_panorama_models(context=None, *, mark_dirty=True, prefetch=True):
         lane_state.model_id = records[0].id  # another mode's model cannot stay selected
     if records and lane_state.model_key != lane_state.model_id:
         # A rebuilt list can show its first model without an assignment; record
-        # it as the choice, so a later list change cannot silently swap it.
-        lane_state.model_key = lane_state.model_id
+        # it as the choice, so a later list change cannot silently swap it. The
+        # key is stored without an RNA update, which would make origins captured
+        # in the scene stale during a catalog load.
+        lane_state["model_key"] = lane_state.model_id
     on_model_changed(context or bpy.context, lane_state, mark_dirty=mark_dirty)
     missing = [r.id for r in records if not r.parameters and r.id not in _pending_models][:12]
     if prefetch and missing:
@@ -482,7 +484,7 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     previous = {item.name for item in lane_state.params if item.model_id == model_id}
     seeded = params_ui.sync_params(lane_state, schema, model_id)
     if props.lane_of(lane_state) == "panorama":
-        _apply_contract_settings(lane_state, schema, model_id, previous)
+        seeded |= _apply_contract_settings(lane_state, schema, model_id, previous)
     # Seeded values skip their RNA callbacks: re-arm this form's price and let a
     # seeded model duration drive the camera path, as an edit would.
     if seeded or lane_state.estimate_state == "IDLE":
@@ -496,27 +498,34 @@ def _apply_contract_settings(lane_state, schema, model_id, previous):
 
     Runs from property callbacks and catalog delivery, never while drawing.
     Unchanged values are not written, so a catalog refresh keeps a ready price.
+    Like schema defaults, the values are seeded without their RNA updates, which
+    would make origins captured in the scene stale; the caller re-arms the price
+    for the returned names.
     """
     contract = panorama_contract.contract_for(model_id)
     if contract is None:
-        return
+        return set()
     values = list(contract.locked)
     values += [(name, value) for name, value in contract.defaults if name not in previous]
+    seeded = set()
     for name, value in values:
         spec = schema.by_name(name)
         index = lane_state.params.find(name)
         if spec is None or index < 0:
             continue
         item = lane_state.params[index]
+        attr = None
         if spec.ptype == "boolean":
-            if item.bool_value != value:
-                item.bool_value = value
+            attr = "bool_value"
         elif spec.ptype == "number" and not spec.allowed_values:
             attr = "int_value" if spec.is_integer else "float_value"
-            if getattr(item, attr) != value:
-                setattr(item, attr, value)
+        if attr is not None and getattr(item, attr) != value:
+            item[attr] = value  # each a plain ID property value, as params_ui seeds them
+            seeded.add(name)
         if not item.enabled:
-            item.enabled = True
+            item["enabled"] = True
+            seeded.add(name)
+    return seeded
 
 
 @dataclass

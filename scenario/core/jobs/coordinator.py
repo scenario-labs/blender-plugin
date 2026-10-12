@@ -326,6 +326,7 @@ class JobCoordinator:
         self._deciding = set()
         # Definition links of waiting workflow jobs, by remote job ID; see _step_links.
         self._step_links_cache = {}
+        self._step_links_unreadable = set()
         self._compositions = WeakValueDictionary()
         self._film_reviews = {}
         self._film_review_cleanup = set()
@@ -1489,11 +1490,14 @@ class JobCoordinator:
         `workflows.retrieve` and kept in memory until no step waits. Any read
         or parsing failure returns None and is retried at the next retrieval;
         `pending_steps` then blocks choosing items in a flow that may loop.
+        A failure logs only its error type, once per waiting period until a
+        read succeeds.
         """
         key = current.remote_job_id
         if response is None or not waiting(response):
             with self._lock:
                 self._step_links_cache.pop(key, None)
+                self._step_links_unreadable.discard(key)
             return None
         with self._lock:
             links = self._step_links_cache.get(key)
@@ -1502,11 +1506,19 @@ class JobCoordinator:
         workflow_id = current.intent.target_id
         try:
             links = definition_links(self._adapter.workflow(workflow_id), workflow_id=workflow_id)
-        except Exception:
+        except Exception as error:
             # Never log the record: it may carry signed thumbnail URLs.
+            with self._lock:
+                first = key not in self._step_links_unreadable
+                self._step_links_unreadable.add(key)
+            if first:
+                logging.getLogger("scenario").warning(
+                    "Workflow step links unavailable (%s)", type(error).__name__
+                )
             return None
         with self._lock:
             self._step_links_cache[key] = links
+            self._step_links_unreadable.discard(key)
         return links
 
     def cancel_remote(self, request_id, *, expected_revision):

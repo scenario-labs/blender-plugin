@@ -3,6 +3,8 @@
 """Decide waiting workflow steps through the actual SDK adapter, once, never replayed."""
 
 import json
+import logging
+import re
 import socket
 import threading
 from dataclasses import replace
@@ -671,6 +673,31 @@ def test_an_unreadable_definition_blocks_choosing_and_is_read_again(setup, defin
     assert item.blocked == "unverified" and item.actions == ("reject",)
     coordinator.refresh_remote("request", expected_revision=record.revision)
     assert len(setup.reads) == 2 and len(calls) == 2
+
+
+def test_an_unreadable_definition_logs_only_its_error_type_once_until_read(setup, caplog):
+    # Not found, a server error, a readable definition, then another workflow's definition.
+    answers = iter(
+        [None, httpx.Response(500, json={"message": "private fixture detail"}), INTO_LOOP]
+        + [{**INTO_LOOP, "id": "another"}] * 2
+    )
+    waiting = into_loop()
+    # The step stops waiting after the read, so the next waiting period reads again.
+    replies = [waiting] * 3 + [into_loop("success")] + [waiting] * 2
+    coordinator, _, _, record = setup(replies, definition=lambda _: next(answers))
+    with caplog.at_level(logging.WARNING, logger="scenario"):
+        for _ in replies:
+            coordinator.refresh_remote("request", expected_revision=record.revision)
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.getMessage().startswith("Workflow step links unavailable")
+    ]
+    assert len(setup.reads) == 5
+    # One line per unreadable stretch: the type name only, never the response, URL or IDs.
+    assert len(messages) == 2
+    assert all(re.fullmatch(r"Workflow step links unavailable \(\w+\)", item) for item in messages)
+    assert "private fixture detail" not in caplog.text and "Signature" not in caplog.text
 
 
 @pytest.mark.parametrize("definition", [INTO_LOOP, None])

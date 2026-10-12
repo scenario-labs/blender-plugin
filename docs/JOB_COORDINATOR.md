@@ -395,6 +395,8 @@ keeps only node IDs, types, input references, `dependsOn` and ForEach body IDs
 as a `FlowLinks` value attached to the `RemoteSnapshot`. The coordinator keeps it
 in memory for that remote job until no step waits; a failed read or an
 unreadable definition attaches nothing and is read again at the next retrieval.
+Such a failure logs only its error type, once per waiting period until a read
+succeeds.
 Read-only checks of live public definitions confirmed `inputs` references and
 `loopBodyNodeIds`; definitions with approval or selection steps, and their
 `dependsOn`, follow the SDK model and are covered offline only.

@@ -593,6 +593,12 @@ class WorkflowCommandTests(unittest.TestCase):
             self.assertFalse(status["awaiting_decision"])
             self.assertTrue(status["delivery_active"])
             self.assertEqual(status["actions"], ())
+            # No recovery control replaces the decision command while it is sent.
+            revision = self.store.get(local_id).revision
+            for action in ("refresh", "resume"):
+                with self.assertRaisesRegex(Exception, "available action changed"):
+                    owner.control(local_id, revision, action)
+            self.assertIs(owner._commands[local_id][1], task)
             # The wait keeps waiting while the decision is being sent.
             waited = self.finish(self.tools.wait_for_job({"job_id": local_id, "timeout": 0.3}))
             self.assertTrue(waited["delivery_active"])

@@ -404,7 +404,11 @@ workflow, an `updatedAt` no later than the job's `createdAt`, the job's nodes
 with the same types, agreement with every link the job flow shows itself, and
 every other job node a `<template>__iter__<n>` copy of a ForEach body node. Its
 `dependsOn` then lists an approval's dependencies and review assets; inside a
-ForEach copy, a dependency's copy from the same iteration replaces it.
+ForEach copy, a dependency's copy from the same iteration replaces it. A copy
+that omits `iterationIndex` or `loopNodeId` takes its iteration index from its
+`__iter__<n>` suffix and its loop node ID from the one ForEach node whose
+`loopBodyNodeIds` lists its template; a template two nodes list names no loop
+node. Without that proof, a name is never read as a copy.
 Otherwise the job flow's own links apply. If some node's links stay unknown in
 a flow with a loop, a nested workflow or an unlisted node type, a selection not
 proven to feed one is blocked as `unverified`, which offers only `reject`, so

@@ -155,14 +155,16 @@ class FlowLinks:
     """Node links read from one workflow definition, without values or URLs.
 
     `nodes` holds (node ID, type, upstream node IDs, `dependsOn`) per
-    definition node, `loop_bodies` the IDs ForEach nodes clone per item, and
-    `updated_at` the definition's `updatedAt`.
+    definition node, `loop_bodies` the IDs ForEach nodes clone per item,
+    `loop_owners` (body ID, ForEach node ID) pairs for bodies exactly one node
+    lists, and `updated_at` the definition's `updatedAt`.
     """
 
     workflow_id: str
     updated_at: str
     nodes: tuple
     loop_bodies: frozenset
+    loop_owners: tuple = ()
 
 
 def _node_id(value):
@@ -282,7 +284,7 @@ def definition_links(workflow, *, workflow_id):
     ):
         raise StepError("Scenario returned an unreadable workflow definition")
     budget = [_REFERENCE_BUDGET]
-    entries, bodies = {}, set()
+    entries, owners = {}, {}
     for node in flow:
         if (
             not isinstance(node, dict)
@@ -303,9 +305,17 @@ def definition_links(workflow, *, workflow_id):
             )
         ):
             raise StepError("Scenario returned unreadable workflow step links")
-        bodies.update(body or ())
+        for item in body or ():
+            # A body that two nodes list has no single owner, so it names no loop node.
+            owners[item] = node["id"] if owners.get(item, node["id"]) == node["id"] else None
         entries[node["id"]] = (node["id"], node["type"], tuple(sorted(inputs)), depends)
-    return FlowLinks(workflow_id, updated, tuple(entries.values()), frozenset(bodies))
+    return FlowLinks(
+        workflow_id,
+        updated,
+        tuple(entries.values()),
+        frozenset(owners),
+        tuple(sorted((body, owner) for body, owner in owners.items() if owner is not None)),
+    )
 
 
 def waiting(job):
@@ -375,6 +385,7 @@ class _Flow:
         self.kinds, self.children, self.depends = {}, {}, {}
         self.unknown = False
         templates = _described(links, job, nodes, workflow_id)
+        self.owners = {}
         if templates is None:
             self.templates = {}
             budget = [_REFERENCE_BUDGET]
@@ -389,6 +400,7 @@ class _Flow:
                 entries.append((node["id"], node["type"], references))
         else:
             self.templates = templates
+            self.owners = dict(links.loop_owners)
             entries = [(entry[0], entry[1], {*entry[2], *entry[3]}) for entry in links.nodes]
             self.depends = {entry[0]: entry[3] for entry in links.nodes}
         for node_id, kind, references in entries:
@@ -436,6 +448,22 @@ class _Flow:
         # A dict keeps the first occurrences in order and finds repeats in
         # constant time, so a long hostile list is read once.
         return tuple(dict.fromkeys(value for value in values if _node_id(value)))
+
+    def loop_position(self, node):
+        """The step's (iterationIndex, loopNodeId), from its copy name when the job omits them.
+
+        A name is read only for a copy the definition proves, since the API
+        does not document how iteration copies are named.
+        """
+        iteration = _whole(node.get("iterationIndex"), None)
+        loop = node.get("loopNodeId")
+        template = self.templates.get(node["id"])
+        if template is not None:
+            if node.get("iterationIndex") is None:
+                iteration = int(_COPY.fullmatch(node["id"])[2])
+            if loop is None:
+                loop = self.owners.get(template)
+        return iteration, loop
 
     def review_assets(self, depends_on):
         assets = {}
@@ -492,8 +520,7 @@ def _selection(node):
 def _step(node, flow, duplicate):
     node_id = node["id"]
     node_type = node["type"]
-    iteration = _whole(node.get("iterationIndex"), None)
-    loop = node.get("loopNodeId")
+    iteration, loop = flow.loop_position(node)
     depends_on = flow.dependencies(node)
     blocked = ""
     items, kind, minimum, maximum = (), None, None, None

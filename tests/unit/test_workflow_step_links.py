@@ -279,6 +279,32 @@ def test_an_approval_inside_a_loop_reviews_its_own_iteration():
     assert step.depends_on == ("cutout1__iter__1",)
     assert step.review_asset_ids == ("asset_cut1",)
     assert step.links_complete
+    # The live copy omits iterationIndex and loopNodeId; the definition proves both.
+    assert (step.iteration_index, step.loop_node_id) == (1, "loop1")
+    assert step.summary()["iteration_index"] == 1
+    assert step.summary()["loop_node_id"] == "loop1"
+
+
+def test_an_unproven_loop_copy_reports_no_iteration():
+    # Without the definition, a name ending in __iter__<n> proves nothing.
+    blind = only(loop_approval_job())
+    assert (blind.iteration_index, blind.loop_node_id) == (None, None)
+
+
+def test_a_body_listed_by_two_loops_has_no_loop_node():
+    workflow = copy.deepcopy(LOOP_APPROVAL)
+    workflow["flow"].append({"id": "loop2", "type": "for-each", "loopBodyNodeIds": ["check1"]})
+    flow = (*loop_approval_job(), {"id": "loop2", "type": "for-each", "status": "pending"})
+    step = only(flow, workflow)
+    assert step.links_complete
+    assert (step.iteration_index, step.loop_node_id) == (1, None)
+
+
+def test_the_job_flow_loop_fields_take_precedence():
+    flow = list(loop_approval_job())
+    flow[-1] = {**flow[-1], "iterationIndex": 7, "loopNodeId": "loop9"}
+    step = only(flow, LOOP_APPROVAL)
+    assert (step.iteration_index, step.loop_node_id) == (7, "loop9")
 
 
 @pytest.mark.parametrize(

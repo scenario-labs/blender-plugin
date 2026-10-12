@@ -98,6 +98,10 @@ class LibraryView:
         # The review whose read-back already updated rows; only the shown review syncs.
         self.synced_review_id = None
         self.stale = set()
+        # Read-back that arrived while a page or collection read was running. That
+        # read may list the state before the write, so its result takes it again once.
+        self.page_readback = None
+        self.collections_readback = None
 
     def current(self):
         return (
@@ -148,6 +152,7 @@ class LibraryView:
         if not outcomes:
             return
         self.task = None
+        readback, self.page_readback = self.page_readback, None
         try:
             page = self.session.deliver_asset_library(outcomes[0])
             if not self.current():
@@ -165,6 +170,8 @@ class LibraryView:
             self.cursors, self.index, self.next_cursor = cursors, index, next_cursor
             self.error = ""
             self.stale.clear()
+            if readback is not None:
+                self._update_rows(*readback)
         except Exception:
             self.error = "Library could not load this page. Check the connection and refresh."
         finally:
@@ -299,6 +306,7 @@ class LibraryView:
         self.collections_task = None
         direction, token = self.collections_pending
         self.collections_pending = None
+        readback, self.collections_readback = self.collections_readback, None
         try:
             page = self.session.asset_organization.take_collections(task)
             if not self.current():
@@ -316,6 +324,8 @@ class LibraryView:
             self.collections, self.collections_tokens = loaded, tokens
             self.collections_next, self.collections_loaded = next_token, True
             self.collections_error = ""
+            if readback is not None:
+                self._add_created(*readback)
         except ValueError as error:
             self.collections_error = str(error)
         except Exception as error:
@@ -460,7 +470,12 @@ class LibraryView:
             and status.review_id != self.synced_review_id
         ):
             self.synced_review_id = status.review_id
-            self._update_rows(status.request, status.result)
+            readback = status.request, status.result
+            self._update_rows(*readback)
+            if self.task is not None:
+                self.page_readback = readback
+            if self.collections_task is not None:
+                self.collections_readback = readback
 
     def _update_rows(self, request, result):
         """Show what Scenario read back; rows leave a filtered page only on refresh."""
@@ -477,6 +492,9 @@ class LibraryView:
                 self.stale.add(outcome.asset_id)
             else:
                 self.stale.discard(outcome.asset_id)
+        self._add_created(request, result)
+
+    def _add_created(self, request, result):
         created = result.created_collection_id
         if (
             created

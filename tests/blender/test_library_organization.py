@@ -194,6 +194,37 @@ class LibraryOrganizationTests(unittest.TestCase):
         self.settle()
         return self.owner.review
 
+    def hold_listing(self, path):
+        """Hold the next GET of ``path`` after it read the state, until released.
+
+        The listing then reports what it read before any later write.
+        """
+        listed, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+        route = self.service.route
+
+        def held(method, request_path, body, request):
+            response = route(method, request_path, body, request)
+            if method == "GET" and request_path == path and not listed.is_set():
+                listed.set()
+                if not release.wait(5):
+                    raise AssertionError("Test did not release the listing")
+            return response
+
+        self.service.route = held
+        return listed, release
+
+    def finish_apply(self):
+        """Wait for the shown review's apply only, then run the real pump once."""
+        review_id = self.owner.review_id
+        self.assertEqual(
+            bpy.ops.scenario.library_organization_apply(review_id=review_id), {"FINISHED"}
+        )
+        for task in list(self.session.asset_organization._tasks):
+            task.result(timeout=10)
+        self.runtime.sync_catalog_context()
+        return self.owner.review
+
     def draw(self):
         layout = Layout()
         self.module.draw(layout, bpy.context)
@@ -881,3 +912,49 @@ class LibraryOrganizationTests(unittest.TestCase):
         self.assertEqual(self.owner.review["phase"], "READY")
         self.assertNotEqual(self.owner.review_id, card)
         self.assertEqual(self.service.writes, [])
+
+    def test_a_page_read_running_when_a_change_is_verified_keeps_its_read_back(self):
+        self.refresh()
+        self.assertEqual(self.organize("asset-b", action="ADD_TAGS", tags="x")["phase"], "READY")
+        # The listing reads asset-b before the write and answers after the read-back.
+        listed, release = self.hold_listing("/v1/assets")
+        self.assertEqual(bpy.ops.scenario.library_page(direction="REFRESH"), {"FINISHED"})
+        self.assertTrue(listed.wait(5))
+        result = self.finish_apply()
+        self.assertEqual(result["result"]["state"], "VERIFIED")
+        self.assertEqual(self.row("asset-b")["tags"], ["x"])
+        release.set()
+        self.settle()
+        self.assertFalse(self.owner.error, self.owner.error)
+        self.assertEqual(self.owner.review["result"]["state"], "VERIFIED")
+        self.assertEqual(self.row("asset-b")["tags"], ["x"])
+        self.assertIn("Tags: x", self.draw().texts())
+        # The read-back is used once: a later page shows what Scenario lists.
+        self.service.assets["asset-b"]["tags"] = ["changed elsewhere"]
+        self.refresh()
+        self.assertEqual(self.row("asset-b")["tags"], ["changed elsewhere"])
+        self.assertEqual(len(self.service.writes), 1)
+
+    def test_a_collection_load_running_when_a_new_collection_is_verified_keeps_it(self):
+        self.collections()
+        self.refresh()
+        review = self.organize("asset-b", action="CREATE", collection_name="Hero props")
+        self.assertEqual(review["phase"], "READY", review["message"])
+        listed, release = self.hold_listing("/v1/collections")
+        self.assertEqual(bpy.ops.scenario.library_collections(direction="LOAD"), {"FINISHED"})
+        self.assertTrue(listed.wait(5))
+        self.assertEqual(self.finish_apply()["result"]["state"], "VERIFIED")
+        release.set()
+        self.settle()
+        self.assertFalse(self.owner.collections_error, self.owner.collections_error)
+        self.assertEqual(
+            [row["collection_id"] for row in self.owner.collections],
+            ["props", "sets", "hero", "created-1"],
+        )
+        self.assertIn("In 1 collection: Hero props", self.draw().texts())
+        # The next load lists it from Scenario, once.
+        self.collections()
+        self.assertEqual(
+            [row["collection_id"] for row in self.owner.collections],
+            ["props", "sets", "hero", "created-1"],
+        )

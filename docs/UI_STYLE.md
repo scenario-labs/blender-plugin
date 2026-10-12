@@ -1875,7 +1875,10 @@ unchanged, unsent or expired card offers **Dismiss**. Rows take the tags and mem
 read back. A row that left the browsed collection stays marked "No longer in this
 collection; refresh" until the next Refresh rather than disappearing. A verified
 new collection joins the loaded collections, even when 200 are already loaded,
-so **Browse** and the dropdown offer it.
+so **Browse** and the dropdown offer it. A page or collection read that was
+already running when the read-back arrived may have listed the state before the
+write, so its rows keep the read-back and the new collection stays listed; the
+next read shows what Scenario lists.
 
 Organize is disabled for pages loaded with Public assets, while a Library page is
 loading and while a change applies. Preparing another review discards a card that
@@ -1897,7 +1900,8 @@ Apply gating and single use, row updates, an asset added elsewhere before Apply
 collection joining a list at the load bound, the card across Studio redraws
 during Apply, connection and file retirement, sanitized refusals, online access
 off, a review bound filled by agent reviews, a finished card kept after an agent's
-review evicts it, and narrow-width wrapping. They also
+review evicts it, a page or collection read still running when a change is
+verified, and narrow-width wrapping. They also
 cover the card under the organized row and on top of a page without it, the
 controls that start a read staying enabled while it runs with repeated clicks
 refused, and the dialog text after a load finds no collections. These tests check

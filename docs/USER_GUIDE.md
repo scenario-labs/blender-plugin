@@ -909,7 +909,8 @@ review, Scenario refuses the add without changing anything; the card then shows
 **Verified** and says the asset was already in the collection. If a result is
 unconfirmed, choose Refresh and inspect the asset. Nothing is resent
 automatically; organize it again only if the change is still needed. A row removed from the collection you are browsing stays marked
-until you refresh.
+until you refresh. A page or collection list that was loading when the result
+arrived keeps the result.
 
 Organize is unavailable for Public assets, while a page is loading and while a
 change is being applied. Refresh, Next, Previous, Load collections, More and

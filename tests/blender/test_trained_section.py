@@ -251,6 +251,26 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertIn(("Strength: the base model's default (0.7)", "BLANK1"), root.labels())
         self.assertEqual(root.ops("scenario.trained_set_strength"), [])
 
+    def test_a_base_default_with_a_range_still_offers_set_strength(self):
+        """A LoRA without a strength, as a saved default's pick: the default it sends is shown."""
+        flux1 = copy.deepcopy(self.details[FLUX1])
+        for field in flux1["inputs"]:
+            if field["name"] == "lorasScale":
+                field["default"] = 0.7  # beside its declared range of 0 to 2
+        self.details[FLUX1] = flux1
+        self.load_catalog()
+        self.open_trained()
+        self.lane.model_id = FLUX1
+        self.add_unscaled(LORA_A, "Public LoRA")
+        self.assertEqual(self.body()["lorasScale"], [0.7])
+        root = self.section()
+        self.assertIn(("Strength: the base model's default (0.7)", "BLANK1"), root.labels())
+        self.assertEqual(
+            root.ops("scenario.trained_set_strength"), [(True, {"lane": "image", "index": 0})]
+        )
+        self.assertEqual(bpy.ops.scenario.trained_set_strength(lane="image", index=0), {"FINISHED"})
+        self.assertEqual(self.body()["lorasScale"], [0.8])  # this LoRA's own start, not 0.7
+
     def test_strength_fields_follow_the_range_the_base_declares_now(self):
         self.load_catalog()
         self.open_trained()

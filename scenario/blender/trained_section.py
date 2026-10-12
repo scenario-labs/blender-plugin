@@ -37,11 +37,11 @@ def _draw_lora(col, lane_state, lane, index, slot):
         col.prop(slot, "scale", text=_strength_text(lane_state, slot))
         return
     base = trained_models.base_slot(lane_state.model_id)
-    if base is not None and base.scale_default is not None:
+    if base is not None and base.scale_default is not None:  # what the request sends now
         col.label(
             text=f"Strength: the base model's default ({base.scale_default:g})", icon="BLANK1"
         )
-    elif trained_models.base_strength(lane_state.model_id) is not None:
+    if trained_models.base_strength(lane_state.model_id) is not None:
         op = col.operator("scenario.trained_set_strength", text="Set strength", icon="ADD")
         op.lane, op.index = lane, index
 

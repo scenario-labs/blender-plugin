@@ -23,6 +23,7 @@ _STAGES = {
     "media": "Copying media",
     "bundle": "Writing the Blender library...",
     "verify": "Checking the library...",
+    "scan": "Checking the library for private data",
     "archive": "Packing the archive",
     "check": "Checking the archive",
     "publish": "Saving the file",
@@ -51,7 +52,7 @@ def suggested_path(folder, name):
 def progress_text(status):
     progress = status["progress"]
     text = _STAGES.get(progress["stage"], "Exporting...")
-    if progress["stage"] in {"media", "archive", "check", "publish"} and progress["total"]:
+    if progress["stage"] in {"media", "scan", "archive", "check", "publish"} and progress["total"]:
         return f"{text} ({status['percent']}%)"
     return text
 

@@ -166,6 +166,30 @@ def test_approved_tasks_follow_named_audio_dialogue_and_masters_without_legacy_s
     assert "score" not in selected and "final-master" not in selected
 
 
+def test_a_legacy_review_selects_the_score_task_its_audio_mix_played():
+    plan = validate_film_plan(recipe())
+    played = [{"id": "score", "task": "theme-v3", "start": 0, "end": 1, "volume": 0.4}] * 2
+    score = study.review_score_task(plan, json.dumps(played))
+    assert score == "theme-v3"
+    selected = study.approved_task_ids(plan, None, score_task_id=score)
+    assert "theme-v3" in selected and "score" not in selected
+    # A previs review plays no score, and named tracks carry their own tasks.
+    assert study.review_score_task(plan, "[]") == "score"
+    assert study.review_score_task(validate_film_plan(recipe(audio_tracks=[])), None) == "score"
+    other = {"id": "score", "task": "theme-v4", "start": 1, "end": 2, "volume": 0.4}
+    for unreadable in (
+        None,
+        "not json",
+        "{}",
+        "[1]",
+        '[{"id": "score"}]',
+        json.dumps([played[0], other]),
+        json.dumps([{**other, "task": "../theme"}]),
+    ):
+        with pytest.raises(ValueError, match="Build the Film review again"):
+            study.review_score_task(plan, unreadable)
+
+
 def test_sanitize_drops_credentials_identities_urls_and_private_identifiers():
     value = {
         "api_secret": "x",

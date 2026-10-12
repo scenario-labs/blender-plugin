@@ -393,7 +393,7 @@ def check_verified(spec, report):
         )
 
 
-def _scan(path, markers, cancel):
+def _scan(path, markers, cancel, progress):
     """Refuse a library that still contains any caller-supplied private identifier."""
     values = sorted({value.encode("utf-8") for value in markers}, key=len, reverse=True)
     if not values:
@@ -401,6 +401,8 @@ def _scan(path, markers, cancel):
     pattern = re.compile(b"|".join(re.escape(value) for value in values))
     overlap, tail = len(values[0]) - 1, b""
     with path.open("rb") as stream:
+        total, done = os.fstat(stream.fileno()).st_size, 0
+        progress("scan", 0, total)
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             if cancel.is_set():
                 raise RenderCancelled("Film case-study export cancelled")
@@ -408,6 +410,8 @@ def _scan(path, markers, cancel):
             if pattern.search(window):
                 raise LocalExportError(_PRIVATE_FOUND)
             tail = window[-overlap:] if overlap else b""
+            done += len(chunk)
+            progress("scan", min(done, total), total)
 
 
 def _documents(spec, receipts, blend, report):
@@ -634,7 +638,7 @@ def _build(spec, cancel, progress):
             ),
         )
         progress("verify", 1, 1)
-    _scan(output, spec.markers, cancel)
+    _scan(output, spec.markers, cancel, progress)
     try:
         blend = (output.stat().st_size, digest(output, maximum=MAX_BLEND_BYTES, cancel=cancel))
     except RenderCancelled:

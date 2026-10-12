@@ -16,7 +16,7 @@ import re
 from decimal import Decimal
 
 from ..jobs.store import CloudJobIntent, FilmUploadReference, StoredJob
-from .film_plan import continuity_audit, validate_film_plan
+from .film_plan import continuity_audit, identifier, validate_film_plan
 
 SCHEMA_VERSION = 1
 FORMAT = "scenario-film-case-study"
@@ -142,6 +142,27 @@ def _references(value):
     elif isinstance(value, str) and value.startswith("$"):
         found.add(value[1:].split(":", 1)[0])
     return found
+
+
+def review_score_task(plan, audio_mix):
+    """Return the score task a built review played, for ``approved_task_ids``.
+
+    A plan without ``audio_tracks`` loops one score from the task chosen when the
+    review was built; the review records it in its audio mix (``scenario_audio_mix``).
+    Named tracks carry their own tasks and a previs review plays no score, so both
+    keep the default. An unreadable mix refuses rather than guessing the task.
+    """
+    if "audio_tracks" in plan:
+        return "score"
+    try:
+        mix = json.loads(audio_mix)
+        if not isinstance(mix, list):
+            raise ValueError("unreadable")
+        tasks = {entry["task"] for entry in mix if entry["id"] == "score"}
+        (task,) = tasks or {"score"}
+        return identifier(task, "Score task")
+    except (TypeError, ValueError, KeyError, RecursionError):
+        raise ValueError("Build the Film review again; its audio mix is unreadable") from None
 
 
 def approved_task_ids(plan, known, *, score_task_id="score"):

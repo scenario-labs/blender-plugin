@@ -457,7 +457,11 @@ class FilmCaseStudyCommands(FilmExportCommands):
         """The sanitized recipe, ledger, manifest base and guide, plus scan markers."""
         raw, plan = film_jobs.recipe(review.scene)
         production = review.binding[0]
-        candidates = film_case_study.approved_task_ids(plan, None)
+        # The score the review was built with, which need not be the default task.
+        score = film_case_study.review_score_task(
+            plan, review.source.scene.get("scenario_audio_mix")
+        )
+        candidates = film_case_study.approved_task_ids(plan, None, score_task_id=score)
         records, uploads = {}, {}
         for task_id in candidates:
             record = self.store.film_job(production, task_id)
@@ -467,7 +471,7 @@ class FilmCaseStudyCommands(FilmExportCommands):
             if upload is not None:
                 uploads[task_id] = upload
         known = {task["id"] for task in plan["tasks"]} | set(records) | set(uploads)
-        task_ids = film_case_study.approved_task_ids(plan, known)
+        task_ids = film_case_study.approved_task_ids(plan, known, score_task_id=score)
         scope = self.session.scope
         private = {production, scope.account_id, scope.project_id, scope.team_id}
         private |= collected.markers

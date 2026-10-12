@@ -143,7 +143,14 @@ def test_build_copies_media_checks_children_and_archives_verified_files(monkeypa
     assert started["media"] == [
         {"path": str(item.stamp.path), "name": item.name, "kind": item.kind} for item in spec.media
     ]
-    assert {event[0] for event in events} == {"media", "bundle", "verify", "archive", "check"}
+    assert {event[0] for event in events} == {
+        "media",
+        "bundle",
+        "verify",
+        "scan",
+        "archive",
+        "check",
+    }
     with zipfile.ZipFile(staged.path) as archive:
         names = archive.namelist()
         assert names == [
@@ -239,6 +246,25 @@ def test_private_markers_in_the_library_refuse_saving_even_across_chunks(monkeyp
     assert not (spec.directory / "output").exists()
 
 
+def test_the_private_scan_reports_its_progress_through_the_library(monkeypatch, spec):
+    blend = b"x" * (2 * 1024 * 1024 + 7)
+    Child(monkeypatch, spec, blend=blend)
+    events = []
+    study.build(spec, progress=lambda *event: events.append(event))
+    stages = [event[0] for event in events]
+    scan = [event for event in events if event[0] == "scan"]
+    # Start, then one report per 1 MiB chunk, between the verification and the archive.
+    assert scan == [
+        ("scan", 0, len(blend)),
+        ("scan", 1024 * 1024, len(blend)),
+        ("scan", 2 * 1024 * 1024, len(blend)),
+        ("scan", len(blend), len(blend)),
+    ]
+    first, last = stages.index("scan"), len(stages) - 1 - stages[::-1].index("scan")
+    assert set(stages[first : last + 1]) == {"scan"}
+    assert stages[first - 1] == "verify" and stages[last + 1] == "archive"
+
+
 def test_private_markers_in_documents_refuse_saving(monkeypatch, tmp_path, media):
     spec = make_spec(tmp_path, media, documents=texts(ledger={"note": MARKER.upper()}))
     Child(monkeypatch, spec)
@@ -246,7 +272,7 @@ def test_private_markers_in_documents_refuse_saving(monkeypatch, tmp_path, media
         study.build(spec)
 
 
-@pytest.mark.parametrize("stage", ["media", "bundle", "archive", "check"])
+@pytest.mark.parametrize("stage", ["media", "bundle", "scan", "archive", "check"])
 def test_cancellation_stops_each_stage_and_keeps_staging(monkeypatch, spec, stage):
     Child(monkeypatch, spec)
     cancel = threading.Event()

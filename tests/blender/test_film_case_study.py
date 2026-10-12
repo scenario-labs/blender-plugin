@@ -3,6 +3,7 @@
 """Installed Film case-study bundles: portable archive, sanitized documents and controls."""
 
 import hashlib
+import io
 import json
 import ntpath
 import os
@@ -11,7 +12,9 @@ import tempfile
 import threading
 import time
 import unittest
+import wave
 import zipfile
+from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call, patch
@@ -869,6 +872,11 @@ class FilmCaseStudyTests(unittest.TestCase):
             self.commands.poll()
             box, labels = self.panel()
             self.assertIn("Packing the archive (50%)", labels)
+            # A long private-data scan reads as its own stage, not the finished verification.
+            scan = {"progress": {"stage": "scan", "done": 1, "total": 4}, "percent": 25}
+            self.assertEqual(
+                self.ui.progress_text(scan), "Checking the library for private data (25%)"
+            )
             self.assertIn(
                 call("scenario.cancel_film_case_study", icon="CANCEL"), box.operator.call_args_list
             )
@@ -1060,6 +1068,142 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(self.staging(), [])
         with self.assertRaisesRegex(ValueError, "fresh ready"):
             self.approve(status)
+        self.assert_offline()
+
+    def save_theme(self, raw, path):
+        """Save a 2 CU audio take of the custom score task ``theme`` and its source."""
+        storage, store = self.media.storage, self.store
+        binding, *_ = submodule("core.jobs.film_tasks")._task_context(
+            store, raw, production_id=self.production, task_id="theme", kind="model"
+        )
+        # A saved request has its own identifier, never the recipe task's.
+        request = "theme-request-identifier-0001"
+        row = store.create(
+            storage.JobIntent(
+                request,
+                self.media.scope,
+                self.media.origin,
+                "model",
+                "fixture-audio-model",
+                "c" * 64,
+                "d" * 64,
+                "2",
+                film_task=binding,
+            )
+        )
+        for state in (
+            storage.JobState.SUBMITTING,
+            storage.JobState.REMOTE,
+            storage.JobState.SUCCEEDED,
+        ):
+            row = store.transition(
+                request,
+                expected_revision=row.revision,
+                state=state,
+                remote_job_id="theme-remote-job-0001" if state == storage.JobState.REMOTE else None,
+            )
+        asset = storage.ResultAsset("theme-asset-identifier-0001", path.name, "audio/wav")
+        store.set_results(request, (asset,), expected_revision=row.revision)
+        self.private |= {request, "theme-remote-job-0001", asset.asset_id}
+        stream = io.BytesIO()
+        with wave.open(stream, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(24000)
+            output.writeframes(b"\0\0" * 24000)
+        path.parent.mkdir()
+        path.write_bytes(stream.getvalue())
+        data = path.read_bytes()
+        receipt = submodule("core.jobs.transfers").DownloadedResult(
+            path.name, len(data), hashlib.sha256(data).hexdigest()
+        )
+        info = self.media.probe.MediaInfo(
+            "audio", receipt.sha256, receipt.size, Fraction(1), audio_duration=Fraction(1)
+        )
+        result = storage.StoredResult(asset, receipt)
+        return self.media.media.ReviewSource(self.media.scope, result, path, info)
+
+    def test_a_custom_legacy_score_task_is_in_the_recipe_ledger_and_total(self):
+        # A recipe without audio tracks loops one score from the task the review chose.
+        raw = json.loads(self.scene.scenario_film.recipe_json)
+        del raw["audio_tracks"]
+        raw["tasks"].append(
+            {
+                "id": "theme",
+                "title": "Theme",
+                "kind": "model",
+                "model": "fixture-audio-model",
+                "parameters": {"prompt": "theme"},
+            }
+        )
+        self.film.load_recipe(self.scene, raw)
+        theme = self.save_theme(raw, self.media.root / "theme-source" / "theme.wav")
+        (picture,) = self.store.get("picture").results
+        data = self.media.source.read_bytes()
+        measured = self.media.probe.MediaInfo(
+            "video",
+            picture.receipt.sha256,
+            len(data),
+            Fraction(4),
+            32,
+            32,
+            Fraction(24),
+            Fraction(4),
+        )
+        sources = {
+            "shot-video": self.media.media.ReviewSource(
+                self.media.scope, picture, self.media.source, measured
+            ),
+            "theme": theme,
+        }
+        built = self.media.builder.build_review_scene(
+            raw,
+            scope=self.media.scope,
+            production_id=self.production,
+            sources=sources,
+            score_task_id="theme",
+        )
+        self.review = built.scene
+        bpy.context.view_layer.update()
+        status = self.mcp_prepare(name="Score.zip", timeline=False)
+        self.assertEqual((status["approved_tasks"], status["priced_tasks"]), (2, 2))
+        self.assertEqual(status["quoted_cost_total"], "3")
+        patcher, calls = self.fake_build()
+        with patcher:
+            self.approve(status)
+            status = self.settle(status["review_id"])
+        self.assertEqual(status["phase"], "EXPORTED", status["error"])
+        (spec,) = calls
+        texts = dict(spec.documents)
+        recipe = json.loads(texts[self.documents.RECIPE_FILE])
+        self.assertNotIn("audio_tracks", recipe)
+        self.assertEqual(sorted(task["id"] for task in recipe["tasks"]), ["shot-video", "theme"])
+        ledger = json.loads(texts[self.documents.LEDGER_FILE])
+        rows = {row["task"]: row for row in ledger["tasks"]}
+        self.assertEqual(sorted(rows), ["shot-video", "theme"])
+        self.assertEqual(
+            (rows["theme"]["quoted_cost"], rows["theme"]["result_types"]), ("2", ["audio/wav"])
+        )
+        self.assertEqual(ledger["quoted_cost_total"], "3")
+        # Every bundled media file holds a result of an approved task in the ledger.
+        owners = {
+            item.asset.asset_id: task
+            for task in rows
+            for item in self.store.film_job(self.production, task).results
+        }
+        assets = {}
+        for strip in self.review.sequence_editor.strips_all:
+            raw_path = strip.filepath if strip.type == "MOVIE" else strip.sound.filepath
+            path = os.path.realpath(bpy.path.abspath(raw_path))
+            assets.setdefault(path, set()).add(strip["scenario_asset"])
+        self.assertEqual(len(spec.media), 2)
+        for item in spec.media:
+            found = assets[os.path.realpath(item.stamp.path)]
+            self.assertTrue(found and all(owners.get(asset) in rows for asset in found), found)
+        self.assertEqual({owners[asset] for found in assets.values() for asset in found}, set(rows))
+        for name, text in spec.documents:
+            for value in self.private:
+                self.assertNotIn(value, text, (name, value))
         self.assert_offline()
 
     def test_unportable_data_is_refused_with_a_reason(self):

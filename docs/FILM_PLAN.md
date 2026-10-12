@@ -1273,7 +1273,9 @@ identifier-like value of the removed properties and settings, in data blocks, th
 node trees and master collections and strips, through nested groups, lists and
 byte strings. Descriptive settings are not scanned for: model choices, parameter
 and input names, kinds and values, titles, labels, prompts and object names, which
-the recipe or the scenes carry anyway. Any match refuses the export.
+the recipe or the scenes carry anyway. Any match refuses the export. The library
+scan reports its own progress, so a long scan shows "Checking the library for
+private data" with a percentage rather than the finished verification.
 
 The archive holds one top folder, `<Title> Case Study`, with the `.blend` file,
 `Film Recipe.json`, `Production Ledger.json`, `Case Study Manifest.json`,
@@ -1287,7 +1289,10 @@ live media paths never change.
 The approved tasks follow Studio's selection: the current final and previs master
 takes, the score or named audio tracks, hero reference, mesh and material takes,
 each shot's style, previs and video takes, dialogue tasks, and their `$task`
-parameter dependencies, limited to recipe tasks and saved observations. The
+parameter dependencies, limited to recipe tasks and saved observations. For a
+recipe that omits `audio_tracks`, the score is the task the review was built
+with, which its recorded audio mix names, not an assumed `score`; a review whose
+audio mix cannot be read is refused until it is built again. The
 ledger lists, per approved task, its title, kind and recipe model, how it was
 obtained (generated, selected cloud result, uploaded or not saved), the saved state,
 the exact quoted cost and the result media types, plus the total quoted cost in

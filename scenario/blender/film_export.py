@@ -53,6 +53,16 @@ def verifier():
     return "ffprobe" if shutil.which("ffprobe") else "blender"
 
 
+def default_size_supported(width, height):
+    """Whether a review scene's own even size can be the export size.
+
+    An 8K or low-percentage review stays exportable at an explicit size inside
+    the bounds, so this is not a blocking reason for the source itself.
+    """
+    bounds = range(local_export.MIN_DIMENSION, local_export.MAX_DIMENSION + 1)
+    return width in bounds and height in bounds
+
+
 def _readable(error, fallback):
     from .job_session import OriginUnavailable, SessionBusy
 
@@ -317,6 +327,14 @@ class FilmExportCommands:
             raise ValueError(source.blocked)
         if not encoder_available():
             raise ValueError("This Blender build cannot encode video")
+        if (width is None or height is None) and not default_size_supported(
+            source.width, source.height
+        ):
+            raise ValueError(
+                f"Scene size {source.width} x {source.height} is outside"
+                f" {local_export.MIN_DIMENSION} to {local_export.MAX_DIMENSION} pixels;"
+                " choose an explicit export size"
+            )
         width = source.width if width is None else width
         height = source.height if height is None else height
         audio = source.audible if audio is None else audio

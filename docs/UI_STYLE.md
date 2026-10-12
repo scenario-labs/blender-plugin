@@ -1671,7 +1671,9 @@ marks a blocked one, with its reason wrapped below), frames and rate, scene size
 media count and whether sound strips are audible. It offers **Audio** (Match sound
 strips, Include or None), **Use review scene size** with Width and Height enabled
 only when it is off, and the lines "Nothing renders yet." and "Render video asks
-again." Its confirm button reads **Choose video file**.
+again." A scene size outside 64 to 4096 pixels adds an `INFO` line "Outside 64 to
+4096 pixels; set an export size", and the browser opens with the option off and
+the nearest bounded size. Its confirm button reads **Choose video file**.
 
 A ready export lists the review scene and mode, frames and rate, the destination
 file name and "Selecting, editing or Undo here discards it", then **Render video**

@@ -15,6 +15,7 @@ from bpy_extras.io_utils import ExportHelper
 
 from ..core.jobs import local_export
 from . import film_jobs, runtime
+from .film_export import default_size_supported
 from .film_scene_controls import _error
 
 # Selection, edits, Undo/Redo and reselecting a scene revoke the captured origins.
@@ -146,8 +147,13 @@ class SCENARIO_OT_prepare_film_export(bpy.types.Operator, ExportHelper):
             (index for index, row in enumerate(self.choices) if not row.blocked), 0
         )
         chosen = self.choices[self.choice_index]
-        self.audio_track, self.scene_size = "AUTO", True
-        self.width, self.height = max(64, chosen.width), max(64, chosen.height)
+        # A scene size outside the bounds opens on the nearest explicit size instead.
+        self.audio_track = "AUTO"
+        self.scene_size = default_size_supported(chosen.width, chosen.height)
+        self.width, self.height = (
+            min(local_export.MAX_DIMENSION, max(local_export.MIN_DIMENSION, value))
+            for value in (chosen.width, chosen.height)
+        )
         try:
             # The explicit Export action opens the configured output folder, as Open output folder does.
             folder.mkdir(parents=True, exist_ok=True)
@@ -170,6 +176,12 @@ class SCENARIO_OT_prepare_film_export(bpy.types.Operator, ExportHelper):
                 layout.label(text=line, icon="ERROR")
         layout.label(text=f"{chosen.frames} frames at {chosen.fps} fps")
         layout.label(text=f"Scene size {chosen.width} x {chosen.height}")
+        if not default_size_supported(chosen.width, chosen.height):
+            layout.label(
+                text=f"Outside {local_export.MIN_DIMENSION} to {local_export.MAX_DIMENSION}"
+                " pixels; set an export size",
+                icon="INFO",
+            )
         layout.label(text=f"{chosen.media} media files")
         layout.label(text="Sound strips audible" if chosen.audible else "No audible sound strips")
         layout.prop(self, "audio_track")

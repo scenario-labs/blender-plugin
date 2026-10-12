@@ -1985,7 +1985,7 @@ SPECS = (
         "prepare_film_export",
         (
             "Bind one built Film review scene and a new MP4 destination for a separate render approval.\n"
-            "Args: context_id, production_id, source_id and destination_path are required; destination_path is an absolute new .mp4 path inside the Output Folder; width/height default to the scene's output size (even, 64 to 4096); include_audio defaults to whether a sound strip is audible.\n"
+            "Args: context_id, production_id, source_id and destination_path are required; destination_path is an absolute new .mp4 path inside the Output Folder; width/height default to the scene's even output size, and both are required when that size is outside 64 to 4096; include_audio defaults to whether a sound strip is audible.\n"
             "Returns: review_id, READY phase, the exact resolved destination, source scene, frames/fps, duration, width/height, audio and media count.\n"
             'Example: {"context_id": "current-context", "production_id": "saved-production", "source_id": "current-source", "destination_path": "<default_directory>/Cut - Final Review.mp4"}.\n'
             "Film is experimental. Agents may write only inside the configured Output Folder, after resolving links; only its default Film subfolder is created when missing. The file must not exist and is never overwritten. Nothing renders yet: show the returned destination and settings and obtain explicit approval before render_film_export. Keep the recipe scene selected and both scenes unchanged until rendering: frame changes, object selection or edits, Undo or Redo, or leaving and selecting a scene again invalidate it. Exports are session-local.\n"

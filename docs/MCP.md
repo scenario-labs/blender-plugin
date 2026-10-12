@@ -984,7 +984,9 @@ returns the context, `default_directory` (the Output Folder's Film subfolder), a
 suggested `default_name` per source and the verification that will run. Call
 `prepare_film_export` with that context, production and source and an absolute new
 `destination_path` inside the Output Folder; optional even `width`/`height` and
-`include_audio` override the scene's size and audible sound strips. Nothing
+`include_audio` override the scene's size and audible sound strips. A listed size
+outside 64 to 4096 pixels is not a blocking reason, but preparing it then needs
+both `width` and `height`; without them the refusal names that size. Nothing
 renders. Show the returned `destination`, timing, size, audio and media count and
 obtain explicit approval before `render_film_export(review_id,
 approved_destination)`, sending that destination verbatim like an exact cost.

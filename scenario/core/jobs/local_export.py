@@ -41,6 +41,8 @@ MAX_MEDIA = 2000
 MAX_MEDIA_BYTES = 16 * 1024**3
 MAX_OUTPUT_BYTES = 16 * 1024**3
 MAX_TIMEOUT = 21600
+# Even H.264 picture bounds for every export, defaulted or chosen.
+MIN_DIMENSION, MAX_DIMENSION = 64, 4096
 # Free space kept beyond each estimate, and the floor that stops a running render.
 SPACE_MARGIN = 64 * 1024**2
 VIDEO_NAME = "film.mp4"
@@ -168,7 +170,8 @@ class ExportSpec:
         ):
             raise ValueError("Export at most fifteen minutes of positive frames")
         if any(
-            type(n) is not int or not 64 <= n <= 4096 or n % 2 for n in (self.width, self.height)
+            type(n) is not int or not MIN_DIMENSION <= n <= MAX_DIMENSION or n % 2
+            for n in (self.width, self.height)
         ):
             raise ValueError("Use even export dimensions from 64 to 4096 pixels")
         if type(self.audio) is not bool:

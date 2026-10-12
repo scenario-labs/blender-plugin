@@ -217,6 +217,59 @@ class FilmExportControlTests(unittest.TestCase):
         self.tools.film_export_review({"review_id": status["review_id"], "action": "discard"})
         self.assert_offline()
 
+    def test_unsupported_scene_size_asks_for_an_explicit_export_size(self):
+        # An 8K or low-percentage review stays exportable at an explicit size, but
+        # its own size cannot be the default: say so before any handle exists.
+        render = self.review.render
+        for key in ("resolution_x", "resolution_percentage"):
+            self.addCleanup(setattr, render, key, getattr(render, key))
+        for x, percentage, size, explicit in (
+            (8192, 100, "8192 x 1080", (4096, 1080)),
+            (1920, 3, "56 x 32", (64, 64)),
+        ):
+            with self.subTest(size=size):
+                render.resolution_x, render.resolution_percentage = x, percentage
+                source = {item["scene"]: item for item in self.sources()["sources"]}[
+                    self.review.name
+                ]
+                self.assertEqual(source["blocked_reason"], "")
+                handles = dict(self.commands._reviews)
+                with self.assertRaisesRegex(ValueError, f"Scene size {size} .*export size"):
+                    self.mcp_prepare(source_id=source["source_id"])
+                self.assertEqual(self.commands._reviews, handles)
+                # The native dialog opens on an explicit size inside the bounds.
+                operator = SimpleNamespace(
+                    report=Mock(),
+                    layout=MagicMock(),
+                    filepath="",
+                    filename_ext=".mp4",
+                    choices=Rows(),
+                    choice_index=0,
+                    audio_track="OFF",
+                    scene_size=True,
+                    width=1920,
+                    height=1080,
+                )
+                context = SimpleNamespace(
+                    scene=self.scene, window_manager=Mock(), blend_data=bpy.data
+                )
+                prepare = self.ui.SCENARIO_OT_prepare_film_export
+                self.assertEqual(prepare.invoke(operator, context, None), {"RUNNING_MODAL"})
+                self.assertFalse(operator.scene_size)
+                self.assertEqual((operator.width, operator.height), explicit)
+                prepare.draw(operator, context)
+                labels = [c.kwargs.get("text") for c in operator.layout.label.call_args_list]
+                self.assertIn(f"Scene size {size}", labels)
+                self.assertIn("Outside 64 to 4096 pixels; set an export size", labels)
+                self.assertEqual(prepare.execute(operator, bpy.context), {"FINISHED"})
+                status = self.commands.current(self.scene)
+                self.assertEqual((status["width"], status["height"]), explicit)
+                self.tools.film_export_review(
+                    {"review_id": status["review_id"], "action": "discard"}
+                )
+        self.assertEqual(self.staging(), [])
+        self.assert_offline()
+
     def test_prepare_refuses_unsafe_destinations_and_settings_before_work(self):
         self.folder.mkdir(parents=True)
         (self.folder / "Taken.mp4").write_bytes(b"keep")

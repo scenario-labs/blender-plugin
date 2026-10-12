@@ -1120,8 +1120,12 @@ strips and any blocking reason: no strips, a rate that is not an integer from 1 
 120, more than fifteen minutes, scene, clip or mask strips, missing media or the
 media budget. **Audio** matches the sound strips by default, or always includes or
 omits an AAC track; **Use review scene size** can be turned off for explicit even
-dimensions. Confirming the file browser validates the destination with the
-session policy and prepares a READY export; nothing renders.
+dimensions. A scene size outside 64 to 4096 pixels is not a blocking reason: the
+browser opens with that option off and the nearest bounded size, and preparing
+that scene size, natively or through MCP without both dimensions, is refused
+with the size and a request for an explicit one. Confirming the file browser
+validates the destination with the session policy and prepares a READY export;
+nothing renders.
 
 **Render video** is a separate confirmation. It repeats the review scene, frames,
 rate, duration, size, audio track and media count, wraps the full resolved

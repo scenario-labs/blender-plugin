@@ -26,7 +26,7 @@
       "tests/fixtures/models/trained/contracts.json": "15c19f7c77dd5dbc9c94b61a1cad8b3785a0105d7c4f21c984bdabf26e0fa779",
       "scenario/mcp/tools_scenario.py": "32962ae1546dd74f80da6a0e4c5ca05c5c403496dd2657341156dc88667825ba",
       "scenario/blender/trained_models.py": "f3ce308f83794bcf4a4a5ed92525e53b5cb511c235ccdd3f3f97da28f270ab9a",
-      "scenario/blender/trained_defaults.py": "43b083f523de461993002bd8df200f3b1b59d4374733c20fddac6b3b12189227"
+      "scenario/blender/trained_defaults.py": "e38474e5174121bf5b6771a6e134ebd5744d7a6d7e717eb7473098c37ad5cf0e"
     }
   }
 }

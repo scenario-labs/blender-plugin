@@ -13,15 +13,15 @@ sections keep their own candidate identities and dates.
 
 Reviewed on 2026-10-12 against `main` at
 `ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged, and brought up
-to date with `main` at `2e89cae89f1ddc7de8487b938b683a57c472a2df`, after #420
-merged. Since that first review, #403 to #406, #408, #409, #416 to #420 and
-#422 have merged. Still open: #410 (trained-model strengths and project
-defaults), #411 (MCP trained models and defaults), #423 (the preview pager's
-fit in the sidebar, a defect found by the
-[pager desktop check](#previews-and-playback)) and release PR #70. The final
-candidate is not built yet. This section records which evidence each retained
-capability has, of which kind, and what remains with its owner. It does not
-certify the final archive, authorize publication or close #68.
+to date with `main` at `3720c9e36eb8ec73382f7158bf4c69c67322eda9`, after #423
+merged. Since that first review, #403 to #406, #408, #409, #416 to #420, #422
+and #423 have merged; #423 fixes the preview pager's fit in the sidebar, a
+defect found by the [pager desktop check](#previews-and-playback). Still open:
+#410 (trained-model strengths and project defaults), #411 (MCP trained models
+and defaults) and release PR #70. The final candidate is not built yet. This
+section records which evidence each retained capability has, of which kind,
+and what remains with its owner. It does not certify the final archive,
+authorize publication or close #68.
 
 ### Release candidate identity
 
@@ -95,7 +95,7 @@ description. Quote values, saved identities and private reports stay private.
 | [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; desktop recheck; #410 and #411 open |
 | [Workflows](#workflows) | Paid live decisions; free live uploads; desktop forms | Pending: desktop review dialogs, previews and uploads |
 | [Film](#film) | Installed; desktop dialogs; export in background Blender | Pending: desktop rerun after #407 and #408 |
-| [Previews and playback](#previews-and-playback) | Free live; desktop on pre-merge heads and the merged pager | Pending: pager fit in the sidebar, #423 open; human listening |
+| [Previews and playback](#previews-and-playback) | Free live; desktop on pre-merge heads and the merged pager | Pending: pager recheck after #423 on the candidate; human listening |
 | [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
 | [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1 | Pending: job card; IME by a person |
 | [MCP parity](#mcp-parity) | Free and paid live through local MCP | Passed for the tools on `ff8d29d8`; pending: #404 and #420 tools on merged heads; #411 open |
@@ -336,17 +336,20 @@ description. Quote values, saved identities and private reports stay private.
   disabled, and a click on it changed nothing, the range line read `1-4 of 6`
   and `3-6 of 6`. A job with four results drew no pager in the sidebar's Jobs
   panel or on the Studio Jobs page. After an arrow click the viewport still
-  answered orbit, wheel zoom and keys, and no field took keyboard focus. One defect: in the 3D View sidebar at its default width, at
-  both scales, a paged row's arrows were about 1.65 times as tall as its tiles,
-  where the [UI contract](../UI_STYLE.md#saved-result-previews) makes them
-  as tall as the icons, and its tiles were about 30% smaller than those of an
-  unpaged row in the same panel. In Studio and in a widened sidebar the arrows
-  matched the tiles. #423, open, fixes the fit; its desktop recheck is
-  pending.
-- **Status:** pending: the pager's fit in the default-width sidebar (#423,
-  then a desktop recheck at UI scales 1.0 and 2.0, under #66 and #68); human listening and Play audio (the maintainer, under #189 and #68);
-  the waveform and Studio's Results page at UI scale 2.0; and the waveform
-  alignment fix proposed on #189.
+  answered orbit, wheel zoom and keys, and no field took keyboard focus. One
+  defect: in the 3D View sidebar at its default width, at both scales, a paged
+  row's arrows were about 1.65 times as tall as its tiles, where the
+  [UI contract](../UI_STYLE.md#saved-result-previews) makes them as tall as the
+  icons, and its tiles were about 30% smaller than those of an unpaged row in
+  the same panel. In Studio and in a widened sidebar the arrows
+  matched the tiles. #423 (`3720c9e3`) then merged, fitting a paged row so its
+  arrows stay as tall as its tiles; the physical recheck at UI scales 1.0 and
+  2.0 is pending and will run on the release candidate ZIP.
+- **Status:** pending: the physical recheck of #423's pager fit in the
+  default-width sidebar at UI scales 1.0 and 2.0, on the release candidate ZIP
+  (#66 and #68); human listening and Play audio (the maintainer, under #189
+  and #68); the waveform and Studio's Results page at UI scale 2.0; and the
+  waveform alignment fix proposed on #189.
 
 ### Library organization
 
@@ -424,7 +427,7 @@ description. Quote values, saved identities and private reports stay private.
 | Export and case-study save after #407 and #408 | Film | #66 and #68 | The fix landed after the desktop pass |
 | Library Apply from the dialog | Library | #66 | Write-capable desktop session refused by the agent permission rules |
 | Merged Environment lane, its rebased tab row, local panorama upload and From image | Panorama | #98 and #66 | #416 merged after the desktop pass; uploads need the spend guard off |
-| Preview pager fit in the default-width sidebar, at UI scales 1.0 and 2.0 | Previews | #66 and #68 | Defect found by the 2026-10-13 desktop check; its fix, #423, is open |
+| Preview pager fit in the default-width sidebar at UI scales 1.0 and 2.0, on the release candidate ZIP | Previews | #66 and #68 | #423 merged the fix after the 2026-10-13 desktop check found the defect; no physical recheck yet |
 | Folder and link buttons on the shared launcher | Previews, Film | #68 | #422 has native tests only; no physical check of the buttons |
 | `workflow_job_steps`, `decide_workflow_step` and `inspect_result_previews` on merged heads, then #411's tools | MCP | #65 and #68 | Live evidence ran on pre-merge heads; #411 is open |
 | #401 session endings and #402 import Undo and save prompt | Composer, 3D | #66 and #68 | Fixes merged after the desktop passes |

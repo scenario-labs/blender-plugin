@@ -224,9 +224,10 @@ silently.
 A LoRA without a strength, such as an ID adopted from an earlier text field, gets
 a **Set strength** button when the base declares a range: the strength then starts
 at that same start and the price is requested again. A base that declares a
-default but no range shows **Strength: the base model's default (N)** and sends
-that default. A request never adds a strength the user did not see. A composition
-row reads **Name (composition)** with its LoRAs and their own strengths listed
+default shows **Strength: the base model's default (N)** and sends that default
+until a strength is set, with **Set strength** below it when the base also
+declares a range. A request never adds a strength the user did not see. A
+composition row reads **Name (composition)** with its LoRAs and their own strengths listed
 read-only below it. The reason a choice cannot run is drawn in the box with
 `ERROR` (or `TIME` while trained models load), and **Add LoRA or composition**
 opens the picker on the Trained chip. The box ends with the experimental line.
@@ -260,8 +261,11 @@ description is read at most once per base and selection; a read that could not
 start is tried again by the pump. Choosing a model or a trained model makes the
 choice explicit, and the default no longer changes that form. Applying a default
 in another scene reprices only that scene's form. Local MCP render inspection and
-quotes apply the same step first; naming `model_id` in
-`render_form` `configure` is an explicit choice, even for the model already shown.
+quotes apply the same step first, and so does `render_form` `configure` without a
+`model_id`, which changes nothing and returns the reason while the default waits or
+cannot run; a failure writing the default is logged and the form keeps waiting.
+Naming `model_id` in `configure` is an explicit choice, even for the model already
+shown, and the default is not applied first.
 Drawing reads cached defaults only; the owner is opened by the pump, requests and
 operators.
 

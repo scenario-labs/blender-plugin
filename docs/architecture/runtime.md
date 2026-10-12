@@ -177,15 +177,17 @@ selected store's scope without any service request, and this retirement path
 retires it, so a default reviewed under the old selection cannot be written into
 the new one ([runtime owner](../JOB_STORAGE.md#runtime-owner)). The native Image and
 Render Image forms read those defaults into a per-selection cache that drawing only
-reads; the GUI pump, before pricing, and local MCP render inspection or quotes give
-a form with no explicit choice its lane default once the route checks, without
-tagging the scene ([catalog delivery](#active-sdk-catalog)), and block its price
+reads; the GUI pump, before pricing, and local MCP render inspection, quotes or
+`configure` without a model give a form with no explicit choice its lane default
+once the route checks, without tagging the scene
+([catalog delivery](#active-sdk-catalog)), and block its price
 with the reason otherwise
 ([trained models section](../UI_STYLE.md#trained-models-section-and-project-defaults)).
 A form that fails to take the default keeps waiting without keeping it from the
 other forms, and Save or Clear still succeeds once the store has written it; the
-pump reports the failure and retries that form. Read-only history and Film
-controls check both credentials and project without mutating state in drawing.
+pump reports the failure and retries that form, and local MCP logs it and returns
+the wait. Read-only history and Film controls check both credentials and project
+without mutating state in drawing.
 Prototype jobs have no reliable credential or project ownership. Their automatic
 service engine is retired for every selection, including the default project;
 clearing the override cannot resume it. See [local prototype records](#local-prototype-records).

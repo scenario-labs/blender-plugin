@@ -1157,7 +1157,7 @@ class JobSession:
         del self._issued[id(completion)]
         claim = self._claim_saved_application(verified, destination, "model", (asset_id,))
         try:
-            application = apply_model(scene, item, path, cursor=cursor)
+            application = apply_model(scene, item, path, cursor=cursor, history=True)
         except ModelApplicationError:
             try:
                 self._coordinator.fail_application(claim)

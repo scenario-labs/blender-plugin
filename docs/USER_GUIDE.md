@@ -271,8 +271,17 @@ rate, with time zero at frame zero. Your current frame and timeline range stay
 unchanged; adjust the range yourself to play the full clip. External files,
 pointer-based animation, other model formats and replacing an existing mesh are
 not supported by this new import action. Large models may briefly pause Blender
-while loading. Save the blend file yourself after import; this command does not
-add a global Undo step.
+while loading.
+
+In desktop Blender with Global Undo enabled and at least two undo steps, the
+import is its own Undo step. One Undo removes only the imported group and keeps
+your earlier steps; Redo brings the import back. Undo History lists it as
+**Scenario model import**, after a **Before Scenario model import** checkpoint
+that keeps any change not yet in history. Blender's history limits still apply.
+Undo does not reset the saved job or reverse a generation charge, and Redo does
+not generate again. To import the saved file again after Undo, choose
+**Import model (N)** and confirm the review. Save the blend file yourself after
+import.
 
 ![One saved triangle model imported beside existing geometry at the approved Blender cursor](images/saved-model-result.png)
 

@@ -9,6 +9,7 @@ import bpy
 from mathutils import Matrix
 
 from . import mesh_application, model_application, rig_application
+from .model_application import _undo_enabled, _undo_push
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -42,22 +43,6 @@ def validate_request(target, *, policy, result_to_source, keep_original):
             "Choose a source with surface geometry, not a parts anchor"
         )
     return mesh_application._matrix(result_to_source)
-
-
-def _undo_enabled():
-    """Respect native history settings; background sessions have no desktop history."""
-    preferences = bpy.context.preferences.edit
-    return (
-        not bpy.app.background
-        and preferences.use_global_undo
-        and preferences.undo_steps > 1
-        and bpy.context.window is not None
-    )
-
-
-def _undo_push(message):
-    if bpy.ops.ed.undo_push(message=message) != {"FINISHED"}:
-        raise RuntimeError("Blender could not record the mesh undo state")
 
 
 def _release_import(imported, objects, staging):

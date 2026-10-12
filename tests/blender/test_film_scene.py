@@ -254,6 +254,21 @@ class FilmSceneTests(unittest.TestCase):
         self.assertEqual(len(result.actors), 1)
         self.unchanged_context()
 
+    def test_hero_import_records_no_history_inside_the_shot_build(self):
+        # Saved-model imports record desktop Undo checkpoints; a shot build owns
+        # its history, so a hero import must not record a partial build state.
+        self.actors()
+        module = self.builder.model_application
+        with (
+            patch.object(module, "_undo_enabled", return_value=True),
+            patch.object(
+                module, "_undo_push", side_effect=AssertionError("Hero history checkpoint")
+            ),
+        ):
+            result = self.build(heroes={"hero": self.source()})
+        self.assertEqual(len(result.actors), 1)
+        self.unchanged_context()
+
     def test_imported_morph_hold_loop_speed_and_stop_evaluate_independently(self):
         self.actors(2)
         first, second = self.raw["shots"][0]["actors"]

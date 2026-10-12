@@ -129,6 +129,22 @@ def validate_destination(scene, cursor):
         raise ModelApplicationError("Choose a local scene in Object Mode and a finite cursor")
 
 
+def _undo_enabled():
+    """Respect native history settings; background sessions have no desktop history."""
+    preferences = bpy.context.preferences.edit
+    return (
+        not bpy.app.background
+        and preferences.use_global_undo
+        and preferences.undo_steps > 1
+        and bpy.context.window is not None
+    )
+
+
+def _undo_push(message):
+    if bpy.ops.ed.undo_push(message=message) != {"FINISHED"}:
+        raise RuntimeError("Blender could not record the undo state")
+
+
 def _snapshot():
     return {name: set(getattr(bpy.data, name)) for name in _TRACKED_DATA}
 
@@ -236,9 +252,24 @@ def staged_model(item, path, previous, *, static_only=True):
                 _log.warning("Model snapshot cleanup failed; temporary files may remain")
 
 
-def apply_model(scene, item, path, *, cursor):
-    """Stage in a disposable scene, then publish only newly imported model data."""
+def apply_model(scene, item, path, *, cursor, history=False):
+    """Stage in a disposable scene, then publish only newly imported model data.
+
+    ``history`` records desktop Undo checkpoints around a standalone import, which
+    runs outside any native operator. Callers importing inside a larger build own
+    their history and must not record its partial states.
+    """
     validate_destination(scene, cursor)
+    undo = history and _undo_enabled()
+    if undo:
+        # Capture the latest state, including edits no operator recorded, so one
+        # Undo removes only this import. Stop before staging without that state.
+        try:
+            _undo_push("Before Scenario model import")
+        except Exception:
+            raise ModelApplicationError(
+                "Could not prepare Blender undo; nothing was imported"
+            ) from None
     previous = _snapshot()
     try:
         with staged_model(item, path, previous, static_only=False) as (staging, objects):
@@ -252,7 +283,6 @@ def apply_model(scene, item, path, *, cursor):
                 anchor = _bottom_center(objects)
             application = _publish(scene, objects, cursor, item.asset.asset_id, anchor)
             bpy.data.scenes.remove(staging)
-            return application
     except Exception:
         _remove_new_data(previous)
         if _snapshot() != previous:
@@ -260,3 +290,12 @@ def apply_model(scene, item, path, *, cursor):
         raise ModelApplicationError(
             "Could not import the verified model; saved files remain"
         ) from None
+    if undo:
+        try:
+            # The history state must contain no staging scene.
+            _undo_push("Scenario model import")
+        except Exception:
+            # The import is complete. A missing history entry is not a failed
+            # application and must never authorize another import.
+            _log.warning("Model imported, but Blender undo could not be recorded")
+    return application

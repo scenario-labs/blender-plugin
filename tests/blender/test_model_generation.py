@@ -2153,6 +2153,109 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(fresh["reuse"])
         self.assertEqual((len(self.calls), len(self.paid)), before)
 
+    def model_history(self):
+        """Enable real memfile history; production checkpoints run on desktop only."""
+        preferences = bpy.context.preferences.edit
+        settings = preferences.use_global_undo, preferences.undo_steps
+        preferences.use_global_undo, preferences.undo_steps = True, 32
+
+        def restore():
+            preferences.use_global_undo, preferences.undo_steps = settings
+
+        self.addCleanup(restore)
+        # Force eligibility to exercise real undo operators in the background runner.
+        return patch.object(
+            submodule("blender.model_application"), "_undo_enabled", return_value=True
+        )
+
+    def test_model_native_undo_removes_only_the_import_and_redo_restores_it(self):
+        request_id = self.recovered_model()
+        history = self.model_history()
+        scene_name = bpy.context.scene.name
+
+        def scene():
+            # History replaces RNA wrappers; resolve the scene again by name.
+            restored = bpy.data.scenes[scene_name]
+            bpy.context.window.scene = restored
+            return restored
+
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+        # The user's neighbouring step, then a script edit without its own step.
+        scene()["recorded_user_edit"] = "kept"
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture user edit"), {"FINISHED"})
+        scene()["unrecorded_user_edit"] = "kept"
+        before = {obj.name for obj in bpy.data.objects}
+        with history:
+            status = self.finish_application(self.prepare_model(request_id))
+        self.assertEqual(status["status"], "applied", status)
+        after = {obj.name for obj in bpy.data.objects}
+        # The new group adds its root empty beside the two imported objects.
+        self.assertEqual(len(after - before), 3)
+        self.assertLess(set(status["objects"]), after - before)
+        record = self.store.get(request_id)
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, before)
+        self.assertEqual(scene().get("recorded_user_edit"), "kept")
+        self.assertEqual(scene().get("unrecorded_user_edit"), "kept")
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertTrue(self.prepare_model(request_id)["reuse"])
+
+        self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, after)
+        self.assertEqual(scene().get("recorded_user_edit"), "kept")
+        self.assertEqual(scene().get("unrecorded_user_edit"), "kept")
+        self.assertFalse(
+            any(item.name.startswith("Scenario import staging") for item in bpy.data.scenes)
+        )
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+
+    def test_model_failed_undo_preparation_imports_nothing_and_allows_review(self):
+        request_id = self.recovered_model()
+        module = submodule("blender.model_application")
+        before, calls = set(bpy.data.objects), (len(self.calls), len(self.paid))
+        with (
+            patch.object(module, "_undo_enabled", return_value=True),
+            patch.object(
+                module, "_undo_push", side_effect=RuntimeError("fixture unavailable history")
+            ),
+        ):
+            status = self.finish_application(self.prepare_model(request_id))
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(set(bpy.data.objects), before)
+        self.assertIn("import_model", status["actions"])
+        self.assertEqual((len(self.calls), len(self.paid)), calls)
+
+    def test_model_failed_final_undo_checkpoint_keeps_import_without_replay(self):
+        request_id = self.recovered_model()
+        module = submodule("blender.model_application")
+        with (
+            patch.object(module, "_undo_enabled", return_value=True),
+            patch.object(
+                module,
+                "_undo_push",
+                side_effect=[None, RuntimeError("fixture unavailable history")],
+            ),
+            self.assertLogs("scenario.jobs", "WARNING") as logs,
+        ):
+            status = self.finish_application(self.prepare_model(request_id))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertNotIn("retry_receipt", status["actions"])
+        self.assertIn("undo could not be recorded", "\n".join(logs.output))
+
+    def test_model_background_import_records_no_desktop_history(self):
+        request_id = self.recovered_model()
+        module = submodule("blender.model_application")
+        with patch.object(
+            module, "_undo_push", side_effect=AssertionError("Background history checkpoint")
+        ):
+            status = self.finish_application(self.prepare_model(request_id))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(status["objects"]), 2)
+
     def recovered_panorama(self, *, jpeg=False, media_type=None, data=None, width=8, height=4):
         before_worlds = set(bpy.data.worlds)
 

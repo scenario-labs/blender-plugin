@@ -138,7 +138,7 @@ there is no receipt-only retry when scene success is unknown. Temporary snapshot
 cleanup is attempted separately: a filesystem cleanup error reports a sanitized
 warning and may leave a temporary file, but preserves a completed packed import.
 Copying, hashing and decoding are synchronous on the main thread, so large models
-can pause Blender. There is no automatic blend save or global-undo transaction.
+can pause Blender. There is no automatic blend save.
 
 Native **Import model (N)** and MCP `prepare_result_application` with
 `asset_id` capture the scene revision and exact cursor. Approval is consumed once;
@@ -153,6 +153,32 @@ Receipt-only retry saves known success without importing another model, and
 session shutdown releases that retry handle. This remains partial #65/#99 work:
 provider-specific edit contracts, rig/animation transfer and edit-specific recovery
 are not established by a successful new-object import.
+
+### Native undo for saved model imports
+
+The import runs on Blender's main thread after worker verification, outside any
+native operator, so Blender records no operator Undo step for it. The model
+command therefore records Blender history itself, under the same conditions as
+[saved mesh edits](#native-undo-for-saved-mesh-edits): a desktop window, Global
+Undo enabled and at least two undo steps. The extension does not change
+preferences, and background application creates no desktop history. The first
+checkpoint, **Before Scenario model import**, follows destination validation and
+precedes staging. It holds the latest scene, including changes no operator
+recorded. The second, **Scenario model import**, follows publication and staging
+scene removal. Neither contains the staging scene. One Undo removes only the new
+group and its data and keeps the user's earlier steps; Redo restores the group.
+Only the saved-result command records these checkpoints. A Film shot build imports
+its heroes through the same primitive without them, so history never holds a
+partially built shot; the build keeps its own Undo behavior.
+
+A failed initial checkpoint stops before staging. The claim then fails like other
+known import failures, so the job can be reviewed again. A failed final checkpoint
+leaves the completed import applied and logs a sanitized warning; it never
+authorizes another import. A failed import after the initial checkpoint is rolled
+back, and that checkpoint stays in history; the command never calls Undo itself.
+Undo/Redo changes Blender scene data only. The saved job stays applied, spending
+records are unchanged and Redo does not import or generate again. Importing again
+after Undo requires fresh reuse approval under a separate local claim.
 
 ## Rigged and animated model import
 
@@ -184,8 +210,9 @@ clips, UI-list restoration and complete cleanup after failed publication.
 
 This imports a complete new character. The separate [RIG policy](#attach-a-returned-rig)
 can attach a compatible returned skin to a captured static mesh; retargeting an
-existing rig remains outside this import command. Native global Undo is not
-added to this new-group command. See [interaction evidence](UI_STYLE.md#animated-model-import-interaction)
+existing rig remains outside this import command. This new-group command records
+the same [native Undo steps](#native-undo-for-saved-model-imports) as a static
+import. See [interaction evidence](UI_STYLE.md#animated-model-import-interaction)
 for the exact packaged desktop check and its limits.
 
 ## Saved 3D package classification

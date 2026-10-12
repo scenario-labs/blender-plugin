@@ -764,10 +764,10 @@ both scales; the loading lines wrapped inside the box, and the summary kept
 started at the box's left edge rather than under the first line's text. All
 three passes predate the credential-free system player launch: **Play video**
 then went through Blender's `wm.path_open`, which runs the same macOS `open`
-command with Blender's whole environment. A later private check at UI scale 1.0,
-with Environment credentials and a ZIP with that launch, confirmed that **Play
-video** opened the system player on the private read-only copy, whose SHA-256
-matched the saved result, and that **Play in Blender** started a player whose
+command with Blender's whole environment. A later private check with
+Environment credentials and a ZIP with that launch confirmed that **Play video**
+opened the system player on the private read-only copy, whose SHA-256 matched
+the saved result, and that **Play in Blender** started a player whose
 environment had no `SCENARIO_`, `PYTHON` or proxy names. Play
 audio, the waveform's Cancel, Retry and close on the desktop, clicking **Play
 video** or **Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport

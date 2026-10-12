@@ -8,6 +8,7 @@ synthetic private records. Nothing reaches the network. Submissions are
 answered only where a test opts in, by that synthetic service; nothing is spent.
 """
 
+import copy
 import hashlib
 import json
 import unittest
@@ -656,6 +657,32 @@ class McpTrainedModelTests(unittest.TestCase):
             [(row["id"], row.get("default", False)) for row in listed],
             [(STUDIO_LORA, False), (COMPOSITION, True)],
         )
+
+    def test_a_default_refuses_a_strength_its_base_draws_no_field_for(self):
+        """A base with a default strength but no range sends that default; Save stores none."""
+        flux1 = copy.deepcopy(self.details[FLUX1])
+        for field in flux1["inputs"]:
+            if field["name"] == "lorasScale":
+                field.pop("min"), field.pop("max")
+                field["default"] = 0.7
+        self.details[FLUX1] = flux1
+        self.load_catalog()
+        self.open_trained()
+        context = self.tools.model_defaults({"lane": "image"})["context_id"]
+        args = {
+            "action": "set",
+            "lane": "image",
+            "context_id": context,
+            "expected_revision": 0,
+            "base_model_id": FLUX1,
+            "picks": [{"model_id": LORA_A, "scale": 0.8}],
+        }
+        self.assert_refused(
+            lambda: self.tools.model_defaults(args), "no longer declares a strength range"
+        )
+        self.assertEqual(self.tools.model_defaults({"lane": "image"})["lanes"][0]["revision"], 0)
+        (saved,) = self.tools.model_defaults({**args, "picks": [{"model_id": LORA_A}]})["lanes"]
+        self.assertEqual(saved["parameters"], {"loras": [LORA_A], "lorasScale": [0.7]})
 
     # -- render_form ------------------------------------------------------------------
     def test_render_form_sets_the_render_image_choice_with_the_pickers_rules(self):

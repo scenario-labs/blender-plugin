@@ -333,6 +333,24 @@ class TrainedModelTests(unittest.TestCase):
         rows = {item.model_id: item for item in self.wm.scenario_picker_items}
         self.assertTrue(rows[STUDIO_LORA].available)
 
+    def test_a_row_highlighted_before_its_bases_arrive_runs_with_its_only_base(self):
+        self.load_catalog()
+        self.picker.prepare(bpy.context, "image", "trained")  # starts the base reads
+        self.assertTrue(self.trained.scan_status("image").startswith("Checking base models"))
+        items = self.wm.scenario_picker_items
+        self.assertEqual((self.wm.scenario_picker_index, items[0].model_id), (0, STUDIO_LORA))
+        self.assertIsNone(self.picker.chosen_base())  # no base description has arrived yet
+        # The arriving descriptions rebuild the rows and assign the unchanged index 0.
+        self.settle()
+        self.assertEqual((self.wm.scenario_picker_index, items[0].model_id), (0, STUDIO_LORA))
+        self.assertEqual(self.wm.scenario_picker_base, FLUX1)
+        self.assertEqual(self.picker.chosen_base().id, FLUX1)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)
+        # OK takes the box's "Runs with FLUX.1 Dev" without another click on the row.
+        self.assertEqual(bpy.ops.scenario.pick_model(lane="image"), {"FINISHED"})
+        self.assertEqual(self.lane.model_id, FLUX1)
+        self.assertEqual([slot.model_id for slot in self.lane.trained], [STUDIO_LORA])
+
     def test_a_reopened_picker_highlights_the_forms_trained_choice(self):
         self.load_catalog()
         self.open_trained()

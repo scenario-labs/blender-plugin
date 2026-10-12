@@ -280,4 +280,4 @@ def unregister():
         try:
             bpy.utils.unregister_class(cls)
         except RuntimeError:
-            pass
+            pass  # already unregistered (a partial registration or tests swapping the module)

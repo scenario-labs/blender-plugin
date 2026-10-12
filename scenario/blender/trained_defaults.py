@@ -297,6 +297,38 @@ def writable(resolution, lane):
     return replace(resolution, reason=reason) if reason else resolution
 
 
+def _select(lane_state, models, model_id):
+    """Store the form's base model without its RNA update, then sync the form as it would."""
+    from . import generation
+
+    # Each model enum value is its 3-tuple item's index, as in restore_model_key.
+    lane_state["model_id"] = models.index(model_id)
+    generation.on_model_changed(bpy.context, lane_state)  # what the update would run
+
+
+def _slots(lane_state):
+    """The form's trained slots with every value write_slots sets (an unset one is None)."""
+    slots = []
+    for s in lane_state.trained:
+        scale = s.scale if s.is_property_set("scale") else None
+        values = (s.model_id, s.kind, s.lane, s.name, s.fmin, s.fmax, s.has_scale)
+        slots.append((*values, scale, s.get(trained_models.SCOPE)))
+    return slots
+
+
+def _restore_slots(lane_state, slots):
+    """Write `_slots` back as they were, without the strength's RNA update."""
+    lane_state.trained.clear()
+    for model_id, kind, lane, name, fmin, fmax, has_scale, scale, scope in slots:
+        item = lane_state.trained.add()
+        item.model_id, item.kind, item.lane, item.name = model_id, kind, lane, name
+        item.fmin, item.fmax, item.has_scale = fmin, fmax, has_scale
+        if scale is not None:
+            item["scale"] = scale
+        if scope is not None:
+            item[trained_models.SCOPE] = scope
+
+
 def _apply(lane_state, lane, resolution, *, seed=False):
     """Write a resolved default into the form: base model, then its trained choice.
 
@@ -309,8 +341,13 @@ def _apply(lane_state, lane, resolution, *, seed=False):
     form and re-arms its price itself. Either way the form is repriced.
 
     Raises ScenarioError before any change when it cannot be written. A failure
-    while writing restores the model key and leaves no trained choice, so a
-    form the default governs stays governed and never prices its base alone.
+    while writing is raised again after a rollback, which reprices the form only
+    by syncing a restored base, as selecting it would. Use restores the form's
+    previous choice: its base model (stored without the RNA update, then synced
+    so its inputs match it), its model key and its trained slots with their
+    strengths and scope. A default applied automatically restores the model key
+    and leaves no trained choice, so the form it governs stays governed and
+    never prices its base alone.
     """
     reason = _write_error(lane, resolution)
     if reason:
@@ -318,23 +355,22 @@ def _apply(lane_state, lane, resolution, *, seed=False):
     scope = trained_models.current_scope()
     base = resolution.base
     models = [item[0] for item in runtime.enum_items(("models", lane))]
-    key, choice_written = lane_state.model_key, False
+    key, previous, slots = lane_state.model_key, lane_state.model_id, _slots(lane_state)
     try:
         lane_state.model_key = base.id
         if lane_state.model_id != base.id:
             if seed:
-                from . import generation
-
-                # Each model enum value is its 3-tuple item's index, as in restore_model_key.
-                lane_state["model_id"] = models.index(base.id)
-                generation.on_model_changed(bpy.context, lane_state)  # what the update would run
+                _select(lane_state, models, base.id)
             else:
                 lane_state.model_id = base.id  # its update callback runs on_model_changed
-        choice_written = True
         trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope, seed=seed)
     except Exception:
-        if choice_written:
-            lane_state.trained.clear()
+        if seed:
+            lane_state.trained.clear()  # the form it governs had no trained choice
+        else:
+            if lane_state.model_id != previous and previous in models:
+                _select(lane_state, models, previous)
+            _restore_slots(lane_state, slots)
         lane_state.model_key = key
         raise
     props.mark_estimate_dirty(lane_state)
@@ -344,7 +380,8 @@ def use(lane_state, lane):
     """Apply the saved default to this form now (explicit Use). Returns its label.
 
     Raises ScenarioError with the reason when it is still loading or cannot run;
-    the form then keeps its current choice.
+    the form then keeps its current choice. Any other failure while writing is
+    raised once the form's previous choice is restored (_apply).
     """
     runtime.sync_catalog_context()
     cache = load()

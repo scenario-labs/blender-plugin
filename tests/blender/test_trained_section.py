@@ -892,6 +892,50 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertTrue(self.defaults.apply_pending())
         self.assertEqual((self.lane.model_key, len(self.lane.trained)), (FLUX1, 2))
 
+    def test_a_use_that_fails_while_writing_keeps_the_forms_previous_choice(self):
+        """Use restores the form's own base, inputs, LoRA and strength, then raises.
+
+        The form keeps Z-Image with a LoRA picked on FLUX.1 Dev, as a base change
+        leaves it; the default is FLUX.1 Dev with two LoRAs. Writing it fails once
+        the base changed and the trained list was cleared and partly written.
+        """
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.lane.trained.clear()
+        self.open_trained()
+        self.pick(LORA_A, 0.6)
+        self.lane.model_id = ZIMAGE  # an explicit base change keeps the LoRA
+        self.settle()
+
+        def choice():
+            slots = [
+                (s.model_id, s.kind, s.lane, s.name, round(s.scale, 4), s.has_scale)
+                + (s.fmin, s.fmax, s.get(self.trained.SCOPE))
+                for s in self.lane.trained
+            ]
+            inputs = sorted((p.model_id, p.name) for p in self.lane.params)
+            return self.lane.model_id, self.lane.model_key, slots, inputs
+
+        before, reasons = choice(), self.errors()
+        self.assertEqual(before[:2], (ZIMAGE, ZIMAGE))
+        self.assertEqual([(slot[0], slot[4]) for slot in before[2]], [(LORA_A, 0.6)])
+        write_slots, written = self.trained.write_slots, []
+
+        def fails_partway(lane_state, lane, chosen, *args, **kwargs):
+            write_slots(lane_state, lane, chosen[:1], *args, **kwargs)
+            written.append((lane_state.model_id, [s.model_id for s in lane_state.trained]))
+            raise RuntimeError("synthetic")
+
+        with (
+            patch.object(self.trained, "write_slots", side_effect=fails_partway),
+            self.assertRaises(RuntimeError),
+        ):
+            self.defaults.use(self.lane, "image")
+        self.assertEqual(written, [(FLUX1, [STUDIO_LORA])])  # the new base and part of its list
+        self.assertEqual(choice(), before)
+        self.assertEqual(self.errors(), reasons)
+
     def test_one_form_failing_to_take_a_saved_default_keeps_it_from_no_other_form(self):
         """Save succeeds once the default is stored; a form that cannot take it waits alone."""
         self.choose_stack()

@@ -350,8 +350,11 @@ establish live generation or full render-lane desktop acceptance.
   on Blender's main thread, one image per timer tick: about 0.1 s for a
   4096-pixel JPEG and 0.2 s at 8192 by 4096 pixels on macOS arm64, longer for
   real photographs and on slower machines. Background Blender decodes no image
-  previews, and local MCP cannot read previews yet. Desktop interaction,
-  screenshots and UI scales are not recorded
+  previews, and local MCP cannot read previews yet. Desktop evidence is
+  partial: two physical passes on macOS arm64 Blender 5.1.2 at UI scale 1.0
+  showed tiles loading and ready in Jobs and ready in Generations and Studio,
+  but not **Retry preview (N)**, Online Access disabled, the measured status
+  wrapping or UI scale 2.0
   ([#66](https://github.com/scenario-labs/blender-plugin/issues/66),
   [#68](https://github.com/scenario-labs/blender-plugin/issues/68)).
 - Prompt helpers lack an explicit generic/model-contextual Spark preference

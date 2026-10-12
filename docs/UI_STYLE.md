@@ -866,18 +866,35 @@ read-only and open no confirmation; Retry's tooltip says nothing is generated,
 applied, spent or changed in the scene. Shared image rows no longer load a
 draw-time thumbnail.
 
-Icon size and wrap columns follow the region width divided by
-`preferences.system.ui_scale` (1 when background Blender reports 0). Drawing
-reads only the controller's precomputed tiles: no file, store or session
-access, decode, request or property write. Requests, image decoding and icons
-happen in the controller's timer, outside drawing.
+Icon size follows the drawn region's width, or in Studio the width it requests
+for its popup, divided by `preferences.system.ui_scale` (1 when background
+Blender reports 0). Status lines wrap like the waveform box's, by the width
+Blender's interface font measures less the sidebar's panel, job box and icon
+space, and a caption such as **Model (2)** stays whole on one line. Drawing
+reads only the controller's precomputed tiles: no file, store or session access,
+decode, request or property write. Requests, image decoding and icons happen in
+the controller's timer, outside drawing.
 
 Installed exact-ZIP tests on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 draw
 tiles through recording layouts with file and store reads refused, and through
 the real Jobs panel. They check that each caption starts with its number and
 that the number with an ellipsis fits the tile's icon width in Blender's UI
-font. Physical input, focus, viewport interaction and screenshots at UI scales
-1.0 and 2.0 are not yet recorded; they remain #66 and #68 acceptance.
+font. On Blender 5.1.2 they also measure the status lines in a 561 px sidebar
+at an interface scale of 2, in a sized popup and in Studio's first draw before
+its popup is sized, where the icons also size from the requested width.
+
+Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
+1.0, with system mouse and wheel events and ZIPs built before the measured
+status wrapping, showed tiles going from their placeholder and status line to
+ready in Jobs, and ready tiles in Generations and on the Studio Jobs and Results
+pages. Wheel scrolling the sidebar and the Studio Jobs page kept the tiles in
+place, and the next clicks hit the intended controls. The second pass read
+number-first captions in the sidebar at its default width, where the 3D job's
+two clipped model captions kept their numbers, and a screenshot from it sets the
+status line inset. The measured status wrapping, **Retry preview (N)**, Online
+Access disabled, focus and viewport interaction while tiles update, screenshots
+at UI scale 2.0 and other platforms are not yet recorded; they remain #66
+and #68 acceptance.
 
 ## Saved static model confirmation
 

@@ -24,7 +24,7 @@ from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, patch
 
 import bpy
-from helpers import draw_job_panels, online_access, submodule, temp_credentials
+from helpers import draw_in_studio, draw_job_panels, online_access, submodule, temp_credentials
 
 MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 64
 CDN = "https://cdn.cloud.scenario.com"
@@ -52,6 +52,13 @@ def corrupt_png(width, height):
     data = png(width, height)
     start = data.index(b"IDAT") + 4
     return data[:start] + b"\x00" * 32 + data[start + 32 :]
+
+
+# Interface units of the sidebar that a status line under the tiles cannot use,
+# measured in the physical desktop check (Blender 5.1.2, macOS Retina, sidebar
+# with its category tabs) from the region's edges to the text after the line's
+# icon and to the job box's right content edge. Wider lines would be clipped.
+STATUS_MARGIN = 90
 
 
 class Layout:
@@ -392,7 +399,8 @@ class ResultPreviewTileTests(unittest.TestCase):
         )
         texts = [call[1] for call in calls if call[0] == "label"][len(drawn) :]
         self.assertEqual(
-            " ".join(texts), "Model (1), Model (2): Preview paused while online access is disabled"
+            " ".join(texts),
+            "Model\u00a0(1), Model\u00a0(2): Preview paused while online access is disabled",
         )
         # Blender keeps the start of a label that does not fit and clips the
         # rest, so the number survives while it fits under the tile's icon in
@@ -511,10 +519,90 @@ class ResultPreviewTileTests(unittest.TestCase):
         # The caption under the placeholder, then the status wrapped to the sidebar.
         self.assertEqual(texts[0], "(1) Video")
         self.assertEqual(
-            " ".join(texts[1:]), "Video (1): Preview paused while online access is disabled"
+            " ".join(texts[1:]), "Video\u00a0(1): Preview paused while online access is disabled"
         )
 
     # -- panels and lifecycle ------------------------------------------------
+
+    def tile_calls(self, view, width, scale, popup=None, studio=None):
+        """Draw calls of the tiles in a region `width` pixels wide or a popup `popup`
+        pixels wide, drawn inside Studio's view `studio` interface units wide if given."""
+        context = SimpleNamespace(
+            region=SimpleNamespace(width=width),
+            region_popup=None if popup is None else SimpleNamespace(width=popup),
+            preferences=SimpleNamespace(
+                system=SimpleNamespace(ui_scale=scale),
+                ui_styles=bpy.context.preferences.ui_styles,
+            ),
+        )
+        layout = Layout()
+        with patch.object(self.tiles, "bpy", SimpleNamespace(context=context, types=bpy.types)):
+            if studio is None:
+                self.tiles.draw(layout, view)
+            else:
+                draw_in_studio(lambda: self.tiles.draw(layout, view), studio)
+        return layout.calls
+
+    def status_lines(self, view, width, scale, popup=None, studio=None):
+        """Status labels below the tiles."""
+        calls = self.tile_calls(view, width, scale, popup, studio)
+        shown = sum(call[0] == "icon" for call in calls)
+        return [call[1] for call in calls if call[0] == "label"][shown:]
+
+    def offline_models(self):
+        """A saved GLB and OBJ waiting offline, and their one status line's text."""
+        assets = [
+            ("glb", "model.glb", "model/gltf-binary", b"glTF" + b"\x00" * 16),
+            ("obj", "model.obj", "model/obj", b"o cube\n"),
+        ]
+        with online_access(False):
+            view = self.saved(assets)
+            self.settle(lambda: [self.status(index=i) for i in range(2)] == ["offline"] * 2)
+        # A no-break space keeps each result's name with its number.
+        return (
+            view,
+            "Model\u00a0(1), Model\u00a0(2): Preview paused while online access is disabled",
+        )
+
+    def assert_fits(self, lines, message, pixels, scale):
+        import blf
+
+        self.assertEqual(" ".join(lines), message)  # Breaks only at ordinary spaces.
+        blf.size(0, bpy.context.preferences.ui_styles[0].widget.points * scale)
+        for line in lines:
+            self.assertLessEqual(blf.dimensions(0, line)[0], pixels, line)
+
+    def test_status_lines_wrap_by_the_width_blender_measures(self):
+        # A desktop check at UI scale 1.0 on a Retina display (interface scale 2,
+        # a 561 px sidebar) found waveform status text, wrapped with the same
+        # 7 units per character estimate, breaking at about half the box.
+        view, message = self.offline_models()
+        lines = self.status_lines(view, 561, 2.0)
+        self.assert_fits(lines, message, 561 - STATUS_MARGIN * 2, 2.0)
+        # A popup's context region is the one it was invoked from, such as the
+        # 3D View header, which spans the area; Blender sized this popup's region.
+        lines = self.status_lines(view, 2400, 2.0, popup=600)
+        self.assertGreater(len(lines), 1)
+        self.assert_fits(lines, message, 600 - STATUS_MARGIN * 2, 2.0)
+        self.assertEqual(self.status_lines(view, 2400, 2.0), [message])
+
+    def test_studio_wraps_status_and_sizes_icons_from_the_requested_width_on_its_first_draw(self):
+        # Blender builds a popup's layout before it sizes the popup's region, so
+        # Studio's first draw finds that region 0 px wide; a refresh finds it
+        # sized to the requested width plus the popup's margins.
+        view, message = self.offline_models()
+        scale, requested = 2.0, 300
+        first = self.tile_calls(view, 2400, scale, popup=0, studio=requested)
+        refreshed = self.tile_calls(
+            view, 2400, scale, popup=(requested + 24) * scale, studio=requested
+        )
+        self.assertEqual(first, refreshed)
+        # Two tiles in 300 units take the largest icon scale, not the 2.5 minimum.
+        self.assertEqual([call[2] for call in first if call[0] == "icon"], [5.0, 5.0])
+        lines = self.status_lines(view, 2400, scale, popup=0, studio=requested)
+        self.assertGreater(len(lines), 1)
+        self.assertLessEqual(len(lines), 3, lines)
+        self.assert_fits(lines, message, (requested - STATUS_MARGIN) * scale, scale)
 
     def test_jobs_generations_and_studio_draw_tiles_without_storage_reads(self):
         panels, studio = submodule("blender.panels"), submodule("blender.studio")

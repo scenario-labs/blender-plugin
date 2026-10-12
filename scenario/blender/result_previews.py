@@ -29,7 +29,6 @@ import hashlib
 import logging
 import os
 import stat
-import textwrap
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, replace
@@ -51,7 +50,8 @@ from ..core.jobs.result_previews import (
 )
 from ..core.jobs.results import PREVIEW_STATES, ResultError
 from ..core.jobs.workers import WorkerError
-from . import runtime
+from ..core.ui.text_wrap import NO_BREAK
+from . import label_wrap, runtime
 from .preview_decode import PreviewDecodeError, decode
 
 _log = logging.getLogger("scenario")
@@ -62,6 +62,11 @@ TILE_LIMIT = 4
 ICON_LIMIT = 64
 BUSY_INTERVAL = 0.1
 IDLE_INTERVAL = 0.5
+# Interface units of the sidebar that a status line under the tiles cannot use:
+# from the region's left edge to the text after the line's icon (panel and job
+# box) and from the job box's right content edge past the category tabs,
+# measured as 90 on Blender 5.1.2, plus a few units of slack.
+TEXT_INSET = 96
 _SAVED_STATES = frozenset(state.value for state in PREVIEW_STATES)
 KIND_ICON = {"image": "IMAGE_DATA", "video": "FILE_MOVIE", "3d": "MESH_DATA", "audio": "SPEAKER"}
 KIND_LABEL = {"image": "Image", "video": "Video", "3d": "Model", "audio": "Audio"}
@@ -522,6 +527,11 @@ def _builtin(name):
     return value
 
 
+def _named(caption):
+    """A tile's caption, such as "Model (2)", that a wrapped status line keeps whole."""
+    return caption.replace(" ", NO_BREAK)
+
+
 def draw(layout, record):
     """Preview tiles of one shared saved view; only precomputed tiles are read."""
     tiles = controller.tiles.get(record.local_id)
@@ -533,10 +543,7 @@ def draw(layout, record):
     ):
         return
     context = bpy.context
-    # The custom-interface multiplier already includes the resolution scale;
-    # background Blender reports 0.
-    scale = context.preferences.system.ui_scale or 1.0
-    width = (context.region.width if context.region is not None else 300) / scale
+    width = label_wrap.region_width(context) / label_wrap.ui_scale(context)
     shown = [tile for tile in tiles if tile.asset_id]
     if shown:
         icon_scale = max(2.5, min(5.0, (width - 60) / (22 * len(shown))))
@@ -547,14 +554,13 @@ def draw(layout, record):
                 icon_value=tile.icon_id or _builtin(KIND_ICON[tile.kind]), scale=icon_scale
             )
             column.label(text=tile.title)
-    columns = max(12, int((width - 60) / 7))
     pending = {}
     for tile in tiles:
         if tile.status == "ready":
             continue
         if tile.retry:
-            message = f"{tile.caption}: {tile.message}" if tile.asset_id else tile.message
-            for index, line in enumerate(textwrap.wrap(message, width=columns)):
+            message = f"{_named(tile.caption)}: {tile.message}" if tile.asset_id else tile.message
+            for index, line in enumerate(label_wrap.label_lines(context, message, TEXT_INSET)):
                 layout.label(text=line, icon="ERROR" if index == 0 else "BLANK1")
             retry = layout.operator(
                 "scenario.retry_result_preview",
@@ -566,8 +572,8 @@ def draw(layout, record):
         else:
             pending.setdefault(tile.message, []).append(tile.caption)
     for message, captions in pending.items():
-        label = f"{', '.join(captions)}: {message}"
-        for index, line in enumerate(textwrap.wrap(label, width=columns)):
+        label = f"{', '.join(_named(caption) for caption in captions)}: {message}"
+        for index, line in enumerate(label_wrap.label_lines(context, label, TEXT_INSET)):
             layout.label(text=line, icon="INFO" if index == 0 else "BLANK1")
 
 

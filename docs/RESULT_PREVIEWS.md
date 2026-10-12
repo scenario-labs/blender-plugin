@@ -438,6 +438,8 @@ and that Blender's animation player started without `SCENARIO_`, `PYTHON` or
 proxy names in its environment; real Windows and Linux launchers remain
 unverified. Automatic previews have installed native tests on Blender 5.0.1,
 5.1.2 and 5.2.1 with synthetic images and a synthetic transport, drawn through
-recording layouts; desktop interaction, screenshots and UI scales are not
-recorded. Clip display, MCP parity and native desktop acceptance, including of
-the review previews, remain open under #189, #65 and #66.
+recording layouts. The same desktop passes showed their tiles loading and ready
+in Jobs and ready in Generations and Studio; **Retry preview (N)**, Online
+Access disabled and UI scale 2.0 were not exercised there. Clip display, MCP
+parity and native desktop acceptance, including of the review previews, remain
+open under #189, #65 and #66.

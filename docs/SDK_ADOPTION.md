@@ -477,7 +477,9 @@ representations changed for this: form decimal fields send the shortest decimal
 their 32-bit storage holds, and MCP model requests start number parameters that
 are not given at their declared default in the field's type, as a form does. The
 service receives the same values as before in a different JSON spelling (`0.8`
-rather than `0.800000011920929`, `0.0` rather than `0`).
+rather than `0.800000011920929`, `0.0` rather than `0`). Environment lane
+requests, which have no form, keep their panorama contract's lane defaults
+instead.
 
 Every call is an existing public SDK 2.2.0 method; there is no new SDK method, raw
 fallback, SDK extension, SDK issue or dependency change. Installed tests use the

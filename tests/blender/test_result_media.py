@@ -813,7 +813,7 @@ class ResultMediaTests(unittest.TestCase):
             ]
         )
         started, stopped, patcher = self.blocked_decode()
-        first = self.waveform(view, "waveform:first")
+        self.waveform(view, "waveform:first")
         self.settle(started.is_set)
         patcher.stop()  # Only the first decode is held.
         # Selecting the same loading waveform again keeps its decode running.

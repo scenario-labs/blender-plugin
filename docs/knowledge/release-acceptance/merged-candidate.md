@@ -33,4 +33,4 @@
 }
 ---
 
-Evidence for the [current candidate and decision](../../maintenance/release-acceptance.md#current-candidate-and-decision).
+Evidence for the [earlier 0.9.9 candidate and decision](../../maintenance/release-acceptance.md#earlier-099-candidate-and-decision).

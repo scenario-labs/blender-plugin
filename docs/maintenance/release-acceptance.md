@@ -5,9 +5,395 @@ hold under [#68](https://github.com/scenario-labs/blender-plugin/issues/68).
 This record identifies the tested integration candidate and the evidence still
 needed before releasing 0.10.0. It does not replace the
 [release plan](release-plan.md), narrow retained-lane acceptance or authorize
-publication. OAuth remains deferred under #67.
+publication. OAuth remains deferred under #67. The
+[0.10.0 evidence by lane](#0100-evidence-by-lane) is the current summary; later
+sections keep their own candidate identities and dates.
 
-## Current candidate and decision
+## 0.10.0 evidence by lane
+
+Reviewed on 2026-10-12 against `main` at
+`ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged. Open pull
+requests #403 to #406, #408 to #411 and #416 to #420 still change these lanes,
+and the final candidate is not built yet. This section records which evidence
+each retained capability has, of which kind, and what remains with its owner.
+It does not certify the final archive, authorize publication or close #68.
+
+### Release candidate identity
+
+| Item | Identity |
+| --- | --- |
+| Source commit | TODO(final candidate): the release-please commit that builds 0.10.0 |
+| Package | `scenario-0.10.0.zip`, SHA-256 TODO(final candidate) |
+| Hosted CI | TODO(final candidate): `ci-ok` run for that commit |
+| Release workflow | TODO(final candidate): release run, its 5.1.2 and 5.2.1 validation jobs and attestations |
+| Installed suite | TODO(final candidate): counts on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with update and offline restart |
+
+Until then, the latest integrated evidence is:
+
+- `main` at `ff8d29d8` passes
+  [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38267887382):
+  6,691 unit tests with the known SDK authentication expected failure on Python
+  3.11 and 3.13, and 1,034 installed baseline tests per job on Linux x64 (Ubuntu
+  24.04, five skips) and Windows x64 (Windows Server 2025, four skips) with
+  Blender 5.0.1, 5.1.2 and 5.2.1. Each job also passes the native install and
+  update fixture and the package update and offline restart check with a
+  synthetic predecessor. Each job builds its own archive. These hosted runs are
+  the accepted Linux and Windows evidence for this release; no desktop
+  interaction ran on those platforms.
+- A 0.10.0 build from release PR #70's head
+  `0bb206efe29d7903b096b9c470673d3c572af565`, whose `scenario/` matches the
+  corrected 0.9.9 candidate source below, produced ZIP SHA-256
+  `e6740c84efbf1c1df981334742fc8c258704c1ab05ed4bee0bdaf6d2ac8a2a68`. On
+  2026-10-10 it passed 1,149 installed tests with two Windows-only skips, and
+  the synthetic update and offline restart, on each of macOS 27.0.1 arm64
+  Blender 5.0.1, 5.1.2 and 5.2.1 LTS. It predates the lane pull requests from
+  #352 onward, so it is a baseline, not the candidate.
+- The weekly macOS arm64 and Windows x64 run on 2026-10-12 failed one stale
+  expectation in `test_result_actions` on both platforms, one failure among
+  1,369 tests with two skips on Blender 5.1.2; #396 corrected that test the
+  same day. #399 and #400 stay open until a rerun passes. TODO(final
+  candidate): the weekly or manual run on the final commit.
+
+### Evidence kinds
+
+| Kind | Meaning |
+| --- | --- |
+| Unit | Locked offline pytest, without Blender or network access. |
+| Installed | The exact packaged ZIP in an isolated profile, `tools/test_blender.py --suite all`, with synthetic service responses; macOS 27.0.1 arm64 unless stated. |
+| Hosted CI | `ci-ok`, including the Linux x64 and Windows x64 baseline on Blender 5.0.1, 5.1.2 and 5.2.1. |
+| Desktop | An exact ZIP in a fresh profile, driven by real operating-system mouse and keyboard events on macOS 27.0.1 arm64 (Retina, French keyboard layout), with inspected screenshots. Blender 5.1.2 at UI scales 1.0 and 2.0 unless stated. A spend guard kept every session free: reads, dry-run quotes and, where stated, free uploads. |
+| Free live | Real service reads, dry-run quotes, uploads or organization writes, without generation. |
+| Paid live | Billed generation authorized beforehand by the maintainer for its scope and budget. The service reimburses failed generation jobs. |
+
+Most desktop and live checks ran on pre-merge pull request heads, named per
+lane. Saved results reached isolated profiles through read-only cloud recovery.
+Unit, installed and hosted results for each merged pull request are in its
+description. Quote values, saved identities and private reports stay private.
+
+### Lane summary
+
+| Lane | Strongest evidence | Status |
+| --- | --- | --- |
+| [Image](#image) | Paid hosted smoke; free live quotes and UI/MCP parity on desktop | Passed |
+| [Material](#material) | Paid hosted smoke; installed application on 5.0.1, 5.1.2 and 5.2.1 | Passed |
+| [Render Image and Render Video](#render-image-and-render-video) | Paid live, including a first frame; desktop handoff | Pending: first-frame capture and quote on desktop |
+| [Audio](#audio) | Paid hosted smoke; installed; desktop waveform | Pending: human listening |
+| [3D generation and imports](#3d-generation-and-imports) | Paid hosted smoke; desktop GLB and OBJ imports of live results | Pending: FBX import |
+| [Splats](#splats) | Installed on 5.0.1, 5.1.2 and 5.2.1 | Pending: import of real splat results |
+| [Panorama and World](#panorama-and-world) | Paid live; desktop on pre-rebase heads | Pending: #416 and #417, desktop recheck |
+| [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; #409 to #411 |
+| [Workflows](#workflows) | Paid live decisions; free live uploads; desktop forms | Pending: desktop review dialogs and uploads; #403 to #406 |
+| [Film](#film) | Installed; desktop dialogs; export in background Blender | Pending: desktop rerun after #407; #408 |
+| [Previews and playback](#previews-and-playback) | Free live; desktop on pre-merge heads | Pending: human listening; #418 to #420 |
+| [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
+| [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1 | Pending: job card; IME by a person |
+| [MCP parity](#mcp-parity) | Free and paid live through local MCP | Passed for merged tools |
+
+### Image
+
+- **Installed and hosted CI:** shared quotes, durable submission, uploads and
+  recovery run in every suite above. Saved image application decoded and packed
+  a representative output on 5.0.1, 5.1.2 and 5.2.1 (see the
+  [earlier candidate](#earlier-099-candidate-and-decision)).
+- **Desktop and free live:** on the 0.10.0 build from #70, Blender 5.2.1 LTS,
+  a typed API key and secret, the connection test, the environment credential
+  source and a log scan for credential values passed. GPT Image 2 had an exact
+  quote equal to local MCP `estimate_cost` with the same parameters. A wrong
+  secret or unknown project then showed only *HTTP 403*; #352 later added
+  guidance, not rechecked on a desktop.
+- **Paid live:** the authorized [hosted smoke run](../MAINTAINERS.md#smoke-lane)
+  produced a `READY` image job with receipt-verified files on 2026-10-09.
+  [Render Image](#render-image-and-render-video) adds GPT Image 2 jobs with a
+  captured scene reference.
+- **Status:** passed. A paid job started from the composer is tracked under
+  [Composer and IME](#composer-and-ime).
+
+### Material
+
+- **Installed:** a representative material's five PBR maps decoded, packed and
+  were assigned to a captured mesh slot on 5.0.1, 5.1.2 and 5.2.1 after #340.
+  #394 keeps material maps out of World candidates; desktop passes on builds
+  before #394 had offered them.
+- **Free live:** exact PATINA Material quote with UI/MCP parity, and previews of
+  an existing texture set.
+- **Paid live:** the hosted smoke material job reached `READY` with
+  receipt-verified maps.
+- **Status:** passed. No desktop application of a newly generated material is
+  recorded.
+
+### Render Image and Render Video
+
+- **Installed and hosted CI:** #377 and #379 pass installed suites on 5.0.1,
+  5.1.2 and 5.2.1. #387, #389, #392 and #393 keep captured origins across form
+  loads, price only the selected scene, treat undeclared conditional inputs as
+  never defined and stop captures from invalidating their own uploads.
+- **Paid live, 2026-10-10:** local MCP `generate` over native forms prepared in a
+  script-driven Blender 5.1.2 window on macOS arm64 (not physical input), on
+  pre-merge builds that included #383 and #393:
+  - Render Image, GPT Image 2 with a camera still: two jobs, both ready, with
+    receipt-verified PNGs.
+  - Render Video, Seedance 2.0 Fast, 480p, 4 s, with a saved image as the first
+    frame. Sent as `image` beside the scene clip, the job failed on the service
+    within seconds because the model refuses that combination, and was
+    reimbursed. Sent as image 1 of the reference images (#377, #379), the rerun
+    completed; its MP4 was receipt-verified and inserted as a Sequencer strip.
+    The merged #379 head differs from the tested one.
+  - Minimax H3 was quoted with the real clip and not submitted.
+- **Desktop (pre-merge #377 and #379 heads, read-only):** **Use as video first
+  frame** in sidebar and Studio Jobs; confirmations for Minimax H3, Seedance 2.0
+  Fast, Kling V3 Omni Video and Kling O1 Reference Video; the reference-image
+  routing lines; binding, removal and refusal of a second handoff; Esc and
+  focus; one undo step with redo. Capturing and uploading the scene clip, the
+  ready quote and its request body were not exercised.
+- **Service:** Seedance 2.0 Mini's first-frame exclusivity is a known
+  service-side issue, already reported to the Scenario backend team. No
+  Seedance 2.0 Mini job was submitted.
+- **Status:** pending. The first-frame clip capture, upload and ready quote on
+  the desktop need a session without the desktop spend guard, which the agent
+  permission rules refused. Owner: the maintainer, under #66 and #68.
+
+### Audio
+
+- **Installed and hosted CI:** #360, #375 and #412. A representative MP3 became
+  a sound strip on 5.0.1, 5.1.2 and 5.2.1 with the earlier candidate.
+- **Free live:** exact Google Lyria 3 Pro quote with its one-of input
+  requirement and UI/MCP parity; an offline waveform envelope of an existing
+  ElevenLabs Sound Effects v2 result.
+- **Paid live:** the hosted smoke audio job reached `READY`.
+- **Desktop:** with the 0.10.0 build from #70 on Blender 5.2.1 LTS, 591 s of
+  offline Sequencer playback of the hosted smoke video and MP3 ran at 22.9 to
+  25.0 fps with the extension enabled and no errors; the preview area stayed
+  black because of a fixture issue. Pre-merge #418 heads drew a waveform at UI
+  scales 1.0 and 2.0.
+- **Human:** the maintainer accepted the sound quality of the reviewed outputs
+  on 2026-10-09.
+- **Status:** pending. Listening through the new **Play** controls (#418) is a
+  human check for the maintainer under #189 and #68; Play audio was not clicked
+  because the test machine's default handler adds files to a personal media
+  library.
+
+### 3D generation and imports
+
+- **Installed and hosted CI:** #362 (Edit 3D pricing), #366 (package
+  classification), #402 (undo step for imports) and #413 (OBJ, FBX, glTF and
+  PLY import).
+- **Free live:** exact Rodin Gen-2.5 Text to 3D quote with UI/MCP parity. Two
+  existing Meshy 7 text-to-3D results, each a GLB with an alternate OBJ, MTL and
+  four PBR maps, were classified and imported through local MCP in background
+  Blender 5.1.2: one root object per import in a new collection, the selection
+  kept, and matching GLB and OBJ extents.
+- **Desktop (pre-merge #413 heads, read-only):** GLB and alternate OBJ imports;
+  OBJ map color spaces; the OBJ normal-strength fix that #413 merged. The tested
+  builds lacked #402, so an import had no undo step of its own and left the file
+  unmodified; desktop Undo and the save prompt after #402 are not rechecked.
+- **Paid live:** the hosted smoke 3D job reached `READY`. Only Meshy 7's package
+  has been imported from a live result; no catalog model was found producing
+  JSON glTF.
+- **Status:** pending. FBX and mesh PLY imports of real results need a paid
+  generation in the GUI, which the agent permission rules refused. Owner: the
+  maintainer, under #65 and #68.
+
+### Splats
+
+- **Installed and hosted CI:** #414 (point-cloud import) passes installed
+  suites on 5.0.1, 5.1.2 and 5.2.1; #356 (bounded decoders) on 5.1.2 and in
+  hosted CI.
+- **Live and desktop:** none. No saved splat result was available. The one
+  planned paid splat generation was stopped before sending, and the agent
+  permission rules refused a retry.
+- **Status:** pending: SPZ and PLY splat generation and import, default axes and
+  a 1,000,000-point viewport check. Owner: the maintainer, under #65 and #68.
+
+### Panorama and World
+
+- **Installed and hosted CI:** #363, #367 (on 5.0.1, 5.1.2 and 5.2.1), #391,
+  #394 and #415.
+- **Paid live, 2026-10-10:** local MCP in background Blender 5.1.2 on pre-merge
+  builds. Flux 360 returned a 1536 x 768 equirectangular PNG. HDRi Skybox from
+  that result returned an EXR original and an LDR JPEG, both receipt-verified;
+  see the [World format limits](../KNOWN_LIMITATIONS.md#creation-and-scene-application).
+  A 2x skybox upscale completed on the service, but its default download was a
+  transformed JPEG that failed verification. #391 downloads untransformed
+  originals, and resuming that saved job without a new submission then verified
+  a 3072 x 1536 PNG. World application and restore of the PNG and EXR matched
+  the baseline exactly. HY World was quoted, not run.
+- **Desktop (pre-rebase #415 to #417 heads):** the Environment tab and modes in
+  the sidebar and Studio, verified-model lists, settings, the upscale cap, 17
+  free quotes, World application of PNG, OpenEXR and JPEG panoramas with
+  restore, Esc and focus. World application adds no undo step, as documented.
+- **Status:** pending: merge #416 and #417 and recheck the rebased tab row on a
+  desktop; a local panorama upload and From image beyond its quote need a
+  session without the desktop spend guard. Owner: #98 and #66. Seam, pole and
+  dynamic-range measurements remain advisory.
+
+### Trained models
+
+- **Installed and hosted CI:** #357, #363, #371, #374 and #376 are merged;
+  #409 to #411 are open.
+- **Free live:** on a pre-merge #411 head through local MCP in background
+  Blender 5.1.2: public trained models listed, exact quotes equal to the #374
+  contracts, byte-identical form and MCP payloads, scoped defaults and local
+  refusals.
+- **Paid live, 2026-10-10:** four jobs from local MCP on that head, FLUX.1 Dev
+  with one LoRA, two LoRAs and a composition, and FLUX.2 Dev with a LoRA. All
+  completed and were receipt-verified and imported.
+- **Desktop (pre-rebase #409 and #410 heads, 23 free quotes):** the picker with
+  public LoRAs and compositions, search, base choice, stacking, strength edits,
+  per-project default Save, Use, Clear and Replace, one fresh quote per change,
+  Esc and focus. #409 and #410 address four findings from that pass, without a
+  desktop recheck. A LoRA starts at the model's declared strength or, without
+  one, at 0.75, the Scenario web app default; the tested build predates that
+  rule.
+- **Status:** pending. Private LoRAs and compositions need credentials that own
+  them: a human check for the maintainer under #97. Restart persistence and
+  the rebased heads also remain.
+
+### Workflows
+
+- **Installed and hosted CI:** #354, #368, #383, #385 and #395 are merged;
+  #403 to #406 are open.
+- **Free live:** a local file uploaded into a public workflow's input (one part,
+  imported, receipt-verified), pricing held while uploading, and **Use saved
+  upload** reuse that discards the earlier quote.
+- **Paid live, 2026-10-10:** private test workflows with approval and selection
+  steps, created through the documented API and deleted afterwards, since no
+  public workflow has such steps. Approval through the native operator and
+  local MCP passed. **Stop workflow** canceled the job and only the step that had
+  run was charged. A text selection reached its next step. A selection feeding
+  a ForEach loop was sent although its step links could not be read, and the
+  charge exceeded the one-pass quote. #395 now warns about loop quotes, and
+  #403 to #405 refuse such selections.
+- **Desktop (pre-rebase heads):** the workflow picker, input form, Library
+  reference, Generate confirmation and, on #395's head, the loop-cost warning.
+- **Status:** pending. The step review dialogs and desktop uploads into inputs
+  need a paid run and a session without the desktop spend guard, which the
+  agent permission rules refused. Owner: the maintainer, under #66 and #68.
+
+### Film
+
+- **Installed and hosted CI:** #361, #364 and #407 are merged; #408 is open, and
+  its current head fails the Windows hosted jobs.
+- **Desktop (pre-fix #407 and #408 heads):** the Film panel, recipe loading, the
+  saved upload picker, review preparation, discard and invalidation, building the
+  review scene, the export file browser and render confirmation passed. Every
+  native export and case-study approval was refused as a scene change, because
+  the export's own view-layer synchronization counted as an edit. The same
+  commands in background Blender wrote a valid 1920 x 1080, 24 fps H.264 MP4
+  and a complete bundle that reopened offline. #407 fixes the synchronization
+  with an installed reproduction.
+- **Paid live:** none; shot building needs paid hero models.
+- **Status:** pending: a desktop rerun of export, cancel, Open folder, Copy
+  SHA-256 and the case-study save after #407 and #408, since the fix landed after
+  the pass, and human playback review. Owner: #66 and #68. Film stays
+  experimental.
+
+### Previews and playback
+
+- **Installed and hosted CI:** #359, #360, #375, #384 and #412 are merged;
+  #418 to #420 are open.
+- **Free live (background Blender 5.1.2):** server stills and local previews for
+  audio, 3D, video, texture-set and image results, MCP inspection matching the
+  tiles, the audio envelope, retry, and the pause while online access is off.
+- **Desktop (pre-merge #418 and #419 heads, read-only):** tiles in Jobs,
+  Generations and Studio; Retry; Play video in the system player; Play in
+  Blender; the waveform; status lines wrapped by measured width.
+- **Status:** pending: human listening and Play audio (the maintainer, under
+  #189 and #68), Studio at UI scale 2.0 and the waveform alignment fix proposed
+  on #189.
+
+### Library organization
+
+- **Installed and hosted CI:** #355, #373, #378 and #380.
+- **Free live (pre-merge #380 head, background Blender 5.1.2):** local MCP and the
+  native operators created a temporary collection, added and removed one asset
+  and added and removed tags. Each apply was verified by an independent read,
+  and the asset was restored. Repeated, unchanged, discarded and rejected reviews
+  and a duplicate collection name were refused without a write.
+- **Desktop (read-only, also in a 1018 x 671 pt window):** Library pages, Organize
+  dialog focus, Unicode tags and the 30-tag limit, dismissal, Discard, viewport
+  shortcuts and, after fixes, the card placement and read-enabled controls.
+  Japanese IME did not compose in the Tags field, as in Blender's own fields.
+- **Status:** pending: Apply from the desktop dialog. It is a free write, but the
+  write-capable desktop session was refused by the agent permission rules.
+  Owner: #66.
+
+### Composer and IME
+
+- **Installed and hosted CI:** #353, #358, #362, #365, #369, #397, #398, #401
+  and #421.
+- **Desktop on the 0.10.0 build from #70 (offline):** physical journeys on
+  Blender 5.0.1, 5.1.2 and 5.2.1 LTS at 2x backing and 5.2.1 LTS at 1x opened
+  Studio on the first click from a focused prompt (5 of 5 each), committed
+  Unicode and dead-key text and then selected an object. On 5.1.2, wheel zoom,
+  N and the header button also worked, and a 1018 x 672 pt window kept the
+  composer usable. The card was drawn under an open sidebar there; #353 fixed
+  that.
+- **Desktop on later heads:** #353 beside the sidebar; #397's real double-clicks
+  reset placement and width, and the card stays in view at window edges and
+  after resizing (tested on #398's head); #398's F2 field, dead keys and
+  composition after a cancelled rename (see the
+  [input method limits](../KNOWN_LIMITATIONS.md#interface-and-capture)). A
+  refused Generate ended the composer session in that build; #401 fixes it,
+  without a desktop recheck.
+- **Status:** pending:
+  - The [compact job strip](../UI_STYLE.md#compact-job-strip) and its job card
+    have no desktop evidence. Their states need one paid generation in the GUI,
+    which the agent permission rules refused. Owner: the maintainer, under #66
+    and #68.
+  - IME composition after F2 with an input source a person selects, and the
+    candidate window: a human check under #66.
+  - #401's endings after an error or a file load, and UI scales 1.25 and 1.5,
+    on a desktop (#66).
+
+### MCP parity
+
+- **Installed and hosted CI:** authenticated loopback MCP contracts in every
+  suite. #386 returns tool failures without tracebacks or local paths, and #388
+  derives history row kinds.
+- **Free and paid live through local MCP:** `estimate_cost` equal to the native
+  price for Image, Video, 3D, Material and Audio forms; trained-model payloads
+  byte-identical to the form; organization; preview inspection matching the
+  tiles; World application and restore; Render quotes and generation over
+  prepared native forms; workflow approval and rejection.
+- **Status:** passed for merged tools. #404, #411 and #420 add tools that need
+  their own evidence after merging. No third-party MCP client session is
+  recorded.
+
+### Pending checks
+
+| Check | Lane | Owner | Reason |
+| --- | --- | --- | --- |
+| Job strip and job card from a real generation | Composer | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
+| Workflow step review dialogs and desktop uploads into inputs | Workflows | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
+| First-frame clip capture, upload and ready quote | Render Video | Maintainer, #66 and #68 | Needs the desktop spend guard off, refused by the agent permission rules |
+| Splat and FBX imports of real results | Splats, 3D | Maintainer, #65 and #68 | Paid generation refused by the agent permission rules |
+| IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Human check |
+| Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Human check |
+| Private LoRAs and compositions | Trained models | Maintainer, #97 | Human check; the test credentials own none |
+| Export and case-study save after #407 and #408 | Film | #66 and #68 | The fix landed after the desktop pass |
+| Library Apply from the dialog | Library | #66 | Write-capable desktop session refused by the agent permission rules |
+| Rebased Environment tab row, local panorama upload and From image | Panorama | #98 and #66 | #416 and #417 are open; uploads need the spend guard off |
+| #401 session endings and #402 import Undo and save prompt | Composer, 3D | #66 and #68 | Fixes merged after the desktop passes |
+| Weekly macOS and Windows rerun | Platforms | #399 and #400 | Stale expectation corrected by #396 |
+| First scheduled monthly paid smoke run | CI | #40 | Not run yet |
+| Final candidate installed suite, hosted CI, update and restart | All | #68 | TODO(final candidate) |
+| Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #36 and #68 | After publication |
+
+### Service behavior observed live
+
+- Dry runs check declared conditional requirements but not exclusivity stated
+  only in input descriptions; the service refuses such a job after accepting
+  it.
+- A pending upload's retrieval omitted the part plan, so uploads stopped before
+  sending bytes until #383 used the plan from the create response. The SDK
+  offers no way to abort an upload.
+- Upscaled skybox results serve a transformed image at their default URL; the
+  untransformed original needs `originalAssets`.
+- A retrieved workflow job omits step links on several node types, so the
+  extension cannot always tell which steps feed a loop.
+- A wrong secret and an unknown project both return HTTP 403.
+
+## Earlier 0.9.9 candidate and decision
 
 Reviewed on 2026-10-09 after the implementation stack merged. The supported
 release remains held by #68. The current development candidate includes the
@@ -94,7 +480,9 @@ not evidence that Blender crashed or that UI checks passed. The corrected ZIP
 has no new physical desktop evidence. Earlier desktop evidence below retains
 its own artifact identity.
 
-Complete these checks on the corrected candidate before releasing:
+This handoff dates from 2026-10-09; the
+[0.10.0 evidence by lane](#0100-evidence-by-lane) supersedes it where it records
+newer evidence. Complete these checks on the corrected candidate before releasing:
 
 1. Fresh API-key onboarding from the documented instructions: connection success,
    offline/permission errors, explicit credential source and optional project
@@ -437,9 +825,12 @@ published-artifact/update gates.
 
 ## Remaining release gates
 
-The current candidate and concrete handoff above supersede earlier evidence gaps
-only where explicitly covered. Historical layer results below retain their own
-source and ZIP identities.
+This table dates from 2026-10-09. The
+[0.10.0 evidence by lane](#0100-evidence-by-lane) and its
+[pending checks](#pending-checks) supersede it where they differ. The earlier
+candidate and its handoff supersede older evidence gaps only where explicitly
+covered. Historical layer results below retain their own source and ZIP
+identities.
 
 | Gate | Current limit | Next evidence and owner |
 | --- | --- | --- |
@@ -540,21 +931,25 @@ array constraints for both schema spellings. These remain synthetic checks.
 
 ## Issue disposition
 
-GitHub state reviewed on 2026-10-07 is separate from candidate acceptance:
+GitHub state reviewed on 2026-10-12 is separate from candidate acceptance:
 
 | Scope | State and release implication |
 | --- | --- |
-| #64, #65, #66, #68 | Open. SDK service-path cleanup and shared commands are implemented in the candidate; complete retained-capability, native journey and live provider acceptance still need evidence. |
-| #97, #98, #99 | Open. Trained/custom-model routing, panoramic generation, and provider-specific mesh edit/rig/parts contracts remain incomplete. Local schema/application primitives do not close these scopes. |
+| #64, #65, #66, #68 | Open. SDK service-path cleanup and shared commands are implemented; the [0.10.0 evidence by lane](#0100-evidence-by-lane) records retained-capability, desktop and live evidence and the [pending checks](#pending-checks). Their checklists are not yet ticked. |
+| #97, #99 | Open. Trained-model use in the UI and MCP (#409 to #411) is still open, and provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close these scopes. |
+| #98 | Closed on 2026-10-12 through #415's closing reference. Its authorized live seam, pole and dynamic-range item is still unchecked, and the native Environment lane (#416) and panorama smoke cases (#417) are open; the maintainer should confirm this disposition. |
 | #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
 | #37 | Closed for the native update repository foundation. Exact 0.10.0 public delivery and update evidence still belong to #36/#68. |
-| #36, #39, #40, #45 | Open. Required-check settings and the protected hosted five-lane smoke/recovery check are verified; their documentation review/merge and remaining scoped acceptance are separate. Publication/provenance administration and action pinning retain their own gates. |
+| #36, #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. Publication and provenance administration (#36) and action pinning (#39) retain their own gates. |
+| #45 | Closed on 2026-10-09 after the required-check update. |
+| #38 | Open. Changelog publication waits for the website deployment and the first published release. |
+| #399, #400 | Open. The 2026-10-12 weekly macOS and Windows runs failed on a stale test expectation that #396 corrected; close after a passing rerun. |
 | #189 | Open. Saved shared video and audio results have Play, Play in Blender and Waveform controls on private verified copies and receipt-keyed envelopes from an offline Blender decoder, with installed-ZIP native tests. Partial private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system player and in Blender's animation player at UI scale 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0, the last on a ZIP whose waveform status wrapped by measured width before later amendments to that wrapping; they are not candidate acceptance. Local MCP `inspect_result_previews` reads the same preview states and envelopes, with installed-ZIP native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 only. Play audio, the waveform's Cancel and Retry on the desktop, Studio at UI scale 2.0, other platforms, and native listening acceptance are not yet recorded. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md) and obtain current-candidate sustained desktop evidence under #68; closure alone supplies no new runtime evidence. |
 
-Read-only administration checks found no open **CodeQL** alerts. The six open
+On 2026-10-07, read-only administration checks found no open **CodeQL** alerts. The six open
 code-scanning alerts were from **Scorecard**, which is advisory under the
 [maintainer baseline](../MAINTAINERS.md). Do not treat the aggregate alert count
 as six CodeQL blockers. Preserve required CodeQL/code-quality and review policies

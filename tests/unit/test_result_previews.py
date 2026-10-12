@@ -171,22 +171,21 @@ def preview_env(tmp_path):
             return httpx.Response(200, json={"asset": state.assets[name]})
         pytest.fail(f"Unexpected preview request {request.method} {request.url.path}")
 
-    adapter = SDKAdapter(
+    with SDKAdapter(
         Credentials("key", "secret"),
         online=lambda: state.online,
         base_url=SCOPE.service,
         account_id=SCOPE.account_id,
         project_id=SCOPE.project_id,
         transport=httpx.MockTransport(respond),
-    )
-    downloader = FakeDownloader()
-    coordinator = JobCoordinator(adapter, store, result_root=results, result_downloader=downloader)
-    state.store, state.coordinator, state.downloader = store, coordinator, downloader
-    state.cache, state.results = cache, results
-    try:
+    ) as adapter:
+        downloader = FakeDownloader()
+        coordinator = JobCoordinator(
+            adapter, store, result_root=results, result_downloader=downloader
+        )
+        state.store, state.coordinator, state.downloader = store, coordinator, downloader
+        state.cache, state.results = cache, results
         yield state
-    finally:
-        adapter.close()
 
 
 @pytest.fixture

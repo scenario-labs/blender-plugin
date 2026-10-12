@@ -750,6 +750,16 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(self.staging(), [])
         self.assert_offline()
 
+    def test_suggested_destination_checks_every_numbered_candidate(self):
+        # The last candidate tried is checked too; a dangling link still takes its name.
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.assertEqual(self.ui.suggested_path(folder, "Cut.zip"), folder / "Cut.zip")
+        for name in ["Cut.zip", *(f"Cut {number}.zip" for number in range(2, 100))]:
+            (folder / name).write_bytes(b"keep")
+        self.assertEqual(self.ui.suggested_path(folder, "Cut.zip"), folder / "Cut 100.zip")
+        (folder / "Cut 100.zip").symlink_to(folder / "missing.zip")
+        self.assertEqual(self.ui.suggested_path(folder, "Cut.zip"), folder / "Cut 101.zip")
+
     def test_exact_destination_and_agent_folder_policy_before_consuming(self):
         status = self.mcp_prepare(timeline=False)
         self.assertTrue(status["output_folder_only"])

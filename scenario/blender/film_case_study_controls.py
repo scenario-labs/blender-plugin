@@ -40,10 +40,10 @@ def commands(*, create=True):
 
 def suggested_path(folder, name):
     """Suggest a destination in ``folder`` that does not exist yet; never reserves it."""
-    path, stem, suffix = Path(folder) / name, Path(name).stem, Path(name).suffix
-    for number in range(2, 100):
-        if not os.path.lexists(path):
-            break
+    path, stem, suffix, number = Path(folder) / name, Path(name).stem, Path(name).suffix, 1
+    # A folder holds finitely many entries, so counting on always finds a free name.
+    while os.path.lexists(path):
+        number += 1
         path = Path(folder) / f"{stem} {number}{suffix}"
     return path
 

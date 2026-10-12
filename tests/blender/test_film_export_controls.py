@@ -548,6 +548,58 @@ class FilmExportControlTests(unittest.TestCase):
         self.assertEqual(status["phase"], "EXPORTED", status["error"])
         self.assert_offline()
 
+    def test_synchronizing_the_unshown_review_scene_is_not_an_edit(self):
+        # Removing any datablock requests a relations rebuild of every depsgraph. A
+        # window evaluates only the scenes it shows, so the review scene keeps that
+        # tag until the export synchronizes it, which then reports an update although
+        # nothing changed.
+        def rebuild_relations():
+            bpy.data.texts.remove(bpy.data.texts.new("Unrelated"))
+
+        source_id = self.source_id()
+        rebuild_relations()
+        status = self.mcp_prepare(source_id=source_id)
+        patcher, calls = self.fake_render()
+        with patcher:
+            started = self.render(status)
+            self.assertEqual(started["phase"], "EXPORTING", started["error"])
+            status = self.settle(status["review_id"])
+        self.assertEqual(status["phase"], "EXPORTED", status["error"])
+        self.assertEqual(len(calls), 1)
+        # Inspecting again synchronizes the same scene without revoking a ready export.
+        status = self.mcp_prepare(name="Again.mp4")
+        rebuild_relations()
+        self.sources()
+        current = self.tools.film_export_review({"review_id": status["review_id"]})
+        self.assertEqual(current["phase"], "READY", current["error"])
+        self.tools.film_export_review({"review_id": status["review_id"], "action": "discard"})
+        # A real edit of the unshown scene still refuses: approval rereads what it showed.
+        sound = next(
+            strip for strip in self.review.sequence_editor.strips_all if strip.type == "SOUND"
+        )
+        render, kept = self.review.render, self.staging()
+        edits = {
+            "size": (render, "resolution_percentage", 50),
+            "audio": (sound, "mute", True),
+            "rate": (render, "fps", 25),
+        }
+        for change, (owner, name, value) in edits.items():
+            with self.subTest(change=change):
+                status = self.mcp_prepare(name=change + ".mp4")
+                previous = getattr(owner, name)
+                setattr(owner, name, value)
+                try:
+                    refused = self.render(status)
+                finally:
+                    setattr(owner, name, previous)
+                self.assertEqual(refused["phase"], "ERROR")
+                self.assertIn("review scene changed", refused["error"])
+                self.assertFalse(Path(status["destination"]).exists())
+                # Only the first export's private files remain; refusal wrote none.
+                self.assertEqual(self.staging(), kept)
+        self.assertEqual(len(calls), 1)
+        self.assert_offline()
+
     def test_panel_and_studio_draw_only_read_cached_status(self):
         studio = submodule("blender.studio")
         view = bpy.context.window_manager.scenario_studio_view

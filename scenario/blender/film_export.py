@@ -36,6 +36,7 @@ STALE = (
     " selected again; prepare the export again"
 )
 _FAILED = "Film export failed; inspect its private files, then export again"
+_CHANGED = "The review scene changed; prepare the export again"
 _RUNNING = {"EXPORTING", "PUBLISHING", "CANCELLING"}
 _OPEN = {"READY", "PUBLISH_FAILED", *_RUNNING}
 _LIMIT = 8
@@ -237,9 +238,11 @@ class FilmExportCommands:
             if len(sources) >= _SOURCES:
                 raise ValueError("Keep at most 256 Film review scenes")
             # Synchronize the scene's own view layers as the snapshot will (the Blender
-            # 5.2 copy guard), so the origin captured now survives the snapshot.
-            for layer in candidate.view_layers:
-                layer.update()
+            # 5.2 copy guard). This evaluation is not an edit, so it keeps the origin
+            # of a ready export of the same scene; approval rereads the shown bounds.
+            with self.session.synchronizing((candidate,)):
+                for layer in candidate.view_layers:
+                    layer.update()
             source = _Source(
                 uuid.uuid4().hex,
                 candidate,
@@ -415,20 +418,27 @@ class FilmExportCommands:
         try:
             if review.within is not None:
                 film_export_policy.require_within(review.destination, review.within)
-            spec = local_capture.export_snapshot(
-                source.scene,
-                self._root(),
-                width=review.width,
-                height=review.height,
-                audio=review.audio,
-            )
+            # A review scene no window shows keeps tags from changes elsewhere until
+            # the snapshot synchronizes it. That evaluation is not an edit
+            # (JobSession.synchronizing), so the bounds the approval showed are reread.
+            details = self._describe(source.scene)
+            if any(getattr(source, key) != value for key, value in details.items()):
+                raise ValueError(_CHANGED)
+            with self.session.synchronizing((source.scene,)):
+                spec = local_capture.export_snapshot(
+                    source.scene,
+                    self._root(),
+                    width=review.width,
+                    height=review.height,
+                    audio=review.audio,
+                )
             review.directory = spec.directory
             if (spec.frames, spec.fps, len(spec.media)) != (
                 source.frames,
                 source.fps,
                 source.media,
             ):
-                raise ValueError("The review scene changed; prepare the export again")
+                raise ValueError(_CHANGED)
             review.task = self.session.export_film(
                 spec, review.destination, origin=review.origin, source_origin=source.origin
             )

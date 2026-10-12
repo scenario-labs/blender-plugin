@@ -77,8 +77,10 @@ establish live generation or full render-lane desktop acceptance.
   render approval; agents may write only inside the Output Folder. They have
   installed synthetic coverage only; desktop interaction and human playback review
   remain pending. A ready export is invalidated by the same scene changes as a
-  review, and one export runs at a time. The Studio case-study bundle is
-  unavailable. Export verification uses an
+  review, and one export runs at a time. An edit made to the review scene without
+  showing it, for example from a script, is noticed only at approval and only when
+  it changes the frames, rate, size, strip or media counts or audible sound shown.
+  The Studio case-study bundle is unavailable. Export verification uses an
   installed ffprobe when present and otherwise a weaker Blender decode check.
   Blender builds without H.264/AAC encoders cannot export; they are detected only
   when the render child fails, with its log retained. Complete runtime adoption

@@ -153,11 +153,16 @@ is added.
 Inspection captures each review scene's origin after synchronizing its own view
 layers; preparation captures the selected recipe scene's origin and binds both
 with the resolved destination. Approval rechecks both origins in Object Mode,
-snapshots on the main thread and calls `export_film`; runtime maintenance drains
-the export task and delivers it with `deliver_local_export`, never through a
-scene callback. A frame, recipe or object change, Undo/Redo or scene reselection
-invalidates a ready export, while a running export keeps its snapshot. The handles
-are closed after the export thread joins, removing their private staging.
+rereads the review scene's shown bounds, snapshots on the main thread and calls
+`export_film`. Both synchronizations run inside `JobSession.synchronizing`: a
+window evaluates only the scenes it shows, so an unshown review scene can hold
+tags from changes elsewhere, such as a datablock removal, and their evaluation
+must not revoke its origin. Other scenes and other updates still revoke origins.
+Runtime maintenance drains the export task and delivers it with
+`deliver_local_export`, never through a scene callback. A frame, recipe or object
+change, Undo/Redo or scene reselection invalidates a ready export, while a running
+export keeps its snapshot. The handles are closed after the export thread joins,
+removing their private staging.
 
 ## Film media preparation ownership
 

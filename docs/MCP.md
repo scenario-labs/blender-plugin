@@ -992,18 +992,21 @@ approved_destination)`, sending that destination verbatim like an exact cost.
 Rendering needs Object Mode with the recipe scene selected and both scenes
 unchanged since preparation: a frame change, object selection or edits, Undo or
 Redo, or leaving a scene and selecting it again invalidate a ready export, as does
-the destination appearing. It snapshots the review scene privately, encodes an
-H.264 MP4 with an AAC track only when requested in an offline Blender child,
-verifies it with installed `ffprobe` or, more weakly, with Blender's decoder, and
-saves it without overwriting. Later scene edits do not stop a running export; one
-export runs at a time. Poll `film_export_review` for the stage, percentage,
-`sha256`, size and verification. Its actions cancel (the destination stays
-absent), discard the private snapshot, staged video and logs (an exported file
-stays), and after a failed save `prepare_republish` with a new `destination_path`,
-then `republish` with the returned `pending_destination` as `approved_destination`.
-A re-publish copies the verified video and never renders again. Both approvals
-recheck that the destination resolves inside the Output Folder; a native choice
-elsewhere is refused without consuming it and stays for native confirmation.
+the destination appearing. An edit of the review scene while no window shows it,
+such as from Python, is refused only when it changes the frames, rate, size, strip
+or media counts or audible sound that `film_export_sources` reported. It snapshots
+the review scene privately, encodes an H.264 MP4 with an AAC track only when
+requested in an offline Blender child, verifies it with installed `ffprobe` or,
+more weakly, with Blender's decoder, and saves it without overwriting. Later scene
+edits do not stop a running export; one export runs at a time. Poll
+`film_export_review` for the stage, percentage, `sha256`, size and verification.
+Its actions cancel (the destination stays absent), discard the private snapshot,
+staged video and logs (an exported file stays), and after a failed save
+`prepare_republish` with a new `destination_path`, then `republish` with the
+returned `pending_destination` as `approved_destination`. A re-publish copies the
+verified video and never renders again. Both approvals recheck that the
+destination resolves inside the Output Folder; a native choice elsewhere is
+refused without consuming it and stays for native confirmation.
 
 These four local commands have no platform equivalent, make no service call and
 spend nothing. They share the [native export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)

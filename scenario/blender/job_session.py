@@ -10,6 +10,7 @@ import logging
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from weakref import WeakKeyDictionary, WeakValueDictionary
@@ -198,6 +199,7 @@ class JobSession:
         self._completion_limit = completion_limit
         self._origins = OriginRevisions()
         self._scenes = {}
+        self._synchronizing = ()
         self._targets = {}
         self._target_scenes = {}
         self._pending = []
@@ -1631,8 +1633,30 @@ class JobSession:
                     self._origins.invalidate(scene_id)
                 del self._targets[target_id]
 
+    @contextmanager
+    def synchronizing(self, scenes):
+        """Keep these scenes' origins while the caller evaluates their own view layers.
+
+        A window evaluates only the scenes it shows. Any other scene keeps pending
+        depsgraph tags, such as the relations rebuild that removing any datablock
+        requests, until something updates it explicitly, and that update reports a
+        change even when the scene's data is unchanged. Such tags cannot be told
+        apart from an edit made without showing the scene, so callers recheck the
+        content they approved instead. Other scenes, and updates outside this block,
+        still revoke origins.
+        """
+        _main_thread()
+        previous = self._synchronizing
+        self._synchronizing = (*previous, *scenes)
+        try:
+            yield
+        finally:
+            self._synchronizing = previous
+
     def invalidate_scene(self, scene):
         _main_thread()
+        if any(item is scene for item in self._synchronizing):
+            return
         for scene_id, existing in self._scenes.items():
             if existing is scene:
                 self._origins.invalidate(scene_id)

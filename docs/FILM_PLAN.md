@@ -951,14 +951,18 @@ rounding each side down to the even size H.264 needs) and
 whether any sound strip is audible: not muted itself, by its sequencer channel or
 by an enclosing meta strip or that strip's channel. It synchronizes
 that scene's own view layers before `libraries.write`, which avoids the Blender
-5.2 copy crash seen for new inactive scenes. A second synchronization is a no-op,
-so a caller can synchronize, capture origins and then snapshot without
-invalidating them. Every distinct external movie, sound, image and font file is
-stamped once by path, size, modification time, device and inode, so the media
-budget counts files rather than strips; packed sounds and fonts travel in the
-snapshot. The working file, selected scene and frame are
-unchanged. Bounds are validated before any file is written, and a failed snapshot
-removes its new `film-export-*` staging directory.
+5.2 copy crash seen for new inactive scenes. A second synchronization with nothing
+in between is a no-op. A window evaluates only the scenes it shows, though, so a
+scene no window shows keeps depsgraph tags from changes elsewhere (removing any
+datablock requests a relations rebuild of every depsgraph) until the next
+synchronization, which then reports an update although its data is unchanged.
+Callers therefore synchronize inside `JobSession.synchronizing`, which does not
+let that evaluation revoke the scene's origins. Every distinct external movie,
+sound, image and font file is stamped once by path, size, modification time,
+device and inode, so the media budget counts files rather than strips; packed
+sounds and fonts travel in the snapshot. The working file, selected scene and
+frame are unchanged. Bounds are validated before any file is written, and a
+failed snapshot removes its new `film-export-*` staging directory.
 
 [`local_export`](../scenario/core/jobs/local_export.py) is the bpy-free export
 primitive. A specification allows at most fifteen minutes of frames (900 seconds
@@ -1105,7 +1109,8 @@ request, spends nothing and writes no job record.
 current production and unchanged recipe: scenes tagged as a downloaded final or
 previs review whose production ID and recipe digest match. Timeline, foreign,
 changed-recipe and library scenes are excluded. Inspection synchronizes each
-candidate's own view layers, as the snapshot later does, and captures its origin.
+candidate's own view layers, as the snapshot later does, and captures its origin;
+neither synchronization counts as an edit of that scene.
 Blender's file browser then opens at `<Output Folder>/Film`, which this explicit
 action creates when missing, with a portable suggested name
 `<Title> - <Mode> Review.mp4`, numbered when that file already exists. Its side
@@ -1122,8 +1127,10 @@ rate, duration, size, audio track and media count, wraps the full resolved
 destination and names the verification that will run (installed `ffprobe`, else
 Blender's weaker decode check). Confirming approves that exact destination once.
 The command requires Object Mode, the selected recipe scene, both captured
-origins and an absent destination, then writes the private snapshot and starts
-the session-owned export thread. A different destination string, an agent
+origins and an absent destination. It rereads the review scene's frames, rate,
+size, strip and media counts, audible sound strips and blocking reason shown when
+preparing, refusing any change, then writes the private snapshot and starts the
+session-owned export thread. A different destination string, an agent
 approval of a destination outside the Output Folder, Edit Mode or another running
 export refuses without consuming the approval; once those checks pass, the
 approval is consumed even if the export cannot start. The panel shows
@@ -1144,16 +1151,20 @@ exported video stays where it was saved.
 A READY export binds the recipe scene's and the review scene's captured origins.
 A frame change, object selection or edit, an Undo or Redo, or leaving either scene
 and selecting it again, including viewing the review scene, turns it into ERROR,
-as does the destination appearing meanwhile; prepare again. Once rendering
-starts, later edits do not stop it, because the snapshot and media stamps bind the
-bytes. Session retirement (credential or project change, file load or extension
-disable) cancels a running export; shutdown removes every handle's private
-staging once the export thread has stopped. `JobSession.film_export` (`FilmExportCommands`)
-keeps at most eight session-local handles, one open export per review scene and
-one export or copy running at a time. A full set retires only finished handles
-that own no private files. Handles add no executor, store, service client or
-persisted state; restart drops them, and the exported file is the durable
-artifact.
+as does the destination appearing meanwhile; prepare again. Blender evaluates a
+review scene that no window shows only when the export synchronizes it, and that
+evaluation cannot tell tags from changes elsewhere apart from an edit, so it does
+not revoke the origin: an edit made to that scene without showing it, for example
+from a script, is caught only by the approval's reread of what preparation
+showed. Once rendering starts, later edits do not stop it, because the snapshot
+and media stamps bind the bytes. Session retirement (credential or project
+change, file load or extension disable) cancels a running export; shutdown
+removes every handle's private staging once the export thread has stopped.
+`JobSession.film_export` (`FilmExportCommands`) keeps at most eight session-local
+handles, one open export per review scene and one export or copy running at a
+time. A full set retires only finished handles that own no private files.
+Handles add no executor, store, service client or persisted state; restart drops
+them, and the exported file is the durable artifact.
 
 Local MCP uses `film_export_sources(production_id)` for the context, sources,
 `default_directory` (`<Output Folder>/Film`), encoder availability and expected

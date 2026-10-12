@@ -321,6 +321,33 @@ class JobSessionTests(unittest.TestCase):
         self.scene.frame_set(self.scene.frame_current + 1)
         self.assertFalse(self.session._origins.current(origin))
 
+    def test_synchronizing_keeps_only_the_named_unshown_scenes(self):
+        def update(scene):
+            for layer in scene.view_layers:
+                layer.update()
+
+        def rebuild_relations():
+            # Removing any datablock requests a relations rebuild of every depsgraph;
+            # scenes no window shows keep that tag until an explicit update.
+            bpy.data.texts.remove(bpy.data.texts.new("Unrelated"))
+
+        unshown, other = (bpy.data.scenes.new(name) for name in ("Unshown", "Other"))
+        for scene in (unshown, other):
+            self.addCleanup(bpy.data.scenes.remove, scene)
+            update(scene)
+        kept, revoked = (self.session.capture(scene) for scene in (unshown, other))
+        rebuild_relations()
+        with self.session.synchronizing((unshown,)):
+            update(unshown)
+            update(other)
+        self.assertTrue(self.session._origins.current(kept))
+        self.assertFalse(self.session._origins.current(revoked))
+        # Outside the block the same evaluation revokes, and the scope is restored.
+        self.assertEqual(self.session._synchronizing, ())
+        rebuild_relations()
+        update(unshown)
+        self.assertFalse(self.session._origins.current(kept))
+
     def test_file_load_hook_deactivates_and_preserves_stored_record(self):
         completion = self.completion()
         request_id = completion.result.intent.request_id

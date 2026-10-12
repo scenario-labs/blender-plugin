@@ -815,10 +815,10 @@ Generations tiles and the saved-job **Waveform** control show, from the same
 session [preview scheduler](RESULT_PREVIEWS.md#local-mcp-inspection). Pass
 `context_id`, `request_id` and `expected_revision` from `list_local_jobs` for a
 job whose results are downloaded (`ready`, `applying`, `apply_failed` or
-`applied`). Without `asset_id` it inspects the same at most four results the
-tiles show, and `more_results` counts the other downloaded results with a
-preview kind; pass one `asset_id` from `job_status` for any of them, which
-returns `more_results: 0`. Each
+`applied`). Without `asset_id` it inspects every downloaded result with a
+preview kind, ranked as the tiles are; the tiles page through them four at a
+time, and the tool needs no pager. Pass one `asset_id` from `job_status` for a
+single result. Each
 result keeps the tile's 1-based `number` and `caption`, such as `Audio (2)`,
 which names it as status lines and saved-job controls do; the tile itself draws
 the number first, `(2) Audio`.

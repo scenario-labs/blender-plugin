@@ -574,8 +574,9 @@ loops decode no images and their decode requests expire.
 
 Local MCP [`inspect_result_previews`](MCP.md#saved-result-previews) uses the
 same scheduler from Blender's main thread. It checks the context token, saved
-revision and previewable state, requests the stills of the results the preview
-controller's `tile_targets` chooses, or of one named result, and an envelope
+revision and previewable state, requests the stills of every result the preview
+controller's `tile_targets` ranks, which the tiles page through four at a time,
+or of one named result, and an envelope
 only when asked, and calls the scheduler's `retry` or `cancel` for one result;
 a retry also calls the controller's `forget_failures`. A bounded wait takes a
 scheduler `watch`, which the maintenance timer or headless loop sets while

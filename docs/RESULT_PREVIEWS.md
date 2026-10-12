@@ -294,8 +294,9 @@ The local MCP tool
 [`inspect_result_previews`](MCP.md#saved-result-previews) uses the session's
 scheduler on Blender's main thread, like the native controls. It checks the
 context token and the saved job's revision and state, then requests the same
-renditions they do: the still of the results the tiles choose, or of one named
-result, and the audio envelope only when asked, as **Waveform** does. `retry`
+renditions they do: the stills of every result the tiles page through, in
+their order, or of one named result, and the audio envelope only when asked, as
+**Waveform** does. `retry`
 and `cancel` call the scheduler's `retry` and `cancel`; a retry also clears the
 preview controller's icon failure for that result, so its tile builds the icon
 again. Responses copy states, reasons, dimensions, sizes and envelope levels

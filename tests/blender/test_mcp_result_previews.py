@@ -220,7 +220,7 @@ class McpResultPreviewTests(unittest.TestCase):
 
     # -- inspection -----------------------------------------------------------
 
-    def test_default_inspection_reports_the_tiles_results_without_paths_or_urls(self):
+    def test_default_inspection_reports_every_previewable_result_without_paths_or_urls(self):
         url = f"{CDN}/clip-thumb.png?signature=fixture"
         self.thumbnails["clip"], self.files[url] = url, png(320, 180)
         with online_access(True):
@@ -238,7 +238,8 @@ class McpResultPreviewTests(unittest.TestCase):
             scheduler._delays, scheduler._window = (0.05,), 0.2
             first = self.mcp.inspect_result_previews(self.args(record))
             self.assertTrue(first["in_progress"])
-            self.assertEqual(first["more_results"], 1)  # The normal map, as in the tiles.
+            # Every previewable result, ranked as the tiles are; MCP has no pager.
+            self.assertNotIn("more_results", first)
             self.assertEqual(
                 [(item["asset_id"], item["number"], item["caption"]) for item in first["results"]],
                 [
@@ -246,10 +247,11 @@ class McpResultPreviewTests(unittest.TestCase):
                     ("sound", 2, "Audio (2)"),
                     ("image", 3, "Image (3)"),
                     ("second", 5, "Image (5)"),
+                    ("normal", 4, "Normal (4)"),
                 ],
             )
             result = self.inspect_until(self.args(record), lambda value: not value["in_progress"])
-        clip, sound, image, second = result["results"]
+        clip, sound, image, second, normal = result["results"]
         self.assertEqual(
             (clip["media_type"], clip["kind"], clip["renditions"]),
             (
@@ -283,16 +285,19 @@ class McpResultPreviewTests(unittest.TestCase):
             },
         )
         self.assertEqual(second["renditions"]["still"]["state"], "ready")
-        # The native tiles show the same results and states from the same scheduler.
+        self.assertEqual(normal["renditions"]["still"]["state"], "ready")
+        # The native tiles draw the same ranked results from the same scheduler,
+        # four at a time: the normal map is on their second page.
         tiles = self.tiles.controller.tiles["request"]
         self.assertEqual(
             [(tile.asset_id, tile.caption) for tile in tiles],
-            [(item["asset_id"], item["caption"]) for item in result["results"]],
+            [(item["asset_id"], item["caption"]) for item in result["results"][:4]],
         )
+        self.assertEqual(self.tiles.controller.pages["request"].label, "1-4 of 5")
         text = json.dumps(result)
         for private in (str(self.root), "http", "signature", "result-previews", "sound.wav"):
             self.assertNotIn(private, text)
-        # One result by asset_id, including one the tiles do not show.
+        # One result by asset_id, here one on the tiles' second page.
         (normal,) = self.mcp.inspect_result_previews(self.args(record, asset_id="normal"))[
             "results"
         ]

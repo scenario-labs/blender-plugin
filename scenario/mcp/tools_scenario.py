@@ -1278,16 +1278,13 @@ def inspect_result_previews(args):
         raise ScenarioError(0, "Download the saved result before previewing it")
     positions = {item.asset.asset_id: number for number, item in enumerate(record.results, 1)}
     if asset_id is None:
-        # The same results the native preview tiles show for this job.
+        # Every result the native preview tiles page through, in their order; an
+        # agent needs no pager.
         chosen = [target.number for target in preview_tiles.tile_targets(record)]
-        more = sum(
-            item.receipt is not None and preview_kind(item.asset.media_type) is not None
-            for item in record.results
-        ) - len(chosen)
     else:
         if asset_id not in positions:
             raise ScenarioError(0, "Choose a saved result asset from this job")
-        chosen, more = [positions[asset_id]], 0
+        chosen = [positions[asset_id]]
         item = record.results[chosen[0] - 1]
         if item.receipt is None:
             raise ScenarioError(0, "Choose a downloaded saved result of this job")
@@ -1341,7 +1338,6 @@ def inspect_result_previews(args):
             "request_id": request_id,
             "revision": record.revision,
             "in_progress": not all(scheduler.quiet(request_id, value) for value in asset_ids),
-            "more_results": more,
             "results": results,
         }
 
@@ -3284,12 +3280,12 @@ SPECS = (
             "Inspect the previews of a downloaded saved job's results, as the native preview tiles and Waveform control show them, without generating, spending, applying or changing the scene or saved job.\n"
             "Args:\n"
             "  - context_id, request_id, expected_revision: required, from list_local_jobs; the job must be ready, applying, apply_failed or applied.\n"
-            "  - asset_id: optional, one result from job_status results. Without it, the same at most four downloaded results the native tiles show: video, audio, embedded models and base color or untagged images first.\n"
+            "  - asset_id: optional, one result from job_status results. Without it, every downloaded result with a preview kind, in the order the native tiles page through four at a time: video, audio, embedded models and base color or untagged images first.\n"
             "  - envelope: optional boolean, default false. Also decode this audio result's waveform envelope from its verified saved file in an offline Blender process, like Waveform; requires asset_id.\n"
             "  - action: inspect (default), retry (prepare asset_id's previews again and clear a missing marker, like Retry preview) or cancel (stop asset_id's local decoding, like the waveform's Cancel).\n"
             "  - bins: optional integer from 8 to 256, default 64, the envelope levels returned.\n"
             "  - wait: optional seconds from 0 to 60, default 0. Waits off Blender's main thread until the requested previews, the envelope when envelope is true and otherwise the stills, are no longer queued, pending or decoding; in_progress still reports any returned rendition in progress.\n"
-            "Returns: context_id, request_id, revision, in_progress, more_results (without asset_id, the other downloaded results with a preview kind; otherwise 0) and results[] with asset_id, number, caption, media_type, kind and renditions. Each rendition has state (queued, pending, offline, decode, ready, missing, failed or unsupported) and reason when set. A still of a result with a preview kind adds source (local or scenario); a ready one adds media_type, width, height and size. A ready envelope adds seconds, sample_rate, channels, silent, overall_rms, overall_peak, bins and rms and peaks levels from 0 to 1. Never returns image bytes, file paths or URLs.\n"
+            "Returns: context_id, request_id, revision, in_progress and results[] with asset_id, number, caption, media_type, kind and renditions. Each rendition has state (queued, pending, offline, decode, ready, missing, failed or unsupported) and reason when set. A still of a result with a preview kind adds source (local or scenario); a ready one adds media_type, width, height and size. A ready envelope adds seconds, sample_rate, channels, silent, overall_rms, overall_peak, bins and rms and peaks levels from 0 to 1. Never returns image bytes, file paths or URLs.\n"
             "Video, 3D and audio stills are Scenario's preview images, read while Online Access allows (offline otherwise; nothing is sent) and polled for about five minutes when missing. Image stills and envelopes use only verified saved files; only an interactive Blender decodes image stills. No tool launches a player.\n"
             'Example: {"context_id": "current-context", "request_id": "saved-request", "expected_revision": 4, "asset_id": "asset_audio", "envelope": true, "wait": 10}.\n'
             "Platform equivalent: asset_get and asset_display for Scenario's preview images; envelopes are local."

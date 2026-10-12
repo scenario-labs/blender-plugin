@@ -45,10 +45,10 @@ def film_folder():
 
 def suggested_path(folder, name):
     """Suggest a destination in ``folder`` that does not exist yet; never reserves it."""
-    path, stem = Path(folder) / name, name[: -len(".mp4")]
-    for number in range(2, 100):
-        if not os.path.lexists(path):
-            break
+    path, stem, number = Path(folder) / name, name[: -len(".mp4")], 1
+    # A folder holds finitely many entries, so counting on always finds a free name.
+    while os.path.lexists(path):
+        number += 1
         path = Path(folder) / f"{stem} {number}.mp4"
     return path
 

@@ -409,6 +409,14 @@ class FilmExportControlTests(unittest.TestCase):
         self.assertEqual(status["phase"], "READY")
         self.assertEqual((status["audio"], status["width"], status["height"]), (False, 128, 72))
         self.assertEqual(Path(status["destination"]).name, "Prepared cut - Final Review 2.mp4")
+        # Every candidate is checked, the last one tried included; a dangling link
+        # still takes its name.
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        for name in ["Cut.mp4", *(f"Cut {number}.mp4" for number in range(2, 100))]:
+            (folder / name).write_bytes(b"keep")
+        self.assertEqual(self.ui.suggested_path(folder, "Cut.mp4"), folder / "Cut 100.mp4")
+        (folder / "Cut 100.mp4").symlink_to(folder / "missing.mp4")
+        self.assertEqual(self.ui.suggested_path(folder, "Cut.mp4"), folder / "Cut 101.mp4")
         render = self.ui.SCENARIO_OT_render_film_export
         dialog = SimpleNamespace(
             review_id=status["review_id"],

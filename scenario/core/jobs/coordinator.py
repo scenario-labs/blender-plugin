@@ -586,10 +586,12 @@ class JobCoordinator:
         except BaseException:
             local_export.release(reservation)
             raise
-        with self._lock:
-            self._staged_exports[id(staged)] = staged
         try:
-            self._check_export()
+            with self._lock:
+                # As for video, a build that outlives retirement or a bounded
+                # shutdown registers nothing and never publishes.
+                self._check_export()
+                self._staged_exports[id(staged)] = staged
         except local_render.RenderCancelled:
             local_export.release(reservation)
             raise local_export.ExportPublishCancelled(

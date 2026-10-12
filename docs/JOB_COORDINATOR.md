@@ -118,9 +118,10 @@ exports, and a render that finishes afterwards registers none.
 [portable case-study bundle](FILM_PLAN.md#portable-case-study-bundle): it requires a
 `.zip` destination, reserves it after the same checks, runs the free-space
 preflight for the media copies and archive, builds and verifies the archive and
-publishes it. `publish_film_export` re-publishes either kind of staged file with
-its own suffix, and the local log names a video or case study with its basename
-and SHA-256.
+publishes it. Like a render, a build that finishes after deactivation registers
+no staged file and publishes nothing. `publish_film_export` re-publishes either
+kind of staged file with its own suffix, and the local log names a video or case
+study with its basename and SHA-256.
 
 `LocalExportWorker` runs these commands on its own named thread, one at a time
 per owner, instead of the bounded `JobWorkers` queue. A multi-hour export

@@ -176,7 +176,7 @@ then snapshots and builds the sanitized documents from this scope's saved jobs a
 uploads on the main thread. Its synchronizations also run inside
 `JobSession.synchronizing`.
 Video exports and case studies refuse each other's approval without consuming it
-while one runs. The handles close with the export handles after the thread joins.
+while one runs. The handles close with the export handles once the thread has stopped.
 
 ## Film media preparation ownership
 

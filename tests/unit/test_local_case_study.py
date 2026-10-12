@@ -451,3 +451,28 @@ def test_case_study_runs_on_the_owned_export_thread_and_republishes(
     assert copy.export.sha256 == result.export.sha256 and copy.staged is result.staged
     with pytest.raises(TypeError):
         exports.export_case_study(object(), destination, origin=ORIGIN, source_origin=SOURCE)
+
+
+def test_a_build_that_finishes_after_retirement_registers_and_publishes_nothing(
+    monkeypatch, tmp_path, owner, spec
+):
+    coordinator, exports = owner()
+    Child(monkeypatch, spec)
+    original = study.build
+
+    def build(value, *, cancel, progress):
+        staged = original(value, cancel=cancel, progress=progress)
+        # The owner retires while the archive is being verified.
+        coordinator.deactivate()
+        return staged
+
+    monkeypatch.setattr(study, "build", build)
+    destination = tmp_path / "Cut.zip"
+    task = exports.export_case_study(spec, destination, origin=ORIGIN, source_origin=SOURCE)
+    with pytest.raises(export.ExportPublishCancelled, match="inactive") as caught:
+        task.result(10)
+    # The verified archive stays in private staging for discard, but nothing can
+    # re-publish it and the placeholder is released.
+    assert caught.value.staged.path.exists()
+    assert not coordinator._staged_exports
+    assert not destination.exists()

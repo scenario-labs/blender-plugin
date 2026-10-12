@@ -604,7 +604,8 @@ shows its own job or no tray.
   is updating; try again in a moment*.
 - The cross hides that job's tray for its scene and form. The job continues in
   Jobs; a newer job there shows the tray again, and loading a file forgets
-  dismissals.
+  dismissals. Only the 64 most recent dismissed scene forms are remembered, so
+  an older one's tray can show again.
 - **Inspect** opens a native job card: an unfinished job as its Jobs row, a
   finished one as its Generations result, always expanded, plus **Show all jobs
   in the sidebar**. The pump refreshes the open card like Studio. A job this
@@ -617,7 +618,8 @@ Drawing reads ModelJobs' in-memory views and bindings only: it creates no job
 owner or session, reads no saved job and writes no scene, WindowManager or job
 state. Its only writes are the composer's Python display caches (the drawn
 signature per region and the held actions); dismissals, which the modal
-records, are Python only too, and a file load clears all three. Drawing and the
+records, are Python only too, and a file load clears all three. Each keeps only
+its newest entries: 32 regions, 64 jobs and 64 scene forms. Drawing and the
 modal share one geometry, so a chip is hit where it is drawn; a press on the
 tray's background drags the composer, and a [double-click](#double-click) there
 resets its placement, since the modal pairs presses on that same geometry.
@@ -628,7 +630,7 @@ through the synthetic SDK transport. They check the line, chips, bar and caches
 with draw-time ensure calls and store reads patched to fail; each chip's
 `INVOKE_DEFAULT` call and exact descriptor properties; the stale-click, busy and
 focused-prompt guards, the busy guard also on the poll that starts a refresh;
-dismissal and file load; scene, lane and credential
+dismissal, its bound and file load; scene, lane and credential
 changes; an unconfirmed submission offering only Inspect; a job Scenario has
 not confirmed as an inference job offering no cancellation; a double-click on
 the background and on a chip; and **Resume download** through the real operator

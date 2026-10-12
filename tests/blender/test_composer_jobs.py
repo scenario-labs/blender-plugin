@@ -840,3 +840,16 @@ class ComposerStripStateTests(unittest.TestCase):
         for index in range(state_mod.OFFERED_LIMIT + 5):
             self.state.shown_actions(f"job-{index}", 1, (), False)
         self.assertEqual(len(self.state.offered), state_mod.OFFERED_LIMIT)
+
+    def test_dismissals_keep_only_the_newest_scene_lanes(self):
+        # Per-shot scenes come and go in one session; their dismissals must not pile up.
+        for index in range(200):
+            self.state.dismiss((f"scene-{index}", "image"), f"job-{index}")
+        self.assertLess(len(self.state.dismissed), 200)
+        state_mod = submodule("blender.composer.state")
+        self.assertEqual(len(self.state.dismissed), state_mod.DISMISSED_LIMIT)
+        self.assertFalse(self.state.is_dismissed(("scene-0", "image"), "job-0"))
+        self.assertTrue(self.state.is_dismissed(("scene-199", "image"), "job-199"))
+        # Dismissing again in a scene lane makes it the newest entry.
+        self.state.dismiss(("scene-150", "image"), "job-new")
+        self.assertEqual(next(reversed(self.state.dismissed)), ("scene-150", "image"))

@@ -10,6 +10,8 @@ COMPOSER_LANES = tuple(LANE_ORDER)
 DRAWN_STRIP_LIMIT = 32
 # Jobs whose last offered actions the strip holds while a status refresh is running.
 OFFERED_LIMIT = 64
+# Scene lanes whose dismissed strip stays hidden; per-shot scenes come and go in one session.
+DISMISSED_LIMIT = 64
 
 
 def _bounded(cache, key, value, limit):
@@ -54,7 +56,7 @@ class ComposerState:
 
     def dismiss(self, key, request_id):
         """Hide the strip of `request_id` for this scene lane; a newer job there shows again."""
-        self.dismissed[key] = request_id
+        _bounded(self.dismissed, key, request_id, DISMISSED_LIMIT)
 
     def is_dismissed(self, key, request_id):
         return self.dismissed.get(key) == request_id

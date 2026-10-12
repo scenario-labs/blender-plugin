@@ -181,7 +181,10 @@ reads; the GUI pump, before pricing, and local MCP render inspection or quotes g
 a form with no explicit choice its lane default once the route checks, without
 tagging the scene ([catalog delivery](#active-sdk-catalog)), and block its price
 with the reason otherwise
-([trained models section](../UI_STYLE.md#trained-models-section-and-project-defaults)). Read-only history and Film
+([trained models section](../UI_STYLE.md#trained-models-section-and-project-defaults)).
+A form that fails to take the default keeps waiting without keeping it from the
+other forms, and Save or Clear still succeeds once the store has written it; the
+pump reports the failure and retries that form. Read-only history and Film
 controls check both credentials and project without mutating state in drawing.
 Prototype jobs have no reliable credential or project ownership. Their automatic
 service engine is retired for every selection, including the default project;

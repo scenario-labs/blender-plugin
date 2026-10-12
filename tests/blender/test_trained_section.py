@@ -892,6 +892,60 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertTrue(self.defaults.apply_pending())
         self.assertEqual((self.lane.model_key, len(self.lane.trained)), (FLUX1, 2))
 
+    def test_one_form_failing_to_take_a_saved_default_keeps_it_from_no_other_form(self):
+        """Save succeeds once the default is stored; a form that cannot take it waits alone."""
+        self.choose_stack()
+        self.defaults.load()
+        shots = [bpy.data.scenes.new(name) for name in ("Shot A", "Shot B")]
+        for shot in shots:
+            self.addCleanup(bpy.data.scenes.remove, shot)
+        trained = submodule("blender.trained_models")
+        write_slots, failed = trained.write_slots, []
+
+        def first_form_fails(lane_state, *args, **kwargs):
+            if not failed:
+                failed.append(lane_state.id_data)
+                raise RuntimeError("synthetic")
+            return write_slots(lane_state, *args, **kwargs)
+
+        with (
+            patch.object(trained, "write_slots", side_effect=first_form_fails),
+            self.assertLogs("scenario.trained_defaults", "ERROR") as logs,
+        ):
+            saved = self.save_default()  # the operator finishes: the default is stored
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual([pick.model_id for pick in saved.default.picks], [STUDIO_LORA, LORA_A])
+        self.assertIn(failed[0], shots)
+        for shot in shots:
+            lane_state = shot.scenario.lane_state("image")
+            expected = ("", []) if shot == failed[0] else (FLUX1, [STUDIO_LORA, LORA_A])
+            self.assertEqual(
+                (lane_state.model_key, [s.model_id for s in lane_state.trained]),
+                expected,
+                shot.name,
+            )
+        waiting = [f"Applying the project default {STACK_LABEL}: applying it to the form."]
+        self.assertEqual(
+            self.generation.build_request(failed[0], "image", for_estimate=True).errors, waiting
+        )
+        self.assertTrue(self.defaults.apply_pending())  # the next tick gives it the default
+        self.assertEqual(failed[0].scenario.lane_state("image").model_key, FLUX1)
+
+    def test_a_form_failing_to_take_its_default_never_fails_clear(self):
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        view = self.defaults.view(self.lane, "image")
+        with (
+            patch.object(self.defaults, "apply_pending", side_effect=RuntimeError("synthetic")),
+            self.assertLogs("scenario.trained_defaults", "ERROR"),
+        ):
+            result = bpy.ops.scenario.trained_default_clear(
+                lane="image", context_id=view.context, revision=view.revision
+            )
+        self.assertEqual(result, {"FINISHED"})
+        self.assertIsNone(self.runtime.ensure_model_defaults().lane("image").default)
+
     def test_drawing_the_section_checks_the_choice_once(self):
         self.choose_stack()
         self.defaults.load()

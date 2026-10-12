@@ -21,6 +21,7 @@ model and each LoRA strength; a composition on the form's current base changes
 only the trained list.
 """
 
+import logging
 from dataclasses import dataclass, field, replace
 
 import bpy
@@ -31,12 +32,14 @@ from ..core.api.trained_routes import Pick, RouteError, apply
 from ..core.jobs.store import StoreError, TrainedModelDefault, TrainedModelPick
 from . import props, runtime, trained_models
 
+log = logging.getLogger("scenario.trained_defaults")
 LANES = trained_models.LANES
 ROUTES = ("stack", "composition")
 UNAVAILABLE = (
     "Project default {label} is unavailable: choose a model or clear the default. {reason}"
 )
 WAITING = "Applying the project default {label}: {reason}"
+APPLYING = "applying it to the form."
 UNREADABLE = "Could not read the project default: {reason} Choose a model to continue."
 # Price errors written from the texts above; a form they no longer block is priced again.
 BLOCKING = (
@@ -272,7 +275,7 @@ def blocking_reason(lane_state):
         return ""
     resolution = writable(resolve(default, lane), lane)
     if resolution.ready:
-        return WAITING.format(label=resolution.label, reason="applying it to the form.")
+        return WAITING.format(label=resolution.label, reason=APPLYING)
     return resolution.text
 
 
@@ -364,6 +367,10 @@ def apply_pending(scenes=None):
     price is requested again whenever its blocking reason changes or ends, so
     the price line always shows the current reason. Returns whether any form
     changed.
+
+    A form that fails to take its default does not keep it from the others: it
+    stays governed and keeps showing the wait, and the first failure is raised
+    once every form was visited, for the pump to report and retry.
     """
     if runtime.state.catalog is None:
         return False  # nothing is selected; selecting is the catalog request's job
@@ -371,7 +378,7 @@ def apply_pending(scenes=None):
         cache = load()
     except ScenarioError:
         return False
-    changed = False
+    changed, failure = False, None
     for scene in bpy.data.scenes if scenes is None else scenes:
         if getattr(scene, "library", None) is not None or not hasattr(scene, "scenario"):
             continue
@@ -385,12 +392,20 @@ def apply_pending(scenes=None):
                 text = UNREADABLE.format(reason=cache.errors[lane])
             elif default is not None:
                 resolution = writable(resolve(default, lane, read=True), lane)
-                if resolution.ready:
-                    _apply(lane_state, lane, resolution, seed=True)
-                    changed = True
-                    continue
-                text = resolution.text
+                if not resolution.ready:
+                    text = resolution.text
+                else:
+                    try:
+                        _apply(lane_state, lane, resolution, seed=True)
+                    except Exception as error:  # this form waits; the others still take theirs
+                        failure = failure or error
+                        text = WAITING.format(label=resolution.label, reason=APPLYING)
+                    else:
+                        changed = True
+                        continue
             changed |= _rearm(lane_state, text)
+    if failure is not None:
+        raise failure
     return changed
 
 
@@ -477,6 +492,18 @@ def _reload():
         runtime.state.trained_defaults = None
 
 
+def _apply_written():
+    """Give the forms the written default governs their new state (Save and Clear).
+
+    The store write has already succeeded, so a form that cannot take the change
+    does not fail Save or Clear: it keeps showing its wait and the pump retries it.
+    """
+    try:
+        apply_pending()
+    except Exception:
+        log.exception("applying the project default to the forms it governs failed")
+
+
 def save(lane_state, lane, context_id, expected_revision):
     """Save the form's choice as the lane default the user reviewed (context and revision).
 
@@ -492,7 +519,7 @@ def save(lane_state, lane, context_id, expected_revision):
             context_id, default, expected_revision=expected_revision
         ),
     )
-    apply_pending()
+    _apply_written()
     return updated
 
 
@@ -504,7 +531,7 @@ def clear(lane, context_id, expected_revision):
         expected_revision,
         lambda: runtime.clear_model_default(context_id, lane, expected_revision=expected_revision),
     )
-    apply_pending()
+    _apply_written()
     return updated
 
 

@@ -161,8 +161,8 @@ must not revoke its origin. Other scenes and other updates still revoke origins.
 Runtime maintenance drains the export task and delivers it with
 `deliver_local_export`, never through a scene callback. A frame, recipe or object
 change, Undo/Redo or scene reselection invalidates a ready export, while a running
-export keeps its snapshot. The handles are closed after the export thread joins,
-removing their private staging.
+export keeps its snapshot. Shutdown closes the handles, removing their private
+staging, only once the export thread has stopped.
 
 ## Film media preparation ownership
 

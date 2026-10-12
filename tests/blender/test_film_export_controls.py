@@ -203,6 +203,20 @@ class FilmExportControlTests(unittest.TestCase):
         self.assertEqual(self.commands._reviews, {})
         self.assert_offline()
 
+    def test_default_size_is_the_even_size_the_snapshot_uses(self):
+        # Blender's output truncates 1920x1080 at 33% to 633x356; the snapshot's
+        # default rounds that down to even, so inspection must show and bind it.
+        render = self.review.render
+        self.addCleanup(setattr, render, "resolution_percentage", render.resolution_percentage)
+        render.resolution_percentage = 33
+        source = {item["scene"]: item for item in self.sources()["sources"]}[self.review.name]
+        self.assertEqual((source["width"], source["height"]), (632, 356))
+        self.assertEqual(source["blocked_reason"], "")
+        status = self.mcp_prepare(source_id=source["source_id"])
+        self.assertEqual((status["width"], status["height"]), (632, 356))
+        self.tools.film_export_review({"review_id": status["review_id"], "action": "discard"})
+        self.assert_offline()
+
     def test_prepare_refuses_unsafe_destinations_and_settings_before_work(self):
         self.folder.mkdir(parents=True)
         (self.folder / "Taken.mp4").write_bytes(b"keep")

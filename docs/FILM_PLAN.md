@@ -1114,7 +1114,8 @@ neither synchronization counts as an edit of that scene.
 Blender's file browser then opens at `<Output Folder>/Film`, which this explicit
 action creates when missing, with a portable suggested name
 `<Title> - <Mode> Review.mp4`, numbered when that file already exists. Its side
-panel lists the review scenes with frames, rate, size, media count, audible sound
+panel lists the review scenes with frames, rate, size (the snapshot's default:
+Blender's truncated output size rounded down to even), media count, audible sound
 strips and any blocking reason: no strips, a rate that is not an integer from 1 to
 120, more than fifteen minutes, scene, clip or mask strips, missing media or the
 media budget. **Audio** matches the sound strips by default, or always includes or
@@ -1187,8 +1188,9 @@ natively elsewhere, which stays for native confirmation. See
 [MCP export commands](MCP.md#film-export-commands).
 
 Installed synthetic tests cover inspection filters and blocking reasons, the
-native file browser and Render dialogs (including dismissal, numbered names,
-explicit audio and size choices), destination refusals (existing, relative, wrong
+even default size at a 33% resolution scale, the native file browser and Render
+dialogs (including dismissal, numbered names, explicit audio and size choices),
+destination refusals (existing, relative, wrong
 suffix, non-portable, private storage, outside the Output Folder or through a
 link), agent approval refusal for native exports and copies outside the Output
 Folder, exact-destination approval, MCP/native handle sharing, cached progress,

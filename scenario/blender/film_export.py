@@ -177,9 +177,9 @@ class FilmExportCommands:
         details = {
             "frames": frames,
             "fps": render.fps,
-            # Blender's own output size truncates the percentage scale.
-            "width": render.resolution_x * percentage // 100,
-            "height": render.resolution_y * percentage // 100,
+            # The snapshot's default: Blender's truncated size, rounded down to even.
+            "width": local_export.default_dimension(render.resolution_x, percentage),
+            "height": local_export.default_dimension(render.resolution_y, percentage),
             "percentage": percentage,
             "strips": len(editor.strips_all) if editor is not None else 0,
             "media": 0,
@@ -627,7 +627,7 @@ class FilmExportCommands:
         }
 
     def close(self):
-        """Called after the export thread and workers joined; removes private staging."""
+        """Called once the export thread and workers have stopped; removes private staging."""
         _main_thread()
         for review in self._reviews.values():
             self._remove(review)

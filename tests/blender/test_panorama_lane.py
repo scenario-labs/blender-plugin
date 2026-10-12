@@ -498,6 +498,70 @@ class EnvironmentJobTests(unittest.TestCase):
         request = self.generation.build_request(self.scene, "panorama", for_estimate=True)
         self.assertEqual((request.body["image"], request.errors), ("saved-panorama", []))
 
+    def test_environment_controls_never_offer_material_maps(self):
+        """A package's PBR maps are neither World nor Environment inputs (#394's candidates)."""
+        fixture = self.fixture
+        # A Meshy-like package with a server-declared 360 result among its maps.
+        fixture.result_assets = {
+            "result-model": {"type": "txt23d"},
+            "result-albedo": {"type": "3d-texture-albedo"},
+            "result-sky": {"type": "skybox-base-360"},
+            "result-normal": {"type": "3d-texture-normal"},
+        }
+        fixture.result_mime_types = {"result-model": "model/gltf-binary"}
+        package = fixture.recovered_panorama()
+        fixture.result_assets = {}
+        texture_set = fixture.recovered_material(("texture-albedo", "texture-normal", "texture-ao"))
+        owner = self.runtime.state.model_jobs
+        view = owner.views[package]
+        self.assertEqual(view.meta["world_assets"], ("result-sky",))
+        self.assertEqual(view.meta["panoramas"], {"result-sky": "ldr"})
+        self.assertEqual(view.meta["panorama_inputs"], ("result-sky",))
+        items = self.actions(view)
+        self.assertEqual(items[0].label, "360 panorama (LDR)")
+        offered = {
+            item.label: dict(item.properties).get("asset_id")
+            for item in items
+            if item.operator in {"scenario.apply_saved_world", "scenario.panorama_to_hdri"}
+        }
+        # World numbers the result's position in the job; Make HDRI counts LDR panoramas.
+        self.assertEqual(
+            offered, {"Set panorama as World (3)": "result-sky", "Make HDRI (1)": "result-sky"}
+        )
+        texture_view = owner.views[texture_set]
+        self.assertEqual(
+            (texture_view.meta["world_assets"], texture_view.meta["panorama_inputs"]), ((), ())
+        )
+        self.assertEqual(texture_view.meta["panoramas"], {})
+        texture_labels = [item.label for item in self.actions(texture_view)]
+        self.assertIn("Apply saved material", texture_labels)
+        self.assertFalse([label for label in texture_labels if "World" in label or "360" in label])
+        self.assertFalse([label for label in texture_labels if label.startswith("Make HDRI")])
+        _, jobs, generations, _ = draw_job_panels()
+        drawn = drawn_texts(jobs, generations)
+        self.assertEqual(
+            {text for text in drawn if text.startswith(("Set panorama", "Make HDRI"))},
+            {"Make HDRI (1)", "Set panorama as World (3)"},
+        )
+        # Use saved panorama lists only the 360 result, and refuses a map by ID.
+        lane_module = submodule("blender.panorama_lane")
+        found = [(r.intent.request_id, i.asset.asset_id) for r, i in lane_module.candidates()]
+        self.assertEqual(found, [(package, "result-sky")])
+        self.scene.scenario.panorama_mode = "HDRI"
+        error = submodule("core.api.errors").ScenarioError
+        for request_id, asset_id in (
+            (package, "result-albedo"),
+            (package, "result-normal"),
+            (texture_set, "result-map-0"),
+        ):
+            with self.subTest(asset=asset_id), self.assertRaises(error):
+                lane_module.attach_saved(self.scene, "image", request_id, asset_id)
+        # Local MCP refuses a map as the HDRI's panorama before any dry run.
+        quotes, paid = len(fixture.dry_runs()), len(fixture.paid)
+        with self.assertRaisesRegex(ValueError, "saved, downloaded 360 panorama"):
+            fixture.panorama_estimate(HDRI, {"image": "result-albedo"})
+        self.assertEqual((len(fixture.dry_runs()), len(fixture.paid)), (quotes, paid))
+
     def test_credential_change_retires_the_price_and_saved_references(self):
         fixture = self.fixture
         _, result = fixture.saved_panorama()

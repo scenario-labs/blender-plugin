@@ -524,6 +524,39 @@ class ComposerJobStripTests(unittest.TestCase):
         self.assertEqual(operator.ops.calls[0][0], "scenario.recover_job")
         self.assertEqual(len(self.jobs.paid), 1)
 
+    def test_the_poll_that_starts_a_status_refresh_already_holds_the_actions(self):
+        view = self.submit_image()
+        owner = self.runtime.state.model_jobs
+        self.jobs.block_cloud_read = True
+        self.jobs.release.clear()
+        owner._next_poll[view.local_id] = 0.0
+        # This poll lists the job's actions before it queues the refresh, so until the next poll
+        # the view still offers them while the job is busy.
+        self.runtime.sync_catalog_context()
+        self.assertTrue(owner.busy(view.local_id))
+        self.assertIn("cancel", view.meta["recovery_actions"])
+        try:
+            # The strip was never drawn before this tick: it holds what the view lists.
+            shown = self.drawn()
+            self.assertTrue(shown.geometry.job.held)
+            self.assertEqual(shown.chips[-2:], ["Cancel generation", "Inspect"])
+            operator = self.press(self.chip_point("cancel"))
+            self.assertEqual(operator.ops.calls, [])
+            operator.report.assert_called_once_with({"INFO"}, self.modal.JOB_BUSY)
+            # The next poll projects the running refresh; the strip keeps the same held chips.
+            self.runtime.sync_catalog_context()
+            self.assertEqual(view.meta["recovery_actions"], ())
+            shown = self.drawn()
+            self.assertTrue(shown.geometry.job.held)
+            self.assertEqual(shown.chips[-2:], ["Cancel generation", "Inspect"])
+        finally:
+            self.jobs.release.set()
+        self.jobs.deliver_results()
+        self.assertFalse(owner.busy(view.local_id))
+        self.assertFalse(self.drawn().geometry.job.held)
+        self.assertEqual(self.jobs.cancel_calls, [])
+        self.assertEqual(len(self.jobs.paid), 1)
+
     def test_a_queued_unsent_job_cancels_through_its_live_chip(self):
         quotes = [self.jobs.mcp_quote() for _ in range(3)]
         self.jobs.release.clear()
@@ -786,12 +819,12 @@ class ComposerStripStateTests(unittest.TestCase):
         self.assertEqual(self.state.shown_actions("job", 3, offered, False), (offered, False))
         self.assertEqual(self.state.shown_actions("job", 3, (), True), (offered, True))
         self.assertEqual(self.state.shown_actions("job", 4, (), True), ((), False))
-        # While busy, nothing is remembered and an action the job still offers stays live.
-        self.assertEqual(
-            self.state.shown_actions("job", 4, ("cancel-prepared",), True),
-            (("cancel-prepared",), False),
-        )
-        self.assertEqual(self.state.shown_actions("job", 3, (), True), (offered, True))
+        # The poll that starts a command still lists what the job offered just before it: those
+        # are held too, and kept until the command ends.
+        listed = ("resume-descriptor",)
+        self.assertEqual(self.state.shown_actions("job", 4, listed, True), (listed, True))
+        self.assertEqual(self.state.shown_actions("job", 4, (), True), (listed, True))
+        self.assertEqual(self.state.shown_actions("job", 3, (), True), ((), False))
         # A revision that offered nothing holds nothing.
         self.assertEqual(self.state.shown_actions("job", 5, (), False), ((), False))
         self.assertEqual(self.state.shown_actions("job", 5, (), True), ((), False))

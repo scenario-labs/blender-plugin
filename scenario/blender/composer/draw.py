@@ -266,8 +266,11 @@ def strip_job(scene, state, lane):
         online=runtime.online(),
         stale=bool(getattr(reading, "stale", False)),
     )
+    # A busy job offers nothing but a prepared job's local cancellation (ModelJobs.busy), which stays
+    # live; anything else the view lists while busy predates the command that just started.
+    busy = jobs.busy(view.local_id) and saved != "prepared"
     actions, held = state.shown_actions(
-        view.local_id, revision, job_recovery.result_actions(view), jobs.busy(view.local_id)
+        view.local_id, revision, job_recovery.result_actions(view), busy
     )
     chips = job_strip.strip_chips(actions, saved, automatic=automatic, error=view.error)
     price = f"{format_cu(view.cu_cost)} CU" if view.cu_cost is not None else ""

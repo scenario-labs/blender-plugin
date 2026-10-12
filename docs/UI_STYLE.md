@@ -596,10 +596,12 @@ shows its own job or no tray.
   its own form first, with the same guard as a click outside: a conflicting
   edit keeps focus and both texts and dispatches nothing.
 - The job offers no action while an automatic status refresh or another command
-  runs. The tray keeps showing the actions it last offered for the same saved
-  revision instead of blinking every poll, but then only the chips that open the
-  job card (**Inspect**, **Apply... (N)** and **Reuse... (N)**) dispatch;
-  another chip answers *The job is updating; try again in a moment*.
+  runs, except a prepared job's local cancellation. The tray keeps showing the
+  actions it last offered for the same saved revision instead of blinking every
+  poll, including those the poll that starts the command still lists until the
+  next poll, but then only the chips that open the job card (**Inspect**,
+  **Apply... (N)** and **Reuse... (N)**) dispatch; another chip answers *The job
+  is updating; try again in a moment*.
 - The cross hides that job's tray for its scene and form. The job continues in
   Jobs; a newer job there shows the tray again, and loading a file forgets
   dismissals.
@@ -625,7 +627,8 @@ primitives and the real modal handler with synthetic events over jobs submitted
 through the synthetic SDK transport. They check the line, chips, bar and caches
 with draw-time ensure calls and store reads patched to fail; each chip's
 `INVOKE_DEFAULT` call and exact descriptor properties; the stale-click, busy and
-focused-prompt guards; dismissal and file load; scene, lane and credential
+focused-prompt guards, the busy guard also on the poll that starts a refresh;
+dismissal and file load; scene, lane and credential
 changes; an unconfirmed submission offering only Inspect; a job Scenario has
 not confirmed as an inference job offering no cancellation; a double-click on
 the background and on a chip; and **Resume download** through the real operator

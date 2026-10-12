@@ -69,18 +69,19 @@ class ComposerState:
     def shown_actions(self, request_id, revision, actions, busy):
         """(actions, held): the actions the strip shows for a job, and whether they are held.
 
-        The job offers no action while a status refresh or another command is running, so the strip
-        keeps the actions it last offered for the same saved revision instead of blinking every poll.
-        Held actions are for display only: a click on one waits for the command to finish. Actions
-        the job offers while busy, such as cancelling a queued unsent job, stay live."""
+        `busy` means the job offers no action now: a status refresh or another command is running.
+        The strip then keeps the actions last offered for the same saved revision instead of blinking
+        every poll. The poll that starts a command lists the job's actions just before starting it,
+        so until the next poll the view still lists them: those are held too, and remembered. Held
+        actions are for display only: a click on one waits for the command to finish."""
         actions = tuple(actions)
-        if not busy:
+        if actions or not busy:
             _bounded(self.offered, request_id, (revision, actions), OFFERED_LIMIT)
-            return actions, False
+            return actions, busy
         offered = self.offered.get(request_id)
-        if not actions and offered is not None and offered[0] == revision and offered[1]:
-            return offered[1], True
-        return actions, False
+        if offered is not None and offered[0] == revision:
+            return offered[1], bool(offered[1])
+        return (), False
 
     def lane_for(self, scene):
         """The composer drives the six generation lanes; other tabs (Generations, MCP, 3D tools) fall back to Image."""

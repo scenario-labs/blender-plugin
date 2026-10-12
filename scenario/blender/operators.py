@@ -12,7 +12,7 @@ from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
 from ..core.ui.costs import format_cu
-from . import apply_image, generation, panorama_lane, params_ui, props, runtime
+from . import apply_image, desktop, generation, panorama_lane, params_ui, props, runtime
 
 
 class SCENARIO_OT_test_connection(bpy.types.Operator):
@@ -189,8 +189,7 @@ class SCENARIO_OT_open_output_folder(bpy.types.Operator):
     def execute(self, context):
         path = runtime.paths().output_dir
         path.mkdir(parents=True, exist_ok=True)
-        bpy.ops.wm.path_open(filepath=str(path))
-        return {"FINISHED"}
+        return desktop.report_open(self, desktop.open_path, path, desktop.PATH_FAILURE)
 
 
 class SCENARIO_OT_show_image(bpy.types.Operator):

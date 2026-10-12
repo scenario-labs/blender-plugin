@@ -14,7 +14,9 @@ example by a crash or by a player that still held one open on Windows.
 Every player starts from ``player_environment()``: a newly started desktop
 application inherits its launcher's environment on macOS (``open``), Linux
 (``xdg-open``) and Windows (``ShellExecute``), so ``system_open`` never lets it
-see the Scenario credentials an environment-configured session holds.
+see the Scenario credentials an environment-configured session holds. Folder
+buttons use ``system_open`` too, and web links ``system_open_url``, which
+starts the same launchers with the same environment.
 """
 
 import os
@@ -24,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -238,8 +241,9 @@ def sweep(root, *, keep=(), now=None, older_than=STALE_SECONDS):
 def player_environment(environ=None):
     """The launching environment without credentials, Python start-up or proxies.
 
-    Blender variables stay, so an animation player uses the same Blender
-    configuration as the session that launched it.
+    Players, folders and web links all start from it. Blender variables stay,
+    so an animation player uses the same Blender configuration as the session
+    that launched it.
     """
     environ = os.environ if environ is None else environ
     return {
@@ -249,33 +253,21 @@ def player_environment(environ=None):
     }
 
 
-def system_open(path, *, platform=None, environ=None, executable=None, popen=None):
-    """Start the operating system's default application on one absolute local path.
-
-    Blender's ``wm.path_open`` passes the whole session environment on to the
-    application it starts. This launcher runs with ``player_environment()``
-    instead: ``/usr/bin/open`` on macOS, ``xdg-open`` on Linux and other
-    systems, and on Windows Blender's own Python interpreter, isolated, calling
-    ``os.startfile``. Output is discarded, since it can name private paths.
-    Returns the launcher process, which the caller reaps; it raises ``OSError``
-    when no launcher can start.
-    """
+def _launch(target, platform, environ, executable, popen):
+    """Start the system opener on one checked target with ``player_environment()``."""
     platform = sys.platform if platform is None else platform
     popen = subprocess.Popen if popen is None else popen
-    path = os.fspath(path)
-    if not os.path.isabs(path):
-        raise PlaybackError("Players open absolute local paths only")
     options = {}
     if platform == "darwin":
-        command = ["/usr/bin/open", path]
+        command = ["/usr/bin/open", target]
     elif platform.startswith("win"):
         executable = sys.executable if executable is None else executable
         if not executable:
-            raise PlaybackError("The system player needs Blender's Python interpreter")
-        command = [executable, "-I", "-S", "-c", _STARTFILE, path]
+            raise PlaybackError("The system opener needs Blender's Python interpreter")
+        command = [executable, "-I", "-S", "-c", _STARTFILE, target]
         options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", _NO_WINDOW)
     else:
-        command = ["xdg-open", path]
+        command = ["xdg-open", target]
     return popen(
         command,
         stdin=subprocess.DEVNULL,
@@ -284,3 +276,46 @@ def system_open(path, *, platform=None, environ=None, executable=None, popen=Non
         env=player_environment(environ),
         **options,
     )
+
+
+def system_open(path, *, platform=None, environ=None, executable=None, popen=None):
+    """Start the operating system's default application on one absolute local path.
+
+    The path can be a file or a folder. Blender's ``wm.path_open`` passes the
+    whole session environment on to the application it starts. This launcher
+    runs with ``player_environment()`` instead: ``/usr/bin/open`` on macOS,
+    ``xdg-open`` on Linux and other systems, and on Windows Blender's own
+    Python interpreter, isolated, calling ``os.startfile``. Output is
+    discarded, since it can name private paths. Returns the launcher process,
+    which the caller reaps; it raises ``OSError`` when no launcher can start.
+    """
+    path = os.fspath(path)
+    if not os.path.isabs(path):
+        raise PlaybackError("Only absolute local paths can be opened")
+    return _launch(path, platform, environ, executable, popen)
+
+
+def _web_link(url):
+    """Whether ``url`` is one absolute https link that no launcher can read as an option."""
+    if not isinstance(url, str) or not url.isprintable() or any(c.isspace() for c in url):
+        return False
+    try:
+        parts = urllib.parse.urlsplit(url)
+        return parts.scheme == "https" and bool(parts.hostname)
+    except ValueError:
+        return False
+
+
+def system_open_url(url, *, platform=None, environ=None, executable=None, popen=None):
+    """Start the default web browser on one https link, like ``system_open`` on a path.
+
+    Blender's ``wm.url_open`` hands the link to Python's ``webbrowser``, which
+    starts ``osascript``, a browser command such as ``xdg-open``, or
+    ``os.startfile`` with the session's whole environment. This uses the same
+    launchers and environment as ``system_open``. Other schemes, links without
+    a host and links with spaces or control characters are refused before
+    anything starts.
+    """
+    if not _web_link(url):
+        raise PlaybackError("Only https links can be opened")
+    return _launch(url, platform, environ, executable, popen)

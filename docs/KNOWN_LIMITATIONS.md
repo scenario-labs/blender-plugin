@@ -311,6 +311,21 @@ establish live generation or full render-lane desktop acceptance.
   behavior without a default player (for example Linux without `xdg-open`) and
   sandboxed Blender packages are unverified. Without a usable executable path,
   Play in Blender fails with an explicit error.
+- **Output folder**, the Film **Open capture**, **Open capture files** and
+  export and case-study **Open folder** buttons, and the **Create a key in the
+  portal**, **Update guide** and **Release ZIPs** links start the same launcher
+  as the system player instead of Blender's `wm.path_open` and `wm.url_open`,
+  with the same environment filter and the same macOS proxy exception. Links
+  open only as `https` addresses. A missing file or folder and a launcher that
+  cannot start are reported at once; a launcher that exits with an error is
+  reported on the status line, and one still running after about 30 seconds is
+  no longer watched. Unit tests check the commands and environment with recorded
+  launchers and a stand-in `xdg-open`, and a source scan finds no other use of
+  Blender's or Python's openers; native tests run every button's operator with
+  a recorded launcher. No physical desktop check of these buttons was made.
+  The private macOS check of `open` described above covers the launcher they
+  share, not the buttons. Real file managers and browsers on Windows and Linux,
+  Linux without `xdg-open` and sandboxed Blender packages are unverified.
 - Each waveform starts a separate offline Blender process: a one-second file took
   0.65 to 0.9 seconds end to end on macOS arm64 with Blender 5.0.1 to 5.2.1.
   Windows and Linux start-up, antivirus interference and sandboxed Blender

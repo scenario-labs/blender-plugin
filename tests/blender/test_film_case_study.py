@@ -851,7 +851,11 @@ class FilmCaseStudyTests(unittest.TestCase):
         box, labels = self.panel()
         self.assertIn("Exported Prepared cut - Case Study 2.zip", labels)
         operators = [c.args[0] for c in box.row.return_value.operator.call_args_list]
-        self.assertEqual(operators, ["wm.path_open", "scenario.copy_text"])
+        self.assertEqual(operators, ["scenario.open_path", "scenario.copy_text"])
+        self.assertEqual(
+            box.row.return_value.operator.return_value.filepath,
+            str(Path(status["destination"]).parent),
+        )
         self.assertEqual(
             self.tools.film_case_study_review({"review_id": status["review_id"]})["sha256"],
             hashlib.sha256(b"verified fixture archive").hexdigest(),

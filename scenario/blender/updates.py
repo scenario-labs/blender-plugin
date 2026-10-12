@@ -107,8 +107,8 @@ def draw(layout, context):
         box.label(text="Use a release ZIP to update this copy and retain its settings")
     box.label(text="Choose updates in Get Extensions; restart Blender if requested")
     row = box.row(align=True)
-    row.operator("wm.url_open", text="Update guide", icon="HELP").url = GUIDE_URL + "#updates"
-    row.operator("wm.url_open", text="Release ZIPs", icon="URL").url = RELEASES_URL
+    row.operator("scenario.open_url", text="Update guide", icon="HELP").url = GUIDE_URL + "#updates"
+    row.operator("scenario.open_url", text="Release ZIPs", icon="URL").url = RELEASES_URL
 
 
 CLASSES = (SCENARIO_OT_setup_updates, SCENARIO_OT_check_updates)

@@ -472,9 +472,9 @@ class SCENARIO_PT_film_case_study(bpy.types.Panel):
                 destination = Path(status["destination"])
                 box.label(text=f"Exported {destination.name}", icon="CHECKMARK")
                 row = box.row(align=True)
-                row.operator("wm.path_open", text="Open folder", icon="FILE_FOLDER").filepath = str(
-                    destination.parent
-                )
+                row.operator(
+                    "scenario.open_path", text="Open folder", icon="FILE_FOLDER"
+                ).filepath = str(destination.parent)
                 copy = row.operator("scenario.copy_text", text="Copy SHA-256", icon="COPYDOWN")
                 copy.text, copy.what = status["sha256"], "SHA-256"
             elif phase == "CANCELLED":

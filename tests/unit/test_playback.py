@@ -460,22 +460,109 @@ def test_the_system_player_refuses_relative_paths_before_launching():
     assert launches.calls == []
 
 
+def test_a_folder_opens_through_the_same_filtered_launcher(tmp_path):
+    environ = {"PATH": "/usr/bin", **SECRETS}
+    for platform, launcher in (("darwin", "/usr/bin/open"), ("linux", "xdg-open")):
+        launches = Launches()
+        playback.system_open(tmp_path, platform=platform, environ=environ, popen=launches)
+        ((command, options),) = launches.calls
+        assert command == [launcher, str(tmp_path)]
+        assert options["env"] == {"PATH": "/usr/bin"}
+
+
+URL = "https://app.scenario.com/team"
+
+
+@pytest.mark.parametrize(
+    ("platform", "launcher"),
+    [("darwin", ["/usr/bin/open"]), ("linux", ["xdg-open"]), ("freebsd14", ["xdg-open"])],
+)
+def test_web_links_open_without_credentials_python_start_up_or_proxies(platform, launcher):
+    environ = {"PATH": "/usr/bin", "DISPLAY": ":0", "BROWSER": "firefox", **SECRETS}
+    launches = Launches()
+    assert playback.system_open_url(URL, platform=platform, environ=environ, popen=launches) == (
+        "launcher"
+    )
+    ((command, options),) = launches.calls
+    assert command == [*launcher, URL]
+    assert options == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "env": {"PATH": "/usr/bin", "DISPLAY": ":0", "BROWSER": "firefox"},
+    }
+
+
+def test_windows_opens_web_links_through_the_isolated_interpreter():
+    environ = {"SYSTEMROOT": "C:\\Windows", **SECRETS}
+    launches = Launches()
+    link = "https://blender.scenario.com/#updates"
+    playback.system_open_url(
+        link, platform="win32", environ=environ, executable="python.exe", popen=launches
+    )
+    ((command, options),) = launches.calls
+    assert command == ["python.exe", "-I", "-S", "-c", playback._STARTFILE, link]
+    assert options["env"] == {"SYSTEMROOT": "C:\\Windows"}
+    assert options["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    with pytest.raises(playback.PlaybackError, match="interpreter"):
+        playback.system_open_url(
+            link, platform="win32", environ=environ, executable="", popen=launches
+        )
+    assert len(launches.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://app.scenario.com/team",
+        "file:///etc/passwd",
+        "javascript:alert(1)",
+        "-a",
+        "",
+        "https://",
+        "https:///path",
+        "https://app.scenario.com/a b",
+        "https://app.scenario.com/\n",
+        "https://[broken/",
+        "app.scenario.com/team",
+        None,
+        b"https://app.scenario.com/team",
+    ],
+)
+def test_only_https_links_with_a_host_start_a_browser(url):
+    launches = Launches()
+    for platform in ("darwin", "linux", "win32"):
+        with pytest.raises(playback.PlaybackError, match="https"):
+            playback.system_open_url(
+                url, platform=platform, environ={}, executable="python.exe", popen=launches
+            )
+    assert launches.calls == []
+
+
 @pytest.mark.skipif(os.name == "nt", reason="a POSIX shell script stands in for xdg-open")
-def test_the_launched_application_inherits_no_credentials(tmp_path):
-    """A real child process: a stand-in xdg-open records the environment it received."""
+@pytest.mark.parametrize("kind", ["file", "folder", "link"])
+def test_the_launched_application_inherits_no_credentials(tmp_path, kind):
+    """A real child process: a stand-in xdg-open records its environment and argument."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     record = tmp_path / "environment.txt"
+    target = tmp_path / "argument.txt"
     opener = bin_dir / "xdg-open"
-    opener.write_text(f'#!/bin/sh\nenv > "{record}"\n')
+    opener.write_text(f'#!/bin/sh\nenv > "{record}"\nprintf %s "$1" > "{target}"\n')
     opener.chmod(0o700)
     environ = {"PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin", **SECRETS}
-    process = playback.system_open(tmp_path / "media.mp4", platform="linux", environ=environ)
+    if kind == "link":
+        expected = URL
+        process = playback.system_open_url(URL, platform="linux", environ=environ)
+    else:
+        expected = str(tmp_path / "media.mp4") if kind == "file" else str(tmp_path)
+        process = playback.system_open(expected, platform="linux", environ=environ)
     assert process.wait(10) == 0
+    assert target.read_text() == expected
     names = {line.split("=", 1)[0] for line in record.read_text().splitlines() if "=" in line}
     assert "PATH" in names
     assert not {name for name in names if name.upper().startswith(("SCENARIO_", "PYTHON"))}
-    assert "HTTP_PROXY" not in names
+    assert not {name for name in names if name.upper() in {"HTTP_PROXY", "HTTPS_PROXY"}}
 
 
 def test_playback_root_requires_an_existing_parent(tmp_path):

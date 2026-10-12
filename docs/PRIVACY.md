@@ -59,6 +59,22 @@ hosted by GitHub Pages. The Release ZIPs button opens
 `https://github.com/scenario-labs/blender-plugin/releases` in your browser.
 Blender stores the repository configuration and cache through its native manager.
 
+The **Create a key in the portal**, **Update guide** and **Release ZIPs** links
+and the folder and file buttons (**Output folder**, the Film **Open capture**
+and **Open capture files**, and the Film export and case-study **Open folder**)
+start your web browser, file manager or default application the way **Play**
+starts the system player, described below: the extension starts `open` on
+macOS, `xdg-open` on Linux, or on Windows Blender's isolated Python interpreter
+calling `os.startfile`, and strips `SCENARIO_`, `PYTHON` and proxy variables
+from the environment it passes. They never use Blender's `wm.path_open` or
+`wm.url_open`, which pass Blender's whole environment, including
+`SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when Credentials > Environment
+supplies them, to the application they start. Links open only as `https`
+addresses. A browser or file manager that is already running receives only the
+link or path; what it records, such as history, is outside the extension's
+control, and macOS still adds proxy settings from your login session to every
+application it launches.
+
 The extension has no telemetry, analytics or automatic crash-reporting service,
 and no independent update-check service. Blender manages configured extension
 repositories and their update checks separately.

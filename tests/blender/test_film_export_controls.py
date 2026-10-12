@@ -448,7 +448,11 @@ class FilmExportControlTests(unittest.TestCase):
         box, labels = self.panel()
         self.assertIn("Exported Prepared cut - Final Review 2.mp4", labels)
         operators = [c.args[0] for c in box.row.return_value.operator.call_args_list]
-        self.assertEqual(operators, ["wm.path_open", "scenario.copy_text"])
+        self.assertEqual(operators, ["scenario.open_path", "scenario.copy_text"])
+        self.assertEqual(
+            box.row.return_value.operator.return_value.filepath,
+            str(Path(status["destination"]).parent),
+        )
         self.assert_offline()
 
     def test_real_child_export_is_verified_and_discard_keeps_the_video(self):

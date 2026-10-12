@@ -17,6 +17,16 @@ Check `bpy.app.online_access` before network activity. Store state and cache
 through `bpy.utils.extension_path_user`; never write into the installed package.
 Use an isolated disposable profile for every development build or probe.
 
+Open folders, files and web links with `scenario.open_path` and
+`scenario.open_url` from [`desktop.py`](../../scenario/blender/desktop.py), and
+players with `core.jobs.playback.system_open`; never with Blender's
+`wm.path_open` or `wm.url_open` or Python's `webbrowser`. Those start the system
+opener with Blender's whole environment, and the launched application inherits
+the `SCENARIO_` credentials an environment-configured session holds. The
+playback launchers strip `SCENARIO_`, `PYTHON` and proxy variables, accept only
+absolute paths and `https` links, and a unit-test source scan rejects any other
+opener in `scenario/`.
+
 New shared-runtime integration must use explicit account, project, scene and
 target identity. [JobSession](../BLENDER_JOB_CONTEXT.md) captures and validates
 origins; names alone cannot identify a deleted or replaced object. Closing a

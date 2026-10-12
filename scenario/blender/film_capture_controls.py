@@ -255,7 +255,7 @@ class SCENARIO_PT_film_capture(bpy.types.Panel):
             layout.label(text="Stopping the owned render process...")
         elif phase == "CAPTURED":
             layout.operator(
-                "wm.path_open", text="Open capture", icon="FILE_FOLDER"
+                "scenario.open_path", text="Open capture", icon="FILE_FOLDER"
             ).filepath = status["path"]
             layout.operator("scenario.upload_film_capture", icon="EXPORT").review_id = status[
                 "review_id"
@@ -269,7 +269,7 @@ class SCENARIO_PT_film_capture(bpy.types.Panel):
                 layout.label(text=line)
         if status["directory"]:
             layout.operator(
-                "wm.path_open", text="Open capture files", icon="FILE_FOLDER"
+                "scenario.open_path", text="Open capture files", icon="FILE_FOLDER"
             ).filepath = status["directory"]
         if phase not in {"RENDERING", "WAITING", "CANCELLING", "UPLOADING"}:
             layout.operator("scenario.discard_film_capture", icon="TRASH").review_id = status[

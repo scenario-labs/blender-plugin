@@ -118,7 +118,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
             box.label(text="The selected source needs both a key and a secret", icon="ERROR")
         row = box.row(align=True)
         row.operator(
-            "wm.url_open", text="Create a key in the portal", icon="URL"
+            "scenario.open_url", text="Create a key in the portal", icon="URL"
         ).url = PORTAL_KEYS_URL
         row.operator("scenario.test_connection", text="Test connection", icon="CHECKMARK")
         if runtime.state.account_label:

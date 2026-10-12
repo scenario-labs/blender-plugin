@@ -12,11 +12,16 @@ sections keep their own candidate identities and dates.
 ## 0.10.0 evidence by lane
 
 Reviewed on 2026-10-12 against `main` at
-`ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged. Open pull
-requests #403 to #406, #408 to #411 and #416 to #420 still change these lanes,
-and the final candidate is not built yet. This section records which evidence
-each retained capability has, of which kind, and what remains with its owner.
-It does not certify the final archive, authorize publication or close #68.
+`ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged, and brought up
+to date with `main` at `2e89cae89f1ddc7de8487b938b683a57c472a2df`, after #420
+merged. Since that first review, #403 to #406, #408, #409, #416 to #420 and
+#422 have merged. Still open: #410 (trained-model strengths and project
+defaults), #411 (MCP trained models and defaults), #423 (the preview pager's
+fit in the sidebar, a defect found by the
+[pager desktop check](#previews-and-playback)) and release PR #70. The final
+candidate is not built yet. This section records which evidence each retained
+capability has, of which kind, and what remains with its owner. It does not
+certify the final archive, authorize publication or close #68.
 
 ### Release candidate identity
 
@@ -30,6 +35,12 @@ It does not certify the final archive, authorize publication or close #68.
 
 Until then, the latest integrated evidence is:
 
+- `main` at `2e89cae8` passes
+  [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38314348872):
+  7,191 unit tests with the known SDK authentication expected failure on Python
+  3.11 and 3.13, and 1,139 installed baseline tests per job, five skips each, on
+  Linux x64 and Windows x64 with Blender 5.0.1, 5.1.2 and 5.2.1, with the same
+  install, update and offline restart checks as the run below.
 - `main` at `ff8d29d8` passes
   [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38267887382):
   6,691 unit tests with the known SDK authentication expected failure on Python
@@ -80,14 +91,14 @@ description. Quote values, saved identities and private reports stay private.
 | [Audio](#audio) | Paid hosted smoke; installed; desktop waveform | Pending: human listening |
 | [3D generation and imports](#3d-generation-and-imports) | Paid hosted smoke; desktop GLB and OBJ imports of live results | Pending: FBX import |
 | [Splats](#splats) | Installed on 5.0.1, 5.1.2 and 5.2.1 | Pending: import of real splat results |
-| [Panorama and World](#panorama-and-world) | Paid live; desktop on pre-rebase heads | Pending: #416 and #417, desktop recheck |
-| [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; #409 to #411 |
-| [Workflows](#workflows) | Paid live decisions; free live uploads; desktop forms | Pending: desktop review dialogs and uploads; #403 to #406 |
-| [Film](#film) | Installed; desktop dialogs; export in background Blender | Pending: desktop rerun after #407; #408 |
-| [Previews and playback](#previews-and-playback) | Free live; desktop on pre-merge heads | Pending: human listening; #418 to #420 |
+| [Panorama and World](#panorama-and-world) | Paid live; desktop on pre-rebase heads | Pending: desktop recheck of the merged lane |
+| [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; desktop recheck; #410 and #411 open |
+| [Workflows](#workflows) | Paid live decisions; free live uploads; desktop forms | Pending: desktop review dialogs, previews and uploads |
+| [Film](#film) | Installed; desktop dialogs; export in background Blender | Pending: desktop rerun after #407 and #408 |
+| [Previews and playback](#previews-and-playback) | Free live; desktop on pre-merge heads and the merged pager | Pending: pager fit in the sidebar, #423 open; human listening |
 | [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
 | [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1 | Pending: job card; IME by a person |
-| [MCP parity](#mcp-parity) | Free and paid live through local MCP | Passed for merged tools |
+| [MCP parity](#mcp-parity) | Free and paid live through local MCP | Passed for the tools on `ff8d29d8`; pending: #404 and #420 tools on merged heads; #411 open |
 
 ### Image
 
@@ -207,7 +218,9 @@ description. Quote values, saved identities and private reports stay private.
 ### Panorama and World
 
 - **Installed and hosted CI:** #363, #367 (on 5.0.1, 5.1.2 and 5.2.1), #391,
-  #394 and #415.
+  #394 and #415. On 2026-10-12 #416 merged as `1741a1e1`, adding the native
+  Environment lane, and #417 as `881a9347`, adding panorama contract smoke cases
+  and an advisory report.
 - **Paid live, 2026-10-10:** local MCP in background Blender 5.1.2 on pre-merge
   builds. Flux 360 returned a 1536 x 768 equirectangular PNG. HDRi Skybox from
   that result returned an EXR original and an LDR JPEG, both receipt-verified;
@@ -221,15 +234,18 @@ description. Quote values, saved identities and private reports stay private.
   the sidebar and Studio, verified-model lists, settings, the upscale cap, 17
   free quotes, World application of PNG, OpenEXR and JPEG panoramas with
   restore, Esc and focus. World application adds no undo step, as documented.
-- **Status:** pending: merge #416 and #417 and recheck the rebased tab row on a
-  desktop; a local panorama upload and From image beyond its quote need a
-  session without the desktop spend guard. Owner: #98 and #66. Seam, pole and
+- **Status:** pending: a desktop recheck of the merged lane, including the
+  rebased composer tab row, which postdates the desktop pass; a local panorama
+  upload and From image beyond its quote need a session without the desktop
+  spend guard. Owner: #98 and #66. Seam, pole and
   dynamic-range measurements remain advisory.
 
 ### Trained models
 
-- **Installed and hosted CI:** #357, #363, #371, #374 and #376 are merged;
-  #409 to #411 are open.
+- **Installed and hosted CI:** #357, #363, #371, #374 and #376 are merged, and
+  #409 merged on 2026-10-12 as `6a6b4c75`: the model picker's trained LoRAs and
+  compositions. #410 (strengths and project defaults) and #411 (MCP trained
+  models and defaults) are open.
 - **Free live:** on a pre-merge #411 head through local MCP in background
   Blender 5.1.2: public trained models listed, exact quotes equal to the #374
   contracts, byte-identical form and MCP payloads, scoped defaults and local
@@ -240,18 +256,22 @@ description. Quote values, saved identities and private reports stay private.
 - **Desktop (pre-rebase #409 and #410 heads, 23 free quotes):** the picker with
   public LoRAs and compositions, search, base choice, stacking, strength edits,
   per-project default Save, Use, Clear and Replace, one fresh quote per change,
-  Esc and focus. #409 and #410 address four findings from that pass, without a
-  desktop recheck. A LoRA starts at the model's declared strength or, without
-  one, at 0.75, the Scenario web app default; the tested build predates that
-  rule.
+  Esc and focus. Merged #409 fixes four findings from that pass and open #410
+  the strength that Backspace reset to 0.0, without a desktop recheck. With
+  #410 a LoRA starts at the model's declared strength or, without one, at 0.75,
+  the Scenario web app default; the tested build predates that rule.
 - **Status:** pending. Private LoRAs and compositions need credentials that own
-  them: a human check for the maintainer under #97. Restart persistence and
-  the rebased heads also remain.
+  them: a human check for the maintainer under #97. Restart persistence, a
+  desktop recheck of the merged picker, and #410 and #411 once merged also
+  remain.
 
 ### Workflows
 
-- **Installed and hosted CI:** #354, #368, #383, #385 and #395 are merged;
-  #403 to #406 are open.
+- **Installed and hosted CI:** #354, #368, #383, #385 and #395 are merged, and
+  on 2026-10-12 #403 (`ae791f5c`, step decisions through shared jobs), #404
+  (`96e5dfa3`, MCP `workflow_job_steps` and `decide_workflow_step`), #405
+  (`5a175b2c`, step review in Studio and Jobs) and #406 (`c90955dd`, private
+  review previews) merged.
 - **Free live:** a local file uploaded into a public workflow's input (one part,
   imported, receipt-verified), pricing held while uploading, and **Use saved
   upload** reuse that discards the earlier quote.
@@ -262,17 +282,20 @@ description. Quote values, saved identities and private reports stay private.
   run was charged. A text selection reached its next step. A selection feeding
   a ForEach loop was sent although its step links could not be read, and the
   charge exceeded the one-pass quote. #395 now warns about loop quotes, and
-  #403 to #405 refuse such selections.
+  the merged #403 to #405 refuse such selections. These decisions ran on
+  pre-fix heads of #403 to #405; the merged code has no paid recheck.
 - **Desktop (pre-rebase heads):** the workflow picker, input form, Library
   reference, Generate confirmation and, on #395's head, the loop-cost warning.
-- **Status:** pending. The step review dialogs and desktop uploads into inputs
-  need a paid run and a session without the desktop spend guard, which the
-  agent permission rules refused. Owner: the maintainer, under #66 and #68.
+- **Status:** pending. The merged step review dialogs and their **Load
+  previews** (#405, #406), and desktop uploads into inputs, need a paid run and
+  a session without the desktop spend guard, which the agent permission rules
+  refused. Owner: the maintainer, under #66 and #68.
 
 ### Film
 
-- **Installed and hosted CI:** #361, #364 and #407 are merged; #408 is open, and
-  its current head fails the Windows hosted jobs.
+- **Installed and hosted CI:** #361, #364 and #407 are merged, and #408 merged on
+  2026-10-12 as `fc8b2231` after its Windows hosted jobs passed: the portable
+  case-study bundle.
 - **Desktop (pre-fix #407 and #408 heads):** the Film panel, recipe loading, the
   saved upload picker, review preparation, discard and invalidation, building the
   review scene, the export file browser and render confirmation passed. Every
@@ -289,17 +312,41 @@ description. Quote values, saved identities and private reports stay private.
 
 ### Previews and playback
 
-- **Installed and hosted CI:** #359, #360, #375, #384 and #412 are merged;
-  #418 to #420 are open.
+- **Installed and hosted CI:** #359, #360, #375, #384 and #412 are merged, and on
+  2026-10-12 #418 (`ee7586fb`, Play, Play in Blender and Waveform for saved
+  video and audio), #419 (`fa711174`, automatic result previews with a pager
+  for more than four results) and #420 (`2e89cae8`, MCP
+  `inspect_result_previews`) merged. #422 (`fd9fd0f1`) moved the folder and
+  link buttons onto Play's launcher; they have native tests with a recorded
+  launcher and no physical desktop check.
 - **Free live (background Blender 5.1.2):** server stills and local previews for
   audio, 3D, video, texture-set and image results, MCP inspection matching the
   tiles, the audio envelope, retry, and the pause while online access is off.
 - **Desktop (pre-merge #418 and #419 heads, read-only):** tiles in Jobs,
   Generations and Studio; Retry; Play video in the system player; Play in
   Blender; the waveform; status lines wrapped by measured width.
-- **Status:** pending: human listening and Play audio (the maintainer, under
-  #189 and #68), Studio at UI scale 2.0 and the waveform alignment fix proposed
-  on #189.
+- **Desktop, preview pager (2026-10-13, `main` at `2e89cae8`):** a ZIP built
+  from that commit (SHA-256
+  `970275023871f1ee643d683ad9b42e913e1d72fc104f34a413ad2fe35c9b5281`) on
+  Blender 5.1.2, macOS arm64, at UI scales 1.0 and 2.0, with real mouse and
+  keyboard input, Online Access disabled and saved jobs written offline from
+  synthetic images, so no service request and no spend. In Jobs, Generations
+  and Studio (the Jobs page at both scales, the Results page at 1.0), a job with
+  six results paged forward and back, the arrow at each end stayed in place,
+  disabled, and a click on it changed nothing, the range line read `1-4 of 6`
+  and `3-6 of 6`. A job with four results drew no pager in the sidebar's Jobs
+  panel or on the Studio Jobs page. After an arrow click the viewport still
+  answered orbit, wheel zoom and keys, and no field took keyboard focus. One defect: in the 3D View sidebar at its default width, at
+  both scales, a paged row's arrows were about 1.65 times as tall as its tiles,
+  where the [UI contract](../UI_STYLE.md#saved-result-previews) makes them
+  as tall as the icons, and its tiles were about 30% smaller than those of an
+  unpaged row in the same panel. In Studio and in a widened sidebar the arrows
+  matched the tiles. #423, open, fixes the fit; its desktop recheck is
+  pending.
+- **Status:** pending: the pager's fit in the default-width sidebar (#423,
+  then a desktop recheck at UI scales 1.0 and 2.0, under #66 and #68); human listening and Play audio (the maintainer, under #189 and #68);
+  the waveform and Studio's Results page at UI scale 2.0; and the waveform
+  alignment fix proposed on #189.
 
 ### Library organization
 
@@ -355,24 +402,31 @@ description. Quote values, saved identities and private reports stay private.
   byte-identical to the form; organization; preview inspection matching the
   tiles; World application and restore; Render quotes and generation over
   prepared native forms; workflow approval and rejection.
-- **Status:** passed for merged tools. #404, #411 and #420 add tools that need
-  their own evidence after merging. No third-party MCP client session is
-  recorded.
+- **Status:** passed for the tools on `main` at `ff8d29d8`. #404's
+  `workflow_job_steps` and `decide_workflow_step` and #420's
+  `inspect_result_previews` merged with installed tests; the live workflow
+  decisions and preview inspection above ran on pre-merge heads, so the merged
+  tools have no live recheck yet. #411's trained-model tools are open. No
+  third-party MCP client session is recorded.
 
 ### Pending checks
 
 | Check | Lane | Owner | Reason |
 | --- | --- | --- | --- |
 | Job strip and job card from a real generation | Composer | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
-| Workflow step review dialogs and desktop uploads into inputs | Workflows | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
+| Workflow step review dialogs, their previews and desktop uploads into inputs | Workflows | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
 | First-frame clip capture, upload and ready quote | Render Video | Maintainer, #66 and #68 | Needs the desktop spend guard off, refused by the agent permission rules |
 | Splat and FBX imports of real results | Splats, 3D | Maintainer, #65 and #68 | Paid generation refused by the agent permission rules |
 | IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Human check |
 | Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Human check |
 | Private LoRAs and compositions | Trained models | Maintainer, #97 | Human check; the test credentials own none |
+| Trained-model picker, strengths and project defaults on merged heads | Trained models | #97 | #409's fixes merged after the desktop pass; #410 and #411 are open |
 | Export and case-study save after #407 and #408 | Film | #66 and #68 | The fix landed after the desktop pass |
 | Library Apply from the dialog | Library | #66 | Write-capable desktop session refused by the agent permission rules |
-| Rebased Environment tab row, local panorama upload and From image | Panorama | #98 and #66 | #416 and #417 are open; uploads need the spend guard off |
+| Merged Environment lane, its rebased tab row, local panorama upload and From image | Panorama | #98 and #66 | #416 merged after the desktop pass; uploads need the spend guard off |
+| Preview pager fit in the default-width sidebar, at UI scales 1.0 and 2.0 | Previews | #66 and #68 | Defect found by the 2026-10-13 desktop check; its fix, #423, is open |
+| Folder and link buttons on the shared launcher | Previews, Film | #68 | #422 has native tests only; no physical check of the buttons |
+| `workflow_job_steps`, `decide_workflow_step` and `inspect_result_previews` on merged heads, then #411's tools | MCP | #65 and #68 | Live evidence ran on pre-merge heads; #411 is open |
 | #401 session endings and #402 import Undo and save prompt | Composer, 3D | #66 and #68 | Fixes merged after the desktop passes |
 | Weekly macOS and Windows rerun | Platforms | #399 and #400 | Stale expectation corrected by #396 |
 | First scheduled monthly paid smoke run | CI | #40 | Not run yet |
@@ -931,13 +985,14 @@ array constraints for both schema spellings. These remain synthetic checks.
 
 ## Issue disposition
 
-GitHub state reviewed on 2026-10-12 is separate from candidate acceptance:
+GitHub state reviewed on 2026-10-12, last after #420 merged, is separate from
+candidate acceptance:
 
 | Scope | State and release implication |
 | --- | --- |
 | #64, #65, #66, #68 | Open. SDK service-path cleanup and shared commands are implemented; the [0.10.0 evidence by lane](#0100-evidence-by-lane) records retained-capability, desktop and live evidence and the [pending checks](#pending-checks). Their checklists are not yet ticked. |
-| #97, #99 | Open. Trained-model use in the UI and MCP (#409 to #411) is still open, and provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close these scopes. |
-| #98 | Closed on 2026-10-12 through #415's closing reference. Its authorized live seam, pole and dynamic-range item is still unchecked, and the native Environment lane (#416) and panorama smoke cases (#417) are open; the maintainer should confirm this disposition. |
+| #97, #99 | Open. The model picker's trained LoRAs and compositions (#409) merged on 2026-10-12; trained-model strengths and project defaults (#410) and MCP trained models and defaults (#411) are open, and provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close these scopes. |
+| #98 | Open. #415's closing reference closed it on 2026-10-12, and it was reopened the same day. The native Environment lane (#416) and panorama smoke cases (#417) merged on 2026-10-12; its authorized live seam, pole and dynamic-range item and the desktop recheck of the merged lane remain. |
 | #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |

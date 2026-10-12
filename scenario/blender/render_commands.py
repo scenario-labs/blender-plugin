@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import logging
 import math
 from dataclasses import replace
 
@@ -23,6 +24,7 @@ from . import (
     trained_models,
 )
 
+log = logging.getLogger("scenario.render_commands")
 _FIELDS = {
     "look": ("prompt", str),
     "capture_source": ("capture_source", str),
@@ -40,12 +42,24 @@ def lane_state(scene, lane):
     return scene.scenario.lane_state(lane)
 
 
+def _apply_default(scene):
+    """The GUI pump's project-default step, for headless MCP too (main thread).
+
+    A form that fails to take its default stays governed and waiting, so
+    build_request reports that reason; the failure is logged, as Save and Clear do.
+    """
+    try:
+        trained_defaults.apply_pending((scene,))
+    except Exception:
+        log.exception("applying the project default to the render form failed")
+
+
 def request(scene, lane, model_id, parameters=None):
     """Use the same prepared form and final body as the native Generate action."""
     state = lane_state(scene, lane)
     if parameters is not None and parameters != {}:
         raise ScenarioError(0, "Configure render_form first; render quotes use its prepared inputs")
-    trained_defaults.apply_pending((scene,))  # the GUI pump's step, for headless MCP too
+    _apply_default(scene)
     if state.model_id != model_id:
         raise ValueError("The render model changed; configure render_form and estimate again")
     result = generation.build_request(scene, lane, for_estimate=True)
@@ -80,7 +94,7 @@ def _source_result(ref):
 
 def inspect(scene, lane):
     state = lane_state(scene, lane)
-    trained_defaults.apply_pending((scene,))  # the GUI pump's step, for headless MCP too
+    _apply_default(scene)
     schema = generation.schema_for(state.model_id)
     styles = render_lanes.style_input(lane, schema) if schema else None
     values, enabled = params_ui.collect_values(state, schema) if schema else ({}, {})
@@ -184,7 +198,12 @@ def _parameter(spec, value):
 
 
 def configure(scene, lane, changes):
-    """Preflight edits before touching the current form; never upload or spend."""
+    """Preflight edits before touching the current form; never upload or spend.
+
+    Settings that name no model edit the form a project default governs only once
+    it holds that default: it is applied first, and while it waits or cannot run
+    the edits are refused with its reason. Naming model_id never applies it.
+    """
     state = lane_state(scene, lane)
     if not isinstance(changes, dict) or set(changes) - {
         *_FIELDS,
@@ -193,6 +212,10 @@ def configure(scene, lane, changes):
         "style_assets",
     }:
         raise ValueError("Unknown render setting")
+    if "model_id" not in changes:
+        _apply_default(scene)
+        if reason := trained_defaults.blocking_reason(state):
+            raise ScenarioError(0, reason)
     model_id = changes.get("model_id", state.model_id)
     if not isinstance(model_id, str) or not model_id:
         raise ValueError("Choose a render model")

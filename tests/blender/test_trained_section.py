@@ -635,6 +635,102 @@ class TrainedSectionTests(unittest.TestCase):
             result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.6}]
         )
 
+    def render_default(self, placeholder):
+        """A saved Render Image default (FLUX.1 Dev, a public LoRA at 0.6) governing the form."""
+        self.load_catalog()
+        render = self.scene.scenario.lane_state("render_image")
+        self.open_trained("render_image")
+        self.highlight(LORA_A)
+        self.wm.scenario_picker_strength = 0.6
+        self.assertEqual(bpy.ops.scenario.pick_model(lane="render_image"), {"FINISHED"})
+        self.defaults.load()
+        state = self.save_default("render_image")
+        self.release(render, placeholder)
+        return render, self.defaults.label(state.default)
+
+    def configure_render(self, settings):
+        tools = submodule("mcp.tools_scenario")
+        return tools.render_form(
+            {"lane": "render_image", "action": "configure", "settings": settings}
+        )
+
+    def test_a_render_default_failing_to_write_reports_its_wait_through_mcp(self):
+        """Local MCP shows the governed form's reason, not the write failure, as the pump does."""
+        render, label = self.render_default(FLUX1)
+        waiting = self.defaults.WAITING.format(label=label, reason=self.defaults.APPLYING)
+        tools = submodule("mcp.tools_scenario")
+        errors = submodule("core.api.errors")
+        with (
+            patch.object(self.trained, "write_slots", side_effect=RuntimeError("synthetic")),
+            self.assertLogs("scenario.render_commands", "ERROR") as logs,
+        ):
+            result = tools.render_form({"lane": "render_image"})
+            with self.assertRaises(errors.ScenarioError) as raised:
+                tools.estimate_cost({"lane": "render_image", "model_id": FLUX1})
+        self.assertEqual((result["errors"], result["ready_to_estimate"]), ([waiting], False))
+        self.assertEqual(result["trained_models"], [])
+        self.assertEqual(raised.exception.reason, waiting)
+        self.assertEqual(len(logs.records), 2)  # inspect and the quote each logged it
+        self.assertEqual((render.model_key, len(render.trained)), ("", 0))  # still governed
+        result = tools.render_form({"lane": "render_image"})
+        self.assertEqual(
+            result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.6}]
+        )
+
+    def test_configure_without_a_model_applies_the_render_default_first(self):
+        """Edits land on the default's base, including values only its schema accepts."""
+        render, _label = self.render_default(ZIMAGE)  # its guidance starts at 1, FLUX.1 Dev's at 0
+        result = self.configure_render(
+            {"look": "dusk", "parameters": {"numInferenceSteps": 40, "guidance": 0.5}}
+        )
+        self.assertEqual((result["model_id"], render.model_key), (FLUX1, FLUX1))
+        self.assertEqual(
+            result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.6}]
+        )
+        self.assertEqual(result["look"], "dusk")
+        parameters = result["parameters"]
+        self.assertEqual((parameters["numInferenceSteps"], parameters["guidance"]), (40, 0.5))
+
+    def test_configure_without_a_model_refuses_while_the_render_default_cannot_apply(self):
+        render, label = self.render_default(FLUX1)
+        errors = submodule("core.api.errors")
+        settings = {"look": "dusk", "parameters": {"numInferenceSteps": 40}}
+
+        def form():
+            steps = render.params["numInferenceSteps"]
+            values = (steps.int_value, steps.float_value, steps.enabled)
+            return render.prompt, render.model_id, render.model_key, len(render.trained), values
+
+        before = form()
+        with (
+            patch.object(self.trained, "write_slots", side_effect=RuntimeError("synthetic")),
+            self.assertLogs("scenario.render_commands", "ERROR"),
+            self.assertRaises(errors.ScenarioError) as raised,
+        ):
+            self.configure_render(settings)  # writing the default fails: it still waits
+        waiting = self.defaults.WAITING.format(label=label, reason=self.defaults.APPLYING)
+        self.assertEqual(raised.exception.reason, waiting)
+        self.assertEqual(form(), before)
+        with (
+            patch.object(self.trained, "current_scope", return_value=None),
+            self.assertRaises(errors.ScenarioError) as raised,
+        ):
+            self.configure_render(settings)
+        self.assertEqual(
+            raised.exception.reason,
+            f"Project default {label} is unavailable: choose a model or clear the default. "
+            "Connect to Scenario before using a project default.",
+        )
+        self.assertEqual(form(), before)
+
+    def test_configure_naming_a_model_never_applies_the_render_default_first(self):
+        render, _label = self.render_default(FLUX1)
+        result = self.configure_render({"model_id": FLUX1, "parameters": {"numInferenceSteps": 40}})
+        self.assertEqual((result["model_id"], result["trained_models"]), (FLUX1, []))
+        self.assertEqual((render.model_key, len(render.trained)), (FLUX1, 0))
+        self.assertEqual(result["parameters"]["numInferenceSteps"], 40)
+        self.assertNotIn("project default", " ".join(result["errors"]).lower())
+
     def test_a_default_saved_in_one_scene_reprices_no_other_scene(self):
         self.choose_stack()
         self.defaults.load()

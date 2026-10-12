@@ -1802,6 +1802,91 @@ class ComposerEditFormTests(unittest.TestCase):
         self.assertEqual(self.edit3d.prompt, "rusty iron plates")
         self.assertEqual(self.drawn().fields, ["This model takes no prompt"])
 
+    def key(self, key="", text=""):
+        """Deliver one key press, named or with no Python type, with Blender's text field recorded, not opened."""
+        self.runtime.state.composer_modal_running = True
+        wm = bpy.context.window_manager
+        context = SimpleNamespace(scene=self.scene, region=MagicMock(), window_manager=wm)
+        event = SimpleNamespace(
+            type=key,
+            value="PRESS",
+            mouse_region_x=10,
+            mouse_region_y=10,
+            shift=False,
+            ctrl=False,
+            oskey=False,
+            alt=False,
+            unicode=text,
+            is_repeat=False,
+        )
+        operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
+        call_panel = MagicMock(return_value={"INTERFACE"})
+        ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
+        with (
+            patch.object(self.modal, "_layout") as layout,
+            patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            layout.return_value.hit.return_value = None
+            layout.return_value.scale = 1.0
+            result = self.modal.SCENARIO_OT_composer_modal.modal(operator, context, event)
+        self.assertEqual(result, {"RUNNING_MODAL"})
+        return operator, call_panel
+
+    def confirm_text_field(self, text):
+        """Confirm Blender's text field with `text`, as Enter in the popover does."""
+        wm = bpy.context.window_manager
+        self.runtime.state.last_message = ""
+        wm.scenario_composer_text = text
+        self.assertEqual(wm.scenario_composer_text, "")
+
+    def test_text_field_types_into_the_edit_form_the_composer_shows(self):
+        self.drawn()
+        self.composer.focused = True
+        self.confirm_text_field(" 日本")
+        self.assertEqual(self.edit3d.prompt, "rusty iron plates 日本")
+        self.assertEqual(self.three_d.prompt, "a teapot")
+        self.assertTrue(self.composer.focused)
+
+    def test_input_method_text_never_reaches_the_form_that_replaced_it(self):
+        # A key with text Blender cannot name, F2, and a composition's second press all type into the prompt.
+        for keys in ((("", "é"),), (("F2", ""),), (("", ""), ("", ""))):
+            with self.subTest(keys=keys):
+                self.focus_text_form()
+                for key, text in keys:
+                    operator, call_panel = self.key(key, text)
+                call_panel.assert_not_called()
+                operator.report.assert_called_once()
+                self.assertIn("Esc", operator.report.call_args.args[1])
+                self.assertTrue(self.composer.focused)
+                self.assertEqual(self.composer.field.text, "a teapot")
+                self.assert_prompts_unchanged()
+        # Blender's text field may be confirmed after the form changed: neither form takes its text.
+        self.focus_text_form()
+        self.confirm_text_field("日本")
+        self.assertTrue(self.composer.focused)
+        self.assertEqual(self.composer.field.text, "a teapot")
+        self.assert_prompts_unchanged()
+        self.assertIn("Esc", self.runtime.state.last_message)
+
+    def test_input_method_text_leaves_a_form_without_a_prompt(self):
+        self.drawn()
+        # Another window or a tool loads an Edit task without a prompt into the focused form.
+        self.retopology("rusty iron plates")
+        for keys in ((("", "é"),), (("F2", ""),), (("", ""), ("", ""))):
+            with self.subTest(keys=keys):
+                self.composer.focused = True
+                for key, text in keys:
+                    operator, call_panel = self.key(key, text)
+                call_panel.assert_not_called()
+                operator.report.assert_called_once_with({"WARNING"}, "This model takes no prompt")
+                self.assertFalse(self.composer.focused)
+                self.assertEqual(self.edit3d.prompt, "rusty iron plates")
+        self.composer.focused = True
+        self.confirm_text_field("日本")
+        self.assertFalse(self.composer.focused)
+        self.assertEqual(self.edit3d.prompt, "rusty iron plates")
+        self.assertEqual(self.runtime.state.last_message, "This model takes no prompt")
+
 
 class ComposerEditFormFixtureTests(unittest.TestCase):
     def test_a_failed_fixture_setup_still_releases_its_patches(self):

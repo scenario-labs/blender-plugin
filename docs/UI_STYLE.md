@@ -425,12 +425,23 @@ drawing a pre-edit it cannot receive.
   event logs one warning rather than one per comparison.
 - Drawing the popover reads the composer state and changes nothing. The field's
   update callback types the text and empties its window-manager property.
+- Text from these paths follows the composer's form rules for typed keys (see
+  [Buttons](#buttons)). When another form replaced the one the focused prompt
+  belongs to, an untyped key with text, F2 and a composition's second press are
+  refused with the same warning, open no popover, and the prompt keeps its focus
+  and original text until Esc. When the form's model takes no prompt, they leave
+  focus with *This model takes no prompt*. A popover confirmed after its form
+  changed in either way adds nothing to either form, and the add-on's status
+  message says why.
 
 Installed tests drive the modal with synthetic untyped, dead-key and F2 events
 (the popover call stubbed), set the field property and draw the panel into a
 recording layout. Another installed test sends a dead key between two clicks in
 the prompt, a click between two untyped presses and the end of a modal session
 between presses, and checks that neither a double-click nor the popover follows.
+Installed Edit form tests send an untyped key with text, F2, a composition's two
+presses and a popover confirmation to a replaced form and to a form whose model
+takes no prompt, and check that neither form's prompt changes.
 Physical composition, dead keys, candidate-window placement and focus after the
 popover have not been checked on a desktop; they remain under #66.
 

@@ -12,6 +12,7 @@ from bpy.props import StringProperty
 
 from ...core.ui import composer_layout as cl
 from .. import runtime
+from .modal import refuse_text
 
 PANEL = "SCENARIO_PT_composer_text_field"
 
@@ -33,7 +34,12 @@ def _on_text(wm, context):
     scene = getattr(context, "scene", None)
     if state is None or scene is None or not hasattr(scene, "scenario"):
         return
-    state.type_text(scene, text)
+    # The form may have changed while the field was open: the rules for typed keys apply.
+    reason = refuse_text(scene, state)
+    if reason is None:
+        state.type_text(scene, text)
+    else:
+        runtime.set_message(reason)
     _redraw_views(context)
 
 

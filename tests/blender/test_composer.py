@@ -850,7 +850,10 @@ class ComposerSideRegionTests(unittest.TestCase):
         ):
             result = self.modal.SCENARIO_OT_composer_modal.modal(self._operator(), context, event)
         self.assertEqual(result, {"RUNNING_MODAL"})
-        pick.assert_called_once_with("INVOKE_DEFAULT", lane=state.lane_for(context.scene))
+        # A form without LoRAs or a composition opens the picker on all models.
+        pick.assert_called_once_with(
+            "INVOKE_DEFAULT", lane=state.lane_for(context.scene), category="all"
+        )
         return open_sidebar
 
     def test_the_model_chip_opens_the_sidebar_only_while_the_card_keeps_its_room(self):
@@ -1952,7 +1955,8 @@ class ComposerEditFormTests(unittest.TestCase):
         ):
             self.press("model")
             self.press("settings")
-        dialogs.pick_model.assert_called_once_with("INVOKE_DEFAULT", lane="edit3d")
+        # Edit 3D takes no trained models, so its picker opens on all models.
+        dialogs.pick_model.assert_called_once_with("INVOKE_DEFAULT", lane="edit3d", category="all")
         # The 3D settings dialog holds the mode switch and the Edit form with its own Generate.
         dialogs.quick_settings.assert_called_once_with("INVOKE_DEFAULT", lane="3d")
         dialogs.generate.assert_not_called()

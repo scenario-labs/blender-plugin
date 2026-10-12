@@ -294,11 +294,18 @@ establish live generation or full render-lane desktop acceptance.
   copy a running animation player reads. The system player is tracked only
   until its launcher (`open`, `xdg-open` or, on Windows, an isolated Python
   helper) exits: an eviction, connection change, file load or disabling the
-  extension can then remove a copy it still has open. Both players start without
-  `SCENARIO_`, `PYTHON` or proxy variables; unit tests check this with recorded
-  launchers and a stand-in `xdg-open`, and native tests with a recorded launcher,
-  not with a real default player on Windows or Linux; the macOS desktop passes
-  above predate this launcher. Windows
+  extension can then remove a copy it still has open. Both launches strip
+  `SCENARIO_`, `PYTHON` and proxy variables from the environment Blender passes;
+  macOS still adds proxy settings from the login session to every application it
+  launches. Unit tests check the filter with recorded launchers and a stand-in
+  `xdg-open`, and native tests with a recorded launcher. A private check on macOS
+  arm64 Blender 5.1.2 with Environment credentials opened the private read-only
+  copy in the system player and started Blender's animation player without
+  `SCENARIO_`, `PYTHON` or proxy names in its environment; probe applications
+  launched through `open` received no `SCENARIO_` or `PYTHON` names from the
+  filtered launch, while an unfiltered `open` passed its caller's whole
+  environment on. Real default players on Windows and Linux remain unverified.
+  Windows
   refuses to delete a copy a player still holds open; it is removed by a later
   day's sweep. Whether Blender's animation player plays a video's soundtrack,
   behavior without a default player (for example Linux without `xdg-open`) and

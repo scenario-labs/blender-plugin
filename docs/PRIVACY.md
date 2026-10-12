@@ -117,10 +117,11 @@ stay in that copy's work directory and are removed with it.
 **Play** and **Play in Blender** copy one verified saved video or audio result
 into a private, read-only file under `cache/media-playback` and open that copy,
 never the saved file, in the system player or a separate Blender animation
-player. Both players start with an environment that omits `SCENARIO_`, `PYTHON`
-and proxy variables, so neither receives your Scenario credentials, including
-`SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when Credentials > Environment
-supplies them. Up to four copies
+player. The extension strips `SCENARIO_`, `PYTHON` and proxy variables from the
+environment Blender passes to either player, so neither receives your Scenario
+credentials, including `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when
+Credentials > Environment supplies them. macOS still adds proxy settings from
+your login session to every application it launches. Up to four copies
 or 1 GiB are kept for reuse; the rest, and every copy when the connection
 changes, a file loads or the extension is disabled, are removed unless a running
 animation player or system player launcher still uses one. A copy left behind, for example one a player still

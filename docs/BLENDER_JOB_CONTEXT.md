@@ -539,7 +539,8 @@ it opens the latest one in the system player, or starts Blender's animation
 player (`-a`) in a separate process. The system player starts through
 `core.jobs.playback.system_open` (`open`, `xdg-open`, or an isolated Python
 helper calling `os.startfile` on Windows), never `wm.path_open`; both launches
-drop `SCENARIO_`, `PYTHON` and proxy variables from the environment. It reuses
+strip `SCENARIO_`, `PYTHON` and proxy variables from the environment Blender
+passes. It reuses
 an unchanged copy of the same receipt, keeps at most four copies or 1 GiB plus
 any copy a running animation player or system player launcher uses or the
 pending Play reuses, reports a launcher that exits with an error, and allows two

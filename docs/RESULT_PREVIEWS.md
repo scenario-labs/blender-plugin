@@ -363,7 +363,11 @@ Waveform controls have installed native tests with patched players. Partial
 private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video's
 private copy in the system player and in Blender's animation player at UI scale
 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0; Play audio and
-the waveform's desktop Cancel and Retry were not exercised. Blender-side image
+the waveform's desktop Cancel and Retry were not exercised. A later private
+check there confirmed that the system player opened the private read-only copy
+and that Blender's animation player started without `SCENARIO_`, `PYTHON` or
+proxy names in its environment; real Windows and Linux launchers remain
+unverified. Blender-side image
 decoding of saved results, still and clip display, MCP parity and native desktop
 acceptance, including of the review previews, remain open under #189, #65 and
 #66.

@@ -14,6 +14,9 @@ trained list are loaded and trained_routes.apply accepts it. Until then, or when
 it cannot run, the form's price is blocked with the reason; it never falls back
 to the base model alone. Use applies the default to a form that already has a
 choice. Applying invalidates the price; the quote still reads every model fresh.
+Applying automatically writes the form without RNA updates, so origins captured
+in its scene stay current (#387); Use is an explicit selection and invalidates
+them like any edit.
 """
 
 from dataclasses import dataclass, field
@@ -272,8 +275,15 @@ def blocking_reason(lane_state):
 
 
 # -- applying --------------------------------------------------------------------------
-def _apply(lane_state, lane, resolution):
-    """Write a resolved default into the form: base model, then its trained choice."""
+def _apply(lane_state, lane, resolution, *, seed=False):
+    """Write a resolved default into the form: base model, then its trained choice.
+
+    Use is an explicit selection and assigns through RNA like any edit. A
+    default applied automatically (`seed`) is not an edit of the scene: as
+    catalog seeding does (#387), it stores the model index and strengths
+    without their RNA updates, which would tag the scene and make every origin
+    captured in it stale, then syncs the form and re-arms its price itself.
+    """
     scope = trained_models.current_scope()
     if scope is None:
         raise ScenarioError(0, "Connect to Scenario before using a project default")
@@ -282,8 +292,16 @@ def _apply(lane_state, lane, resolution):
         raise ScenarioError(0, "Its base model is not in this form's model list")
     lane_state.model_key = base.id
     if lane_state.model_id != base.id:
-        lane_state.model_id = base.id  # its update callback runs on_model_changed
-    trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope)
+        if seed:
+            from . import generation
+
+            # Each model enum value is its 3-tuple item's index, as in restore_model_key.
+            models = [item[0] for item in runtime.enum_items(("models", lane))]
+            lane_state["model_id"] = models.index(base.id)
+            generation.on_model_changed(bpy.context, lane_state)  # what the update would run
+        else:
+            lane_state.model_id = base.id  # its update callback runs on_model_changed
+    trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope, seed=seed)
     props.mark_estimate_dirty(lane_state)
 
 
@@ -337,7 +355,7 @@ def apply_pending(scenes=None):
                 resolution = resolve(default, lane, read=True)
                 if resolution.ready:
                     try:
-                        _apply(lane_state, lane, resolution)
+                        _apply(lane_state, lane, resolution, seed=True)
                     except ScenarioError:
                         continue
                     changed = True

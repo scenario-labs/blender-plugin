@@ -338,11 +338,15 @@ def _resolved(chosen, slot, *, visible_start=True):
     return resolved
 
 
-def write_slots(lane_state, lane, chosen, slot, scope):
+def write_slots(lane_state, lane, chosen, slot, scope, *, seed=False):
     """Replace the lane's slots with `chosen` (already resolved) for this base slot.
 
     A LoRA gets a strength control only when it has a strength and the slot
     declares bounds; one without a strength sends the slot's declared default.
+    `seed` stores each strength within its bounds without the RNA update, for a
+    choice the user did not make in this scene (a project default applied
+    automatically): that update would tag the scene and make every origin
+    captured in it stale. The caller then re-arms the price.
     """
     strength = trained_offers.strength(slot)
     lane_state.trained.clear()
@@ -354,7 +358,10 @@ def write_slots(lane_state, lane, chosen, slot, scope):
         if scale is not None and strength is not None:
             item.fmin, item.fmax = strength.minimum, strength.maximum
             item.has_scale = True
-            item.scale = scale
+            if seed:
+                item["scale"] = strength.clamp(scale)
+            else:
+                item.scale = scale
         item[SCOPE] = scope
 
 

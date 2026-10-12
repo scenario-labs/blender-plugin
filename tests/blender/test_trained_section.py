@@ -15,6 +15,7 @@ import unittest
 from unittest.mock import patch
 
 import bpy
+import test_generation as generation_tests
 import test_trained_models as trained_tests
 from helpers import submodule
 
@@ -101,6 +102,8 @@ class TrainedSectionTests(unittest.TestCase):
     pick = _shared("pick")
     body = _shared("body")
     gets = _shared("gets")
+    # A job session with its own store, as in the catalog-load origin tests (#387).
+    job_session = generation_tests.FirstCatalogLoadOriginTests.job_session
 
     # -- helpers -------------------------------------------------------------------
     @property
@@ -605,6 +608,52 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertEqual(len(self.gets(FLUX1)), reads + 1)
         self.assertFalse(len(self.lane.trained))
         self.assertIn("Its base model's description declares no inputs.", self.errors()[0])
+
+    def test_an_automatic_default_keeps_origins_captured_before_it(self):
+        """A default landing in a form without a choice is not a scene edit (#387).
+
+        Captured origins, and the quotes and MCP approvals bound to them, stay
+        current in every scene the default reaches; an explicit Use still
+        invalidates them, as any other selection does.
+        """
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        second = bpy.data.scenes.new("Second shot")
+        self.addCleanup(bpy.data.scenes.remove, second)
+        self.release(self.lane)
+        scenes = (self.scene, second)
+        for scene in scenes:
+            scene.view_layers[0].update()
+        session = self.job_session()
+        origins = [session.capture(scene) for scene in scenes]
+        self.assertTrue(self.defaults.apply_pending())
+        for scene, origin in zip(scenes, origins, strict=True):
+            scene.view_layers[0].update()
+            self.assertTrue(session._origins.current(origin), scene.name)
+            lane_state = scene.scenario.lane_state("image")
+            self.assertEqual((lane_state.model_id, lane_state.model_key), (FLUX1, FLUX1))
+            self.assertEqual(
+                [
+                    (s.model_id, round(s.scale, 4), s.has_scale, s.get(self.trained.SCOPE))
+                    for s in lane_state.trained
+                ],
+                [
+                    (STUDIO_LORA, 0.8, True, self.trained.current_scope()),
+                    (LORA_A, 1.25, True, self.trained.current_scope()),
+                ],
+                scene.name,
+            )
+            self.assertEqual(lane_state.estimate_state, "PENDING")  # re-armed without a callback
+        self.assertEqual(self.body()["lorasScale"], [0.8, 1.25])
+        # Use is an explicit selection: it invalidates origins like any edit.
+        self.lane.trained.clear()
+        self.lane.model_id = ZIMAGE
+        self.scene.view_layers[0].update()
+        origin = session.capture(self.scene)
+        self.assertEqual(bpy.ops.scenario.trained_default_apply(lane="image"), {"FINISHED"})
+        self.scene.view_layers[0].update()
+        self.assertFalse(session._origins.current(origin))
 
     def test_the_pump_applies_defaults_before_pricing_and_survives_a_failure(self):
         self.choose_stack()

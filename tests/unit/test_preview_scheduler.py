@@ -1226,6 +1226,28 @@ def test_watches_are_bounded_released_on_close_and_owned_by_one_thread(lane):
         scheduler.watch("request", ["asset-video"])
 
 
+def test_a_watch_closed_by_its_waiter_frees_its_slot_without_unwatch(lane):
+    # Adapted from a review finding: a wait whose delivery never ran, such as
+    # after the local MCP server stopped, kept its watch until its results settled.
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-video", "video/mp4", MP4)])
+    service.assets["asset-video"] = asset_record("asset-video", "video/mp4")
+    scheduler.request("request")
+    watches = [scheduler.watch("request", ["asset-video"]) for _ in range(WATCH_LIMIT)]
+    closer = threading.Thread(target=watches[0].close)  # The waiting thread gives up.
+    closer.start()
+    closer.join(5)
+    assert not watches[0].quiet and not scheduler.quiet("request", "asset-video")
+    # A new wait takes the closed watch's place; a pump forgets the others.
+    again = scheduler.watch("request", ["asset-video"])
+    assert watches[0] not in scheduler._watches and again in scheduler._watches
+    for watch in watches[1:]:
+        watch.close()
+    scheduler.pump()
+    assert scheduler._watches == [again] and not again.quiet
+    scheduler.unwatch(watches[0])  # Already forgotten; harmless.
+
+
 def test_a_retry_behind_an_inflight_poll_is_never_reported_quiet(decoding):
     # Adapted from a review probe: a retry deferred behind an in-flight offline
     # poll kept the result's settled states, so quiet and a watch reported it

@@ -461,6 +461,53 @@ class McpResultPreviewTests(unittest.TestCase):
             with self.assertRaisesRegex(Exception, "changed while waiting"):
                 deferred.finish(None)
 
+    def test_a_wait_a_stopped_server_never_delivers_frees_its_watch(self):
+        # Adapted from a review finding: only the main-thread delivery dropped the
+        # watch, and a stopped server never queues that delivery.
+        with online_access(False):
+            record = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+            started, _, _ = self.blocked_decode()
+            server = SimpleNamespace(running=True)
+            self.runtime.state.mcp = server
+            deferred = self.mcp.inspect_result_previews(
+                self.args(record, asset_id="sound", envelope=True, wait=60)
+            )
+            scheduler = self.runtime.state.job_session.result_previews
+            self.assertEqual(len(scheduler._watches), 1)
+            waiter = threading.Thread(target=deferred.run, name="McpWait")
+            waiter.start()
+            deadline = time.monotonic() + 30
+            while not started.is_set():
+                self.assertLess(time.monotonic(), deadline)
+                self.pump()
+                time.sleep(0.01)
+            server.running = False
+            waiter.join(5)
+            self.assertFalse(waiter.is_alive())
+            self.pump()
+            # The decode still runs, yet the abandoned wait holds no watch.
+            self.assertFalse(scheduler.quiet("request", "sound", ("envelope",)))
+            self.assertEqual(scheduler._watches, [])
+
+    def test_a_wait_refuses_a_saved_job_that_changed_while_it_waited(self):
+        error = submodule("core.api.errors").ScenarioError
+        with online_access(False):
+            record = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+            deferred = self.mcp.inspect_result_previews(
+                self.args(record, asset_id="sound", envelope=True, wait=0.2)
+            )
+            deferred.run()  # Nothing pumps here, so the envelope is still queued.
+            # Another action changes the saved job while the agent waits.
+            changed = self.runtime.state.job_store.transition(
+                "request",
+                expected_revision=record.revision,
+                state=self.storemod.JobState.APPLYING,
+            )
+            self.assertGreater(changed.revision, record.revision)
+            with self.assertRaisesRegex(error, "saved job changed while waiting"):
+                deferred.finish(None)
+            self.assertEqual(self.runtime.state.job_session.result_previews._watches, [])
+
     def test_stale_invalid_or_unsupported_requests_are_refused(self):
         error = submodule("core.api.errors").ScenarioError
         with online_access(False):

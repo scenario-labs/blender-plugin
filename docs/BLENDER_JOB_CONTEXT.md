@@ -580,9 +580,10 @@ or of one named result, and an envelope
 only when asked, and calls the scheduler's `retry` or `cancel` for one result;
 a retry also calls the controller's `forget_failures`. A bounded wait takes a
 scheduler `watch`, which the maintenance timer or headless loop sets while
-pumping and `deactivate` releases. The HTTP thread waits on it; the final
-statuses are read on the main thread only if the context token and session are
-unchanged.
+pumping and `deactivate` releases. The HTTP thread waits on it and closes it
+when the wait ends, so the next pump forgets a watch whose delivery never runs;
+the final statuses are read on the main thread only if the context token,
+session and saved revision are unchanged.
 
 ## Explicit saved-result World application
 

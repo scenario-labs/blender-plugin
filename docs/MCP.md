@@ -848,7 +848,9 @@ envelope with `envelope: true` and otherwise the stills, are no longer
 Scenario still that keeps polling. A retry reads `queued` at once, even while a
 batch for that result is on the preview lane, so a wait after it returns only
 once the retried renditions settle. `in_progress` is `true` while any returned
-rendition is still in progress, including when the wait expired first.
+rendition is still in progress, including when the wait expired first. If the
+saved job changes during a wait, the tool refuses with a request to list local
+jobs again instead of reporting its earlier revision.
 `offline` renditions end the wait, because they change only when the user
 allows Online Access. The tool returns state, sizes, dimensions and levels
 only: never image bytes, cache or result paths, signed URLs or the saved file.

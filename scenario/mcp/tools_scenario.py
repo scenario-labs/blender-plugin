@@ -1355,13 +1355,18 @@ def inspect_result_previews(args):
 
     def run():
         # The HTTP thread only waits; the main thread pumps the scheduler.
-        while not watch.wait(min(0.1, max(0.0, deadline - time.monotonic()))):
-            if (
-                time.monotonic() >= deadline
-                or not session.active
-                or (server is not None and not server.running)
-            ):
-                return
+        try:
+            while not watch.wait(min(0.1, max(0.0, deadline - time.monotonic()))):
+                if (
+                    time.monotonic() >= deadline
+                    or not session.active
+                    or (server is not None and not server.running)
+                ):
+                    return
+        finally:
+            # finish may never run, for example once the server stopped; the
+            # scheduler then forgets the watch on its next pump.
+            watch.close()
 
     def finish(_):
         scheduler.unwatch(watch)
@@ -1371,6 +1376,11 @@ def inspect_result_previews(args):
             or runtime.state.job_context_id != context_id
         ):
             raise ScenarioError(0, "The saved-job context changed while waiting; inspect it again")
+        store = runtime.state.job_store
+        current = None if store is None else store.get(request_id)
+        if current is None or current.revision != record.revision:
+            # The response reports this revision's results; never a stale one.
+            raise ScenarioError(0, "The saved job changed while waiting; list local jobs again")
         return respond()
 
     return DeferredTool(run, finish)

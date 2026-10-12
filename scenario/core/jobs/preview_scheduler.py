@@ -83,23 +83,33 @@ class PreviewWatch:
     for Online Access, so it counts as quiet. ``renditions``, when set, limits
     the watch to those renditions of each result. The scheduler's owner thread
     sets the signal while it pumps, and on close; statuses must still be read
-    there.
+    there. A waiter that stops waiting calls ``close`` from its own thread, so
+    the watch never outlives its wait even when nothing reads it afterwards.
     """
 
-    __slots__ = ("_event", "keys", "renditions")
+    __slots__ = ("_closed", "_event", "keys", "renditions")
 
     def __init__(self, keys, renditions=None):
         self.keys = keys
         self.renditions = renditions
         self._event = threading.Event()
+        self._closed = threading.Event()
 
     def wait(self, timeout=None):
         """Whether the watched results became quiet within ``timeout`` seconds."""
         return self._event.wait(timeout)
 
+    def close(self):
+        """End this wait from any thread; the owner thread forgets it on its next pump."""
+        self._closed.set()
+
     @property
     def quiet(self):
         return self._event.is_set()
+
+    @property
+    def closed(self):
+        return self._closed.is_set()
 
 
 class _Entry:
@@ -449,11 +459,14 @@ class ResultPreviewScheduler:
 
         ``renditions`` limits the wait to those renditions of each result, as
         for ``quiet``. The owner thread reads their statuses afterwards and
-        calls ``unwatch``. Closing the scheduler sets every signal, so no wait
-        outlives it.
+        calls ``unwatch``; a waiter that gives up first closes the watch, which
+        then frees its place even if ``unwatch`` never runs. Closing the
+        scheduler sets every signal, so no wait outlives it.
         """
         self._check()
         renditions = self._renditions(renditions)
+        # A closed watch's waiter is gone, so it holds no place among the open waits.
+        self._watches[:] = [watch for watch in self._watches if not watch.closed]
         if len(self._watches) >= WATCH_LIMIT:
             raise previews.PreviewError("Too many preview waits are open; try again shortly")
         # Saved results only, keyed as their entries are; review assets are not watched.
@@ -472,7 +485,9 @@ class ResultPreviewScheduler:
 
     def _notify(self):
         for watch in tuple(self._watches):
-            if all(self._quiet(key, watch.renditions) for key in watch.keys):
+            if watch.closed:
+                self._watches.remove(watch)
+            elif all(self._quiet(key, watch.renditions) for key in watch.keys):
                 self._watches.remove(watch)
                 watch._event.set()
 

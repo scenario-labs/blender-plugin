@@ -313,10 +313,14 @@ stills, so an envelope wait does not also wait up to five minutes for a
 Scenario still. A retry deferred behind a batch already on the lane reads
 `queued`, so the wait never reports it finished before it runs. A result without
 a preview kind reports an `unsupported` still without a `source`. Statuses are
-then read again on the main thread, after checking that the context token and
-session are unchanged. At most eight waits are open per scheduler, and closing
-it releases them. Nothing here starts a player: local MCP has no tool that opens
-a saved result in a system or Blender player.
+then read again on the main thread, after checking that the context token,
+session and saved job's revision are unchanged; a saved job that changed during
+the wait is refused rather than reported at its earlier revision. At most eight
+waits are open per scheduler, and closing it releases them. A wait that ends
+also closes its watch from the HTTP thread, so the next pump forgets a watch
+whose main-thread delivery never runs, for example after the local MCP server
+stopped. Nothing here starts a player: local MCP has no tool that opens a saved
+result in a system or Blender player.
 
 ## Cache
 

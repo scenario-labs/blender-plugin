@@ -549,7 +549,9 @@ rendition only, so no server still is polled, and polls its status from a timer;
 Cancel, and selecting another result's waveform while one loads, call the
 scheduler's `cancel`, which terminates a running decode. A late copy or envelope is discarded unless the
 context token, session and receipt are unchanged. Retirement, a file load and
-unregistering clear the selection and remove copies no running player reads.
+unregistering clear the selection and remove copies no running player reads,
+including copies evicted for a Play whose lane command, which removes them
+first, has not run: deactivation cancels a queued command.
 
 ## Explicit saved-result World application
 

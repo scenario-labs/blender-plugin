@@ -202,9 +202,11 @@ retired command removes its partial copy.
 An unchanged copy of the same receipt, compared by its file metadata, is reused
 instead of copying again. Before copying, the command removes the copies its
 owner evicted and sweeps `play-*` directories older than a day that the owner no
-longer uses, including copies a Windows player kept open. Copies hold the saved
-bytes; no URL, credential or prompt is written. They are disposable and safe to
-delete while no player reads them.
+longer uses, including copies a Windows player kept open. The owner tracks
+evicted copies until the command ends and removes any left, as when the
+connection retires and deactivation cancels the queued command. Copies hold the
+saved bytes; no URL, credential or prompt is written. They are disposable and
+safe to delete while no player reads them.
 
 ## Cache
 

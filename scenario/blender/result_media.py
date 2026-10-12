@@ -226,6 +226,9 @@ class MediaController:
         self._players = []  # (process, PlaybackCopy) for Blender animation players
         self._openers = []  # (process, PlaybackCopy) for system player launchers
         self._abandoned = []  # lane tasks whose copies must be removed once done
+        # (lane task, copy) evicted for a Play whose command discards it first;
+        # tracked until that task ends, since deactivation cancels a queued one.
+        self._evicted = []
         self._context = None
         self._previews = None
 
@@ -347,7 +350,7 @@ class MediaController:
         except WorkerError:
             raise MediaError("Previews are busy; try again shortly") from None
         for cached in evicted:
-            del self._copies[cached]
+            self._evicted.append((task, self._copies.pop(cached)))
         if self._play is not None:
             self._abandon(self._play)
         kind = playback.kind(item.asset.media_type)
@@ -449,6 +452,20 @@ class MediaController:
             if not self._cached(copy) and not self._pinned(copy):
                 _discard(copy)
         self._abandoned = remaining
+
+    def _collect_evicted(self):
+        """Discard evicted copies once their lane task ends, usually already removed.
+
+        A command canceled before it ran, or refused before its discards, left
+        them in place.
+        """
+        remaining = []
+        for task, copy in self._evicted:
+            if task.done():
+                _discard(copy)
+            else:
+                remaining.append((task, copy))
+        self._evicted = remaining
 
     # -- waveform ---------------------------------------------------------
 
@@ -562,6 +579,7 @@ class MediaController:
             changed = True
         changed |= self._finish_play()
         self._collect_abandoned()
+        self._collect_evicted()
         changed |= self._update_waveform()
         return changed
 
@@ -582,6 +600,11 @@ class MediaController:
             if not self._pinned(copy):
                 _discard(copy)
         self._copies.clear()
+        # Deactivation cancels a queued command before it discards what its
+        # Play evicted; a running one may discard them too, which is harmless.
+        for _, copy in self._evicted:
+            _discard(copy)
+        self._evicted.clear()
         self._context = None
 
     def shutdown(self):

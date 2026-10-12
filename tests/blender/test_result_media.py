@@ -21,6 +21,7 @@ import threading
 import time
 import unittest
 import wave
+from concurrent.futures import CancelledError
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -394,6 +395,8 @@ class ResultMediaTests(unittest.TestCase):
             self.play(view, "play:sound")
             (second,) = self.copies()
         self.assertNotEqual(first, second)
+        # The lane discarded the evicted copy, so the controller stops tracking it.
+        self.assertEqual(self.media.controller._evicted, [])
         self.assertEqual([Path(path).name for path in self.opened], ["media.mp4", "media.wav"])
 
     def test_trimming_after_a_player_exits_keeps_the_copy_a_pending_play_reuses(self):
@@ -516,6 +519,49 @@ class ResultMediaTests(unittest.TestCase):
         # must not mistake it for a running player and leave its copy behind.
         self.players[-1].code = 0
         self.media.controller.shutdown()
+        self.assertEqual(self.copies(), [])
+
+    def test_retirement_removes_a_copy_evicted_for_a_play_the_lane_never_ran(self):
+        view = self.saved(
+            [
+                ("clip", "clip.mp4", "video/mp4", MP4),
+                ("sound", "sound.wav", "audio/wav", tone()),
+            ]
+        )
+        controller = self.media.controller
+        session = self.runtime.state.job_session
+        coordinator = session._coordinator
+        original = coordinator.prepare_result_previews
+        entered, release = threading.Event(), threading.Event()
+
+        def held(*args, **kwargs):
+            entered.set()
+            if not release.wait(10):
+                raise AssertionError("The test did not release the preview lane")
+            return original(*args, **kwargs)
+
+        self.addCleanup(release.set)
+        with patch.object(self.media, "COPY_LIMIT", 1):
+            self.play(view, "play:clip")
+            (evicted,) = self.copies()
+            with patch.object(coordinator, "prepare_result_previews", side_effect=held):
+                # A still poll holds the lane, so the next Play's command, which
+                # first discards the copy that Play evicts, waits in the queue.
+                session.result_previews.request("request", asset_ids=("sound",))
+                self.settle(entered.is_set)
+                args = self.args(view, "play:sound")
+                task = controller.play(
+                    args["context_id"], "request", args["expected_revision"], "sound", "SYSTEM"
+                )
+                self.assertEqual(self.copies(), [evicted])
+                # A credential change retires the controller, then deactivation
+                # cancels the queued command before it discards anything.
+                self.runtime.state.reset()
+                release.set()
+                self.settle(lambda: task.done() and not controller.loading)
+        with self.assertRaises(CancelledError):
+            task.result(0)
+        self.assertEqual(len(self.opened), 1)
         self.assertEqual(self.copies(), [])
 
     def test_the_update_timer_survives_file_loads(self):

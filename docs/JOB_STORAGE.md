@@ -534,7 +534,9 @@ module ([trained models](MCP.md#trained-models-loras-and-compositions)). `get`
 returns the owner's `context_id` with each lane's revision and default; `set` and
 `clear` pass that context and revision back, like **Save** and **Clear**, and go
 through the same write path (`trained_defaults.store` and `clear`). A default set
-through MCP names a base and its picks explicitly; it is checked with the same
+through MCP names a base and its picks explicitly. A LoRA named without a strength
+is stored at the strength the picker starts it at on that base, as choosing it and
+**Save** would (`trained_models.started`); it is checked with the same
 `resolve` that applies a default to a form, so a choice that cannot run in that
 form now is refused, and only `stack` and `composition` defaults are written. An
 unreadable row is reported in `error` and left unchanged.

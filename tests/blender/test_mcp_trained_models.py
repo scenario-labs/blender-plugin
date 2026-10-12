@@ -410,6 +410,7 @@ class McpTrainedModelTests(unittest.TestCase):
                     "scale_input": "lorasScale",
                     "scale_range": [0, 2],
                     "scale_step": 0.05,
+                    "start_scale": 0.75,
                     "default_scale": None,
                     "min_items": 0,
                     "max_items": 6,
@@ -417,6 +418,7 @@ class McpTrainedModelTests(unittest.TestCase):
             ],
         )
         self.assertFalse(rows[LORA_A]["private"])
+        self.assertEqual(rows[LORA_A]["routes"][0]["start_scale"], 0.8)  # its own strength
         self.assertEqual(
             rows[COMPOSITION]["routes"],
             [
@@ -567,7 +569,7 @@ class McpTrainedModelTests(unittest.TestCase):
         refused = [
             ([{"model_id": FLUX2_LORA, "scale": 0.8}], FLUX1, "accepts flux.1-lora models"),
             ([{"model_id": COMPOSITION, "scale": 0.5}], FLUX1, "applies its own strengths"),
-            ([{"model_id": LORA_A}], FLUX1, "provide a strength for each LoRA"),
+            ([{"model_id": LORA_A, "scale": 2.5}], FLUX1, "use a strength from 0 to 2"),
             ([{"model_id": LORA_A, "scale": 0.8}], ZIMAGE, "Z-Image LoRA accepts"),
             ([{"model_id": LORA_A, "scale": 0.8}], "model_unknown", "not in the model list"),
             ([], FLUX1, "Choose a LoRA or composition"),
@@ -728,7 +730,7 @@ class McpTrainedModelTests(unittest.TestCase):
         before = snapshot()
         for picks, message in (
             ([{"model_id": FLUX2_LORA, "scale": 0.8}], "accepts flux.1-lora models"),
-            ([{"model_id": LORA_A}], "provide a strength for each LoRA"),
+            ([{"model_id": LORA_A, "scale": 2.5}], "use a strength from 0 to 2"),
             ([{"model_id": COMPOSITION, "scale": 0.5}], "applies its own strengths"),
             ([{"model_id": LORA_A, "scale": 0.12345}], "at most 4 decimal places"),
             ([{"model_id": "model_gone", "scale": 0.5}], "no longer listed"),
@@ -753,3 +755,67 @@ class McpTrainedModelTests(unittest.TestCase):
         result = self.tools.render_form({**configure, "settings": {"trained": []}})
         self.assertEqual(result["trained_models"], [])
         self.assertFalse(len(render.trained))
+
+    def test_a_lora_named_without_a_strength_starts_where_the_picker_starts_it(self):
+        """render_form, model_defaults and the listing follow the picker's start (#97).
+
+        That is the LoRA's own declared strength, otherwise the Scenario web
+        app's 0.75, within the base's range. The base's declared default (0.6
+        here) only fills a strength a request omits; it does not move the start.
+        """
+        flux1 = copy.deepcopy(self.details[FLUX1])
+        for field in flux1["inputs"]:
+            if field["name"] == "lorasScale":
+                field["default"] = 0.6
+        self.details[FLUX1] = flux1
+        self.load_catalog()
+        self.open_trained()
+        self.pick(LORA_A)
+        self.open_trained()
+        self.pick(STUDIO_LORA)
+        picker = self.body()["lorasScale"]
+        self.assertEqual(picker, [0.8, 0.75])  # the picker's start, not the base's 0.6
+        listed = self.tools.list_models({"lane": "image", "source": "trained"})["trained"]
+        routes = {row["id"]: row["routes"] for row in listed}
+        self.assertEqual(
+            [
+                [(route["start_scale"], route["default_scale"]) for route in routes[model_id]]
+                for model_id in (LORA_A, STUDIO_LORA)
+            ],
+            [[(0.8, 0.6)], [(0.75, 0.6)]],
+        )
+        # render_form: the same LoRAs without strengths get the picker's visible fields.
+        self.open_trained("render_image")
+        render = self.scene.scenario.lane_state("render_image")
+        result = self.tools.render_form(
+            {
+                "lane": "render_image",
+                "action": "configure",
+                "settings": {
+                    "model_id": FLUX1,
+                    "trained": [{"model_id": LORA_A}, {"model_id": STUDIO_LORA}],
+                },
+            }
+        )
+        self.assertEqual([item["strength"] for item in result["trained_models"]], picker)
+        self.assertEqual([slot.has_scale for slot in render.trained], [True, True])
+        body = self.generation.build_request(self.scene, "render_image", for_estimate=True).body
+        self.assertEqual(body["lorasScale"], picker)
+        # model_defaults set: saved as choosing them in the picker and then Save would.
+        context = self.tools.model_defaults({"lane": "image"})["context_id"]
+        args = {
+            "action": "set",
+            "lane": "image",
+            "context_id": context,
+            "expected_revision": 0,
+            "base_model_id": FLUX1,
+            "picks": [{"model_id": LORA_A}, {"model_id": STUDIO_LORA}],
+        }
+        (saved,) = self.tools.model_defaults(args)["lanes"]
+        self.assertEqual(
+            saved["default"]["picks"],
+            [{"model_id": LORA_A, "scale": 0.8}, {"model_id": STUDIO_LORA, "scale": 0.75}],
+        )
+        self.assertEqual(
+            saved["parameters"], {"loras": [LORA_A, STUDIO_LORA], "lorasScale": picker}
+        )

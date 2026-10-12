@@ -482,12 +482,15 @@ def _route_entry(base, record, default):
     slot = base.slot
     entry = {"route": route, "model_id": base.id, "name": base.record.name}
     if route == ROUTE_STACK:
-        bounded = strength(slot) is not None
+        # Where the picker starts this LoRA on this base; the base's declared
+        # default only fills a strength a request omits.
+        control = strength(slot, record)
         entry.update(
             model_input=slot.component.model_input,
             scale_input=slot.component.scale_input,
-            scale_range=[slot.scale_min, slot.scale_max] if bounded else None,
+            scale_range=[slot.scale_min, slot.scale_max] if control is not None else None,
             scale_step=slot.scale_step,
+            start_scale=control.initial if control is not None else None,
             default_scale=slot.scale_default,
             min_items=slot.min_items,
             max_items=slot.max_items,
@@ -503,7 +506,8 @@ def describe_offer(offer, *, private=False, default=None):
     """One trained model as local MCP lists it, from the same Offer the picker draws.
 
     `routes` names every base model that runs it in the lane and the inputs
-    that carry it. `default` is the lane's saved default (a TrainedModelDefault
+    that carry it; a LoRA's `start_scale` is where the picker starts its
+    strength on that base. `default` is the lane's saved default (a TrainedModelDefault
     or None); rows and routes it uses are marked. Nothing here is a quote.
     """
     record = offer.record

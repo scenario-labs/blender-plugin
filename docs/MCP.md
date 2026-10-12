@@ -673,8 +673,12 @@ true, rows wait with a reason and `note` asks to call again. `source=all` adds t
 same rows to the catalog listing; other lanes refuse both sources. Each row has
 `kind`, the REST `type`, `private`, and `available` or a `reason`. Its `routes`
 name each base model that runs it and the inputs that carry it: `model_input`,
-plus `scale_input`, `scale_range`, `scale_step`, `default_scale`, `min_items` and
-`max_items` for a LoRA stack. A composition also lists its `concepts`. Rows and
+plus `scale_input`, `scale_range`, `scale_step`, `start_scale`, `default_scale`,
+`min_items` and `max_items` for a LoRA stack. `start_scale` is where the native
+picker starts that LoRA's strength on that base: the strength the LoRA declares
+for itself, otherwise 0.75 (the Scenario web app's default), within
+`scale_range`. `default_scale` is the base's declared default, which fills only a
+strength a request leaves out. A composition also lists its `concepts`. Rows and
 routes that the lane's saved default uses are marked `default`. A call returns at
 most 40 rows and always keeps those the saved default uses. Private plain
 custom models are not listed, as in the picker. `model_schema` reports the same
@@ -707,8 +711,10 @@ refuse is refused before any request:
 
 Other lanes refuse these inputs. The quote then reads every chosen model again,
 as it does for the form. For Render Image, `render_form` `configure` takes
-`trained: [{model_id, scale}]`, checked the same way before the form changes;
-`[]` removes the choice.
+`trained: [{model_id, scale}]`, checked the same way before the form changes,
+except that a LoRA without `scale` starts at its `start_scale`, as a picker choice
+does. On a base without a strength range it keeps none and the base's declared
+default is sent, as in the form. `[]` removes the choice.
 
 The same choice through the native form and through MCP builds the same target
 and payload, so its saved intent has the same `payload_sha256`. For equal bytes,
@@ -725,7 +731,8 @@ Approval is unchanged: `generate` needs the same parameters and the exact
 `context_id` and, for each lane, `revision`, `default`, `label` and whether it
 runs now; when it runs, `parameters` holds the base's LoRA inputs to add to an
 Image `estimate_cost` call. `set` takes `context_id`, `expected_revision`,
-`base_model_id` and `picks`. Like the native **Save**, it refuses a choice that
+`base_model_id` and `picks`; a LoRA without `scale` is saved at its `start_scale`,
+as choosing it in the picker and then **Save** would. Like the native **Save**, it refuses a choice that
 cannot run in that form now, a stale revision, or a context from other credentials
 or another project; `clear` takes the same context and revision. Neither requests
 a price or changes a payload. A form without an explicit choice takes the saved

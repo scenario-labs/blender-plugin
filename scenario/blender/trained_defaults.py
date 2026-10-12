@@ -578,8 +578,10 @@ def explicit_default(lane, base_model_id, picks):
     """A default named by IDs (local MCP), refused unless it runs in `lane` now, like Save.
 
     `picks` are trained_routes.Pick values. The route follows the listed kinds:
-    one composition alone, otherwise a LoRA stack. The check is the one forms
-    use to apply a default (resolve), so a saved default runs wherever it lands.
+    one composition alone, otherwise a LoRA stack. A LoRA named without a
+    strength starts where the picker starts it (trained_models.started), so it
+    saves what choosing it and Save would. The check is the one forms use to
+    apply a default (resolve), so a saved default runs wherever it lands.
     """
     if lane not in LANES:
         raise ScenarioError(0, "Project defaults are kept for the Image and Render Image forms")
@@ -593,6 +595,11 @@ def explicit_default(lane, base_model_id, picks):
     composition = [kinds.get(pick.model_id) for pick in picks] == [catalog.TRAINED_COMPOSITION]
     if composition and picks[0].scale is not None:
         raise ScenarioError(0, "A composition applies its own strengths; remove the strength.")
+    chosen = trained_models.started(
+        [(pick.model_id, kinds.get(pick.model_id), pick.scale) for pick in picks],
+        trained_models.base_slot(base_model_id),
+    )
+    picks = [Pick(model_id, scale) for model_id, _kind, scale in chosen]
     try:
         default = TrainedModelDefault(
             lane,

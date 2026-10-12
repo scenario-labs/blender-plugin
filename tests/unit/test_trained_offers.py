@@ -485,6 +485,42 @@ def test_describe_slot_reports_the_declared_lora_inputs_and_bounds():
     json.dumps(described)  # plain JSON values only
 
 
+def test_a_lora_route_reports_where_the_picker_starts_it_not_the_base_default():
+    """start_scale follows the picker (#97): the LoRA's own strength, else 0.75, in range."""
+
+    def starts(base_raw, *raws):
+        lane_bases = [base for base in bases() if base.id != FLUX1]
+        lane_bases.append(trained_offers.Base(record(base_raw), LoraSlot.from_record(base_raw)))
+        rows = [(catalog.TRAINED_LORA, record(raw)) for raw in raws]
+        return [
+            [
+                (route["start_scale"], route["default_scale"])
+                for route in trained_offers.describe_offer(offer)["routes"]
+                if route["model_id"] == FLUX1
+            ]
+            for offer in trained_offers.offers(rows, lane_bases)
+        ]
+
+    private = record(PUBLIC[KONTEXT_LORA], id="model_private", type="flux.1-lora").raw
+    private.pop("concepts", None)
+    defaulted = deepcopy(BASES[FLUX1])
+    scale_input(defaulted)["default"] = 0.6
+    # The captured public LoRA declares 0.8; one declaring none starts at the web app's 0.75.
+    assert starts(defaulted, PUBLIC[LORA_A], private) == [[(0.8, 0.6)], [(0.75, 0.6)]]
+    narrow = deepcopy(BASES[FLUX1])
+    scale_input(narrow).update({"min": 0.78, "max": 1.5})
+    above = {**private, "id": "model_above", "concepts": [{"modelId": "model_above", "scale": 1.9}]}
+    assert starts(narrow, PUBLIC[LORA_A], private, above) == [
+        [(0.8, None)],
+        [(0.78, None)],
+        [(1.5, None)],
+    ]
+    unbounded = deepcopy(BASES[FLUX1])
+    scale_input(unbounded).pop("max")
+    scale_input(unbounded)["default"] = 0.7
+    assert starts(unbounded, PUBLIC[LORA_A]) == [[(None, 0.7)]]
+
+
 def test_describe_offer_lists_routes_reasons_and_the_saved_default():
     from scenario.core.jobs.store import TrainedModelDefault, TrainedModelPick
 
@@ -513,6 +549,7 @@ def test_describe_offer_lists_routes_reasons_and_the_saved_default():
                 "scale_input": "lorasScale",
                 "scale_range": [0, 2],
                 "scale_step": 0.05,
+                "start_scale": 0.8,
                 "default_scale": None,
                 "min_items": 0,
                 "max_items": 6,

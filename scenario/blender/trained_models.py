@@ -718,11 +718,32 @@ def apply_picks(record, requested, body):
     return result
 
 
+def started(chosen, slot):
+    """`chosen` with each LoRA named without a strength starting where a picker choice does.
+
+    On a base that declares a strength range, that is the LoRA's own declared
+    strength, otherwise the Scenario web app's default, within the range
+    (trained_offers.strength), so an explicit choice gives the payload the
+    picker gives. Explicit strengths are kept as given, for apply to check, and
+    a base without a range keeps none: its declared default fills it, as in a form.
+    """
+    records = runtime.state.trained_records
+    result = []
+    for model_id, kind, scale in chosen:
+        if kind == catalog.TRAINED_LORA and scale is None and slot is not None:
+            strength = trained_offers.strength(slot, records.get(model_id))
+            if strength is not None:
+                scale = strength.initial
+        result.append((model_id, kind, scale))
+    return result
+
+
 def checked_choice(record, picks):
     """(model_id, kind, scale) for explicit picks the base runs now; raises before any change.
 
     The same rules as a picker choice: listed LoRAs or one composition,
     trained_routes.apply, and a strength only where the base declares a range.
+    A LoRA named without a strength starts where the picker starts it (started).
     No picks always passes, so a choice a new base refuses can be removed.
     """
     if not picks:
@@ -742,6 +763,8 @@ def checked_choice(record, picks):
         if kind not in catalog.USABLE_TRAINED_KINDS:
             raise ScenarioError(0, "Refresh trained models; a selected model is no longer listed.")
         chosen.append((pick.model_id, kind, pick.scale))
+    chosen = started(chosen, slot)
+    picks = [Pick(model_id, scale) for model_id, _kind, scale in chosen]
     try:
         apply(record.raw, picks, runtime.state.trained_records)
         _strengths_drawable(slot, picks)

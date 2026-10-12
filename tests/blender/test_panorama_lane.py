@@ -559,18 +559,31 @@ class EnvironmentJobTests(unittest.TestCase):
         found = [(r.intent.request_id, i.asset.asset_id) for r, i in lane_module.candidates()]
         self.assertEqual(found, [(package, "result-sky")])
         self.scene.scenario.panorama_mode = "HDRI"
+        # The refusals below are about the map, not about the input it targets.
+        self.assertEqual(self.lane.model_id, HDRI)
+        self.assertTrue(lane_module.is_panorama_input(self.lane, "image"))
         error = submodule("core.api.errors").ScenarioError
-        for request_id, asset_id in (
+        maps = (
             (package, "result-albedo"),
             (package, "result-normal"),
             (texture_set, "result-map-0"),
-        ):
-            with self.subTest(asset=asset_id), self.assertRaises(error):
+        )
+        attached = [(ref.param_name, ref.asset_id) for ref in self.lane.references]
+        for request_id, asset_id in maps:
+            with (
+                self.subTest(asset=asset_id),
+                self.assertRaisesRegex(error, "saved, downloaded 360 panorama"),
+            ):
                 lane_module.attach_saved(self.scene, "image", request_id, asset_id)
-        # Local MCP refuses a map as the HDRI's panorama before any dry run.
+        self.assertEqual([(ref.param_name, ref.asset_id) for ref in self.lane.references], attached)
+        # Local MCP refuses each map as the HDRI's panorama before any dry run.
         quotes, paid = len(fixture.dry_runs()), len(fixture.paid)
-        with self.assertRaisesRegex(ValueError, "saved, downloaded 360 panorama"):
-            fixture.panorama_estimate(HDRI, {"image": "result-albedo"})
+        for _, asset_id in maps:
+            with (
+                self.subTest(mcp=asset_id),
+                self.assertRaisesRegex(ValueError, "saved, downloaded 360 panorama"),
+            ):
+                fixture.panorama_estimate(HDRI, {"image": asset_id})
         self.assertEqual((len(fixture.dry_runs()), len(fixture.paid)), (quotes, paid))
 
     def test_credential_change_retires_the_price_and_saved_references(self):

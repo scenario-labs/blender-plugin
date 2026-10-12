@@ -25,7 +25,7 @@
       "scenario/blender/composer/modal.py": "a92c212ac7e8475ef9bf00ead177e68d1fe8605718be71b8477710496e80c2bf",
       "scenario/core/ui/composer_layout.py": "4c84afe34242bec6e83a688b7d62125655cd767a6af0c1e25efc21c829fcbae9",
       "scenario/core/ui/saved_job_actions.py": "54c0728285999c86ba5bb43eb57229ad97b755b66a2ab30441c2f168d59c0e93",
-      "tests/blender/test_panorama_lane.py": "08c113297e5b45faf9f00e9edc4029792123504312259dff7b5449651c942147",
+      "tests/blender/test_panorama_lane.py": "e1371f77d663b68ee782cf6e636ff8b66e32a80a19fb0bfad48931545203f8e8",
       "tests/unit/test_panorama_contract.py": "2f1e9b0bf561912a586ba2e836ef3a1fffc90e1840c0d767b9050298e8196ed4",
       "tests/blender/test_composer.py": "300ecb578e9fe9228e1c10695576d2aa87cca3ddbefebd7fee2f9ede466da869",
       "tests/unit/test_composer_layout.py": "3a2dab00dceffe0bd86cc5c5baebdb16c63f2a2dcbd1fde075fd9d95f91f7de6",

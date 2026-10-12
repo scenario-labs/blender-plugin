@@ -18,7 +18,7 @@
       "scenario/core/scene/panorama_contract.py": "be4c2c949696ca82c18a1062c62ec252eec40d7d4e0e5d7fb2fe3064bab4e518",
       "scenario/core/ui/saved_job_actions.py": "54c0728285999c86ba5bb43eb57229ad97b755b66a2ab30441c2f168d59c0e93",
       "tests/blender/test_model_generation.py": "f56f96f6b0727ca9f24c4104d0ed0ed0ab69034007f0febaf88439b365bd71ba",
-      "tests/blender/test_panorama_lane.py": "08c113297e5b45faf9f00e9edc4029792123504312259dff7b5449651c942147"
+      "tests/blender/test_panorama_lane.py": "e1371f77d663b68ee782cf6e636ff8b66e32a80a19fb0bfad48931545203f8e8"
     }
   }
 }

@@ -302,7 +302,8 @@ class EnvironmentFormTests(unittest.TestCase):
         )
         self.assertEqual((self.lane.model_id, self.lane.prompt), (GPT, "a dome"))
         self.assertEqual(self.lane.params["quality"].enum_value, "medium")
-        self.assertEqual(submodule("blender.history")._kinds()[FLUX], "image")
+        # History rows read the catalog kind: a panorama model produces images.
+        self.assertEqual(submodule("blender.history")._catalog_kind(FLUX), "image")
         # The model list is shared by scenes; Reload relists an unchanged mode too.
         other = bpy.data.scenes.new("Environment other mode")
         self.addCleanup(bpy.data.scenes.remove, other)
@@ -353,6 +354,13 @@ class EnvironmentJobTests(unittest.TestCase):
 
     def actions(self, view):
         return submodule("blender.job_recovery").result_actions(view)
+
+    def reload_models(self):
+        """Load the image and contract models again, as a catalog load after a restart would."""
+        catalog = submodule("core.api.catalog")
+        models = (self.fixture.model, *(recorded(m) for m in (FLUX, GPT, WORLD, HDRI, UPSCALE)))
+        records = [catalog.ModelRecord.from_api(model) for model in models]
+        self.generation.set_catalog(records, records)
 
     def test_native_job_waits_for_world_approval_in_the_selected_scene(self):
         fixture = self.fixture
@@ -510,8 +518,11 @@ class EnvironmentJobTests(unittest.TestCase):
         }
         fixture.result_mime_types = {"result-model": "model/gltf-binary"}
         package = fixture.recovered_panorama()
+        # A recovery resets the runtime state and its loaded records.
+        self.reload_models()
         fixture.result_assets = {}
         texture_set = fixture.recovered_material(("texture-albedo", "texture-normal", "texture-ao"))
+        self.reload_models()
         owner = self.runtime.state.model_jobs
         view = owner.views[package]
         self.assertEqual(view.meta["world_assets"], ("result-sky",))

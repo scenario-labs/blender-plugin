@@ -891,10 +891,19 @@ pages. Wheel scrolling the sidebar and the Studio Jobs page kept the tiles in
 place, and the next clicks hit the intended controls. The second pass read
 number-first captions in the sidebar at its default width, where the 3D job's
 two clipped model captions kept their numbers, and a screenshot from it sets the
-status line inset. The measured status wrapping, **Retry preview (N)**, Online
-Access disabled, focus and viewport interaction while tiles update, screenshots
-at UI scale 2.0 and other platforms are not yet recorded; they remain #66
-and #68 acceptance.
+status line inset. A third pass, on a ZIP with the measured status wrapping
+but before its later Studio popup width and hyphen amendments, ran in the
+sidebar at UI scales 1.0 and 2.0, with a 1122 px sidebar at 2.0. When a cached
+still was removed while its preview was being prepared, the tile kept its kind
+icon with an `ERROR` line, wrapped and aligned after the icon, and **Retry
+preview (N)**, which prepared the preview again: for a video's still and a
+decoded image at 1.0, and for the video at 2.0. At 2.0, four tiles fit one row
+with their numbers visible, and status, error and grouped loading lines wrapped
+inside the box with captions whole. Stills removed while idle were prepared
+again after a file reload, without **Retry preview (N)**. Online Access
+disabled, focus and viewport interaction while tiles update, the Studio pages
+at UI scale 2.0 and other platforms are not yet recorded; they remain #66 and
+#68 acceptance.
 
 ## Saved static model confirmation
 

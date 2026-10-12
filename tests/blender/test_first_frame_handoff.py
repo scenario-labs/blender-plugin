@@ -311,7 +311,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
 
     def test_minimax_style_and_array_only_models_receive_the_first_frame(self):
         request_id = self.saved_image()
-        lane = self.render_video(H3, "fixture-render-h3")
+        self.render_video(H3, "fixture-render-h3")
         self.apply(self.prepare(request_id))
         request = self.generation.build_request(bpy.context.scene, "render_video", True)
         self.assertEqual(request.errors, [])
@@ -572,7 +572,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
 
     def test_saved_blend_keeps_no_private_path_and_is_scoped_on_reopen(self):
         request_id = self.saved_image()
-        lane = self.render_video(FRAME_AND_CLIP)
+        self.render_video(FRAME_AND_CLIP)
         self.apply(self.prepare(request_id))
         state_dir = str(self.runtime.paths().state_dir)
         with tempfile.TemporaryDirectory() as directory:

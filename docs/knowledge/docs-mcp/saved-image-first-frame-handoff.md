@@ -18,7 +18,7 @@
       "scenario/blender/first_frame_handoff.py": "cc5e5bb5ea7d9778cc535409a9ecbc15564217b0bffb9c68a54d4a2b6b3aa9f9",
       "scenario/blender/runtime.py": "fb94a077ddaced7032f449a9ec4266f73ba3782de068be937d01f3b7ce9b82fe",
       "scenario/core/ui/saved_job_actions.py": "5dea4ea6c75ee42aa5c2f309c0405a9e33cfa511fc99e7ead28c7f49ec5d1806",
-      "tests/blender/test_first_frame_handoff.py": "ef4a1f10b13233402920f7eb8e30d70f9f4d976bd74d7bfceb58c77d27dd3e44",
+      "tests/blender/test_first_frame_handoff.py": "91fa3b05e9a6bb44cf59072996c79d47a894adf8f1546ba6262d6c15d01c951c",
       "tests/unit/test_saved_job_actions.py": "9bfd18935335d412b9820ab7f64a6334bd020cd9423de4139a7b48adfcdf070d",
       "scenario/blender/render_lanes.py": "c644c891cb6d4e4a92b7bead7b5274592adfad943bca2b9257d9f745301b1782"
     }

@@ -22,7 +22,7 @@
       "scenario/core/ui/saved_job_actions.py": "5dea4ea6c75ee42aa5c2f309c0405a9e33cfa511fc99e7ead28c7f49ec5d1806",
       "scenario/core/jobs/result_metadata.py": "c16b9788e7836ea2ab77a8675506bea1409989da935de801f16c30ee626f5cb1",
       "scenario/blender/render_prompt_jobs.py": "5789166b017b45e9a56e5390ccc8ce7b9d374e03932c080dee1a189ff08a5edd",
-      "tests/blender/test_first_frame_handoff.py": "ef4a1f10b13233402920f7eb8e30d70f9f4d976bd74d7bfceb58c77d27dd3e44",
+      "tests/blender/test_first_frame_handoff.py": "91fa3b05e9a6bb44cf59072996c79d47a894adf8f1546ba6262d6c15d01c951c",
       "tests/blender/test_reference_form.py": "a86e6ef2d78061609cf1eab489a9682e1d0dd6131c4a47075bbceb306b1d5ec6",
       "tests/unit/test_saved_job_actions.py": "9bfd18935335d412b9820ab7f64a6334bd020cd9423de4139a7b48adfcdf070d",
       "tests/unit/test_result_metadata.py": "fd6a9cd054805fc7ee94318dcff3f9be73185adf48abf5caf1392408e834a6a8",

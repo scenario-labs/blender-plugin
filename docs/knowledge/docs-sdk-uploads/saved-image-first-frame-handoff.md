@@ -15,7 +15,7 @@
       "scenario/blender/first_frame_handoff.py": "cc5e5bb5ea7d9778cc535409a9ecbc15564217b0bffb9c68a54d4a2b6b3aa9f9",
       "scenario/blender/reference_form.py": "f7b43fd7511e12168a7ec875410b619ad5e72b128cb5873dfcef8995f194e095",
       "scenario/blender/render_references.py": "4897d8fe89d4bfbd9e171392cfa88feff4fa6a35ba88c40e4f63158fdb93aa47",
-      "tests/blender/test_first_frame_handoff.py": "ef4a1f10b13233402920f7eb8e30d70f9f4d976bd74d7bfceb58c77d27dd3e44",
+      "tests/blender/test_first_frame_handoff.py": "91fa3b05e9a6bb44cf59072996c79d47a894adf8f1546ba6262d6c15d01c951c",
       "tests/blender/test_reference_form.py": "a86e6ef2d78061609cf1eab489a9682e1d0dd6131c4a47075bbceb306b1d5ec6",
       "scenario/blender/render_lanes.py": "c644c891cb6d4e4a92b7bead7b5274592adfad943bca2b9257d9f745301b1782"
     }

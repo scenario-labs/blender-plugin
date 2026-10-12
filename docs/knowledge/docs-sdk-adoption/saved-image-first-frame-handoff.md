@@ -15,7 +15,7 @@
       "scenario/blender/first_frame_handoff.py": "cc5e5bb5ea7d9778cc535409a9ecbc15564217b0bffb9c68a54d4a2b6b3aa9f9",
       "scenario/blender/generation.py": "9ea7d7a562a5178fe0264bb125855bcbea64257d0e4a3c21fd77e006854bc73d",
       "scenario/core/api/sdk_adapter.py": "0add4688710b00326fc31381d028e42cd9b5415f84bd168f45b5a8434a48aa19",
-      "tests/blender/test_first_frame_handoff.py": "ef4a1f10b13233402920f7eb8e30d70f9f4d976bd74d7bfceb58c77d27dd3e44",
+      "tests/blender/test_first_frame_handoff.py": "91fa3b05e9a6bb44cf59072996c79d47a894adf8f1546ba6262d6c15d01c951c",
       "scenario/core/schema/params.py": "9ac7ae09d361b0d7931c77e32efa7d2d4e06f9e7a51d608deaecfa4cc9ddf8ab",
       "scenario/core/schema/forms.py": "6c13428b31421d71aa28f2f8fd2c95c7594eaa31fcadd49fc92782c462e274f6",
       "tests/unit/test_model_payload_validation.py": "54bca0e711adc77e41ca66ce752c24fb46137f1040546f1f0f3d635beb5ef0e8"

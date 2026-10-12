@@ -16,7 +16,7 @@
       "scenario/blender/model_jobs.py": "69e3c0a37db957710dcfd534ea0552a79b0a425f84cbf7d859e120ff9598b563",
       "scenario/blender/job_session.py": "e66910c65d3680fa0acacf1b0f8e23abbd7d541fb42ede6cd360d8e2cae327e0",
       "scenario/blender/render_references.py": "4897d8fe89d4bfbd9e171392cfa88feff4fa6a35ba88c40e4f63158fdb93aa47",
-      "tests/blender/test_first_frame_handoff.py": "ef4a1f10b13233402920f7eb8e30d70f9f4d976bd74d7bfceb58c77d27dd3e44",
+      "tests/blender/test_first_frame_handoff.py": "91fa3b05e9a6bb44cf59072996c79d47a894adf8f1546ba6262d6c15d01c951c",
       "scenario/blender/render_lanes.py": "c644c891cb6d4e4a92b7bead7b5274592adfad943bca2b9257d9f745301b1782"
     }
   }

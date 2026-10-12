@@ -236,23 +236,30 @@ def _untyped_event(operator, context, state, event):
     return {"RUNNING_MODAL"}
 
 
+def _leave_prompt():
+    """Leave a focused prompt when the session ends without the event that would normally end it.
+
+    Keys reach the viewport until the pointer moves again over a 3D view and starts a new session, so the
+    prompt loses focus rather than every 3D view drawing a caret that types nothing. Every edit was already
+    committed to its form as it was typed."""
+    state = runtime.state.composer
+    if state is not None:
+        state.focused = False
+
+
 def _ends_session_on_error(handle):
     """End the composer's session when its event handler raises, then let Blender report the error.
 
     Blender drops a modal handler whose modal() raises without calling it again. Without this, the composer
     would stay marked as running: every later session would be refused and clicks on the composer would fall
-    through to the viewport until the next file load. Keys reach the viewport until the pointer moves again
-    and starts a new session, so a focused prompt is left too rather than drawing a caret that types nothing.
-    Every edit was already committed to its form as it was typed."""
+    through to the viewport until the next file load."""
 
     @functools.wraps(handle)
     def modal(self, context, event):
         try:
             return handle(self, context, event)
         except Exception:
-            state = runtime.state.composer
-            if state is not None:
-                state.focused = False
+            _leave_prompt()
             self._finish(context)
             raise
 
@@ -307,6 +314,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
 
     def cancel(self, context):
         """Blender removed the handler without calling modal() again: its window closed or a file loaded."""
+        _leave_prompt()
         self._finish(context)
 
     # -- placement drags -------------------------------------------------------

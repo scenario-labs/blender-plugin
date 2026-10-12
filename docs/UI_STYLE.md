@@ -388,35 +388,41 @@ under #66.
 
 ### Errors and file loads
 
-The composer's modal operator runs one session at a time, from a pointer move
-over the composer until a click outside it, or until the pointer leaves it
-while the prompt is unfocused. A refused Generate, such as a failed poll or an
-error report from the submission, is reported as a warning and the session goes
-on. If handling any other event raises, whether a click, a key, a pointer move
-or a drag, the composer ends its session and Blender reports the error. The
-composer leaves a focused prompt and marks no session as running, so the next
-pointer move over it starts a new session. A session that Blender ends without
-an event, because its window closed or a file loaded, ends the same way through
-the operator's cancel callback. Every file load (Open, Revert, File > New)
-collapses the card to the pill, leaves the prompt and restores the saved
-placement; its handler persists across loads.
+The composer's modal operator runs one session at a time. A pointer move over
+the composer starts one, and so does a pointer move anywhere in a 3D viewport
+while the prompt is focused. The session lasts until a click outside the
+composer, or until the pointer leaves it while the prompt is unfocused. A
+refused Generate, such as a failed poll or an error report from the submission,
+is reported as a warning and the session goes on. If handling any other event
+raises, whether a click, a key, a pointer move or a drag, the composer ends its
+session and Blender reports the error. The composer leaves a focused prompt and
+marks no session as running, so the next pointer move over it starts a new
+session. Blender can also end a session without an event, because its window
+closed or a file loaded. The operator's cancel callback then ends it the same
+way: it leaves a focused prompt, stops a selection drag, puts a dragged composer
+back where the press found it and marks no session as running, so no 3D view
+keeps drawing a caret that types nothing. Every file load (Open, Revert,
+File > New) also collapses the card to the pill, leaves the prompt and restores
+the saved placement through the composer's load handler, which persists across
+loads.
 
 A physical Blender 5.1.2 macOS check found the composer frozen for the rest of
 the session after one Generate refused by the GUI spend guard: clicks on it fell
 through to the viewport, and a file load did not help because Blender had
 dropped the non-persistent load handler at the first load. Generate refusals
-became warnings in a later change. Installed tests on the packaged ZIP now
-send the modal a Generate refused by the spend guard's poll, an error raised
-while a key is typed in the focused prompt and the cancel callback during a
-drag, and run three file loads in a row. The error, cancel and file-load tests
-fail on the previous composer. They call the operator's handlers directly in
-background Blender, which cannot start the modal itself: there, an
-`INVOKE_DEFAULT` call of a modal operator is refused before `invoke` runs, even
-with a window, area and region override. No event-simulated GUI check
-(`--enable-event-simulate`) has run for this change, because it was prepared
-without opening a Blender window. Blender's window manager has therefore not
-yet been seen dropping the handler after an error, calling cancel on a file load
-or keeping the load handler across File > Revert in an interface session. The
+became warnings in a later change. Installed tests on the packaged ZIP now send
+the modal a Generate refused by the spend guard's poll and an error raised while
+a key is typed in the focused prompt. They call the cancel callback during a
+placement drag and during a selection drag in the focused prompt, and run three
+file loads in a row. The error, cancel and file-load tests fail on the previous
+composer. They call the operator's handlers directly in background Blender,
+which cannot start the modal itself: there, an `INVOKE_DEFAULT` call of a modal
+operator is refused before `invoke` runs, even with a window, area and region
+override. No event-simulated GUI check (`--enable-event-simulate`) has run for
+this change, because it was prepared without opening a Blender window. Blender's
+window manager has therefore not yet been seen dropping the handler after an
+error, calling cancel on a file load or keeping the load handler across
+File > Revert in an interface session. The
 [#66 follow-up](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
 lists those event-simulated checks and the physical rechecks, with their
 expected results.

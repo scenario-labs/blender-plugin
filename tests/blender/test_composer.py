@@ -1267,6 +1267,35 @@ class ComposerSideRegionTests(unittest.TestCase):
             self.assertEqual(state.offset, saved)
             self.assertEqual(self._invoke(operator, ctx, grab), {"RUNNING_MODAL"})
 
+    def test_a_handler_blender_removes_leaves_a_focused_prompt(self):
+        # After a closed window, keys reach the viewport until a pointer move starts a new session: no 3D view
+        # may keep drawing a caret in a prompt that types nothing, as after an error.
+        ctx, state, layout = self._session()
+        prompt = self._centre(layout.prompt_rect)
+        card = layout.card_rect
+        above = (card.x + card.w / 2, card.top + 40 * layout.scale)
+        self.assertIsNone(layout.hit(*above))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.runtime.state, "composer_modal_running", False),
+            mock.patch.object(self.modal, "_caret_index", return_value=0),
+        ):
+            operator = self._operator()
+            self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+            # a press in the prompt focuses it and starts a selection drag that is still held
+            self._event(operator, ctx, "LEFTMOUSE", "PRESS", prompt)
+            self.assertTrue(state.focused and state.dragging)
+            self.modal.SCENARIO_OT_composer_modal.cancel(operator, ctx)
+            self.assertFalse(self.runtime.state.composer_modal_running)
+            self.assertFalse(state.focused or state.dragging)
+            self.assertEqual(self.scene_prompt(), "a red kettle")
+            # a pointer move elsewhere in the viewport no longer resumes typing; one over the composer starts
+            # a new session that takes the click
+            self.assertEqual(self._invoke(operator, ctx, above), {"PASS_THROUGH", "CANCELLED"})
+            self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+            self._clicks(operator, ctx, prompt, (20.0,))
+            self.assertTrue(state.focused)
+
     @staticmethod
     def scene_prompt():
         return bpy.context.scene.scenario.lane_state("image").prompt

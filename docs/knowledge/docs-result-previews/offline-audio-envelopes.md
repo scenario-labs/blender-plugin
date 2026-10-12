@@ -27,7 +27,7 @@
       "tests/unit/test_preview_scheduler.py": "5949e57a0ceb148c514de2bc634eea8951b9de7ace8fe8f2e5377da4832128c0",
       "tests/unit/test_result_previews.py": "39bd9c984b9e8c93a078b677bbe398167ed72fa57803f7db7f73320cf2ff548d",
       "tests/unit/test_job_workers.py": "433229194bd6dc327f3f076f0f3c73ac919fb6df108a97bd6b99f9ff3346bca5",
-      "tests/blender/test_waveform_worker.py": "47a54f6b3bf1c7faa5bb372312986980eb7d76936dfe90c14d86b20c220b9561",
+      "tests/blender/test_waveform_worker.py": "5e03524a94fcedee799c9030c9b6a17ee872d9b8982349602c60bb369a62a230",
       "tests/blender/test_result_previews.py": "fd31993233db037d73220f4c5e67355da6af5688c864fbe2f62848f228af4c80",
       "tests/blender/run_all.py": "1ede97e95898fdc7d2cb8ddfaff1bc4fd7325cd64258ee9797d041c8b7675199",
       ".github/workflows/blender-baseline.yml": "831c887cf2b56795e934a60d40fa3c9cd93de7d7d8cf2977589548ed01413022"

@@ -17,7 +17,7 @@
       "scenario/blender/waveform_worker.py": "184e6aea667e31e84fa46f68c61448c12714e52d39dfdaef40f56db3091a4e4a",
       "scenario/core/audio_waveform.py": "888c1c6a1c3ab5dfeb0f174c807290e399c856cf067bd37e6011f5e184edf18c",
       "scenario/blender/runtime.py": "628771d9cdda2fad47c506a4e5571727103ec3b6549c289eb3a8571ba96fffe0",
-      "tests/blender/test_waveform_worker.py": "47a54f6b3bf1c7faa5bb372312986980eb7d76936dfe90c14d86b20c220b9561"
+      "tests/blender/test_waveform_worker.py": "5e03524a94fcedee799c9030c9b6a17ee872d9b8982349602c60bb369a62a230"
     }
   }
 }

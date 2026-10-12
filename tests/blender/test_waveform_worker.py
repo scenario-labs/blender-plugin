@@ -114,6 +114,8 @@ class WaveformWorkerTests(unittest.TestCase):
         def run():
             try:
                 outcome["value"] = work()
+            except BaseException as error:  # re-raised on the calling thread below
+                outcome["error"] = error
             finally:
                 done.set()
 
@@ -135,6 +137,8 @@ class WaveformWorkerTests(unittest.TestCase):
         finally:
             if collecting:
                 gc.enable()
+        if "error" in outcome:
+            raise outcome["error"]
         return outcome["value"], longest, now - started
 
     def test_spec_points_at_the_installed_worker_and_this_blender(self):

@@ -682,8 +682,7 @@ Installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the
 labels, the review lines and dropdowns, read-only drawing, option revision under a new handle, the
 old handle's refusal, confirmation and cancel. Physical desktop evidence of the
 dropdowns, the dialog fit at other sizes and DPI, the post-import status lines,
-and viewport navigation after a 1,000,000-point import is pending and will be
-collected in an unlocked session.
+and viewport navigation after a 1,000,000-point import is pending.
 
 ## Saved panorama approval and restoration
 

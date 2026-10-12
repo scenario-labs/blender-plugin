@@ -126,16 +126,22 @@ class OrganizationSessionTests(unittest.TestCase):
         self.store = storage.JobStore(Path(temp.name) / "jobs.sqlite3", self.scope)
         self.service = Service()
         self.online = True
-        adapter = api.SDKAdapter(
-            api.Credentials("key", "secret"),
+        self.api = api
+        self.session = self.new_session()
+        self.owner = self.session.asset_organization
+
+    def new_session(self, *, completion_limit=128):
+        adapter = self.api.SDKAdapter(
+            self.api.Credentials("key", "secret"),
             online=lambda: self.online,
             account_id=self.scope.account_id,
             base_url=self.scope.service,
             transport=httpx.MockTransport(self.service),
         )
         self.addCleanup(adapter.close)
-        self.session = self.module.JobSession(adapter, self.store, workers=1)
-        self.owner = self.session.asset_organization
+        return self.module.JobSession(
+            adapter, self.store, workers=1, completion_limit=completion_limit
+        )
 
     def tearDown(self):
         self.session.shutdown()
@@ -228,6 +234,33 @@ class OrganizationSessionTests(unittest.TestCase):
                 self.owner.take_collections(task)
             self.assertIn(expected, str(caught.exception))
             self.assertNotIn("private", str(caught.exception))
+
+    def test_untaken_collection_page_frees_its_slot_after_the_review_lifetime(self):
+        # A local MCP caller can stop waiting before list_collections takes its
+        # page. The pump then frees that admission slot instead of leaking it.
+        owners = submodule("blender.asset_organization")
+        self.session.shutdown()
+        self.session = self.new_session(completion_limit=1)
+        now = [100.0]
+        owner = owners.AssetOrganization(self.session, clock=lambda: now[0])
+        abandoned = owner.collections(page_size=10)
+        abandoned.result(5)
+        owner.poll()
+        with self.assertRaises(self.module.SessionBusy):
+            owner.collections(page_size=10)
+        # The finished page still waits for its caller within the lifetime.
+        now[0] += self.organization.REVIEW_TTL - 1
+        owner.poll()
+        with self.assertRaises(self.module.SessionBusy):
+            owner.collections(page_size=10)
+        now[0] += 1
+        owner.poll()
+        task = owner.collections(page_size=10)
+        task.result(5)
+        self.assertEqual(owner.take_collections(task)["collections"][0]["collection_id"], "props")
+        with self.assertRaises(self.organization.OrganizationError) as caught:
+            owner.take_collections(abandoned)
+        self.assertIn("load collections again", str(caught.exception))
 
     def test_undo_and_scene_switch_keep_reviews(self):
         review_id = self.ready()

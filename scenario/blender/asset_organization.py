@@ -8,10 +8,12 @@ only as long as their JobSession; nothing is persisted and no scene is changed.
 """
 
 import logging
+import time
 
 from ..core.api.sdk_adapter import AdapterError
 from ..core.jobs.coordinator import QuoteError
 from ..core.jobs.organization import (
+    REVIEW_TTL,
     DuplicateCollection,
     OrganizationError,
     OrganizationNotSent,
@@ -26,6 +28,7 @@ from .job_session import OriginUnavailable, SessionBusy, _main_thread
 _log = logging.getLogger("scenario.organization")
 _SAFE = (OrganizationError, AdapterError, QuoteError, WorkerError, OriginUnavailable, SessionBusy)
 _COLLECTIONS_FAILED = "Collections could not load; check the connection and try again"
+_COLLECTIONS_EXPIRED = "This collection page expired unread; load collections again"
 
 
 def safe_message(error, fallback="Scenario organization failed; refresh the Library to inspect"):
@@ -42,10 +45,13 @@ class AssetOrganization:
     this owner, so a late outcome is never delivered to another connection.
     """
 
-    def __init__(self, session, *, reviews=None):
+    def __init__(self, session, *, reviews=None, clock=time.monotonic):
         self.session = session
         self.reviews = reviews or OrganizationReviews()
+        self._clock = clock
         self._tasks = {}
+        # Collection page task -> when poll first saw it finished, until taken.
+        self._collection_reads = {}
 
     def _check(self):
         _main_thread()
@@ -98,14 +104,19 @@ class AssetOrganization:
     def collections(self, *, page_size=50, pagination_token=None):
         """Queue one collection page read; take it with ``take_collections``."""
         self._check()
-        return self.session.collection_page(page_size=page_size, pagination_token=pagination_token)
+        task = self.session.collection_page(page_size=page_size, pagination_token=pagination_token)
+        self._collection_reads[task] = None
+        return task
 
     def take_collections(self, task):
         """Consume a finished collection page without thumbnails or owner IDs."""
         self._check()
+        if task not in self._collection_reads:
+            raise OrganizationError(_COLLECTIONS_EXPIRED)
         completions = self.session.drain(task=task)
         if not completions:
             raise OrganizationError("Collections are still loading")
+        del self._collection_reads[task]
         try:
             page = self.session.deliver_asset_organization(completions[0])
         except _SAFE:
@@ -124,6 +135,18 @@ class AssetOrganization:
         if not self.session.active:
             self.close()
             return
+        now = self._clock()
+        for task, finished_at in tuple(self._collection_reads.items()):
+            if not task.done():
+                continue
+            if finished_at is None:
+                self._collection_reads[task] = now
+            elif now - finished_at >= REVIEW_TTL:
+                # Its caller stopped waiting (a local MCP request that timed
+                # out or a closed view). Discard the page unread so it cannot
+                # hold one of the session's admission slots forever.
+                del self._collection_reads[task]
+                self.session.drain(task=task)
         for task, (review_id, kind) in tuple(self._tasks.items()):
             if not task.done():
                 continue
@@ -156,4 +179,5 @@ class AssetOrganization:
             # No IDs or names: the user inspects the Library of that connection.
             _log.info("A Scenario organization change ended with its connection; inspect assets")
         self._tasks.clear()
+        self._collection_reads.clear()
         self.reviews.clear()

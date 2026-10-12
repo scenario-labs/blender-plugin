@@ -572,6 +572,9 @@ review once; if the command cannot even be queued, the review returns to READY
 because nothing was sent. `collections` and `take_collections` read one page
 of collections without thumbnails or owner IDs; like `poll`, a failed read
 reports only text written for these surfaces, never the worker's own error text.
+A finished page nobody takes within the 10-minute review lifetime, for example
+after a local MCP request stopped waiting, is discarded unread by `poll`, so it
+cannot hold a session admission slot; taking it later asks for a new read.
 
 A review moves from PREPARING to READY, UNCHANGED (nothing to change) or
 REJECTED, then from READY to APPLYING and FINISHED or NOT_SENT; it can also be

@@ -163,6 +163,12 @@ failure also fails the command because the requested evidence is incomplete.
 `--timeout` bounds each Blender child process, not the runner's total wall-clock
 time: terminal and filesystem I/O can block. The runner waits for its forwarding
 thread before closing the log, so it does not leave a writer using closed storage.
+Inside Blender, the installed suite prints each failure's traceback as soon as
+its test ends, not only in unittest's closing summary, so a run that `--timeout`
+stops still records why earlier tests failed. A test running longer than 60
+seconds also dumps every thread's stack, and the run continues. Keep each wait in
+a native test bounded well below that timeout, so a condition that never arrives
+fails its own test instead of using up the whole run's time.
 
 The separate [native update fixture](../../tools/test_repository_update.py) tests
 Blender's repository install and update mechanism with two synthetic extension

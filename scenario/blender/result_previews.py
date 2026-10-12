@@ -436,10 +436,15 @@ class PreviewController:
     def _update_tiles(self, scheduler, budget):
         """Rebuild the drawn tiles and pages; ``budget`` is how many icons this tick may decode."""
         self._used = set()
-        tiles, pages, results = {}, {}, {}
+        tiles, pages, results, hidden = {}, {}, {}, set()
         for request_id, job in tuple(self._jobs.items()):
             results[request_id] = tuple(target.asset_id for target in job.targets)
             visible, page = self._visible(request_id, job.targets)
+            hidden.update(
+                f"{request_id}/{target.asset_id}/"
+                for target in job.targets
+                if target not in visible
+            )
             built = []
             for target in visible:
                 if scheduler.status(request_id, target.asset_id) is None:
@@ -462,8 +467,13 @@ class PreviewController:
         # A job no longer shown, or whose results changed, starts on its first page.
         self._offsets.prune(results)
         self._trim_icons(self._used)
+        # A failed icon stays while its result is shown on any page, so paging
+        # back shows its Retry instead of verifying the file again; a drawn
+        # result keeps only its current still's failure.
         self._icon_failures = {
-            key: message for key, message in self._icon_failures.items() if key in self._used
+            key: message
+            for key, message in self._icon_failures.items()
+            if key in self._used or key.rpartition("/")[0] + "/" in hidden
         }
         self._busy = any(tile.status == "loading" for items in tiles.values() for tile in items)
         if tiles == self.tiles and pages == self.pages:

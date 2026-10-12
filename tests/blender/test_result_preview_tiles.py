@@ -374,13 +374,13 @@ class ResultPreviewTileTests(unittest.TestCase):
         tiles = self.tiles.controller.tiles.get("request", ())
         return len(tiles) == count and all(tile.status == "ready" for tile in tiles)
 
-    def six_maps(self):
+    def six_maps(self, settled=None):
         maps = [
             (f"map-{role}", f"{role}.png", "image/png", png(8, 8), role)
             for role in ("normal", "height", "albedo", "metallic", "ao", "edge")
         ]
         view = self.saved(maps)
-        self.settle(self.ready_page)
+        self.settle(settled or self.ready_page)
         return view
 
     def pager(self, view):
@@ -536,6 +536,49 @@ class ResultPreviewTileTests(unittest.TestCase):
                 dict(controller._jobs),
             )
             self.assertEqual(before, after)
+
+    def test_a_failed_icon_keeps_its_retry_while_its_job_is_paged_away_and_back(self):
+        # Adapted from a review finding: paging a failed icon's result away
+        # forgot the failure, so paging back verified the file again.
+        verified, checks = self.tiles._verified, []
+
+        def normal_changed(preview, root):
+            status = self.runtime.state.job_session.result_previews.status("request", "map-normal")
+            if status is not None and preview == status.get("still").preview:
+                checks.append(preview)
+                return None  # As when its cache file changed.
+            return verified(preview, root)
+
+        def normal_failed():
+            tiles = self.tiles.controller.tiles.get("request", ())
+            return [tile.status for tile in tiles] == ["ready", "unavailable", "ready", "ready"]
+
+        with online_access(False):
+            with patch.object(self.tiles, "_verified", side_effect=normal_changed):
+                view = self.six_maps(normal_failed)
+                failed = self.tile(index=1)
+                self.assertEqual((failed.caption, failed.retry), ("Normal (1)", True))
+                self.assertIn("changed or was removed", failed.message)
+                self.assertEqual(len(checks), 1)
+                self.assertEqual(self.page("NEXT"), {"FINISHED"})
+                self.assertNotIn("Normal (1)", self.captions())
+                self.settle(self.ready_page)
+                self.assertEqual(self.page("PREVIOUS"), {"FINISHED"})
+                # Back at once, before a tick could build an icon.
+                self.assertEqual(self.tile(index=1), failed)
+                self.settle(normal_failed)
+                self.assertEqual(self.tile(index=1), failed)
+                self.assertEqual(len(checks), 1)  # Its file was not verified again.
+            args = {
+                "context_id": self.runtime.state.job_context_id,
+                "request_id": "request",
+                "asset_id": "map-normal",
+            }
+            self.assertEqual(bpy.ops.scenario.retry_result_preview(**args), {"FINISHED"})
+            self.settle(self.ready_page)
+            self.assertEqual(self.pager(view)[1], ["1-4 of 6"])
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.data_counts(), self.counts)
 
     def test_roughness_and_smoothness_maps_are_captioned_by_their_roles(self):
         # A roughness map from a 3D texture set once fell back to "Image (N)".

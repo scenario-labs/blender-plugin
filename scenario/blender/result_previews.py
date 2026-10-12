@@ -349,13 +349,18 @@ class PreviewController:
         return changed
 
     def _decode_one(self, scheduler):
-        """Decode the oldest issued image copy into its PNG; one per tick."""
+        """Decode the oldest issued image copy into its PNG; one per tick.
+
+        Returns whether this tick decoded or handed a copy to the lane, so the
+        tick decodes no icon as well.
+        """
         requests = scheduler.decode_requests()
         self._decoded &= set(requests)
         if not requests:
             return False
         request = requests[0]
-        if request not in self._decoded:
+        decoded = request not in self._decoded
+        if decoded:
             try:
                 decode(request.source, request.max_edge, bounded_local_image, output=request.output)
             except PreviewDecodeError as error:
@@ -365,7 +370,9 @@ class PreviewController:
         try:
             scheduler.finish_decode(request)
         except WorkerError:
-            return False  # The lane is full; the decoded file waits for the next tick.
+            # The lane is full; the decoded file waits for the next tick, which
+            # retries only the hand-off.
+            return decoded
         self._decoded.discard(request)
         return True
 

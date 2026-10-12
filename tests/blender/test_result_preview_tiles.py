@@ -956,6 +956,51 @@ class ResultPreviewTileTests(unittest.TestCase):
             self.assertEqual(len(calls), 2)
         self.assertEqual(self.requests, [])
 
+    def test_a_decoded_copy_the_lane_refuses_is_the_ticks_only_decode(self):
+        # Adapted from a review finding: when the lane refused a decoded image
+        # copy, the same tick also decoded an icon.
+        workers = submodule("core.jobs.workers")
+        controller = self.tiles.controller
+        with online_access(False):
+            self.saved(
+                [
+                    ("first", "first.png", "image/png", png(16, 16)),
+                    ("second", "second.png", "image/png", png(8, 8)),
+                ]
+            )
+            scheduler = self.runtime.state.job_session.result_previews
+            issued = scheduler.decode_requests
+
+            def first_only():
+                return tuple(request for request in issued() if request.key.asset_id == "first")
+
+            # The second copy waits while the first result's icon is built.
+            with patch.object(scheduler, "decode_requests", side_effect=first_only):
+                self.settle(
+                    lambda: (
+                        self.status(index=0) == "ready"
+                        and any(request.key.asset_id == "second" for request in issued())
+                    )
+                )
+            controller._icons.clear()  # Its icon is built again, as after trimming.
+            decodes, decode = [], self.tiles.decode
+
+            def counted(*args, **kwargs):
+                decodes.append(args[0])
+                return decode(*args, **kwargs)
+
+            refusal = workers.WorkerError("The preview lane is full")
+            with (
+                patch.object(self.tiles, "decode", side_effect=counted),
+                patch.object(scheduler, "finish_decode", side_effect=refusal),
+            ):
+                controller.poll()
+            # The second copy was decoded; the first icon waits for another tick.
+            self.assertEqual(len(decodes), 1)
+            self.assertEqual(self.status(index=0), "loading")
+            self.settle(lambda: self.ready_page(2))
+        self.assertEqual(self.requests, [])
+
     def test_a_failed_redraw_keeps_the_preview_timer_running(self):
         controller = self.tiles.controller
         with (

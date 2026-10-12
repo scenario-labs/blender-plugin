@@ -340,7 +340,9 @@ def contract_body(adapter, contract, parameters, refs, *, code=2):
     schema = parse_schema(ModelRecord.from_api(adapter.model(contract.model_id)))
     body, errors = panorama_contract.prepare(contract, schema.specs, parameters, panorama_refs=refs)
     errors += [
-        error for error in validate(schema.specs, body, schema.one_of) if error not in errors
+        error
+        for error in validate(schema.specs, body, schema.one_of, schema.exclusive)
+        if error not in errors
     ]
     if errors:
         raise SmokeError("Panorama contract refused the request: " + "; ".join(errors), code)

@@ -302,6 +302,29 @@ def test_upscale_cap_uses_the_measured_size_of_the_saved_panorama(runs, service)
     assert service.bodies(dry_run=True)[-1][1]["upscaleFactor"] == 5
 
 
+@pytest.mark.parametrize("stage", ["quote", "submit"])
+def test_inputs_the_schema_says_cannot_be_combined_never_reach_a_dry_run(runs, service, stage):
+    # No recorded skybox schema names exclusive inputs today. When a file input's
+    # description says so, the smoke tool refuses the body as the native form and MCP do.
+    runs.complete("text")
+    parameters = {"image": {"$panorama": "text"}, "imagePrompt": ["asset-style"]}
+    if stage == "submit":
+        assert runs.quote("styled", UPSCALE, "panorama", parameters, saved=runs.root) == 0
+    [style] = [item for item in service.models[UPSCALE]["inputs"] if item["name"] == "imagePrompt"]
+    style["description"] = "Optional images to guide the style. Mutually exclusive with image."
+    before = requests(service)
+    refused = "Image can't be combined with Style Images"
+    with pytest.raises(model.SmokeError, match=refused) as error:
+        if stage == "quote":
+            runs.quote("styled", UPSCALE, "panorama", parameters, saved=runs.root)
+        else:
+            runs.submit("styled")
+    assert error.value.code == {"quote": 2, "submit": 3}[stage]
+    assert all(call.url.params.get("dryRun") != "true" for call in service.calls[before:])
+    assert all(target != UPSCALE for target, _ in service.bodies(dry_run=False))
+    assert (runs.root / "styled" / "quote.json").exists() == (stage == "submit")
+
+
 @pytest.mark.parametrize(
     "change", ["missing", "absent", "unfinished", "unprojected", "hdr", "changed", "scope"]
 )

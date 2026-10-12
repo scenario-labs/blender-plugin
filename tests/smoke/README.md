@@ -404,9 +404,10 @@ Environment form and local MCP, in single runs and in suites:
   contract before the dry run. Schema drift fails closed; forced values (the
   HDRI's OpenEXR-only outputs) and the lane default (one Flux output) are
   applied; a GPT size must be one of the 2:1 presets; the result must pass the
-  schema's own checks. A refused case prints the contract's reasons and quotes
-  nothing. The quote record, version 4, keeps the prepared parameters and the
-  verified panorama references.
+  schema's own checks, including file inputs whose descriptions say they can't
+  be combined. A refused case prints the contract's reasons and quotes nothing.
+  The quote record, version 4, keeps the prepared parameters and the verified
+  panorama references.
 - `submit` applies the contract to the fresh schema again after claiming the
   attempt; a change refuses submission with exit 3. A contract model quoted
   without this check (record versions 1 to 3) cannot submit; quote it again in

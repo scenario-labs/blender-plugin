@@ -108,7 +108,7 @@ for size, rollback and persistence limits.
 
 For a saved model, pass the `key` of one importable entry in `job_status`
 `import_units` as `asset_id`. The approval returns `kind: model`, the `format`
-(glb, gltf, fbx, obj or ply), whether it is the `primary` result or an alternate,
+(glb, gltf, fbx, obj, ply, spz or splat), whether it is the `primary` result or an alternate,
 its `members` with their roles and media types, glTF candidate `resources` and the
 approved `cursor` instead of a media frame. Show the scene, cursor, format and
 files before approval. Every member is rehashed into a private copy before the
@@ -120,10 +120,25 @@ is rechecked before the claim, and a reuse claim lists every member. GLB and glT
 rigs, weights and node/morph clips stay in the new group with the current scene
 FPS. FBX clips keep the file's frame rate and `model_import.frame_rate_mismatch`
 reports a different scene FPS; `model_import.dropped_references` counts OBJ and MTL
-references left out. External-file, pointer-animation and splat results remain
+references left out. External-file and pointer-animation results remain
 unsupported. See [model import](MESH_APPLICATION.md#explicit-saved-glb-import) and
 [package import](MESH_APPLICATION.md#saved-model-package-import) for bounds and
 recovery. This never replaces an existing mesh.
+
+SPZ, `.splat` and PLY units also return `splat_options` with the approved
+`max_points` and `axes` (null for mesh formats). Pass `splat_max_points`
+(250000, 500000, 1000000 or 2000000) and `splat_axes` (`OPENGL` or `OPENCV`) to
+choose them; the defaults are 1,000,000 points and the file format's convention,
+`OPENGL` for SPZ and `OPENCV` for PLY and `.splat`, which providers may not
+follow. To change an option, prepare again and show the new approval. Application
+first reads the file on a worker in the single local-operation slot, which a
+local render or Film media inspection can occupy: a decoder rejection, such as an
+SPZ v4 file, or a changed file stops with `Nothing was imported` before any claim.
+Splats become a new coloured point cloud, not a Gaussian splat render, and a PLY
+without splat data continues as a mesh. `model_import.splat` then reports
+`points_total`, `points_kept`, `step`, `axes` and `spz_extensions`; when
+`spz_extensions` is true the file may store other axes, so check the result.
+See [saved Gaussian splat import](MESH_APPLICATION.md#saved-gaussian-splat-import).
 
 For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
 `prepare_result_application`. A result whose saved metadata declares a texture
@@ -368,7 +383,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |

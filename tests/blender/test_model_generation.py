@@ -25,6 +25,8 @@ from helpers import (
     online_access,
     reset_scene,
     scanline_exr,
+    splat_ply_bytes,
+    spz_bytes,
     submodule,
     temp_credentials,
     textured_model_exports,
@@ -2841,11 +2843,11 @@ class ModelGenerationTests(unittest.TestCase):
             }
         )
 
-    def prepare_package(self, request_id, key):
+    def prepare_package(self, request_id, key, **options):
         args = self.recovery_args(request_id, "import_model")
         del args["action"]
         args["asset_id"] = key
-        return self.tools.prepare_result_application(args)
+        return self.tools.prepare_result_application(dict(args, **options))
 
     def saved_file(self, request_id, asset_id):
         item = next(i for i in self.store.get(request_id).results if i.asset.asset_id == asset_id)
@@ -2896,6 +2898,7 @@ class ModelGenerationTests(unittest.TestCase):
                 "members": ["result-obj", "result-mtl", "result-albedo"],
                 "dropped_references": 1,
                 "frame_rate_mismatch": False,
+                "splat": None,
             },
         )
         (name,) = status["objects"]
@@ -3016,7 +3019,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(images)
         self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
 
-    def test_splat_and_unsupported_results_are_listed_but_never_offered(self):
+    def test_splat_results_are_offered_and_unsupported_models_are_not(self):
         request_id = self.recovered_package(
             {
                 "result-spz": ("model/spz", b"\x1f\x8b" + bytes(30), {"type": "img2splat"}),
@@ -3025,16 +3028,19 @@ class ModelGenerationTests(unittest.TestCase):
         )
         status = self.tools.job_status({"job_id": request_id})
         self.assertEqual(
-            [(u["key"], u["format"], u["importable"]) for u in status["import_units"]],
-            [("result-spz", "spz", False)],
+            [(u["key"], u["format"], u["kind"], u["importable"]) for u in status["import_units"]],
+            [("result-spz", "spz", "splat", True)],
         )
         self.assertEqual(
             status["import_findings"], [{"asset_id": "result-stl", "reason": "unsupported-format"}]
         )
-        self.assertNotIn("import_model", status["actions"])
-        for key in ("result-spz", "result-stl"):
-            with self.subTest(key=key), self.assertRaises(self.request_error):
-                self.prepare_package(request_id, key)
+        self.assertIn("import_model", status["actions"])
+        recovery = submodule("blender.job_recovery")
+        view = self.runtime.state.model_jobs.views[request_id]
+        labels = [i.label for i in recovery.result_actions(view) if i.action == "import_model"]
+        self.assertEqual(labels, ["Import splats: SPZ (1)"])
+        with self.assertRaises(self.request_error):
+            self.prepare_package(request_id, "result-stl")
 
     def test_native_package_review_names_the_files_and_cancel_discards(self):
         request_id = self.obj_package()
@@ -3063,13 +3069,358 @@ class ModelGenerationTests(unittest.TestCase):
         # The existing 480 px model dialog was verified with 66-character lines.
         self.assertLessEqual(max(len(label) for label in labels), 66)
         recovery = submodule("blender.job_recovery")
-        for lines in recovery.MODEL_REVIEW.values():
+        for lines in (*recovery.MODEL_REVIEW.values(), recovery.SPLAT_REVIEW):
             self.assertLessEqual(max(len(line) for line in lines), 66)
         operator.cancel(fake, context)
         self.assertNotIn(fake.application_id, owner._application_approvals)
         objects = set(bpy.data.objects)
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
         self.assertEqual(set(bpy.data.objects), objects)
+        self.assertEqual(len(self.paid), 1)
+
+    def splat_job(self, files=None):
+        """A finished job with a primary GLB and an alternate SPZ splat world."""
+        from helpers import FIXTURES
+
+        points = [(index % 4, 1, -(index // 4)) for index in range(12)]
+        glb = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        return self.recovered_package(
+            files
+            or {
+                "result-spz": ("model/spz", spz_bytes(points), {"type": "img2splat"}),
+                "result-glb": ("model/gltf-binary", glb, {"type": "img23d"}),
+            }
+        )
+
+    def test_spz_imports_as_points_under_reviewed_options_without_requests(self):
+        request_id = self.splat_job()
+        owner = self.runtime.state.model_jobs
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            [(u["key"], u["format"], u["kind"], u["primary"]) for u in status["import_units"]],
+            [("result-glb", "glb", "mesh", True), ("result-spz", "spz", "splat", False)],
+        )
+        recovery = submodule("blender.job_recovery")
+        labels = [
+            item.label
+            for item in recovery.result_actions(owner.views[request_id])
+            if item.action == "import_model"
+        ]
+        self.assertEqual(labels, ["Import GLB model (2)", "Import alternate splats: SPZ (1)"])
+        # Splat options belong to SPZ, PLY and .splat units only.
+        with self.assertRaises(self.request_error):
+            self.prepare_package(request_id, "result-glb", splat_axes="OPENCV")
+        args = self.recovery_args(request_id, "import_model")
+        del args["action"]
+        with self.assertRaises(ValueError):
+            self.tools.prepare_result_application(dict(args, splat_max_points=250000))
+        with self.assertRaises(ValueError):
+            self.tools.prepare_result_application(
+                dict(args, purpose="world", asset_id="result-spz", splat_axes="OPENGL")
+            )
+        with self.assertRaises(self.request_error):
+            self.prepare_package(request_id, "result-spz", splat_max_points=1234)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        bpy.context.scene.cursor.location = (1, 2, 3)
+        default = self.prepare_package(request_id, "result-spz")
+        self.assertEqual(default["splat_options"], {"max_points": 1000000, "axes": "OPENGL"})
+        self.assertIn("point cloud", default["note"])
+        approval = self.prepare_package(
+            request_id, "result-spz", splat_max_points=250000, splat_axes="OPENCV"
+        )
+        self.assertEqual(approval["splat_options"], {"max_points": 250000, "axes": "OPENCV"})
+        self.assertEqual(
+            approval["members"],
+            [{"asset_id": "result-spz", "role": "model", "media_type": "model/spz"}],
+        )
+        splats = submodule("core.scene.splats")
+        threads = []
+        decode = splats.decode
+
+        def record(*args, **kwargs):
+            threads.append(threading.current_thread() is threading.main_thread())
+            return decode(*args, **kwargs)
+
+        with patch.object(splats, "decode", side_effect=record):
+            status = self.finish_application(approval)
+        self.assertEqual(threads, [False])
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(
+            status["model_import"],
+            {
+                "unit": "result-spz",
+                "format": "spz",
+                "members": ["result-spz"],
+                "dropped_references": 0,
+                "frame_rate_mismatch": False,
+                "splat": {
+                    "points_total": 12,
+                    "points_kept": 12,
+                    "step": 1,
+                    "axes": "OPENCV",
+                    "spz_extensions": False,
+                },
+            },
+        )
+        (name,) = status["objects"]
+        obj = bpy.data.objects[name]
+        self.assertEqual(len(obj.data.vertices), 12)
+        self.assertEqual(obj.parent["scenario_assets"], "result-spz")
+        self.assertEqual(obj.modifiers[0].type, "NODES")
+        rows = [item.label for item in recovery.result_actions(owner.views[request_id])]
+        self.assertIn("Shown as points: 12 of 12 splats", rows)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        # A review of the earlier saved revision cannot be used after the import.
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(default))
+        reuse = self.prepare_package(request_id, "result-spz")
+        self.assertTrue(reuse["reuse"])
+        status = self.finish_application(reuse)
+        self.assertEqual(status["local_applications"][-1]["asset_ids"], ["result-spz"])
+        self.assertEqual(status["local_applications"][-1]["state"], "applied")
+        self.assertEqual(status["model_import"]["splat"]["axes"], "OPENGL")
+        self.assertEqual(len(status["objects"]), 2)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_spz_extension_flag_is_reported_after_import(self):
+        points = [(index, 0, 0) for index in range(3)]
+        request_id = self.splat_job(
+            {"result-spz": ("model/spz", spz_bytes(points, flags=0x3), {"type": "img2splat"})}
+        )
+        status = self.finish_application(self.prepare_package(request_id, "result-spz"))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertTrue(status["model_import"]["splat"]["spz_extensions"])
+        view = self.runtime.state.model_jobs.views[request_id]
+        rows = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
+        self.assertIn("This SPZ declares extensions; check its axes", rows)
+        # A history change (undo, redo or file load) retires the summary and its notices.
+        self.runtime.state.model_jobs.session.invalidate_all()
+        self.runtime.state.model_jobs.poll()
+        self.assertEqual(view.meta["import_notices"], ())
+        self.assertIsNone(self.tools.job_status({"job_id": request_id})["model_import"])
+
+    def test_ply_is_read_on_a_worker_and_imports_as_a_mesh_or_points(self):
+        exports = self.package_exports()
+        rows = [(float(i), 0.0, 0.0, 1.0, 0.0, -1.0, 2.0, -3.0, -3.0, -3.0) for i in range(5)]
+        request_id = self.recovered_package(
+            {
+                "result-mesh": ("model/ply", exports["ply"].read_bytes(), {}),
+                "result-points": ("application/x-ply", splat_ply_bytes(rows), {}),
+            }
+        )
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual({unit["kind"] for unit in status["import_units"]}, {"ply"})
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_package(request_id, "result-mesh")
+        self.assertEqual(approval["splat_options"], {"max_points": 1000000, "axes": "OPENCV"})
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(
+            (status["model_import"]["format"], status["model_import"]["splat"]), ("ply", None)
+        )
+        (mesh,) = status["objects"]
+        self.assertEqual(bpy.data.objects[mesh].type, "MESH")
+        self.assertFalse(bpy.data.objects[mesh].modifiers)
+        status = self.finish_application(self.prepare_package(request_id, "result-points"))
+        self.assertEqual(status["local_applications"][-1]["state"], "applied")
+        self.assertEqual(status["model_import"]["splat"]["points_total"], 5)
+        points = next(name for name in status["objects"] if name != mesh)
+        self.assertEqual(len(bpy.data.objects[points].data.vertices), 5)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_undecodable_splats_stop_before_a_claim(self):
+        request_id = self.splat_job(
+            {"result-spz": ("model/spz", b"NGSP" + bytes(60), {"type": "img2splat"})}
+        )
+        record, objects = self.store.get(request_id), set(bpy.data.objects)
+        status = self.finish_application(self.prepare_package(request_id, "result-spz"))
+        self.assertEqual(status["status"], "ready", status)
+        self.assertEqual(
+            status["error"],
+            "Nothing was imported: SPZ v4 (ZSTD) cannot be decoded in this release; "
+            "the saved file is kept",
+        )
+        self.assertEqual((status["local_applications"], status["model_import"]), ([], None))
+        self.assertEqual((self.store.get(request_id), set(bpy.data.objects)), (record, objects))
+
+    def test_splats_changed_after_review_stop_before_a_claim(self):
+        request_id = self.splat_job()
+        approval = self.prepare_package(request_id, "result-spz")
+        record, objects = self.store.get(request_id), set(bpy.data.objects)
+        path = self.saved_file(request_id, "result-spz")
+        path.write_bytes(path.read_bytes() + b"changed after review")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"].startswith("Nothing was imported:"), status["error"])
+        self.assertEqual((status["local_applications"], status["model_import"]), ([], None))
+        self.assertEqual((self.store.get(request_id), set(bpy.data.objects)), (record, objects))
+
+    def test_busy_local_slot_rejects_splat_import_without_changes(self):
+        request_id = self.splat_job()
+        owner = self.runtime.state.model_jobs
+        approval = self.prepare_package(request_id, "result-spz")
+        record = self.store.get(request_id)
+        workers = submodule("core.jobs.workers")
+        busy = workers.WorkerError("Wait for the current local media operation to finish")
+        with patch.object(owner.session, "prepare_model_import", side_effect=busy):
+            with self.assertRaisesRegex(
+                self.request_error, "current local media operation to finish; review the import"
+            ):
+                self.tools.apply_result_application(self.import_args(approval))
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertNotIn(request_id, owner._commands)
+
+    def test_splat_receipt_retry_never_rebuilds_points(self):
+        request_id = self.splat_job()
+        approval = self.prepare_package(request_id, "result-spz")
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        store = self.runtime.state.model_jobs.store
+        original = store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storemod.JobState.APPLIED:
+                raise OSError("synthetic receipt failure")
+            return original(*args, **kwargs)
+
+        with patch.object(store, "transition", side_effect=fail_receipt):
+            status = deferred.finish(result)
+        self.assertEqual(status["status"], "applying", status)
+        self.assertIn("retry_receipt", status["actions"])
+        before = set(bpy.data.objects)
+        with patch.object(
+            submodule("blender.job_session"),
+            "import_splat",
+            side_effect=AssertionError("Repeated splat build"),
+        ):
+            status = self.tools.recover_local_job(self.recovery_args(request_id, "retry_receipt"))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(set(bpy.data.objects), before)
+
+    def test_splat_import_is_one_native_undo_step(self):
+        # The saved splat import records the same checkpoints as a model import.
+        request_id = self.splat_job()
+        module = submodule("blender.model_application")
+        history = self.model_history()
+        scene_name = bpy.context.scene.name
+
+        def scene():
+            # History replaces RNA wrappers; resolve the scene again by name.
+            restored = bpy.data.scenes[scene_name]
+            bpy.context.window.scene = restored
+            return restored
+
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+        scene()["unrecorded_user_edit"] = "kept"
+        before = {obj.name for obj in bpy.data.objects}
+        groups = {group.name for group in bpy.data.node_groups}
+        approval = self.prepare_package(request_id, "result-spz")
+        pushes = []
+        push = module._undo_push
+
+        def record_push(message):
+            pushes.append(message)
+            push(message)
+
+        with history, patch.object(module, "_undo_push", side_effect=record_push):
+            status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(pushes, ["Before Scenario model import", "Scenario model import"])
+        after = {obj.name for obj in bpy.data.objects}
+        # The new group's root empty and the point-cloud object.
+        self.assertEqual(len(after - before), 2)
+        record = self.store.get(request_id)
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, before)
+        self.assertEqual({group.name for group in bpy.data.node_groups}, groups)
+        self.assertEqual(scene().get("unrecorded_user_edit"), "kept")
+        self.assertEqual(self.store.get(request_id), record)
+
+        self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, after)
+        (name,) = status["objects"]
+        self.assertEqual(len(bpy.data.objects[name].data.vertices), 12)
+        self.assertIsNotNone(bpy.data.objects[name].modifiers[0].node_group)
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+
+    def test_splat_failed_undo_preparation_builds_nothing_and_allows_review(self):
+        request_id = self.splat_job()
+        module = submodule("blender.model_application")
+        before, calls = set(bpy.data.objects), (len(self.calls), len(self.paid))
+        with (
+            patch.object(module, "_undo_enabled", return_value=True),
+            patch.object(
+                module, "_undo_push", side_effect=RuntimeError("fixture unavailable history")
+            ),
+        ):
+            status = self.finish_application(self.prepare_package(request_id, "result-spz"))
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(set(bpy.data.objects), before)
+        self.assertIn("import_model", status["actions"])
+        self.assertEqual((len(self.calls), len(self.paid)), calls)
+
+    def test_native_splat_review_revises_options_under_a_new_handle(self):
+        request_id = self.splat_job()
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-spz",
+            layout=MagicMock(),
+            report=MagicMock(),
+            splat_points="1000000",
+            splat_axes="OPENGL",
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        original = owner._application_approvals[fake.application_id]
+        self.assertTrue(fake.is_splat)
+        self.assertEqual((fake.splat_points, fake.splat_axes), ("1000000", "OPENGL"))
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared values.
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertIn("Selected: SPZ (alternate result)", labels)
+        for line in recovery.SPLAT_REVIEW:
+            self.assertIn(line, labels)
+        self.assertLessEqual(max(len(label) for label in labels), 66)
+        self.assertEqual(
+            [call.args[1] for call in fake.layout.prop.call_args_list],
+            ["splat_points", "splat_axes"],
+        )
+        first = fake.application_id
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(fake.application_id, first)  # Unchanged options keep the handle.
+        fake.splat_points, fake.splat_axes = "250000", "OPENCV"
+        self.assertTrue(operator.check(fake, context))
+        self.assertNotEqual(fake.application_id, first)
+        self.assertNotIn(first, owner._application_approvals)
+        revised = owner._application_approvals[fake.application_id]
+        self.assertEqual((revised.max_points, revised.axes), (250000, "OPENCV"))
+        self.assertEqual(
+            (revised.destination, revised.cursor, revised.unit),
+            (original.destination, original.cursor, original.unit),
+        )
+        with self.assertRaises(self.request_error):
+            self.runtime.apply_saved_result(args["context_id"], first)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["model_import"]["splat"]["axes"], "OPENCV")
+        operator.cancel(fake, context)
         self.assertEqual(len(self.paid), 1)
 
     def recovered_panorama(self, *, jpeg=False, media_type=None, data=None, width=8, height=4):

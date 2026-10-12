@@ -298,8 +298,12 @@ scene, preserves existing selection and packs textures only from the package. GL
 and glTF rigs, weights and node/morph animation clips remain in the new group;
 timing uses scene FPS without changing the current frame or timeline range, while
 FBX clips keep the file's rate. Its separate durable claim, which lists every
-member for a reuse, and receipt recovery follow the same session; in-place
-rig/animation transfer and splat import remain open.
+member for a reuse, and receipt recovery follow the same session. SPZ, `.splat`
+and Gaussian splat PLY results are decoded by a worker in the local-operation
+slot with reviewed point limits and axes, then built on the main thread as a new
+point cloud (mesh plus Geometry Nodes and a new material) under the same claim
+and receipt rules; it approximates splats and is not a splat renderer. In-place
+rig/animation transfer remains open.
 Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
 World replacement, with a separate guarded restore in the current session.
 Application refuses a file whose container differs from its saved media type;

@@ -9,6 +9,8 @@ with its MTL and maps, or mesh PLY) takes two main-thread steps instead:
 references before any application claim, so a changed or unsupported package
 leaves the saved job unchanged; `import_snapshot` then imports that snapshot in
 a disposable scene, keeps only images packed from it and publishes new data.
+SPZ, .splat and PLY units are first read on a worker: splats are decoded there
+and shown by `splat_application`, and a mesh PLY returns here.
 """
 
 import hashlib
@@ -65,10 +67,14 @@ _TRACKED_DATA = (*_DATA, "shape_keys")
 # OBJ curves and legacy FBX textures, besides the GLB datablocks.
 _PACKAGE_DATA = (*_DATA, "curves", "textures")
 _PACKAGE_TRACKED = (*_PACKAGE_DATA, "shape_keys")
-# Saved formats this release imports as a new group; splat units wait for their builder.
-IMPORT_FORMATS = frozenset(
+# Saved formats imported from a main-thread snapshot as a new group of meshes.
+MESH_FORMATS = frozenset(
     {ModelFormat.GLB, ModelFormat.GLTF, ModelFormat.FBX, ModelFormat.OBJ, ModelFormat.PLY}
 )
+# Formats a worker reads before import: SPZ and .splat splats, and PLY, whose
+# verified header decides between a mesh and Gaussian splats.
+WORKER_FORMATS = frozenset({ModelFormat.PLY, ModelFormat.SPZ, ModelFormat.SPLAT})
+IMPORT_FORMATS = MESH_FORMATS | WORKER_FORMATS
 GLB_MEDIA_TYPES = FORMAT_MEDIA_TYPES[ModelFormat.GLB]
 _IMAGE_SIGNATURES = {
     "png": (b"\x89PNG\r\n\x1a\n",),
@@ -95,6 +101,8 @@ class ModelApplication:
     members: tuple = ()
     dropped_references: int = 0
     frame_rate_mismatch: bool = False
+    # Point counts, axes and SPZ flags of a splat import; None for meshes.
+    splat: dict | None = None
 
 
 def _read(item, path, *, static_only=True):
@@ -387,8 +395,13 @@ def import_plan(record):
 
 
 def importable(unit):
-    """Whether this release imports the unit as a new group of meshes."""
-    return unit.format in IMPORT_FORMATS and unit.kind is not UnitKind.SPLAT
+    """Whether this release imports the unit as a new group (meshes or splat points)."""
+    return unit.format in IMPORT_FORMATS
+
+
+def worker_prepared(unit):
+    """Whether a worker decodes or classifies the unit before its import."""
+    return unit.format in WORKER_FORMATS
 
 
 _FLAGS = (
@@ -614,8 +627,9 @@ def _snapshot_ply(unit, files, directory):
     except (ModelPackageError, splats.SplatError) as error:
         raise ModelPreflightError(str(error)) from None
     if kind != "mesh":
+        # Worker preparation routes a Gaussian splat PLY to the point-cloud builder.
         raise ModelPreflightError(
-            "This PLY holds Gaussian splat data, which this release does not import; "
+            "This PLY holds Gaussian splat data, which imports as splat points; "
             "the saved file is kept"
         )
     return entry, unit.members, 0, True
@@ -641,8 +655,8 @@ def prepare_snapshot(unit, files):
     """
     if threading.current_thread() is not threading.main_thread():
         raise ModelPreflightError("Import models on Blender's main thread")
-    if not importable(unit):
-        raise ModelPreflightError("This saved model format is not imported in this release")
+    if unit.format not in MESH_FORMATS or unit.kind is UnitKind.SPLAT:
+        raise ModelPreflightError("Saved splats are decoded on a worker; review the import again")
     selected = _members(files, (*unit.members, *unit.resources))
     sizes = [item.receipt.size for item, _ in selected if item.receipt is not None]
     if len(sizes) != len(selected) or sum(sizes[: len(unit.members)]) > MAX_PACKAGE_BYTES:

@@ -344,14 +344,15 @@ points when no limit is given and does not return the SPZ flags. The prototype
 "Add to scene" button reports such a rejection as an error and adds no object,
 instead of failing with a Python traceback.
 
-No session, UI, MCP or Blender importer uses this command yet. The point-cloud
-builder, which must create fresh Geometry Nodes and material data instead of the
-prototype's reuse of any material named "Scenario Splat", and saved mesh imports
-remain under #65. Live evidence must still confirm provider MIME types, SPZ
-versions, axis conventions and whether the `url` saved from an
-[untransformed asset read](#untransformed-result-assets) serves a 3D asset's
-original bytes; SDK 2.2.0 documents `original_file_url` for some replaced 3D
-assets.
+Saved SPZ, `.splat` and PLY import units use this command through
+`JobSession.prepare_model_import`; the reviewed import, its point-cloud builder,
+which creates fresh Geometry Nodes and material data, and its UI and MCP controls
+are described in [saved Gaussian splat import](MESH_APPLICATION.md#saved-gaussian-splat-import).
+The prototype SPZ import now delegates to the same builder. Live evidence must
+still confirm provider MIME types, SPZ versions, axis conventions and whether the
+`url` saved from an [untransformed asset read](#untransformed-result-assets)
+serves a 3D asset's original bytes; SDK 2.2.0 documents `original_file_url` for
+some replaced 3D assets.
 
 ## Saved-result preview transfers
 

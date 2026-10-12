@@ -113,9 +113,13 @@ selection, packs only textures embedded in or read from the package, retains rig
 and node/morph animation clips, and keeps the destination timeline unchanged. The
 [model guide](../MESH_APPLICATION.md#explicit-saved-glb-import) and its
 [package section](../MESH_APPLICATION.md#saved-model-package-import) detail
-supported containers, bounded synchronous work and rollback. Existing
-`mesh_application.py` remains the separate explicit in-place mesh/UV primitive;
-importing a new GLB does not establish those edit workflows.
+supported containers, bounded synchronous work and rollback.
+[`splat_application.py`](../../scenario/blender/splat_application.py) builds a
+worker-decoded splat snapshot on the main thread as a new mesh, Geometry Nodes
+point group and unlit material, never reusing data by name, and publishes it like
+a model group; see [saved Gaussian splat import](../MESH_APPLICATION.md#saved-gaussian-splat-import).
+Existing `mesh_application.py` remains the separate explicit in-place mesh/UV
+primitive; importing a new GLB does not establish those edit workflows.
 
 ## Saved materials
 

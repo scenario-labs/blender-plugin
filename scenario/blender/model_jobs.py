@@ -18,9 +18,12 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs import progress
 from ..core.jobs.coordinator import CancellationUnsupported, RemoteSnapshot, cancellable_job
 from ..core.jobs.records import JobRecord
+from ..core.jobs.results import ResultError
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
+from ..core.jobs.workers import WorkerError
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, model_format
 from ..core.scene.panorama import world_candidate
+from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
 from . import first_frame_handoff
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
@@ -45,8 +48,11 @@ from .model_application import (
     ModelPreflightError,
     import_plan,
     importable,
+    worker_prepared,
 )
 from .model_application import validate_destination as validate_model_destination
+from .splat_application import AXES as SPLAT_AXES
+from .splat_application import DEFAULT_POINTS, POINT_CHOICES, default_axes
 from .world_application import PanoramaError, WorldApplicationError
 
 # Shared by the native operator and MCP recover_local_job through control().
@@ -196,7 +202,11 @@ class MediaApplicationApproval:
 
 @dataclass(frozen=True)
 class ModelApplicationApproval:
-    """One reviewed import unit; `asset_id` is its key, the primary member's ID."""
+    """One reviewed import unit; `asset_id` is its key, the primary member's ID.
+
+    SPZ, .splat and PLY units also carry the reviewed point limit and saved axes;
+    mesh units leave both None.
+    """
 
     identifier: str
     record: StoredJob
@@ -206,6 +216,12 @@ class ModelApplicationApproval:
     cursor: tuple
     kind: str = "model"
     unit: object = field(default=None, repr=False)
+    max_points: int | None = None
+    axes: str | None = None
+
+    @property
+    def splat_options(self):
+        return None if self.max_points is None else SplatOptions(self.max_points, self.axes)
 
 
 @dataclass(frozen=True)
@@ -533,6 +549,12 @@ class ModelJobs:
                 if not completions:
                     raise RuntimeError("Missing owned result completion")
                 completion = completions[0]
+                if command == "prepare_model" and isinstance(
+                    completion.error, (ResultError, SplatCancelled)
+                ):
+                    # The worker read or decode stopped before any claim; its
+                    # sanitized reason reaches the row like a snapshot preflight.
+                    raise ModelPreflightError(str(completion.error)) from None
                 if completion.error is not None:
                     raise completion.error
                 if command in ("refresh_remote", "cancel_remote"):
@@ -571,12 +593,13 @@ class ModelJobs:
                     )
                     self._remember_world(request_id, world.destination, applied.application)
                     self._paused.discard(request_id)
-                elif command == "verify_model":
+                elif command in ("verify_model", "prepare_model"):
                     applied = self.session.apply_recovered_model(
                         completion,
                         destination=model.destination,
                         asset_id=model.asset_id,
                         cursor=model.cursor,
+                        options=model.splat_options,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
@@ -701,6 +724,7 @@ class ModelJobs:
                 item.asset.asset_id for item in first_frame_handoff.eligible_assets(record)
             )
             view.meta["import_units"] = self._unit_rows(record)
+            view.meta["import_notices"] = self._import_notices(request_id)
             self._project_remote(request_id, record, view, online=online)
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
                 view.error = "Submission outcome is not confirmed; do not submit it again"
@@ -1124,8 +1148,14 @@ class ModelJobs:
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
-    def prepare_model_application(self, request_id, expected_revision, scene, asset_id):
-        """Capture one import unit's destination; `asset_id` is the unit key."""
+    def prepare_model_application(
+        self, request_id, expected_revision, scene, asset_id, *, max_points=None, axes=None
+    ):
+        """Capture one import unit's destination; `asset_id` is the unit key.
+
+        SPZ, .splat and PLY units take a point limit (default 1,000,000) and saved
+        axes (default: the file format's convention); mesh units take neither.
+        """
         record = self.store.get(request_id)
         if (
             type(expected_revision) is not int
@@ -1139,8 +1169,12 @@ class ModelJobs:
         ]
         if len(selected) != 1:
             raise ScenarioError(
-                0, "Choose one GLB, glTF, FBX, OBJ or PLY model from this job's import units"
+                0,
+                "Choose one GLB, glTF, FBX, OBJ, PLY, SPZ or .splat result "
+                "from this job's import units",
             )
+        unit = selected[0]
+        max_points, axes = self._splat_options(unit, max_points, axes)
         if len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Complete or cancel an existing application review first")
         if scene != bpy.context.scene:
@@ -1154,10 +1188,48 @@ class ModelJobs:
             scene.name,
             asset_id,
             tuple(scene.cursor.location),
-            unit=selected[0],
+            unit=unit,
+            max_points=max_points,
+            axes=axes,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
+
+    @staticmethod
+    def _splat_options(unit, max_points, axes):
+        """Validate reviewed splat options; return (None, None) for a mesh unit."""
+        if not worker_prepared(unit):
+            if max_points is not None or axes is not None:
+                raise ScenarioError(0, "Point limits and axes apply only to SPZ, PLY or .splat")
+            return None, None
+        if max_points is None:
+            max_points = DEFAULT_POINTS
+        if axes is None:
+            axes = default_axes(unit.format.value)
+        if type(max_points) is not int or max_points not in POINT_CHOICES:
+            raise ScenarioError(0, "Keep 250,000, 500,000, 1,000,000 or 2,000,000 splat points")
+        if axes not in SPLAT_AXES:
+            raise ScenarioError(0, "Choose OPENGL or OPENCV saved splat axes")
+        return max_points, axes
+
+    def revise_model_application(self, identifier, *, max_points, axes):
+        """Change reviewed splat options under a new handle; the old one stops working.
+
+        The captured scene, cursor and unit stay the same; nothing is recaptured.
+        """
+        ticket = self._application_approvals.get(identifier)
+        if not isinstance(ticket, ModelApplicationApproval) or not worker_prepared(ticket.unit):
+            raise ScenarioError(0, "Use an unconsumed SPZ, PLY or .splat import review")
+        max_points, axes = self._splat_options(ticket.unit, max_points, axes)
+        self.session.validate_destination(ticket.destination, cursor=ticket.cursor)
+        if self.store.get(ticket.record.intent.request_id) != ticket.record:
+            raise ScenarioError(0, "The saved model changed; start a fresh review")
+        if (max_points, axes) == (ticket.max_points, ticket.axes):
+            return ticket
+        revised = replace(ticket, identifier=uuid.uuid4().hex, max_points=max_points, axes=axes)
+        del self._application_approvals[identifier]
+        self._application_approvals[revised.identifier] = revised
+        return revised
 
     def _remember_model_application(self, request_id, application):
         if isinstance(application, MeshEditApplication):
@@ -1174,6 +1246,7 @@ class ModelJobs:
                     "members": list(application.members),
                     "dropped_references": application.dropped_references,
                     "frame_rate_mismatch": application.frame_rate_mismatch,
+                    "splat": dict(application.splat) if application.splat else None,
                 }
                 self._model_imports[request_id] = (self.session.history_revision, summary)
 
@@ -1490,7 +1563,9 @@ class ModelJobs:
             "error": None if bound is not None else (error or first_frame_handoff.STOPPED),
         }
 
-    def prepare_asset_application(self, request_id, expected_revision, scene, asset_id):
+    def prepare_asset_application(
+        self, request_id, expected_revision, scene, asset_id, *, max_points=None, axes=None
+    ):
         record = self.store.get(request_id)
         # Any model-family file routes to model review, which accepts only unit keys.
         if record is not None and any(
@@ -1502,7 +1577,11 @@ class ModelJobs:
             )
             for item in record.results
         ):
-            return self.prepare_model_application(request_id, expected_revision, scene, asset_id)
+            return self.prepare_model_application(
+                request_id, expected_revision, scene, asset_id, max_points=max_points, axes=axes
+            )
+        if max_points is not None or axes is not None:
+            raise ScenarioError(0, "Point limits and axes apply only to SPZ, PLY or .splat")
         return self.prepare_media_application(request_id, expected_revision, scene, asset_id)
 
     def apply_saved_result(self, identifier):
@@ -1547,7 +1626,22 @@ class ModelJobs:
                 del self._worlds[request_id]
             self._view(record).error = None
             return request_id, None
-        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        prepare = is_model and worker_prepared(ticket.unit)
+        if prepare:
+            # Decoding uses the single local-operation slot shared with local
+            # renders and Film media inspection.
+            try:
+                task = self.session.prepare_model_import(
+                    request_id,
+                    expected_revision=record.revision,
+                    asset_id=ticket.asset_id,
+                    options=ticket.splat_options,
+                )
+            except WorkerError as error:
+                # The sanitized reason, such as a busy local slot; nothing was queued.
+                raise ScenarioError(0, f"{error}; review the import again") from None
+        else:
+            task = self.session.verify_results(request_id, expected_revision=record.revision)
         if is_world:
             self._world_destinations[request_id] = ticket
         elif is_model:
@@ -1555,7 +1649,13 @@ class ModelJobs:
         else:
             self._media_destinations[request_id] = ticket
         self._commands[request_id] = (
-            "verify_world" if is_world else "verify_model" if is_model else "verify_media",
+            "verify_world"
+            if is_world
+            else "prepare_model"
+            if prepare
+            else "verify_model"
+            if is_model
+            else "verify_media",
             task,
         )
         self._automatic_application.discard(request_id)
@@ -1644,6 +1744,17 @@ class ModelJobs:
             # Like mesh edits, retire the summary once history may have replaced it.
             return None
         return dict(saved[1])
+
+    def _import_notices(self, request_id):
+        """Status rows for this session's last splat import while its summary is current."""
+        status = self._model_import_status(request_id)
+        splat = status.get("splat") if status else None
+        if not splat:
+            return ()
+        notices = [f"Shown as points: {splat['points_kept']:,} of {splat['points_total']:,} splats"]
+        if splat["spz_extensions"]:
+            notices.append("This SPZ declares extensions; check its axes")
+        return tuple(notices)
 
     def _import_units_status(self, record):
         plan = self._plan(record)

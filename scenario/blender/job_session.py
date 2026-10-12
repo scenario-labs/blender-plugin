@@ -35,7 +35,12 @@ from ..core.jobs.organization import (
 )
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.preview_scheduler import ResultPreviewScheduler
-from ..core.jobs.results import ModelTextResult, PromptResults, VerifiedResults
+from ..core.jobs.results import (
+    ModelTextResult,
+    PreparedModelImport,
+    PromptResults,
+    VerifiedResults,
+)
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker
 from .film_application import FilmShotCommands
@@ -55,8 +60,10 @@ from .model_application import (
     import_snapshot,
     importable,
     prepare_snapshot,
+    worker_prepared,
 )
 from .model_application import validate_destination as validate_model_destination
+from .splat_application import import_splat
 from .world_application import PanoramaError, WorldApplication, WorldApplicationError, apply_world
 
 _log = logging.getLogger("scenario.jobs")
@@ -601,6 +608,20 @@ class JobSession:
         """Queue local receipt verification; this does not authorize application."""
         return self._record_command("verify_results", request_id, expected_revision)
 
+    def prepare_model_import(self, request_id, *, expected_revision, asset_id, options):
+        """Queue worker verification and one saved splat decode in the local slot.
+
+        A PLY without splat data comes back as a mesh. Like verification, the
+        preparation authorizes nothing until an approved application claims it.
+        """
+        return self._record_command(
+            "prepare_model_import",
+            request_id,
+            expected_revision,
+            asset_id=asset_id,
+            options=options,
+        )
+
     def recover_downloads(self, request_id, *, expected_revision):
         """Queue explicit offline reconciliation without resolving or applying old targets."""
         return self._record_command("recover_downloads", request_id, expected_revision)
@@ -1007,13 +1028,14 @@ class JobSession:
             workflow_catalog = task in self._workflow_reads and self._workflow_reads[task] is None
             try:
                 result = task.result()
-                record = (
-                    result.record
-                    if isinstance(
-                        result, (RemoteSnapshot, VerifiedResults, PromptResults, ModelTextResult)
-                    )
-                    else result
-                )
+                if isinstance(result, PreparedModelImport):
+                    record = result.verified.record
+                elif isinstance(
+                    result, (RemoteSnapshot, VerifiedResults, PromptResults, ModelTextResult)
+                ):
+                    record = result.record
+                else:
+                    record = result
                 if cloud_read:
                     identifier, model_id = self._cloud_reads[task]
                     # A repeat read preserves the saved job's original origin.
@@ -1350,20 +1372,25 @@ class JobSession:
         del self._media_receipts[outcome]
         return AppliedMedia(record, application)
 
-    def apply_recovered_model(self, completion, *, destination, asset_id, cursor):
-        """Import one saved model unit at the approved scene/cursor after verification.
+    def apply_recovered_model(self, completion, *, destination, asset_id, cursor, options=None):
+        """Import one saved model unit at the approved scene/cursor after worker preparation.
 
-        `asset_id` is the unit key classified from the verified record. Every
-        member is rehashed into a private snapshot before the claim, so a changed
-        or unsupported package raises ModelPreflightError and leaves the saved job
-        and the scene unchanged. A reuse claim of a completed job names every member read.
+        `asset_id` is the unit key classified from the verified record. A mesh unit
+        comes from `verify_results`: every member is rehashed into a private
+        snapshot before the claim, so a changed or unsupported package raises
+        ModelPreflightError and leaves the saved job and the scene unchanged. An
+        SPZ, .splat or PLY unit comes from `prepare_model_import` with exactly the
+        approved `options`; decoded splats become a new point cloud, and a PLY
+        without splat data takes the mesh snapshot path. A reuse claim of a
+        completed job names every member read.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed model verification from this session")
         if completion.error is not None:
             raise completion.error
-        verified = completion.result
+        prepared = completion.result if isinstance(completion.result, PreparedModelImport) else None
+        verified = prepared.verified if prepared is not None else completion.result
         if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
             raise OriginUnavailable("Verify the model and approve its destination")
         scene, _ = self._resolve(destination)
@@ -1376,33 +1403,58 @@ class JobSession:
             unit = None
         if unit is None or not importable(unit):
             raise OriginUnavailable("Select one importable saved model")
+        # A worker-read unit needs the preparation of this exact file and options.
+        if worker_prepared(unit) != (prepared is not None) or (
+            prepared is not None and (prepared.asset_id != unit.key or prepared.options != options)
+        ):
+            raise OriginUnavailable("Prepare the selected model with its approved options again")
         files = {
             item.asset.asset_id: (item, path)
             for item, path in zip(verified.record.results, verified.paths, strict=True)
         }
         del self._issued[id(completion)]
+        if prepared is not None and prepared.splat is not None:
+            claim = self._claim_saved_application(verified, destination, "model", unit.members)
+            return self._finish_model(
+                claim,
+                lambda: import_splat(
+                    scene,
+                    prepared.splat,
+                    cursor=cursor,
+                    unit_key=unit.key,
+                    members=unit.members,
+                    fmt=unit.format.value,
+                    history=True,
+                ),
+            )
         snapshot = prepare_snapshot(unit, files)
         try:
             claim = self._claim_saved_application(verified, destination, "model", snapshot.members)
-            try:
-                application = import_snapshot(scene, snapshot, cursor=cursor, history=True)
-            except ModelApplicationError:
-                try:
-                    self._coordinator.fail_application(claim)
-                except Exception:
-                    raise ModelResultUncertain() from None
-                raise
-            except Exception:
-                raise ModelResultUncertain() from None
-            try:
-                record = self._coordinator.complete_application(claim)
-            except Exception:
-                outcome = ModelResultUncertain(application)
-                self._model_receipts[outcome] = (claim, application)
-                raise outcome from None
-            return AppliedModel(record, application)
+            return self._finish_model(
+                claim, lambda: import_snapshot(scene, snapshot, cursor=cursor, history=True)
+            )
         finally:
             snapshot.cleanup()
+
+    def _finish_model(self, claim, run):
+        """Run one claimed model import; failures keep receipt-only recovery."""
+        try:
+            application = run()
+        except ModelApplicationError:
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise ModelResultUncertain() from None
+            raise
+        except Exception:
+            raise ModelResultUncertain() from None
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = ModelResultUncertain(application)
+            self._model_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedModel(record, application)
 
     def apply_recovered_mesh(
         self,

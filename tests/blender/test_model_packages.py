@@ -389,12 +389,22 @@ class ModelPackageTests(unittest.TestCase):
             snapshot.cleanup()
         self.assertEqual(tuple(self.root.iterdir()), ())
 
-    def test_splat_units_are_not_importable_in_this_release(self):
+    def test_splat_units_import_after_worker_preparation_never_a_snapshot(self):
         self.save("spz", "model/spz", b"\x1f\x8b" + b"\0" * 30)
-        unit = self.unit("spz")
-        self.assertFalse(self.module.importable(unit))
-        with self.assertRaises(self.module.ModelPreflightError):
-            self.module.prepare_snapshot(unit, self.files)
+        self.save("splat", "model/splat", bytes(32))
+        self.save("ply", "model/ply", self.exports["ply"].read_bytes())
+        for key in ("spz", "splat", "ply"):
+            with self.subTest(key=key):
+                unit = self.unit(key)
+                self.assertTrue(self.module.importable(unit))
+                self.assertTrue(self.module.worker_prepared(unit))
+        for key in ("spz", "splat"):
+            with (
+                self.subTest(key=key),
+                self.assertRaisesRegex(self.module.ModelPreflightError, "decoded on a worker"),
+            ):
+                self.module.prepare_snapshot(self.unit(key), self.files)
+        self.assertEqual(tuple(self.root.iterdir()), ())
 
 
 if __name__ == "__main__":

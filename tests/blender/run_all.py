@@ -38,6 +38,7 @@ BASELINE = (
     "test_apply_3d",
     "test_model_packages",
     "test_splat_snapshots",
+    "test_splat_application",
     "test_apply_video",
     "test_mesh_application",
     "test_mcp_server",

@@ -432,8 +432,9 @@ request, download, claim or scene mutation. `JobWorkers.prepare_model_import`
 uses the single local-operation slot shared with local capture and Film media
 inspection, so `cancel_local` and owner retirement stop preparation before the
 next receipt is hashed or between decoding chunks; one receipt's hash, up to the
-storage policy's byte limit (256 MiB by default), is not interrupted. Session, UI
-and MCP wiring remain separate.
+storage policy's byte limit (256 MiB by default), is not interrupted.
+`JobSession.prepare_model_import` queues it for reviewed saved splat imports; see
+[saved Gaussian splat import](MESH_APPLICATION.md#saved-gaussian-splat-import).
 
 
 ## Saved-result preview commands

@@ -274,18 +274,34 @@ and the normal map goes through a Normal Map node at full strength, unless the
 saved material sets another strength. A glTF reads only the job's
 saved buffers and images. An FBX packs its embedded textures;
 one that points at texture files elsewhere is rejected, and its clips keep the
-file's frame rate even when your scene uses another. A PLY holding Gaussian splats
-is not imported yet, and splat results (SPZ, `.splat`) have no import button. Every
-file is checked again before anything changes: if one changed or is unsupported,
-the job says **Nothing was imported** and stays as it was.
+file's frame rate even when your scene uses another. Every file is checked again
+before anything changes: if one changed or is unsupported, the job says
+**Nothing was imported** and stays as it was.
+
+Gaussian splat worlds, such as Marble, HY World or TripoSplat results, show
+**Import splats: SPZ (N)** or **Import splats: .splat (N)**; a PLY keeps
+**Import PLY model (N)** and is imported as splats when it holds splat data, or
+as a mesh otherwise. The review adds two choices. **Points** keeps at most 250,000,
+500,000, 1,000,000 (the default) or 2,000,000 evenly spaced splats. **Saved axes**
+says how the file stores up: **OpenGL: Y up** (the SPZ convention) or
+**OpenCV: Y down** (the PLY and `.splat` convention). Each format starts with its
+own convention; if the world arrives upside down, delete it and import again
+with the other axes. Blender has no Gaussian splat renderer, so the splats become
+a new coloured point cloud: use Material Preview or Rendered view (EEVEE or
+Cycles) to see their colours. The point size and its cap are the **Point scale**
+and **Max radius** inputs of the **Scenario Splat Points** modifier. After the
+import, the job shows how many points were kept, such as
+**Shown as points: 1,000,000 of 2,400,000 splats**, and warns when an SPZ
+declares extensions that may use other axes. SPZ version 4 files cannot be read
+yet; the job says **Nothing was imported** and keeps the file.
 
 This path accepts GLBs with one scene and embedded files, up to 256 MiB. It keeps
 rigs, skin weights, shape keys and node animation clips. The first clip is active;
 other clips are retained in muted NLA tracks. Clip timing uses your scene frame
 rate, with time zero at frame zero. Your current frame and timeline range stay
 unchanged; adjust the range yourself to play the full clip. External files,
-pointer-based animation, splats and replacing an existing mesh are not supported
-by this new import action. Large models and packages (up to 256 MiB per file and
+pointer-based animation and replacing an existing mesh are not supported by this
+new import action. Large models and packages (up to 256 MiB per file and
 512 MiB per package) may briefly pause Blender while loading.
 
 In desktop Blender with Global Undo enabled and at least two undo steps, the
@@ -306,7 +322,7 @@ Four modes: **Text**, **Image** (one picture), **Multi-view** (several views of 
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 
-Generate: Meshy 7 and Rodin Gen-2.5 for text; Tripo 3.1, Tripo P1, Meshy 7, Hunyuan 3.1 Pro, Rodin 2.5 for images; Meshy 7 Multi Image, Tripo 3.1 Multi View, Hunyuan 3.1 Pro Multiview and Rodin for multi-view; worlds (Marble, HY World, TripoSplat) through the picker. Worlds come back as Gaussian splats (`.spz`, millions of splats): Blender cannot render splats, so the add-on loads them as a coloured point cloud (splat centres with their colours, sized points through a Geometry Nodes modifier, one million points kept for interactivity). The result is imported at the 3D cursor into a "Scenario" collection and the viewport switches to Material Preview so the textures show. Providers return several variants of one result (Meshy: GLB, OBJ and texture PNGs; Rodin with `material=All`: a shaded and a PBR mesh): the add-on imports one primary mesh (the textured GLB) and lists the other files in Generations with an **Add** button. Rodin defaults to PBR. **Add to scene** imports the primary mesh again at the cursor; **Select** selects the objects the job created.
+Generate: Meshy 7 and Rodin Gen-2.5 for text; Tripo 3.1, Tripo P1, Meshy 7, Hunyuan 3.1 Pro, Rodin 2.5 for images; Meshy 7 Multi Image, Tripo 3.1 Multi View, Hunyuan 3.1 Pro Multiview and Rodin for multi-view; worlds (Marble, HY World, TripoSplat) through the picker. Worlds come back as Gaussian splats (`.spz`, `.splat` or PLY, often millions of splats). Blender cannot render splats, so **Import splats** in the saved job adds them as a coloured point cloud after you review the point limit and axes; see [3D](#3d). Providers return several variants of one result (Meshy: GLB, OBJ and texture PNGs; Rodin with `material=All`: a shaded and a PBR mesh): the add-on imports one primary mesh (the textured GLB) and lists the other files in Generations with an **Add** button. Rodin defaults to PBR. **Add to scene** imports the primary mesh again at the cursor; **Select** selects the objects the job created.
 
 Edit mode:
 

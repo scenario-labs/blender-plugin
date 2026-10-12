@@ -413,6 +413,56 @@ def textured_model_exports(directory, *, fps=24):
                 values.remove(value, do_unlink=True)
 
 
+SPLAT_PLY_PROPERTIES = (
+    "x",
+    "y",
+    "z",
+    "f_dc_0",
+    "f_dc_1",
+    "f_dc_2",
+    "opacity",
+    "scale_0",
+    "scale_1",
+    "scale_2",
+)
+
+
+def spz_bytes(points, *, version=3, scale_byte=96, alpha=255, color=(128, 128, 128), flags=0):
+    """Synthetic SPZ with integer saved positions, 12 fractional bits and identity rotations.
+
+    `flags` sets the header's antialiasing (0x1) and extension (0x2) bits; no
+    extension record is written.
+    """
+    import gzip
+
+    count = len(points)
+    header = struct.pack("<IIIBBBB", 0x5053474E, version, count, 0, 12, flags, 0)
+    body = bytearray()
+    for point in points:
+        for value in point:
+            raw = (int(value) << 12) & 0xFFFFFF
+            body += bytes((raw & 0xFF, (raw >> 8) & 0xFF, raw >> 16))
+    body += bytes([alpha] * count) + bytes(color) * count + bytes([scale_byte] * 3 * count)
+    rotation = b"\x00\x00\x00\xc0" if version == 3 else b"\x00\x00\x00"
+    return gzip.compress(bytes(header + body) + rotation * count)
+
+
+def splat_records(points, scale=0.6, rgba=(255, 0, 0, 255)):
+    """.splat records: float32 position and linear scale, RGBA and a byte quaternion."""
+    return b"".join(
+        struct.pack("<3f3f4B4B", *point, scale, scale, scale, *rgba, 128, 128, 128, 255)
+        for point in points
+    )
+
+
+def splat_ply_bytes(rows):
+    """A binary 3DGS PLY: one row of ten floats per splat, in SPLAT_PLY_PROPERTIES order."""
+    header = "ply\nformat binary_little_endian 1.0\n"
+    header += f"element vertex {len(rows)}\n"
+    header += "".join(f"property float {name}\n" for name in SPLAT_PLY_PROPERTIES)
+    return (header + "end_header\n").encode() + b"".join(struct.pack("<10f", *row) for row in rows)
+
+
 def draw_job_panels():
     """Draw the real Jobs header, Jobs and Generations panels into recording layouts.
 

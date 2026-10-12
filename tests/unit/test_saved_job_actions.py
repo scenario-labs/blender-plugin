@@ -226,6 +226,9 @@ def test_model_imports_follow_the_projected_units_in_classified_order():
         ("gltf", "model/gltf+json"),
         ("ply", "model/ply"),
         ("glb", "model/glb"),
+        ("spz", "model/spz"),
+        ("splat", "model/splat"),
+        ("sog", "model/sog"),
     )
     units = (
         ("glb", "glb", True),
@@ -233,8 +236,10 @@ def test_model_imports_follow_the_projected_units_in_classified_order():
         ("fbx", "fbx", False),
         ("obj", "obj", False),
         ("ply", "ply", False),
+        ("spz", "spz", False),
+        ("splat", "splat", False),
         # Unknown formats or keys never become controls.
-        ("splat", "spz", False),
+        ("sog", "sog", False),
         ("missing", "obj", False),
     )
     subject = view(("import_model",), "ready", assets, import_units=units)
@@ -245,12 +250,18 @@ def test_model_imports_follow_the_projected_units_in_classified_order():
         asset("import_model", model, "Import alternate: FBX (4)", "fbx"),
         asset("import_model", model, "Import alternate: OBJ (3)", "obj"),
         asset("import_model", model, "Import alternate: PLY (6)", "ply"),
+        asset("import_model", model, "Import alternate splats: SPZ (8)", "spz"),
+        asset("import_model", model, "Import alternate splats: .splat (9)", "splat"),
         AWAITING,
     ]
-    # A primary that this release cannot import leaves only alternates.
+    # Another unit is primary when this release cannot import the first one.
     alternates = view(("import_model",), "ready", assets, import_units=units[1:2])
     assert [item.label for item in sja.describe(alternates, CONTEXT, TYPES)][:1] == [
         "Import alternate: glTF (5)"
+    ]
+    splats = view(("import_model",), "ready", assets, import_units=(("spz", "spz", True),))
+    assert [item.label for item in sja.describe(splats, CONTEXT, TYPES)][:1] == [
+        "Import splats: SPZ (8)"
     ]
     assert sja.describe(view(("import_model",), "applied", assets), CONTEXT, TYPES)[1:] == ()
 
@@ -485,3 +496,27 @@ def test_first_frame_controls_follow_the_projected_stills_and_number_every_asset
     assert "video_first_frame" in schema["purpose"]["enum"]
     description, _ = _mcp_spec("job_status")
     assert "use_first_frame offers" in description
+
+
+def test_session_import_notices_are_status_rows_after_the_controls():
+    notices = ("Shown as points: 12 of 40 splats", "This SPZ declares extensions; check its axes")
+    subject = view(
+        ("import_model",),
+        "applied",
+        (("spz", "model/spz"),),
+        import_units=(("spz", "spz", True),),
+        import_notices=notices,
+    )
+    items = sja.describe(subject, CONTEXT, TYPES)
+    assert [(item.key, item.group, item.operator, item.label, item.icon) for item in items] == [
+        ("reuse", "status", None, "Reuse saved results", "FILE_REFRESH"),
+        (
+            "import_model:spz",
+            "apply",
+            "scenario.import_saved_model",
+            "Import splats: SPZ (1)",
+            "NONE",
+        ),
+        ("import_notice:0", "status", None, notices[0], "INFO"),
+        ("import_notice:1", "status", None, notices[1], "INFO"),
+    ]

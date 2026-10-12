@@ -122,9 +122,10 @@ and node transform/morph-weight animations. Limits are 256 MiB of file bytes,
 clips and 10,000 total joints or animation channels. This is a bounded policy
 preflight, not a complete glTF validator or proof against every expensive decoder
 input; Blender validates geometry and textures. JSON glTF, FBX, OBJ and mesh PLY
-results import through the [saved package path](#saved-model-package-import);
-splats, multiple scenes, external files and pointer-based animation remain
-unsupported. Unsupported downloads remain available. REMESH, UV, RETEXTURE and
+results import through the [saved package path](#saved-model-package-import), and
+SPZ, `.splat` and Gaussian splat PLY results through
+[saved Gaussian splat import](#saved-gaussian-splat-import). Multiple scenes,
+external files and pointer-based animation remain unsupported. Unsupported downloads remain available. REMESH, UV, RETEXTURE and
 PARTS keep the default static-only preflight; RIG uses the bounded skin policy
 below. In-place edits and Film shots still accept only `model/gltf-binary`.
 
@@ -169,12 +170,14 @@ command therefore records Blender history itself, under the same conditions as
 [saved mesh edits](#native-undo-for-saved-mesh-edits): a desktop window, Global
 Undo enabled and at least two undo steps. The extension does not change
 preferences, and background application creates no desktop history.
-`import_snapshot` records both checkpoints for every saved model format. The
-first, **Before Scenario model import**, follows the snapshot preflight, the claim
-and destination revalidation, and precedes staging. It holds the latest scene,
-including changes no operator recorded. The second, **Scenario model import**,
-follows publication and staging scene removal. Neither contains the staging
-scene. One Undo removes only the new group and its data and keeps the user's
+`import_snapshot` records both checkpoints for every saved model format, and
+`import_splat` records the same two for saved splats. The first, **Before
+Scenario model import**, follows the snapshot preflight or worker splat
+preparation, the claim and destination revalidation, and precedes staging or the
+point build. It holds the latest scene, including changes no operator recorded.
+The second, **Scenario model import**, follows publication and staging scene
+removal. Neither contains the staging scene. One Undo removes only the new group
+and its data and keeps the user's
 earlier steps; Redo restores the group. Only the saved-result command records
 these checkpoints. A Film shot build imports its heroes through `apply_model`,
 which records none, so history never holds a partially built shot; the build
@@ -328,8 +331,10 @@ controls list one **Import <format> model (N)** button for the primary unit and
 **Import alternate: <format> (N)** for the others, in the classified order; N
 counts every saved file. MCP `job_status` reports every unit in `import_units`,
 with `importable`, `primary`, its members and roles, glTF candidate resources and
-`import_findings` for files left out. SPZ, `.splat` and other splat units are
-listed but not offered in this release. Nothing is imported automatically.
+`import_findings` for files left out. SPZ and `.splat` units are offered as
+splats, and a PLY unit is a mesh or splats depending on its bytes; both follow
+[saved Gaussian splat import](#saved-gaussian-splat-import). Nothing is imported
+automatically.
 
 The review captures the scene revision and cursor like the GLB command above. The
 dialog and MCP approval name the format, the saved files (for example
@@ -346,8 +351,9 @@ a private directory under the extension's user `model-import` folder:
   references are dropped and counted.
 - FBX must be binary and needs Blender's bundled FBX add-on; a disabled add-on
   stops before any file is written.
-- PLY must be a mesh by the same rule as worker splat preparation; Gaussian splat
-  PLY files stop with the saved file kept.
+- PLY reaches this step only after worker preparation found no splat data; the
+  snapshot applies the same `splat_ply` rule again, and a Gaussian splat PLY stops
+  here with the saved file kept.
 - Map and glTF image bytes must start like PNG, JPEG or WebP.
 
 A failure removes the snapshot and raises before the claim: the saved job, its
@@ -394,7 +400,86 @@ normal map through a Normal Map node at full strength or at a saved `-bm` value,
 external FBX textures, a disabled
 FBX add-on, splat PLY and SPZ refusal, changed bytes before the claim, windowless
 callers, rollback and every member in reuse claims. Provider package shapes still
-need live evidence; splat units wait for their point-cloud builder.
+need live evidence.
+
+## Saved Gaussian splat import
+
+SPZ, `.splat` and PLY import units are read by a worker before any claim. The
+review offers **Import splats: SPZ (N)** or **Import splats: .splat (N)**
+(**Import alternate splats: ...** when the unit is not primary); a PLY keeps
+**Import PLY model (N)** because only its bytes say whether it is a mesh. The
+approval captures the scene revision and cursor like the other model imports
+and adds two reviewed options: a point limit of 250,000, 500,000, 1,000,000
+(default) or 2,000,000, and the saved axes, `OPENGL` (right, up, back) or
+`OPENCV` (right, down, forward). The default axes are the file format's
+convention from [worker-side splat preparation](RESULT_TRANSFERS.md#worker-side-splat-preparation):
+`OPENGL` for SPZ and `OPENCV` for PLY and `.splat`. Providers can store worlds in
+other axes, so these defaults are not established by live visual evidence yet.
+Changing an option in the native dialog exchanges the approval for a new handle
+under the same scene, cursor and unit (`revise_model_application`); the old
+handle stops working. MCP prepares a new approval instead.
+
+Application queues `JobSession.prepare_model_import` in the single local-operation
+slot shared with local renders and Film media inspection; a busy slot rejects the
+import before any work, with the saved job unchanged and the approval consumed,
+so review the import again later. The worker verifies every
+receipt again and decodes the selected file while hashing it, with the approved
+options. A decoder rejection (for example SPZ v4, the pre-release v1 or a
+compressed PLY), a changed file or cancellation reaches the job row and MCP
+`error` as **Nothing was imported:** with the reason, before any claim. A PLY
+without splat data comes back without points and continues through the
+[mesh snapshot path](#saved-model-package-import). On the main thread,
+`apply_recovered_model` accepts only the preparation of the approved unit with
+exactly the approved options, claims it like other model imports (a reuse claim
+names the unit key) and calls [`splat_application.import_splat`](../scenario/blender/splat_application.py).
+
+The builder never reads files and never runs an importer. It creates a new mesh
+whose vertices are the kept splat centres, with `splat_color` (display-referred
+RGB and opacity), `splat_opacity` and `splat_radius` point attributes written from
+the decoded buffers. A new Geometry Nodes group, **Scenario Splat Points**, turns
+the vertices into points with Mesh to Points: the radius is `splat_radius`
+times a **Point scale** input (1.0), capped by a **Max radius** input that starts at
+the 99th percentile of an even sample of at most 10,000 radii, so rare huge splats
+cannot hide the cloud. Both inputs stay editable on the modifier. A new unlit
+material shows the colour through an Emission shader, after a 2.2 gamma that
+approximates the sRGB to linear conversion, mixed with Transparent by opacity.
+Mesh plus Geometry Nodes is used because `PointCloud.resize` is missing in
+Blender 5.0. Every datablock is new: an existing material named **Scenario Splat**
+or node group named **Scenario Splat Points** is never reused or changed.
+Publication reuses the model group: a new **Scenario Model** collection and root
+with the bottom center of the decoded bounds at the cursor, `scenario_asset` and
+`scenario_assets`, and `scenario_splat_points` and `scenario_splat_kept` counts.
+Selection, the active object and the timeline stay unchanged. A failure removes
+only new objects, collections, meshes, materials and node groups, then verifies
+those sets; incomplete cleanup is reported as uncertain, and receipt-only retry
+never builds the points again. In desktop Blender the import records the
+[native Undo steps](#native-undo-for-saved-model-imports) of a model import, so
+one Undo removes only the new group.
+
+This is a point-cloud approximation, not a Gaussian splat renderer: there are no
+rotations, anisotropic scales, view-dependent colour or sorted alpha blending,
+and each splat becomes one sphere. Denser files are thinned evenly. MCP
+`model_import.splat` reports `points_total`, `points_kept`, `step`, `axes` and
+`spz_extensions` until undo history changes, and the native job row shows
+**Shown as points: K of N splats**. When an SPZ header declares extensions, which
+can include a coordinate-system record that is not read, the row also says
+**This SPZ declares extensions; check its axes**.
+
+Installed tests decode synthetic SPZ v2 and v3, 3DGS PLY and `.splat` files on a
+worker thread and check point counts and thinning, both axis conventions, the
+bottom center at the cursor, activated colour, opacity and radius, the evaluated
+point cloud and its material, the radius cap and Point scale, fresh data beside an
+existing **Scenario Splat** material and node group, exact rollback, main-thread
+refusal on workers, a Cycles CPU render on every platform and an EEVEE render on
+macOS. Runtime journeys cover UI and MCP review, options, revision, a mesh PLY
+and a splat PLY in one job, SPZ v4 and changed-file refusals before any claim, a
+busy local slot, the extension notice, reuse claims, unchanged request, paid
+submission and download counts, and receipt-only retry. The installed suite
+passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Linux and Windows CI have
+not run these tests yet. In isolated macOS arm64 probes, a 1,000,000-record `.splat` decoded in about 0.3 s and its points were
+built in about 0.04 s on Blender 5.0.1, 5.1.2 and 5.2.1; one run each, not a
+guarantee. Provider files, default axes, viewport performance at 1,000,000 or
+more points and physical desktop review need live evidence.
 
 ## Captured source and verified saved-mesh command
 

@@ -302,8 +302,26 @@ MODEL_REVIEW = {
         "Keep clips at the file's frame rate; keep the scene timeline.",
     ),
     "obj": ("Leave out maps that were not saved with this job.",),
-    "ply": ("Import a PLY mesh; a Gaussian splat PLY stops before any change.",),
+    "ply": ("A PLY without splat data imports as a mesh.",),
+    "spz": ("Read SPZ versions 2 and 3; other versions stop unchanged.",),
 }
+# Formats a worker reads first, with reviewed point limits and saved axes.
+SPLAT_REVIEW_FORMATS = frozenset({"spz", "splat", "ply"})
+SPLAT_REVIEW = (
+    "Show splats as coloured points; Blender has no splat renderer.",
+    "Denser files are thinned evenly to the point limit.",
+    "Default axes follow the file format; check the result is upright.",
+)
+SPLAT_POINT_ITEMS = (
+    ("250000", "250,000", "Keep at most 250,000 evenly spaced points"),
+    ("500000", "500,000", "Keep at most 500,000 evenly spaced points"),
+    ("1000000", "1,000,000", "Keep at most 1,000,000 evenly spaced points"),
+    ("2000000", "2,000,000", "Keep at most 2,000,000 evenly spaced points"),
+)
+SPLAT_AXIS_ITEMS = (
+    ("OPENGL", "OpenGL: Y up", "Saved right, up, back; the SPZ format convention"),
+    ("OPENCV", "OpenCV: Y down", "Saved right, down, forward; the PLY and .splat convention"),
+)
 
 
 def unit_summary(unit):
@@ -337,6 +355,14 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     model_format: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     model_summary: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     is_primary: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_splat: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    splat_points: EnumProperty(
+        name="Points", items=SPLAT_POINT_ITEMS, default="1000000", options={"SKIP_SAVE"}
+    )
+    splat_axes: EnumProperty(
+        name="Saved axes", items=SPLAT_AXIS_ITEMS, default="OPENGL", options={"SKIP_SAVE"}
+    )
 
     def invoke(self, context, event):
         try:
@@ -356,10 +382,35 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             self.model_format = approval.unit.format.value
             self.model_summary = unit_summary(approval.unit)
             self.is_primary = approval.unit.primary
+            # The review shows the approval's own defaults for SPZ, PLY and .splat.
+            self.is_splat = approval.max_points is not None
+            if self.is_splat:
+                self.splat_points, self.splat_axes = str(approval.max_points), approval.axes
+            self.review_error = ""
         except Exception:
             self.report({"ERROR"}, "Could not prepare model import; inspect the saved result")
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=480)
+
+    def _sync_options(self):
+        """Exchange the approval for one with the shown splat options."""
+        approval = runtime.revise_model_application(
+            self.context_id,
+            self.application_id,
+            max_points=int(self.splat_points),
+            axes=self.splat_axes,
+        )
+        self.application_id = approval.identifier
+        self.review_error = ""
+
+    def check(self, context):
+        if not self.application_id or not self.is_splat:
+            return False
+        try:
+            self._sync_options()
+        except Exception:
+            self.review_error = "Destination or options changed; cancel and review again"
+        return True
 
     def draw(self, context):
         layout = self.layout
@@ -369,12 +420,24 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
         choice = "primary result" if self.is_primary else "alternate result"
         layout.label(text=f"Selected: {self.model_summary} ({choice})")
         position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
-        layout.label(text=f"Place model bottom at cursor: {position}")
-        layout.label(text="Import into a new group; pack its textures.")
+        splats_only = self.model_format in ("spz", "splat")
+        noun = "splats" if splats_only else "model"
+        layout.label(text=f"Place {noun} bottom at cursor: {position}")
+        if splats_only:
+            layout.label(text="Import into a new group with its own new material.")
+        else:
+            layout.label(text="Import into a new group; pack its textures.")
         layout.label(text="Keep existing objects and selection unchanged.")
         for line in MODEL_REVIEW.get(self.model_format, ()):
             layout.label(text=line)
+        if self.is_splat:
+            layout.prop(self, "splat_points")
+            layout.prop(self, "splat_axes")
+            for line in SPLAT_REVIEW:
+                layout.label(text=line)
         layout.label(text="Files are checked again first; a change stops the import.")
+        if self.review_error:
+            layout.label(text=self.review_error, icon="ERROR")
 
     def cancel(self, context):
         jobs = getattr(self, "_jobs", None)
@@ -383,8 +446,11 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def execute(self, context):
         try:
+            if self.is_splat:
+                self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except Exception:
+            self.cancel(context)
             self.report({"ERROR"}, "Model import was not started; review its destination again")
             return {"CANCELLED"}
         runtime.set_message("Verifying saved model for the approved scene and cursor")

@@ -56,7 +56,17 @@ NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
 # The Render Video first-frame review; ModelJobs projects its accepted assets.
 FIRST_FRAME_OPERATOR = "scenario.use_saved_first_frame"
 # Display names of the saved model formats `import_model` can offer.
-MODEL_FORMATS = {"glb": "GLB", "gltf": "glTF", "fbx": "FBX", "obj": "OBJ", "ply": "PLY"}
+MODEL_FORMATS = {
+    "glb": "GLB",
+    "gltf": "glTF",
+    "fbx": "FBX",
+    "obj": "OBJ",
+    "ply": "PLY",
+    "spz": "SPZ",
+    "splat": ".splat",
+}
+# Formats that are always Gaussian splats; a PLY can hold a mesh or splats.
+SPLAT_FORMATS = frozenset({"spz", "splat"})
 
 
 @dataclass(frozen=True, eq=False)
@@ -154,7 +164,10 @@ def _import_units(view, action, job):
         if key not in numbers or fmt not in MODEL_FORMATS:
             continue
         name = MODEL_FORMATS[fmt]
-        label = f"Import {name} model" if primary else f"Import alternate: {name}"
+        if fmt in SPLAT_FORMATS:
+            label = f"Import splats: {name}" if primary else f"Import alternate splats: {name}"
+        else:
+            label = f"Import {name} model" if primary else f"Import alternate: {name}"
         items.append(
             SavedJobAction(
                 f"{action}:{key}",
@@ -280,6 +293,9 @@ def describe(view, context_id, result_types, blockout_review=None):
         items.append(_status("reuse", "", "Reuse saved results", "FILE_REFRESH"))
     for action in actions:
         items.extend(_describe_action(action, view, job, result_types, blockout_review))
+    # Session-local notes about the last import, such as splat thinning.
+    for index, text in enumerate(meta.get("import_notices", ())):
+        items.append(_status(f"import_notice:{index}", "", text, "INFO"))
     if state in ("ready", "apply_failed"):
         items.append(
             _status("awaiting_review", "", "Downloaded result awaits application review", "INFO")

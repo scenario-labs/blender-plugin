@@ -262,3 +262,42 @@ def test_organization_tools_review_before_one_unrepeated_write():
         assert ast.literal_eval(found[name].args[2].args[1]) == ["context_id", "review_id"]
     status = found["asset_organization_status"].args[1].value
     assert "Never sends an organization write" in status
+
+
+def _module_constants(path):
+    tree = ast.parse((ROOT / path).read_text())
+    return {
+        node.targets[0].id: node.value
+        for node in tree.body
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name)
+    }
+
+
+def test_splat_options_match_the_reviewed_choices_everywhere():
+    from scenario.core.scene.splats import AXES, FORMAT_AXES
+
+    builder = _module_constants("scenario/blender/splat_application.py")
+    choices = ast.literal_eval(builder["POINT_CHOICES"])
+    axes = ast.literal_eval(builder["AXES"])
+    assert ast.literal_eval(builder["DEFAULT_POINTS"]) in choices
+    assert set(axes) == AXES
+    _, calls = specs("tools_scenario")
+    call = next(call for call in calls if call.args[0].value == "prepare_result_application")
+    schema = {
+        ast.literal_eval(key): ast.literal_eval(value)
+        for key, value in zip(call.args[2].args[0].keys, call.args[2].args[0].values, strict=True)
+    }
+    assert schema["splat_max_points"] == {"type": "integer", "enum": list(choices)}
+    assert schema["splat_axes"] == {"type": "string", "enum": list(axes)}
+    description = call.args[1].value
+    assert "1000000 (default)" in description
+    # The documented defaults are the decoder's format conventions.
+    assert FORMAT_AXES == {"spz": "OPENGL", "ply": "OPENCV", "splat": "OPENCV"}
+    assert "OPENGL for SPZ, OPENCV for PLY and .splat" in description
+    dialog = _module_constants("scenario/blender/job_recovery.py")
+    points = [int(item[0]) for item in ast.literal_eval(dialog["SPLAT_POINT_ITEMS"])]
+    assert points == list(choices)
+    assert [item[0] for item in ast.literal_eval(dialog["SPLAT_AXIS_ITEMS"])] == list(axes)
+    status = next(call for call in calls if call.args[0].value == "job_status").args[1].value
+    assert "importable (true for every listed format in this release)" in status
+    assert "spz_extensions" in status

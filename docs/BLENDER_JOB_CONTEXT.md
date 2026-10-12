@@ -1061,7 +1061,7 @@ kept.
 ## Explicit saved model application
 
 `prepare_model_application` captures one importable unit of the saved job (GLB,
-JSON glTF, FBX, OBJ with its MTL and maps, or mesh PLY), keyed by its primary
+JSON glTF, FBX, OBJ with its MTL and maps, PLY, SPZ or `.splat`), keyed by its primary
 file's asset ID, with the current scene revision and cursor location. `ModelJobs`
 classifies the saved manifest once per saved revision with
 [`classify_packages`](MESH_APPLICATION.md#saved-3d-package-classification) and
@@ -1080,8 +1080,25 @@ handles. Model status includes names of its retained imported objects, the
 `model_import` summary; names do not authorize replay or locate replacement
 targets after restart.
 
-See [model import](MESH_APPLICATION.md#explicit-saved-glb-import) and
-[package import](MESH_APPLICATION.md#saved-model-package-import) for formats,
+SPZ, `.splat` and PLY units also carry a reviewed point limit and saved axes in
+the approval; `revise_model_application` exchanges a native review for a new
+handle with other options and the same captured destination, cursor and unit.
+For these units `apply_saved_result` queues `JobSession.prepare_model_import`
+instead of verification, in the workers' single local-operation slot; a busy slot
+raises before anything is queued. Its `PreparedModelImport` completion carries the
+registered verification of every receipt and, for splats, the decoded snapshot.
+`drain` binds it to the job origin like a verification. `apply_recovered_model`
+accepts it only for the approved unit and exactly the approved options, claims
+it, and builds the point cloud with `splat_application.import_splat`; a PLY
+without splat data continues through the mesh snapshot path. A worker rejection
+or cancellation pauses delivery with **Nothing was imported** before any claim,
+and receipt-only retry never rebuilds points. The session summary adds the splat
+point counts, axes and SPZ extension flag, which the native row shows as status
+lines.
+
+See [model import](MESH_APPLICATION.md#explicit-saved-glb-import),
+[package import](MESH_APPLICATION.md#saved-model-package-import) and
+[splat import](MESH_APPLICATION.md#saved-gaussian-splat-import) for formats,
 allocation, placement, rollback and remaining edit-policy limits. In-place mesh
 edits and Film shots still use only `model/gltf-binary` results. Neither this
 approval nor the importer calls Scenario or submits generation.

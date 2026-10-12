@@ -158,12 +158,17 @@ establish live generation or full render-lane desktop acceptance.
   Snapshot copying and hashing are synchronous on the main thread. Provider
   package shapes, including whether glTF JSON is delivered at all, need live
   evidence (#65).
-- Saved Gaussian splats (SPZ v2/v3, 3DGS PLY and .splat) can be decoded off the
-  main thread, but no saved-job import control uses this yet (#65). SPZ v4 (ZSTD),
-  the pre-release v1 and compressed splat PLY files cannot be decoded; their files
-  are kept. SPZ extension records, including a declared coordinate system, are not
-  read; the snapshot only flags their presence. Splats will be shown as coloured
-  point clouds, not rendered as Gaussian splats.
+- Saved Gaussian splats (SPZ v2/v3, 3DGS PLY and .splat) import as a coloured
+  point cloud, not as rendered Gaussian splats: rotations, anisotropic scales,
+  view-dependent colour and sorted alpha blending are not reproduced, and files
+  denser than the reviewed point limit (at most 2,000,000) are thinned evenly.
+  SPZ v4 (ZSTD), the pre-release v1 and compressed splat PLY files cannot be
+  decoded; their files are kept. SPZ extension records, including a declared
+  coordinate system, are not read; the job row and MCP only flag their presence.
+  The default saved axes follow each file format's convention and still need live
+  visual evidence for provider worlds; choose the other axes in the review when a
+  result is not upright. Viewport performance at 1,000,000 or more points is not
+  established (#65).
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.

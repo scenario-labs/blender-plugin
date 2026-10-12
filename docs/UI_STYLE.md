@@ -635,15 +635,16 @@ in-place editing, other OS desktop behavior, release readiness or #263 resolutio
 Each importable unit of a saved job gets one control from the shared
 descriptors: **Import <format> model (N)** for the primary unit and
 **Import alternate: <format> (N)** for the others, in classified order, with
-GLB, glTF, FBX, OBJ or PLY as the format and N counting every saved file. A
-splat or unsupported model is not drawn. The 480 px review adds a **Selected**
+GLB, glTF, FBX, OBJ or PLY as the format and N counting every saved file. Splat
+units use their own labels (see [Saved splat review](#saved-splat-review)); an
+unsupported model is not drawn. The 480 px review adds a **Selected**
 line naming the saved files and whether they are the primary or an alternate
 result (for example `Selected: OBJ + MTL + 1 map (alternate result)`), then the
 cursor, the new group, packed textures and preserved selection. Format lines
 follow: GLB and glTF keep scene FPS and the timeline, FBX packs embedded textures,
 rejects external texture files and keeps the file's clip timing, OBJ leaves out
-maps that were not saved, and PLY imports meshes only. A last line says the files
-are checked again first. Every line stays within 66 characters, the longest line
+maps that were not saved, and PLY says a file without splat data imports as a
+mesh. A last line says the files are checked again first. Every line stays within 66 characters, the longest line
 the earlier 480 px desktop capture showed. Drawing only reads the prepared
 values; cancel discards the approval.
 
@@ -651,6 +652,38 @@ Installed native tests on macOS arm64 Blender 5.1.2 check the labels drawn for a
 job with a GLB alias and an OBJ package, the review lines, read-only drawing and
 cancel. Physical desktop evidence of this dialog, its fit at other sizes and DPI,
 and viewport interaction after a non-GLB import is pending.
+
+## Saved splat review
+
+SPZ and `.splat` units are drawn as **Import splats: SPZ (N)** or
+**Import splats: .splat (N)** for the primary unit and
+**Import alternate splats: <format> (N)** otherwise. A PLY keeps the model label,
+because only its bytes decide between a mesh and splats. The same 480 px review
+names the selected file and the cursor (**Place splats bottom at cursor** for SPZ
+and `.splat`), says the import makes a new group with its own new material, and
+for SPZ that versions other than 2 and 3 stop unchanged. SPZ, `.splat` and PLY
+reviews then draw two dropdowns, **Points** (250,000, 500,000, 1,000,000 or
+2,000,000) and **Saved axes** (**OpenGL: Y up** or **OpenCV: Y down**), and
+three lines: splats show as coloured points because Blender has no splat
+renderer, denser files are thinned evenly, and the default axes follow the file
+format so the result should be checked upright. Invoke sets the dropdowns from
+the prepared approval's defaults. Changing one calls `check()`, which exchanges
+the approval for a new handle with the same scene, cursor and unit; a changed
+destination shows an error line instead, and confirmation fails closed. Drawing
+only reads prepared values, every line stays within 66 characters, and cancel
+discards the current handle.
+
+After an import, the job row adds status lines from the session summary:
+**Shown as points: K of N splats** and, when an SPZ declares extensions,
+**This SPZ declares extensions; check its axes**. They disappear when undo
+history changes.
+
+Installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the
+labels, the review lines and dropdowns, read-only drawing, option revision under a new handle, the
+old handle's refusal, confirmation and cancel. Physical desktop evidence of the
+dropdowns, the dialog fit at other sizes and DPI, the post-import status lines,
+and viewport navigation after a 1,000,000-point import is pending and will be
+collected in an unlocked session.
 
 ## Saved panorama approval and restoration
 

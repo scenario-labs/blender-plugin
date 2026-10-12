@@ -191,8 +191,10 @@ another connection or project, or a route the current schema refuses keeps the
 choice and blocks the price with its reason. An ID that an earlier version saved
 in the base's model text field (such as **LoRA or Composition Model**) becomes the
 form's choice when it has none, so it is neither dropped silently nor sent
-unchecked; it gets the same checks and remove button, and the form is priced
-again, so a price error saved with the file gives way to the current reason.
+unchecked; it gets the same checks and remove button. Dropping any value an
+earlier version saved in an input the form no longer draws, such as the LoRA
+lists it drew as text, prices the form again, so a price error saved with the
+file gives way to the current reason.
 **Reload parameters** restores the job's LoRAs or composition that are still
 listed, never adds a strength the job did not send (the base's declared default
 applies, otherwise the price asks for one) and warns about the trained models it

@@ -30,8 +30,9 @@ import logging
 import os
 import stat
 import threading
+import time
 from collections import OrderedDict
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import bpy
@@ -62,6 +63,9 @@ TILE_LIMIT = 4
 ICON_LIMIT = 64
 BUSY_INTERVAL = 0.1
 IDLE_INTERVAL = 0.5
+# Seconds before a job whose preview request was refused, for example by a full
+# scheduler, is requested again; the last delay repeats.
+REQUEST_RETRY = (5.0, 10.0, 20.0, 40.0, 60.0)
 # Interface units of the sidebar that a status line under the tiles cannot use:
 # from the region's left edge to the text after the line's icon (panel and job
 # box) and from the job box's right content edge past the category tabs,
@@ -132,9 +136,17 @@ class _Target:
 
 @dataclass(frozen=True)
 class _Job:
+    """One shown job's previewed targets, or why its request was refused.
+
+    A refused request is made again at ``retry_at`` (monotonic seconds), after
+    ``attempts`` refusals in a row.
+    """
+
     revision: int
     targets: tuple
     message: str = ""
+    retry_at: float = field(default=0.0, compare=False)
+    attempts: int = field(default=0, compare=False)
 
 
 def _verified(preview, root):
@@ -267,11 +279,13 @@ class PreviewController:
     def _request(self, scheduler, store, views):
         changed = False
         jobs = {}
+        now = time.monotonic()
         for view in views:
             request_id, revision = view.local_id, view.meta["saved_revision"]
-            job = self._jobs.get(request_id)
-            if job is None or job.revision != revision:
-                job = _Job(revision, ())
+            previous = job = self._jobs.get(request_id)
+            refused = job is not None and job.revision == revision and job.message
+            if job is None or job.revision != revision or (refused and now >= job.retry_at):
+                message = ""
                 try:
                     record = store.get(request_id)
                     targets = () if record is None else _targets(record)
@@ -284,13 +298,18 @@ class PreviewController:
                     job = _Job(revision, targets)
                 except PreviewError as error:
                     # Sanitized scheduler refusals, such as too many pending previews.
-                    job = _Job(revision, (), str(error))
+                    message = str(error)
                 except (ResultError, ValueError):
                     job = _Job(revision, ())
                 except Exception:
                     _log.warning("Result preview request failed")
-                    job = _Job(revision, (), "Previews could not be requested")
-                changed = True
+                    message = "Previews could not be requested"
+                if message:
+                    # Ask again later: a refusal such as a full scheduler is transient.
+                    attempts = previous.attempts + 1 if refused else 1
+                    delay = REQUEST_RETRY[min(attempts, len(REQUEST_RETRY)) - 1]
+                    job = _Job(revision, (), message, now + delay, attempts)
+                changed |= job != previous
             jobs[request_id] = job
         changed |= jobs.keys() != self._jobs.keys()
         self._jobs = jobs
@@ -475,6 +494,8 @@ def _redraw():
 
 
 def _tick():
+    # Blender unregisters a timer that raises, and only enabling the extension
+    # registers this one: no failure may escape it.
     try:
         changed = controller.poll()
     except Exception:
@@ -482,7 +503,10 @@ def _tick():
         _log.warning("Result preview update failed")
         changed = False
     if changed:
-        _redraw()
+        try:
+            _redraw()
+        except Exception:
+            _log.warning("Result preview redraw failed")
     return controller.interval()
 
 

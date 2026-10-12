@@ -19,6 +19,7 @@ import threading
 import time
 import unittest
 import zlib
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, patch
@@ -684,6 +685,49 @@ class ResultPreviewTileTests(unittest.TestCase):
                 self.tiles.controller.retry(context, "request", "image")
             self.assertFalse(self.tiles.controller.poll())
             self.assertEqual(self.draw(view), [])
+
+    def test_a_refused_preview_request_is_made_again_later(self):
+        with online_access(False):
+            self.saved([("clip", "clip.mp4", "video/mp4", MP4)])
+            scheduler = self.runtime.state.job_session.result_previews
+            request = scheduler.request
+            refusal = self.previews.PreviewError(
+                "Too many result previews are pending; try again shortly"
+            )
+            calls, refusals = [], [refusal]
+
+            def full_then_open(*args, **kwargs):
+                calls.append(args)
+                if refusals:
+                    raise refusals.pop()
+                return request(*args, **kwargs)
+
+            controller = self.tiles.controller
+            with patch.object(scheduler, "request", side_effect=full_then_open):
+                controller.poll()
+                (note,) = controller.tiles["request"]
+                self.assertEqual((note.asset_id, note.message), ("", str(refusal)))
+                # Not due yet: the refusal is shown, not requested on every tick.
+                controller.poll()
+                self.assertEqual(len(calls), 1)
+                job = controller._jobs["request"]
+                self.assertEqual(job.attempts, 1)
+                self.assertAlmostEqual(
+                    job.retry_at - time.monotonic(), self.tiles.REQUEST_RETRY[0], delta=1.0
+                )
+                controller._jobs["request"] = replace(job, retry_at=0.0)
+                self.settle(lambda: self.status() == "offline")
+            self.assertEqual(len(calls), 2)
+        self.assertEqual(self.requests, [])
+
+    def test_a_failed_redraw_keeps_the_preview_timer_running(self):
+        controller = self.tiles.controller
+        with (
+            patch.object(controller, "poll", return_value=True),
+            patch.object(self.tiles, "_redraw", side_effect=RuntimeError("no screen")),
+            self.assertLogs("scenario", "WARNING"),
+        ):
+            self.assertEqual(self.tiles._tick(), controller.interval())
 
     def test_controller_belongs_to_the_main_thread(self):
         errors = []

@@ -227,12 +227,17 @@ safe to delete while no player reads them.
 
 [`result_previews`](../scenario/blender/result_previews.py) in the Blender layer
 is the scheduler's main-thread owner. Its own persistent timer runs every half
-second, or every tenth of a second while it has work, and never inside drawing:
+second, or every tenth of a second while it has work, and never inside drawing;
+a failed redraw is logged and does not stop it:
 
 - **Requests.** It takes the first twelve unfinished rows of Jobs and the first
   twelve rows Generations lists, whether or not those panels are open, and for
   each shared saved job whose results are downloaded (`ready`, `applying`,
-  `apply_failed` or `applied`) reads the saved record once per revision. It requests the still of at most four
+  `apply_failed` or `applied`) reads the saved record once per revision. A
+  request the scheduler refuses, for example when it already tracks its limit
+  of pending previews, shows the reason on the job and is made again after
+  5 s, then 10, 20, 40 and every 60 s while it is refused, rereading the
+  record each time. It requests the still of at most four
   downloaded results: video, audio, embedded models and base color or untagged
   images first, then other texture maps and OBJ models, each in saved order.
   It asks for stills only, so it never starts an audio envelope decode or

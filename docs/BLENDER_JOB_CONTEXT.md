@@ -558,7 +558,9 @@ is the scheduler's Blender-side owner for
 [automatic previews](RESULT_PREVIEWS.md#automatic-previews-in-blender). Its own
 persistent timer requests the still rendition of a few downloaded results for
 the first saved jobs that Jobs and Generations draw, reading each saved record
-once per revision; it never requests envelopes or clips. It answers
+once per revision, or again to repeat a request the scheduler refused after a
+delay growing from 5 s to a minute; it never requests envelopes or clips. A
+failed redraw is logged and does not stop the timer. It answers
 `decode_requests` one per tick, decoding the private copy inside
 `bpy.data.temp_data()` with the shared
 [temporary preview decode](architecture/blender.md#temporary-preview-decoding),

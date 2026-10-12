@@ -1687,8 +1687,10 @@ class ModelGenerationTests(unittest.TestCase):
                 ref.param_name, ref.source, ref.asset_id = "reference", "ASSET", "scene-snapshot"
                 ref[references.ROLE] = references.SCENE
             parameters = {}
+        # Other test classes borrow this helper without lane_model; only panorama needs it.
+        model_id = self.lane_model(lane) if lane == "panorama" else self.model["id"]
         deferred = self.tools.estimate_cost(
-            {"model_id": self.lane_model(lane), "parameters": parameters, "lane": lane}
+            {"model_id": model_id, "parameters": parameters, "lane": lane}
         )
         return deferred.finish(deferred.run())
 

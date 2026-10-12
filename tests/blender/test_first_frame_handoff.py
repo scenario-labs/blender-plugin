@@ -96,7 +96,6 @@ class FirstFrameHandoffTests(unittest.TestCase):
     deliver_results = model_tests.ModelGenerationTests.deliver_results
     configure_ui_lane = model_tests.ModelGenerationTests.configure_ui_lane
     mcp_quote = model_tests.ModelGenerationTests.mcp_quote
-    lane_model = model_tests.ModelGenerationTests.lane_model
     mcp_submit = model_tests.ModelGenerationTests.mcp_submit
     recovery_args = model_tests.ModelGenerationTests.recovery_args
 

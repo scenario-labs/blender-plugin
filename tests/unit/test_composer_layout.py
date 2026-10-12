@@ -663,6 +663,24 @@ def test_short_lane_labels_are_distinct_and_none_starts_another():
         assert len(cl.LANE_SHORT_LABELS[lane]) <= len(cl.LANE_LABELS[lane])
 
 
+def test_tabs_share_the_row_by_label_length_and_fill_it():
+    for scale in (1.0, 2.0, 4.0):
+        for width in (None, cl.MIN_CARD_WIDTH * scale):
+            layout = cl.pill_placement(
+                1800 * scale, 900 * scale, expanded=True, scale=scale, width=width
+            )
+            tabs = layout.tab_rects
+            # a long label gets more room than a short one
+            assert tabs["render_video"].w > tabs["material"].w > tabs["image"].w > tabs["3d"].w
+            for lane in cl.LANE_ORDER:
+                ratio = tabs[lane].w / tabs["image"].w
+                assert abs(ratio - cl.TAB_WEIGHTS[lane] / cl.TAB_WEIGHTS["image"]) < 1e-9
+            # the row still runs from the card's padding to the minus button, one gap apart
+            last = tabs[cl.LANE_ORDER[-1]]
+            assert abs(last.right + cl.ROW_GAP * scale - layout.collapse_rect.x) < 1e-6
+    assert set(cl.TAB_WEIGHTS) == set(cl.LANE_ORDER)
+
+
 def test_tab_label_keeps_the_full_label_when_it_fits():
     measure = _per_char(6.0)
     for lane in cl.LANE_ORDER:

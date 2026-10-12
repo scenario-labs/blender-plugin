@@ -34,6 +34,12 @@ LANE_SHORT_LABELS = {
     "panorama": "Env",
 }
 CHIP_TEXT_INSET = 12  # horizontal room a chip keeps around its label, in unscaled pixels
+# Tabs share their row in proportion to their full label's length plus this many characters, so a long
+# label gets more room than "3D". With seven tabs, equal cells would clip R-Img on the minimum card and
+# shorten Render Video on the default one; these widths keep every short label whole on the minimum card
+# and every full label on the default card.
+TAB_LABEL_PAD = 12
+TAB_WEIGHTS = {lane: len(LANE_LABELS[lane]) + TAB_LABEL_PAD for lane in LANE_ORDER}
 ELLIPSIS = "…"
 PLACEHOLDERS = {
     "image": "Describe the image to generate",
@@ -589,8 +595,10 @@ def pill_placement(
     # the minus button is a cell of the tab row: same height as the tabs, in the top-right corner
     collapse = Rect(card.right - pad - tab_h, tabs_y, tab_h, tab_h)
     tab_rects, tx = {}, x + pad
-    tab_w = (collapse.x - gap - (x + pad) - gap * (len(LANE_ORDER) - 1)) / len(LANE_ORDER)
+    tabs_w = collapse.x - gap - (x + pad) - gap * (len(LANE_ORDER) - 1)
+    weights = sum(TAB_WEIGHTS.values())
     for lane in LANE_ORDER:
+        tab_w = tabs_w * TAB_WEIGHTS[lane] / weights
         tab_rects[lane] = Rect(tx, tabs_y, tab_w, tab_h)
         tx += tab_w + gap
     row_h = 34 * s

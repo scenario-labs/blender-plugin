@@ -683,9 +683,10 @@ class ComposerSideRegionTests(unittest.TestCase):
         drawn = self._draw(closed, state, texts)
         card = layout.card_rect
         self.assertIn((card.x, card.y, card.w, card.h), drawn)
-        # glyphs 0.65 em wide at 48 px: the long labels give way to their short ones, none is clipped
+        # glyphs 0.65 em wide at 48 px: on the minimum card the long labels give way to their short ones,
+        # none is clipped
         shown = [label for label in texts if label in self._lane_labels()]
-        self.assertEqual(shown, ["Image", "Video", "3D", "Mat", "R-Img", "R-Vid"])
+        self.assertEqual(shown, ["Img", "Vid", "3D", "Mat", "R-Img", "R-Vid", "Env"])
         # the sidebar opens again: the pill once more, with the stored choice untouched
         self.assertFalse(self.modal._layout(opened, state).expanded)
         self.assertEqual((state.expanded, state.width), (True, 1680))

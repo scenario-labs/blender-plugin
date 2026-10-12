@@ -357,11 +357,17 @@ nothing.
   composer assumes it reopens at Blender's default width of 220 px times the UI
   scale; a sidebar widened before it was hidden can still leave less room than
   that, and the pill then stands in as usual.
+- The seven lane tabs share their row in proportion to their full labels' length
+  plus a fixed allowance, so Render Video gets more room than 3D. Equal cells
+  would clip R-Img on the minimum card and shorten Render Video on the default
+  one; with these widths the default card shows every full label and the minimum
+  card every short label whole.
 - A lane tab shows its full label when it fits the tab, otherwise a short one:
-  **Img**, **Vid**, **3D**, **Mat**, **R-Img**, **R-Vid**. Each tab decides from
-  the measured text width, so Image and Video can keep their full labels beside
-  R-Img. Only a short label that still does not fit is clipped with an ellipsis,
-  as a last resort and never below its first character, so a tab is never blank.
+  **Img**, **Vid**, **3D**, **Mat**, **R-Img**, **R-Vid**, **Env**. Each tab
+  decides from the measured text width, so Image and Video can keep their full
+  labels beside R-Img. Only a short label that still does not fit is clipped with
+  an ellipsis, as a last resort and never below its first character, so a tab is
+  never blank.
 - A saved or dragged offset keeps the whole pill or card inside the viewport,
   between any toolbar and sidebar: it stops at a bare viewport edge as it does
   at a side-region edge, so Generate and the minus button stay in view. The

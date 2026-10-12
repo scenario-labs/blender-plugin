@@ -714,7 +714,10 @@ represented by Blender's string enum identifiers. Only declared numeric choices
 accept these strings; other numeric settings still require JSON numbers.
 Inspection also lists `trained_models`: the LoRAs or composition chosen for the
 Render Image form in the native picker's Trained chip, each with its kind and
-rounded strength. The render quote and generation include them, and a choice
+the strength it sends: its own, rounded, or for a LoRA without one the base
+model's declared default; `null` for a composition, which applies its own
+strengths, and for a LoRA with no strength to send. The render quote and
+generation include them, and a choice
 that cannot run blocks preparation with its reason. A Render Image form whose
 model was never chosen takes the selected credentials and project's saved
 default when it is inspected, configured or quoted, as in the native form, or

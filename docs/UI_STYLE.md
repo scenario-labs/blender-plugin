@@ -217,11 +217,15 @@ returns it to the start the picker gives a newly chosen LoRA, rather than 0: the
 LoRA's own strength, otherwise 0.75, within the base's range; a base's declared
 default does not move it. Each LoRA keeps its own strength in form order, so
 removing one never shifts another's strength. When the base's description
-changes, the fields take its new range, but a strength outside it is kept and
-the price is blocked with the range until the user edits it; nothing changes
-silently. On a base that declares no range, including after the form switches to
+changes its range, the fields take the new range and the form is priced again,
+even after a background catalog refresh, but a strength outside the range is
+kept and the price is blocked with the range until the user edits it; nothing
+changes silently. On a base that declares no range, including after the form switches to
 one, each LoRA loses its field, as a LoRA chosen there gets none, and the form is
-priced again with what that base sends, described below.
+priced again with what that base sends, described below. Both apply as well to a
+LoRA that **Reload parameters** restored before the trained list named it. A
+refreshed description that changes anything else in the base's LoRA inputs, such
+as its declared default or the LoRA types it accepts, also prices the form again.
 
 A LoRA without a strength, such as an ID adopted from an earlier text field, gets
 a **Set strength** button when the base declares a range: the strength then starts

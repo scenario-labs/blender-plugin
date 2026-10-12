@@ -95,7 +95,10 @@ update callback, even with an unchanged value, and that update makes the scene's
 Seeding a new or replaced parameter with its schema default, correcting an enum
 value the schema no longer offers and restoring a model enum index therefore
 store raw values without callbacks. A seeded form re-arms its own price in its
-own scene, and a seeded model duration still drives the camera path. Removing an
+own scene, and a seeded model duration still drives the camera path. A refreshed
+base description that changes a form's LoRA strength range, or any other LoRA
+input its trained choice runs through, such as the declared default strength,
+re-arms that form's price the same way. Removing an
 obsolete parameter alone does not re-arm a price. A trained-model project default
 applied automatically to a form without an explicit choice
 ([project selection](#optional-project-selection)) follows the same rule: it

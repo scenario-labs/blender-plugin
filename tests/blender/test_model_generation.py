@@ -3548,7 +3548,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(
             buttons,
             {
-                "Import model (1)": "result-model",
+                "Import GLB model (1)": "result-model",
                 "Set panorama as World (3)": "result-panorama",
             },
         )

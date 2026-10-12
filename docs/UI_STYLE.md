@@ -664,8 +664,8 @@ distinction and session-local restore limit. The action's presence is a
 media-type offer that excludes results declaring a texture role; byte
 compatibility is checked during application, never in drawing. Drawing reads the
 saved-job projection's candidate list and numbers each button by the result's
-position among all results, like **Import model (N)**. Cancel discards the
-prepared handle.
+position among all results, like the model import buttons such as
+**Import GLB model (N)**. Cancel discards the prepared handle.
 
 After completed application, **Restore previous World** uses a separate prepared
 approval. It names the current scene/World and explains that edited owned data

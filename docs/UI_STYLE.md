@@ -820,25 +820,41 @@ Saved-job controls label a server-declared 360 result **360 panorama (LDR)**,
 **360 HDR environment (OpenEXR)** or **360 panorama and HDR environment**, keep
 **Set panorama as World (N)**, and offer **Make HDRI (N)** on settled jobs with a
 downloaded LDR panorama. Make HDRI only opens the HDRI form with that reference;
-it never prices, generates or changes a World. The floating composer shows an
-**Environment** tab that drives the Generate mode; choosing it selects that
-mode, and while the sidebar shows another Environment mode the composer drives
-Image. Its **Settings** chip commits focused text to the original form before
-the dialog opens, so a mode change there cannot retarget that text; a form that
-changed under the text refuses to open and keeps both texts. Make HDRI and Reload
+it never prices, generates or changes a World. A material map, such as a 3D
+package's PBR maps or a texture set, is never a World candidate, a Make HDRI
+source or a **Use saved panorama** choice. The floating composer shows an
+**Environment** tab (**Env** when its full label does not fit) that drives the
+Generate mode; choosing it selects that mode, and while the sidebar shows
+another Environment mode the composer drives Image. As on every tab, its
+**Settings** chip commits focused text to the original form before the dialog
+opens, so a mode change there cannot retarget that text; a form that changed
+under the text refuses to open and keeps both texts. Make HDRI and Reload
 relist the target mode's models even when the scene already shows that mode,
 because the list is shared by scenes. Mode, size and model changes happen in
-property callbacks or operators; drawing never writes.
+property callbacks or operators; drawing never writes. Contract values and the
+recorded model choice that a catalog load fills in are stored without RNA
+updates, like seeded schema defaults, so they keep captured origins current.
 
 Installed tests on macOS arm64 Blender 5.1.2 cover the appended tab values
 through a saved and reopened blend, mode model lists and price invalidation,
 contract values, read-only drawing of every mode, picker restriction, Quick
-settings, Reload, the composer tab, the panorama upload preflight, and a fake
-service quote, submission, saved result, restart, Make HDRI and World approval
-in a newly selected scene. Physical desktop evidence (mouse and keyboard on the
-tab and modes, composer text entry, small windows and other scales, viewport
-return after the dialogs) is pending and will be collected in an unlocked
-desktop session; no screenshot of the Environment form is claimed yet.
+settings, Reload, the composer tab, the panorama upload preflight, material
+maps kept out of every Environment and World control, and a fake service quote,
+submission, saved result, restart, Make HDRI and World approval in a newly
+selected scene.
+
+A physical desktop pass on macOS arm64 Blender 5.1.2 at UI scales 1 and 2 used
+the exact packaged ZIP of this lane before it was rebased onto the World
+candidate fix (#394), with free price quotes only. The tab, modes and mode lines
+in the sidebar and Studio, the mode-restricted dropdown and picker, the Flux,
+GPT and HDRI settings and result lines, the upscale factor cap message, World
+application of saved PNG, OpenEXR and JPEG panoramas, Restore previous World,
+reapplying after a Blender undo, Esc and viewport keys after each dialog, and
+the controls at scale 2 behaved as described here. That pass also found material
+maps offered as World panoramas; the rebased lane uses #394's World candidates,
+which an installed test checks, but the fix was not rechecked physically. Nor
+were the composer's label-sized tab row, a local file through **Upload
+reference** or From image beyond its quote. No screenshot is committed.
 
 ## Saved panorama approval and restoration
 

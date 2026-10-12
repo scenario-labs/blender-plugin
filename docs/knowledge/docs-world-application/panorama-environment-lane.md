@@ -10,15 +10,15 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-12",
     "base_revision": "4bd0061d73f6d049a86adac37119cc7a2c37741c",
-    "limits": "Reviewed that native and MCP Environment lane jobs stop at saved results without automatic image import or World replacement, that their projection results reach the existing World approval unchanged, that the World confirmation does not state the projection while native saved-job rows label server-declared 360 results and MCP job_status reports projection, and that the guide still lists storage policy, undo, seam and pole quality, desktop evidence and live generation as open. Installed native tests on macOS arm64 Blender 5.1.2 (exact dev ZIP, isolated profile) cover a native panorama job left unapplied, then applied only to a newly selected scene after approval with the first scene's World unchanged, and the restart label. No paid or live generation, returned output format, size or asset layout, seam, pole or HDR range quality, or Blender 5.0 and 5.2 run is established by this review.",
+    "limits": "Reviewed that native and MCP Environment lane jobs stop at saved results without automatic image import or World replacement, that their projection results reach the existing World approval unchanged, that the World confirmation does not state the projection while native saved-job rows label server-declared 360 results and MCP job_status reports projection, and that the guide still lists storage policy, undo, seam and pole quality, desktop evidence and live generation as open. Installed native tests on macOS arm64 Blender 5.1.2 (exact dev ZIP, isolated profile) cover a native panorama job left unapplied, then applied only to a newly selected scene after approval with the first scene's World unchanged, and the restart label. No paid or live generation, returned output format, size or asset layout, seam, pole or HDR range quality, or Blender 5.0 and 5.2 run is established by this review. Re-checked 2026-10-12 after restacking on main 4bd0061d (with #380): World candidates are #394's world_assets, which exclude material maps; the Environment label and Make HDRI never list a material map (installed test).",
     "sources": {
-      "docs/WORLD_APPLICATION.md": "641180189f11d77793f6a7ca2c35b15a999c7a6b87c4699bc3220c7e24085cfd",
-      "scenario/mcp/tools_scenario.py": "ddd3efd7b48378cec9c3bca01928ce1858cdabcf1d05bdbee086ed0b1d327b14",
-      "scenario/blender/model_jobs.py": "b5174cdf8a73fea86b633fb660a7d942b0fd0f2516e81ec7477e1be6bb956b6b",
+      "docs/WORLD_APPLICATION.md": "c8ae4e202ccb3a73a5c9e0637acc9f77944199d4e6fff8044871d48677019f07",
+      "scenario/mcp/tools_scenario.py": "b4c064d45fda6d1ea734115574830ef887b6c09cfbc448973b14b275e7069a26",
+      "scenario/blender/model_jobs.py": "4eeac905c9f752274d21fcd732d10fde0ffbba950d9c3ec90227ce5a39860f78",
       "scenario/core/scene/panorama_contract.py": "be4c2c949696ca82c18a1062c62ec252eec40d7d4e0e5d7fb2fe3064bab4e518",
-      "scenario/core/ui/saved_job_actions.py": "923ec72acee64754b948547f69d3b7f0b851c5c8d58a3156dc028e2131fa4756",
-      "tests/blender/test_model_generation.py": "7a259312ca4bdbbcf45f14b34985cb71bcd722da2d8546439d4a206704a05049",
-      "tests/blender/test_panorama_lane.py": "a556e269ab2ea9817ac51c92177d03e79b1cac826ee941cc88b4a61a99ce3172"
+      "scenario/core/ui/saved_job_actions.py": "54c0728285999c86ba5bb43eb57229ad97b755b66a2ab30441c2f168d59c0e93",
+      "tests/blender/test_model_generation.py": "f56f96f6b0727ca9f24c4104d0ed0ed0ab69034007f0febaf88439b365bd71ba",
+      "tests/blender/test_panorama_lane.py": "08c113297e5b45faf9f00e9edc4029792123504312259dff7b5449651c942147"
     }
   }
 }

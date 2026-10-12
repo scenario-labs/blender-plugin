@@ -149,8 +149,13 @@ class ComposerStateTests(unittest.TestCase):
         )
         with (
             patch.object(modal, "_layout") as layout,
+            patch.object(modal, "_geometry") as geometry,
             patch.object(modal, "bpy", SimpleNamespace(ops=ops)),
         ):
+            # Hit tests go through the composer and strip geometry; share the card layout with it.
+            geometry.return_value.layout = layout.return_value
+            geometry.return_value.hit = layout.return_value.hit
+            geometry.return_value.job = None
             layout.return_value.hit.return_value = ("settings",)
             result = modal.SCENARIO_OT_composer_modal.modal(operator, context, press)
             self.assertEqual(result, {"RUNNING_MODAL"})
@@ -172,8 +177,13 @@ class ComposerStateTests(unittest.TestCase):
         scenario.lane_state("panorama").prompt = "new sidebar value"
         with (
             patch.object(modal, "_layout") as layout,
+            patch.object(modal, "_geometry") as geometry,
             patch.object(modal, "bpy", SimpleNamespace(ops=ops)),
         ):
+            # Hit tests go through the composer and strip geometry; share the card layout with it.
+            geometry.return_value.layout = layout.return_value
+            geometry.return_value.hit = layout.return_value.hit
+            geometry.return_value.job = None
             layout.return_value.hit.return_value = ("settings",)
             result = modal.SCENARIO_OT_composer_modal.modal(operator, context, press)
         self.assertEqual(result, {"RUNNING_MODAL"})

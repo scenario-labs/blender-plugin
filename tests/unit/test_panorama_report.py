@@ -280,6 +280,9 @@ def test_report_requires_distinct_completed_runs_of_the_selected_scope(saved, tm
     runs, _ = saved
     with pytest.raises(report.ReportError, match="once"):
         measure(runs, ["text", "text"])
+    # Another spelling of the same run is the same run, refused before any is read.
+    with pytest.raises(report.ReportError, match="once"):
+        measure(runs, ["text", "hdri/../text"])
     with pytest.raises(model.SmokeError, match="selected credentials and project"):
         measure(runs, ["text"], settings=type(SETTINGS)(SETTINGS.credentials, "another"))
     assert runs.quote("pending", FLUX, "panorama", {"prompt": "a lake"}) == 0
@@ -289,6 +292,16 @@ def test_report_requires_distinct_completed_runs_of_the_selected_scope(saved, tm
     result.write_bytes(LDR + b"changed")
     with pytest.raises(model.SmokeError, match="could not be verified"):
         measure(runs, ["text"])
+
+
+def test_report_refuses_more_files_than_its_cap_before_reading_any(saved, monkeypatch):
+    runs, _ = saved
+    read = []
+    monkeypatch.setattr(report, "MAX_FILES", 1)
+    monkeypatch.setattr(model, "verified_bytes", lambda item, path: read.append(path))
+    with pytest.raises(report.ReportError, match="at most 1 panorama file") as error:
+        measure(runs, ["text", "hdri"])
+    assert error.value.code == 2 and read == []
 
 
 def test_main_writes_a_new_private_report_and_prints_counts_only(saved, monkeypatch, capsys):

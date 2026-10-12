@@ -267,14 +267,15 @@ def collect(run_dirs, settings):
     Returns ([(entry, bytes, container info)], skipped result count). Only
     results whose saved Scenario metadata declares an equirectangular
     projection are measured; their bytes are bound to the download receipts.
+    More than MAX_FILES of them are refused before any is read for measurement.
     """
     from scenario.core.scene import panorama_contract
     from scenario.core.scene.panorama import PanoramaError, inspect_panorama
     from tools import smoke_image as model
 
-    if len({Path(directory).absolute() for directory in run_dirs}) != len(run_dirs):
+    if len({Path(directory).resolve() for directory in run_dirs}) != len(run_dirs):
         raise ReportError("Name each run directory once", 2)
-    found, skipped = [], 0
+    projected, skipped = [], 0
     for run, directory in enumerate(run_dirs, 1):
         verified = model.saved_results(directory, settings)
         producer = verified.record.intent.target_id
@@ -284,33 +285,36 @@ def collect(run_dirs, settings):
             if item.asset.projection != "equirectangular":
                 skipped += 1
                 continue
-            data = model.verified_bytes(item, path)
-            try:
-                info = inspect_panorama(data)
-            except PanoramaError:
-                raise ReportError("A projected result is not a supported 2:1 panorama") from None
-            entry = {
-                "run": run,
-                "result": position,
-                # Contract models are public; other model IDs are not reported.
-                "model": producer if panorama_contract.contract_for(producer) else None,
-                "media_type": item.asset.media_type,
-                "source": item.asset.source,
-                "size": item.receipt.size,
-                "sha256": item.receipt.sha256,
-                "container": {
-                    "format": info.file_format,
-                    "width": info.width,
-                    "height": info.height,
-                    "openexr": info.hdr_capable,
-                    "chromaticities": info.chromaticities,
-                },
-            }
-            found.append((entry, data, info))
-    if not found:
+            projected.append((run, position, producer, item, path))
+            if len(projected) > MAX_FILES:
+                raise ReportError(f"Measure at most {MAX_FILES} panorama files per report", 2)
+    if not projected:
         raise ReportError("The runs hold no saved 360 panorama results to measure", 4)
-    if len(found) > MAX_FILES:
-        raise ReportError(f"Measure at most {MAX_FILES} panorama files per report", 2)
+    found = []
+    for run, position, producer, item, path in projected:
+        data = model.verified_bytes(item, path)
+        try:
+            info = inspect_panorama(data)
+        except PanoramaError:
+            raise ReportError("A projected result is not a supported 2:1 panorama") from None
+        entry = {
+            "run": run,
+            "result": position,
+            # Contract models are public; other model IDs are not reported.
+            "model": producer if panorama_contract.contract_for(producer) else None,
+            "media_type": item.asset.media_type,
+            "source": item.asset.source,
+            "size": item.receipt.size,
+            "sha256": item.receipt.sha256,
+            "container": {
+                "format": info.file_format,
+                "width": info.width,
+                "height": info.height,
+                "openexr": info.hdr_capable,
+                "chromaticities": info.chromaticities,
+            },
+        }
+        found.append((entry, data, info))
     return found, skipped
 
 

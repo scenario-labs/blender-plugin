@@ -235,6 +235,41 @@ class FilmControlsTests(unittest.TestCase):
                     )
                 )
 
+    def test_result_reload_never_aliases_a_catalog_lane_into_another_form(self):
+        # A catalog lane without a native form keeps its own rules; its asset kind
+        # must not reopen it in another lane's form, such as an ordinary Image job.
+        catalog = submodule("core.api.catalog")
+        records = submodule("core.jobs.records")
+        props = submodule("blender.props")
+        panels = submodule("blender.panels")
+        self.assertIn("panorama", catalog.LANE_KIND)
+        self.scene.scenario.lane = "video"
+        image = self.scene.scenario.lane_state("image")
+        image.model_key = "keep-image-model"
+        for lane, kind in catalog.LANE_KIND.items():
+            expected = lane if lane in props.GENERATION_LANES else None
+            with self.subTest(lane=lane, kind=kind):
+                record = records.JobRecord.new(lane=lane, kind=kind, model_id="fixture", body={})
+                self.assertEqual(self.generation.reload_lane(record), expected)
+                if expected is not None:
+                    continue
+                record.status = "success"
+                self.runtime.state.jobs_view.append(record)
+                layout = MagicMock()
+                panels.draw_result(layout, record)
+                self.assertFalse(
+                    any(
+                        call.args and call.args[0] == "scenario.reload_generation"
+                        for call in layout.mock_calls
+                    )
+                )
+                self.assertEqual(
+                    bpy.ops.scenario.reload_generation(local_id=record.local_id),
+                    {"CANCELLED"},
+                )
+                self.assertEqual(self.scene.scenario.lane, "video")
+                self.assertEqual(image.model_key, "keep-image-model")
+
     def test_automated_gui_probe_cannot_approve_through_native_or_mcp(self):
         item = self.quote()
         with patch.dict(os.environ, {"SCENARIO_GUI_PROBE": "1"}):

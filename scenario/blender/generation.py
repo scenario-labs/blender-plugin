@@ -11,6 +11,7 @@ import bpy
 
 from ..core.api.catalog import (
     DEFAULT_MODELS,
+    LANE_KIND,
     MULTIVIEW_HINTS,
     RENDER_LANES,
     edit3d_models,
@@ -33,11 +34,16 @@ _MODEL_FAILED = "Could not load this model: "
 
 
 def reload_lane(record):
-    """Return the recorded generation form, without guessing for Film or generic jobs."""
-    return next(
-        (lane for lane in (record.lane, record.kind) if lane in props.GENERATION_LANES),
-        None,
-    )
+    """Return the recorded generation form, without guessing for Film or generic jobs.
+
+    A catalog lane without a native form never falls back to its asset kind's
+    form, which would drop that lane's own rules; only generic jobs use the kind.
+    """
+    if record.lane in props.GENERATION_LANES:
+        return record.lane
+    if record.lane in LANE_KIND:
+        return None
+    return record.kind if record.kind in props.GENERATION_LANES else None
 
 
 def schema_for(model_id):

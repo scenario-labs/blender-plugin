@@ -214,8 +214,10 @@ that is not offered rather than drawing it disabled, and keep any approval in
 the operator's own dialog.
 
 **Reload parameters** is available only when a result records a supported
-generation lane or kind. Film tasks and generic jobs without that information
-keep their saved-result controls; they must not overwrite the Image form.
+generation lane, or a generic job records a supported kind. A catalog lane
+without a native form never falls back to its kind's form, which would drop
+that lane's rules. Film tasks and generic jobs without that information keep
+their saved-result controls; they must not overwrite the Image form.
 
 **Remove background** prepares the Image form and never submits directly. Its
 message tells users to upload the reference, review the price and choose

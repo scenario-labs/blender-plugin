@@ -340,8 +340,10 @@ and delivery boundaries; callers do not need a separate stale-RNA error branch.
 Dependency updates conservatively invalidate the affected scene's revisions;
 frame changes invalidate unconditionally in their own pre-change hook, regardless
 of whether the unevaluated depsgraph lists updates. Catalog loads fill and
-restore generation forms without RNA update callbacks, so they do not cause such
-an update; see [catalog delivery](architecture/runtime.md#active-sdk-catalog).
+restore generation forms without RNA update callbacks, and so does a trained-model
+project default applied automatically to a form without an explicit choice, so
+neither causes such an update; see [catalog delivery](architecture/runtime.md#active-sdk-catalog).
+Explicit selections, including a default's **Use**, and edits still invalidate.
 Undo/redo and file loading
 invalidate captured state too. The one exception is
 `JobSession.synchronizing(scenes)`, which a main-thread caller opens while it

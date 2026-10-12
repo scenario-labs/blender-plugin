@@ -553,9 +553,23 @@ def sync_bounds(lane_state):
     Called when the base's description is (re)loaded or the base changes. A
     strength outside a narrowed range is kept, not changed silently: the
     request then refuses it with the range until the user edits it.
+
+    A base that takes LoRAs but declares no range drops each control, as
+    write_slots gives none on that base: the LoRA then sends the base's declared
+    default, which the section shows, and the price is re-armed. A base not
+    described yet, or without LoRA inputs, changes nothing.
     """
     strength = base_strength(lane_state.model_id)
     if strength is None:
+        if base_slot(lane_state.model_id) is None:
+            return
+        dropped = False
+        for slot in lane_state.trained:
+            if slot.kind == catalog.TRAINED_LORA and slot.has_scale:
+                slot.has_scale = False  # a plain property: no update tags the scene
+                dropped = True
+        if dropped:
+            props.mark_estimate_dirty(lane_state)
         return
     for slot in lane_state.trained:
         if slot.kind != catalog.TRAINED_LORA or not slot.has_scale:

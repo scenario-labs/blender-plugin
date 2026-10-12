@@ -290,6 +290,50 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertEqual(round(slot.scale, 4), 1.2)
         self.assertEqual(self.body()["lorasScale"], [1.2])
 
+    def deliver_default_only(self, model_id, default):
+        """Deliver `model_id`'s description taking Flux LoRAs with a default strength, no range."""
+        record = copy.deepcopy(self.details[model_id])
+        for field in record["inputs"]:
+            if field["name"] == "loras":
+                field["modelTypes"] = ["flux.1-lora"]
+            elif field["name"] == "lorasScale":
+                field.pop("min"), field.pop("max")
+                field["default"] = default
+        self.details[model_id] = record
+        catalog = submodule("core.api.catalog")
+        self.generation.set_models([catalog.ModelRecord.from_api(record)], {}, mark_dirty=False)
+
+    def assert_sends_the_base_default(self, slot, default):
+        self.assertFalse(slot.has_scale)
+        root = self.section()
+        self.assertNotIn("scale", [name for name, _text in root.props()])
+        self.assertIn(
+            (f"Strength: the base model's default ({default:g})", "BLANK1"), root.labels()
+        )
+        self.assertEqual(root.ops("scenario.trained_set_strength"), [])
+        self.assertEqual(self.body()["lorasScale"], [default])
+
+    def test_a_kept_lora_drops_its_strength_field_on_a_base_without_a_range(self):
+        """As one chosen on that base: it shows and sends the default, never the former bounds."""
+        self.load_catalog()
+        self.open_trained()
+        self.pick(LORA_A, 1.5)
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.has_scale, slot.fmin, slot.fmax), (True, 0.0, 2.0))
+        self.deliver_default_only(ZIMAGE, 0.6)
+        self.lane.model_id = ZIMAGE  # its update runs on_model_changed, as the Model box does
+        self.assertEqual(self.lane.trained[0].model_id, LORA_A)
+        self.assert_sends_the_base_default(self.lane.trained[0], 0.6)
+
+    def test_a_description_dropping_its_range_reprices_the_default_it_sends(self):
+        self.load_catalog()
+        self.open_trained()
+        self.pick(LORA_A, 1.5)
+        self.lane.estimate_state = "READY"  # a price for the strength of 1.5
+        self.deliver_default_only(FLUX1, 0.7)  # a catalog refresh: no dirty intent of its own
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assert_sends_the_base_default(self.lane.trained[0], 0.7)
+
     def reset_scale(self, index):
         """What Blender's Reset to Default Value (Backspace over the field) does: assign
         the property's RNA default, which runs its update."""

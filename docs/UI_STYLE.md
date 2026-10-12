@@ -2093,9 +2093,10 @@ the preview lane, decoding only in the pump (a fitted icon with the stored
 colors, no image added to the open file, no dependency update and a captured
 origin still current), icons drawn in rows, Studio and the dialog with storage
 reads and requests refused, unavailable candidates and their explicit retry, a
-lost cached still fetched again once by itself and then by Retry previews, a
-still Blender could not decode checked and decoded again by Retry previews,
-stale, foreign and offline requests, released icons after a decision or
+candidate asset listed twice fetched once, a lost cached still fetched again
+once by itself and then by Retry previews, a still Blender could not decode
+checked and decoded again by Retry previews, an icon Blender could not fill
+released, stale, foreign and offline requests, released icons after a decision or
 connection change, and cached stills reused after a restart.
 Background Blender assigns no icon IDs, so drawn icons were recorded with a
 stand-in ID. Physical desktop evidence of the rows, previews and dialog (input,

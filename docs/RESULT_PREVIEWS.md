@@ -221,9 +221,10 @@ A workflow job waiting at an approval or selection step lists assets for a
 person to review: an approval's upstream result assets, or an asset selection's
 candidates, at most 50 per step ([waiting workflow steps](UI_STYLE.md#waiting-workflow-steps)).
 They are not downloaded results, so they have no receipt. **Load previews** asks
-`ModelJobs.review_assets` for the current step's asset IDs, bound like a decision
-to the context, saved revision and the step's `review_id`, then calls
-`ResultPreviewScheduler.request_review`. The coordinator's
+`ModelJobs.review_assets` for the current step's distinct asset IDs, bound like a
+decision to the context, saved revision and the step's `review_id`, then calls
+`ResultPreviewScheduler.request_review`. A selection that lists one asset as
+several candidates previews it once. The coordinator's
 `review_preview_targets` accepts 1 to 50 distinct IDs only for a saved
 `remote` workflow job with a known remote ID. Their entries are keyed apart
 from saved results, so the same asset ID never shares state, and the lane
@@ -257,7 +258,8 @@ automatic application bound to them
 ([origin lifetime](BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime)). At most
 two stills are decoded per pump tick, and none while a render job runs. The
 pixels fill an icon of a private `bpy.utils.previews` collection, so Blender's
-file-thumbnail cache is never written. At most 128 review assets are tracked;
+file-thumbnail cache is never written; an icon Blender refuses to fill is
+removed at once. At most 128 review assets are tracked;
 icons of a step that no longer waits are released, and retiring the job context
 releases them all. Drawing reads only that memory.
 

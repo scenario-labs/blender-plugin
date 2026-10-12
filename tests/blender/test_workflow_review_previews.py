@@ -359,6 +359,25 @@ class ReviewPreviewTests(unittest.TestCase):
         # The entry still verified, so nothing was fetched again.
         self.assertEqual(self.transfers(), transfers)
 
+    def test_an_icon_blender_could_not_fill_is_released(self):
+        local_id = self.paused(self.fixture.approval())
+        self.assertEqual(self.load(local_id, "check")[0], {"FINISHED"})
+        decode = submodule("blender.preview_decode")
+        # Decoding succeeds, but Blender refuses the pixels for the new icon.
+        with patch.object(decode, "decode", return_value=((2, 2), None)):
+            self.settled(local_id, "asset-render")
+        owner = self.owner()
+        value = owner.get(local_id, "asset-render")
+        self.assertEqual(
+            (value.state, value.reason), ("unavailable", "Blender could not decode this preview")
+        )
+        self.assertEqual((owner._icons, len(owner._collection)), ({}, 0))
+        # Retry decodes it again into the only icon of the collection.
+        self.assertEqual(self.load(local_id, "check", retry=True)[0], {"FINISHED"})
+        self.settled(local_id, "asset-render")
+        self.assertEqual(owner.get(local_id, "asset-render").state, "ready")
+        self.assertEqual(list(owner._collection), [owner._icons[(local_id, "asset-render")][1]])
+
     def test_unavailable_candidates_are_reported_and_retried_explicitly(self):
         local_id = self.paused(self.fixture.selection())
         self.assertEqual(self.load(local_id, "pick")[0], {"FINISHED"})
@@ -399,6 +418,28 @@ class ReviewPreviewTests(unittest.TestCase):
         self.assertEqual(len(self.fixture.bulk_reads), reads + 1)
         body = json.loads(self.fixture.bulk_reads[-1].content)
         self.assertEqual(body["assetIds"], ["asset-b", "asset-c"])
+        self.assertFalse(self.fixture.decisions)
+
+    def test_a_selection_listing_an_asset_twice_previews_it_once(self):
+        pick = {**self.fixture.selection(), "items": ["asset-a", "asset-render", "asset-a"]}
+        local_id = self.paused(pick)
+        result, operator = self.load(local_id, "pick")
+        self.assertEqual(result, {"FINISHED"}, operator.report.call_args)
+        self.settled(local_id, "asset-a", "asset-render")
+        owner = self.owner()
+        self.assertEqual(
+            [owner.get(local_id, asset).state for asset in ("asset-a", "asset-render")],
+            ["ready", "ready"],
+        )
+        # One read and one transfer per distinct asset.
+        self.assertEqual(
+            [json.loads(read.content)["assetIds"] for read in self.fixture.bulk_reads],
+            [["asset-a", "asset-render"]],
+        )
+        self.assertEqual(
+            sorted(url.rsplit("/", 1)[-1].split(".")[0] for url, _ in self.downloads),
+            ["asset-a", "asset-render"],
+        )
         self.assertFalse(self.fixture.decisions)
 
     def test_rows_and_dialog_draw_loaded_icons_without_any_request(self):

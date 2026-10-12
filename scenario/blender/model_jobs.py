@@ -994,11 +994,12 @@ class ModelJobs:
         return record, step
 
     def review_assets(self, request_id, expected_revision, node_id, review_id):
-        """Asset IDs one current waiting step lists for review, for its previews.
+        """Distinct asset IDs one current waiting step lists for review, for its previews.
 
         Bound like a decision to the saved revision and the step's `review_id`,
         but a command in flight, such as the automatic refresh, does not refuse
-        it: previews never send a decision. Reads the store and memory only.
+        it: previews never send a decision. A selection may list one asset as
+        several candidates; it is previewed once. Reads the store and memory only.
         """
         record = self.store.get(request_id)
         if (
@@ -1015,7 +1016,7 @@ class ModelJobs:
         )
         if step is None or not isinstance(review_id, str) or step.review_id != review_id:
             raise ScenarioError(0, "The workflow step changed; review it again")
-        return workflow_nodes.preview_assets(step)
+        return tuple(dict.fromkeys(workflow_nodes.preview_assets(step)))
 
     def read_steps(self, request_id):
         """Queue one retrieval of a saved workflow job's waiting steps; UI and MCP share it.

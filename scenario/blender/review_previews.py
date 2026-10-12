@@ -299,8 +299,13 @@ class ReviewPreviews:
         name = f"review-{self._serial}"
         self._serial += 1
         icon = self._collection.new(name)
-        icon.image_size = size
-        icon.image_pixels_float.foreach_set(pixels)
+        try:
+            icon.image_size = size
+            icon.image_pixels_float.foreach_set(pixels)
+        except BaseException:
+            # No tracked key names it yet, so only this removal releases it.
+            del self._collection[name]
+            raise
         return name, icon.icon_id
 
     def _release_icon(self, key):

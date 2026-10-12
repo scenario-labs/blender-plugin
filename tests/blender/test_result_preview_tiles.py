@@ -292,7 +292,9 @@ class ResultPreviewTileTests(unittest.TestCase):
             if status is not None and status.get("still").state == ready:
                 return status.get("still")
             time.sleep(0.01)
-        self.fail(f"The lane did not cache the still: {scheduler.status('request', 'image')}")
+        raise self.failureException(
+            f"The lane did not cache the still: {scheduler.status('request', 'image')}"
+        )
 
     def tile(self, request_id="request", index=0):
         tiles = self.tiles.controller.tiles.get(request_id, ())

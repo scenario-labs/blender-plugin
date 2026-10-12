@@ -16,7 +16,7 @@
       "scenario/mcp/tools_scenario.py": "b4c064d45fda6d1ea734115574830ef887b6c09cfbc448973b14b275e7069a26",
       "scenario/blender/model_jobs.py": "4eeac905c9f752274d21fcd732d10fde0ffbba950d9c3ec90227ce5a39860f78",
       "scenario/core/scene/panorama_contract.py": "be4c2c949696ca82c18a1062c62ec252eec40d7d4e0e5d7fb2fe3064bab4e518",
-      "scenario/core/ui/saved_job_actions.py": "54c0728285999c86ba5bb43eb57229ad97b755b66a2ab30441c2f168d59c0e93",
+      "scenario/core/ui/saved_job_actions.py": "ab85bf3e0c7dd17305d7d199daeb17dd6c8d81f7aedae5619cf42cd40a7f1d9f",
       "tests/blender/test_model_generation.py": "f56f96f6b0727ca9f24c4104d0ed0ed0ab69034007f0febaf88439b365bd71ba",
       "tests/blender/test_panorama_lane.py": "e1371f77d663b68ee782cf6e636ff8b66e32a80a19fb0bfad48931545203f8e8"
     }

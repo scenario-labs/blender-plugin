@@ -12,13 +12,13 @@ instead of keeping their own branches.
 A descriptor grants nothing. Its operator rechecks its context token and saved
 revision or review, and opens its own confirmation or destination review where
 one applies.
+Availability is expressed by presence: every offered operator descriptor is
+enabled. A descriptor without an operator is a status row, never a control.
 
 Results whose saved metadata declares a 360 projection add a label row and, for
 each downloaded LDR panorama, a **Make HDRI** form prefill. A prefill is not a
 saved-job action: it changes no saved job, quotes nothing and only opens the
 Environment form, so MCP lists no matching action.
-Availability is expressed by presence: every offered operator descriptor is
-enabled. A descriptor without an operator is a status row, never a control.
 
 A running workflow job also gets rows from its owner's in-memory step
 projection (`WorkflowSteps`): one review control per waiting step, the decision

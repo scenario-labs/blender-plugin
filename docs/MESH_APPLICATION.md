@@ -351,9 +351,11 @@ a private directory under the extension's user `model-import` folder:
   references are dropped and counted.
 - FBX must be binary and needs Blender's bundled FBX add-on; a disabled add-on
   stops before any file is written.
-- PLY reaches this step only after worker preparation found no splat data; the
-  snapshot applies the same `splat_ply` rule again, and a Gaussian splat PLY stops
-  here with the saved file kept.
+- PLY reaches this step after worker preparation found no splat data, or after
+  ordinary verification while the local-operation slot was busy; the snapshot
+  applies the same `splat_ply` rule again, and a Gaussian splat PLY stops here
+  with the saved file kept and a request to review the import again once the
+  local operation finishes.
 - Map and glTF image bytes must start like PNG, JPEG or WebP.
 
 A failure removes the snapshot and raises before the claim: the saved job, its
@@ -420,9 +422,14 @@ under the same scene, cursor and unit (`revise_model_application`); the old
 handle stops working. MCP prepares a new approval instead.
 
 Application queues `JobSession.prepare_model_import` in the single local-operation
-slot shared with local renders and Film media inspection; a busy slot rejects the
-import before any work, with the saved job unchanged and the approval consumed,
-so review the import again later. The worker verifies every
+slot shared with local renders and Film media inspection; a busy slot rejects an
+SPZ or `.splat` import before any work, with the saved job unchanged and the
+approval consumed, so review the import again later. The native dialog reports
+that reason. A PLY needs the slot only to decode splats: while it is busy, the
+PLY queues ordinary verification instead and imports through the mesh snapshot
+path when its verified header shows a mesh, while splat data stops with
+**Nothing was imported** before any claim and asks for a new review once the
+local operation finishes. The worker verifies every
 receipt again and decodes the selected file while hashing it, with the approved
 options. A decoder rejection (for example SPZ v4, the pre-release v1 or a
 compressed PLY), a changed file or cancellation reaches the job row and MCP
@@ -473,8 +480,9 @@ existing **Scenario Splat** material and node group, exact rollback, main-thread
 refusal on workers, a Cycles CPU render on every platform and an EEVEE render on
 macOS. Runtime journeys cover UI and MCP review, options, revision, a mesh PLY
 and a splat PLY in one job, SPZ v4 and changed-file refusals before any claim, a
-busy local slot, the extension notice, reuse claims, unchanged request, paid
-submission and download counts, and receipt-only retry. The installed suite
+busy local slot (refusing SPZ in MCP and the native dialog, importing a mesh PLY
+and stopping a splat PLY), the extension notice, reuse claims, unchanged request,
+paid submission and download counts, and receipt-only retry. The installed suite
 passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Linux and Windows CI have
 not run these tests yet. In isolated macOS arm64 probes, a 1,000,000-record `.splat` decoded in about 0.3 s and its points were
 built in about 0.04 s on Blender 5.0.1, 5.1.2 and 5.2.1; one run each, not a

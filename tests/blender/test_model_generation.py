@@ -3271,6 +3271,85 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.get(request_id), record)
         self.assertNotIn(request_id, owner._commands)
 
+    def hold_local_slot(self):
+        """Occupy the workers' single local-operation slot, like a local render."""
+        workers = self.runtime.state.model_jobs.session._workers
+        task = workers._enqueue_local(lambda *, cancel: cancel.wait(30))
+
+        def release():
+            workers.cancel_local(task)
+            task.result(5)
+
+        self.addCleanup(release)
+        return release
+
+    def test_busy_local_slot_keeps_mesh_ply_imports_and_stops_splat_ply_before_a_claim(self):
+        exports = self.package_exports()
+        rows = [(float(i), 0.0, 0.0, 1.0, 0.0, -1.0, 2.0, -3.0, -3.0, -3.0) for i in range(5)]
+        request_id = self.recovered_package(
+            {
+                "result-mesh": ("model/ply", exports["ply"].read_bytes(), {}),
+                "result-points": ("application/x-ply", splat_ply_bytes(rows), {}),
+            }
+        )
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        release = self.hold_local_slot()
+        # Only a splat decode needs the slot: a mesh PLY still imports.
+        status = self.finish_application(self.prepare_package(request_id, "result-mesh"))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertIsNone(status["model_import"]["splat"])
+        (mesh,) = status["objects"]
+        self.assertEqual(bpy.data.objects[mesh].type, "MESH")
+        record, objects = self.store.get(request_id), set(bpy.data.objects)
+        claims = status["local_applications"]
+        status = self.finish_application(self.prepare_package(request_id, "result-points"))
+        self.assertEqual(
+            status["error"],
+            "Nothing was imported: This PLY holds Gaussian splat data; wait for the current "
+            "local media operation to finish, then review the import again",
+        )
+        self.assertEqual(status["local_applications"], claims)
+        self.assertEqual((self.store.get(request_id), set(bpy.data.objects)), (record, objects))
+        release()
+        status = self.finish_application(self.prepare_package(request_id, "result-points"))
+        self.assertEqual(status["local_applications"][-1]["state"], "applied")
+        self.assertEqual(status["model_import"]["splat"]["points_total"], 5)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_native_splat_import_reports_why_it_did_not_start(self):
+        request_id = self.splat_job()
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-spz",
+            layout=MagicMock(),
+            report=MagicMock(),
+            splat_points="1000000",
+            splat_axes="OPENGL",
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        record, objects = self.store.get(request_id), set(bpy.data.objects)
+        self.hold_local_slot()
+        self.assertEqual(operator.execute(fake, context), {"CANCELLED"})
+        fake.report.assert_called_once_with(
+            {"ERROR"},
+            "Model import was not started: Wait for the current local media operation "
+            "to finish; review the import again",
+        )
+        self.assertNotIn(fake.application_id, owner._application_approvals)
+        self.assertNotIn(request_id, owner._commands)
+        self.assertEqual((self.store.get(request_id), set(bpy.data.objects)), (record, objects))
+
     def test_splat_receipt_retry_never_rebuilds_points(self):
         request_id = self.splat_job()
         approval = self.prepare_package(request_id, "result-spz")

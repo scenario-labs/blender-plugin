@@ -1085,8 +1085,11 @@ the approval; `revise_model_application` exchanges a native review for a new
 handle with other options and the same captured destination, cursor and unit.
 For these units `apply_saved_result` queues `JobSession.prepare_model_import`
 instead of verification, in the workers' single local-operation slot; a busy slot
-raises before anything is queued. Its `PreparedModelImport` completion carries the
-registered verification of every receipt and, for splats, the decoded snapshot.
+raises before anything is queued for SPZ and `.splat`, while a PLY then queues
+ordinary verification that `apply_recovered_model` accepts only for the mesh
+snapshot path, which refuses splat data before any claim. Its
+`PreparedModelImport` completion carries the registered verification of every
+receipt and, for splats, the decoded snapshot.
 `drain` binds it to the job origin like a verification. `apply_recovered_model`
 accepts it only for the approved unit and exactly the approved options, claims
 it, and builds the point cloud with `splat_application.import_splat`; a PLY

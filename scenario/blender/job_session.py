@@ -55,6 +55,7 @@ from .media_application import MediaApplicationError, apply_media
 from .mesh_result_application import MeshResultApplicationError, apply_saved_mesh
 from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import (
+    MESH_FORMATS,
     ModelApplicationError,
     import_plan,
     import_snapshot,
@@ -1381,8 +1382,9 @@ class JobSession:
         ModelPreflightError and leaves the saved job and the scene unchanged. An
         SPZ, .splat or PLY unit comes from `prepare_model_import` with exactly the
         approved `options`; decoded splats become a new point cloud, and a PLY
-        without splat data takes the mesh snapshot path. A reuse claim of a
-        completed job names every member read.
+        without splat data takes the mesh snapshot path. A PLY may also come from
+        `verify_results` when the local-operation slot was busy; it then imports
+        only as a mesh. A reuse claim of a completed job names every member read.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1404,9 +1406,17 @@ class JobSession:
         if unit is None or not importable(unit):
             raise OriginUnavailable("Select one importable saved model")
         # A worker-read unit needs the preparation of this exact file and options.
-        if worker_prepared(unit) != (prepared is not None) or (
-            prepared is not None and (prepared.asset_id != unit.key or prepared.options != options)
-        ):
+        # A PLY verified without it, while the local slot was busy, imports only
+        # through the mesh snapshot path, which refuses splat data.
+        if prepared is None:
+            accepted = unit.format in MESH_FORMATS
+        else:
+            accepted = (
+                worker_prepared(unit)
+                and prepared.asset_id == unit.key
+                and prepared.options == options
+            )
+        if not accepted:
             raise OriginUnavailable("Prepare the selected model with its approved options again")
         files = {
             item.asset.asset_id: (item, path)

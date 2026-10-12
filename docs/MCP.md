@@ -131,9 +131,12 @@ SPZ, `.splat` and PLY units also return `splat_options` with the approved
 choose them; the defaults are 1,000,000 points and the file format's convention,
 `OPENGL` for SPZ and `OPENCV` for PLY and `.splat`, which providers may not
 follow. To change an option, prepare again and show the new approval. Application
-first reads the file on a worker in the single local-operation slot, which a
-local render or Film media inspection can occupy: a decoder rejection, such as an
-SPZ v4 file, or a changed file stops with `Nothing was imported` before any claim.
+first reads the file on a worker in the single local-operation slot: a decoder
+rejection, such as an SPZ v4 file, or a changed file stops with
+`Nothing was imported` before any claim. While a local render or Film media
+inspection holds that slot, SPZ and `.splat` imports are refused before anything
+is queued, and a PLY is only verified: a mesh imports and splat data stops the
+same way.
 Splats become a new coloured point cloud, not a Gaussian splat render, and a PLY
 without splat data continues as a mesh. `model_import.splat` then reports
 `points_total`, `points_kept`, `step`, `axes` and `spz_extensions`; when

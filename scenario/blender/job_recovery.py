@@ -449,6 +449,13 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             if self.is_splat:
                 self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
+        except ScenarioError as error:
+            # A sanitized refusal, such as a busy local-operation slot, names its cause.
+            self.cancel(context)
+            self.report(
+                {"ERROR"}, f"Model import was not started: {_refusal(self.context_id, error)}"
+            )
+            return {"CANCELLED"}
         except Exception:
             self.cancel(context)
             self.report({"ERROR"}, "Model import was not started; review its destination again")
@@ -772,7 +779,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
 
 
 def _refusal(context_id, error):
-    """A first-frame refusal in native words; the facade's context reason names MCP steps."""
+    """A saved-result refusal in native words; the facade's context reason names MCP steps."""
     if context_id != runtime.state.job_context_id:
         return "The connection changed; inspect saved jobs again"
     return error.reason

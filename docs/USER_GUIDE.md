@@ -293,7 +293,11 @@ and **Max radius** inputs of the **Scenario Splat Points** modifier. After the
 import, the job shows how many points were kept, such as
 **Shown as points: 1,000,000 of 2,400,000 splats**, and warns when an SPZ
 declares extensions that may use other axes. SPZ version 4 files cannot be read
-yet; the job says **Nothing was imported** and keeps the file.
+yet; the job says **Nothing was imported** and keeps the file. Splats are read
+one file at a time, in the slot that **Render capture** and Film composition and
+review preparation also use: while one of those runs, an SPZ or `.splat` import
+says why it did not start and a splat PLY says **Nothing was imported**, so
+import again once it finishes. A mesh PLY still imports.
 
 This path accepts GLBs with one scene and embedded files, up to 256 MiB. It keeps
 rigs, skin weights, shape keys and node animation clips. The first clip is active;

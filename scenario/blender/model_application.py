@@ -10,7 +10,9 @@ references before any application claim, so a changed or unsupported package
 leaves the saved job unchanged; `import_snapshot` then imports that snapshot in
 a disposable scene, keeps only images packed from it and publishes new data.
 SPZ, .splat and PLY units are first read on a worker: splats are decoded there
-and shown by `splat_application`, and a mesh PLY returns here.
+and shown by `splat_application`, and a mesh PLY returns here. While the
+local-operation slot is busy, a PLY is only verified and imports here if it is
+a mesh.
 """
 
 import hashlib
@@ -627,10 +629,11 @@ def _snapshot_ply(unit, files, directory):
     except (ModelPackageError, splats.SplatError) as error:
         raise ModelPreflightError(str(error)) from None
     if kind != "mesh":
-        # Worker preparation routes a Gaussian splat PLY to the point-cloud builder.
+        # Worker preparation routes a Gaussian splat PLY to the point-cloud builder;
+        # a PLY reaches here unprepared only while the local-operation slot is busy.
         raise ModelPreflightError(
-            "This PLY holds Gaussian splat data, which imports as splat points; "
-            "the saved file is kept"
+            "This PLY holds Gaussian splat data; wait for the current local media "
+            "operation to finish, then review the import again"
         )
     return entry, unit.members, 0, True
 

@@ -669,9 +669,11 @@ renderer, denser files are thinned evenly, and the default axes follow the file
 format so the result should be checked upright. Invoke sets the dropdowns from
 the prepared approval's defaults. Changing one calls `check()`, which exchanges
 the approval for a new handle with the same scene, cursor and unit; a changed
-destination shows an error line instead, and confirmation fails closed. Drawing
-only reads prepared values, every line stays within 66 characters, and cancel
-discards the current handle.
+destination shows an error line instead, and confirmation fails closed. A
+refusal at confirmation, such as a busy local render, is reported with its
+reason after **Model import was not started:**. Drawing only reads prepared
+values, every line stays within 66 characters, and cancel discards the current
+handle.
 
 After an import, the job row adds status lines from the session summary:
 **Shown as points: K of N splats** and, when an SPZ declares extensions,
@@ -680,9 +682,10 @@ history changes.
 
 Installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the
 labels, the review lines and dropdowns, read-only drawing, option revision under a new handle, the
-old handle's refusal, confirmation and cancel. Physical desktop evidence of the
-dropdowns, the dialog fit at other sizes and DPI, the post-import status lines,
-and viewport navigation after a 1,000,000-point import is pending.
+old handle's refusal, confirmation, the busy-slot refusal reason and cancel.
+Physical desktop evidence of the dropdowns, the dialog fit at other sizes and
+DPI, the post-import status lines, and viewport navigation after a
+1,000,000-point import is pending.
 
 ## Saved panorama approval and restoration
 

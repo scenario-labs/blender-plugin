@@ -21,7 +21,7 @@ from ..core.jobs.records import JobRecord
 from ..core.jobs.results import ResultError
 from ..core.jobs.store import JobOrigin, JobState, LocalApplicationState, StoredJob, _identity
 from ..core.jobs.workers import WorkerError
-from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, model_format
+from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
@@ -1638,9 +1638,13 @@ class ModelJobs:
                     options=ticket.splat_options,
                 )
             except WorkerError as error:
-                # The sanitized reason, such as a busy local slot; nothing was queued.
-                raise ScenarioError(0, f"{error}; review the import again") from None
-        else:
+                if ticket.unit.format is not ModelFormat.PLY:
+                    # The sanitized reason, such as a busy local slot; nothing was queued.
+                    raise ScenarioError(0, f"{error}; review the import again") from None
+                # Only splats need the slot: this PLY verifies on the ordinary queue
+                # and imports if its verified header shows a mesh.
+                prepare = False
+        if not prepare:
             task = self.session.verify_results(request_id, expected_revision=record.revision)
         if is_world:
             self._world_destinations[request_id] = ticket

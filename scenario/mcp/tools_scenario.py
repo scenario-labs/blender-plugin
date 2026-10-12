@@ -50,6 +50,23 @@ SOURCES = ("catalog", "trained", "all")
 TRAINED_LIMIT = 40
 
 
+def _within_limit(rows):
+    """At most TRAINED_LIMIT rows in listing order, always keeping those the default uses.
+
+    A default names at most MAX_PICKS models, so its rows always fit; a cut
+    never hides which listed models the lane's saved default runs.
+    """
+    room = TRAINED_LIMIT - sum(1 for row in rows if row.get("default"))
+    kept = []
+    for row in rows:
+        if row.get("default"):
+            kept.append(row)
+        elif room > 0:
+            kept.append(row)
+            room -= 1
+    return kept
+
+
 def _trained_listing(lane, query):
     """The picker's Trained chip rows for `lane`, with routes, availability and default marks.
 
@@ -86,7 +103,7 @@ def _trained_listing(lane, query):
         "pending": bool(scan.get("pending")),
         "error": scan.get("error", ""),
     }
-    result = {"trained": rows[:TRAINED_LIMIT], "bases": bases}
+    result = {"trained": _within_limit(rows), "bases": bases}
     if bases["pending"]:
         result["note"] = "base model descriptions are still being checked; call again for routes"
     return result
@@ -3561,7 +3578,7 @@ SPECS = (
             "  - lane: optional string, default image; image, video, 3d, material, audio, render_image, render_video, edit3d or panorama.\n"
             "  - query: optional string, substring of the model name, description or id.\n"
             "  - source: optional string, catalog (default), trained or all. trained and all need lane image or render_image.\n"
-            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes. Lane panorama (Environment) lists only models with a verified 360 panorama contract; each entry adds contract with mode (GENERATE, FROM_IMAGE, HDRI or UPSCALE), output (ldr or hdr), description, references (parameter, kind still or panorama, required, max), sizes, locked, defaults and factor_parameter. trained and all also return trained[] (at most 40, available first) with id, name, kind (lora or composition, or unsupported), type, private, available, reason when unavailable, routes[] (route stack or composition, model_id and name of the base model to run it with, model_input, and for stack scale_input, scale_range, scale_step, default_scale, min_items and max_items), concepts for a composition and default when the lane's saved default uses it; bases reports checked/total/pending/error of base description reads and note asks to call again while they run.\n"
+            "Returns: lane, models[] with id, name, description, capabilities and capability_status (empty, or the experimental note the picker shows). Retry after catalog loading completes. Lane panorama (Environment) lists only models with a verified 360 panorama contract; each entry adds contract with mode (GENERATE, FROM_IMAGE, HDRI or UPSCALE), output (ldr or hdr), description, references (parameter, kind still or panorama, required, max), sizes, locked, defaults and factor_parameter. trained and all also return trained[] (at most 40, available first, always including the rows the lane's saved default uses) with id, name, kind (lora or composition, or unsupported), type, private, available, reason when unavailable, routes[] (route stack or composition, model_id and name of the base model to run it with, model_input, and for stack scale_input, scale_range, scale_step, default_scale, min_items and max_items), concepts for a composition and default when the lane's saved default uses it; bases reports checked/total/pending/error of base description reads and note asks to call again while they run.\n"
             'Example: {"lane": "image", "source": "trained"}.\n'
             "Prefer model_schema before choosing generation parameters; this is not the full platform catalog. A trained model runs only through a listed base: pass that base as model_id with the LoRA IDs and one strength each in its model_input/scale_input (or the composition in its model_input) to estimate_cost. Trained listing reads the selected credentials and project's trained list and base model descriptions, like the picker's Trained chip; it never trains or spends.\n"
             "Platform equivalent: models_list, recommend."

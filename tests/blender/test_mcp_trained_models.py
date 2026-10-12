@@ -634,6 +634,29 @@ class McpTrainedModelTests(unittest.TestCase):
         )
         self.assertEqual(render.model_id, FLUX1)
 
+    def test_a_listing_cut_to_its_limit_keeps_the_rows_the_default_uses(self):
+        self.load_catalog()
+        self.open_trained()
+        context = self.tools.model_defaults({"lane": "image"})["context_id"]
+        self.tools.model_defaults(
+            {
+                "action": "set",
+                "lane": "image",
+                "context_id": context,
+                "expected_revision": 0,
+                "base_model_id": FLUX1,
+                "picks": [{"model_id": COMPOSITION}],
+            }
+        )
+        # The composition is the third row; a cut to two still shows the default.
+        self.addCleanup(setattr, self.tools, "TRAINED_LIMIT", self.tools.TRAINED_LIMIT)
+        self.tools.TRAINED_LIMIT = 2
+        listed = self.tools.list_models({"lane": "image", "source": "trained"})["trained"]
+        self.assertEqual(
+            [(row["id"], row.get("default", False)) for row in listed],
+            [(STUDIO_LORA, False), (COMPOSITION, True)],
+        )
+
     # -- render_form ------------------------------------------------------------------
     def test_render_form_sets_the_render_image_choice_with_the_pickers_rules(self):
         self.load_catalog()

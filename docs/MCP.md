@@ -675,7 +675,8 @@ same rows to the catalog listing; other lanes refuse both sources. Each row has
 name each base model that runs it and the inputs that carry it: `model_input`,
 plus `scale_input`, `scale_range`, `scale_step`, `default_scale`, `min_items` and
 `max_items` for a LoRA stack. A composition also lists its `concepts`. Rows and
-routes that the lane's saved default uses are marked `default`. Private plain
+routes that the lane's saved default uses are marked `default`. A call returns at
+most 40 rows and always keeps those the saved default uses. Private plain
 custom models are not listed, as in the picker. `model_schema` reports the same
 inputs as `lora_component`; its parameters carry `model_types`,
 `min_items`/`max_items` and a `role` (`lora_models`, `lora_strengths` or

@@ -301,6 +301,9 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         runtime.state.composer_modal_running = False
         state = runtime.state.composer
         if state is not None:
+            # A drag, or the pointer resting on the resize corner, may have set the window's cursor. The next
+            # session starts with no hover and would never restore it: give the window its own cursor back.
+            restore_cursor = state.drag_mode is not None or state.hover == ("resize",)
             # the next session starts over: no double-click, no composition run with a press from this one
             state.presses.reset()
             state.untyped_press = False
@@ -308,6 +311,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             state.dragging = False
             if state.drag_mode is not None:
                 state.cancel_drag()
+            if restore_cursor:
                 _cursor(context, None)
         _redraw(context)
         return {"FINISHED"}

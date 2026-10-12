@@ -1390,6 +1390,58 @@ class ComposerSideRegionTests(unittest.TestCase):
                     operator.report.assert_not_called()
                 self.assertEqual(self.scene_prompt(), "hello world")
 
+    def test_an_ended_session_restores_the_resize_cursor(self):
+        # The pointer resting on the resize corner, before any press, shows a resize cursor. A session ended
+        # there by an error or by Blender gives the window its own cursor back: the next session starts with no
+        # hover, so its pointer moves would never restore it.
+        failure = ValueError("simulated failure")
+        for end in ("error", "cancel"):
+            with self.subTest(end=end):
+                ctx, state, layout = self._session()
+                ctx.window = self._cursor_window()
+                corner = self._centre(layout.resize_rect)
+                prompt = self._centre(layout.prompt_rect)
+                self.assertEqual(layout.hit(*corner), ("resize",))
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.runtime.state, "composer_modal_running", False),
+                ):
+                    operator = self._operator()
+                    self.assertEqual(self._invoke(operator, ctx, corner), {"RUNNING_MODAL"})
+                    self.assertEqual(
+                        self._event(operator, ctx, "MOUSEMOVE", "NOTHING", corner), {"PASS_THROUGH"}
+                    )
+                    self.assertEqual(ctx.window.cursor, "MOVE_X")
+                    self.assertIsNone(state.drag_mode)  # a hover, not a resize
+                    if end == "cancel":  # a closed window or a loaded file
+                        self.modal.SCENARIO_OT_composer_modal.cancel(operator, ctx)
+                    else:  # an error while laying out the next pointer move
+                        with (
+                            mock.patch.object(self.modal, "_layout", side_effect=failure),
+                            self.assertRaises(ValueError),
+                        ):
+                            self._event(operator, ctx, "MOUSEMOVE", "NOTHING", corner)
+                    self.assertFalse(self.runtime.state.composer_modal_running)
+                    self.assertIsNone(state.hover)
+                    self.assertIsNone(ctx.window.cursor)
+                    # the next session shows the resize cursor only on the corner again
+                    self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+                    self._event(operator, ctx, "MOUSEMOVE", "NOTHING", prompt)
+                    self.assertIsNone(ctx.window.cursor)
+                    self._event(operator, ctx, "MOUSEMOVE", "NOTHING", corner)
+                    self.assertEqual(ctx.window.cursor, "MOVE_X")
+                    self._event(operator, ctx, "MOUSEMOVE", "NOTHING", prompt)
+                    self.assertIsNone(ctx.window.cursor)
+                    operator.report.assert_not_called()
+
+    @staticmethod
+    def _cursor_window():
+        """A window showing the modal cursor last set, or its own (None) once restored, as Blender's does."""
+        window = SimpleNamespace(cursor=None)
+        window.cursor_modal_set = lambda name: setattr(window, "cursor", name)
+        window.cursor_modal_restore = lambda: setattr(window, "cursor", None)
+        return window
+
     @staticmethod
     def scene_prompt():
         return bpy.context.scene.scenario.lane_state("image").prompt

@@ -495,6 +495,18 @@ class McpTrainedModelTests(unittest.TestCase):
         self.assertEqual(params["modelId"]["model_types"], ["flux.1-lora", "flux.1-composition"])
         self.assertNotIn("role", params["prompt"])
         self.assertNotIn("model_types", params["prompt"])
+        # A count bound that is not a finite number is left out instead of failing the call.
+        described = self.runtime.state.records[FLUX1]
+        scale = next(raw for raw in described.parameters if raw.get("name") == "lorasScale")
+        for name, value in (("maxLength", float("inf")), ("minLength", float("nan"))):
+            scale[name] = value
+            params = {
+                item["name"]: item
+                for item in self.tools.model_schema({"model_id": FLUX1})["parameters"]
+            }
+            self.assertNotIn("min_items", params["lorasScale"], name)
+            self.assertNotIn("max_items", params["lorasScale"], name)
+            self.assertEqual(params["loras"]["max_items"], 6, name)
         zimage = self.tools.model_schema({"model_id": ZIMAGE})["lora_component"]
         self.assertEqual(
             zimage["model_types"], ["zimage-lora", "zimage-turbo-lora", "zimage-de-turbo-lora"]

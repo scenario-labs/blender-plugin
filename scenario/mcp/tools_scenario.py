@@ -163,8 +163,11 @@ LORA_ROLES = (
 
 
 def _item_count(raw, *names):
+    """A declared array count as an int, or None when it is not a finite whole number >= 0."""
     value = next((raw.get(name) for name in names if raw.get(name) is not None), None)
-    if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    if not math.isfinite(value) or value < 0:
         return None
     return int(value) if value == int(value) else None
 

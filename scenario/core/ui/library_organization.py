@@ -56,6 +56,12 @@ REVIEWS_FULL = (
     "Too many organization reviews are open, including a connected agent's. Retry after "
     "they are applied or discarded; unapplied reviews expire after 10 minutes"
 )
+# The shared owner applies one change at a time. Library's own applying card
+# blocks Organize, so another applying review is a connected agent's.
+AGENT_APPLYING = (
+    "A connected agent's organization change is being applied. Apply this review "
+    "after it finishes; nothing has been sent"
+)
 
 
 def clip(text, width=WIDTH):
@@ -248,8 +254,12 @@ def _asset_change(payload, row):
     return now, "No change"
 
 
-def review_lines(payload, *, names=None, width=WIDTH):
-    """(text, icon) lines for a review card, each at most ``width`` characters."""
+def review_lines(payload, *, names=None, width=WIDTH, agent_applying=False):
+    """(text, icon) lines for a review card, each at most ``width`` characters.
+
+    ``agent_applying`` adds a wait line to a ready card while another caller's
+    change holds the shared owner's single apply.
+    """
     names = names or {}
     lines = []
     phase = payload.get("phase", "UNAVAILABLE")
@@ -277,6 +287,8 @@ def review_lines(payload, *, names=None, width=WIDTH):
             minutes = max(1, -(-int(expires) // 60))
             _wrapped(lines, f"This review expires in {minutes} min", "TIME", width)
         _wrapped(lines, NOTICE, "INFO", width)
+        if agent_applying:
+            _wrapped(lines, AGENT_APPLYING, "TIME", width)
     elif phase == "APPLYING":
         _wrapped(
             lines,

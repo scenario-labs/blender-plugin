@@ -258,6 +258,21 @@ def test_ready_membership_card_shows_current_and_resulting_state(service):
     assert "Change: remove from the collection" in shown
 
 
+def test_ready_card_names_a_connected_agent_change_that_is_applying(service):
+    payload = review(service, "update_tags", asset_ids=["asset-a"], add_tags=["x"])
+    wanted = " ".join(organizing.AGENT_APPLYING.split())
+    assert wanted not in " ".join(joined(organizing.review_lines(payload)).split())
+    lines = organizing.review_lines(payload, agent_applying=True)
+    assert wanted in " ".join(joined(lines).split())
+    assert "nothing has been sent" in organizing.AGENT_APPLYING
+    assert "TIME" in [icon for text, icon in lines if "connected agent" in text]
+    assert_bounded(lines)
+    # Only a ready card waits for the shared owner's single apply.
+    finished = review(service, "update_tags", asset_ids=["asset-a"], add_tags=["y"], apply=True)
+    shown = joined(organizing.review_lines(finished, agent_applying=True))
+    assert "connected agent" not in shown
+
+
 def test_ready_tag_card_lists_only_the_differences(service):
     payload = review(
         service,

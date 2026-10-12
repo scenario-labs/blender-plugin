@@ -783,8 +783,10 @@ from Scenario, and a row that left the browsed collection is marked for refresh
 rather than removed. A verified new collection joins the loaded list, even when
 200 are already loaded. A page or collection read still running when the
 read-back arrives may list the state before the write, so its result takes the
-read-back once more. Retirement on a credential, Project ID or file change
-drops the view with the session and its reviews. See
+read-back once more. The owner applies one review at a time; a ready card says
+when an agent's change holds it, and Apply then refuses with that reason.
+Retirement on a credential, Project ID or file change drops the view with the
+session and its reviews. See
 [the UI contract](../UI_STYLE.md#library-organization); physical desktop and live
 acceptance remain pending.
 

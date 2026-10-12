@@ -367,6 +367,14 @@ class LibraryView:
     def applying(self):
         return self.review is not None and self.review.get("phase") == Phase.APPLYING.value
 
+    def agent_applying(self):
+        """Whether a ready card waits for another caller's change; read-only for drawing."""
+        return (
+            self.review is not None
+            and self.review.get("phase") == Phase.READY.value
+            and self.session.asset_organization.reviews.applying
+        )
+
     def organize_block(self):
         """Why Organize is unavailable for this page, or "" when it is offered."""
         if not self.current():
@@ -428,7 +436,11 @@ class LibraryView:
             or self.review.get("phase") != Phase.READY.value
         ):
             raise ValueError("Apply only the ready review shown in Library, once")
-        self.session.asset_organization.apply(review_id)
+        try:
+            self.session.asset_organization.apply(review_id)
+        except OrganizationBusy as error:
+            # This card is READY, so the change holding the single apply is an agent's.
+            raise ValueError(organizing.AGENT_APPLYING) from error
         self._sync_review()
 
     def dismiss_review(self, review_id):
@@ -821,7 +833,10 @@ def _draw_review(layout, owner):
     box.label(text="Organization review", icon="OUTLINER_COLLECTION")
     if owner.review_label:
         box.label(text="Asset: " + organizing.clip(owner.review_label, 40))
-    for text, icon in organizing.review_lines(review, names=owner.collection_names()):
+    lines = organizing.review_lines(
+        review, names=owner.collection_names(), agent_applying=owner.agent_applying()
+    )
+    for text, icon in lines:
         box.label(text=text, icon=icon)
     actions = organizing.card_actions(review.get("phase"))
     if not actions:

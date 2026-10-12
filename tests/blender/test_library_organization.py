@@ -958,3 +958,47 @@ class LibraryOrganizationTests(unittest.TestCase):
             [row["collection_id"] for row in self.owner.collections],
             ["props", "sets", "hero", "created-1"],
         )
+
+    def test_apply_while_an_agent_change_applies_names_the_cause_and_sends_nothing(self):
+        self.refresh()
+        self.organize("asset-b", action="ADD_TAGS", tags="x")
+        card = self.owner.review_id
+        owner = self.session.asset_organization
+        agent = owner.prepare("update_tags", asset_ids=["asset-a"], add_tags=["agent"])
+        self.settle()
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def hold(request):
+            if request.url.path == "/v1/assets/asset-a/tags":
+                entered.set()
+                if not release.wait(5):
+                    raise AssertionError("Test did not release the write")
+
+        self.service.gate = hold
+        # The shared owner applies one change at a time, here a connected agent's.
+        self.assertEqual(owner.apply(agent)["phase"], "APPLYING")
+        self.assertTrue(entered.wait(5))
+        self.runtime.sync_catalog_context()
+        self.assertEqual(self.owner.review["phase"], "READY")
+        layout = self.draw()
+        self.assertIn("connected agent", " ".join(layout.texts()))
+        self.assertEqual(
+            [active for _, active, _ in layout.buttons("scenario.library_organization_apply")],
+            [True],
+        )
+        requests = len(self.service.requests)
+        operator = SimpleNamespace(review_id=card, report=MagicMock())
+        cls = self.module.SCENARIO_OT_library_organization_apply
+        self.assertEqual(cls.execute(operator, bpy.context), {"CANCELLED"})
+        message = operator.report.call_args.args[1]
+        self.assertIn("connected agent", message)
+        self.assertIn("nothing has been sent", message)
+        self.assertEqual(self.owner.review["phase"], "READY")
+        self.assertEqual(len(self.service.requests), requests)
+        release.set()
+        self.settle()
+        self.assertEqual(owner.status(agent)["phase"], "FINISHED")
+        self.assertNotIn("connected agent", " ".join(self.draw().texts()))
+        self.assertEqual(self.apply()["result"]["state"], "VERIFIED")
+        self.assertEqual(self.row("asset-b")["tags"], ["x"])

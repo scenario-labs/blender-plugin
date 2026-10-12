@@ -851,7 +851,7 @@ remain #189 and #68 acceptance.
 
 Shared saved jobs whose results are downloaded show preview tiles above their
 saved-job controls, in Jobs, Generations and the Studio pages that reuse them:
-at most four per job, primary results first (video, audio, embedded model, base
+four at a time, primary results first (video, audio, embedded model, base
 color or untagged image), then other maps. Each tile is the preview icon or,
 until it is ready, the result kind's built-in icon at the same size, with a
 caption that starts with the number of its saved-job controls: **(1) Video**,
@@ -866,13 +866,28 @@ read-only and open no confirmation; Retry's tooltip says nothing is generated,
 applied, spent or changed in the scene. Shared image rows no longer load a
 draw-time thumbnail.
 
+Blender panels cannot scroll sideways, so a job with more than four previewable
+results gets a pager instead of a fifth tile: a **‹** button before the tiles,
+a **›** button after them, each one interface unit wide and as tall as the
+icons, and a range line such as `3-6 of 6` under the row. The range uses a
+hyphen-minus. A page steps by four and the last page ends at the last result,
+so it is always full: six results show 1-4, then 3-6. An arrow at its end stays
+in place, drawn disabled, so the tiles never shift. The arrows run an operator
+that changes the job's page offset, transient state of the preview controller
+that is never saved with the file and never written while drawing; a changed
+set of previewable results, a connection, project or file change, or the job
+leaving the first rows each panel draws starts it on its first page again. Only
+the drawn page's previews are requested; paging requests the next page at once
+and shows its icons as the timer builds them. Jobs, Generations and the Studio
+Jobs and Results pages draw the same pager, because they draw the same tiles.
+
 Icon size follows the drawn region's width, or in Studio the width it requests
 for its popup, divided by `preferences.system.ui_scale` (1 when background
 Blender reports 0). Status lines wrap like the waveform box's, by the width
 Blender's interface font measures less the sidebar's panel, job box and icon
 space, and a caption such as **Model (2)** stays whole on one line. Drawing
-reads only the controller's precomputed tiles: no file, store or session access,
-decode, request or property write. Requests, image decoding and icons happen in
+reads only the controller's precomputed tiles and pages: no file, store or
+session access, decode, request or property write. Requests, image decoding and icons happen in
 the controller's timer, outside drawing.
 
 Installed exact-ZIP tests on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 draw
@@ -881,7 +896,14 @@ the real Jobs panel. They check that each caption starts with its number and
 that the number with an ellipsis fits the tile's icon width in Blender's UI
 font. On Blender 5.1.2 they also measure the status lines in a 561 px sidebar
 at an interface scale of 2, in a sized popup and in Studio's first draw before
-its popup is sized, where the icons also size from the requested width.
+its popup is sized, where the icons also size from the requested width. Pager
+tests on Blender 5.1.2 page six maps forward and back, clamp at both ends,
+refuse a stale connection or job, start again on the first page after the
+results change or the connection retires, find the same arrows and range line
+in Jobs, Generations and Studio, and draw a paged row with file and store reads
+refused and no change to tiles, pages, offsets or requests. The pager has no
+desktop evidence yet: its arrow width and height and its use at UI scales 1.0
+and 2.0 need a physical check.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
 1.0, with system mouse and wheel events and ZIPs built before the measured

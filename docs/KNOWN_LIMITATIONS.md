@@ -338,7 +338,9 @@ establish live generation or full render-lane desktop acceptance.
   for a changed connection; it does not monitor later external file changes, but
   every Play and decode rechecks the saved receipt.
 - Automatic result previews cover the first twelve jobs of Jobs and of
-  Generations and at most four results per job. Which result kinds receive a
+  Generations and show four results per job at a time; a job with more pages
+  through them with **‹** and **›**, which have no desktop interaction evidence
+  yet. Which result kinds receive a
   Scenario preview image, how long it takes and where a first-access redirect
   points are not established by live evidence; a preview missing after about
   five minutes of online polling needs **Retry preview (N)**. Video clips and 3D

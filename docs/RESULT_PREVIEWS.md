@@ -237,9 +237,10 @@ a failed redraw is logged and does not stop it:
   request the scheduler refuses, for example when it already tracks its limit
   of pending previews, shows the reason on the job and is made again after
   5 s, then 10, 20, 40 and every 60 s while it is refused, rereading the
-  record each time. It requests the still of at most four
-  downloaded results: video, audio, embedded models and base color or untagged
-  images first, then other texture maps and OBJ models, each in saved order.
+  record each time. It ranks the downloaded results, video, audio, embedded
+  models and base color or untagged images first, then other texture maps and
+  OBJ models, each in saved order, and requests the stills of the four on the
+  job's drawn page; a pager shows and requests the others four at a time.
   It asks for stills only, so it never starts an audio envelope decode or
   fetches a clip.
 - **Image decoding.** It decodes the oldest issued image copy, one per tick,
@@ -270,7 +271,10 @@ a failed redraw is logged and does not stop it:
   number of its saved-job controls, as `(3) Albedo`: Blender keeps the start of
   a caption that does not fit, so a narrow column clips the role before the
   number. Status lines name results as the controls do, as `Albedo (3)`.
-  Retry clears the missing marker and opens a new polling window.
+  Retry clears the missing marker and opens a new polling window. With more
+  than four previewable results, the row has **‹** and **›** arrows around the
+  tiles and a range line such as `3-6 of 6`; the page offset is transient
+  controller state that resets when the job's results change.
 - **Lifetime.** A connection, project or file change, and unregistering the
   extension, release the icons and tiles. A status read after that belongs to
   another connection and is never shown.

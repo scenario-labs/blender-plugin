@@ -63,10 +63,15 @@ STATUS_MARGIN = 90
 
 
 class Layout:
-    """Records draw calls, including nested rows, columns and boxes, in order."""
+    """Records draw calls, including nested rows, columns and boxes, in order.
 
-    def __init__(self, calls=None):
+    Rows and columns record into the same list and inherit ``enabled``; an
+    operator records whether its layout was enabled.
+    """
+
+    def __init__(self, calls=None, enabled=True):
         self.calls = [] if calls is None else calls
+        self.enabled = enabled
 
     def box(self):
         self.calls.append(("box",))
@@ -74,18 +79,18 @@ class Layout:
 
     def row(self, align=False):
         self.calls.append(("row",))
-        return self
+        return Layout(self.calls, self.enabled)
 
     def column(self, align=False):
         self.calls.append(("column",))
-        return self
+        return Layout(self.calls, self.enabled)
 
     def label(self, *, text, icon="NONE"):
         self.calls.append(("label", text, icon))
 
     def operator(self, idname, *, text="", icon="NONE", emboss=True):
         properties = {}
-        self.calls.append(("operator", idname, text, icon, properties))
+        self.calls.append(("operator", idname, text, icon, properties, self.enabled))
         return _Properties(properties)
 
     def template_icon(self, *, icon_value, scale):
@@ -340,22 +345,172 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertIn(("label", "(1) Image", "NONE"), calls)
         self.assertFalse([call for call in calls if call[0] == "operator"])
 
-    def test_material_maps_show_base_color_first_and_at_most_four(self):
+    def ready_page(self, count=4):
+        tiles = self.tiles.controller.tiles.get("request", ())
+        return len(tiles) == count and all(tile.status == "ready" for tile in tiles)
+
+    def six_maps(self):
         maps = [
             (f"map-{role}", f"{role}.png", "image/png", png(8, 8), role)
             for role in ("normal", "height", "albedo", "metallic", "ao", "edge")
         ]
+        view = self.saved(maps)
+        self.settle(self.ready_page)
+        return view
+
+    def pager(self, view):
+        """The drawn arrows as (text, enabled, properties) and the range label."""
+        calls = self.draw(view)
+        arrows = [
+            (call[2], call[5], call[4])
+            for call in calls
+            if call[0] == "operator" and call[1] == "scenario.page_result_previews"
+        ]
+        labels = [call[1] for call in calls if call[0] == "label" and " of " in call[1]]
+        return arrows, labels
+
+    def page(self, direction, request_id="request", context_id=None):
+        context_id = context_id or self.runtime.state.job_context_id
+        return bpy.ops.scenario.page_result_previews(
+            context_id=context_id, request_id=request_id, direction=direction
+        )
+
+    def captions(self):
+        return [tile.caption for tile in self.tiles.controller.tiles["request"]]
+
+    def test_material_maps_show_base_color_first_four_at_a_time(self):
         with online_access(False):
-            self.saved(maps)
-            self.settle(
-                lambda: all(
-                    tile.status == "ready"
-                    for tile in self.tiles.controller.tiles.get("request", (None,))
-                    if tile
-                )
+            view = self.six_maps()
+            self.assertEqual(
+                self.captions(), ["Albedo (3)", "Normal (1)", "Height (2)", "Metallic (4)"]
             )
-        captions = [tile.caption for tile in self.tiles.controller.tiles["request"]]
-        self.assertEqual(captions, ["Albedo (3)", "Normal (1)", "Height (2)", "Metallic (4)"])
+            scheduler = self.runtime.state.job_session.result_previews
+            # Only the drawn page is requested; the rest waits for the pager.
+            self.assertIsNone(scheduler.status("request", "map-ao"))
+            arrows, labels = self.pager(view)
+            context = {"context_id": self.runtime.state.job_context_id, "request_id": "request"}
+            self.assertEqual(
+                arrows,
+                [
+                    ("\u2039", False, {**context, "direction": "PREVIOUS"}),
+                    ("\u203a", True, {**context, "direction": "NEXT"}),
+                ],
+            )
+            self.assertEqual(labels, ["1-4 of 6"])
+            # The arrows sit around the tiles: first and last in the tile row.
+            calls = self.draw(view)
+            drawn = [call for call in calls if call[0] in ("icon", "operator")]
+            self.assertEqual([call[0] for call in drawn], ["operator", *["icon"] * 4, "operator"])
+            self.assertEqual(self.page("NEXT"), {"FINISHED"})
+            # The last page ends at the last result: ranks 3 to 6.
+            self.assertEqual(self.captions(), ["Height (2)", "Metallic (4)", "AO (5)", "Edge (6)"])
+            self.assertIsNotNone(scheduler.status("request", "map-ao"))
+            self.settle(self.ready_page)
+            arrows, labels = self.pager(view)
+            self.assertEqual(
+                [(text, enabled) for text, enabled, _ in arrows],
+                [
+                    ("\u2039", True),
+                    ("\u203a", False),
+                ],
+            )
+            self.assertEqual(labels, ["3-6 of 6"])
+            self.assertEqual(self.page("PREVIOUS"), {"FINISHED"})
+            self.assertEqual(
+                self.captions(), ["Albedo (3)", "Normal (1)", "Height (2)", "Metallic (4)"]
+            )
+            self.assertEqual(self.pager(view)[1], ["1-4 of 6"])
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.data_counts(), self.counts)
+
+    def test_paging_clamps_at_either_end_and_refuses_stale_requests(self):
+        with online_access(False):
+            view = self.six_maps()
+            # Already on the first page: nothing changes.
+            self.assertEqual(self.page("PREVIOUS"), {"CANCELLED"})
+            self.assertEqual(self.pager(view)[1], ["1-4 of 6"])
+            self.assertEqual(self.page("NEXT"), {"FINISHED"})
+            self.assertEqual(self.page("NEXT"), {"CANCELLED"})
+            self.assertEqual(self.pager(view)[1], ["3-6 of 6"])
+            with self.assertRaises(TypeError):
+                self.page("LAST")  # Only the previous or next page.
+            with self.assertRaises(RuntimeError):
+                self.page("NEXT", context_id="another-connection")
+            with self.assertRaises(RuntimeError):
+                self.page("NEXT", request_id="unknown")
+            with self.assertRaises(self.tiles.PageRefused):
+                self.tiles.controller.page("another-connection", "request", 1)
+            with self.assertRaises(ValueError):
+                self.tiles.controller.page(self.runtime.state.job_context_id, "request", 2)
+            self.assertEqual(self.pager(view)[1], ["3-6 of 6"])
+
+    def test_four_or_fewer_results_draw_no_pager(self):
+        maps = [
+            (f"map-{role}", f"{role}.png", "image/png", png(8, 8), role)
+            for role in ("normal", "height", "albedo", "metallic")
+        ]
+        with online_access(False):
+            view = self.saved(maps)
+            self.settle(self.ready_page)
+            self.assertEqual(self.pager(view), ([], []))
+            self.assertNotIn("request", self.tiles.controller.pages)
+            self.assertEqual(self.page("NEXT"), {"CANCELLED"})
+
+    @staticmethod
+    def reread(controller):
+        """Make the next poll read the saved job again, as a new saved revision does."""
+        controller._jobs["request"] = replace(controller._jobs["request"], revision=-1)
+
+    def test_the_page_resets_when_the_results_change_or_the_connection_retires(self):
+        with online_access(False):
+            view = self.six_maps()
+            self.assertEqual(self.page("NEXT"), {"FINISHED"})
+            controller = self.tiles.controller
+            targets = self.tiles._targets
+
+            def without_edge(record):
+                return tuple(target for target in targets(record) if target.label != "Edge")
+
+            # A saved revision whose previewable results differ: five maps now.
+            with patch.object(self.tiles, "_targets", side_effect=without_edge):
+                self.reread(controller)
+                self.settle(lambda: self.pager(view)[1] == ["1-4 of 5"])
+                self.assertEqual(
+                    self.captions(), ["Albedo (3)", "Normal (1)", "Height (2)", "Metallic (4)"]
+                )
+            self.reread(controller)
+            self.settle(lambda: self.pager(view)[1] == ["1-4 of 6"])
+            self.assertEqual(self.page("NEXT"), {"FINISHED"})
+            self.assertEqual(self.pager(view)[1], ["3-6 of 6"])
+            self.runtime.state.retire_jobs()
+            self.assertEqual(controller.pages, {})
+            self.assertEqual(dict(controller._offsets.items()), {})
+            view = self.runtime.inspect_model_jobs().views["request"]
+            self.settle(self.ready_page)
+            self.assertEqual(self.pager(view)[1], ["1-4 of 6"])
+
+    def test_drawing_a_paged_row_reads_and_changes_nothing(self):
+        with online_access(False):
+            view = self.six_maps()
+            self.assertEqual(self.page("NEXT"), {"FINISHED"})
+            self.settle(self.ready_page)
+            controller = self.tiles.controller
+            before = (
+                dict(controller.tiles),
+                dict(controller.pages),
+                dict(controller._offsets.items()),
+                dict(controller._jobs),
+            )
+            # self.draw refuses file and store access while drawing.
+            for _ in range(3):
+                self.assertTrue(self.draw(view))
+            after = (
+                dict(controller.tiles),
+                dict(controller.pages),
+                dict(controller._offsets.items()),
+                dict(controller._jobs),
+            )
+            self.assertEqual(before, after)
 
     def test_roughness_and_smoothness_maps_are_captioned_by_their_roles(self):
         # A roughness map from a 3D texture set once fell back to "Image (N)".
@@ -634,6 +789,47 @@ class ResultPreviewTileTests(unittest.TestCase):
         for layout in (result, studio_jobs):
             drawn = [call for call in layout.mock_calls if call[0].endswith("template_icon")]
             self.assertTrue(drawn)
+
+    def test_jobs_generations_and_studio_draw_the_same_pager(self):
+        panels, studio = submodule("blender.panels"), submodule("blender.studio")
+        with online_access(False):
+            view = self.six_maps()
+            self.assertEqual(self.page("NEXT"), {"FINISHED"})
+            _, jobs, _, _ = draw_job_panels()
+            result, active, studio_jobs = MagicMock(), MagicMock(), MagicMock()
+            page = bpy.context.window_manager.scenario_studio_view
+            previous = page.page
+            self.addCleanup(setattr, page, "page", previous)
+            page.page = "JOBS"
+            store = self.runtime.state.job_store
+            refused = AssertionError("Store read in draw")
+            with (
+                patch.object(store, "get", side_effect=refused),
+                patch.object(store, "records", side_effect=refused),
+            ):
+                panels.draw_result(result, view)
+                panels.draw_active_job(active, view)
+                studio.draw_view(studio_jobs, bpy.context, width=960)
+        for name, layout in (
+            ("jobs", jobs),
+            ("generations", result),
+            ("active", active),
+            ("studio", studio_jobs),
+        ):
+            with self.subTest(surface=name):
+                arrows = [
+                    call
+                    for call in layout.mock_calls
+                    if call[0].endswith("operator")
+                    and call.args[:1] == ("scenario.page_result_previews",)
+                ]
+                self.assertEqual([call.kwargs["text"] for call in arrows], ["\u2039", "\u203a"])
+                labels = [
+                    call.kwargs.get("text")
+                    for call in layout.mock_calls
+                    if call[0].endswith("label")
+                ]
+                self.assertIn("3-6 of 6", labels)
 
     def test_previews_follow_the_first_rows_each_panel_draws(self):
         records = submodule("core.jobs.records")

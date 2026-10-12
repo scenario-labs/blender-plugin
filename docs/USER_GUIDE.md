@@ -595,9 +595,12 @@ Opening the saved job does not generate again, resume an inactive download or
 import into the current scene. An older cached copy cannot bypass its result approval.
 
 Saved jobs whose results are downloaded show previews above their controls, in
-Jobs, Generations and the Studio pages that reuse them, for at most four results
-each: video, audio and 3D results show Scenario's preview image, and images show
-a small copy decoded from the verified downloaded file. Each caption starts with
+Jobs, Generations and the Studio pages that reuse them, four results at a time:
+video, audio and 3D results show Scenario's preview image, and images show a
+small copy decoded from the verified downloaded file. A job with more results
+shows **‹** and **›** beside its previews and a line such as `3-6 of 6` below
+them; the arrows show the previous or next results, and the job starts on its
+first previews again after a restart, a connection change or a file load. Each caption starts with
 the number its controls show, such as **(2) Model**, so a narrow sidebar shortens
 the name before the number. Previews appear for the first twelve jobs of Jobs
 and of Generations. Scenario can take a few minutes to

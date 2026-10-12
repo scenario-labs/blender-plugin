@@ -1296,6 +1296,100 @@ class ComposerSideRegionTests(unittest.TestCase):
             self._clicks(operator, ctx, prompt, (20.0,))
             self.assertTrue(state.focused)
 
+    def test_an_error_opening_the_text_field_releases_the_composer(self):
+        # A composition's second press and F2 open Blender's text field from the same handler: an error there
+        # ends the session as any other does, and the composer stays usable.
+        ctx, state, layout = self._session()
+        ctx.window_manager.scenario_composer_text = ""  # the popover opens empty
+        prompt = self._centre(layout.prompt_rect)
+        # not a RuntimeError or an AttributeError, which the text field reports as a warning
+        failure = TypeError("simulated failure")
+        call_panel = mock.Mock(side_effect=failure)
+        ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.runtime.state, "composer_modal_running", False),
+            mock.patch.object(self.modal, "_caret_index", return_value=0),
+            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            operator = self._operator()
+            for when, keys in ((10.0, ("", "")), (20.0, ("F2",))):
+                with self.subTest(keys=keys):
+                    call_panel.reset_mock()
+                    self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+                    self._clicks(operator, ctx, prompt, (when,))
+                    self.assertTrue(state.focused)
+                    for key in keys[:-1]:
+                        self.assertEqual(
+                            self._event(operator, ctx, key, "PRESS", prompt), {"RUNNING_MODAL"}
+                        )
+                    with self.assertRaises(TypeError) as raised:
+                        self._event(operator, ctx, keys[-1], "PRESS", prompt)
+                    self.assertIs(raised.exception, failure)  # Blender still reports the error
+                    call_panel.assert_called_once()
+                    self.assertFalse(self.runtime.state.composer_modal_running)
+                    self.assertFalse(state.focused or state.dragging or state.untyped_press)
+                    self.assertEqual(self.scene_prompt(), "a red kettle")
+            # the next pointer move over the composer starts a new session that takes the click
+            self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+            self._clicks(operator, ctx, prompt, (30.0,))
+            self.assertTrue(state.focused)
+        operator.report.assert_not_called()
+
+    def test_an_ended_session_forgets_its_pending_click_and_untyped_press(self):
+        # A press pairs with the next one into a double-click, and an untyped press with the next one into a
+        # composition, only within one session: a session ended by an error or by Blender starts both over.
+        quick = self._double_click_seconds() / 2
+        failure = ValueError("simulated failure")
+        for end in ("error", "cancel"):
+            with self.subTest(end=end):
+                ctx, state, _layout = self._session(prompt="hello world")
+                ctx.window_manager.scenario_composer_text = ""
+                point, index = self._word_point(ctx, state)
+                call_panel = mock.Mock(return_value={"INTERFACE"})
+                ops = SimpleNamespace(wm=SimpleNamespace(call_panel=call_panel))
+                with (
+                    mock.patch.object(self.runtime.state, "composer", state),
+                    mock.patch.object(self.runtime.state, "composer_modal_running", False),
+                    mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+                ):
+                    operator = self._operator()
+
+                    def end_session(operator=operator, ctx=ctx, point=point, end=end):
+                        if end == "cancel":  # a closed window or a loaded file
+                            self.modal.SCENARIO_OT_composer_modal.cancel(operator, ctx)
+                            return
+                        # an error before the event's type is read, here while laying out a pointer move
+                        with (
+                            mock.patch.object(self.modal, "_layout", side_effect=failure),
+                            self.assertRaises(ValueError),
+                        ):
+                            self._event(operator, ctx, "MOUSEMOVE", "NOTHING", point)
+
+                    self.assertEqual(self._invoke(operator, ctx, point), {"RUNNING_MODAL"})
+                    self._clicks(operator, ctx, point, (10.0,))
+                    self.assertTrue(state.focused)
+                    end_session()
+                    self.assertFalse(self.runtime.state.composer_modal_running)
+                    self.assertIsNone(state.presses.last)
+                    # the next session's first click places the caret: it completes no double-click
+                    self.assertEqual(self._invoke(operator, ctx, point), {"RUNNING_MODAL"})
+                    self._clicks(operator, ctx, point, (10.0 + quick,))
+                    self.assertTrue(state.focused)
+                    self.assertIsNone(state.field.selection)
+                    self.assertEqual(state.field.caret, index)
+                    # the first press of a composition, then the session ends: the run starts over
+                    self.assertEqual(
+                        self._event(operator, ctx, "", "PRESS", point), {"RUNNING_MODAL"}
+                    )
+                    self.assertTrue(state.untyped_press)
+                    end_session()
+                    self.assertFalse(self.runtime.state.composer_modal_running)
+                    self.assertFalse(state.untyped_press or state.focused)
+                    call_panel.assert_not_called()
+                    operator.report.assert_not_called()
+                self.assertEqual(self.scene_prompt(), "hello world")
+
     @staticmethod
     def scene_prompt():
         return bpy.context.scene.scenario.lane_state("image").prompt

@@ -395,13 +395,19 @@ composer, or until the pointer leaves it while the prompt is unfocused. A
 refused Generate, such as a failed poll or an error report from the submission,
 is reported as a warning and the session goes on. If handling any other event
 raises, whether a click, a key, a pointer move or a drag, the composer ends its
-session and Blender reports the error. The composer leaves a focused prompt and
-marks no session as running, so the next pointer move over it starts a new
-session. Blender can also end a session without an event, because its window
-closed or a file loaded. The operator's cancel callback then ends it the same
-way: it leaves a focused prompt, stops a selection drag, puts a dragged composer
-back where the press found it and marks no session as running, so no 3D view
-keeps drawing a caret that types nothing. Every file load (Open, Revert,
+session and Blender reports the error. So does an error that F2 or a
+composition's second press raises while opening the
+[native text field](#composer-text-input), unless it is a `RuntimeError` or an
+`AttributeError`, which that call reports as a warning. The composer leaves a
+focused prompt and marks no session as running, so the next pointer move over
+it starts a new session. Blender can also end a session without an event,
+because its window closed or a file loaded. The operator's cancel callback then
+ends it the same way: it leaves a focused prompt, stops a selection drag, puts a
+dragged composer back where the press found it and marks no session as running,
+so no 3D view keeps drawing a caret that types nothing. Either way, as at every
+session end, the composer forgets a pending click and an untyped press: the next
+session's first click completes no [double-click](#double-click) and its first
+untyped press starts a new composition run. Every file load (Open, Revert,
 File > New) also collapses the card to the pill, leaves the prompt and restores
 the saved placement through the composer's load handler, which persists across
 loads.
@@ -415,10 +421,15 @@ the modal a Generate refused by the spend guard's poll and an error raised while
 a key is typed in the focused prompt. They call the cancel callback during a
 placement drag and during a selection drag in the focused prompt, and run three
 file loads in a row. The error, cancel and file-load tests fail on the previous
-composer. They call the operator's handlers directly in background Blender,
-which cannot start the modal itself: there, an `INVOKE_DEFAULT` call of a modal
-operator is refused before `invoke` runs, even with a window, area and region
-override. No event-simulated GUI check (`--enable-event-simulate`) has run for
+composer. Another test raises from the text field call on a composition's
+second press and on F2. A last one ends a session by an error and by the cancel
+callback, after a click and after an untyped press. Without the error handling,
+the text field test fails and so does the last test's error case; when a
+session end keeps the pending click and the untyped press, both of the last
+test's cases fail. The tests call the operator's handlers directly in background
+Blender, which cannot start the modal itself: there, an `INVOKE_DEFAULT` call
+of a modal operator is refused before `invoke` runs, even with a window, area
+and region override. No event-simulated GUI check (`--enable-event-simulate`) has run for
 this change, because it was prepared without opening a Blender window. Blender's
 window manager has therefore not yet been seen dropping the handler after an
 error, calling cancel on a file load or a closed window, or keeping the load

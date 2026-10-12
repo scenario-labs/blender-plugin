@@ -265,10 +265,10 @@ choice belongs to the credentials and project that made it: after switching
 either, choose it again.
 **Reload parameters** restores a generation's LoRAs or composition when they are
 still listed and says how many it could not restore. If the trained model list
-has not loaded yet, it keeps them all, shown by ID under **Model** (a composition
-as a composition, LoRAs with their strengths), and checks them once the list
-arrives, which shows their names; one that is no longer listed then stays under
-**Model** with the reason until you remove it. A LoRA the generation sent
+has not loaded yet, it keeps them all, shown by ID in the **Trained models** box
+(a composition as a composition, LoRAs without a strength field yet), and checks
+them once the list arrives, which shows their names; one that is no longer listed
+then stays in the box with the reason until you remove it. A LoRA the generation sent
 without a strength needs one before the form is priced, unless its base declares a
 default. A composition ID typed into **LoRA or Composition Model** with an
 earlier version appears there too, as the form's choice: check it, or remove it

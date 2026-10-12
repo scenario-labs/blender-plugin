@@ -199,6 +199,21 @@ class FilmCaseStudyTests(unittest.TestCase):
         if scene in tuple(bpy.data.scenes):
             bpy.data.scenes.remove(scene)
 
+    fixture_image = FIXTURES / "synthetic/panorama-progressive.jpg"
+
+    @staticmethod
+    def write_library(path, scene, *others):
+        """Write a new scene as a data library, uncompressed and without remapping.
+
+        Blender 5.2 crashes writing a scene whose view layers were never evaluated;
+        the snapshot synchronizes them first too.
+        """
+        for layer in scene.view_layers:
+            layer.update()
+        bpy.data.libraries.write(
+            str(path), {scene, *others}, path_remap="NONE", fake_user=True, compress=False
+        )
+
     @staticmethod
     def clear_lanes(scenes):
         for scene in scenes:
@@ -494,15 +509,13 @@ class FilmCaseStudyTests(unittest.TestCase):
         root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
         scene = bpy.data.scenes.new("Separator probe")
         self.addCleanup(self.remove, scene)
-        image = bpy.data.images.new("Separator probe", 4, 4)
+        image = bpy.data.images.load(str(self.fixture_image), check_existing=False)
         self.addCleanup(bpy.data.images.remove, image)
-        image.source = "FILE"
+        image.name = "Separator probe"
         image.filepath_raw = f"//Media{foreign}002 image.jpg"
         scene.render.filepath = f"//render{foreign}"
         blend = root / "separators.blend"
-        bpy.data.libraries.write(
-            str(blend), {scene, image}, path_remap="NONE", fake_user=True, compress=False
-        )
+        self.write_library(blend, scene, image)
         self.assertIn(f"//render{foreign}\0".encode(), blend.read_bytes())
         report = root / "report.json"
         self.open_in_blender(blend, SEPARATORS, str(report))
@@ -539,16 +552,13 @@ class FilmCaseStudyTests(unittest.TestCase):
         worker = submodule("blender.film_case_study_worker")
         scene = bpy.data.scenes.new("Filler probe")
         self.addCleanup(self.remove, scene)
-        image = bpy.data.images.new("Filler probe", 4, 4)
+        image = bpy.data.images.load(str(self.fixture_image), check_existing=False)
         self.addCleanup(bpy.data.images.remove, image)
-        image.source = "FILE"
         editor = scene.sequence_editor_create()
         movie = editor.strips.new_movie(
             "Movie", str(FIXTURES / "synthetic/film-four-seconds.mp4"), 1, 1
         )
-        frames = editor.strips.new_image(
-            "Frames", str(FIXTURES / "synthetic/panorama-progressive.jpg"), 2, 1
-        )
+        frames = editor.strips.new_image("Frames", str(self.fixture_image), 2, 1)
         # The longest folder (767 characters with its "/"), file name (255) and
         # path (1,023) Blender keeps in its fixed buffers, each ending in a NUL.
         folder, name, path = "/" + "Z" * 765 + "/", "Q" * 255, "/" + "Y" * 1022
@@ -566,7 +576,7 @@ class FilmCaseStudyTests(unittest.TestCase):
         worker._overwrite(image, "filepath_raw", "//Media/003 image.jpg", worker.FILE_FILLER)
         worker._overwrite(scene.render, "filepath", "//render/", worker.FILE_FILLER)
         written = Path(self.enterContext(tempfile.TemporaryDirectory())) / "fillers.blend"
-        bpy.data.libraries.write(str(written), {scene, image}, path_remap="NONE", compress=False)
+        self.write_library(written, scene, image)
         data = written.read_bytes()
         self.assertIn(b"//Media/\0", data)
         for leftover in (b"ZZZZ", b"QQQQ", b"YYYY"):

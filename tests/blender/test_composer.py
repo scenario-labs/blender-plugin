@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import contextlib
 import json
+import os
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -101,6 +102,24 @@ class ComposerStateTests(unittest.TestCase):
         state.sync_from_lane(scene)
         self.assertIsNone(state.field.selection)
         self.assertEqual(state.field.caret, len("from panel"))
+
+
+class ComposerFileLoadTests(unittest.TestCase):
+    def test_every_file_load_resets_the_composer(self):
+        # Blender drops a load_pre handler that is not persistent at the first file load it runs for.
+        composer = submodule("blender.composer")
+        runtime = submodule("blender.runtime")
+        for _load in range(3):
+            state = runtime.state.composer
+            state.expanded = state.focused = True
+            state.field.set_text("left from the previous file")
+            runtime.state.composer_modal_running = True
+            reset_scene()  # File > New, Open and Revert run the same load handlers
+            self.assertIn(composer._load_pre, bpy.app.handlers.load_pre)
+            self.assertIs(runtime.state.composer, state)
+            self.assertFalse(state.expanded or state.focused)
+            self.assertEqual(state.field.text, "")
+            self.assertFalse(runtime.state.composer_modal_running)
 
 
 class ComposerDrawHelpersTests(unittest.TestCase):
@@ -1157,6 +1176,100 @@ class ComposerSideRegionTests(unittest.TestCase):
         self.assertEqual(result, {"RUNNING_MODAL"})
         self.assertEqual(state.offset, (0.0, 0.0))
         save.assert_called_once_with()
+
+    # -- handler lifetime ------------------------------------------------------
+    def _session(self, prompt="a red kettle"):
+        """An expanded card on the Image form, its layout and a context that can start the modal."""
+        scene = bpy.context.scene
+        scene.scenario.lane = "image"
+        scene.scenario.lane_state("image").prompt = prompt
+        ctx = self._context(sidebar=False)
+        ctx.window_manager = SimpleNamespace(modal_handler_add=mock.Mock())
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        state.sync_from_lane(scene)
+        return ctx, state, self.modal._layout(ctx, state)
+
+    def _invoke(self, operator, context, point):
+        """The pointer moving over `point`: the key map starts the composer's modal there."""
+        event = SimpleNamespace(type="MOUSEMOVE", value="NOTHING")
+        event.mouse_region_x, event.mouse_region_y = point
+        return self.modal.SCENARIO_OT_composer_modal.invoke(operator, context, event)
+
+    def test_a_refused_generate_keeps_the_composer_usable(self):
+        # The physical repro: with the GUI spend guard, Generate's poll refuses and bpy.ops raises.
+        ctx, state, layout = self._session()
+        generate = self._centre(layout.generate_rect)
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.runtime.state, "composer_modal_running", False),
+            mock.patch.object(self.modal.panels, "generate_enabled", return_value=True),
+            mock.patch.object(self.modal, "_caret_index", return_value=0),
+            mock.patch.dict(os.environ, {"SCENARIO_GUI_PROBE": "1"}),
+        ):
+            operator = self._operator()
+            self.assertEqual(self._invoke(operator, ctx, generate), {"RUNNING_MODAL"})
+            self.assertEqual(self._clicks(operator, ctx, generate, (10.0,))[0], {"RUNNING_MODAL"})
+            operator.report.assert_called_once()
+            self.assertEqual(operator.report.call_args.args[0], {"WARNING"})
+            # the same handler keeps the composer: the next click focuses the prompt
+            self.assertTrue(self.runtime.state.composer_modal_running)
+            self._clicks(operator, ctx, self._centre(layout.prompt_rect), (20.0,))
+            self.assertTrue(state.focused)
+
+    def test_an_error_while_handling_input_releases_the_composer(self):
+        # Blender ends a modal handler whose modal() raises without calling it again: the composer must not
+        # stay marked as running, or every later session is refused and clicks fall through to the viewport.
+        ctx, state, layout = self._session()
+        prompt = self._centre(layout.prompt_rect)
+        failure = ValueError("simulated failure")
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.runtime.state, "composer_modal_running", False),
+            mock.patch.object(self.modal, "_caret_index", return_value=0),
+        ):
+            operator = self._operator()
+            self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+            self._clicks(operator, ctx, prompt, (10.0,))
+            self.assertTrue(state.focused)
+            with (
+                mock.patch.object(self.modal.panels, "form_takes_prompt", side_effect=failure),
+                self.assertRaises(ValueError) as raised,
+            ):
+                self._event(operator, ctx, "A", "PRESS", prompt, unicode="a")
+            self.assertIs(raised.exception, failure)  # Blender still reports the error
+            self.assertFalse(self.runtime.state.composer_modal_running)
+            # no caret is left drawn in a prompt whose keys now reach the viewport
+            self.assertFalse(state.focused or state.dragging)
+            self.assertEqual(self.scene_prompt(), "a red kettle")
+            # the next pointer move over the composer starts a new session that takes the click
+            self.assertEqual(self._invoke(operator, ctx, prompt), {"RUNNING_MODAL"})
+            self.assertTrue(self.runtime.state.composer_modal_running)
+            self._clicks(operator, ctx, prompt, (20.0,))
+            self.assertTrue(state.focused)
+
+    def test_a_handler_blender_removes_releases_the_composer(self):
+        # A closed window or a loaded file removes the handler and calls the operator's cancel(), not modal().
+        ctx, state, layout = self._session()
+        saved = state.offset
+        grab, _kind = self._grab_point(layout)
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.runtime.state, "composer_modal_running", False),
+        ):
+            operator = self._operator()
+            self.assertEqual(self._invoke(operator, ctx, grab), {"RUNNING_MODAL"})
+            self._event(operator, ctx, "LEFTMOUSE", "PRESS", grab)
+            self.assertIsNotNone(state.drag_mode)
+            self.modal.SCENARIO_OT_composer_modal.cancel(operator, ctx)
+            self.assertFalse(self.runtime.state.composer_modal_running)
+            self.assertIsNone(state.drag_mode)
+            self.assertEqual(state.offset, saved)
+            self.assertEqual(self._invoke(operator, ctx, grab), {"RUNNING_MODAL"})
+
+    @staticmethod
+    def scene_prompt():
+        return bpy.context.scene.scenario.lane_state("image").prompt
 
     # -- drag helpers ----------------------------------------------------------
     @staticmethod

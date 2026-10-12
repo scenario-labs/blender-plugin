@@ -386,6 +386,31 @@ the pairing rule itself. Physical double-clicks on Blender 5.1.2 macOS selected
 nothing and reset nothing before this change; a physical recheck remains
 under #66.
 
+### Errors and file loads
+
+The composer's modal operator runs one session at a time, from a pointer move
+over the composer until a click outside it, or until the pointer leaves it
+while the prompt is unfocused. A refused Generate, such as a failed poll or an error report from the submission,
+is reported as a warning and the session goes on. If handling a click or key
+raises anything else, Blender ends the session and reports the error. The
+composer then leaves a focused prompt and marks no session as running, so the
+next pointer move over it starts a new session. A session that Blender ends
+without an event, because its window closed or a file loaded, ends the same
+way through the operator's cancel callback. Every file load (Open, Revert,
+File > New) collapses the card to the pill, leaves the prompt and restores the
+saved placement; its handler persists across loads.
+
+A physical Blender 5.1.2 macOS check found the composer frozen for the rest of
+the session after one Generate refused by the GUI spend guard: clicks on it fell
+through to the viewport, and a file load did not help because Blender had
+dropped the non-persistent load handler at the first load. Generate refusals
+became warnings in a later change. Installed tests on the packaged ZIP now
+send the modal a Generate refused by the spend guard's poll, an error raised
+while a key is typed in the focused prompt and the cancel callback during a
+drag, and run three file loads in a row. The error, cancel and file-load tests
+fail on the previous composer. They call the operator's handlers directly in
+background Blender; a physical recheck remains under #66.
+
 ## Composer text input
 
 The composer prompt is custom drawing fed by key events. Blender composes

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Modal operator that owns the mouse and keyboard while the pointer is on the composer or the prompt has focus."""
 
+import functools
 import time
 
 import bpy
@@ -235,6 +236,29 @@ def _untyped_event(operator, context, state, event):
     return {"RUNNING_MODAL"}
 
 
+def _ends_session_on_error(handle):
+    """End the composer's session when its event handler raises, then let Blender report the error.
+
+    Blender drops a modal handler whose modal() raises without calling it again. Without this, the composer
+    would stay marked as running: every later session would be refused and clicks on the composer would fall
+    through to the viewport until the next file load. Keys reach the viewport until the pointer moves again
+    and starts a new session, so a focused prompt is left too rather than drawing a caret that types nothing.
+    Every edit was already committed to its form as it was typed."""
+
+    @functools.wraps(handle)
+    def modal(self, context, event):
+        try:
+            return handle(self, context, event)
+        except Exception:
+            state = runtime.state.composer
+            if state is not None:
+                state.focused = False
+            self._finish(context)
+            raise
+
+    return modal
+
+
 class SCENARIO_OT_composer_modal(bpy.types.Operator):
     bl_idname = "scenario.composer_modal"
     bl_label = "Scenario composer"
@@ -280,6 +304,10 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                 _cursor(context, None)
         _redraw(context)
         return {"FINISHED"}
+
+    def cancel(self, context):
+        """Blender removed the handler without calling modal() again: its window closed or a file loaded."""
+        self._finish(context)
 
     # -- placement drags -------------------------------------------------------
     def _drag_move(self, context, state, event):
@@ -339,6 +367,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             _open_settings(context, state.lane_for(scene))
         _redraw(context)
 
+    @_ends_session_on_error
     def modal(self, context, event):
         state = runtime.state.composer
         if state is None or context.region is None:

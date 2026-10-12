@@ -102,6 +102,7 @@ def load_layout():
     return True
 
 
+@bpy.app.handlers.persistent  # without it, Blender removes this handler at the first file load
 def _load_pre(*args):
     if runtime.state.composer is not None:
         runtime.state.composer.__init__()

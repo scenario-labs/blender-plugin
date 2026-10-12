@@ -45,10 +45,18 @@ MATERIAL = Action(
     "scenario.apply_saved_material",
 )
 MODEL_1 = Action(
-    "import_model:a1", "import_model", "apply", "Import model (1)", "scenario.import_saved_model"
+    "import_model:a1",
+    "import_model",
+    "apply",
+    "Import GLB model (1)",
+    "scenario.import_saved_model",
 )
 MODEL_2 = Action(
-    "import_model:a2", "import_model", "apply", "Import model (2)", "scenario.import_saved_model"
+    "import_model:a2",
+    "import_model",
+    "apply",
+    "Import alternate: OBJ (2)",
+    "scenario.import_saved_model",
 )
 WORLD = Action(
     "apply_world:a1",
@@ -311,12 +319,12 @@ def test_an_unconfirmed_submission_offers_only_inspect(state):
 
 def test_one_apply_action_is_named_without_its_asset_number():
     assert js.strip_chips((MODEL_1,), "ready") == (
-        js.StripChip("import_model:a1", "Import model"),
+        js.StripChip("import_model:a1", "Import GLB model"),
         INSPECT,
     )
-    # numbering counts every saved asset, so the only model can be the second one
+    # numbering counts every saved asset, so the only control can be the second one
     assert js.strip_chips((MODEL_2, REVIEW_ROW), "apply_failed") == (
-        js.StripChip("import_model:a2", "Import model"),
+        js.StripChip("import_model:a2", "Import alternate: OBJ"),
         INSPECT,
     )
     assert js.strip_chips((MATERIAL,), "ready")[0].label == "Apply saved material"

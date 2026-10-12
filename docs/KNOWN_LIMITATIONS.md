@@ -87,8 +87,10 @@ establish live generation or full render-lane desktop acceptance.
   paint mode was used in it), movie clips, packed sound strip audio, image
   sequences and other unportable data, keeps model IDs in the recipe and cannot
   clear Blender's unused bytes of earlier settings, so review a bundle before
-  publishing it widely. It has
-  installed synthetic coverage only. Video export verification uses an
+  publishing it widely. It notices an edit of its unshown scenes only through the
+  review's frames, rate, size and strip count, the scene and media counts and bytes
+  and the ledger. It has installed synthetic coverage only. Video export
+  verification uses an
   installed ffprobe when present and otherwise a weaker Blender decode check.
   Blender builds without H.264/AAC encoders cannot export; they are detected only
   when the render child fails, with its log retained. Complete runtime adoption

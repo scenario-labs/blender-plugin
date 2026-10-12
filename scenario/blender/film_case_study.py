@@ -255,9 +255,21 @@ class FilmCaseStudyCommands(FilmExportCommands):
         except ReferenceError:
             return False
 
-    def _review_source(self, candidate, kind, binding, digest, default_name, users):
+    @staticmethod
+    def _bounds(candidate):
+        """A review scene's listed frames, rate, output size and strip count."""
         render, editor = candidate.render, candidate.sequence_editor
-        strips = len(editor.strips_all) if editor is not None else 0
+        percentage = render.resolution_percentage
+        return (
+            candidate.frame_end - candidate.frame_start + 1,
+            render.fps,
+            render.resolution_x * percentage // 100,
+            render.resolution_y * percentage // 100,
+            len(editor.strips_all) if editor is not None else 0,
+        )
+
+    def _review_source(self, candidate, kind, binding, digest, default_name, users):
+        frames, fps, width, height, strips = self._bounds(candidate)
         media, blocked = 0, ""
         if not strips:
             blocked = "Add sequencer strips to this review scene"
@@ -266,7 +278,6 @@ class FilmCaseStudyCommands(FilmExportCommands):
                 media = len(_collect((candidate,), None, users).media)
             except (ValueError, LocalExportError) as error:
                 blocked = str(error)
-        percentage = render.resolution_percentage
         return _Source(
             uuid.uuid4().hex,
             candidate,
@@ -276,10 +287,10 @@ class FilmCaseStudyCommands(FilmExportCommands):
             binding,
             digest,
             default_name,
-            candidate.frame_end - candidate.frame_start + 1,
-            render.fps,
-            render.resolution_x * percentage // 100,
-            render.resolution_y * percentage // 100,
+            frames,
+            fps,
+            width,
+            height,
             strips,
             media,
             blocked,
@@ -305,11 +316,14 @@ class FilmCaseStudyCommands(FilmExportCommands):
                 if timeline
                 else ((), "")
             )
-            # Synchronize each scene's own view layers as the snapshot will, so the
-            # origins captured now survive the snapshot (the Blender 5.2 copy guard).
-            for item in (candidate, *(shot for shot in shots if shot is not None)):
-                for layer in item.view_layers:
-                    layer.update()
+            # Synchronize each scene's own view layers as the snapshot will (the Blender
+            # 5.2 copy guard). This evaluation is not an edit, so it keeps the origins of
+            # a ready case study of the same scenes; approval rereads what it showed.
+            synchronized = (candidate, *(shot for shot in shots if shot is not None))
+            with self.session.synchronizing(synchronized):
+                for item in synchronized:
+                    for layer in item.view_layers:
+                        layer.update()
             if not timeline:
                 source = self._review_source(candidate, kind, binding, digest, default_name, users)
                 sources[source.identifier] = source
@@ -537,10 +551,14 @@ class FilmCaseStudyCommands(FilmExportCommands):
     def _snapshot(self, review):
         """Write the private snapshot and specification on the main thread.
 
-        The approval covers the counts, size and ledger shown when preparing; a media
-        file or saved job that changed without touching a scene refuses the build.
+        The approval covers the review bounds, counts, size and ledger shown when
+        preparing; any change refuses the build, including a media file or saved job
+        that changed without touching a scene.
         """
-        timeline = review.timeline
+        source, timeline = review.source, review.timeline
+        shown = (source.frames, source.fps, source.width, source.height, source.strips)
+        if self._bounds(source.scene) != shown:
+            raise ValueError(CHANGED)
         collected = _collect(self._roots(review), timeline.scene if timeline else None)
         names, texts, markers = self._documents(review, collected)
         if self._summary(review, collected, texts) != review.summary:
@@ -550,9 +568,14 @@ class FilmCaseStudyCommands(FilmExportCommands):
             root = directory / local_case_study.BUNDLE
             root.mkdir(mode=0o700)
             snapshot = root / local_case_study.SNAPSHOT
-            for name in collected.scenes:
-                for layer in bpy.data.scenes[name].view_layers:
-                    layer.update()
+            # Scenes no window shows keep tags from changes elsewhere until now. This
+            # evaluation is not an edit (JobSession.synchronizing); the rereads above
+            # cover what the approval showed.
+            scenes = tuple(bpy.data.scenes[name] for name in collected.scenes)
+            with self.session.synchronizing(scenes):
+                for scene in scenes:
+                    for layer in scene.view_layers:
+                        layer.update()
             previous = bpy.data.filepath
             bpy.data.libraries.write(
                 blender_path(snapshot),

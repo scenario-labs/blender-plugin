@@ -746,6 +746,64 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(self.staging(), [])
         self.assert_offline()
 
+    def test_synchronizing_the_unshown_scenes_is_not_an_edit(self):
+        # As for video exports: removing any datablock leaves every scene no window
+        # shows tagged, and the snapshot's own synchronization must not count as an edit.
+        def rebuild_relations():
+            bpy.data.texts.remove(bpy.data.texts.new("Unrelated"))
+
+        self.build_timeline()
+        result = self.sources()
+        rebuild_relations()
+        status = self.tools.prepare_film_case_study(
+            {
+                "context_id": "fixture-context",
+                "production_id": self.production,
+                "source_id": next(
+                    item["source_id"]
+                    for item in result["sources"]
+                    if item["scene"] == self.review.name
+                ),
+                "timeline_id": result["timelines"][0]["timeline_id"],
+                "destination_path": str(self.folder / "Cut.zip"),
+            }
+        )
+        self.assertEqual(status["phase"], "READY", status["error"])
+        patcher, calls = self.fake_build()
+        with patcher:
+            started = self.approve(status)
+            self.assertEqual(started["phase"], "EXPORTING", started["error"])
+            status = self.settle(status["review_id"])
+        self.assertEqual(status["phase"], "EXPORTED", status["error"])
+        self.assertEqual(len(calls), 1)
+        # Inspecting again synchronizes the same scenes without revoking a ready case study.
+        status = self.mcp_prepare(name="Again.zip")
+        rebuild_relations()
+        self.sources()
+        current = self.tools.film_case_study_review({"review_id": status["review_id"]})
+        self.assertEqual(current["phase"], "READY", current["error"])
+        self.tools.film_case_study_review({"review_id": status["review_id"], "action": "discard"})
+        # A real edit of the unshown review scene still refuses: approval rereads its bounds.
+        render, kept = self.review.render, self.staging()
+        for change, (name, value) in {
+            "size": ("resolution_percentage", 50),
+            "rate": ("fps", 25),
+        }.items():
+            with self.subTest(change=change):
+                status = self.mcp_prepare(name=change + ".zip")
+                previous = getattr(render, name)
+                setattr(render, name, value)
+                try:
+                    refused = self.approve(status)
+                finally:
+                    setattr(render, name, previous)
+                self.assertEqual(refused["phase"], "ERROR")
+                self.assertIn("changed after it was prepared", refused["error"])
+                self.assertFalse(Path(status["destination"]).exists())
+                self.assertEqual(self.staging(), kept)
+        self.assertEqual(len(calls), 1)
+        self.assert_offline()
+
     def test_contents_that_change_after_preparing_refuse_the_build(self):
         self.build_timeline()
         status = self.mcp_prepare(name="Changed.zip")

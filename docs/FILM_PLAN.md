@@ -1296,10 +1296,14 @@ opening steps, which the guide repeats with extraction and privacy notes.
 
 A ready case study binds the recipe, review, timeline and shot scenes' captured
 origins; the video export's invalidations apply to each of them. Approval also
-recounts the scenes, media files and bytes and the ledger's approved tasks, priced
-tasks and quoted total; if any differs from what preparation showed, for example
-because a media file or a saved job changed without touching a scene, the approval
-is consumed and nothing is written. A running export keeps its snapshot.
+rereads the review scene's frames, rate, size and strip count and recounts the
+scenes, media files and bytes and the ledger's approved tasks, priced tasks and
+quoted total; if any differs from what preparation showed, for example because a
+media file or a saved job changed without touching a scene, the approval is
+consumed and nothing is written. Inspection and the snapshot synchronize the
+chosen scenes inside `JobSession.synchronizing`, as the video export does, so an
+edit of a scene no window shows is caught only by these rereads. A running export
+keeps its snapshot.
 `JobSession.film_case_study` (`FilmCaseStudyCommands`) keeps at most eight
 session-local handles and one open case study per review scene. Video exports and
 case studies share the session's single export thread: while one runs, approving

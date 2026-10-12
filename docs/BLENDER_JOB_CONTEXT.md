@@ -171,8 +171,10 @@ is this Blender running the bundled case-study worker. `publish_film_export` als
 copies a verified staged archive, keeping the `.zip` suffix. `JobSession.film_case_study`
 (`FilmCaseStudyCommands`) extends the export handles: inspection also captures
 each director timeline's and shot scene's origin, a ready case study binds them
-with the recipe and review scene origins, and approval snapshots and builds the
-sanitized documents from this scope's saved jobs and uploads on the main thread.
+with the recipe and review scene origins, and approval rereads the review bounds,
+then snapshots and builds the sanitized documents from this scope's saved jobs and
+uploads on the main thread. Its synchronizations also run inside
+`JobSession.synchronizing`.
 Video exports and case studies refuse each other's approval without consuming it
 while one runs. The handles close with the export handles after the thread joins.
 

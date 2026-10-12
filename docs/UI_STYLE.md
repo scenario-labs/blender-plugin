@@ -830,7 +830,10 @@ another Environment mode the composer drives Image. As on every tab, its
 opens, so a mode change there cannot retarget that text; a form that changed
 under the text refuses to open and keeps both texts. Make HDRI and Reload
 relist the target mode's models even when the scene already shows that mode,
-because the list is shared by scenes. Mode, size and model changes happen in
+because the list is shared by scenes. Reload attaches a panorama input's
+recorded asset as a saved panorama only while the selected connection still
+holds it as a downloaded LDR 360 result; any other asset ID is restored bare and
+refused until a panorama is chosen again. Mode, size and model changes happen in
 property callbacks or operators; drawing never writes. Contract values and the
 recorded model choice that a catalog load fills in are stored without RNA
 updates, like seeded schema defaults, so they keep captured origins current.

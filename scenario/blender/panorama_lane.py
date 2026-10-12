@@ -19,6 +19,7 @@ import bpy
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
+from ..core.jobs.store import StoreError
 from ..core.scene import panorama, panorama_contract
 from . import props, runtime
 
@@ -152,6 +153,32 @@ def attach_saved(scene, param_name, request_id, asset_id):
     ref[PROJECTION] = "equirectangular"
     props.mark_estimate_dirty(lane_state)
     return ref
+
+
+def restore_saved(scene, param_name, asset_id):
+    """Reattach a reloaded job's panorama source while it is a saved 360 result of this scope.
+
+    A saved job records only the source's asset ID. It gets Use saved
+    panorama's markers only when the selected scope's storage still holds it
+    as a downloaded LDR 360 result, and build_request rechecks it like any
+    saved reference. Returns the reference, or None for any other asset (an
+    upload, another scope's result, unreadable storage); the caller then keeps
+    the bare ID, which the contract refuses until a panorama is chosen again.
+    """
+    from . import history
+
+    try:
+        records = history.saved_records()
+    except ScenarioError:
+        return None
+    for record in records:
+        for item in record.results:
+            if item.asset.asset_id == asset_id and panorama_contract.is_ldr_panorama(item):
+                try:
+                    return attach_saved(scene, param_name, record.intent.request_id, asset_id)
+                except (ScenarioError, StoreError, OSError):
+                    return None
+    return None
 
 
 def prefill_hdri(context, context_id, request_id, asset_id):

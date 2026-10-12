@@ -485,6 +485,50 @@ class EnvironmentJobTests(unittest.TestCase):
         self.assertEqual((request.body["image"], request.errors), ("saved-panorama", []))
         self.assertEqual(len(self.fixture.paid), paid)
 
+    def test_reload_reattaches_a_saved_panorama_source_and_nothing_else(self):
+        """Reload of an HDRI job keeps its source usable only while it is still a saved 360 result."""
+        fixture = self.fixture
+        fixture.saved_panorama(asset_id="asset_reload-panorama")
+        records = submodule("core.jobs.records")
+        body = {"image": "asset_reload-panorama", "outputExr": True, "outputHdr": False}
+        for local_id, source in (
+            ("hdri-saved", "asset_reload-panorama"),
+            ("hdri-other", "asset_other"),
+        ):
+            self.runtime.state.jobs_view.append(
+                records.JobRecord(
+                    local_id=local_id,
+                    lane="panorama",
+                    kind="image",
+                    model_id=HDRI,
+                    body=dict(body, image=source),
+                    status="success",
+                )
+            )
+        paid = len(fixture.paid)
+        self.scene.scenario.lane = "image"
+        self.assertEqual(bpy.ops.scenario.reload_generation(local_id="hdri-saved"), {"FINISHED"})
+        scenario = self.scene.scenario
+        self.assertEqual((scenario.lane, scenario.panorama_mode), ("panorama", "HDRI"))
+        self.assertEqual(self.lane.model_id, HDRI)
+        [ref] = self.lane.references
+        self.assertEqual(
+            (ref.param_name, ref.source, ref.asset_id), ("image", "ASSET", "asset_reload-panorama")
+        )
+        self.assertEqual(ref["_scenario_reference_projection"], "equirectangular")
+        self.assertIsNone(submodule("blender.reference_form").scope_error(self.lane))
+        request = self.generation.build_request(self.scene, "panorama", for_estimate=True)
+        self.assertEqual((request.body["image"], request.errors), ("asset_reload-panorama", []))
+        # An asset that is not a saved 360 result of this scope stays refused.
+        self.assertEqual(bpy.ops.scenario.reload_generation(local_id="hdri-other"), {"FINISHED"})
+        [ref] = self.lane.references
+        self.assertEqual(
+            (ref.asset_id, ref.get("_scenario_reference_projection")), ("asset_other", None)
+        )
+        request = self.generation.build_request(self.scene, "panorama", for_estimate=True)
+        self.assertIn("saved, downloaded 360 panorama", request.errors[0])
+        self.assertEqual(len(fixture.paid), paid)
+
     def test_saved_panorama_choices_hold_only_scoped_ldr_results(self):
         fixture = self.fixture
         _, panorama = fixture.saved_panorama()

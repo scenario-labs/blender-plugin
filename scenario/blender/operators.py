@@ -12,7 +12,7 @@ from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
 from ..core.ui.costs import format_cu
-from . import apply_image, generation, params_ui, props, runtime
+from . import apply_image, generation, panorama_lane, params_ui, props, runtime
 
 
 class SCENARIO_OT_test_connection(bpy.types.Operator):
@@ -890,8 +890,15 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                     )
                 inputs = [p for p in inputs if p not in local]
             else:
+                panorama_input = lane == "panorama" and panorama_lane.is_panorama_input(
+                    lane_state, spec.name
+                )
                 for asset_id in ids:
                     if isinstance(asset_id, str) and asset_id.startswith("asset_"):
+                        if panorama_input and panorama_lane.restore_saved(
+                            scene, spec.name, asset_id
+                        ):
+                            continue
                         ref = lane_state.references.add()
                         ref.param_name, ref.source, ref.asset_id, ref.label = (
                             spec.name,

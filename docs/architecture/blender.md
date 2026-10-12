@@ -69,7 +69,10 @@ image, so callers check the format and declared dimensions before decoding.
 their icons with it after verifying the cached file, its format and its declared
 dimensions, and the
 [automatic result preview](../RESULT_PREVIEWS.md#automatic-previews-in-blender)
-controller decodes its image copies and icons with it; no MCP path uses it.
+controller decodes its image copies and icons with it. Local MCP reaches it only
+through that controller, which also decodes the image stills that
+[`inspect_result_previews`](../RESULT_PREVIEWS.md#local-mcp-inspection)
+requests on the shared scheduler; no MCP tool calls it directly.
 
 ## Scene application
 

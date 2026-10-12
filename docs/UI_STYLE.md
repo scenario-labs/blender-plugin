@@ -398,15 +398,17 @@ acceptance check under #66.
 
 ### Double-click
 
-A double-click on the card background or its resize corner puts the composer
-back at its default place and width, and a double-click in the prompt selects
-the word (or the run of spaces) under the pointer, so typing replaces it.
+A double-click on the card background, its resize corner or the
+[job strip](#compact-job-strip)'s background puts the composer back at its
+default place and width, and a double-click in the prompt selects the word (or
+the run of spaces) under the pointer, so typing replaces it.
 
 Blender never hands a modal operator a double-click: before calling it, the
 window manager turns the second press into a plain press (only key maps see the
 double-click value), in Blender 5.0, 5.1 and 5.2 alike. The composer therefore
 pairs presses itself, by Blender's rule. A press completes a double-click when
-it lands on the same composer target as the previous press, less than Blender's
+it lands on the same composer target (a control, the card or strip background,
+the prompt or a strip chip) as the previous press, less than Blender's
 double-click time preference after it (350 ms by default) and within the
 composer's 4 px drag threshold times the UI scale. Another key or button
 pressed in between (Escape, which cancels a held press, included), a drag or
@@ -417,15 +419,18 @@ the button is held keeps the press. Time is taken when the composer handles
 each press, since Python events carry no timestamp. A click that changes the
 layout under the pointer (the pill expanding into the card) never pairs with
 the next press. On any other control the second press of a double-click does
-nothing more, so a double-click on Generate submits once.
+nothing more, so a double-click on Generate submits once and one on a strip
+chip runs its operator, or opens its dialog, once.
 
 Installed tests send the composer's modal what Blender really delivers, two
 press and release pairs at pinned times, and check the word selection, the
 reset, the timing and distance limits, jitter on the resize corner, the presses
-that start over (Escape included) and the single submission. Unit tests cover
-the pairing rule itself. Physical double-clicks on Blender 5.1.2 macOS selected
-nothing and reset nothing before this change; a physical recheck remains
-under #66.
+that start over (Escape included) and the single submission. Job strip tests
+send the same pairs to the strip's background, which resets the placement
+within the time and distance limits only, and to a strip chip, which dispatches
+once. Unit tests cover the pairing rule itself. Physical double-clicks on
+Blender 5.1.2 macOS selected nothing and reset nothing before pairing; a
+physical recheck, the strip included, remains under #66.
 
 ### Errors and file loads
 
@@ -606,9 +611,10 @@ Drawing reads ModelJobs' in-memory views and bindings only: it creates no job
 owner or session, reads no saved job and writes no scene, WindowManager or job
 state. Its only writes are the composer's Python display caches (the drawn
 signature per region and the held actions); dismissals, which the modal
-records, are Python only too, and a file load clears all three. Drawing and the modal share one geometry, so a chip is hit where it is
-drawn; a press on the tray's background drags the composer, and a double-click
-there resets its placement.
+records, are Python only too, and a file load clears all three. Drawing and the
+modal share one geometry, so a chip is hit where it is drawn; a press on the
+tray's background drags the composer, and a [double-click](#double-click) there
+resets its placement, since the modal pairs presses on that same geometry.
 
 Installed tests on the packaged ZIP drive the real draw handler with recording
 primitives and the real modal handler with synthetic events over jobs submitted
@@ -616,8 +622,10 @@ through the synthetic SDK transport. They check the line, chips, bar and caches
 with draw-time ensure calls and store reads patched to fail; each chip's
 `INVOKE_DEFAULT` call and exact descriptor properties; the stale-click, busy and
 focused-prompt guards; dismissal and file load; scene, lane and credential
-changes; an unconfirmed submission offering only Inspect; and **Resume
-download** through the real operator downloading once without a paid request.
+changes; an unconfirmed submission offering only Inspect; a job Scenario has
+not confirmed as an inference job offering no cancellation; a double-click on
+the background and on a chip; and **Resume download** through the real operator
+downloading once without a paid request.
 Physical desktop evidence is pending: the dialogs and popup a chip opens from
 inside the composer modal, viewport input afterwards, alternate UI scales and
 screenshots need an unlocked desktop session under #66 and #68.

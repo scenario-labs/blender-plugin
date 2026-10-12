@@ -106,20 +106,21 @@ def _double_click_seconds(context):
     return ms / 1000.0
 
 
-def _completes_double_click(context, state, layout, event):
+def _completes_double_click(context, state, geometry, event):
     """Whether this left press is the second press of a double-click on the same composer target.
 
     Blender turns a double-click into a plain press before calling a modal operator (only key maps see
     DOUBLE_CLICK), so the composer pairs the presses itself, with Blender's double-click time and its own
-    drag threshold."""
+    drag threshold. Targets are the hits of the geometry clicks reach, so the job strip's background
+    pairs like the card's and a strip chip runs once for a double-click, as Generate does."""
     x, y = event.mouse_region_x, event.mouse_region_y
     return state.presses.press(
-        layout.hit(x, y),
+        geometry.hit(x, y),
         x,
         y,
         _now(),
         _double_click_seconds(context),
-        cl.DRAG_THRESHOLD * layout.scale,
+        cl.DRAG_THRESHOLD * geometry.layout.scale,
     )
 
 
@@ -529,7 +530,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
         if event.type != "LEFTMOUSE":
             if value == "PRESS":
                 state.presses.reset()  # another key or button between two clicks: no double-click
-        elif value == "PRESS" and _completes_double_click(context, state, layout, event):
+        elif value == "PRESS" and _completes_double_click(context, state, geometry, event):
             value = "DOUBLE_CLICK"
         if event.type == "LEFTMOUSE" and value == "DOUBLE_CLICK":
             state.presses.reset()
@@ -547,7 +548,7 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
                     state.dragging = False
                     _redraw(context)
             elif hit in (("drag",), ("resize",)):
-                # double-click on the card background puts the composer back at its default place and size
+                # on the card or job strip background it puts the composer back at its default place and size
                 state.cancel_drag()
                 state.reset_layout()
                 _save_layout()

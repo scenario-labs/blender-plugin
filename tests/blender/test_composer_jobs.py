@@ -73,6 +73,8 @@ class ComposerJobStripTests(unittest.TestCase):
             draw=lambda *args: None,
         )
         self.enterContext(patch.object(self.draw, "blf", self.fake_blf))
+        # Press time as the modal reads it; press() spaces clicks well beyond a double-click.
+        self.clock = 0.0
 
     # -- fixtures -----------------------------------------------------------------
     def submit_image(self, progress=0.42, status="in-progress", job_type="inference"):
@@ -138,7 +140,11 @@ class ComposerJobStripTests(unittest.TestCase):
         return rect.x + rect.w / 2, rect.y + rect.h / 2
 
     def press(self, point, ops=None):
-        """One left click through the real modal handler and real geometry; returns the operator."""
+        """One left click through the real modal handler and real geometry; returns the operator.
+
+        Each press comes ten seconds after the previous one, so two presses on one target are two
+        clicks, never a double-click."""
+        self.clock += 10.0
         self.runtime.state.composer_modal_running = True
         event = SimpleNamespace(
             type="LEFTMOUSE",
@@ -153,10 +159,42 @@ class ComposerJobStripTests(unittest.TestCase):
         )
         operator = SimpleNamespace(report=MagicMock(), _finish=MagicMock())
         recording = ops if ops is not None else RecordingOps()
-        with patch.object(self.modal, "bpy", SimpleNamespace(ops=recording)):
+        with (
+            patch.object(self.modal, "bpy", SimpleNamespace(ops=recording)),
+            patch.object(self.modal, "_now", return_value=self.clock),
+        ):
             result = self.modal.SCENARIO_OT_composer_modal.modal(operator, self.context, event)
         self.assertEqual(result, {"RUNNING_MODAL"})
         operator.ops = recording
+        return operator
+
+    def click(self, point, when):
+        """A press and its release at `point`, the press read at time `when`, as Blender hands a click
+        to the running modal: a double-click arrives as two of these. Returns the operator."""
+        cls = self.modal.SCENARIO_OT_composer_modal
+        operator = SimpleNamespace(report=MagicMock(), ops=RecordingOps())
+        for name in ("_finish", "_drag_move", "_drag_release"):
+            setattr(operator, name, getattr(cls, name).__get__(operator))
+        self.runtime.state.composer_modal_running = True
+        results = []
+        with (
+            patch.object(self.modal, "bpy", SimpleNamespace(ops=operator.ops)),
+            patch.object(self.modal, "_now", return_value=when),
+        ):
+            for value in ("PRESS", "RELEASE"):
+                event = SimpleNamespace(
+                    type="LEFTMOUSE",
+                    value=value,
+                    mouse_region_x=point[0],
+                    mouse_region_y=point[1],
+                    shift=False,
+                    ctrl=False,
+                    oskey=False,
+                    alt=False,
+                    unicode="",
+                )
+                results.append(cls.modal(operator, self.context, event))
+        self.assertEqual(results[0], {"RUNNING_MODAL"})
         return operator
 
     def descriptor(self, view, key):
@@ -292,6 +330,73 @@ class ComposerJobStripTests(unittest.TestCase):
         self.assertIsInstance(top, float)
         self.assertGreaterEqual(min(bottom, top), 0.0)
         self.assertLessEqual(bottom + top, region.height)
+
+    # -- double-click -----------------------------------------------------------------
+    # Blender hands a modal operator both presses of a double-click as plain presses; the composer
+    # pairs them on the targets its clicks reach (see test_composer), the tray included.
+
+    def test_a_double_click_on_the_tray_background_resets_the_placement(self):
+        self.submit_image()
+        quick = self.modal._double_click_seconds(self.context) / 2
+        threshold = submodule("core.ui.composer_layout").DRAG_THRESHOLD
+        saved = (-120.0, 80.0)
+        cases = (
+            ((10.0, 10.0 + quick), (0, 0), True),
+            ((10.0, 10.0 + quick), (threshold, -threshold), True),  # a slight drift still pairs
+            ((10.0, 10.0 + 2 * quick + 0.01), (0, 0), False),  # past the double-click time
+            ((10.0, 10.0 + quick), (threshold + 1, 0), False),  # moved beyond the threshold
+        )
+        for times, drift, resets in cases:
+            with self.subTest(times=times, drift=drift):
+                self.composer.offset, self.composer.width = saved, 600
+                self.composer.presses.reset()
+                geometry = self.draw.composer_geometry(self.context, self.composer)
+                tray = geometry.strip.rect
+                point = (tray.x + 20, tray.y + tray.h / 2)
+                second = (point[0] + drift[0], point[1] + drift[1])
+                self.assertFalse(geometry.layout.card_rect.contains(*point))
+                self.assertEqual(geometry.hit(*point), ("drag",))
+                self.assertEqual(geometry.hit(*second), ("drag",))
+                with patch.object(self.modal, "_save_layout") as save:
+                    first = self.click(point, times[0])
+                    self.assertEqual((self.composer.offset, self.composer.drag_mode), (saved, None))
+                    last = self.click(second, times[1])
+                if resets:
+                    self.assertEqual(
+                        (self.composer.offset, self.composer.width), ((0.0, 0.0), None)
+                    )
+                    save.assert_called_once_with()
+                else:
+                    self.assertEqual((self.composer.offset, self.composer.width), (saved, 600))
+                    save.assert_not_called()
+                self.assertIsNone(self.composer.drag_mode)
+                self.assertEqual(first.ops.calls + last.ops.calls, [])
+        self.assertEqual(len(self.jobs.paid), 1)
+
+    def test_a_double_click_on_a_chip_dispatches_it_once(self):
+        # As on Generate, the second press of a double-click does nothing more: a chip never opens
+        # its confirmation or runs its operator twice for one double-click.
+        view = self.submit_image()
+        self.drawn()
+        quick = self.modal._double_click_seconds(self.context) / 2
+        point = self.chip_point("cancel")
+        expected = [
+            (
+                "scenario.recover_job",
+                ("INVOKE_DEFAULT",),
+                dict(self.descriptor(view, "cancel").properties),
+            )
+        ]
+        first = self.click(point, 10.0)
+        second = self.click(point, 10.0 + quick)
+        self.assertEqual(first.ops.calls, expected)
+        self.assertEqual(second.ops.calls, [])
+        second.report.assert_not_called()
+        # The pair is spent: the next quick press is a click of its own.
+        third = self.click(point, 10.0 + 2 * quick)
+        self.assertEqual(third.ops.calls, expected)
+        self.assertEqual(self.jobs.cancel_calls, [])
+        self.assertEqual(len(self.jobs.paid), 1)
 
     # -- dispatch ---------------------------------------------------------------------
     def test_each_chip_dispatches_its_descriptor_with_invoke_default(self):

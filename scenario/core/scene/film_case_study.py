@@ -267,35 +267,47 @@ def _guide(title, blend, scenes, frame):
     lines = [
         f"# Open {title}",
         "",
-        f"Extract this archive first, then keep `{blend}` beside its `{MEDIA_FOLDER}` folder"
-        " when moving the bundle. Movie, sound, image and font files use relative paths;"
-        " packed textures stay inside the Blender file.",
+        (
+            f"Extract this archive first, then keep `{blend}` beside its `{MEDIA_FOLDER}` folder"
+            " when moving the bundle. Movie, sound, image and font files use relative paths;"
+            " packed textures stay inside the Blender file."
+        ),
         "",
-        f"This curated Blender data library contains {len(scenes['all'])} scenes and does not"
-        " store a workspace. Blender may warn `Library file, loading empty scene` or show a"
-        " default viewport.",
+        (
+            f"This curated Blender data library contains {len(scenes['all'])} scenes and does not"
+            " store a workspace. Blender may warn `Library file, loading empty scene` or show a"
+            " default viewport."
+        ),
         "",
         f"1. Open `{blend}` and use the scene selector to choose `{review}`.",
         "2. Change the large area's editor type to **Video Sequencer**.",
-        f"3. In the Video Sequencer header's own scene selector, choose `{review}`."
-        " If it shows **New**, use its scene dropdown to select the existing review."
-        " The Video Sequencer has its own scene selection.",
-        "4. Set the view to **Sequencer & Preview**. Hover over the strip timeline and press"
-        " **Home** to frame all strips.",
+        (
+            f"3. In the Video Sequencer header's own scene selector, choose `{review}`."
+            " If it shows **New**, use its scene dropdown to select the existing review."
+            " The Video Sequencer has its own scene selection."
+        ),
+        (
+            "4. Set the view to **Sequencer & Preview**. Hover over the strip timeline and press"
+            " **Home** to frame all strips."
+        ),
         f"5. Go to frame **{frame}** and play the review.",
         "",
     ]
     if timeline:
         lines += [
-            f"For editable native shot timing, select `{timeline}`. Select any shot listed in"
-            f" `{MANIFEST_FILE}` to inspect its geometry and camera.",
+            (
+                f"For editable native shot timing, select `{timeline}`. Select any shot listed in"
+                f" `{MANIFEST_FILE}` to inspect its geometry and camera."
+            ),
             "",
         ]
     lines += [
-        f"`{RECIPE_FILE}` is the approved recipe without its project, credentials or URLs."
-        f" `{LEDGER_FILE}` lists each approved take, how it was made and its quoted cost,"
-        " without service identifiers. Blender keeps unused bytes of earlier settings inside"
-        " some fields of a .blend file; review the bundle before publishing it widely.",
+        (
+            f"`{RECIPE_FILE}` is the approved recipe without its project, credentials or URLs."
+            f" `{LEDGER_FILE}` lists each approved take, how it was made and its quoted cost,"
+            " without service identifiers. Blender keeps unused bytes of earlier settings inside"
+            " some fields of a .blend file; review the bundle before publishing it widely."
+        ),
         "",
         ATTRIBUTION,
         "",

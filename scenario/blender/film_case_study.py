@@ -29,7 +29,7 @@ from ..core.jobs.local_render import blender_path, digest
 from ..core.scene import film_case_study
 from . import film_jobs, film_scene
 from .film_application import _main_thread
-from .film_case_study_worker import KEEP
+from .film_case_study_worker import embedded, removed, strip_file
 from .film_export import _LIMIT, _OPEN, _SOURCES, FilmExportCommands, _Export, _readable
 
 STALE = (
@@ -102,28 +102,68 @@ def _closure(roots, users):
     return reachable
 
 
-def _values(value):
+# Extension settings that describe the scene rather than name an account, job, asset,
+# upload or local file: model choices (recipes keep model IDs too), parameter and
+# input names, kinds and values, titles, labels, prompts and object names, which
+# the bundle carries anyway. Every other setting value is scanned for, so a new
+# setting counts as private until it is listed here.
+_DESCRIPTIVE_SETTINGS = frozenset(
+    {
+        "description",
+        "kind",
+        "label",
+        "lane",
+        "model_id",
+        "model_key",
+        "multi_value",
+        "name",
+        "options",
+        "param_name",
+        "prompt",
+        "ptype",
+        "refine",
+        "source_object",
+        "spark_look",
+        "str_value",
+        "title",
+    }
+)
+
+
+def _values(value, descriptive=frozenset()):
+    """Every string an ID property holds: nested groups, group and string lists, bytes."""
     if hasattr(value, "to_dict"):
         value = value.to_dict()
+    elif hasattr(value, "to_list"):
+        value = value.to_list()
     if isinstance(value, dict):
-        for item in value.values():
-            yield from _values(item)
-    elif isinstance(value, (list, tuple)):
+        for key, item in value.items():
+            if key not in descriptive:
+                yield from _values(item, descriptive)
+    elif isinstance(value, (list, tuple, set, frozenset)):
         for item in value:
-            yield from _values(item)
+            yield from _values(item, descriptive)
+    elif isinstance(value, (bytes, bytearray)):
+        try:
+            yield bytes(value).decode("utf-8")
+        except UnicodeDecodeError:
+            pass  # Not text, so not an identifier a reader could recognize.
     elif isinstance(value, str):
         yield value
 
 
 def _markers(owner):
-    """Identifier-like values of Scenario properties the bundle removes."""
+    """Identifier-like values of the Scenario properties and settings the bundle removes."""
+    custom, settings = removed(owner)
     found = set()
-    for key in owner.keys():
-        if not key.lower().lstrip("_").startswith("scenario") or key in KEEP:
-            continue
-        for value in _values(owner[key]):
-            if 12 <= len(value) <= 256 and not any(c.isspace() or ord(c) < 32 for c in value):
-                found.add(value)
+    try:
+        values = [value for item in custom for value in _values(item)]
+        values += [value for item in settings for value in _values(item, _DESCRIPTIVE_SETTINGS)]
+    except RecursionError:
+        raise ValueError("Scenario properties are nested too deeply for a case study") from None
+    for value in values:
+        if 12 <= len(value) <= 256 and not any(c.isspace() or not c.isprintable() for c in value):
+            found.add(value)
     return found
 
 
@@ -145,7 +185,8 @@ def _collect(roots, timeline, users=None):
             raise ValueError("Make linked or overridden data local before exporting a case study")
         if isinstance(datablock, (bpy.types.MovieClip, bpy.types.CacheFile, bpy.types.Volume)):
             raise ValueError("Remove movie clips, cache files and volumes from the case study")
-        markers |= _markers(datablock)
+        for owner in embedded(bpy, datablock):
+            markers |= _markers(owner)
         if isinstance(datablock, bpy.types.Image):
             if datablock.type not in {"IMAGE", "MULTILAYER"} or datablock.source in {
                 "GENERATED",
@@ -178,7 +219,7 @@ def _collect(roots, timeline, users=None):
                     add(strip.filepath, "movie")
                 elif strip.type == "IMAGE":
                     for element in strip.elements:
-                        add(os.path.join(strip.directory, element.filename), "image")
+                        add(strip_file(strip.directory, element.filename), "image")
                 elif strip.type == "SOUND":
                     if strip.sound is None or strip.sound.packed_file is not None:
                         raise ValueError("Unpack sound strip audio before exporting a case study")

@@ -206,13 +206,19 @@ file, scenes, frame or media paths. It refuses linked data and data that cannot
 travel before any approval. The bundled
 [`film_case_study_worker.py`](../../scenario/blender/film_case_study_worker.py)
 edits only that snapshot in an offline child: it fills each rewritten path field
-completely before setting its bundle-relative value, rebuilds sound strips so
-their hidden paths are relative, repacks packed images and removes Scenario
-properties that name jobs, assets or productions together with the extension's
-registered settings, which Blender 5 stores apart from custom properties; a second
+with the longest value Blender stores there before setting its bundle-relative
+value, rebuilds sound strips so their hidden paths are relative, repacks packed
+images and removes Scenario properties that name jobs, assets or productions
+together with the extension's registered settings, which Blender 5 stores apart
+from custom properties. The main thread scans for identifier-like values of
+everything removed, including nested groups, lists and byte strings in settings,
+node trees, master collections and strips; descriptive settings such as model
+choices are skipped. Rewritten paths and image strip frames use `/`: Blender
+converts every path to the native separator, `\` on Windows, when it opens a
+file, and `os.path.join` reads a `//` folder as a Windows network share. A second
 child reopens the written library and reports its file references with `/`
-separators, because Blender lists a strip's stored folder and file name joined by
-the native separator, `\` on Windows. Media copies, checks, private scans
+separators, because its listing joins a strip's folder and file name with the
+native separator. Media copies, checks, private scans
 and the archive run in bpy-free core code on the session-owned export thread. See
 the [bundle contract](../FILM_PLAN.md#portable-case-study-bundle). Drawing reads
 cached status; desktop interaction remains pending.

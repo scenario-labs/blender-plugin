@@ -129,21 +129,41 @@ def _overwrite(owner, attribute, value, filler):
     setattr(owner, attribute, value)
 
 
-FILE_FILLER = "_" * 1022
-STRIP_FILLER = "_" * 760 + "/" + "_" * 250
+# The longest values Blender keeps in its fixed path buffers, each ending in a NUL:
+# 1,023 characters of a path, 767 of a folder (with its "/") and 255 of a file name.
+# A movie strip's path fills both its folder and its file name buffers.
+FILE_FILLER = "_" * 1023
 DIRECTORY_FILLER = "_" * 766 + "/"
-NAME_FILLER = "_" * 254
+NAME_FILLER = "_" * 255
+STRIP_FILLER = DIRECTORY_FILLER + NAME_FILLER
+
+
+def strip_file(directory, filename):
+    """An image strip frame's path from its folder and file name, joined as stored.
+
+    ``os.path.join`` reads a blend-relative ``//`` folder as a Windows network share:
+    with Python 3.11 it joins ``//`` and a name as ``//\\name``, which Windows
+    resolves at the drive root instead of beside the saved file.
+    """
+    if directory and not directory.endswith(("/", "\\")):
+        directory += "/"
+    return directory + filename
+
+
+def embedded(bpy, item):
+    """One data block and the data Blender stores inside it: node trees, master collections."""
+    yield item
+    tree = getattr(item, "node_tree", None)
+    if tree is not None:
+        yield tree
+    if isinstance(item, bpy.types.Scene):
+        yield item.collection
 
 
 def _ids(bpy):
     for name in COLLECTIONS:
         for item in getattr(bpy.data, name, ()):
-            yield item
-            tree = getattr(item, "node_tree", None)
-            if tree is not None:
-                yield tree
-            if isinstance(item, bpy.types.Scene):
-                yield item.collection
+            yield from embedded(bpy, item)
 
 
 def _scenario(key):
@@ -170,6 +190,12 @@ def _settings(owner):
     if group is None:
         return None, []
     return group, [key for key in group.keys() if _scenario(key)]
+
+
+def removed(owner):
+    """The values ``bundle`` deletes from one owner: Scenario properties, then settings."""
+    group, keys = _settings(owner)
+    return [owner[key] for key in _private(owner)], [group[key] for key in keys]
 
 
 def _remove(owner):
@@ -314,7 +340,7 @@ def _bundle(bpy, spec):
                 _overwrite(strip, "filepath", relative(strip.filepath), STRIP_FILLER)
             elif strip.type == "IMAGE":
                 directory = strip.directory
-                elements = [relative(os.path.join(directory, e.filename)) for e in strip.elements]
+                elements = [relative(strip_file(directory, e.filename)) for e in strip.elements]
                 _overwrite(strip, "directory", "//" + MEDIA + "/", DIRECTORY_FILLER)
                 for element, path in zip(strip.elements, elements, strict=True):
                     _overwrite(element, "filename", path.rsplit("/", 1)[1], NAME_FILLER)
@@ -352,9 +378,9 @@ def _bundle(bpy, spec):
 def _listed(bpy, packed):
     """Blender's file references, with ``/`` between folders on every platform.
 
-    Movie, image and sound strips keep a folder and a file name; the listing joins
-    them with the native separator, so Windows reports ``//Media\\001 movie.mp4``
-    for the stored ``//Media/`` and ``001 movie.mp4``.
+    Opening a file converts its paths to the native separator, and the listing
+    joins a strip's folder and file name with it, so Windows reports
+    ``//Media\\001 movie.mp4`` for the stored ``//Media/`` and ``001 movie.mp4``.
     """
     paths = bpy.utils.blend_paths(absolute=False, packed=packed, local=False)
     return [path.replace(os.sep, "/") for path in paths]

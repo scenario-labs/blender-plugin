@@ -1257,16 +1257,23 @@ the extension's saved settings from every bundled data block: Blender 5 stores
 registered properties apart from custom ones, and composer lanes keep reference
 uploads' request and asset IDs, concept jobs and local reference paths, while the
 Film form keeps its production and raw recipe. Rewritten path fields are filled
-completely before their final value, so an earlier path is not left in their
-unused bytes. It writes the scenes as an uncompressed data library with fake
-users. A second offline child reopens that library and reports its scenes, file
-references and remaining Scenario properties and settings; the export requires
-exactly the chosen scenes, only bundle-relative Media references that exist,
-neutral packed names, no libraries and no private properties. The library and
-every document are scanned for the production, credential scope, request, job,
-asset, upload and application identifiers of the approved tasks, removed property
-values, extension storage and the source media folders. Any match refuses the
-export.
+with the longest value Blender stores in them (1,023 characters of a path, 767 of
+a folder, 255 of a file name, and both for a movie strip) before their final
+value, so an earlier path is not left in their unused bytes. Every rewritten path
+uses `/`; Blender converts a file's paths to the native separator when it opens
+it, so the same bundle opens on any system. It writes the scenes as an
+uncompressed data library with fake users. A second offline child reopens that
+library and reports its scenes, file references and remaining Scenario properties
+and settings; the export requires exactly the chosen scenes, only bundle-relative
+Media references that exist, neutral packed names, no libraries and no private
+properties. The library and every document are scanned for the production,
+credential scope, request, job, asset, upload and application identifiers of the
+approved tasks, extension storage, the source media folders and every
+identifier-like value of the removed properties and settings, in data blocks, their
+node trees and master collections and strips, through nested groups, lists and
+byte strings. Descriptive settings are not scanned for: model choices, parameter
+and input names, kinds and values, titles, labels, prompts and object names, which
+the recipe or the scenes carry anyway. Any match refuses the export.
 
 The archive holds one top folder, `<Title> Case Study`, with the `.blend` file,
 `Film Recipe.json`, `Production Ledger.json`, `Case Study Manifest.json`,
@@ -1327,7 +1334,12 @@ bundle from a review scene and a timeline with a textured, tagged shot; reopen t
 extracted archive in a fresh offline Blender, which resolves every relative file,
 keeps the rebuilt sound strip's animation and renders a frame from the relative
 movie; and check that no archived byte holds a private identifier or the source,
-storage or output folders. They also cover inspection filters and blocking
+storage or output folders and that the library stores `/` paths. Others check that
+the fillers leave no byte of the longest paths Blender keeps, that image strip
+frames join their folder and name with `/` so Windows resolves a `//` folder
+beside the saved file, that the scan reads every property and setting container
+and that a removed setting's value kept elsewhere refuses the export. They also
+cover inspection filters and blocking
 reasons, destination refusals, exact and agent approvals, the native file browser
 and Save dialogs, progress, cancellation, a failed save with a copy-only native
 re-publish, invalidation by a timeline or shot change, the shared export thread,

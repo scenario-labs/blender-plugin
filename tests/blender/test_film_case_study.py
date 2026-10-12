@@ -4,6 +4,8 @@
 
 import hashlib
 import json
+import ntpath
+import os
 import subprocess
 import tempfile
 import threading
@@ -42,12 +44,14 @@ for collection in (bpy.data.scenes, bpy.data.objects, bpy.data.materials, bpy.da
     for owner in collection:
         group = owner.bl_system_properties_get(do_create=False)
         system += [k for k in (group.keys() if group is not None else ()) if "scenario" in k]
-# Windows joins a strip's stored folder and file name with its own separator.
+# Opening a file converts its paths to the native separator, "\\" on Windows.
+def portable(path):
+    return path.replace(os.sep, "/")
 listed = bpy.utils.blend_paths(absolute=False, packed=False, local=False)
-paths = [path.replace(os.sep, "/") for path in listed]
+paths = [portable(path) for path in listed]
 strips = review.sequence_editor.strips_all
 sounds = [s for s in strips if s.type == "SOUND"]
-render_paths = sorted({scene.render.filepath for scene in bpy.data.scenes})
+render_paths = sorted({portable(scene.render.filepath) for scene in bpy.data.scenes})
 review.render.resolution_x = review.render.resolution_y = 64
 review.render.resolution_percentage = 100
 review.render.image_settings.file_format = "PNG"
@@ -60,8 +64,8 @@ report = {
     "paths": paths,
     "resolved": [os.path.isfile(bpy.path.abspath(path)) for path in paths],
     "sounds": [os.path.isfile(bpy.path.abspath(s.sound.filepath)) for s in sounds],
-    "images": {i.name: [i.filepath, i.packed_file is not None] for i in bpy.data.images
-               if i.type == "IMAGE"},
+    "images": {i.name: [portable(i.filepath), i.packed_file is not None]
+               for i in bpy.data.images if i.type == "IMAGE"},
     "leftovers": leftovers,
     "system": system,
     "render_paths": render_paths,
@@ -76,6 +80,19 @@ report = {
         for bag in strip.channelbags
         for curve in bag.fcurves
     ),
+}
+with open(report_path, "w", encoding="utf-8") as stream:
+    json.dump(report, stream)
+"""
+
+SEPARATORS = r"""
+import json, sys
+import bpy
+
+(report_path,) = sys.argv[sys.argv.index("--") + 1 :]
+report = {
+    "render": bpy.data.scenes["Separator probe"].render.filepath,
+    "image": bpy.data.images["Separator probe"].filepath,
 }
 with open(report_path, "w", encoding="utf-8") as stream:
     json.dump(report, stream)
@@ -260,19 +277,14 @@ class FilmCaseStudyTests(unittest.TestCase):
     def assert_offline(self):
         self.assertFalse(self.media.calls or self.media.downloads)
 
-    def reopen(self, archive):
-        """Extract the archive elsewhere and reopen it in a fresh isolated Blender."""
+    def open_in_blender(self, blend, source, *arguments):
+        """Run ``source`` on ``blend`` in a fresh isolated offline Blender."""
         root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
-        with zipfile.ZipFile(archive) as bundle:
-            bundle.extractall(root / "extracted")
-        (top,) = (root / "extracted").iterdir()
-        (blend,) = top.glob("*.blend")
-        script = root / "reopen.py"
-        script.write_text(REOPEN, encoding="utf-8")
+        script = root / "script.py"
+        script.write_text(source, encoding="utf-8")
         profile, temporary = root / "profile", root / "tmp"
         profile.mkdir()
         temporary.mkdir()
-        report, frame = root / "report.json", root / "frame.png"
         subprocess.run(
             [
                 bpy.app.binary_path,
@@ -287,8 +299,7 @@ class FilmCaseStudyTests(unittest.TestCase):
                 "--python",
                 str(script),
                 "--",
-                str(report),
-                str(frame),
+                *arguments,
             ],
             env=self.local_render._environment(profile, temporary),
             stdin=subprocess.DEVNULL,
@@ -297,6 +308,16 @@ class FilmCaseStudyTests(unittest.TestCase):
             timeout=300,
             check=True,
         )
+
+    def reopen(self, archive):
+        """Extract the archive elsewhere and reopen it in a fresh isolated Blender."""
+        root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(root / "extracted")
+        (top,) = (root / "extracted").iterdir()
+        (blend,) = top.glob("*.blend")
+        report, frame = root / "report.json", root / "frame.png"
+        self.open_in_blender(blend, REOPEN, str(report), str(frame))
         return top, json.loads(report.read_text(encoding="utf-8")), frame
 
     def test_real_bundle_reopens_with_relative_media_and_no_private_data(self):
@@ -389,6 +410,11 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(manifest["scenes"]["shots"], [shot.name])
         blend = contents[top_name + "Prepared cut Case Study.blend"]
         self.assertEqual(manifest["blend_file"]["sha256"], hashlib.sha256(blend).hexdigest())
+        # The library stores "/" whichever system built it; opening converts it.
+        self.assertIn(b"//render/\0", blend)
+        self.assertIn(b"//Media/002 image.jpg\0", blend)
+        self.assertNotIn(b"//render\\", blend)
+        self.assertNotIn(b"//Media\\", blend)
         for item in manifest["media"]:
             data = contents[top_name + item["file"]]
             self.assertEqual(
@@ -460,6 +486,162 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(report["missing"], ["//Media\\001 movie.mp4"])
         with self.assertRaises(self.export.LocalExportError):
             self.study.check_verified(SimpleNamespace(scenes=(), media=media), report)
+
+    def test_opening_a_library_converts_its_paths_to_the_native_separator(self):
+        # Why the bundle stores "/" and compares portable paths: Blender rewrites
+        # file and output paths with its own separator whenever it opens a file.
+        foreign = "/" if os.sep == "\\" else "\\"
+        root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        scene = bpy.data.scenes.new("Separator probe")
+        self.addCleanup(self.remove, scene)
+        image = bpy.data.images.new("Separator probe", 4, 4)
+        self.addCleanup(bpy.data.images.remove, image)
+        image.source = "FILE"
+        image.filepath_raw = f"//Media{foreign}002 image.jpg"
+        scene.render.filepath = f"//render{foreign}"
+        blend = root / "separators.blend"
+        bpy.data.libraries.write(
+            str(blend), {scene, image}, path_remap="NONE", fake_user=True, compress=False
+        )
+        self.assertIn(f"//render{foreign}\0".encode(), blend.read_bytes())
+        report = root / "report.json"
+        self.open_in_blender(blend, SEPARATORS, str(report))
+        self.assertEqual(
+            json.loads(report.read_text(encoding="utf-8")),
+            {"render": f"//render{os.sep}", "image": f"//Media{os.sep}002 image.jpg"},
+        )
+
+    def test_strip_frames_join_folder_and_name_with_a_slash(self):
+        # Python 3.11's ntpath (Blender 5.0 on Windows) joins "//" and a name as
+        # "//\\name", which Windows resolves at the drive root, not beside the file.
+        worker = submodule("blender.film_case_study_worker")
+        joined = {
+            "//": "//001 image.jpg",
+            "//./": "//./001 image.jpg",
+            "//Media\\": "//Media\\001 image.jpg",
+            "//Media/": "//Media/001 image.jpg",
+            "//Media": "//Media/001 image.jpg",
+            "C:\\Film\\Media\\": "C:\\Film\\Media\\001 image.jpg",
+            "": "001 image.jpg",
+        }
+        for directory, expected in joined.items():
+            with self.subTest(directory=directory):
+                path = worker.strip_file(directory, "001 image.jpg")
+                self.assertEqual(path, expected)
+                if path.startswith("//"):
+                    resolved = ntpath.normpath(ntpath.join("C:\\Film", path[2:]))
+                    self.assertTrue(resolved.startswith("C:\\Film\\"), resolved)
+                    self.assertTrue(resolved.endswith("\\001 image.jpg"), resolved)
+        # Stamping and the bundle child join strip frames the same way.
+        self.assertIs(self.module.strip_file, worker.strip_file)
+
+    def test_path_fillers_clear_the_longest_values_blender_stores(self):
+        worker = submodule("blender.film_case_study_worker")
+        scene = bpy.data.scenes.new("Filler probe")
+        self.addCleanup(self.remove, scene)
+        image = bpy.data.images.new("Filler probe", 4, 4)
+        self.addCleanup(bpy.data.images.remove, image)
+        image.source = "FILE"
+        editor = scene.sequence_editor_create()
+        movie = editor.strips.new_movie(
+            "Movie", str(FIXTURES / "synthetic/film-four-seconds.mp4"), 1, 1
+        )
+        frames = editor.strips.new_image(
+            "Frames", str(FIXTURES / "synthetic/panorama-progressive.jpg"), 2, 1
+        )
+        # The longest folder (767 characters with its "/"), file name (255) and
+        # path (1,023) Blender keeps in its fixed buffers, each ending in a NUL.
+        folder, name, path = "/" + "Z" * 765 + "/", "Q" * 255, "/" + "Y" * 1022
+        movie.filepath = folder + name
+        frames.directory = folder
+        frames.elements[0].filename = name
+        image.filepath_raw = scene.render.filepath = path
+        self.assertEqual(
+            (len(movie.filepath), len(frames.directory), len(frames.elements[0].filename)),
+            (1022, 767, 255),
+        )
+        worker._overwrite(movie, "filepath", "//Media/001 movie.mp4", worker.STRIP_FILLER)
+        worker._overwrite(frames, "directory", "//Media/", worker.DIRECTORY_FILLER)
+        worker._overwrite(frames.elements[0], "filename", "002 image.jpg", worker.NAME_FILLER)
+        worker._overwrite(image, "filepath_raw", "//Media/003 image.jpg", worker.FILE_FILLER)
+        worker._overwrite(scene.render, "filepath", "//render/", worker.FILE_FILLER)
+        written = Path(self.enterContext(tempfile.TemporaryDirectory())) / "fillers.blend"
+        bpy.data.libraries.write(str(written), {scene, image}, path_remap="NONE", compress=False)
+        data = written.read_bytes()
+        self.assertIn(b"//Media/\0", data)
+        for leftover in (b"ZZZZ", b"QQQQ", b"YYYY"):
+            self.assertNotIn(leftover, data)
+
+    def test_private_scan_reads_every_scenario_property_container(self):
+        timeline, shot = self.build_timeline()
+        hero = next(obj for obj in shot.objects if obj.get("scenario_role") == "hero")
+        material = hero.data.materials[0]
+        (strip,) = timeline.sequence_editor.strips_all
+        # Blender 5 keeps registered settings apart from custom properties; besides
+        # the composer lane, this test registers a byte string and a strip setting.
+        bpy.types.Scene.scenario_case_probe = bpy.props.StringProperty(subtype="BYTE_STRING")
+        bpy.types.Strip.scenario_case_probe = bpy.props.StringProperty()
+        self.addCleanup(delattr, bpy.types.Scene, "scenario_case_probe")
+        self.addCleanup(delattr, bpy.types.Strip, "scenario_case_probe")
+        self.addCleanup(self.clear_lanes, [shot])
+        lane = shot.scenario.image
+        reference = lane.references.add()
+        private = {
+            "setting": "private-setting-concept-job",
+            "setting collection": "private-setting-reference-asset",
+            "setting item property": "private-setting-reference-request",
+            "setting byte string": "private-setting-byte-string",
+            "strip setting": "private-strip-setting-value",
+            "nested group": "private-nested-group-request",
+            "group list": "private-group-list-asset",
+            "string list": "private-string-list-upload",
+            "byte string": "private-custom-byte-string",
+            "kept tag holding a group": "private-kept-tag-group",
+            "node tree": "private-node-tree-job",
+            "master collection": "private-master-collection-job",
+            "strip group": "private-strip-group-job",
+        }
+        lane.concept_job = private["setting"]
+        reference.asset_id = private["setting collection"]
+        reference["_scenario_reference_request"] = private["setting item property"]
+        shot.scenario_case_probe = private["setting byte string"].encode()
+        strip.scenario_case_probe = private["strip setting"]
+        hero["scenario_upload"] = {"nested": {"request": private["nested group"]}}
+        hero["scenario_uploads"] = [{"asset": private["group list"]}]
+        hero["scenario_assets"] = [private["string list"], "short"]
+        hero["scenario_raw"] = private["byte string"].encode()
+        hero["scenario_hero_id"] = {"id": private["kept tag holding a group"]}
+        hero["scenario_weights"] = [0.5, 1.5]
+        material.node_tree["scenario_job"] = private["node tree"]
+        shot.collection["scenario_job"] = private["master collection"]
+        strip["scenario_job"] = {"id": private["strip group"]}
+        # Descriptive settings are not scanned for: model choices, parameter names and
+        # values and object names also travel in the recipe or the scene itself.
+        lane.model_key = "descriptive-model-identifier"
+        lane.source_object = "DescriptiveHeroObject"
+        parameter = lane.params.add()
+        parameter.name, parameter.str_value = "descriptive_parameter", "descriptive_16_9_choice"
+        markers = self.module._collect((timeline,), timeline).markers
+        for container, value in private.items():
+            with self.subTest(container=container):
+                self.assertIn(value, markers)
+        for value in (
+            "short",
+            "descriptive-model-identifier",
+            "DescriptiveHeroObject",
+            "descriptive_parameter",
+            "descriptive_16_9_choice",
+        ):
+            self.assertNotIn(value, markers)
+        # A removed setting's value that survives elsewhere in the library refuses it.
+        hero["note"] = private["setting"]
+        status = self.mcp_prepare(name="Leak.zip")
+        self.approve(status)
+        status = self.settle(status["review_id"])
+        self.assertEqual(status["phase"], "ERROR")
+        self.assertIn("private Scenario identifier", status["error"])
+        self.assertFalse((self.folder / "Leak.zip").exists())
+        self.assert_offline()
 
     def test_inspection_lists_reviews_and_current_timelines_without_changes(self):
         timeline, shot = self.build_timeline()

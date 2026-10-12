@@ -8,15 +8,15 @@
     "path": "docs/WORLD_APPLICATION.md",
     "scope": "panorama-environment-lane",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-10",
-    "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
+    "reviewed_at": "2026-10-12",
+    "base_revision": "4bd0061d73f6d049a86adac37119cc7a2c37741c",
     "limits": "Reviewed that MCP Environment lane jobs stop at saved results without automatic image import or World replacement, that their projection results reach the existing World approval unchanged, and that the guide no longer lists SDK model validation and estimates among missing work while still listing the native tab, storage policy, undo, seam and pole quality and live generation. Installed native tests on macOS arm64 Blender 5.1.2 check that a saved panorama job leaves the scene World and images unchanged. No live panorama output, World application of a generated panorama, other Blender version or desktop interaction is established.",
     "sources": {
-      "docs/WORLD_APPLICATION.md": "d26bd7ddfcb3ddbf1ec4e2581652c609bd3dafde7c764420b71c82acd9e9e840",
-      "scenario/mcp/tools_scenario.py": "250b62c0e6f90129bb9eb09336ac97ec823512a8440ab28e277e77ee14f013ab",
-      "scenario/blender/model_jobs.py": "56e8699e97278dcd39bdf38404e9dc2407f22217053a98f663d11e8a4e6c284c",
+      "docs/WORLD_APPLICATION.md": "007b9f4b31a312261d2038a85486ad851aacf5797c693eaa55e1d600b90b90d6",
+      "scenario/mcp/tools_scenario.py": "54dd2fc57b96ddcac1f8e44fa97df513487a7f3537266797a2f5ab024a760ca0",
+      "scenario/blender/model_jobs.py": "88f17955538534d792b7408cf8e11e705bb2e6ee82d584173d51a365504c467d",
       "scenario/core/scene/panorama_contract.py": "2110f885c49516bbc985c2948c9542350f74041448348ec34952e23d2fb8fa99",
-      "tests/blender/test_model_generation.py": "bf3d274e457ff4377c0bd42ad8d639b557dfbeeccbcbd1311d5c0f814469d2ce"
+      "tests/blender/test_model_generation.py": "402e14442c01ec69eec18d401b3aebbc32ce7d080efc69e2ee32e9ea837a039c"
     }
   }
 }

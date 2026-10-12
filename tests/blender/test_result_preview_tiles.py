@@ -60,6 +60,11 @@ def corrupt_png(width, height):
 # with its category tabs) from the region's edges to the text after the line's
 # icon and to the job box's right content edge. Wider lines would be clipped.
 STATUS_MARGIN = 90
+# The longest any wait here may take. Previews settle in well under a second on
+# hosted CI, so this is ample; a bound per wait keeps tiles that never settle,
+# as when no icon could be built on Windows, from adding up to the native
+# runner's per-process timeout before unittest can report why.
+WAIT_SECONDS = 10
 
 
 class Layout:
@@ -262,7 +267,7 @@ class ResultPreviewTileTests(unittest.TestCase):
         scheduler = self.runtime.state.job_session.result_previews
         scheduler._delays, scheduler._window = (0.05,), window
 
-    def settle(self, predicate, timeout=30):
+    def settle(self, predicate, timeout=WAIT_SECONDS):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             # The same main-thread entry points as the GUI timers.
@@ -272,6 +277,22 @@ class ResultPreviewTileTests(unittest.TestCase):
                 return
             time.sleep(0.01)
         self.fail(f"Previews did not settle: {self.tiles.controller.tiles}")
+
+    def cache_still(self, scheduler):
+        """Run the lane until it caches the image's decoded still, building no icon.
+
+        Returns the still's status; fails after ``WAIT_SECONDS``.
+        """
+        ready = self.previews.PreviewState.READY
+        deadline = time.monotonic() + WAIT_SECONDS
+        while time.monotonic() < deadline:
+            self.module.reap_retired()
+            self.tiles.controller._decode_one(scheduler)
+            status = scheduler.status("request", "image")
+            if status is not None and status.get("still").state == ready:
+                return status.get("still")
+            time.sleep(0.01)
+        self.fail(f"The lane did not cache the still: {scheduler.status('request', 'image')}")
 
     def tile(self, request_id="request", index=0):
         tiles = self.tiles.controller.tiles.get(request_id, ())
@@ -331,10 +352,14 @@ class ResultPreviewTileTests(unittest.TestCase):
         first = tuple(round(value, 2) for value in preview.image_pixels_float[:4])
         self.assertEqual(first, (0.25, 0.5, 0.75, 1.0))
         # The lane cached Blender's PNG, bound to the saved receipt.
-        status = self.runtime.state.job_session.result_previews.status("request", "image")
-        cached = status.get("still").preview
+        scheduler = self.runtime.state.job_session.result_previews
+        cached = scheduler.status("request", "image").get("still").preview
         self.assertEqual((cached.media_type, cached.width, cached.height), ("image/png", 256, 128))
-        self.assertTrue(cached.path.is_relative_to(self.root / "cache" / "result-previews"))
+        # Spelled from the cache's canonical root, Windows' extended \\?\ namespace,
+        # which the icon step compares with the scheduler's configured root.
+        canonical = self.transfers._root(self.root / "cache" / "result-previews")
+        self.assertTrue(cached.path.is_relative_to(canonical))
+        self.assertTrue(self.previews.in_cache(cached.path, scheduler.root))
         # The temporary decode left the open file, its data and flags unchanged.
         self.assertEqual(self.data_counts(), self.counts)
         self.assertEqual(bpy.data.is_dirty, dirty)
@@ -596,19 +621,7 @@ class ResultPreviewTileTests(unittest.TestCase):
             scheduler = self.runtime.state.job_session.result_previews
             # Let the lane cache the decoded still, but build no icon yet.
             self.tiles.controller.poll()
-            ready = self.previews.PreviewState.READY
-
-            def cached():
-                self.module.reap_retired()
-                self.tiles.controller._decode_one(scheduler)
-                status = scheduler.status("request", "image")
-                return status is not None and status.get("still").state == ready
-
-            deadline = time.monotonic() + 30
-            while not cached():
-                self.assertLess(time.monotonic(), deadline)
-                time.sleep(0.01)
-            path = scheduler.status("request", "image").get("still").preview.path
+            path = self.cache_still(scheduler).preview.path
             path.write_bytes(png(64, 32, b"\xff\x00\x00\xff"))
             self.settle(lambda: self.status() == "unavailable")
             self.assertIn("changed or was removed", self.tile().message)
@@ -631,19 +644,7 @@ class ResultPreviewTileTests(unittest.TestCase):
             view = self.saved([("image", "result.png", "image/png", png(64, 32))])
             scheduler = self.runtime.state.job_session.result_previews
             self.tiles.controller.poll()
-            ready = self.previews.PreviewState.READY
-
-            def cached():
-                self.module.reap_retired()
-                self.tiles.controller._decode_one(scheduler)
-                status = scheduler.status("request", "image")
-                return status is not None and status.get("still").state == ready
-
-            deadline = time.monotonic() + 30
-            while not cached():
-                self.assertLess(time.monotonic(), deadline)
-                time.sleep(0.01)
-            preview = scheduler.status("request", "image").get("still").preview
+            preview = self.cache_still(scheduler).preview
             preview.path.unlink()
             os.mkfifo(preview.path, 0o600)
             result = []
@@ -1068,8 +1069,9 @@ class ResultPreviewTileTests(unittest.TestCase):
             except RuntimeError as error:
                 errors.append(str(error))
 
-        worker = threading.Thread(target=run)
+        worker = threading.Thread(target=run, daemon=True)
         worker.start()
-        worker.join()
+        worker.join(WAIT_SECONDS)
+        self.assertFalse(worker.is_alive())
         self.assertEqual(errors, ["Result previews belong to Blender's main thread"])
         self.assertIsInstance(self.tiles.controller, self.tiles.PreviewController)

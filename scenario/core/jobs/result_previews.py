@@ -37,7 +37,7 @@ from . import audio_decode
 from .local_render import RenderCancelled
 from .media_probe import FORMATS, MediaProbeError, _snapshot
 from .store import JobScope, StoredResult, _identity, _json
-from .transfers import DownloadedResult, TransferError, _root
+from .transfers import DownloadedResult, TransferError, _root, _windows_storage_path
 
 FORMAT = 1
 STILL, CLIP, ENVELOPE = "still", "clip", "envelope"
@@ -663,6 +663,21 @@ def _read_small(path, limit):
 def _read_head(path, limit):
     with _open_regular(path) as stream:
         return stream.read(limit)
+
+
+def in_cache(path, root):
+    r"""Whether ``path``, as a ``PreviewCache`` returned it, lies below the cache ``root``.
+
+    The cache spells its paths from the canonical root, which on Windows is the
+    extended-length ``\\?\`` namespace, while callers such as the preview
+    scheduler keep the root as configured. Pathlib never relates ``\\?\D:\...``
+    to ``D:\...``, so both are compared in the extended namespace; paths
+    without a drive, as on POSIX, compare unchanged. Lexical only: no I/O.
+    """
+    try:
+        return _windows_storage_path(path).is_relative_to(_windows_storage_path(root))
+    except TransferError:
+        return False  # A Windows device path is never inside the cache.
 
 
 def discard_directory(directory):

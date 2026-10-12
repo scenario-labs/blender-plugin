@@ -49,6 +49,7 @@ from ..core.jobs.result_previews import (
     PreviewError,
     PreviewState,
     bounded_local_image,
+    in_cache,
     preview_kind,
 )
 from ..core.jobs.results import PREVIEW_STATES, ResultError
@@ -166,10 +167,14 @@ class _Job:
 
 
 def _verified(preview, root):
-    """The cache file of a ready still, rehashed against its entry, or None."""
+    r"""The cache file of a ready still, rehashed against its entry, or None.
+
+    ``root`` is the scheduler's configured root; the cache spells ``path`` from
+    its canonical root, the extended ``\\?\`` namespace on Windows.
+    """
     path = preview.path
     try:
-        if path is None or not Path(path).is_relative_to(root):
+        if path is None or not in_cache(Path(path), Path(root)):
             return None
         # Nonblocking: a named pipe in its place would otherwise block the
         # main-thread timer until a writer opens it.

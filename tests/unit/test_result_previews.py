@@ -14,7 +14,7 @@ import wave
 import zlib
 from contextlib import contextmanager
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from types import SimpleNamespace
 
 import httpx
@@ -689,6 +689,48 @@ def test_cache_paths_keep_the_canonical_root_spelling(env, monkeypatch):
     assert published.path.is_relative_to(root) and (published.width, published.height) == (4, 2)
     env.coordinator.discard_result_preview(other, root=env.cache)
     assert work_directories(env) == []
+
+
+@pytest.mark.parametrize(
+    "path, root, inside",
+    [
+        # Windows: the cache's extended spelling below the configured root.
+        (r"\\?\D:\cache\result-previews\v1\s\k\still.png", r"D:\cache\result-previews", True),
+        (r"\\?\d:\Cache\Result-Previews\v1\still.png", r"D:\cache\result-previews", True),
+        (r"\\?\D:\cache\result-previews\v1\still.png", r"\\?\D:\cache\result-previews", True),
+        (r"D:\cache\result-previews\v1\still.png", r"D:\cache\result-previews", True),
+        (r"\\?\UNC\host\share\previews\v1\still.png", r"\\host\share\previews", True),
+        (r"\\?\D:\cache\other\still.png", r"D:\cache\result-previews", False),
+        (r"\\?\D:\cache\result-previews-x\still.png", r"D:\cache\result-previews", False),
+        (r"\\?\E:\cache\result-previews\still.png", r"D:\cache\result-previews", False),
+        (r"\\?\UNC\host\other\previews\still.png", r"\\host\share\previews", False),
+        (r"\\.\D:\cache\result-previews\still.png", r"D:\cache\result-previews", False),
+    ],
+)
+def test_windows_cache_paths_are_in_the_configured_root(path, root, inside):
+    """Adapted from a Windows CI failure: no icon was ever built from a ready still.
+
+    The cache returns ``\\\\?\\D:\\...`` paths while the scheduler holds ``D:\\...``,
+    which pathlib's ``is_relative_to`` never relates.
+    """
+    path, root = PureWindowsPath(path), PureWindowsPath(root)
+    assert previews.in_cache(path, root) is inside
+    if inside and str(path).startswith("\\\\?\\") and not str(root).startswith("\\\\?\\"):
+        assert not path.is_relative_to(root)  # The check the icon step used before.
+
+
+@pytest.mark.parametrize(
+    "path, inside",
+    [
+        ("/cache/result-previews/v1/s/k/still.png", True),
+        ("/cache/result-previews", True),
+        ("/cache/result-previews-x/still.png", False),
+        ("/cache/other/still.png", False),
+    ],
+)
+def test_posix_cache_paths_compare_unchanged(path, inside):
+    root = PurePosixPath("/cache/result-previews")
+    assert previews.in_cache(PurePosixPath(path), root) is inside
 
 
 @pytest.mark.parametrize(

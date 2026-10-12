@@ -254,7 +254,8 @@ a failed redraw is logged and does not stop it:
   decode fails with a reason; the lane validates and caches the PNG.
 - **Icons.** For a ready still, it rereads the cache file, opened without
   following a symbolic link or waiting on a named pipe, as a regular file
-  inside the cache root and compares its size and SHA-256
+  inside the cache root, checked in the root's canonical spelling (the
+  extended `\\?\` namespace on Windows), and compares its size and SHA-256
   with the cache entry, then decodes that file the same way to at most 256
   pixels per side. It builds at most one icon per tick, none in a tick that
   decoded an image copy, in its own `bpy.utils.previews` collection from the

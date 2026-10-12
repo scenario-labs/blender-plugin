@@ -390,15 +390,16 @@ under #66.
 
 The composer's modal operator runs one session at a time, from a pointer move
 over the composer until a click outside it, or until the pointer leaves it
-while the prompt is unfocused. A refused Generate, such as a failed poll or an error report from the submission,
-is reported as a warning and the session goes on. If handling a click or key
-raises anything else, Blender ends the session and reports the error. The
-composer then leaves a focused prompt and marks no session as running, so the
-next pointer move over it starts a new session. A session that Blender ends
-without an event, because its window closed or a file loaded, ends the same
-way through the operator's cancel callback. Every file load (Open, Revert,
-File > New) collapses the card to the pill, leaves the prompt and restores the
-saved placement; its handler persists across loads.
+while the prompt is unfocused. A refused Generate, such as a failed poll or an
+error report from the submission, is reported as a warning and the session goes
+on. If handling any other event raises, whether a click, a key, a pointer move
+or a drag, the composer ends its session and Blender reports the error. The
+composer leaves a focused prompt and marks no session as running, so the next
+pointer move over it starts a new session. A session that Blender ends without
+an event, because its window closed or a file loaded, ends the same way through
+the operator's cancel callback. Every file load (Open, Revert, File > New)
+collapses the card to the pill, leaves the prompt and restores the saved
+placement; its handler persists across loads.
 
 A physical Blender 5.1.2 macOS check found the composer frozen for the rest of
 the session after one Generate refused by the GUI spend guard: clicks on it fell
@@ -409,7 +410,16 @@ send the modal a Generate refused by the spend guard's poll, an error raised
 while a key is typed in the focused prompt and the cancel callback during a
 drag, and run three file loads in a row. The error, cancel and file-load tests
 fail on the previous composer. They call the operator's handlers directly in
-background Blender; a physical recheck remains under #66.
+background Blender, which cannot start the modal itself: there, an
+`INVOKE_DEFAULT` call of a modal operator is refused before `invoke` runs, even
+with a window, area and region override. No event-simulated GUI check
+(`--enable-event-simulate`) has run for this change, because it was prepared
+without opening a Blender window. Blender's window manager has therefore not
+yet been seen dropping the handler after an error, calling cancel on a file load
+or keeping the load handler across File > Revert in an interface session. The
+[#66 follow-up](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
+lists those event-simulated checks and the physical rechecks, with their
+expected results.
 
 ## Composer text input
 

@@ -2,14 +2,14 @@
 {
   "type": "Evidence",
   "id": "docs-user-guide.composer-session-lifetime",
-  "title": "Composer after a failed click or key and after a file load",
+  "title": "Composer after a failed event and after a file load",
   "evidence": {
     "path": "docs/USER_GUIDE.md",
     "scope": "composer-session-lifetime",
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-12",
     "base_revision": "4ca693cb8f0e02a5c27c12d39bedbbc166b4e725",
-    "limits": "Reviewed the two composer sentences on a failed click or key and on file loads against the composer modal, its load handler and ComposerState initialization. An error raised while the modal handles a click or key leaves the prompt, ends the session and reaches Blender, which reports it; the next pointer move over the composer starts a new session. The persistent load handler re-initializes the composer state (collapsed, unfocused, empty field) and restores the offset and width saved in the preferences. Installed native tests in background Blender 5.1.2 on macOS arm64 cover a raised error during typing and three consecutive home-file loads; the UI style topic of the same scope records the runs, Blender source reading and limits. Not established: how Blender's status bar shows the report, Open, Revert or File > New from the interface, physical input, and other Blender versions or operating systems.",
+    "limits": "Reviewed the two composer sentences on a failure while handling the pointer or keyboard and on file loads against the composer modal, its load handler and ComposerState initialization. An error raised while the modal handles any event (click, key, pointer move or drag; the wrapper covers the whole modal method) leaves the prompt, ends the session and reaches Blender, which reports it; the next pointer move over the composer starts a new session. The persistent load handler re-initializes the composer state (collapsed, unfocused, empty field) and restores the offset and width saved in the preferences. Installed native tests in background Blender 5.1.2 on macOS arm64 cover a raised error during typing and three consecutive home-file loads; the UI style topic of the same scope records the runs, Blender source reading and limits. Not established, and tracked in the issue #66 comment 6120385854: Blender's window manager running these paths in an interface session (no event-simulated or physical check ran), how Blender's status bar shows the report, Open, Revert or File > New from the interface, physical input, and other Blender versions or operating systems.",
     "sources": {
       "scenario/blender/composer/modal.py": "968819bc3ec818fd5e7afe8ebe801832c66b65556251366da456d2043171a27e",
       "scenario/blender/composer/__init__.py": "9135da55599d3d9a0a63be6e9528571c7cf62b4164fbb55811e3682b9a6b27d6",
@@ -21,6 +21,6 @@
 }
 ---
 
-# Composer after a failed click or key and after a file load
+# Composer after a failed event and after a file load
 
 Evidence for the [user guide's floating composer section](../../USER_GUIDE.md#the-floating-composer).

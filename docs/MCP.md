@@ -684,7 +684,8 @@ most 40 rows and always keeps those the saved default uses. Private plain
 custom models are not listed, as in the picker. `model_schema` reports the same
 inputs as `lora_component`; its parameters carry `model_types`,
 `min_items`/`max_items` and a `role` (`lora_models`, `lora_strengths` or
-`composition`).
+`composition`). An array count the schema declares is reported only when it is a
+finite whole number of zero or more; any other value is left out.
 
 A trained model is never the generation target; it runs through a base model from
 its routes. A LoRA or composition has no inputs of its own, so `model_schema`,

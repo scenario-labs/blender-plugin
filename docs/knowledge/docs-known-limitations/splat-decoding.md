@@ -9,7 +9,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-11",
     "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
-    "limits": "Checked the limitation against the decoder version checks, compressed splat PLY rejection, the SPZ extension flag that is kept while extension records are not read, the prototype point-cloud presentation. No native desktop review, provider file or live acceptance; this topic covers only the splat bullet. On 2026-10-10 the bullet was rewritten for saved splat import and apply_splat.py now delegates to the shared builder; the decoding claims above were rechecked and are unchanged, and import, presentation and axis claims are covered by docs-known-limitations.saved-splat-import. The review date is unchanged.",
+    "limits": "Checked the limitation against the decoder version checks, compressed splat PLY rejection, the SPZ extension flag that is kept while extension records are not read, and the prototype point-cloud presentation. No native desktop review, provider file or live acceptance; this topic covers only the splat bullet. On 2026-10-12, rechecked against the sources of the saved splat import branch after it was rebuilt on main: the bullet was rewritten for saved splat import and apply_splat.py now delegates to the shared builder; the decoding claims above are unchanged, and import, presentation and axis claims are covered by docs-known-limitations.saved-splat-import. The review date is unchanged.",
     "sources": {
       "scenario/core/scene/splats.py": "a8462e1b261ffe3c56eb4476cf457bd19c29147ff1306460863254669907a1ad",
       "scenario/core/scene/spz.py": "dab0ca7fd16ca7dd9366d1c52e64513dd06bb78d1b82bd3dbe887ce9e59bff0a",

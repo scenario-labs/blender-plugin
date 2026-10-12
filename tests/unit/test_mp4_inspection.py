@@ -115,23 +115,27 @@ def test_real_mpeg4_part2_fixture_is_not_reported_as_h264():
 
 def test_variable_frame_durations_have_no_constant_rate(tmp_path):
     data = movie(video_track(timing=[(47, 512), (1, 1024)]))
-    assert mp4.inspect(write(tmp_path, data)).video[0].frame_rate is None
+    summary = mp4.inspect(write(tmp_path, data))
+    assert summary.video[0].frame_rate is None
 
 
 def test_non_aac_mpeg4_audio_keeps_its_sample_entry_name(tmp_path):
     data = movie(video_track(), audio_track(object_type=0x6B))
-    assert mp4.inspect(write(tmp_path, data)).audio[0].codec == "mp4a"
+    summary = mp4.inspect(write(tmp_path, data))
+    assert summary.audio[0].codec == "mp4a"
 
 
 def test_other_handlers_are_counted(tmp_path):
     text = track(b"text", box(b"tx3g", bytes(8)), scale=1000, timing=[(1, 1000)], presented=1000)
-    assert mp4.inspect(write(tmp_path, movie(video_track(), text))).other_tracks == 1
+    summary = mp4.inspect(write(tmp_path, movie(video_track(), text)))
+    assert summary.other_tracks == 1
 
 
 def test_large_size_box_headers_are_supported(tmp_path):
     data = movie(video_track())
     large = struct.pack(">I4sQ", 1, b"free", 16 + 4) + bytes(4)
-    assert mp4.inspect(write(tmp_path, data + large)).video[0].frames == 48
+    summary = mp4.inspect(write(tmp_path, data + large))
+    assert summary.video[0].frames == 48
 
 
 @pytest.mark.parametrize(

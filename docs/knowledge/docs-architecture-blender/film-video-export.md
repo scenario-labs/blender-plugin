@@ -22,7 +22,7 @@
       "tests/blender/run_all.py": "13dd9acde4cbaa95722afe08b87d7c0aa438f828c95fbb344eefea0770e66157",
       "tests/blender/test_film_export_primitive.py": "639da0069baf60abd9637b36b8192b5574576bf651e7cc65646e92dec577df63",
       "tests/unit/test_local_export.py": "e9fc2544f802edf5d9ec472b5cf243a4dec9e3a5b52fe22256a1b90110d656d1",
-      "tests/unit/test_mp4_inspection.py": "9de87e15ae3891c43b5b56918ad9c99d5451cf5a2625c0f460a290404cb9b945"
+      "tests/unit/test_mp4_inspection.py": "4c6fad6decccf554c110784c6a268e1686e686e934648faee9547450b9d743c9"
     }
   }
 }

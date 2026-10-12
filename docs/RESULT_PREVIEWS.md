@@ -318,23 +318,22 @@ command is queued or running. Shutdown joins the lane with the other workers.
 
 `ResultPreviewScheduler` runs on its owner thread, normally Blender's main
 thread, and performs no network I/O or preview cache work. `request` reads saved
-receipts from the local job store, `request_review` reads the saved workflow job,
-and `release` removes leftover private copies after the lane stops. `request`,
-`request_review`, `retry`, `cancel`, `status`, `decode_requests`, `finish_decode`
-and `discard_decode` are its interface; `retry` and `status` take `review=True`
-for a review asset. Status snapshots are immutable and safe to read while
-drawing. `request(..., renditions=...)` limits
-a request to some renditions of a result: the Waveform control asks for the
-local envelope only, so it never polls Scenario for a still. `cancel` stops one
-result's local decoding: an issued request is discarded, a running decode is
-signaled, which terminates its child, and a copy an in-flight batch is preparing
-is discarded when that batch returns. Its unfinished local renditions fail as
-canceled until `retry`, including one waiting to poll again after a failed lane
-batch; server stills keep polling. A retry after `cancel`
-reports the envelope queued at once, even while its canceled child is still
-stopping or a still poll for the same result is on the lane, so the Waveform
-control keeps loading instead of reading the canceled outcome. It sends at most
-one batch of up to 32 assets at a time.
+receipts from the local job store, `request_review` reads the saved workflow
+job, and `release` removes leftover private copies after the lane stops.
+`request`, `request_review`, `retry`, `cancel`, `status`, `decode_requests`,
+`finish_decode` and `discard_decode` are its interface; `retry` and `status`
+take `review=True` for a review asset. Status snapshots are immutable and safe
+to read while drawing. `request(..., renditions=...)` limits a request to some
+renditions of a result: the Waveform control asks for the local envelope only,
+so it never polls Scenario for a still. `cancel` stops one result's local
+decoding: an issued request is discarded, a running decode is signaled, which
+terminates its child, and a copy an in-flight batch is preparing is discarded
+when that batch returns. Its unfinished local renditions fail as canceled until
+`retry`, including one waiting to poll again after a failed lane batch; server
+stills keep polling. A retry after `cancel` reports the envelope queued at once,
+even while its canceled child is still stopping or a still poll for the same
+result is on the lane, so the Waveform control keeps loading instead of reading
+the canceled outcome. It sends at most one batch of up to 32 assets at a time.
 
 `JobSession(preview_root=...)` exposes it as `result_previews` while the session
 is active. The session's existing maintenance timer, and `reap_retired` in

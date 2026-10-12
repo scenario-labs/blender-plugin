@@ -541,11 +541,12 @@ player (`-a`) in a separate process. The system player starts through
 helper calling `os.startfile` on Windows), never `wm.path_open`; both launches
 drop `SCENARIO_`, `PYTHON` and proxy variables from the environment. It reuses
 an unchanged copy of the same receipt, keeps at most four copies or 1 GiB plus
-any copy a running animation player or system player launcher uses, reports a
-launcher that exits with an error, and allows two animation players. For **Waveform** it asks
-`result_previews` for the envelope rendition only, so no server still is polled,
-and polls its status from a timer; Cancel calls the scheduler's `cancel`, which
-terminates a running decode. A late copy or envelope is discarded unless the
+any copy a running animation player or system player launcher uses or the
+pending Play reuses, reports a launcher that exits with an error, and allows two
+animation players. For **Waveform** it asks `result_previews` for the envelope
+rendition only, so no server still is polled, and polls its status from a timer;
+Cancel, and selecting another result's waveform while one loads, call the
+scheduler's `cancel`, which terminates a running decode. A late copy or envelope is discarded unless the
 context token, session and receipt are unchanged. Retirement, a file load and
 unregistering clear the selection and remove copies no running player reads.
 

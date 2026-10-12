@@ -169,7 +169,8 @@ class ResultMediaTests(unittest.TestCase):
             )
         )
         self.enterContext(patch.object(self.runtime, "JobSession", side_effect=session))
-        self.opened = []
+        # System player launchers exit at once unless a test keeps them running.
+        self.opened, self.launchers, self.launcher_code = [], [], 0
         self.system_open = self.media._system_open
         self.enterContext(patch.object(self.media, "_system_open", side_effect=self.open))
         self.players = []
@@ -182,7 +183,9 @@ class ResultMediaTests(unittest.TestCase):
 
     def open(self, path):
         self.opened.append(path)
-        return FakePlayer(["open", path], code=0)
+        launcher = FakePlayer(["open", path], code=self.launcher_code)
+        self.launchers.append(launcher)
+        return launcher
 
     def launch(self, command, **options):
         if len(command) != 3 or command[1] != "-a":
@@ -192,7 +195,7 @@ class ResultMediaTests(unittest.TestCase):
         return player
 
     def cleanup(self):
-        for player in self.players:
+        for player in (*self.players, *self.launchers):
             player.code = 0
         self.media.controller.poll()
         self.media.controller.retire()
@@ -392,6 +395,35 @@ class ResultMediaTests(unittest.TestCase):
             (second,) = self.copies()
         self.assertNotEqual(first, second)
         self.assertEqual([Path(path).name for path in self.opened], ["media.mp4", "media.wav"])
+
+    def test_trimming_after_a_player_exits_keeps_the_copy_a_pending_play_reuses(self):
+        view = self.saved(
+            [
+                ("clip", "clip.mp4", "video/mp4", MP4),
+                ("sound", "sound.wav", "audio/wav", tone()),
+            ]
+        )
+        controller = self.media.controller
+        with patch.object(self.media, "COPY_LIMIT", 1):
+            self.play(view, "play_in_blender:clip")  # Pinned by its running player.
+            self.launcher_code = None  # The system player launcher keeps running.
+            self.play(view, "play:sound")  # Over the limit, pinned by its launcher.
+            reused = self.opened[-1]
+            self.assertEqual(len(self.copies()), 2)
+            args = self.args(view, "play:sound")
+            task = controller.play(
+                args["context_id"], "request", args["expected_revision"], "sound", "SYSTEM"
+            )
+            # The lane hands back the cached copy, then its launcher exits before
+            # the timer opens it: trimming back to the limit must keep that copy.
+            self.assertIs(task.result(10), controller._play.reuse)
+            self.launchers[-1].code = 0
+            controller.poll()
+        self.assertIsNone(controller._play)
+        self.assertEqual(self.opened, [reused, reused])
+        self.assertTrue(Path(reused).is_file())
+        self.assertIn("system player", self.runtime.state.last_message)
+        self.assertEqual(len(self.copies()), 2)
 
     def test_at_most_two_animation_players_run_at_once(self):
         view = self.saved([("clip", "clip.mp4", "video/mp4", MP4)])
@@ -772,6 +804,34 @@ class ResultMediaTests(unittest.TestCase):
         self.assertEqual(selected.status, "READY", selected.message)
         self.assertEqual(selected.label, "Audio (2)")
         self.assertAlmostEqual(selected.envelope.overall_peak, 0.75, delta=0.01)
+
+    def test_selecting_another_waveform_stops_the_loading_decode(self):
+        view = self.saved(
+            [
+                ("first", "first.wav", "audio/wav", tone(amplitude=0.25)),
+                ("second", "second.wav", "audio/wav", tone(amplitude=0.75)),
+            ]
+        )
+        started, stopped, patcher = self.blocked_decode()
+        first = self.waveform(view, "waveform:first")
+        self.settle(started.is_set)
+        patcher.stop()  # Only the first decode is held.
+        # Selecting the same loading waveform again keeps its decode running.
+        first = self.waveform(view, "waveform:first")
+        self.assertEqual(first.status, "LOADING")
+        self.assertEqual(stopped, [])
+        second = self.waveform(view, "waveform:second")
+        self.assertEqual((first.status, first.message), ("CANCELED", "Waveform canceled"))
+        # The unused child stops at once instead of holding the preview lane.
+        self.settle(lambda: stopped == ["ScenarioPreview"], timeout=5)
+        self.settle(lambda: second.status != "LOADING")
+        self.assertEqual(second.status, "READY", second.message)
+        self.assertIs(self.media.controller.selection, second)
+        previews = self.runtime.state.job_session.result_previews
+        envelope = submodule("core.jobs.result_previews").ENVELOPE
+        canceled = submodule("core.jobs.preview_scheduler").CANCELED
+        self.assertEqual(previews.status("request", "first").get(envelope).reason, canceled)
+        self.assertEqual(self.requests, [])
 
     def test_close_hides_the_waveform_and_releases_its_icon(self):
         view = self.saved([("sound", "sound.wav", "audio/wav", tone())])

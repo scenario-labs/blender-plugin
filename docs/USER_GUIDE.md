@@ -401,8 +401,8 @@ peak bars with brighter RMS cores, and a gray line where the audio is silent.
 Below it, a line gives the duration, channel layout and sample rate, and says
 when the audio is silent. A decoded waveform is kept for that exact saved file,
 so showing it again, including after a restart, needs no new decode. Selecting
-another result's waveform replaces it; changing credentials or project, or
-opening a file, hides it.
+another result's waveform replaces it and stops the replaced one's decoder if it
+was still loading; changing credentials or project, or opening a file, hides it.
 
 Waveforms support WAV, MP3, Ogg, FLAC, M4A and AAC files that Blender's audio
 decoder reads, up to 256 MiB, ten minutes, eight channels, 192 kHz and 64 Mi

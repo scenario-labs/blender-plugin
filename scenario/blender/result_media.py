@@ -277,12 +277,17 @@ class MediaController:
     # -- play -------------------------------------------------------------
 
     def _trim(self):
-        """Remove the oldest unpinned copies while the cache exceeds its budgets."""
+        """Remove the oldest unpinned copies while the cache exceeds its budgets.
+
+        The copy the pending Play reuses stays: the lane may already have
+        handed it back for the timer to open.
+        """
         total = sum(copy.size for copy in self._copies.values())
+        reused = None if self._play is None else self._play.reuse
         for key, copy in tuple(self._copies.items()):
             if len(self._copies) <= COPY_LIMIT and total <= COPY_BYTES:
                 break
-            if self._pinned(copy):
+            if self._pinned(copy) or copy is reused:
                 continue
             del self._copies[key]
             total -= copy.size
@@ -469,6 +474,11 @@ class MediaController:
         except (OriginUnavailable, ResultError, ValueError):
             raise MediaError("Waveforms are unavailable for this connection") from None
         self._bind(context_id)
+        previous, key = self.selection, (request_id, asset_id)
+        if previous is not None and (previous.request_id, previous.asset_id) != key:
+            # Only one waveform shows: an unfinished decode of the one it
+            # replaces would hold the preview lane until it ends.
+            self.cancel_waveform()
         self._release_icon()
         self.selection = Waveform(context_id, session, request_id, asset_id, f"Audio ({index})")
         self._update_waveform()

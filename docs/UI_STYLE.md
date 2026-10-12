@@ -212,8 +212,10 @@ after the **Model** box, in the sidebar, in Studio and in Render Image alike; an
 other form shows it only when it holds a choice. Each chosen LoRA has a row with
 its name and a remove button, then a **Strength (min to max)** field bounded by
 the range the current base declares. Editing a strength clamps it to that range
-and reprices the form; each LoRA keeps its own strength in form order, so removing
-one never shifts another's strength. When the base's description changes, the
+and reprices the form. Resetting the field to its default (Backspace over it)
+gives the base's declared default strength, or 1 when it declares none, rather
+than 0. Each LoRA keeps its own strength in form order, so removing one never
+shifts another's strength. When the base's description changes, the
 fields take its new range, but a strength outside it is kept and the price is
 blocked with the range until the user edits it; nothing changes silently.
 
@@ -249,10 +251,11 @@ reason, and an unreadable stored row reads **Could not read the project
 default**. Generate stays disabled, and this reason comes before the form's other
 request checks. It never falls back to the base model alone, and a default lands
 only on a base the form's own model list offers. A default's missing base
-description is read at most once per base and selection. Choosing a model or a
-trained model makes the choice explicit, and the default no longer changes that
-form. Applying a default in another scene reprices only that scene's form. Local
-MCP render inspection and quotes apply the same step first; naming `model_id` in
+description is read at most once per base and selection; a read that could not
+start is tried again by the pump. Choosing a model or a trained model makes the
+choice explicit, and the default no longer changes that form. Applying a default
+in another scene reprices only that scene's form. Local MCP render inspection and
+quotes apply the same step first; naming `model_id` in
 `render_form` `configure` is an explicit choice, even for the model already shown.
 Drawing reads cached defaults only; the owner is opened by the pump, requests and
 operators.

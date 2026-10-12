@@ -612,9 +612,10 @@ class TrainedSectionTests(unittest.TestCase):
     def test_an_automatic_default_keeps_origins_captured_before_it(self):
         """A default landing in a form without a choice is not a scene edit (#387).
 
-        Captured origins, and the quotes and MCP approvals bound to them, stay
-        current in every scene the default reaches; an explicit Use still
-        invalidates them, as any other selection does.
+        Captured origins, and other forms' quotes and MCP approvals bound to
+        them, stay current in every scene the default reaches; an explicit Use
+        that assigns a different base model invalidates them, as choosing that
+        model would.
         """
         self.choose_stack()
         self.defaults.load()
@@ -646,7 +647,7 @@ class TrainedSectionTests(unittest.TestCase):
             )
             self.assertEqual(lane_state.estimate_state, "PENDING")  # re-armed without a callback
         self.assertEqual(self.body()["lorasScale"], [0.8, 1.25])
-        # Use is an explicit selection: it invalidates origins like any edit.
+        # Use assigns the different base model through RNA, which tags the scene.
         self.lane.trained.clear()
         self.lane.model_id = ZIMAGE
         self.scene.view_layers[0].update()
@@ -654,6 +655,43 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.trained_default_apply(lane="image"), {"FINISHED"})
         self.scene.view_layers[0].update()
         self.assertFalse(session._origins.current(origin))
+
+    def test_use_on_the_current_base_stales_origins_only_through_strengths(self):
+        """Use always reprices its form, but tags the scene only through RNA assignments.
+
+        On the form's current base, a stack's strengths are assigned through
+        RNA and invalidate origins captured in the scene. A composition writes
+        only the form's trained list: those origins stay current, while the
+        form itself loses its quote and is priced again.
+        """
+        session = self.job_session()
+
+        def use():
+            self.lane.trained.clear()  # the form keeps FLUX.1 Dev as its explicit choice
+            self.lane.estimate_state, self.lane.estimate_key = "READY", "quoted"
+            self.scene.view_layers[0].update()
+            origin = session.capture(self.scene)
+            self.assertEqual(bpy.ops.scenario.trained_default_apply(lane="image"), {"FINISHED"})
+            self.scene.view_layers[0].update()
+            self.assertEqual(
+                (self.lane.model_id, self.lane.model_key, self.lane.estimate_state),
+                (FLUX1, FLUX1, "PENDING"),
+            )
+            self.assertEqual(self.lane.estimate_key, "")  # the form's own quote is gone
+            return session._origins.current(origin)
+
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.assertFalse(use())  # each LoRA strength is assigned through RNA
+        self.assertEqual(self.body()["lorasScale"], [0.8, 1.25])
+        self.lane.trained.clear()
+        self.open_trained()
+        self.assertEqual(self.pick(COMPOSITION), {"FINISHED"})
+        self.assertEqual(self.save_default().default.route, "composition")
+        self.assertTrue(use())  # only the trained list changed
+        self.assertEqual(self.body()["modelId"], COMPOSITION)
+        self.assertNotIn("loras", self.body())
 
     def test_the_pump_applies_defaults_before_pricing_and_survives_a_failure(self):
         self.choose_stack()

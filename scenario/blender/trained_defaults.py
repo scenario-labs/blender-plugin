@@ -13,10 +13,12 @@ takes the saved default: the pump applies it once the base description and the
 trained list are loaded and trained_routes.apply accepts it. Until then, or when
 it cannot run, the form's price is blocked with the reason; it never falls back
 to the base model alone. Use applies the default to a form that already has a
-choice. Applying invalidates the price; the quote still reads every model fresh.
-Applying automatically writes the form without RNA updates, so origins captured
-in its scene stay current (#387); Use is an explicit selection and invalidates
-them like any edit.
+choice. Applying always reprices the form; the quote still reads every model
+fresh. Applying automatically writes the form without RNA updates, so origins
+captured in its scene stay current (#387). Use assigns through RNA, whose
+update tags the scene and makes those origins stale, only a different base
+model and each LoRA strength; a composition on the form's current base changes
+only the trained list.
 """
 
 from dataclasses import dataclass, field
@@ -278,11 +280,13 @@ def blocking_reason(lane_state):
 def _apply(lane_state, lane, resolution, *, seed=False):
     """Write a resolved default into the form: base model, then its trained choice.
 
-    Use is an explicit selection and assigns through RNA like any edit. A
-    default applied automatically (`seed`) is not an edit of the scene: as
-    catalog seeding does (#387), it stores the model index and strengths
-    without their RNA updates, which would tag the scene and make every origin
-    captured in it stale, then syncs the form and re-arms its price itself.
+    Use is an explicit selection: it assigns a different base model and each
+    LoRA strength through RNA, as the picker does, so only those tag the scene;
+    the trained list itself has no update. A default applied automatically
+    (`seed`) is not an edit of the scene: as catalog seeding does (#387), it
+    stores the model index and strengths without their RNA updates, which would
+    tag the scene and make every origin captured in it stale, then syncs the
+    form and re-arms its price itself. Either way the form is repriced.
     """
     scope = trained_models.current_scope()
     if scope is None:

@@ -155,8 +155,12 @@ Private plain custom models are not listed here.
 Base-model descriptions declare the LoRA inputs, so they are read only when the
 Trained chip opens: in lane order, once per connection, with a progress line and
 the reason when reading stops. A catalog refresh never starts these reads, and
-neither does a trained list that arrives after the dialog closed on this chip; a
-refresh only lets a later Trained chip retry the descriptions that failed.
+neither does a trained list that arrives after the dialog closed on this chip.
+Descriptions a stopped scan never reached are read the next time the chip opens;
+only a refresh lets a later Trained chip retry the ones that failed. The open
+dialog is refreshed as descriptions arrive, through the same popup refresh as
+Studio. Its list shows ten rows, fewer when the window is too short for the whole
+dialog at the current UI scale, so OK and Cancel stay on screen.
 
 The highlighted model's box shows its kind, **Runs with** for a single base or a
 **Run with** choice among several (the form's current base when it runs the model,
@@ -164,7 +168,8 @@ otherwise **Choose a base model**; OK refuses until one is chosen), and for a Lo
 a **Strength** field bounded by the base's declared range. Without a declared
 default, the strength starts at the visible value 1 within that range. The chosen
 base and strength stay while base descriptions keep arriving and the rows are
-rebuilt; another row or a new dialog starts again from the form. A
+rebuilt; another row or a new dialog starts again from the form, and a new
+dialog highlights the form's first trained model. A
 composition shows how many LoRAs it combines with their own strengths. One line
 states the effect on the form: adding to the LoRAs already chosen, changing this
 LoRA's strength, or replacing the form's trained models. Choosing through another
@@ -184,7 +189,12 @@ another connection or project, or a route the current schema refuses keeps the
 choice and blocks the price with its reason. An ID that an earlier version saved
 in the base's model text field (such as **LoRA or Composition Model**) becomes the
 form's choice when it has none, so it is neither dropped silently nor sent
-unchecked; it gets the same checks and remove button. Strength editing in the
+unchecked; it gets the same checks and remove button, and the form is priced
+again, so a price error saved with the file gives way to the current reason.
+**Reload parameters** restores the job's LoRAs or composition that are still
+listed, never adds a strength the job did not send (the base's declared default
+applies, otherwise the price asks for one) and warns about the trained models it
+could not restore. Strength editing in the
 sidebar and Studio, project defaults and the composer chip label are follow-up
 work.
 

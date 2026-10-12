@@ -253,7 +253,9 @@ again and refuses one that was deleted, is no longer accessible, changed type or
 is not trained, before any price is requested. A choice belongs to the
 credentials and project that made it: after switching either, choose it again.
 **Reload parameters** restores a generation's LoRAs or composition when they are
-still listed. A composition ID typed into **LoRA or Composition Model** with an
+still listed and says how many it could not restore; a LoRA the generation sent
+without a strength needs one before the form is priced, unless its base declares a
+default. A composition ID typed into **LoRA or Composition Model** with an
 earlier version appears there too, as the form's choice: check it, or remove it
 and choose again in the picker. Trained models are experimental here: generation results with them
 have not been accepted yet, project defaults and sidebar strength sliders are not

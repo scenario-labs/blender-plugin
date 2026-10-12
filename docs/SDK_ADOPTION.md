@@ -409,8 +409,9 @@ selected project in the query), cached per connection. These reads start only wh
 the picker shows its Trained chip, never on a catalog refresh. One worker reads the
 lane's base models whose descriptions are still unknown, in lane order, at most 400
 per lane and connection, and reports progress every 10. One unreadable model is
-skipped; three failures in a row stop the scan with the last sanitized reason, and
-an explicit refresh lets the next Trained chip retry them. The pure
+skipped; three failures in a row stop the scan with the last sanitized reason. The
+next Trained chip reads the models the scan did not reach, and an explicit refresh
+lets it retry the failed ones. The pure
 [trained_offers](../scenario/core/api/trained_offers.py) module pairs each trained
 record with the detailed bases whose slot runs it; a LoRA also needs declared
 strength bounds or a declared default.

@@ -493,13 +493,13 @@ class ResultPreviewTileTests(unittest.TestCase):
             view = self.six_maps()
             self.assertEqual(self.page("NEXT"), {"FINISHED"})
             controller = self.tiles.controller
-            targets = self.tiles._targets
+            targets = self.tiles.tile_targets
 
             def without_edge(record):
                 return tuple(target for target in targets(record) if target.label != "Edge")
 
             # A saved revision whose previewable results differ: five maps now.
-            with patch.object(self.tiles, "_targets", side_effect=without_edge):
+            with patch.object(self.tiles, "tile_targets", side_effect=without_edge):
                 self.reread(controller)
                 self.settle(lambda: self.pager(view)[1] == ["1-4 of 5"])
                 self.assertEqual(

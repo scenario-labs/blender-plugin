@@ -596,6 +596,29 @@ def test_guard_failure_before_the_resend_stops_it(service):
     assert result.message.endswith("Already in the collection: 1 of 2 assets")
 
 
+def test_resend_stopped_before_dispatch_is_not_reported_as_sent_again(service):
+    online = [True]
+    owner = commands(service, online=lambda: online[0])
+    snapshot = owner.snapshot(
+        request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
+    )
+    join_props(service, "asset-a")
+    guard = guarded()
+
+    def go_offline_before_resend():
+        guard()
+        if len(guard.calls) == 2:
+            online[0] = False
+
+    result = owner.execute(snapshot, go_offline_before_resend)
+    assert add_writes(service) == [["asset-a", "asset-c"]]
+    assert len(guard.calls) == 2
+    assert result.requests_sent == 1
+    assert "Online access is disabled" in result.message
+    assert result.message.endswith("Already in the collection: 1 of 2 assets")
+    assert "sent again" not in result.message
+
+
 def test_uncertain_resend_is_unconfirmed_and_never_sent_again(service):
     owner = commands(service)
     snapshot = owner.snapshot(

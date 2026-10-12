@@ -605,10 +605,12 @@ class _Execution:
             method = self.adapter.remove_collection_assets
         else:
             method = self.adapter.add_collection_assets
-        total, present, attempts = len(targets), 0, 0
+        total, present, attempts, resent = len(targets), 0, 0, False
         while targets and not self.stopped and self.admit():
             attempts += 1
             write, value = self.send(lambda batch=list(targets): method(self.collection_id, batch))
+            # Only a resend that reached the service counts as sent again.
+            resent = attempts > 1 and write.kind != "unsent"
             for asset_id in targets:
                 self.writes[asset_id] = write
             if write.kind == "unsent":
@@ -633,7 +635,7 @@ class _Execution:
         elif present == total:
             self.info = f"All {total} assets were already in the collection"
         elif present:
-            again = "; the rest were sent again" if attempts > 1 else ""
+            again = "; the rest were sent again" if resent else ""
             self.info = f"Already in the collection: {present} of {total} assets{again}"
 
     def read_members(self, targets):

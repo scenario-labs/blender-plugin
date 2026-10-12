@@ -582,10 +582,20 @@ class BlockoutJobsTests(unittest.TestCase):
             self.assertEqual(item.phase, "DONE")
         else:
             item.task.result(5)
-            record = self.runtime.state.job_store.get(item.request_id)
-            self.jobs().session.refresh_remote(
-                item.request_id, expected_revision=record.revision
-            ).result(5)
+            # One maintenance tick (every runtime.ensure_* call runs one) drains the
+            # submission and queues the action's own refresh. Wait for that one and
+            # tick no more, so the plan is never listed or read. A second refresh of
+            # the same revision would race it and be refused once it committed.
+            self.runtime.sync_catalog_context()
+            self.assertEqual(item.phase, "POLLING")
+            item.task.result(5)
+            # One refresh read the job; no duplicate raced the action's own.
+            reads = [c for c in self.calls if c.method == "GET" and "/jobs/" in c.url.path]
+            self.assertEqual(len(reads), 1)
+            self.assertEqual(
+                self.runtime.state.job_store.get(item.request_id).state,
+                self.storage.JobState.SUCCEEDED,
+            )
         self.runtime.state.reset()
         self.scene.scenario_blockout.plan_json = ""
         self.runtime.local_job_recovery()
@@ -609,6 +619,8 @@ class BlockoutJobsTests(unittest.TestCase):
         record = self.saved_plan()
         self.scene.scenario_blockout.plan_json = '[{"name":"Existing plan"}]'
         before = tuple(self.scene.objects)
+        # Tick before the read starts: a later tick could already consume its task.
+        recovery = self.jobs().recovery
         self.assertEqual(
             bpy.ops.scenario.read_saved_blockout(
                 context_id=self.runtime.state.job_context_id,
@@ -617,7 +629,6 @@ class BlockoutJobsTests(unittest.TestCase):
             ),
             {"FINISHED"},
         )
-        recovery = self.jobs().recovery
         review = recovery.current(record.intent.request_id, self.scene)
         review.task.result(5)
         recovery.poll()
@@ -657,8 +668,9 @@ class BlockoutJobsTests(unittest.TestCase):
             "request_id": record.intent.request_id,
             "expected_revision": record.revision,
         }
-        started = self.mcp.prepare_blockout_plan(arguments)
+        # Tick before the read starts: a later tick could already consume its task.
         recovery = self.jobs().recovery
+        started = self.mcp.prepare_blockout_plan(arguments)
         review = recovery.reviews[started["review_id"]]
         review.task.result(5)
         keys = {"context_id": arguments["context_id"], "review_id": review.identifier}

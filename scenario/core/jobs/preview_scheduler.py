@@ -424,7 +424,7 @@ class ResultPreviewScheduler:
         """
         if threading.current_thread() is not self._owner:
             raise RuntimeError("Use result previews from their owning thread")
-        return self._quiet((request_id, asset_id), self._renditions(renditions))
+        return self._quiet((request_id, asset_id, False), self._renditions(renditions))
 
     @staticmethod
     def _renditions(renditions):
@@ -456,7 +456,9 @@ class ResultPreviewScheduler:
         renditions = self._renditions(renditions)
         if len(self._watches) >= WATCH_LIMIT:
             raise previews.PreviewError("Too many preview waits are open; try again shortly")
-        watch = PreviewWatch(tuple((request_id, asset_id) for asset_id in asset_ids), renditions)
+        # Saved results only, keyed as their entries are; review assets are not watched.
+        keys = tuple((request_id, asset_id, False) for asset_id in asset_ids)
+        watch = PreviewWatch(keys, renditions)
         self._watches.append(watch)
         self._notify()
         return watch

@@ -1242,7 +1242,7 @@ def test_a_retry_behind_an_inflight_poll_is_never_reported_quiet(decoding):
     assert scheduler.quiet("request", "asset-sound")
     clock.now += 5
     scheduler.pump()  # The offline still's next poll is now on the lane.
-    entry = scheduler._entries[("request", "asset-sound")]
+    entry = scheduler._entries[("request", "asset-sound", False)]
     assert entry.inflight
     retried = scheduler.retry("request", "asset-sound")
     assert entry.retry and retried.get(ENVELOPE).state == State.QUEUED

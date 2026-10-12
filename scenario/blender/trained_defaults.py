@@ -21,7 +21,7 @@ model and each LoRA strength; a composition on the form's current base changes
 only the trained list.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import bpy
 
@@ -270,13 +270,30 @@ def blocking_reason(lane_state):
     default = saved(cache, lane)
     if default is None:
         return ""
-    resolution = resolve(default, lane)
+    resolution = writable(resolve(default, lane), lane)
     if resolution.ready:
         return WAITING.format(label=resolution.label, reason="applying it to the form.")
     return resolution.text
 
 
 # -- applying --------------------------------------------------------------------------
+def _write_error(lane, resolution):
+    """Why a runnable default cannot be written into this form now, or "" (read-only)."""
+    if trained_models.current_scope() is None:
+        return "Connect to Scenario before using a project default"
+    if not _listed(resolution.base.id, lane):
+        return "Its base model is not in this form's model list"
+    return ""
+
+
+def writable(resolution, lane):
+    """`resolution`, made unavailable with the reason when it runs but cannot be written now."""
+    if not resolution.ready:
+        return resolution
+    reason = _write_error(lane, resolution)
+    return replace(resolution, reason=reason) if reason else resolution
+
+
 def _apply(lane_state, lane, resolution, *, seed=False):
     """Write a resolved default into the form: base model, then its trained choice.
 
@@ -287,25 +304,36 @@ def _apply(lane_state, lane, resolution, *, seed=False):
     stores the model index and strengths without their RNA updates, which would
     tag the scene and make every origin captured in it stale, then syncs the
     form and re-arms its price itself. Either way the form is repriced.
-    """
-    scope = trained_models.current_scope()
-    if scope is None:
-        raise ScenarioError(0, "Connect to Scenario before using a project default")
-    base = resolution.base
-    if not _listed(base.id, lane):
-        raise ScenarioError(0, "Its base model is not in this form's model list")
-    lane_state.model_key = base.id
-    if lane_state.model_id != base.id:
-        if seed:
-            from . import generation
 
-            # Each model enum value is its 3-tuple item's index, as in restore_model_key.
-            models = [item[0] for item in runtime.enum_items(("models", lane))]
-            lane_state["model_id"] = models.index(base.id)
-            generation.on_model_changed(bpy.context, lane_state)  # what the update would run
-        else:
-            lane_state.model_id = base.id  # its update callback runs on_model_changed
-    trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope, seed=seed)
+    Raises ScenarioError before any change when it cannot be written. A failure
+    while writing restores the model key and leaves no trained choice, so a
+    form the default governs stays governed and never prices its base alone.
+    """
+    reason = _write_error(lane, resolution)
+    if reason:
+        raise ScenarioError(0, reason)
+    scope = trained_models.current_scope()
+    base = resolution.base
+    models = [item[0] for item in runtime.enum_items(("models", lane))]
+    key, choice_written = lane_state.model_key, False
+    try:
+        lane_state.model_key = base.id
+        if lane_state.model_id != base.id:
+            if seed:
+                from . import generation
+
+                # Each model enum value is its 3-tuple item's index, as in restore_model_key.
+                lane_state["model_id"] = models.index(base.id)
+                generation.on_model_changed(bpy.context, lane_state)  # what the update would run
+            else:
+                lane_state.model_id = base.id  # its update callback runs on_model_changed
+        choice_written = True
+        trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope, seed=seed)
+    except Exception:
+        if choice_written:
+            lane_state.trained.clear()
+        lane_state.model_key = key
+        raise
     props.mark_estimate_dirty(lane_state)
 
 
@@ -356,12 +384,9 @@ def apply_pending(scenes=None):
             if lane in cache.errors:
                 text = UNREADABLE.format(reason=cache.errors[lane])
             elif default is not None:
-                resolution = resolve(default, lane, read=True)
+                resolution = writable(resolve(default, lane, read=True), lane)
                 if resolution.ready:
-                    try:
-                        _apply(lane_state, lane, resolution, seed=True)
-                    except ScenarioError:
-                        continue
+                    _apply(lane_state, lane, resolution, seed=True)
                     changed = True
                     continue
                 text = resolution.text
@@ -388,8 +413,12 @@ def _rearm(lane_state, text):
 
 
 # -- saving and clearing -----------------------------------------------------------------
-def selection_default(lane_state, lane):
-    """The form's current choice as a default to save; refuses one that cannot run now."""
+def selection_default(lane_state, lane, reason=None):
+    """The form's current choice as a default to save; refuses one that cannot run now.
+
+    `reason` is trained_models.selection_error's result when the caller already
+    has it (a draw), so the route check runs once.
+    """
     if lane not in LANES:
         raise ScenarioError(0, "Project defaults are kept for the Image and Render Image forms")
     if not len(lane_state.trained):
@@ -400,7 +429,8 @@ def selection_default(lane_state, lane):
     record = runtime.state.records.get(lane_state.model_id)
     if record is None or not record.parameters:
         raise ScenarioError(0, "Wait for the model description to load")
-    _body, reason = trained_models.apply_to(lane_state, record, {})
+    if reason is None:
+        _body, reason = trained_models.apply_to(lane_state, record, {})
     if reason:
         raise ScenarioError(0, reason)
     kinds = [slot.kind for slot in lane_state.trained]
@@ -493,20 +523,23 @@ class View:
     can_save: bool = False
 
 
-def view(lane_state, lane):
-    """What the form's project-default row shows; reads cached state only (safe in draw)."""
+def view(lane_state, lane, reason=None):
+    """What the form's project-default row shows; reads cached state only (safe in draw).
+
+    `reason` is the choice's trained_models.selection_error when the caller has it.
+    """
     cache = cached()
     if cache is None or lane not in LANES:
         return View(False)
     error = cache.errors.get(lane, "")
     default = saved(cache, lane)
     try:
-        candidate = selection_default(lane_state, lane)
+        candidate = selection_default(lane_state, lane, reason)
     except ScenarioError:
         candidate = None
     status, unavailable, text = "", False, ""
     if default is not None:
-        resolution = resolve(default, lane)
+        resolution = writable(resolve(default, lane), lane)
         text = resolution.label
         unavailable = bool(resolution.reason)
         # Only a form the default governs waits for it; any form may learn it cannot run.

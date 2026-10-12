@@ -859,6 +859,48 @@ class TrainedSectionTests(unittest.TestCase):
                 pump._process()
         self.assertEqual(len(logs.records), 2)  # the recurrence is reported again
 
+    def test_a_default_that_cannot_be_written_keeps_the_form_governed_with_its_reason(self):
+        """A failed automatic apply never prices the base alone or hides why it failed."""
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.release(self.lane)
+        trained = submodule("blender.trained_models")
+        # A failure while writing the form leaves it as the default found it.
+        with (
+            patch.object(trained, "write_slots", side_effect=RuntimeError("synthetic")),
+            self.assertRaises(RuntimeError),
+        ):
+            self.defaults.apply_pending()
+        self.assertEqual((self.lane.model_key, len(self.lane.trained)), ("", 0))
+        self.assertEqual(
+            self.errors(),
+            [f"Applying the project default {STACK_LABEL}: applying it to the form."],
+        )
+        # A reason that keeps it from being written reaches the price line, not the wait.
+        reason = (
+            f"Project default {STACK_LABEL} is unavailable: choose a model or clear the "
+            "default. Connect to Scenario before using a project default."
+        )
+        self.lane.estimate_state = "READY"
+        with patch.object(trained, "current_scope", return_value=None):
+            self.assertTrue(self.defaults.apply_pending())  # the price shows the reason
+            self.assertEqual(self.lane.estimate_state, "PENDING")
+            self.assertEqual(self.errors(), [reason])
+            self.assertEqual(self.defaults.view(self.lane, "image").status, reason)
+        self.assertEqual((self.lane.model_key, len(self.lane.trained)), ("", 0))
+        self.assertTrue(self.defaults.apply_pending())
+        self.assertEqual((self.lane.model_key, len(self.lane.trained)), (FLUX1, 2))
+
+    def test_drawing_the_section_checks_the_choice_once(self):
+        self.choose_stack()
+        self.defaults.load()
+        trained = submodule("blender.trained_models")
+        with patch.object(trained, "apply_to", wraps=trained.apply_to) as checked:
+            root = self.section()
+        self.assertEqual(checked.call_count, 1)  # the reason line and the default row share it
+        self.assertTrue(root.ops("scenario.trained_default_save")[0][0])  # it can still be saved
+
     # -- compact composer and job views ----------------------------------------------
     def test_composer_chip_and_job_views_name_the_trained_choice(self):
         self.choose_stack()

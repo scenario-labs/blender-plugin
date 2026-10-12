@@ -117,7 +117,7 @@ def draw(layout, lane_state, lane):
     reason = trained_models.selection_error(lane_state)
     if reason:
         _draw_wrapped(box, reason, "TIME" if reason == trained_models.LOADING else "ERROR")
-    view = trained_defaults.view(lane_state, lane)
+    view = trained_defaults.view(lane_state, lane, reason)  # one route check per draw
     if lane in trained_models.LANES:
         op = box.operator("scenario.pick_model", text="Add LoRA or composition", icon="ADD")
         op.lane, op.category = lane, model_filter.TRAINED_CATEGORY

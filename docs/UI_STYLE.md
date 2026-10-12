@@ -247,11 +247,14 @@ model, as in a new scene or file) takes the saved default: the main-thread pump
 applies it once the base description and the trained list are loaded. Until
 then, the price reads **Applying the project default ...**; if the default cannot
 run (a model no longer listed, a base the form no longer offers, another type, a
-refused route, a base described without inputs), the price reads **Project
+refused route, a base described without inputs, no connection to write it
+under), the price reads **Project
 default ... is unavailable: choose a model or clear the default.** with the
 reason, and an unreadable stored row reads **Could not read the project
 default**. Generate stays disabled, and this reason comes before the form's other
-request checks. It never falls back to the base model alone, and a default lands
+request checks. It never falls back to the base model alone: a write into the
+form that fails part way restores the form's empty model key and leaves no
+trained choice, so the form stays blocked. A default lands
 only on a base the form's own model list offers. A default's missing base
 description is read at most once per base and selection; a read that could not
 start is tried again by the pump. Choosing a model or a trained model makes the

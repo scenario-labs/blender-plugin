@@ -68,16 +68,17 @@ class ModelPackageTests(unittest.TestCase):
         self.assertIsNotNone(unit, plan)
         return unit
 
-    def legacy_obj(self, *, extra_maps=True):
-        """The ingestion convention: {obj}.mtl and {obj}_<role>.png, missing maps appended."""
+    def legacy_obj(self, *, extra_maps=True, bump="map_Bump obj_normal.png"):
+        """The ingestion convention: {obj}.mtl and {obj}_<role>.png, missing maps appended.
+
+        Saved provider MTLs name the normal map without a ``-bm`` multiplier.
+        """
         obj = self.exports["obj"].read_text().replace("mtllib cube.mtl", "mtllib obj.mtl")
         mtl = self.exports["mtl"].read_text()
         self.assertIn("map_Kd tex.png", mtl)
         mtl = mtl.replace("map_Kd tex.png", "map_Kd obj_albedo.png")
         if extra_maps:
-            mtl += (
-                "map_Pm obj_metallic.png\nmap_Pr obj_roughness.png\nmap_Bump -bm 1 obj_normal.png\n"
-            )
+            mtl += f"map_Pm obj_metallic.png\nmap_Pr obj_roughness.png\n{bump}\n"
         self.save("obj", "model/obj", obj.encode())
         self.save("mtl", "model/mtl", mtl.encode())
         self.save("albedo", "image/png", self.exports["png"].read_bytes(), role="albedo")
@@ -127,12 +128,15 @@ class ModelPackageTests(unittest.TestCase):
         textures = [node.image for node in material.node_tree.nodes if node.type == "TEX_IMAGE"]
         self.assertEqual(textures, list(images))
 
-    def test_obj_data_maps_read_as_non_color_and_normals_use_a_normal_map_node(self):
-        # Blender's OBJ importer reads every MTL map as sRGB; the unit knows each role.
-        self.legacy_obj()
+    def obj_with_maps(self, **options):
+        self.legacy_obj(**options)
         png = self.exports["png"].read_bytes()
         for role in ("normal", "roughness", "metallic"):
             self.save(role, "image/png", png, role=role)
+
+    def test_obj_data_maps_read_as_non_color_and_normals_use_a_normal_map_node(self):
+        # Blender's OBJ importer reads every MTL map as sRGB; the unit knows each role.
+        self.obj_with_maps()
         unit = self.unit("obj")
         self.assertEqual(
             [slot for slot, _ in unit.textures], ["albedo", "normal", "roughness", "metallic"]
@@ -163,10 +167,21 @@ class ModelPackageTests(unittest.TestCase):
         self.assertEqual(link.from_node, normal_maps[0])
         normal = image_into(normal_maps[0].inputs["Color"])
         self.assertTrue(normal.colorspace_settings.is_data)
+        # The saved MTL names no -bm multiplier; the GLB of the same job uses 1.
+        self.assertEqual(normal_maps[0].inputs["Strength"].default_value, 1.0)
         self.assertEqual(
             {albedo, normal, *(image_into(bsdf.inputs[n]) for n in ("Metallic", "Roughness"))},
             images,
         )
+
+    def test_obj_normal_map_keeps_a_saved_bump_multiplier(self):
+        self.obj_with_maps(bump="bump -bm 0.5 obj_normal.png")
+        result = self.apply("obj")
+        self.assert_published(result, "obj")
+        self.assertEqual(result.dropped_references, 0)
+        mesh = next(obj for obj in result.objects if obj.type == "MESH")
+        (node,) = [n for n in mesh.data.materials[0].node_tree.nodes if n.type == "NORMAL_MAP"]
+        self.assertAlmostEqual(node.inputs["Strength"].default_value, 0.5, places=6)
 
     def test_normal_maps_reach_the_shader_through_one_normal_map_node(self):
         material = bpy.data.materials.new("Direct normal")

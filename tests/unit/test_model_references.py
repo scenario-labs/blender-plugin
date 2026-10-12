@@ -186,12 +186,24 @@ def test_every_slot_keyword_maps_to_its_canonical_statement():
         (b"MAP_KD", b"map_Kd a.png"),
         (b"map_Pm", b"map_Pm m.webp"),
         (b"map_Pr", b"map_Pr r.jpg"),
-        (b"map_Bump", b"map_Bump n.png"),
-        (b"bump", b"map_Bump n.png"),
-        (b"norm", b"map_Bump n.png"),
+        (b"map_Bump", b"map_Bump -bm 1 n.png"),
+        (b"bump", b"map_Bump -bm 1 n.png"),
+        (b"norm", b"map_Bump -bm 1 n.png"),
     ]:
         result = mtl(b"newmtl M\n" + keyword + b" /abs/t e x.png\n", names)
         assert result.data == b"newmtl M\n" + expected + b"\n"
+
+
+@pytest.mark.parametrize("keyword", [b"map_Bump", b"bump", b"norm"])
+def test_a_normal_map_without_a_bump_multiplier_gets_full_strength(keyword):
+    # Blender's OBJ importer (5.0.1, 5.1.2 and 5.2.1) sets Normal Map Strength from
+    # -bm and uses 0 without it, so a provider's plain map_Bump line had no effect.
+    result = mtl(b"newmtl M\n" + keyword + b" -s 2 delivered-normal.png\n")
+    assert result.data == b"newmtl M\nmap_Bump -bm 1 -s 2 texture-normal.png\n"
+    assert result.bound == ("normal",)
+    # A saved multiplier, including zero, is kept and gets no second one.
+    result = mtl(b"newmtl M\n" + keyword + b" -s 2 -BM 0 delivered-normal.png\n")
+    assert result.data == b"newmtl M\nmap_Bump -s 2 -bm 0 texture-normal.png\n"
 
 
 def test_options_keep_only_numeric_scale_offset_and_bump_strength():
@@ -205,7 +217,7 @@ def test_options_keep_only_numeric_scale_offset_and_bump_strength():
         b"newmtl M\nmap_Kd -o 0.1 0.2 -s 2 texture-albedo.png\nmap_Bump -bm 2 texture-normal.png\n"
     )
     text = b"newmtl N\nmap_Bump -bm nan -s 2 tex.png\n"
-    assert mtl(text).data == b"newmtl N\nmap_Bump texture-normal.png\n"
+    assert mtl(text).data == b"newmtl N\nmap_Bump -bm 1 texture-normal.png\n"
 
 
 @pytest.mark.parametrize(
@@ -254,7 +266,8 @@ def test_different_files_for_one_slot_across_materials_are_ambiguous():
     text = b"newmtl A\nmap_Kd a.png\nmap_Bump n.png\nnewmtl B\nmap_Kd b.png\nmap_Bump n.png\n"
     result = mtl(text)
     assert result.data == (
-        b"newmtl A\nmap_Bump texture-normal.png\nnewmtl B\nmap_Bump texture-normal.png\n"
+        b"newmtl A\nmap_Bump -bm 1 texture-normal.png\n"
+        b"newmtl B\nmap_Bump -bm 1 texture-normal.png\n"
     )
     assert result.bound == ("normal",)
     assert reasons(result.report) == [

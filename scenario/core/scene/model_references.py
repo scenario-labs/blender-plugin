@@ -281,6 +281,9 @@ _OPTION_ARITY = {
     b"-type": (1, 1),
 }
 _KEPT_OPTIONS = frozenset({b"-bm", b"-o", b"-s"})
+# Blender's OBJ importer reads a normal map's Normal Map Strength from -bm and uses
+# 0 without one; full strength matches the GLB of the same job.
+_DEFAULT_BUMP = (b"-bm", b"1")
 _WORD_OPTIONS = frozenset({b"-clamp", b"-blendu", b"-blendv", b"-cc", b"-imfchan", b"-type"})
 # Plain ASCII decimal notation only. Blender keeps an option value only when the
 # whole token is one number; it rejects forms Python's float() accepts, such as
@@ -331,12 +334,13 @@ def rewrite_mtl(data, *, textures):
 
     ``textures`` maps slots (albedo, normal, roughness, metallic) to snapshot names.
     ``map_Kd``, ``map_Pm``, ``map_Pr`` and ``map_Bump``/``bump``/``norm`` statements
-    bind by slot. Within one material the last statement for a slot wins. If
-    materials name different files for one slot, that slot is ambiguous and all its
-    statements are dropped rather than sharing one texture. Other map, ``refl``,
-    ``disp`` and ``decal`` statements are dropped. Blender's MTL reader has no line
-    continuation, so each physical line is classified and a trailing backslash
-    never hides the next one.
+    bind by slot; a normal statement without ``-bm`` gets ``-bm 1`` so Blender's
+    Normal Map node has full strength. Within one material the last statement for a
+    slot wins. If materials name different files for one slot, that slot is ambiguous
+    and all its statements are dropped rather than sharing one texture. Other map,
+    ``refl``, ``disp`` and ``decal`` statements are dropped. Blender's MTL reader has
+    no line continuation, so each physical line is classified and a trailing
+    backslash never hides the next one.
     """
     names = {}
     for slot, name in dict(textures).items():
@@ -386,6 +390,8 @@ def rewrite_mtl(data, *, textures):
             report.drop(number, keyword, DUPLICATE_MAP)
         else:
             bound.add(slot)
+            if slot == "normal" and b"-bm" not in kept:
+                kept = [*_DEFAULT_BUMP, *kept]
             output.append(b" ".join([_CANONICAL_MAP[slot], *kept, names[slot]]) + b"\n")
     text = b"".join(output)
     if text and not text.endswith(b"\n"):

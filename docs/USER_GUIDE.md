@@ -270,7 +270,8 @@ new confirmation.
 Saved GLB, glTF, FBX, OBJ and mesh PLY results are supported. An OBJ uses only
 its saved MTL and texture maps; maps the job did not save are left out. Its
 normal, roughness and metallic maps are read as non-color data, as in the GLB,
-and the normal map goes through a Normal Map node. A glTF reads only the job's
+and the normal map goes through a Normal Map node at full strength, unless the
+saved material sets another strength. A glTF reads only the job's
 saved buffers and images. An FBX packs its embedded textures;
 one that points at texture files elsewhere is rejected, and its clips keep the
 file's frame rate even when your scene uses another. A PLY holding Gaussian splats

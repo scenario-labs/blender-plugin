@@ -281,7 +281,9 @@ bound textures, keeps only `-o`, `-s` and `-bm` options whose values are plain A
 decimal numbers and drops every other map, `refl`, `disp` and `decal` statement,
 including maps whose files are not part of the saved package. Blender reads a value
 such as `1_0` as part of the file name, so any other value ends option parsing and
-the option is dropped. A slot whose materials name different files is dropped rather
+the option is dropped. A bound normal statement without a kept `-bm` gets `-bm 1`:
+Blender's OBJ importer sets its Normal Map node's Strength from `-bm` and uses 0
+without one. A slot whose materials name different files is dropped rather
 than shared. Original names, absolute paths, traversal and URLs never reach the
 output. Reports keep the line, a fixed keyword and the reason, never the reference:
 an unknown keyword reports only its matched prefix, such as `map_`, because a
@@ -368,7 +370,9 @@ absolute path or an OBJ placeholder, fails the import and rolls back. Blender's
 OBJ importer reads every MTL map as sRGB, so the unit's saved texture roles decide:
 bound normal, roughness and metallic maps become Non-Color data while albedo stays
 sRGB, and a normal map that does not already reach the shader through a Normal Map
-node gets one. Accepted images are packed and their file paths cleared. The FBX
+node gets one. The importer's node takes its Strength from the rewritten `-bm`, so a
+saved MTL without one gets full strength, as in the GLB. Accepted images are packed
+and their file paths cleared. The FBX
 importer sets the file's frame rate on the staging scene: clips keep that timing
 and the destination scene keeps its own, and `model_import.frame_rate_mismatch`
 reports when they differ. Publication matches the GLB group and records
@@ -386,7 +390,8 @@ Native tests build an OBJ with its MTL and PNG, an FBX with an embedded texture,
 separate glTF with its buffer and a mesh PLY with Blender's own exporters, then
 rename them to the provider's legacy package convention. They cover placement,
 preserved selection, packed images, dropped maps, Non-Color OBJ data maps with the
-normal map through a Normal Map node, external FBX textures, a disabled
+normal map through a Normal Map node at full strength or at a saved `-bm` value,
+external FBX textures, a disabled
 FBX add-on, splat PLY and SPZ refusal, changed bytes before the claim, windowless
 callers, rollback and every member in reuse claims. Provider package shapes still
 need live evidence; splat units wait for their point-cloud builder.

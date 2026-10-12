@@ -183,7 +183,7 @@ class McpResultPreviewTests(unittest.TestCase):
             if predicate(result):
                 return result
             time.sleep(0.01)
-        self.fail(f"Previews did not settle: {result}")
+        raise self.failureException(f"Previews did not settle: {result}")
 
     def wait(self, deferred, timeout=30):
         """Run a deferred wait on a worker thread while this main thread pumps."""

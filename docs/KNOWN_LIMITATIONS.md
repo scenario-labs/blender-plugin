@@ -90,11 +90,10 @@ establish live generation or full render-lane desktop acceptance.
   publishing it widely. It notices an edit of its unshown scenes only through the
   review's frames, rate, size and strip count, the scene and media counts and bytes
   and the ledger. It has installed synthetic coverage only. Video export
-  verification uses an
-  installed ffprobe when present and otherwise a weaker Blender decode check.
-  Blender builds without H.264/AAC encoders cannot export; they are detected only
-  when the render child fails, with its log retained. Complete runtime adoption
-  and live/native acceptance remain open
+  verification uses an installed ffprobe when present and otherwise a weaker
+  Blender decode check. Blender builds without H.264/AAC encoders cannot export;
+  they are detected only when the render child fails, with its log retained.
+  Complete runtime adoption and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
 - Credentials use one explicitly selected pair (saved Blender preferences by

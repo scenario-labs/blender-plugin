@@ -20,7 +20,7 @@
       "scenario/blender/film_case_study_worker.py": "b25a081316bf1c1e40e03ca94ed38ee4305d2dade7612561a99a414461eccc9c",
       "scenario/blender/film_case_study_controls.py": "4e4faaea143f1774c9962d0a9e68f1c7d3f450da05024fdcf7a2ab158cedf44b",
       "scenario/blender/film_export.py": "62481b41bcd570f246706942554b791db93db14bec98a983f59874dba67b3846",
-      "scenario/blender/job_session.py": "d2ac5331100d5f4be335d4595a34cdfc4b3e3bce436d5b7510b8bca334e1632a",
+      "scenario/blender/job_session.py": "38b77a4ee786298d430077be91ba663bec6e14637301e6d49bca67c2625c7e27",
       "scenario/blender/runtime.py": "adea7cdba77072ce43e5a25d720608170ce30977753e9aafb19ba7175b45cbdd",
       "scenario/blender/film.py": "f6f3b695ce4ebb3cb36fb82c40393b416b587578f2ec140f9319dd5b2009e398",
       "scenario/blender/studio.py": "234c69d7f358a70b3f44a5a2bb72d0bc2aad657ba8ba711500f28c74bb43b6ee",

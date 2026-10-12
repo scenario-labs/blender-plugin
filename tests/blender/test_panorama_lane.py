@@ -529,6 +529,65 @@ class EnvironmentJobTests(unittest.TestCase):
         self.assertIn("saved, downloaded 360 panorama", request.errors[0])
         self.assertEqual(len(fixture.paid), paid)
 
+    def test_reload_keeps_local_style_files_off_the_upscale_panorama_source(self):
+        """A saved job's local files name no input, so they never fill a panorama slot."""
+        fixture = self.fixture
+        fixture.saved_panorama(asset_id="asset_upscale-source")
+        style = self.runtime.paths().state_dir / "style.png"
+        write_png(style, 4, 4)
+        records = submodule("core.jobs.records")
+        for local_id, source in (
+            ("upscale-saved", "asset_upscale-source"),
+            ("upscale-other", "asset_other"),
+        ):
+            self.runtime.state.jobs_view.append(
+                records.JobRecord(
+                    local_id=local_id,
+                    lane="panorama",
+                    kind="image",
+                    model_id=UPSCALE,
+                    body={"image": source, "upscaleFactor": 2},
+                    status="success",
+                    meta={"inputs": [str(style)]},
+                )
+            )
+
+        def references():
+            return [
+                (
+                    ref.param_name,
+                    ref.source,
+                    ref.asset_id or ref.filepath,
+                    ref.get("_scenario_reference_projection"),
+                )
+                for ref in self.lane.references
+            ]
+
+        paid = len(fixture.paid)
+        self.scene.scenario.lane = "image"
+        self.assertEqual(bpy.ops.scenario.reload_generation(local_id="upscale-saved"), {"FINISHED"})
+        scenario = self.scene.scenario
+        self.assertEqual((scenario.lane, scenario.panorama_mode), ("panorama", "UPSCALE"))
+        self.assertEqual(self.lane.model_id, UPSCALE)
+        self.assertEqual(
+            references(),
+            [
+                ("image", "ASSET", "asset_upscale-source", "equirectangular"),
+                ("imagePrompt", "FILE", str(style), None),
+            ],
+        )
+        request = self.generation.build_request(self.scene, "panorama", for_estimate=True)
+        self.assertEqual(request.body["image"], "asset_upscale-source")
+        self.assertEqual(request.files, {"imagePrompt": [str(style)]})
+        # A source that is not a saved 360 result stays bare and refused; the
+        # style file still fills only the style input.
+        self.assertEqual(bpy.ops.scenario.reload_generation(local_id="upscale-other"), {"FINISHED"})
+        self.assertEqual(
+            references(),
+            [("image", "ASSET", "asset_other", None), ("imagePrompt", "FILE", str(style), None)],
+        )
+        self.assertEqual(len(fixture.paid), paid)
+
     def test_saved_panorama_choices_hold_only_scoped_ldr_results(self):
         fixture = self.fixture
         _, panorama = fixture.saved_panorama()

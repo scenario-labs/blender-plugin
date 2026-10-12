@@ -866,8 +866,27 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
         inputs = [
             p for p in (rec.meta.get("inputs") or []) if isinstance(p, str) and os.path.exists(p)
         ]
+        # The saved local files name no input, so none may fill a panorama
+        # input: its recorded asset is reattached first, and the files go only
+        # to ordinary inputs below.
+        panorama_inputs = [
+            spec.name
+            for spec in schema.specs
+            if lane == "panorama"
+            and spec.is_file
+            and panorama_lane.is_panorama_input(lane_state, spec.name)
+        ]
+        for name in panorama_inputs:
+            value = rec.body.get(name)
+            for asset_id in value if isinstance(value, list) else [value]:
+                if (
+                    isinstance(asset_id, str)
+                    and asset_id.startswith("asset_")
+                    and not panorama_lane.restore_saved(scene, name, asset_id)
+                ):
+                    _add_asset_reference(lane_state, name, asset_id)
         for spec in schema.specs:
-            if not spec.is_file:
+            if not spec.is_file or spec.name in panorama_inputs:
                 continue
             if lane == "edit3d" and (spec.kind or "").lower() == "3d":
                 continue  # the mesh comes from the current scene selection, not a stale asset from the old job
@@ -890,22 +909,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                     )
                 inputs = [p for p in inputs if p not in local]
             else:
-                panorama_input = lane == "panorama" and panorama_lane.is_panorama_input(
-                    lane_state, spec.name
-                )
                 for asset_id in ids:
                     if isinstance(asset_id, str) and asset_id.startswith("asset_"):
-                        if panorama_input and panorama_lane.restore_saved(
-                            scene, spec.name, asset_id
-                        ):
-                            continue
-                        ref = lane_state.references.add()
-                        ref.param_name, ref.source, ref.asset_id, ref.label = (
-                            spec.name,
-                            "ASSET",
-                            asset_id,
-                            asset_id,
-                        )
+                        _add_asset_reference(lane_state, spec.name, asset_id)
         props.mark_estimate_dirty(lane_state)
         self.report(
             {"INFO"},
@@ -920,6 +926,12 @@ _EXTS = {
     "audio": (".mp3", ".wav", ".ogg", ".m4a"),
     "3d": (".glb", ".gltf", ".fbx", ".obj"),
 }
+
+
+def _add_asset_reference(lane_state, param_name, asset_id):
+    """Restore one recorded asset ID as a bare reference; its form rechecks it."""
+    ref = lane_state.references.add()
+    ref.param_name, ref.source, ref.asset_id, ref.label = (param_name, "ASSET", asset_id, asset_id)
 
 
 class SCENARIO_OT_quick_settings(bpy.types.Operator):

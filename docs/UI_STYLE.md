@@ -833,7 +833,9 @@ relist the target mode's models even when the scene already shows that mode,
 because the list is shared by scenes. Reload attaches a panorama input's
 recorded asset as a saved panorama only while the selected connection still
 holds it as a downloaded LDR 360 result; any other asset ID is restored bare and
-refused until a panorama is chosen again. Mode, size and model changes happen in
+refused until a panorama is chosen again. A saved job's local files do not name
+their input, so Reload never puts one on a panorama input; they fill only still
+inputs such as Upscale's style images. Mode, size and model changes happen in
 property callbacks or operators; drawing never writes. Contract values and the
 recorded model choice that a catalog load fills in are stored without RNA
 updates, like seeded schema defaults, so they keep captured origins current.

@@ -138,7 +138,10 @@ establish live generation or full render-lane desktop acceptance.
   whose text is added at the caret; a composition starting in the focused prompt
   (two untyped presses without text in a row) opens the same field, so it no
   longer stays pending for the next native field. A lone such press, as a dead
-  key sends, opens nothing. In an input mode that commits each key, the first
+  key sends, opens nothing. The field does not open while another form has
+  replaced the focused prompt's or when the form's model takes no prompt, the
+  cases where typed keys are refused too, so a composition started then can
+  still stay pending. In an input mode that commits each key, the first
   key's text arrives in the second press the composer consumes and is lost.
   Inspected Blender 5.0.1, 5.1.2 and 5.2.1 macOS source ends input-method state
   only after a text edit that received a composition. After another edit, such

@@ -430,7 +430,8 @@ drawing a pre-edit it cannot receive.
   belongs to, an untyped key with text, F2 and a composition's second press are
   refused with the same warning, open no popover, and the prompt keeps its focus
   and original text until Esc. When the form's model takes no prompt, they leave
-  focus with *This model takes no prompt*. A popover confirmed after its form
+  focus with *This model takes no prompt*. A refused composition is not handed
+  to a field, so it can still stay pending. A popover confirmed after its form
   changed in either way adds nothing to either form, and the add-on's status
   message says why.
 

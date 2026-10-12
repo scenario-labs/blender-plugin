@@ -291,10 +291,14 @@ establish live generation or full render-lane desktop acceptance.
 - Play first copies the saved file, up to 512 MiB, on the preview lane, so a
   large file waits for its copy and queues behind server thumbnail polls and
   waveform decodes there. Up to four copies or 1 GiB are kept for reuse, plus any
-  copy a running animation player reads. The system player is not tracked: an
-  eviction, connection change, file load or disabling the extension can remove a
-  copy it still has open, and on Windows and Linux it can inherit Blender's
-  environment, including credentials from Credentials > Environment. Windows
+  copy a running animation player reads. The system player is tracked only
+  until its launcher (`open`, `xdg-open` or, on Windows, an isolated Python
+  helper) exits: an eviction, connection change, file load or disabling the
+  extension can then remove a copy it still has open. Both players start without
+  `SCENARIO_`, `PYTHON` or proxy variables; unit tests check this with recorded
+  launchers and a stand-in `xdg-open`, and native tests with a recorded launcher,
+  not with a real default player on Windows or Linux; the macOS desktop passes
+  above predate this launcher. Windows
   refuses to delete a copy a player still holds open; it is removed by a later
   day's sweep. Whether Blender's animation player plays a video's soundtrack,
   behavior without a default player (for example Linux without `xdg-open`) and

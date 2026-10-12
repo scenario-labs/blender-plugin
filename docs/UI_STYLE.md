@@ -761,7 +761,10 @@ hyphen amendments, drew the sidebar rows at UI scales 1.0 and 2.0, with a
 1122 px sidebar at 2.0. **Waveform** reached its summary and envelope icon at
 both scales; the loading lines wrapped inside the box, and the summary kept
 "1.00 s" whole and ended its first line with a `·` separator. The wrapped lines
-started at the box's left edge rather than under the first line's text. Play
+started at the box's left edge rather than under the first line's text. All
+three passes predate the credential-free system player launch: **Play video**
+then went through Blender's `wm.path_open`, which runs the same macOS `open`
+command with Blender's whole environment. Play
 audio, the waveform's Cancel, Retry and close on the desktop, clicking **Play
 video** or **Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
 interaction, other platforms and human listening are not yet recorded; they

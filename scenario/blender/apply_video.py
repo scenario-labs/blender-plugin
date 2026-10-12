@@ -9,6 +9,7 @@ from pathlib import Path
 import bpy
 from bpy.props import IntProperty, StringProperty
 
+from ..core.jobs import playback
 from . import runtime
 
 VIDEO_EXTS = {".mp4", ".mov", ".webm", ".mkv", ".avi", ".m4v"}
@@ -21,11 +22,16 @@ def on_video_result(rec):
 
 
 def play_with_os(path):
-    bpy.ops.wm.path_open(filepath=path)
+    """The system player, started without Scenario credentials, Python start-up or proxies."""
+    path = Path(bpy.path.abspath(path))
+    if not path.is_file():
+        raise ValueError("Select an available downloaded file")
+    return playback.system_open(path)
 
 
 def play_with_blender(path):
-    subprocess.Popen([bpy.app.binary_path, "-a", path])
+    """Blender's animation player in a separate process, without those variables."""
+    return subprocess.Popen([bpy.app.binary_path, "-a", path], env=playback.player_environment())
 
 
 def _load_movie(editor, path, channel, frame):

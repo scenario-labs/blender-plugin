@@ -5,6 +5,7 @@
 import hashlib
 import os
 import stat
+import subprocess
 import threading
 import time
 from dataclasses import replace
@@ -27,8 +28,8 @@ from tests.unit.test_result_previews import (
     MP4,
     ORIGIN,
     SCOPE,
-    env,  # noqa: F401 - shared fixture
     png,
+    preview_env,
     wav,
 )
 
@@ -68,7 +69,13 @@ def saved(service, assets, request_id="request"):
 
 
 @pytest.fixture
-def root(env):  # noqa: F811 - pytest injects the shared fixture
+def env(tmp_path):
+    with preview_env(tmp_path) as state:
+        yield state
+
+
+@pytest.fixture
+def root(env):
     return env.cache.parent / "media-playback"
 
 
@@ -91,7 +98,7 @@ def assert_offline(service):
     assert service.calls == [] and service.downloader.calls == []
 
 
-def test_copy_has_the_receipt_bytes_a_canonical_name_and_private_modes(env, root):  # noqa: F811
+def test_copy_has_the_receipt_bytes_a_canonical_name_and_private_modes(env, root):
     record, _ = saved(env, [("clip", "run.command", "video/mp4", MP4)])
     copy = copy_of(env, record, "clip", root)
     assert copy.path.name == "media.mp4" and copy.kind == "video"
@@ -119,14 +126,14 @@ def test_copy_has_the_receipt_bytes_a_canonical_name_and_private_modes(env, root
         ("video/x-msvideo", b"RIFF\x00\x00\x00\x00AVI " + b"\x00" * 60, "media.avi", "video"),
     ],
 )
-def test_every_playable_type_gets_its_canonical_suffix(env, root, media_type, data, name, kind):  # noqa: F811
+def test_every_playable_type_gets_its_canonical_suffix(env, root, media_type, data, name, kind):
     record, _ = saved(env, [("asset", "saved.bin", media_type, data)])
     copy = copy_of(env, record, "asset", root)
     assert (copy.path.name, copy.kind) == (name, kind)
     assert copy.path.read_bytes() == data
 
 
-def test_unsupported_missing_or_undownloaded_results_are_refused(env, root):  # noqa: F811
+def test_unsupported_missing_or_undownloaded_results_are_refused(env, root):
     record, _ = saved(
         env,
         [("image", "image.png", "image/png", png(2, 2)), ("clip", "clip.mp4", "video/mp4", MP4)],
@@ -146,7 +153,7 @@ def test_unsupported_missing_or_undownloaded_results_are_refused(env, root):  # 
     assert_offline(env)
 
 
-def test_a_job_that_is_not_downloaded_has_nothing_to_play(env, root):  # noqa: F811
+def test_a_job_that_is_not_downloaded_has_nothing_to_play(env, root):
     current = env.store.create(
         JobIntent("pending", SCOPE, ORIGIN, "model", "model", "a" * 64, "b" * 64, "1.0")
     )
@@ -155,7 +162,7 @@ def test_a_job_that_is_not_downloaded_has_nothing_to_play(env, root):  # noqa: F
     assert_offline(env)
 
 
-def test_changed_saved_bytes_or_mismatched_contents_leave_no_copy(env, root):  # noqa: F811
+def test_changed_saved_bytes_or_mismatched_contents_leave_no_copy(env, root):
     record, directory = saved(
         env,
         [
@@ -174,7 +181,7 @@ def test_changed_saved_bytes_or_mismatched_contents_leave_no_copy(env, root):  #
     assert copies(root) == []
 
 
-def test_oversized_receipts_are_refused_before_copying(env, root, monkeypatch):  # noqa: F811
+def test_oversized_receipts_are_refused_before_copying(env, root, monkeypatch):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     monkeypatch.setattr(playback, "MAX_BYTES", len(MP4) - 1)
     with pytest.raises(playback.PlaybackError, match="too large"):
@@ -182,7 +189,7 @@ def test_oversized_receipts_are_refused_before_copying(env, root, monkeypatch): 
     assert copies(root) == []
 
 
-def test_an_unchanged_copy_is_reused_and_a_changed_one_replaced(env, root):  # noqa: F811
+def test_an_unchanged_copy_is_reused_and_a_changed_one_replaced(env, root):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     first = copy_of(env, record, "clip", root)
     assert copy_of(env, record, "clip", root, reuse=first, keep=[first.directory]) is first
@@ -207,7 +214,7 @@ def _changes_during_copy(monkeypatch, store, record):
 
 
 def test_a_changed_receipt_discards_the_copy_but_an_unrelated_revision_keeps_it(
-    env,  # noqa: F811 - pytest injects the shared fixture
+    env,
     root,
     monkeypatch,
 ):
@@ -227,7 +234,7 @@ def test_a_changed_receipt_discards_the_copy_but_an_unrelated_revision_keeps_it(
     assert copies(root) == [copy.directory.name]
 
 
-def test_cancellation_removes_partial_and_finished_copies(env, root, monkeypatch):  # noqa: F811
+def test_cancellation_removes_partial_and_finished_copies(env, root, monkeypatch):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     cancel = threading.Event()
     cancel.set()
@@ -248,7 +255,7 @@ def test_cancellation_removes_partial_and_finished_copies(env, root, monkeypatch
     assert copies(root) == []
 
 
-def test_a_canceled_reuse_is_never_discarded(env, root):  # noqa: F811
+def test_a_canceled_reuse_is_never_discarded(env, root):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     first = copy_of(env, record, "clip", root)
     cancel = threading.Event()
@@ -258,7 +265,7 @@ def test_a_canceled_reuse_is_never_discarded(env, root):  # noqa: F811
     assert first.path.read_bytes() == MP4
 
 
-def test_an_inactive_owner_refuses_before_copying(env, root):  # noqa: F811
+def test_an_inactive_owner_refuses_before_copying(env, root):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     env.coordinator.deactivate()
     with pytest.raises(ResultError, match="inactive"):
@@ -266,7 +273,7 @@ def test_an_inactive_owner_refuses_before_copying(env, root):  # noqa: F811
     assert copies(root) == []
 
 
-def test_owner_discards_and_stale_sweeps_happen_on_the_lane_before_copying(env, root):  # noqa: F811
+def test_owner_discards_and_stale_sweeps_happen_on_the_lane_before_copying(env, root):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     evicted = copy_of(env, record, "clip", root)
     kept = copy_of(env, record, "clip", root)
@@ -333,7 +340,7 @@ def test_discard_removes_a_read_only_copy(tmp_path):
     assert not directory.exists()
 
 
-def test_playback_copies_run_on_the_preview_lane(env, root, monkeypatch):  # noqa: F811
+def test_playback_copies_run_on_the_preview_lane(env, root, monkeypatch):
     record, _ = saved(env, [("clip", "clip.mp4", "video/mp4", MP4)])
     threads, original = [], env.coordinator.prepare_playback
 
@@ -383,6 +390,92 @@ def test_players_get_no_credentials_python_start_up_or_proxies():
     assert "SCENARIO_API_KEY" not in playback.player_environment(
         {**os.environ, "SCENARIO_API_KEY": "secret"}
     )
+
+
+SECRETS = {
+    "SCENARIO_API_KEY": "launch-key",
+    "SCENARIO_API_SECRET": "fixture",
+    "Scenario_Project": "project",
+    "PYTHONPATH": "/inject",
+    "PYTHONHOME": "/home",
+    "HTTP_PROXY": "http://proxy.invalid",
+}
+
+
+class Launches:
+    """Records launcher processes instead of starting them."""
+
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, command, **options):
+        self.calls.append((command, options))
+        return "launcher"
+
+
+@pytest.mark.parametrize(
+    ("platform", "launcher"),
+    [("darwin", ["/usr/bin/open"]), ("linux", ["xdg-open"]), ("freebsd14", ["xdg-open"])],
+)
+def test_the_system_player_launcher_gets_no_credentials(tmp_path, platform, launcher):
+    path = tmp_path / "play-fixture" / "media.mp4"
+    environ = {"PATH": "/usr/bin", "DISPLAY": ":0", "BLENDER_USER_CONFIG": "/config", **SECRETS}
+    launches = Launches()
+    assert playback.system_open(path, platform=platform, environ=environ, popen=launches) == (
+        "launcher"
+    )
+    ((command, options),) = launches.calls
+    assert command == [*launcher, str(path)]
+    assert options == {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "env": {"PATH": "/usr/bin", "DISPLAY": ":0", "BLENDER_USER_CONFIG": "/config"},
+    }
+
+
+def test_windows_opens_through_an_isolated_interpreter_with_a_filtered_environment(tmp_path):
+    path = tmp_path / "media.wav"
+    environ = {"SYSTEMROOT": "C:\\Windows", "PATH": "C:\\Windows", **SECRETS}
+    launches = Launches()
+    playback.system_open(
+        path, platform="win32", environ=environ, executable="python.exe", popen=launches
+    )
+    ((command, options),) = launches.calls
+    # Blender's interpreter, isolated from start-up variables and site packages,
+    # calls ShellExecute; the started application inherits this environment.
+    assert command == ["python.exe", "-I", "-S", "-c", playback._STARTFILE, str(path)]
+    assert options["env"] == {"SYSTEMROOT": "C:\\Windows", "PATH": "C:\\Windows"}
+    assert options["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    with pytest.raises(playback.PlaybackError, match="interpreter"):
+        playback.system_open(path, platform="win32", environ=environ, executable="", popen=launches)
+    assert len(launches.calls) == 1
+
+
+def test_the_system_player_refuses_relative_paths_before_launching():
+    launches = Launches()
+    for path in ("media.mp4", "-a", ""):
+        with pytest.raises(playback.PlaybackError, match="absolute"):
+            playback.system_open(path, platform="linux", environ={}, popen=launches)
+    assert launches.calls == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a POSIX shell script stands in for xdg-open")
+def test_the_launched_application_inherits_no_credentials(tmp_path):
+    """A real child process: a stand-in xdg-open records the environment it received."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    record = tmp_path / "environment.txt"
+    opener = bin_dir / "xdg-open"
+    opener.write_text(f'#!/bin/sh\nenv > "{record}"\n')
+    opener.chmod(0o700)
+    environ = {"PATH": f"{bin_dir}{os.pathsep}/usr/bin{os.pathsep}/bin", **SECRETS}
+    process = playback.system_open(tmp_path / "media.mp4", platform="linux", environ=environ)
+    assert process.wait(10) == 0
+    names = {line.split("=", 1)[0] for line in record.read_text().splitlines() if "=" in line}
+    assert "PATH" in names
+    assert not {name for name in names if name.upper().startswith(("SCENARIO_", "PYTHON"))}
+    assert "HTTP_PROXY" not in names
 
 
 def test_playback_root_requires_an_existing_parent(tmp_path):

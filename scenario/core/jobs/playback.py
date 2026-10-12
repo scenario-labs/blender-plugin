@@ -10,11 +10,18 @@ signature must match its saved MIME type, and it is named ``media`` plus that
 type's canonical suffix, read-only. Copies are disposable: their Blender owner
 discards them, and an age sweep on the lane removes any left behind, for
 example by a crash or by a player that still held one open on Windows.
+
+Every player starts from ``player_environment()``: a newly started desktop
+application inherits its launcher's environment on macOS (``open``), Linux
+(``xdg-open``) and Windows (``ShellExecute``), so ``system_open`` never lets it
+see the Scenario credentials an environment-configured session holds.
 """
 
 import os
 import shutil
 import stat
+import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -32,6 +39,10 @@ STALE_SECONDS = 24 * 60 * 60
 PLAYBACK_TYPES = {media_type: (kind, suffix) for media_type, (kind, suffix, _) in FORMATS.items()}
 # Variables a player never needs: credentials, Python start-up and proxies.
 _PROXIES = frozenset({"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"})
+# Windows has no environment argument for ShellExecute, so an isolated child
+# interpreter started with the filtered environment calls it instead.
+_STARTFILE = "import os, sys; os.startfile(sys.argv[1])"
+_NO_WINDOW = 0x08000000  # subprocess.CREATE_NO_WINDOW, defined only on Windows
 
 
 def _avi(head):
@@ -199,7 +210,7 @@ def discard(root, directory):
                 _unlink(child)
         directory.rmdir()
     except OSError:
-        pass
+        pass  # A player can still hold the copy on Windows; the age sweep removes it.
 
 
 def sweep(root, *, keep=(), now=None, older_than=STALE_SECONDS):
@@ -236,3 +247,40 @@ def player_environment(environ=None):
         for key, value in environ.items()
         if not key.upper().startswith(("SCENARIO_", "PYTHON")) and key.upper() not in _PROXIES
     }
+
+
+def system_open(path, *, platform=None, environ=None, executable=None, popen=None):
+    """Start the operating system's default application on one absolute local path.
+
+    Blender's ``wm.path_open`` passes the whole session environment on to the
+    application it starts. This launcher runs with ``player_environment()``
+    instead: ``/usr/bin/open`` on macOS, ``xdg-open`` on Linux and other
+    systems, and on Windows Blender's own Python interpreter, isolated, calling
+    ``os.startfile``. Output is discarded, since it can name private paths.
+    Returns the launcher process, which the caller reaps; it raises ``OSError``
+    when no launcher can start.
+    """
+    platform = sys.platform if platform is None else platform
+    popen = subprocess.Popen if popen is None else popen
+    path = os.fspath(path)
+    if not os.path.isabs(path):
+        raise PlaybackError("Players open absolute local paths only")
+    options = {}
+    if platform == "darwin":
+        command = ["/usr/bin/open", path]
+    elif platform.startswith("win"):
+        executable = sys.executable if executable is None else executable
+        if not executable:
+            raise PlaybackError("The system player needs Blender's Python interpreter")
+        command = [executable, "-I", "-S", "-c", _STARTFILE, path]
+        options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", _NO_WINDOW)
+    else:
+        command = ["xdg-open", path]
+    return popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=player_environment(environ),
+        **options,
+    )

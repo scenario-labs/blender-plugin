@@ -5,8 +5,9 @@
 The shared saved-job descriptors draw these controls. They never submit,
 download, spend, apply or change the scene or the job store. **Play** opens a
 private verified copy (``core.jobs.playback``) in the system player, and **Play
-in Blender** opens one in Blender's animation player, a separate process
-started without Scenario credentials. **Waveform** asks the session's preview
+in Blender** opens one in Blender's animation player, a separate process. Both
+start without Scenario credentials, Python start-up or proxy variables in their
+environment, never through ``wm.path_open``. **Waveform** asks the session's preview
 scheduler for the saved audio's envelope, which an owned offline Blender
 process decodes on the preview lane, then draws it from cached state.
 
@@ -88,8 +89,8 @@ def _blender_binary():
 
 
 def _system_open(path):
-    """Open a file with the operating system's default application."""
-    return bpy.ops.wm.path_open(filepath=path)
+    """The operating system's default application on a private copy, without credentials."""
+    return playback.system_open(path)
 
 
 def _launch(binary, copy):
@@ -223,6 +224,7 @@ class MediaController:
         self._play = None
         self._copies = OrderedDict()  # PreviewKey -> PlaybackCopy, oldest first
         self._players = []  # (process, PlaybackCopy) for Blender animation players
+        self._openers = []  # (process, PlaybackCopy) for system player launchers
         self._abandoned = []  # lane tasks whose copies must be removed once done
         self._context = None
         self._previews = None
@@ -240,12 +242,12 @@ class MediaController:
     def interval(self):
         if self.loading:
             return LOADING_INTERVAL
-        if self.selection is not None or self._players:
+        if self.selection is not None or self._players or self._openers:
             return IDLE_INTERVAL
         return None
 
     def _pinned(self, copy):
-        return any(pinned is copy for _, pinned in self._players)
+        return any(pinned is copy for _, pinned in (*self._players, *self._openers))
 
     def _cached(self, copy):
         return any(cached is copy for cached in self._copies.values())
@@ -313,11 +315,12 @@ class MediaController:
             context_id, request_id, expected_revision, asset_id, kinds
         )
         binary = None
+        # Exited players and launchers no longer pin their copies.
+        self._reap()
         if player == "BLENDER":
             binary = _blender_binary()
             if binary is None:
                 raise MediaError("Play in Blender needs Blender's executable")
-            self._reap()
             if len(self._players) >= PLAYER_LIMIT:
                 raise MediaError("Close an open Blender animation player first")
         self._bind(context_id)
@@ -325,7 +328,7 @@ class MediaController:
         reuse = self._copies.get(key)
         evicted = self._evictions(key, item.receipt.size)
         keep = [copy.directory for copy in self._copies.values()]
-        keep += [copy.directory for _, copy in self._players]
+        keep += [copy.directory for _, copy in (*self._players, *self._openers)]
         try:
             task = session.prepare_playback(
                 request_id,
@@ -391,24 +394,37 @@ class MediaController:
                 self._players.append((_launch(request.binary, copy), copy))
                 message = f"Opened saved {request.label} in Blender's animation player"
             else:
-                if "FINISHED" not in _system_open(blender_path(copy.path)):
-                    raise RuntimeError("The system player did not open the copy")
+                self._openers.append((_system_open(blender_path(copy.path)), copy))
                 message = f"Opened saved {request.label} in the system player"
         except (OSError, RuntimeError, ValueError, LocalRenderError):
             message = "The player could not open the private copy"
         runtime.set_message(message)
 
     def _reap(self):
-        """Forget exited players; their copies leave with them unless cached or shared."""
-        running, exited = [], []
+        """Forget exited players and launchers; their copies leave unless cached or shared.
+
+        A system player launcher exits once the default application has the
+        copy; a failed one is reported, since nothing else would show it.
+        """
+        running, exited, failed = [], [], False
         for process, copy in self._players:
             if process.poll() is None:
                 running.append((process, copy))
             else:
                 exited.append(copy)
+        opening = []
+        for process, copy in self._openers:
+            code = process.poll()
+            if code is None:
+                opening.append((process, copy))
+            else:
+                exited.append(copy)
+                failed |= code != 0
         if not exited:
             return False
-        self._players = running
+        self._players, self._openers = running, opening
+        if failed:
+            runtime.set_message("The system player could not open the private copy")
         for copy in exited:
             if not self._cached(copy) and not self._pinned(copy):
                 _discard(copy)
@@ -423,7 +439,7 @@ class MediaController:
                 continue
             try:
                 copy = task.result()
-            except BaseException:
+            except Exception:
                 continue  # A failed or canceled copy was removed on the lane.
             if not self._cached(copy) and not self._pinned(copy):
                 _discard(copy)
@@ -542,7 +558,7 @@ class MediaController:
     def retire(self):
         """Forget the selection and pending play; remove copies no running player uses."""
         _main_thread()
-        # An animation player that exited since the last timer tick no longer
+        # A player or launcher that exited since the last timer tick no longer
         # pins its copy, so that copy is removed here too.
         self._reap()
         if self.selection is not None:
@@ -561,12 +577,13 @@ class MediaController:
     def shutdown(self):
         """On unregister: retire, collect finished lane tasks and leave players running.
 
-        A running player keeps its copy; the age sweep removes it later.
+        A running player or launcher keeps its copy; the age sweep removes it later.
         """
         self.retire()
         self._collect_abandoned()
         self._abandoned.clear()
         self._players.clear()
+        self._openers.clear()
 
 
 controller = MediaController()

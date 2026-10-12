@@ -3,7 +3,8 @@
 """Installed Play, Play in Blender and waveform controls for saved shared results.
 
 Waveforms decode in the real offline Blender child. Players are patched: the
-system opener and the animation player process are recorded, never launched.
+system player launcher and the animation player process are recorded, never
+launched.
 Nothing contacts Scenario; drawing is checked through recording layouts, not
 physical input.
 """
@@ -110,10 +111,10 @@ def preferences(ui_scale, **others):
 
 
 class FakePlayer:
-    """Stands in for Blender's animation player process."""
+    """Stands in for Blender's animation player or a system player launcher process."""
 
-    def __init__(self, command, **options):
-        self.command, self.options, self.code = command, options, None
+    def __init__(self, command, code=None, **options):
+        self.command, self.options, self.code = command, options, code
 
     def poll(self):
         return self.code
@@ -169,6 +170,7 @@ class ResultMediaTests(unittest.TestCase):
         )
         self.enterContext(patch.object(self.runtime, "JobSession", side_effect=session))
         self.opened = []
+        self.system_open = self.media._system_open
         self.enterContext(patch.object(self.media, "_system_open", side_effect=self.open))
         self.players = []
         # subprocess is shared: only the animation player is faked, while the
@@ -180,7 +182,7 @@ class ResultMediaTests(unittest.TestCase):
 
     def open(self, path):
         self.opened.append(path)
-        return {"FINISHED"}
+        return FakePlayer(["open", path], code=0)
 
     def launch(self, command, **options):
         if len(command) != 3 or command[1] != "-a":
@@ -844,6 +846,84 @@ class ResultMediaTests(unittest.TestCase):
         thread.start()
         thread.join(5)
         self.assertEqual(len(errors), 3)
+
+    def test_the_system_player_launcher_starts_without_scenario_credentials(self):
+        view = self.saved([("clip", "clip.mp4", "video/mp4", MP4)])
+        launchers = []
+
+        def launch(command, **options):
+            launchers.append(FakePlayer(command, **options))
+            return launchers[-1]
+
+        secrets = {
+            "SCENARIO_API_KEY": "launch-key",
+            "SCENARIO_API_SECRET": "fixture",
+            "PYTHONPATH": "start-up",
+            "HTTPS_PROXY": "proxy",
+        }
+        # The real opener with only its process faked: nothing is launched.
+        with (
+            patch.object(self.media, "_system_open", self.system_open),
+            patch.object(subprocess, "Popen", side_effect=launch),
+            patch.dict(os.environ, secrets),
+        ):
+            self.play(view, "play:clip")
+        (launcher,) = launchers
+        path = Path(launcher.command[-1])
+        self.assertEqual(path.name, "media.mp4")
+        self.assertEqual(path.parent.parent.resolve(), self.playback_root().resolve())
+        env = launcher.options["env"]
+        for name in secrets:
+            self.assertNotIn(name, env)
+        self.assertFalse(any(key.upper().startswith(("SCENARIO_", "PYTHON")) for key in env))
+        self.assertIn("PATH", env)
+        for stream in ("stdin", "stdout", "stderr"):
+            self.assertIs(launcher.options[stream], subprocess.DEVNULL)
+        if os.name != "nt":
+            self.assertNotIn("-c", launcher.command)  # open or xdg-open, never a shell.
+        self.assertIn("system player", self.runtime.state.last_message)
+        # A running launcher keeps its copy, even past the cache budget.
+        controller = self.media.controller
+        controller.retire()
+        self.assertTrue(path.is_file())
+        launcher.code = 0
+        controller.poll()
+        self.assertEqual(self.copies(), [])
+
+    def test_a_failed_system_player_launch_is_reported(self):
+        view = self.saved([("clip", "clip.mp4", "video/mp4", MP4)])
+        with patch.object(self.media, "_system_open", return_value=FakePlayer(["open"], code=1)):
+            self.play(view, "play:clip")
+        self.media.controller.poll()
+        self.assertIn("could not open", self.runtime.state.last_message)
+        self.assertEqual(len(self.copies()), 1)  # Kept for reuse, like an opened copy.
+        with patch.object(self.media, "_system_open", side_effect=OSError("no opener")):
+            self.play(view, "play:clip")
+        self.assertIn("could not open", self.runtime.state.last_message)
+
+    def test_retained_prototype_play_buttons_start_players_without_credentials(self):
+        launched = []
+
+        def launch(command, **options):
+            launched.append(FakePlayer(command, **options))
+            return launched[-1]
+
+        video = self.root / "prototype.mp4"
+        video.write_bytes(MP4)
+        with (
+            patch.object(subprocess, "Popen", side_effect=launch),
+            patch.dict(os.environ, {"SCENARIO_API_KEY": "launch-key", "PYTHONHOME": "home"}),
+        ):
+            self.assertEqual(bpy.ops.scenario.play_video(filepath=str(video)), {"FINISHED"})
+            self.assertEqual(bpy.ops.scenario.play_video_blender(filepath=str(video)), {"FINISHED"})
+            with self.assertRaises(RuntimeError):  # Reported, nothing launched.
+                bpy.ops.scenario.play_video(filepath=str(self.root / "absent.mp4"))
+        system, player = launched
+        self.assertEqual(Path(system.command[-1]), video)
+        self.assertEqual(player.command[1:], ["-a", str(video)])
+        for process in launched:
+            self.assertNotIn("SCENARIO_API_KEY", process.options["env"])
+            self.assertNotIn("PYTHONHOME", process.options["env"])
 
     def test_unregister_style_shutdown_leaves_running_players_alone(self):
         view = self.saved([("clip", "clip.mp4", "video/mp4", MP4)])

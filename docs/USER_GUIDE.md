@@ -248,7 +248,8 @@ Text, images or your Blender scene to video (Seedance 2.0 and 2.5, Kling, Veo, W
   in the same saved-job controls: in Jobs while a result awaits review, and in
   Generations after it is applied. Play opens a private, read-only copy in your
   system's default player. Play in Blender opens one in Blender's animation player,
-  a separate Blender process started without your Scenario credentials. The copy
+  a separate Blender process. Both players start without your Scenario
+  credentials in their environment. The copy
   is checked against the saved download receipt and named `media` plus the saved
   type's extension, so the player never receives the saved file or its downloaded
   name. Nothing is generated, downloaded, spent or changed in the scene, and both

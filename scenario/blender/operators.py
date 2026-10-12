@@ -334,20 +334,27 @@ class SCENARIO_OT_import_result(bpy.types.Operator):
 class SCENARIO_OT_play_video(bpy.types.Operator):
     bl_idname = "scenario.play_video"
     bl_label = "Play"
-    bl_description = "Open the video with the system player"
+    bl_description = "Open the file with the system player, without Scenario credentials"
     filepath: StringProperty()
 
     def execute(self, context):
         from . import apply_video
 
-        apply_video.play_with_os(self.filepath)
+        try:
+            apply_video.play_with_os(self.filepath)
+        except ValueError as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        except (OSError, RuntimeError):
+            self.report({"ERROR"}, "The system player could not open this file")
+            return {"CANCELLED"}
         return {"FINISHED"}
 
 
 class SCENARIO_OT_play_video_blender(bpy.types.Operator):
     bl_idname = "scenario.play_video_blender"
     bl_label = "Play in Blender"
-    bl_description = "Open the video in Blender's animation player"
+    bl_description = "Open the video in Blender's animation player, without Scenario credentials"
     filepath: StringProperty()
 
     def execute(self, context):

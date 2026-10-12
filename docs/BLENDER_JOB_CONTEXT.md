@@ -535,11 +535,14 @@ Worker threads cannot call these methods.
 of one saved result on the same preview lane and returns its task; it is not a
 session completion either, and `cancel_playback` signals it. The main-thread
 [saved media controller](../scenario/blender/result_media.py) owns the copies:
-it opens the latest one in the system player through `wm.path_open`, or starts
-Blender's animation player (`-a`) in a separate process whose environment drops
-`SCENARIO_`, `PYTHON` and proxy variables. It reuses an unchanged copy of the
-same receipt, keeps at most four copies or 1 GiB plus any copy a running
-animation player reads, and allows two such players. For **Waveform** it asks
+it opens the latest one in the system player, or starts Blender's animation
+player (`-a`) in a separate process. The system player starts through
+`core.jobs.playback.system_open` (`open`, `xdg-open`, or an isolated Python
+helper calling `os.startfile` on Windows), never `wm.path_open`; both launches
+drop `SCENARIO_`, `PYTHON` and proxy variables from the environment. It reuses
+an unchanged copy of the same receipt, keeps at most four copies or 1 GiB plus
+any copy a running animation player or system player launcher uses, reports a
+launcher that exits with an error, and allows two animation players. For **Waveform** it asks
 `result_previews` for the envelope rendition only, so no server still is polled,
 and polls its status from a timer; Cancel calls the scheduler's `cancel`, which
 terminates a running decode. A late copy or envelope is discarded unless the

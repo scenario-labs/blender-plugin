@@ -6,6 +6,7 @@ Fixtures are generated here with Blender's audio module or Python's wave module,
 or are the documented first-party files under tests/fixtures/synthetic.
 """
 
+import gc
 import math
 import shutil
 import struct
@@ -102,6 +103,40 @@ class WaveformWorkerTests(unittest.TestCase):
         builder.add(memoryview(samples.reshape(-1)))
         return builder.finish(bins)
 
+    def longest_pause(self, work):
+        """Run ``work`` on a thread; return its value, this thread's longest pause and the time.
+
+        As in timeit, automatic garbage collection waits until the end: a full
+        pass over this suite's heap stops every thread, whatever ``work`` does.
+        """
+        done, outcome = threading.Event(), {}
+
+        def run():
+            try:
+                outcome["value"] = work()
+            finally:
+                done.set()
+
+        collecting = gc.isenabled()
+        gc.disable()
+        try:
+            thread = threading.Thread(target=run)
+            started = last = time.perf_counter()
+            longest = 0.0
+            thread.start()
+            while not done.is_set():
+                now = time.perf_counter()
+                longest, last = max(longest, now - last), now
+                time.sleep(0.001)
+            # The pause that ends with the work is a pause too.
+            now = time.perf_counter()
+            longest = max(longest, now - last)
+            thread.join(5)
+        finally:
+            if collecting:
+                gc.enable()
+        return outcome["value"], longest, now - started
+
     def test_spec_points_at_the_installed_worker_and_this_blender(self):
         self.assertIsNotNone(self.spec)
         installed = Path(submodule("blender.runtime").__file__).resolve().parent
@@ -180,25 +215,16 @@ class WaveformWorkerTests(unittest.TestCase):
             aud.FORMAT_S16,
             seconds=300.0,
         )
-        done, outcome = threading.Event(), {}
-
-        def run():
-            try:
-                outcome["value"] = self.decode(long)
-            finally:
-                done.set()
-
-        thread = threading.Thread(target=run)
-        started = last = time.monotonic()
-        gap = 0.0
-        thread.start()
-        while not done.is_set():
-            now = time.monotonic()
-            gap, last = max(gap, now - last), now
-            time.sleep(0.001)
-        thread.join(5)
-        elapsed = time.monotonic() - started
-        self.assertAlmostEqual(outcome["value"].seconds, 300.0, delta=0.08)
-        # The whole decode took longer than any pause this thread observed.
-        self.assertGreater(elapsed, 0.5)
-        self.assertLess(gap, 0.1)
+        # Control: the same decode on a thread of this Blender holds its
+        # interpreter lock throughout, so this thread pauses about as long.
+        _, held, decoding = self.longest_pause(lambda: aud.Sound(str(long)).data().shape)
+        self.assertGreater(held, decoding / 2, "An in-process decode no longer holds the lock")
+        result, pause, elapsed = self.longest_pause(lambda: self.decode(long))
+        self.assertAlmostEqual(result.seconds, 300.0, delta=0.08)
+        # The offline decode outlasts that pause, yet this thread never stops for
+        # half of it. Both scale with this machine's speed, unlike a fixed bound:
+        # unrelated pauses on hosted runners reached 0.11 s.
+        self.assertGreater(elapsed, held)
+        self.assertLess(
+            pause, held / 2, f"Paused {pause:.3f} s; an in-process decode held {held:.3f} s"
+        )

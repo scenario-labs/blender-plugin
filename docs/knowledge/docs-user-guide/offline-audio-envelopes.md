@@ -7,9 +7,9 @@
     "path": "docs/USER_GUIDE.md",
     "scope": "offline-audio-envelopes",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-11",
-    "base_revision": "1d86f53d3489b23f2447be69cb589140e2f3ba64",
-    "limits": "Reviewed the prototype Generations preview after the PCM-only reader's retirement: worker-thread decoding through the offline child, before/after file stamps, envelope raster, the missing-executable refusal, Cancel terminating the decoder and the stated format and size limits. Installed-ZIP native tests for the waveform decoder, session previews and the prototype preview passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Windows and Linux rest on hosted CI, not on this review. Desktop drawing, UI scale and human listening were not reviewed; the inherited audio-preview topic keeps its older claims.",
+    "reviewed_at": "2026-10-12",
+    "base_revision": "759f764dff9c9d9b1f50efecdd46835471f19189",
+    "limits": "Reviewed the prototype Generations preview after the PCM-only reader's retirement: worker-thread decoding through the offline child, before/after file stamps, envelope raster, the missing-executable refusal, Cancel terminating the decoder and the stated format and size limits. Installed-ZIP native tests for the waveform decoder, session previews and the prototype preview passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Windows and Linux rest on hosted CI, not on this review. Desktop drawing, UI scale and human listening were not reviewed; the inherited audio-preview topic keeps its older claims. Re-checked the interface-responsiveness claim after the main-thread lock test changed: the test bounds the offline decode's longest main-thread pause at half that of the same decode run in process, with automatic garbage collection paused during both measurements. Other drifted sources were not re-reviewed.",
     "sources": {
       "scenario/blender/audio_preview.py": "e77b8d21f7733322b9714a17ff8b982d24cd993e5702e6b0403d7b5b3ddfbb22",
       "tests/blender/test_audio_preview.py": "c024d3dff025d0c8600c0575fa2850dd16d29a4fc0babe79c5f82b35757b2f0e",
@@ -17,7 +17,7 @@
       "scenario/blender/waveform_worker.py": "184e6aea667e31e84fa46f68c61448c12714e52d39dfdaef40f56db3091a4e4a",
       "scenario/core/audio_waveform.py": "888c1c6a1c3ab5dfeb0f174c807290e399c856cf067bd37e6011f5e184edf18c",
       "scenario/blender/runtime.py": "628771d9cdda2fad47c506a4e5571727103ec3b6549c289eb3a8571ba96fffe0",
-      "tests/blender/test_waveform_worker.py": "b1fbfb74b8c75ef5366283ce32c97b23350bb1e81766891a2a7fab046b537aa5"
+      "tests/blender/test_waveform_worker.py": "47a54f6b3bf1c7faa5bb372312986980eb7d76936dfe90c14d86b20c220b9561"
     }
   }
 }

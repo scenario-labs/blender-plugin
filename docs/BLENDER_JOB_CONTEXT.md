@@ -343,7 +343,11 @@ of whether the unevaluated depsgraph lists updates. Catalog loads fill and
 restore generation forms without RNA update callbacks, and so does a trained-model
 project default applied automatically to a form without an explicit choice, so
 neither causes such an update; see [catalog delivery](architecture/runtime.md#active-sdk-catalog).
-Explicit selections, including a default's **Use**, and edits still invalidate.
+Explicit selections and edits that assign a property with an RNA update
+callback, such as the model or a LoRA strength, still invalidate. A default's
+**Use** always reprices its form but invalidates only when it assigns a
+different base model or a LoRA strength that way; a composition used on the
+form's current base changes only the form's trained list.
 Undo/redo and file loading
 invalidate captured state too. The one exception is
 `JobSession.synchronizing(scenes)`, which a main-thread caller opens while it

@@ -100,10 +100,13 @@ obsolete parameter alone does not re-arm a price. A trained-model project defaul
 applied automatically to a form without an explicit choice
 ([project selection](#optional-project-selection)) follows the same rule: it
 stores the model enum index and LoRA strengths as raw values, runs the form's
-model synchronization itself and re-arms that form's price. Explicit selections,
-including a default's **Use**, mode or task changes and edits still use RNA and
-invalidate captured origins. Request bodies, models and render forms keep their
-own exact checks at approval.
+model synchronization itself and re-arms that form's price. Explicit selections
+and edits that assign a model, mode, task, parameter or LoRA strength still use
+RNA and invalidate captured origins. A default's **Use** always re-arms its
+form's price, and invalidates them only when it assigns a different base model
+or a LoRA strength; a composition used on the form's current base writes only
+the form's trained list. Request bodies, models and render forms keep their own
+exact checks at approval.
 
 Caches are connection-local and in memory. The active path does not reuse the
 prototype's unscoped disk model cache. Restart therefore requires a catalog

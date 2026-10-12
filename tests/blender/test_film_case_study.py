@@ -42,7 +42,9 @@ for collection in (bpy.data.scenes, bpy.data.objects, bpy.data.materials, bpy.da
     for owner in collection:
         group = owner.bl_system_properties_get(do_create=False)
         system += [k for k in (group.keys() if group is not None else ()) if "scenario" in k]
-paths =bpy.utils.blend_paths(absolute=False, packed=False, local=False)
+# Windows joins a strip's stored folder and file name with its own separator.
+listed = bpy.utils.blend_paths(absolute=False, packed=False, local=False)
+paths = [path.replace(os.sep, "/") for path in listed]
 strips = review.sequence_editor.strips_all
 sounds = [s for s in strips if s.type == "SOUND"]
 render_paths = sorted({scene.render.filepath for scene in bpy.data.scenes})
@@ -426,6 +428,38 @@ class FilmCaseStudyTests(unittest.TestCase):
         self.assertEqual(self.staging(), [])
         self.assertEqual(self.local_render.digest(archive, maximum=1 << 32), status["sha256"])
         self.assert_offline()
+
+    def test_verification_accepts_strip_paths_joined_with_a_windows_separator(self):
+        # Windows lists a strip's stored "//Media/" folder and file name joined by "\".
+        worker = submodule("blender.film_case_study_worker")
+        root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        (root / "Media").mkdir()
+        for name in ("001 movie.mp4", "002 image.jpg"):
+            (root / "Media" / name).write_bytes(b"fixture")
+        listed = ["//Media\\001 movie.mp4", "//Media/002 image.jpg"]
+        listings = {False: listed, True: [*listed, "//Packed/003 image.jpg"]}
+        native = SimpleNamespace(
+            data=SimpleNamespace(scenes=(), libraries=()),
+            types=bpy.types,
+            utils=SimpleNamespace(blend_paths=lambda absolute, packed, local: listings[packed]),
+            path=SimpleNamespace(abspath=lambda path: str(root / path[2:].replace("\\", "/"))),
+        )
+        names = ("001 movie.mp4", "002 image.jpg")
+        windows = SimpleNamespace(sep="\\", path=worker.os.path)
+        with patch.object(worker, "os", windows):
+            report = worker._verify(native, {"media": [{"name": name} for name in names]})
+        self.assertEqual(report["paths"], ["//Media/001 movie.mp4", "//Media/002 image.jpg"])
+        self.assertEqual(report["packed_paths"], ["//Packed/003 image.jpg"])
+        self.assertEqual(report["missing"], [])
+        media = tuple(SimpleNamespace(name=name) for name in names)
+        self.study.check_verified(SimpleNamespace(scenes=(), media=media), report)
+        # Elsewhere a backslash is part of a file name, never a bundle folder.
+        posix = SimpleNamespace(sep="/", path=worker.os.path)
+        with patch.object(worker, "os", posix):
+            report = worker._verify(native, {"media": [{"name": name} for name in names]})
+        self.assertEqual(report["missing"], ["//Media\\001 movie.mp4"])
+        with self.assertRaises(self.export.LocalExportError):
+            self.study.check_verified(SimpleNamespace(scenes=(), media=media), report)
 
     def test_inspection_lists_reviews_and_current_timelines_without_changes(self):
         timeline, shot = self.build_timeline()

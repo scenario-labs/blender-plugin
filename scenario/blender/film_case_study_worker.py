@@ -13,8 +13,8 @@ rebuilds sound strips so no earlier path stays in them, repacks packed images
 under neutral names, removes Scenario properties that identify jobs, assets or
 productions, removes the extension's saved settings (composer lanes and their
 references, Film and workflow forms) and writes the chosen scenes as a data
-library. ``verify`` opens that library and reports its scenes, file references and
-remaining properties.
+library. ``verify`` opens that library and reports its scenes, file references
+(with ``/`` separators on every platform) and remaining properties.
 """
 
 import json
@@ -349,11 +349,22 @@ def _bundle(bpy, spec):
     return {"written": [scene.name for scene in scenes], "counts": counts}
 
 
+def _listed(bpy, packed):
+    """Blender's file references, with ``/`` between folders on every platform.
+
+    Movie, image and sound strips keep a folder and a file name; the listing joins
+    them with the native separator, so Windows reports ``//Media\\001 movie.mp4``
+    for the stored ``//Media/`` and ``001 movie.mp4``.
+    """
+    paths = bpy.utils.blend_paths(absolute=False, packed=packed, local=False)
+    return [path.replace(os.sep, "/") for path in paths]
+
+
 def _verify(bpy, spec):
     expected = {item["name"] for item in spec["media"] if isinstance(item.get("name"), str)}
-    paths = bpy.utils.blend_paths(absolute=False, packed=False, local=False)
+    paths = _listed(bpy, packed=False)
     # Packed data appears only in the full listing; keep what the unpacked one lacks.
-    every = Counter(bpy.utils.blend_paths(absolute=False, packed=True, local=False))
+    every = Counter(_listed(bpy, packed=True))
     every.subtract(Counter(paths))
     every = sorted(path for path, count in every.items() for _ in range(max(0, count)))
     leftovers = []

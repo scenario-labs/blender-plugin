@@ -274,6 +274,16 @@ class EnvironmentFormTests(unittest.TestCase):
         items = picker.prepare(bpy.context, "panorama")
         self.assertEqual([item.model_id for item in items], [HDRI])
 
+    def test_picker_keeps_the_contract_models_after_another_modality_tab(self):
+        """Switching the picker back to Image must not replace the mode's list with every Image model."""
+        picker = submodule("blender.model_picker")
+        wm = bpy.context.window_manager
+        wm.scenario_picker_modality = "video"  # left by a Video lane's picker
+        items = picker.prepare(bpy.context, "panorama")
+        self.assertEqual(wm.scenario_picker_modality, "image")
+        self.assertEqual([item.model_id for item in items], MODE_MODELS["GENERATE"])
+        self.assertTrue(picker._ctx["panorama_only"])
+
     def test_quick_settings_and_reload_open_the_environment_form(self):
         operators_module = submodule("blender.operators")
         layout = MagicMock()

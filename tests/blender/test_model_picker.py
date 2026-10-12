@@ -318,6 +318,10 @@ class ModelPickerTests(unittest.TestCase):
         items = self.picker.prepare(bpy.context, "material")
         self.assertEqual([i.model_id for i in items], ["model_patina-material"])
         self.assertTrue(self.picker._ctx["material_only"])
+        # Coming back from another modality's tab keeps the PATINA list too.
+        bpy.context.window_manager.scenario_picker_modality = "video"
+        items = self.picker.prepare(bpy.context, "material")
+        self.assertEqual([i.model_id for i in items], ["model_patina-material"])
 
     def test_highlighted_model_with_unaccepted_capability_shows_experimental_status(self):
         catalog = submodule("core.api.catalog")

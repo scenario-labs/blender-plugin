@@ -207,7 +207,9 @@ def refilter(wm):
 
 
 def _on_modality_change(self, context):
-    _ctx["records"] = candidate_records(self.scenario_picker_modality)
+    # A curated list (PATINA, the Environment mode's contract models) is not the tab's catalog.
+    if not (_ctx["material_only"] or _ctx["panorama_only"]):
+        _ctx["records"] = candidate_records(self.scenario_picker_modality)
     _enum_cache.pop(("categories", self.scenario_picker_modality), None)
     self.scenario_picker_category = "all"  # its update refilters
 
@@ -242,7 +244,7 @@ def prepare(context, lane):
         _ctx["records"] = candidate_records(modality)
     wm.scenario_picker_index = -1
     if wm.scenario_picker_modality != modality:
-        wm.scenario_picker_modality = modality  # update: records + category reset + refilter
+        wm.scenario_picker_modality = modality  # update: records unless curated, refilter
     elif wm.scenario_picker_category != "all":
         wm.scenario_picker_category = "all"
     if wm.scenario_picker_query:

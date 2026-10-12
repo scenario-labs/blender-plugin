@@ -149,7 +149,13 @@ def step_title(step):
     """What the step asks for, with its loop index when it has one."""
     if step.node_type == "user-approval":
         text = "Approval step"
-    elif step.minimum is None or step.maximum is None or not step.items:
+    elif (
+        step.blocked == "unsupported"
+        or step.minimum is None
+        or step.maximum is None
+        or not step.items
+    ):
+        # Unsupported limits can exceed the candidates; never show their range.
         text = "Selection step with unreadable candidates or limits"
     else:
         upper = min(step.maximum, len(step.items))

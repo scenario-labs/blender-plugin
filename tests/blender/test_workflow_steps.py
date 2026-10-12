@@ -453,6 +453,25 @@ class WorkflowStepTests(unittest.TestCase):
         self.assertEqual(self.dialog.execute(operator, self.context), {"CANCELLED"})
         self.assertFalse(self.fixture.decisions)
 
+    def test_a_selection_whose_minimum_exceeds_its_candidates_shows_no_range(self):
+        selection = {
+            **self.fixture.selection(),
+            "items": ["asset-a", "asset-b"],
+            "inputs": [{"name": "choices", "type": "file_array", "min": 3, "max": 5}],
+        }
+        local_id = self.paused(selection)
+        self.assertEqual(self.fixture.step(local_id, "pick").blocked, "unsupported")
+        drawn = self.draw(self.opened(local_id, "pick"))
+        self.assertIn(
+            ("label", "Selection step with unreadable candidates or limits", "QUESTION"),
+            drawn.calls,
+        )
+        self.assertFalse(
+            [text for text in drawn.labels() if text.startswith("Selection step: choose")]
+        )
+        self.assertIn(("prop_enum", "CONTINUE", "Select", False), drawn.calls)
+        self.assertFalse(self.fixture.decisions)
+
     def test_an_approval_with_unread_links_warns_that_results_may_be_missing(self):
         live = {"id": "check", "type": "user-approval", "status": "processing"}
         local_id = self.paused(live)

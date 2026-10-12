@@ -938,6 +938,11 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             f"Restored {rec.meta.get('model_name') or rec.model_id}: prompt, {restored} setting(s), {len(lane_state.references)} reference(s)"
             + (f", {trained} trained model(s)" if trained else "")
             + (
+                ", checked once the trained model list loads"
+                if trained and not runtime.state.trained_loaded
+                else ""
+            )
+            + (
                 f"; {skipped} trained model(s) could not be restored, choose them again in the picker"
                 if skipped
                 else ""

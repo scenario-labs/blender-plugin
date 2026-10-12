@@ -685,7 +685,7 @@ class TrainedModelTests(unittest.TestCase):
         result = operators.SCENARIO_OT_reload_generation.execute(operator, bpy.context)
         self.assertEqual(result, {"FINISHED"})
         self.assertFalse(len(self.lane.trained))
-        ((levels, message), _kwargs) = operator.report.call_args
+        levels, message = operator.report.call_args.args
         self.assertEqual(levels, {"WARNING"})
         self.assertIn("2 trained model(s) could not be restored", message)
         # A stack this slot cannot describe (misaligned strengths) is not restored silently either.
@@ -693,6 +693,87 @@ class TrainedModelTests(unittest.TestCase):
         misaligned = {"prompt": PROMPT, "loras": [LORA_A], "lorasScale": [0.3, 0.6]}
         self.assertEqual(self.trained.restore(self.lane, "image", record, misaligned), 1)
         self.assertEqual(self.trained.restore(self.lane, "image", record, {"prompt": PROMPT}), 0)
+
+    def test_reload_before_the_trained_list_arrives_keeps_the_jobs_choice_pending(self):
+        """Picks wait for the list that names them; a reload never drops them for arriving early."""
+        scale = next(f for f in self.details[FLUX1]["inputs"] if f["name"] == "lorasScale")
+        scale["default"] = 0.65
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        state = self.runtime.state
+        operators = submodule("blender.operators")
+        records = submodule("core.jobs.records")
+
+        def reload(body):
+            job = records.JobRecord.new("image", "image", FLUX1, body, meta={"prompt": PROMPT})
+            state.jobs_view[:] = [job]
+            operator = types.SimpleNamespace(local_id=job.local_id, report=MagicMock())
+            result = operators.SCENARIO_OT_reload_generation.execute(operator, bpy.context)
+            self.assertEqual(result, {"FINISHED"})
+            return operator.report.call_args.args
+
+        def errors():
+            return self.generation.build_request(self.scene, "image", for_estimate=True).errors
+
+        def deliver_list():
+            self.assertTrue(
+                self.trained.request(self.runtime.ensure_manager(), self.runtime.ensure_catalog())
+            )
+            self.settle()
+
+        self.trained.clear()  # the connection's trained list has not arrived yet
+        levels, message = reload(
+            {
+                "prompt": PROMPT,
+                "loras": [LORA_A, STUDIO_LORA, "model_gone"],
+                "lorasScale": [0.3, 0.6, 0.9],
+            }
+        )
+        self.assertEqual(levels, {"INFO"})
+        self.assertIn("3 trained model(s), checked once the trained model list loads", message)
+        self.assertNotIn("could not be restored", message)
+        self.assertEqual(
+            [(slot.model_id, slot.kind, round(slot.scale, 4)) for slot in self.lane.trained],
+            [(LORA_A, "", 0.3), (STUDIO_LORA, "", 0.6), ("model_gone", "", 0.9)],
+        )
+        self.assertEqual(errors(), [self.trained.LOADING])
+        self.lane.estimate_state = "UNAVAILABLE"
+        deliver_list()
+        self.assertTrue(state.trained_loaded, state.trained_error)
+        self.assertEqual(self.lane.estimate_state, "PENDING")  # priced again with the list
+        self.assertEqual(
+            [(slot.model_id, slot.kind, slot.name) for slot in self.lane.trained],
+            [
+                (LORA_A, "lora", state.trained_records[LORA_A].name),
+                (STUDIO_LORA, "lora", "Studio LoRA"),
+                ("model_gone", "", "model_gone"),
+            ],
+        )
+        # A pick the list does not name stays, blocking the price with its reason.
+        self.assertEqual(
+            errors(), ["Refresh trained models; a selected model is no longer listed."]
+        )
+        self.assertEqual(bpy.ops.scenario.trained_remove(lane="image", index=2), {"FINISHED"})
+        body = self.body()
+        self.assertEqual((body["loras"], body["lorasScale"]), ([LORA_A, STUDIO_LORA], [0.3, 0.6]))
+
+        # A composition restored early sends no strength once the list names it, and a
+        # failed list read keeps it with the reason until the Trained chip reads it again.
+        self.trained.clear()
+        self.private_error = 500
+        reload({"prompt": PROMPT, "modelId": COMPOSITION})
+        deliver_list()
+        self.assertFalse(state.trained_loaded)
+        self.assertEqual([slot.model_id for slot in self.lane.trained], [COMPOSITION])
+        self.assertEqual(errors(), [f"Could not load trained models: {state.trained_error}"])
+        self.private_error = None
+        self.open_trained()
+        self.assertTrue(state.trained_loaded, state.trained_error)
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.kind, slot.has_scale), ("composition", False))
+        body = self.body()
+        self.assertEqual(body["modelId"], COMPOSITION)
+        self.assertNotIn("lorasScale", body)
 
     def test_an_adopted_id_replaces_a_price_error_saved_with_the_file(self):
         """A file saved by an earlier version keeps its refusal until the adopted choice reprices."""

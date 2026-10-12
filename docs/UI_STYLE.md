@@ -196,7 +196,12 @@ again, so a price error saved with the file gives way to the current reason.
 **Reload parameters** restores the job's LoRAs or composition that are still
 listed, never adds a strength the job did not send (the base's declared default
 applies, otherwise the price asks for one) and warns about the trained models it
-could not restore. Strength editing in the
+could not restore. Before the trained list has loaded (still loading, or its read
+failed), it keeps every model the base's LoRA inputs describe, unchecked, says
+they are checked once the list loads, and the price waits with the list's reason.
+When the list arrives, the models it names get their kind and name (a composition
+sends no strength) and the form is priced again; one it does not name stays and
+blocks the price with its reason until it is removed. Strength editing in the
 sidebar and Studio, project defaults and the composer chip label are follow-up
 work.
 

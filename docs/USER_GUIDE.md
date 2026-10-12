@@ -255,7 +255,10 @@ again and refuses one that was deleted, is no longer accessible, changed type or
 is not trained, before any price is requested. A choice belongs to the
 credentials and project that made it: after switching either, choose it again.
 **Reload parameters** restores a generation's LoRAs or composition when they are
-still listed and says how many it could not restore; a LoRA the generation sent
+still listed and says how many it could not restore. If the trained model list
+has not loaded yet, it keeps them all and checks them once the list arrives; one
+that is no longer listed then stays under **Model** with the reason until you
+remove it. A LoRA the generation sent
 without a strength needs one before the form is priced, unless its base declares a
 default. A composition ID typed into **LoRA or Composition Model** with an
 earlier version appears there too, as the form's choice: check it, or remove it

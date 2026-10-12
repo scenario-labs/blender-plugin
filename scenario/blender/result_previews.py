@@ -153,7 +153,8 @@ class _Job:
 
     ``requested`` holds the asset IDs already requested, those of the pages
     drawn so far. A refused request is made again at ``retry_at`` (monotonic
-    seconds), after ``attempts`` refusals in a row.
+    seconds), after ``attempts`` refusals in a row; meanwhile the targets
+    already read stay, so ready tiles and the page offset survive it.
     """
 
     revision: int
@@ -341,7 +342,9 @@ class PreviewController:
                     # Ask again later: a refusal such as a full scheduler is transient.
                     attempts = previous.attempts + 1 if refused else 1
                     delay = REQUEST_RETRY[min(attempts, len(REQUEST_RETRY)) - 1]
-                    job = _Job(revision, (), message, now + delay, attempts)
+                    if job is None or job.revision != revision:
+                        job = _Job(revision, ())  # Its saved record was not read.
+                    job = replace(job, message=message, retry_at=now + delay, attempts=attempts)
                 changed |= job != previous
             jobs[request_id] = job
         changed |= jobs.keys() != self._jobs.keys()
@@ -435,6 +438,11 @@ class PreviewController:
             built = []
             for target in visible:
                 if scheduler.status(request_id, target.asset_id) is None:
+                    if job.message:
+                        # Its request was refused; the job asks again when due.
+                        base = target.asset_id, target.number, target.label, target.kind
+                        built.append(Tile(*base, "waiting", job.message))
+                        continue
                     # The scheduler forgot a settled entry to make room: request
                     # this job again on the next poll.
                     self._jobs[request_id] = replace(job, revision=-1)

@@ -941,8 +941,11 @@ class ResultPreviewTileTests(unittest.TestCase):
             controller = self.tiles.controller
             with patch.object(scheduler, "request", side_effect=full_then_open):
                 controller.poll()
-                (note,) = controller.tiles["request"]
-                self.assertEqual((note.asset_id, note.message), ("", str(refusal)))
+                (tile,) = controller.tiles["request"]
+                self.assertEqual(
+                    (tile.caption, tile.status, tile.message),
+                    ("Video (1)", "waiting", str(refusal)),
+                )
                 # Not due yet: the refusal is shown, not requested on every tick.
                 controller.poll()
                 self.assertEqual(len(calls), 1)
@@ -954,6 +957,52 @@ class ResultPreviewTileTests(unittest.TestCase):
                 controller._jobs["request"] = replace(job, retry_at=0.0)
                 self.settle(lambda: self.status() == "offline")
             self.assertEqual(len(calls), 2)
+        self.assertEqual(self.requests, [])
+
+    def test_a_refused_later_page_keeps_ready_tiles_and_the_page(self):
+        # Adapted from review findings: refusing the next page's request
+        # replaced the job's ready tiles with one note and reset its pager.
+        with online_access(False):
+            view = self.six_maps()
+            scheduler = self.runtime.state.job_session.result_previews
+            request = scheduler.request
+            refusal = self.previews.PreviewError(
+                "Too many result previews are pending; try again shortly"
+            )
+            calls, refusals = [], [refusal]
+
+            def full_then_open(*args, **kwargs):
+                calls.append(tuple(kwargs["asset_ids"]))
+                if refusals:
+                    raise refusals.pop()
+                return request(*args, **kwargs)
+
+            controller = self.tiles.controller
+            with patch.object(scheduler, "request", side_effect=full_then_open):
+                self.assertEqual(self.page("NEXT"), {"FINISHED"})
+                self.assertEqual(calls, [("map-ao", "map-edge")])
+                tiles = controller.tiles["request"]
+                self.assertEqual(
+                    [(tile.caption, tile.status, tile.message) for tile in tiles],
+                    [
+                        ("Height (2)", "ready", ""),
+                        ("Metallic (4)", "ready", ""),
+                        ("AO (5)", "waiting", str(refusal)),
+                        ("Edge (6)", "waiting", str(refusal)),
+                    ],
+                )
+                self.assertEqual(self.pager(view)[1], ["3-6 of 6"])
+                # Not due yet: the next ticks request nothing and keep the page.
+                controller.poll()
+                controller.poll()
+                self.assertEqual(len(calls), 1)
+                self.assertEqual(self.pager(view)[1], ["3-6 of 6"])
+                job = controller._jobs["request"]
+                controller._jobs["request"] = replace(job, retry_at=0.0)
+                self.settle(self.ready_page)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(self.captions(), ["Height (2)", "Metallic (4)", "AO (5)", "Edge (6)"])
+            self.assertEqual(self.pager(view)[1], ["3-6 of 6"])
         self.assertEqual(self.requests, [])
 
     def test_a_decoded_copy_the_lane_refuses_is_the_ticks_only_decode(self):

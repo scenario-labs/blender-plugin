@@ -859,7 +859,10 @@ caption that starts with the number of its saved-job controls: **(1) Video**,
 narrow sidebar clips the role before the number. Below the tiles, one
 information line per distinct status names the waiting tiles as the controls
 do, such as **Video (1)**: preparing, waiting for Scenario, or `Preview paused
-while online access is disabled`. A missing, failed or unreadable preview gets
+while online access is disabled`. When the scheduler refuses a request, for
+example at its limit of pending previews, the tiles it left without a preview
+show its reason on that line until the request is made again, while ready
+tiles and the page stay. A missing, failed or unreadable preview gets
 an `ERROR` line with its reason and an explicit **Retry preview (N)** button;
 nothing retries after the polling window without that click. Previews are
 read-only and open no confirmation; Retry's tooltip says nothing is generated,

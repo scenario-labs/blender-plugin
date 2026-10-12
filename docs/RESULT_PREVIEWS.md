@@ -235,7 +235,8 @@ a failed redraw is logged and does not stop it:
   each shared saved job whose results are downloaded (`ready`, `applying`,
   `apply_failed` or `applied`) reads the saved record once per revision. A
   request the scheduler refuses, for example when it already tracks its limit
-  of pending previews, shows the reason on the job and is made again after
+  of pending previews, shows the reason under the tiles it left without a
+  preview, keeps the job's other tiles and drawn page, and is made again after
   5 s, then 10, 20, 40 and every 60 s while it is refused, rereading the
   record each time. It ranks the downloaded results, video, audio, embedded
   models and base color or untagged images first, then other texture maps and

@@ -1019,6 +1019,35 @@ class TrainedSectionTests(unittest.TestCase):
                 pump._process()
         self.assertEqual(len(logs.records), 2)  # the recurrence is reported again
 
+    def test_the_pump_redraws_a_tick_in_which_one_form_failed_to_take_its_default(self):
+        """The form that took its default in that tick never waits for an unrelated redraw."""
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        shot = bpy.data.scenes.new("Shot A")
+        self.addCleanup(bpy.data.scenes.remove, shot)
+        self.release(self.lane)
+        pump = submodule("blender.pump")
+        self.addCleanup(pump._failures.clear)
+        pump._failures.clear()
+        pump._jobs_changed()  # job rows stay unchanged on the tick below
+        write_slots = self.trained.write_slots
+
+        def shot_fails(lane_state, *args, **kwargs):
+            if lane_state.id_data == shot:
+                raise RuntimeError("synthetic")
+            return write_slots(lane_state, *args, **kwargs)
+
+        with (
+            patch.object(self.trained, "write_slots", side_effect=shot_fails),
+            patch.object(pump, "redraw") as redraw,
+            self.assertLogs("scenario.pump", "ERROR"),
+        ):
+            pump._process()
+        self.assertEqual((self.lane.model_key, len(self.lane.trained)), (FLUX1, 2))
+        self.assertEqual(shot.scenario.lane_state("image").model_key, "")  # it waits
+        redraw.assert_called_once()
+
     def test_a_default_that_cannot_be_written_keeps_the_form_governed_with_its_reason(self):
         """A failed automatic apply never prices the base alone or hides why it failed."""
         self.choose_stack()

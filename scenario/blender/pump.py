@@ -71,6 +71,9 @@ def _process():
         changed |= trained_defaults.apply_pending()
         _failures.pop("defaults", None)  # a failure that comes back after this is new
     except Exception as error:  # never let it stop pricing; report each new failure once
+        # Other forms may have taken their default before the failure was raised,
+        # and the failing one shows its wait: redraw, at most once per timer tick.
+        changed = True
         if type(error).__name__ != _failures.get("defaults"):
             _failures["defaults"] = type(error).__name__
             log.exception("applying project defaults failed")

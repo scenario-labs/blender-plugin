@@ -110,8 +110,9 @@ def _rearm_selections():
     """Reprice lanes whose trained choice waited for this list; quoted forms stay quoted.
 
     A choice adopted from an earlier version's text field (adopt_typed) or
-    restored before the list arrived (restore) learns its kind and name once
-    the list names it; only a LoRA keeps the strength it was restored with.
+    restored before the list arrived (restore) shows its ID until then; every
+    choice the list names takes its listed kind and name, and only a LoRA keeps
+    the strength it was restored with.
     """
     state = runtime.state
     kinds = {record.id: kind for kind, record in state.trained_pairs}
@@ -121,10 +122,13 @@ def _rearm_selections():
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
             for slot in lane_state.trained:
-                if not slot.kind and kinds.get(slot.model_id) in catalog.USABLE_TRAINED_KINDS:
-                    slot.kind = kinds[slot.model_id]
-                    slot.name = state.trained_records[slot.model_id].name
-                    if slot.kind != catalog.TRAINED_LORA:
+                kind = kinds.get(slot.model_id)
+                if kind not in catalog.USABLE_TRAINED_KINDS:
+                    continue
+                name = state.trained_records[slot.model_id].name
+                if (slot.kind, slot.name) != (kind, name):
+                    slot.kind, slot.name = kind, name
+                    if kind != catalog.TRAINED_LORA:
                         slot.has_scale = False  # a composition applies its own strengths
             if len(lane_state.trained) and lane_state.estimate_state in ("UNAVAILABLE", "IDLE"):
                 props.mark_estimate_dirty(lane_state)
@@ -396,9 +400,11 @@ def restore(lane_state, lane, record, payload):
     inputs the base's current schema cannot describe count as not restored.
 
     Before the trained list is loaded (still loading, or its read failed), no
-    pick can be checked, so every pick is kept without a kind: the price waits
-    with the list's reason, and _rearm_selections completes the picks the list
-    names. A pick it does not name stays and blocks the price with its reason.
+    pick can be checked, so every pick is kept under its ID: a composition from
+    the model ID input as a composition without a strength, LoRAs from the stack
+    without a kind. The price waits with the list's reason, and
+    _rearm_selections gives the picks the list names their listed kind and
+    name. A pick it does not name stays and blocks the price with its reason.
     """
     lane_state.trained.clear()
     props.mark_estimate_dirty(lane_state)
@@ -425,14 +431,18 @@ def restore(lane_state, lane, record, payload):
             visible_start=False,
         )
     else:
-        # Resolved as LoRAs, the only kind with a strength; once the list names a
-        # composition, _rearm_selections drops the strength again.
-        resolved = _resolved(
-            [(pick.model_id, catalog.TRAINED_LORA, pick.scale) for pick in wanted],
-            slot,
-            visible_start=False,
-        )
-        chosen = [(model_id, "", scale) for model_id, _kind, scale in resolved]
+        # The model ID input carries only a composition, which applies its own
+        # strengths: it waits as one, without the base's default strength. The
+        # stack's picks are resolved as LoRAs, the only kind with a strength.
+        if slot.model_id_input and payload.get(slot.model_id_input) == wanted[0].model_id:
+            chosen = [(wanted[0].model_id, catalog.TRAINED_COMPOSITION, None)]
+        else:
+            resolved = _resolved(
+                [(pick.model_id, catalog.TRAINED_LORA, pick.scale) for pick in wanted],
+                slot,
+                visible_start=False,
+            )
+            chosen = [(model_id, "", scale) for model_id, _kind, scale in resolved]
     _write(lane_state, trained_lane(lane), chosen, slot, scope)
     return named - len(chosen)
 

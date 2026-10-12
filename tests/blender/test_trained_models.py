@@ -775,6 +775,57 @@ class TrainedModelTests(unittest.TestCase):
         self.assertEqual(body["modelId"], COMPOSITION)
         self.assertNotIn("lorasScale", body)
 
+    def test_a_composition_reloaded_before_the_list_shows_as_one_without_a_strength(self):
+        """The model ID input carries only a composition; the base's default strength is a LoRA's."""
+        scale = next(f for f in self.details[FLUX1]["inputs"] if f["name"] == "lorasScale")
+        scale["default"] = 0.65
+        self.details[COMPOSITION]["name"] = "Snowy Cabins"
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        state = self.runtime.state
+        operators = submodule("blender.operators")
+        panels = submodule("blender.panels")
+        records = submodule("core.jobs.records")
+
+        def reload(body):
+            job = records.JobRecord.new("image", "image", FLUX1, body, meta={"prompt": PROMPT})
+            state.jobs_view[:] = [job]
+            operator = types.SimpleNamespace(local_id=job.local_id, report=MagicMock())
+            result = operators.SCENARIO_OT_reload_generation.execute(operator, bpy.context)
+            self.assertEqual(result, {"FINISHED"})
+
+        def choices():
+            root = picker_tests.FakeLayout()
+            panels.draw_model_row(root, self.lane, "image")
+            return [
+                call[2]
+                for node in root.walk()
+                for call in node.named("label")
+                if call[2].get("icon") in ("GROUP", "SHADERFX")
+            ]
+
+        self.trained.clear()  # the connection's trained list has not arrived yet
+        reload({"prompt": PROMPT, "modelId": COMPOSITION})
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.kind, slot.has_scale), ("composition", False))
+        self.assertEqual(choices(), [{"text": f"{COMPOSITION} (composition)", "icon": "GROUP"}])
+        # LoRAs from the stack still wait as LoRAs with the strength the job sent.
+        reload({"prompt": PROMPT, "loras": [LORA_A], "lorasScale": [0.3]})
+        self.assertEqual(choices(), [{"text": f"{LORA_A} (strength 0.3)", "icon": "SHADERFX"}])
+        # The delivered list names the composition; it still sends no strength.
+        reload({"prompt": PROMPT, "modelId": COMPOSITION})
+        self.assertTrue(
+            self.trained.request(self.runtime.ensure_manager(), self.runtime.ensure_catalog())
+        )
+        self.settle()
+        self.assertTrue(state.trained_loaded, state.trained_error)
+        self.assertEqual(choices(), [{"text": "Snowy Cabins (composition)", "icon": "GROUP"}])
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.kind, slot.has_scale), ("composition", False))
+        body = self.body()
+        self.assertEqual(body["modelId"], COMPOSITION)
+        self.assertNotIn("lorasScale", body)
+
     def test_an_adopted_id_replaces_a_price_error_saved_with_the_file(self):
         """A file saved by an earlier version keeps its refusal until the adopted choice reprices."""
         self.load_catalog()

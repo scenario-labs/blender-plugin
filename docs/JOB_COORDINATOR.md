@@ -334,8 +334,9 @@ node of its `metadata.flow` is `processing`: Scenario waits for one decision.
 [`workflow_nodes.pending_steps`](../scenario/core/jobs/workflow_nodes.py) projects
 those nodes from one `jobs.retrieve` response into immutable `PendingStep`
 values, in flow order: node ID and type, iteration index and loop node ID of a
-loop copy, dependencies, review asset IDs from the dependencies' outputs (at
-most 50, with their total) and whether every node's links were read
+loop copy, dependencies (at most 64 listed), review asset IDs from every
+dependency's outputs (at most 50, with their total) and whether every node's
+links were read
 (see [step links](#step-links)). A selection also carries its frozen candidates, at
 most 50 asset IDs or texts of at most 4,096 characters each, and its declared
 pick bounds (defaults 1 and 100). Signed asset URLs are never copied.

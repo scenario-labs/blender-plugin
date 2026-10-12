@@ -107,9 +107,10 @@ class PendingStep:
     the decisions this extension may send. `blocked` names why choosing is
     unavailable: "loop", "unverified" (unknown links in a flow that may loop)
     or "unsupported" leave rejection, while "unidentified" (an unreadable or
-    repeated node ID) leaves no decision at all. `links_complete` is False when
-    some node's links are unknown, so `depends_on` and the review assets may be
-    incomplete.
+    repeated node ID) leaves no decision at all. `depends_on` lists at most
+    MAX_DEPENDENCIES IDs, but the review assets come from every dependency.
+    `links_complete` is False when some node's links are unknown, so
+    `depends_on` and the review assets may be incomplete.
     """
 
     node_id: str
@@ -432,14 +433,12 @@ class _Flow:
         if template is not None:
             suffix = "__iter__" + _COPY.fullmatch(node_id)[2]
             values = [value + suffix if value + suffix in self.by_id else value for value in values]
-        unique = []
-        for value in values:
-            if _node_id(value) and value not in unique:
-                unique.append(value)
-        return tuple(unique[:MAX_DEPENDENCIES])
+        # A dict keeps the first occurrences in order and finds repeats in
+        # constant time, so a long hostile list is read once.
+        return tuple(dict.fromkeys(value for value in values if _node_id(value)))
 
     def review_assets(self, depends_on):
-        assets = []
+        assets = {}
         for dependency in depends_on:
             for node in self.by_id.get(dependency, ()):
                 values = node.get("assets")
@@ -447,9 +446,9 @@ class _Flow:
                     continue
                 for value in values:
                     asset = value.get("assetId") if isinstance(value, dict) else None
-                    if _asset_id(asset) and asset not in assets:
-                        assets.append(asset)
-        return assets
+                    if _asset_id(asset):
+                        assets[asset] = None
+        return list(assets)
 
 
 def _selection(node):
@@ -516,7 +515,7 @@ def _step(node, flow, duplicate):
         node_type=node_type,
         iteration_index=iteration if iteration is not None and iteration >= 0 else None,
         loop_node_id=loop if _node_id(loop) else None,
-        depends_on=depends_on,
+        depends_on=depends_on[:MAX_DEPENDENCIES],
         review_asset_ids=tuple(assets[:MAX_REVIEW_ASSETS]),
         review_asset_total=len(assets),
         items=items,

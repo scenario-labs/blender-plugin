@@ -86,6 +86,37 @@ def test_review_assets_are_unique_valid_and_bounded():
     assert step.review_asset_total == 60
 
 
+def test_review_assets_count_every_dependency_beyond_the_listed_ones():
+    upstream = [produced(f"render_{index}", f"asset_{index}") for index in range(70)]
+    step = only(*upstream, approval(dependsOn=[item["id"] for item in upstream]))
+    assert len(step.depends_on) == nodes.MAX_DEPENDENCIES
+    assert step.review_asset_ids == tuple(f"asset_{index}" for index in range(50))
+    assert step.review_asset_total == 70
+
+
+class _Counted(str):
+    """A string that counts equality checks, to observe repeat detection cost."""
+
+    checks = 0
+
+    def __eq__(self, other):
+        type(self).checks += 1
+        return str.__eq__(self, other)
+
+    __hash__ = str.__hash__
+
+
+def test_hostile_dependency_and_asset_lists_are_deduplicated_in_linear_time():
+    count = 3000
+    assets = [{"assetId": _Counted(f"asset_{index}")} for index in range(count)]
+    depends = ["render", *(_Counted(f"missing_{index}") for index in range(count))]
+    _Counted.checks = 0
+    step = only(node("render", assets=assets), approval(dependsOn=depends))
+    assert step.review_asset_total == count
+    # Repeats checked against a list compare each value with every kept one.
+    assert _Counted.checks < 4 * count
+
+
 @pytest.mark.parametrize(
     "kind,items,expected",
     [

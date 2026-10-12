@@ -1152,11 +1152,11 @@ A READY export binds the recipe scene's and the review scene's captured origins.
 A frame change, object selection or edit, an Undo or Redo, or leaving either scene
 and selecting it again, including viewing the review scene, turns it into ERROR,
 as does the destination appearing meanwhile; prepare again. Blender evaluates a
-review scene that no window shows only when the export synchronizes it, and that
-evaluation cannot tell tags from changes elsewhere apart from an edit, so it does
-not revoke the origin: an edit made to that scene without showing it, for example
-from a script, is caught only by the approval's reread of what preparation
-showed. Once rendering starts, later edits do not stop it, because the snapshot
+review scene that no window shows only when something updates it explicitly, such
+as the export's own synchronizations. Their evaluation cannot tell tags from
+changes elsewhere apart from an edit, so it does not revoke the origin: an edit
+made to that scene without showing it, for example from a script, is caught only
+by the approval's reread of what preparation showed. Once rendering starts, later edits do not stop it, because the snapshot
 and media stamps bind the bytes. Session retirement (credential or project
 change, file load or extension disable) cancels a running export; shutdown
 removes every handle's private staging once the export thread has stopped.

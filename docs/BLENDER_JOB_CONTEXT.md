@@ -329,7 +329,17 @@ of whether the unevaluated depsgraph lists updates. Catalog loads fill and
 restore generation forms without RNA update callbacks, so they do not cause such
 an update; see [catalog delivery](architecture/runtime.md#active-sdk-catalog).
 Undo/redo and file loading
-invalidate captured state too. Every main-thread scene callback and reaper tick
+invalidate captured state too. The one exception is
+`JobSession.synchronizing(scenes)`, which a main-thread caller opens while it
+evaluates those scenes' own view layers: a scene that no window shows keeps tags
+from changes elsewhere until such an update, which then reports a change although
+its data is unchanged. Inside the block, main-thread dependency and frame updates
+to a named scene revoke none of that scene's origins. Origins share one revision
+per scene (`OriginRevisions`), so this keeps every origin captured in it,
+including origins other features captured, not only the caller's; callers
+recheck the content they approved instead. Other scenes, updates outside the
+block, deleted scenes and targets, render-thread callbacks, Undo/Redo and file
+loading still invalidate. Every main-thread scene callback and reaper tick
 prunes removed captured scenes and deleted object wrappers, including when a surviving
 scene has no dependency updates. Deleted targets invalidate the scenes that captured
 them and their registry entries are dropped; live targets in other scenes retain

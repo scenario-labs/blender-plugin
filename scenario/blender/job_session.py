@@ -1635,15 +1635,21 @@ class JobSession:
 
     @contextmanager
     def synchronizing(self, scenes):
-        """Keep these scenes' origins while the caller evaluates their own view layers.
+        """Keep every origin of these scenes while the caller evaluates their own view layers.
 
         A window evaluates only the scenes it shows. Any other scene keeps pending
         depsgraph tags, such as the relations rebuild that removing any datablock
         requests, until something updates it explicitly, and that update reports a
         change even when the scene's data is unchanged. Such tags cannot be told
         apart from an edit made without showing the scene, so callers recheck the
-        content they approved instead. Other scenes, and updates outside this block,
-        still revoke origins.
+        content they approved instead.
+
+        Inside the block, main-thread dependency and frame updates to a named scene
+        revoke none of that scene's origins. Origins share one revision per scene
+        (``OriginRevisions``), so this keeps every origin captured in it, including
+        origins other features captured, not only the caller's. Other scenes,
+        updates outside the block, deleted scenes and targets, render-thread
+        callbacks, Undo/Redo and file loading still revoke origins.
         """
         _main_thread()
         previous = self._synchronizing

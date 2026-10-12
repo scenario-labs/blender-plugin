@@ -170,7 +170,10 @@ def _verified(preview, root):
     try:
         if path is None or not Path(path).is_relative_to(root):
             return None
+        # Nonblocking: a named pipe in its place would otherwise block the
+        # main-thread timer until a writer opens it.
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
         descriptor = os.open(path, flags)
         with os.fdopen(descriptor, "rb") as stream:
             if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):

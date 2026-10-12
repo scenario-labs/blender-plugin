@@ -623,6 +623,46 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertEqual(first, (0.25, 0.5, 0.75, 1.0))
         self.assertTrue(self.draw(view))
 
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "POSIX named pipes")
+    def test_a_cache_file_replaced_by_a_named_pipe_never_blocks_the_main_thread(self):
+        # Opening a named pipe for reading waits for a writer unless it is
+        # nonblocking, which would freeze Blender's main thread in the timer.
+        with online_access(False):
+            view = self.saved([("image", "result.png", "image/png", png(64, 32))])
+            scheduler = self.runtime.state.job_session.result_previews
+            self.tiles.controller.poll()
+            ready = self.previews.PreviewState.READY
+
+            def cached():
+                self.module.reap_retired()
+                self.tiles.controller._decode_one(scheduler)
+                status = scheduler.status("request", "image")
+                return status is not None and status.get("still").state == ready
+
+            deadline = time.monotonic() + 30
+            while not cached():
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+            preview = scheduler.status("request", "image").get("still").preview
+            preview.path.unlink()
+            os.mkfifo(preview.path, 0o600)
+            result = []
+            reader = threading.Thread(
+                target=lambda: result.append(self.tiles._verified(preview, scheduler.root)),
+                daemon=True,
+            )
+            reader.start()
+            reader.join(5)
+            if reader.is_alive():
+                # Release the blocked reader so the failure leaves no thread behind.
+                os.close(os.open(preview.path, os.O_WRONLY | os.O_NONBLOCK))
+                reader.join(5)
+                self.fail("Verifying a cached preview blocked on a named pipe")
+            self.assertEqual(result, [None])
+            self.settle(lambda: self.status() == "unavailable")
+            self.assertIn("changed or was removed", self.tile().message)
+            self.assertTrue(self.draw(view))
+
     # -- server stills --------------------------------------------------------
 
     def test_server_still_retries_a_first_access_redirect_then_shows_its_icon(self):

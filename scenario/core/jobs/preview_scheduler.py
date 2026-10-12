@@ -316,12 +316,13 @@ class ResultPreviewScheduler:
     def cancel(self, request_id, asset_id):
         """Stop local decoding for one result; its unfinished local renditions fail.
 
-        Server stills and clips keep polling. An issued decode request is
-        discarded and a running decode is signaled, which terminates its offline
-        Blender process. A copy that an in-flight batch is still preparing is
-        discarded when that batch returns. A retry still waiting for that
-        batch then restarts server renditions only: local decoding starts
-        again only on a later ``retry``.
+        Unfinished means queued, decoding or, after a failed lane batch, waiting
+        for its next poll. Server stills and clips keep polling. An issued
+        decode request is discarded and a running decode is signaled, which
+        terminates its offline Blender process. A copy that an in-flight batch
+        is still preparing is discarded when that batch returns. A retry still
+        waiting for that batch then restarts server renditions only: local
+        decoding starts again only on a later ``retry``.
         """
         self._check()
         # Saved results only: a workflow review asset has no local renditions.
@@ -338,9 +339,10 @@ class ResultPreviewScheduler:
                 self._workers.cancel_preview(task)
                 self._canceled.add(task)
         for rendition, status in tuple(entry.states.items()):
-            if previews.is_local(entry.target.kind, rendition) and status.state in (
-                State.QUEUED,
-                State.DECODE,
+            # A failed lane batch leaves local renditions pending its next
+            # poll, which would otherwise send them to the lane again.
+            if previews.is_local(entry.target.kind, rendition) and (
+                status.state in _ACTIVE or status.state == State.DECODE
             ):
                 entry.states[rendition] = RenditionStatus(State.FAILED, reason=CANCELED)
         entry.canceled |= entry.inflight

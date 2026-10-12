@@ -943,6 +943,40 @@ def test_cancel_discards_an_issued_envelope_copy_and_retry_decodes(decoding, mon
     assert scheduler.cancel("request", "unknown") is None
 
 
+def test_cancel_in_a_failed_batch_backoff_keeps_the_envelope_from_decoding(decoding, monkeypatch):
+    # A lane batch that failed leaves the envelope pending its next poll; a
+    # Cancel in that backoff must stop it, so that poll never queues a decode.
+    lane = decoding
+    service, scheduler = lane.env, lane.scheduler
+    ready_job(service, "request", [("asset-sound", "audio/wav", wav())])
+    original, failures = service.coordinator.prepare_result_previews, []
+
+    def fail_once(*args, **kwargs):
+        if not failures:
+            failures.append(args)
+            raise OSError("fixture lane failure")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service.coordinator, "prepare_result_previews", fail_once)
+    scheduler.request("request", renditions=(ENVELOPE,))
+    drive(scheduler)
+    pending = state(lane, "asset-sound", ENVELOPE)
+    assert failures and pending.state == State.PENDING and "retrying" in pending.reason
+    canceled = scheduler.cancel("request", "asset-sound").get(ENVELOPE)
+    assert canceled.state == State.FAILED and canceled.reason == CANCELED
+    lane.clock.now += 60
+    drive(scheduler)
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).reason == CANCELED
+    assert lane.decoder.calls == [] and work_directories(service) == []
+    # Only an explicit retry decodes it again.
+    scheduler.retry("request", "asset-sound")
+    drive(scheduler)
+    drive(scheduler)
+    assert state(lane, "asset-sound", ENVELOPE).state == State.READY
+    assert len(lane.decoder.calls) == 1
+
+
 def test_cancel_terminates_a_running_offline_decode(decoding):
     lane = decoding
     service, scheduler = lane.env, lane.scheduler

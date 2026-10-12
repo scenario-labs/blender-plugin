@@ -755,11 +755,17 @@ wrapping, showed the rows in the sidebar Jobs panel and on the Studio Jobs page.
 **Play video** opened the system player; **Play in Blender** opened Blender's
 animation player, which Escape closed with Blender's window frontmost again; and
 **Waveform** went from its loading lines to the summary and envelope icon. A
-screenshot from the second pass sets the waveform text inset. The measured
-wrapping itself has no desktop evidence yet. Play audio, Cancel, Retry and close
-on the desktop, viewport interaction, screenshots at UI scale 2.0, other
-platforms and human listening are not yet recorded; they remain #189 and #68
-acceptance.
+screenshot from the second pass sets the waveform text inset. A third pass, on
+a ZIP with the measured wrapping but before its later Studio popup width and
+hyphen amendments, drew the sidebar rows at UI scales 1.0 and 2.0, with a
+1122 px sidebar at 2.0. **Waveform** reached its summary and envelope icon at
+both scales; the loading lines wrapped inside the box, and the summary kept
+"1.00 s" whole and ended its first line with a `·` separator. The wrapped lines
+started at the box's left edge rather than under the first line's text. Play
+audio, the waveform's Cancel, Retry and close on the desktop, clicking **Play
+video** or **Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
+interaction, other platforms and human listening are not yet recorded; they
+remain #189 and #68 acceptance.
 
 ## Saved static model confirmation
 

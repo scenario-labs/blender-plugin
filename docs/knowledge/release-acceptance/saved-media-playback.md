@@ -9,7 +9,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-12",
     "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
-    "limits": "Reviewed only the #189 status row against the current code and, on 2026-10-12, against the private report of two partial physical desktop passes on macOS arm64 Blender 5.1.2 at UI scale 1.0, whose ZIPs predate the measured waveform status wrapping: a saved video opened in the system player and in Blender's animation player, and a waveform drew. That is not candidate acceptance. No candidate ZIP, listening or release evidence is added; #189 stays open.",
+    "limits": "Reviewed only the #189 status row against the current code and, on 2026-10-12, against the private report of three partial physical desktop passes on macOS arm64 Blender 5.1.2: at UI scale 1.0, on ZIPs that predate the measured waveform status wrapping, a saved video opened in the system player and in Blender's animation player and a waveform drew; the third, on a ZIP with the measured wrapping before its later Studio popup width and hyphen amendments, drew a waveform in the sidebar at UI scales 1.0 and 2.0. Play audio, the waveform's desktop Cancel and Retry, Studio at UI scale 2.0 and other platforms are stated as not recorded. That is not candidate acceptance. No candidate ZIP, listening or release evidence is added; #189 stays open.",
     "sources": {
       "scenario/blender/result_media.py": "4a5479d5592c54810687c12ace5190896747a7bb55443dfa0b5c485c204e5a88",
       "scenario/core/jobs/playback.py": "234d2e58b7d0ebfd595b5409bad223e6d524052f2809433bbd752c69300e54c6",

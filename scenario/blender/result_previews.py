@@ -80,6 +80,19 @@ TEXT_INSET = 96
 # as tall as the tiles' icons.
 ARROW_UNITS = 1.0
 ARROW_WIDTH = 24
+# A tile row in interface units: each tile takes about 22 per icon scale step
+# with its spacing, and the panel and job box margins take 60 of the region.
+# Icons grow with the width up to ICON_MAX_SCALE. An unpaged row keeps at least
+# ICON_MIN_SCALE; a paged row may shrink to PAGED_MIN_SCALE to fit beside its
+# arrows, because Blender narrows the items of a row wider than its region but
+# not the arrows' height. A tile is 20 units wide per scale step: 35 at
+# PAGED_MIN_SCALE, wider than a caption's "(99)…" in Blender's UI font, which
+# measures 32 on Blender 5.1.2.
+TILE_UNITS = 22
+ROW_MARGIN = 60
+ICON_MIN_SCALE = 2.5
+ICON_MAX_SCALE = 5.0
+PAGED_MIN_SCALE = 1.75
 PREVIOUS_ARROW, NEXT_ARROW = "\u2039", "\u203a"
 _SAVED_STATES = frozenset(state.value for state in PREVIEW_STATES)
 KIND_ICON = {"image": "IMAGE_DATA", "video": "FILE_MOVIE", "3d": "MESH_DATA", "audio": "SPEAKER"}
@@ -730,6 +743,18 @@ def _named(caption):
     return caption.replace(" ", NO_BREAK)
 
 
+def _icon_scale(width, count, paged):
+    """The icon scale of ``count`` tiles in a row ``width`` interface units wide.
+
+    A paged row leaves room for its two arrows and may take smaller icons than
+    an unpaged row, so that it fits and its arrows stay as tall as its icons.
+    """
+    arrows = 2 * ARROW_WIDTH if paged else 0
+    smallest = PAGED_MIN_SCALE if paged else ICON_MIN_SCALE
+    fits = (width - ROW_MARGIN - arrows) / (TILE_UNITS * count)
+    return max(smallest, min(ICON_MAX_SCALE, fits))
+
+
 def _arrow(row, record, text, direction, enabled, height):
     """One pager arrow beside the tiles, as tall as their icons; disabled at an end."""
     column = row.column(align=True)
@@ -756,8 +781,7 @@ def draw(layout, record):
     shown = [tile for tile in tiles if tile.asset_id]
     page = controller.pages.get(record.local_id)
     if shown:
-        arrows = 0 if page is None else 2 * ARROW_WIDTH
-        icon_scale = max(2.5, min(5.0, (width - 60 - arrows) / (22 * len(shown))))
+        icon_scale = _icon_scale(width, len(shown), page is not None)
         row = layout.row(align=False)
         if page is not None:
             _arrow(row, record, PREVIOUS_ARROW, "PREVIOUS", page.previous, icon_scale)

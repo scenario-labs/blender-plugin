@@ -70,13 +70,16 @@ WAIT_SECONDS = 10
 class Layout:
     """Records draw calls, including nested rows, columns and boxes, in order.
 
-    Rows and columns record into the same list and inherit ``enabled``; an
-    operator records whether its layout was enabled.
+    Rows and columns record into the same list and inherit ``enabled`` and
+    ``scale_y``, as Blender's sublayouts do; an operator records whether its
+    layout was enabled, then the layout's ``scale_y`` and ``ui_units_x``.
     """
 
-    def __init__(self, calls=None, enabled=True):
+    def __init__(self, calls=None, enabled=True, scale_y=1.0):
         self.calls = [] if calls is None else calls
         self.enabled = enabled
+        self.scale_y = scale_y
+        self.ui_units_x = 0.0
 
     def box(self):
         self.calls.append(("box",))
@@ -84,18 +87,29 @@ class Layout:
 
     def row(self, align=False):
         self.calls.append(("row",))
-        return Layout(self.calls, self.enabled)
+        return Layout(self.calls, self.enabled, self.scale_y)
 
     def column(self, align=False):
         self.calls.append(("column",))
-        return Layout(self.calls, self.enabled)
+        return Layout(self.calls, self.enabled, self.scale_y)
 
     def label(self, *, text, icon="NONE"):
         self.calls.append(("label", text, icon))
 
     def operator(self, idname, *, text="", icon="NONE", emboss=True):
         properties = {}
-        self.calls.append(("operator", idname, text, icon, properties, self.enabled))
+        self.calls.append(
+            (
+                "operator",
+                idname,
+                text,
+                icon,
+                properties,
+                self.enabled,
+                self.scale_y,
+                self.ui_units_x,
+            )
+        )
         return _Properties(properties)
 
     def template_icon(self, *, icon_value, scale):
@@ -635,7 +649,8 @@ class ResultPreviewTileTests(unittest.TestCase):
         for scale, title in drawn:
             number = title.split(" ", 1)[0]
             self.assertLess(blf.dimensions(0, f"{number}…")[0], 20 * scale, title)
-        self.assertLess(blf.dimensions(0, "(99)…")[0], 20 * 2.5)  # The smallest tiles.
+        # The smallest tiles: a paged row's in a narrow region.
+        self.assertLess(blf.dimensions(0, "(99)…")[0], 20 * self.tiles.PAGED_MIN_SCALE)
 
     def test_undecodable_saved_image_reports_a_failure_with_retry(self):
         with online_access(False):
@@ -845,6 +860,108 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertGreater(len(lines), 1)
         self.assertLessEqual(len(lines), 3, lines)
         self.assert_fits(lines, message, (requested - STATUS_MARGIN) * scale, scale)
+
+    def tile_sizes(self, view, width, scale, popup=None, studio=None):
+        """The icon scales of a row drawn as tile_calls draws it, and its pager
+        arrows as (units wide, scale_y)."""
+        calls = self.tile_calls(view, width, scale, popup, studio)
+        icons = [call[2] for call in calls if call[0] == "icon"]
+        arrows = [
+            (call[7], call[6])
+            for call in calls
+            if call[0] == "operator" and call[1] == "scenario.page_result_previews"
+        ]
+        return icons, arrows
+
+    def assert_numbers_fit(self, icon_scale, titles):
+        """Each caption's number with an ellipsis fits under an icon of that scale."""
+        import blf
+
+        blf.size(0, bpy.context.preferences.ui_styles[0].widget.points)
+        for title in titles:
+            number = title.split(" ", 1)[0]
+            self.assertLess(blf.dimensions(0, f"{number}…")[0], 20 * icon_scale, title)
+
+    def test_a_paged_row_fits_the_default_sidebar_so_its_arrows_are_as_tall_as_its_icons(self):
+        # A desktop check found the arrows about 1.65 times as tall as the icons
+        # in the sidebar at its default width, 561 px at UI scale 1.0 and 1122 px
+        # at 2.0 on a Retina display, 280.5 interface units either way. The paged
+        # row's icon scale was raised to 2.5, so the row was wider than its
+        # region: Blender narrowed every item, but not the arrows' height.
+        with online_access(False):
+            view = self.six_maps()
+        titles = [tile.title for tile in self.tiles.controller.tiles["request"]]
+        for pixels, scale in ((561, 2.0), (1122, 4.0)):
+            with self.subTest(pixels=pixels, ui_scale=scale):
+                icons, arrows = self.tile_sizes(view, pixels, scale)
+                self.assertEqual(len(icons), 4)
+                icon_scale = icons[0]
+                self.assertEqual(icons, [icon_scale] * 4)
+                self.assertLess(icon_scale, 2.5)
+                # Blender's row in interface units: about 22 per icon scale step
+                # for each tile with its spacing, 24 for each one-unit arrow and
+                # 60 for the panel and job box margins. An unpaged row of four
+                # 2.5 icons, 280 units, fitted this sidebar on the desktop.
+                needed = 4 * 22 * icon_scale + 2 * 24 + 60
+                self.assertLessEqual(round(needed, 6), pixels / scale)
+                self.assertEqual(arrows, [(1.0, icon_scale), (1.0, icon_scale)])
+                self.assert_numbers_fit(icon_scale, titles)
+
+    def test_a_paged_row_in_a_narrow_sidebar_keeps_its_arrows_as_tall_as_its_smallest_icons(self):
+        with online_access(False):
+            view = self.six_maps()
+        # 200 and 150 interface units, both narrower than a paged row of the
+        # smallest icons; those icons still hold a two-digit caption number.
+        sizes = [self.tile_sizes(view, pixels, 2.0) for pixels in (400, 300)]
+        self.assertEqual(sizes[0], sizes[1])
+        icons, arrows = sizes[0]
+        smallest = icons[0]
+        self.assertEqual(icons, [smallest] * 4)
+        self.assertLess(smallest, 2.5)
+        self.assertEqual(arrows, [(1.0, smallest), (1.0, smallest)])
+        self.assert_numbers_fit(smallest, ["(99) Metallic"])
+
+    def test_four_results_keep_the_unpaged_icon_scale_and_its_minimum(self):
+        maps = [
+            (f"map-{role}", f"{role}.png", "image/png", png(8, 8), role)
+            for role in ("normal", "height", "albedo", "metallic")
+        ]
+        with online_access(False):
+            view = self.saved(maps)
+            self.settle(self.ready_page)
+        # The default sidebar fits four tiles of about 2.5 without arrows:
+        # (280.5 - 60) / (22 * 4).
+        for pixels, scale in ((561, 2.0), (1122, 4.0)):
+            with self.subTest(pixels=pixels, ui_scale=scale):
+                icons, arrows = self.tile_sizes(view, pixels, scale)
+                self.assertEqual(arrows, [])
+                self.assertEqual(len(icons), 4)
+                for drawn in icons:
+                    self.assertAlmostEqual(drawn, (280.5 - 60) / 88)
+                    self.assertGreaterEqual(drawn, 2.5)
+        # A narrower sidebar keeps an unpaged row's 2.5 minimum.
+        self.assertEqual(self.tile_sizes(view, 400, 2.0), ([2.5] * 4, []))
+
+    def test_a_paged_row_in_a_wide_region_keeps_its_icon_scale(self):
+        # Studio and a widened sidebar already fitted a paged row beside its
+        # arrows on the desktop; their icons keep the size they had.
+        with online_access(False):
+            view = self.six_maps()
+        for scale in (2.0, 4.0):
+            with self.subTest(studio=960, ui_scale=scale):
+                icons, arrows = self.tile_sizes(view, 2400, scale, popup=0, studio=960)
+                self.assertEqual(icons, [5.0] * 4)
+                self.assertEqual(arrows, [(1.0, 5.0), (1.0, 5.0)])
+        # The sidebar widened to 861 px at UI scale 1.0 on a Retina display.
+        icons, arrows = self.tile_sizes(view, 861, 2.0)
+        expected = (861 / 2.0 - 60 - 2 * 24) / (22 * 4)
+        self.assertGreater(expected, 2.5)
+        for drawn in icons:
+            self.assertAlmostEqual(drawn, expected)
+        self.assertEqual(len(icons), 4)
+        self.assertEqual([units for units, _ in arrows], [1.0, 1.0])
+        for _, height in arrows:
+            self.assertAlmostEqual(height, expected)
 
     def test_jobs_generations_and_studio_draw_tiles_without_storage_reads(self):
         panels, studio = submodule("blender.panels"), submodule("blender.studio")

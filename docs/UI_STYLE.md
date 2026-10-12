@@ -886,9 +886,15 @@ Jobs and Results pages draw the same pager, because they draw the same tiles.
 
 Icon size follows the drawn region's width, or in Studio the width it requests
 for its popup, divided by `preferences.system.ui_scale` (1 when background
-Blender reports 0). Status lines wrap like the waveform box's, by the width
-Blender's interface font measures less the sidebar's panel, job box and icon
-space, and a caption such as **Model (2)** stays whole on one line. Drawing
+Blender reports 0). An unpaged row's icons scale from 2.5 to 5 with that
+width. A paged row leaves room for its arrows and may take icons down to a
+scale of 1.75 so that it fits: Blender narrows the items of a row wider than
+its region but keeps the arrows' height, so an overflowing row's arrows stand
+taller than its icons. At 1.75 a caption's **(99)…** still fits under its
+icon. A region narrower than a row of those smallest icons still narrows it.
+Status lines wrap like the waveform box's, by the width Blender's interface
+font measures less the sidebar's panel, job box and icon space, and a caption
+such as **Model (2)** stays whole on one line. Drawing
 reads only the controller's precomputed tiles and pages: no file, store or
 session access, decode, request or property write. Requests, image decoding and icons happen in
 the controller's timer, outside drawing.
@@ -904,9 +910,19 @@ tests on Blender 5.1.2 page six maps forward and back, clamp at both ends,
 refuse a stale connection or job, start again on the first page after the
 results change or the connection retires, find the same arrows and range line
 in Jobs, Generations and Studio, and draw a paged row with file and store reads
-refused and no change to tiles, pages, offsets or requests. The pager has no
-desktop evidence yet: its arrow width and height and its use at UI scales 1.0
-and 2.0 need a physical check.
+refused and no change to tiles, pages, offsets or requests.
+
+A private physical desktop check of the pager on Blender 5.1.2 macOS arm64, at
+UI scales 1.0 and 2.0, found paging, the disabled arrow at each end, the range
+line, no pager for four results and viewport input after an arrow click
+working in Jobs, Generations and Studio. In the sidebar at its default width,
+280.5 interface units at both scales, the arrows were about 1.65 times as tall
+as the icons, because the paged row's icon scale was raised to 2.5 and the row
+overflowed; in Studio and in a widened sidebar they matched. Paged rows now
+fit as described above. Native tests check that at that width a paged row fits
+with both arrows as tall as its icon scale, that a narrower sidebar takes the
+1.75 floor, and that unpaged rows and wide regions keep their icon scale. The
+physical recheck of the fitted row at UI scales 1.0 and 2.0 is pending.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
 1.0, with system mouse and wheel events and ZIPs built before the measured

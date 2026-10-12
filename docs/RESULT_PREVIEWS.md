@@ -278,7 +278,9 @@ a failed redraw is logged and does not stop it:
   Retry clears the missing marker and opens a new polling window. With more
   than four previewable results, the row has **‹** and **›** arrows around the
   tiles and a range line such as `3-6 of 6`; the page offset is transient
-  controller state that resets when the job's results change.
+  controller state that resets when the job's results change. Such a paged
+  row may take smaller icons than an unpaged one, down to a scale of 1.75, so
+  that it fits its region and its arrows stay as tall as its icons.
 - **Lifetime.** A connection, project or file change, and unregistering the
   extension, release the icons and tiles. A status read after that belongs to
   another connection and is never shown.

@@ -49,6 +49,9 @@ def sync_params(lane_state, schema, model_id):
     """Ensure one collection item per drawable spec; keep values whose name, type and model match.
 
     Returns the names whose values were seeded or corrected; removals are not listed.
+    Dropping a value this model's form held, such as a LoRA list an earlier
+    version drew as text, changes the request, so the form is priced again and
+    a price error saved with the file gives way to the current reason.
     """
     keep = {}
     seeded = set()
@@ -96,15 +99,20 @@ def sync_params(lane_state, schema, model_id):
                 seeded.add(spec.name)
             if created and not has_default and not spec.required_always:
                 _seed(item, "enabled", False)
+    dropped = False
     for index in range(len(lane_state.params) - 1, -1, -1):
         item = lane_state.params[index]
         if item.name not in keep:
-            if item.name in hidden and item.model_id == model_id:
-                from . import trained_models
+            if item.model_id == model_id:
+                dropped = True
+                if item.name in hidden:
+                    from . import trained_models
 
-                # An earlier version drew this LoRA input as text; keep a saved ID visible.
-                trained_models.adopt_typed(lane_state, item)
+                    # An earlier version drew this LoRA input as text; keep a saved ID visible.
+                    trained_models.adopt_typed(lane_state, item)
             lane_state.params.remove(index)
+    if dropped:
+        props.mark_estimate_dirty(lane_state)
     return seeded
 
 

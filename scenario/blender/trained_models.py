@@ -456,9 +456,9 @@ def adopt_typed(lane_state, item):
     choice instead of disappearing silently from the request: it runs when it
     is listed and the base accepts it, otherwise it blocks the price with the
     reason, and the Model row offers its remove button. A choice saved without
-    a connection gets no scope tag and must be chosen again. The form is priced
-    again, so a price error saved with the file gives way to the current reason.
-    Returns whether a choice was added.
+    a connection gets no scope tag and must be chosen again. sync_params prices
+    the form again, so a price error saved with the file gives way to the
+    current reason. Returns whether a choice was added.
     """
     value = item.str_value.strip()
     if item.ptype != "model" or not item.enabled or not value or len(lane_state.trained):
@@ -471,7 +471,6 @@ def adopt_typed(lane_state, item):
     slot.kind = kind if kind in catalog.USABLE_TRAINED_KINDS else ""
     slot.name = state.trained_records[value].name if slot.kind else value
     slot[SCOPE] = current_scope() or ""
-    props.mark_estimate_dirty(lane_state)
     return True
 
 

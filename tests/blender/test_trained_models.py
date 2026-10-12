@@ -864,6 +864,103 @@ class TrainedModelTests(unittest.TestCase):
         request = self.generation.build_request(self.scene, "image", for_estimate=True)
         self.assertEqual(request.errors, ["LoRA Scale: provide a strength for each LoRA."])
 
+    def test_a_price_asked_before_the_trained_list_arrives_runs_once_it_arrives(self):
+        """A form priced while the list loads, or after its read failed, is priced again."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        self.assertEqual(self.pick(STUDIO_LORA, 0.8), {"FINISHED"})
+
+        def price():
+            self.generation.request_estimate(self.scene, "image")
+            return self.lane.estimate_state, self.lane.estimate_error
+
+        def deliver_list():
+            self.assertTrue(
+                self.trained.request(self.runtime.ensure_manager(), self.runtime.ensure_catalog())
+            )
+            self.settle()
+
+        self.trained.clear()  # the connection's trained list has not arrived yet
+        self.assertEqual(price(), ("UNAVAILABLE", self.trained.LOADING))
+        self.private_error = 500
+        deliver_list()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        reason = f"Could not load trained models: {self.runtime.state.trained_error}"
+        self.assertEqual(price(), ("UNAVAILABLE", reason))
+        self.private_error = None
+        deliver_list()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.posts.clear()
+        price()
+        self.deliver_quote()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        self.assertTrue(submodule("blender.panels").generate_enabled(self.lane, "image"))
+        (sent,) = self.posts
+        self.assertEqual((sent["loras"], sent["lorasScale"]), ([STUDIO_LORA], [0.8]))
+
+    def test_an_id_adopted_before_the_trained_list_arrives_shows_the_current_reason(self):
+        """A file opened before the list arrives keeps no refusal an earlier version saved."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        params_ui = submodule("blender.params_ui")
+        self.lane.model_id = FLUX1
+        params_ui.sync_params(self.lane, self.generation.schema_for(FLUX1), FLUX1)
+        self.trained.clear()  # the connection's trained list has not arrived yet
+        item = self.lane.params.add()
+        item.name, item.ptype, item.model_id = "modelId", "model", FLUX1
+        item.str_value, item.enabled = LORA_A, True
+        self.lane.estimate_state = "ERROR"
+        self.lane.estimate_error = "LoRA or Composition Model is a LoRA."
+        self.generation.on_model_changed(bpy.context, self.lane, mark_dirty=False)
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.generation.request_estimate(self.scene, "image")
+        self.assertEqual(
+            (self.lane.estimate_state, self.lane.estimate_error),
+            ("UNAVAILABLE", self.trained.LOADING),
+        )
+        self.assertTrue(
+            self.trained.request(self.runtime.ensure_manager(), self.runtime.ensure_catalog())
+        )
+        self.settle()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.generation.request_estimate(self.scene, "image")
+        self.assertEqual(
+            (self.lane.estimate_state, self.lane.estimate_error),
+            ("UNAVAILABLE", "LoRA Scale: provide a strength for each LoRA."),
+        )
+
+    def test_a_lora_list_typed_by_an_earlier_version_reprices_the_form(self):
+        """Earlier versions drew a base's LoRA lists as text, which validation always refused."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        params_ui = submodule("blender.params_ui")
+        self.lane.model_id = FLUX1
+        params_ui.sync_params(self.lane, self.generation.schema_for(FLUX1), FLUX1)
+        for name, ptype, value in (
+            ("loras", "model_array", LORA_A),
+            ("lorasScale", "number_array", "0.8"),
+        ):
+            item = self.lane.params.add()
+            item.name, item.ptype, item.model_id = name, ptype, FLUX1
+            item.str_value, item.enabled = value, True
+        self.lane.estimate_state = "UNAVAILABLE"
+        self.lane.estimate_error = "Flux LoRA: expected an array, even for a single item."
+        # The catalog delivery after opening the file synchronizes the form without repricing it.
+        self.generation.on_model_changed(bpy.context, self.lane, mark_dirty=False)
+        self.assertLess(self.lane.params.find("loras"), 0)
+        self.assertLess(self.lane.params.find("lorasScale"), 0)
+        self.assertFalse(len(self.lane.trained))  # only the model input held a whole choice
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.posts.clear()
+        self.generation.request_estimate(self.scene, "image")
+        self.deliver_quote()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        (sent,) = self.posts
+        self.assertNotIn("loras", sent)
+        # The form is priced once: a later catalog delivery keeps the ready price.
+        self.generation.on_model_changed(bpy.context, self.lane, mark_dirty=False)
+        self.assertEqual(self.lane.estimate_state, "READY")
+
     def test_an_id_typed_by_an_earlier_version_becomes_the_trained_choice(self):
         """Earlier versions drew the base's LoRA inputs as text; a saved ID is kept, not dropped."""
         self.load_catalog()

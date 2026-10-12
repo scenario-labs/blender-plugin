@@ -439,7 +439,8 @@ the composer starts one, and so does a pointer move anywhere in a 3D viewport
 while the prompt is focused. The session lasts until a click outside the
 composer, or until the pointer leaves it while the prompt is unfocused. A
 refused Generate, such as a failed poll or an error report from the submission,
-is reported as a warning and the session goes on. If handling any other event
+is reported as a warning and the session goes on, and so is an error from the
+operator a [job strip](#compact-job-strip) chip runs. If handling any other event
 raises, whether a click, a key, a pointer move or a drag, the composer ends its
 session and Blender reports the error. So does an error that F2 or a
 composition's second press raises while opening the
@@ -547,6 +548,7 @@ presses and a popover confirmation to a replaced form and to a form whose model
 takes no prompt, and check that neither form's prompt changes.
 Physical composition, dead keys, candidate-window placement and focus after the
 popover have not been checked on a desktop; they remain under #66.
+
 ## Compact job strip
 
 The expanded composer shows the current job of the form it describes in a
@@ -580,6 +582,8 @@ shows its own job or no tray.
   **Inspect**, which is never dropped, and at most one primary action before it:
   a receipt retry, a cancellation, download recovery, the single result action,
   or **Apply... (N)** / **Reuse... (N)**, which opens the job card to choose.
+  As in Jobs, **Cancel generation** appears only once a poll confirmed an
+  inference job, the only type Scenario documents as cancellable.
   A submission in flight or unconfirmed, and an Image result being imported
   automatically, offer only Inspect. Refresh is never a chip; the pump polls.
   On a narrow tray the primary chip is dropped before the line gets shorter

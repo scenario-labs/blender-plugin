@@ -414,7 +414,11 @@ next Trained chip reads the models the scan did not reach, and an explicit refre
 lets it retry the failed ones. The pure
 [trained_offers](../scenario/core/api/trained_offers.py) module pairs each trained
 record with the detailed bases whose slot runs it; a LoRA also needs declared
-strength bounds or a declared default.
+strength bounds or a declared default. A newly chosen LoRA starts at the scale of
+the first entry of its listed record's `concepts`, otherwise at 0.75, as the
+Scenario web app does, clamped to the base's range; this reads no other record.
+The captured public LoRA details carry `concepts` (scale 0.8), but the captures
+do not record whether list rows carry it; a listed LoRA without it starts at 0.75.
 
 A form keeps only the chosen IDs, kinds, strengths and a scope tag. Each request
 rebuilds the payload with `trained_routes.apply`, and the unchanged quote check

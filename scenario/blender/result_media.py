@@ -597,6 +597,8 @@ def _redraw():
 
 
 def _tick():
+    # Blender unregisters a timer that raises, which would leave players unreaped
+    # and a loading waveform frozen until the next Play or Waveform.
     try:
         changed = controller.poll()
     except Exception:
@@ -604,7 +606,10 @@ def _tick():
         _log.warning("Saved media update failed")
         changed = False
     if changed:
-        _redraw()
+        try:
+            _redraw()
+        except Exception:
+            _log.warning("Saved media redraw failed")
     return controller.interval()
 
 

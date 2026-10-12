@@ -508,6 +508,18 @@ class ResultMediaTests(unittest.TestCase):
             ],
         )
 
+    def test_a_failed_redraw_keeps_the_update_timer_running(self):
+        view = self.saved([("clip", "clip.mp4", "video/mp4", MP4)])
+        self.play(view, "play_in_blender:clip")
+        controller = self.media.controller
+        with (
+            patch.object(controller, "poll", return_value=True),
+            patch.object(self.media, "_redraw", side_effect=RuntimeError("no screen")),
+            self.assertLogs("scenario", "WARNING"),
+        ):
+            # A running player still needs reaping, so the timer keeps its interval.
+            self.assertEqual(self.media._tick(), self.media.IDLE_INTERVAL)
+
     # -- waveform -------------------------------------------------------------
 
     def test_waveform_decodes_offline_and_draws_from_cached_state(self):

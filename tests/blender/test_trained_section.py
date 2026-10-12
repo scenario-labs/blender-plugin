@@ -897,6 +897,50 @@ class TrainedSectionTests(unittest.TestCase):
         self.scene.view_layers[0].update()
         self.assertFalse(session._origins.current(origin))
 
+    def test_a_default_syncs_a_late_form_already_showing_its_base(self):
+        """A governed form already showing the default's base gets that base's inputs too.
+
+        A scene made after the catalog and the base's description were loaded
+        shows the base without its inputs: neither delivery synced it. Applying
+        the default syncs it as selecting the base would, keeps the inputs a
+        synced form already edited and leaves origins captured in both scenes
+        current (#387).
+        """
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.release(self.lane, FLUX1)  # synced for FLUX.1 Dev: its edited input stays
+        self.lane.params["numInferenceSteps"].int_value = 40
+        late = bpy.data.scenes.new("Late shot")
+        self.addCleanup(bpy.data.scenes.remove, late)
+        form = late.scenario.lane_state("image")
+        models = [item[0] for item in self.runtime.enum_items(("models", "image"))]
+        form["model_id"] = models.index(FLUX1)  # shown, never synced
+        form.prompt = trained_tests.PROMPT
+        self.assertEqual((form.model_id, form.model_key, len(form.params)), (FLUX1, "", 0))
+        inputs = sorted(p.name for p in self.lane.params if p.model_id == FLUX1)
+        scenes = (self.scene, late)
+        for scene in scenes:
+            scene.view_layers[0].update()
+        session = self.job_session()
+        origins = [session.capture(scene) for scene in scenes]
+        self.assertTrue(self.defaults.apply_pending())
+        for scene, origin in zip(scenes, origins, strict=True):
+            scene.view_layers[0].update()
+            self.assertTrue(session._origins.current(origin), scene.name)
+        self.assertEqual(sorted(p.name for p in form.params if p.model_id == FLUX1), inputs)
+        self.assertEqual(
+            (form.model_key, [s.model_id for s in form.trained]), (FLUX1, [STUDIO_LORA, LORA_A])
+        )
+        request = self.generation.build_request(late, "image", for_estimate=True)
+        self.assertFalse(request.errors, request.errors)
+        body = request.body
+        self.assertEqual(
+            (body["loras"], body["lorasScale"], body.get("numInferenceSteps")),
+            ([STUDIO_LORA, LORA_A], [0.8, 1.25], 28),
+        )
+        self.assertEqual(self.body()["numInferenceSteps"], 40)
+
     def test_use_on_the_current_base_stales_origins_only_through_strengths(self):
         """Use always reprices its form, but tags the scene only through RNA assignments.
 

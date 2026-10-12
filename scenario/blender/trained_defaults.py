@@ -298,11 +298,17 @@ def writable(resolution, lane):
 
 
 def _select(lane_state, models, model_id):
-    """Store the form's base model without its RNA update, then sync the form as it would."""
+    """Store the form's base model without its RNA update, then sync the form as it would.
+
+    A form already showing the model keeps its enum and is still synced: one in
+    a scene made after the catalog and that model's description were loaded
+    was never synced for it.
+    """
     from . import generation
 
-    # Each model enum value is its 3-tuple item's index, as in restore_model_key.
-    lane_state["model_id"] = models.index(model_id)
+    if lane_state.model_id != model_id:
+        # Each model enum value is its 3-tuple item's index, as in restore_model_key.
+        lane_state["model_id"] = models.index(model_id)
     generation.on_model_changed(bpy.context, lane_state)  # what the update would run
 
 
@@ -338,7 +344,8 @@ def _apply(lane_state, lane, resolution, *, seed=False):
     (`seed`) is not an edit of the scene: as catalog seeding does (#387), it
     stores the model index and strengths without their RNA updates, which would
     tag the scene and make every origin captured in it stale, then syncs the
-    form and re-arms its price itself. Either way the form is repriced.
+    form, even one already showing the base, and re-arms its price itself.
+    Either way the form is repriced.
 
     Raises ScenarioError before any change when it cannot be written. A failure
     while writing is raised again after a rollback, which reprices the form only
@@ -358,11 +365,10 @@ def _apply(lane_state, lane, resolution, *, seed=False):
     key, previous, slots = lane_state.model_key, lane_state.model_id, _slots(lane_state)
     try:
         lane_state.model_key = base.id
-        if lane_state.model_id != base.id:
-            if seed:
-                _select(lane_state, models, base.id)
-            else:
-                lane_state.model_id = base.id  # its update callback runs on_model_changed
+        if seed:
+            _select(lane_state, models, base.id)  # syncs a form already showing the base too
+        elif lane_state.model_id != base.id:
+            lane_state.model_id = base.id  # its update callback runs on_model_changed
         trained_models.write_slots(lane_state, lane, resolution.chosen, base.slot, scope, seed=seed)
     except Exception:
         if seed:

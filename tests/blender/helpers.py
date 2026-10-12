@@ -487,6 +487,26 @@ def draw_job_panels():
     return header, jobs, generations, [call.args[1] for call in draw_result.call_args_list]
 
 
+def draw_in_studio(draw, width):
+    """Call `draw` where Studio's real Jobs page draws its panel, `width` interface units wide.
+
+    Studio's `draw_view` runs around it as the popup operator's `draw` calls it,
+    with the width the operator passes to `invoke_popup`; only the panel body is
+    replaced by `draw`.
+    """
+    from unittest.mock import MagicMock
+
+    studio = submodule("blender.studio")
+    view = bpy.context.window_manager.scenario_studio_view
+    page = view.page
+    view.page = "JOBS"
+    try:
+        with patch.object(studio, "draw_panel", lambda _layout, _context, _panel: draw()):
+            studio.draw_view(MagicMock(), bpy.context, width=width)
+    finally:
+        view.page = page
+
+
 def drawn_texts(*layouts):
     """Every `text` drawn anywhere under recording layouts, nested rows and boxes included."""
     return [

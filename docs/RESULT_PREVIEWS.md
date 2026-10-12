@@ -359,7 +359,10 @@ arm64 and in hosted CI on Linux x64 and Windows x64 runners. Provider audio
 files, child start-up time and antivirus behavior on real Windows and Linux
 desktops, macOS x64 and sandboxed Blender packages are not covered. The timing
 figures above are macOS arm64 measurements only. Player copies and the Play and
-Waveform controls have installed native tests with patched players only.
-Blender-side image decoding of saved results, still and clip display, MCP parity
-and native desktop acceptance, including of the review previews, remain open
-under #189, #65 and #66.
+Waveform controls have installed native tests with patched players. Partial
+private desktop passes on macOS arm64 Blender 5.1.2 at UI scale 1.0 opened a
+saved video's private copy in the system player and in Blender's animation
+player and drew a waveform; Play audio and desktop Cancel and Retry were not
+exercised. Blender-side image decoding of saved results, still and clip display,
+MCP parity and native desktop acceptance, including of the review previews,
+remain open under #189, #65 and #66.

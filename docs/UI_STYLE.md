@@ -723,20 +723,42 @@ reports through the status line once the private copy opens or fails, and is
 unavailable in background Blender.
 
 The waveform box follows the job's controls: a `SOUND` header naming the result,
-with a close button, then status text wrapped to the sidebar width, **Cancel**
-while loading, the waveform icon when ready and **Retry** after an error or
-cancellation. Wrap columns and icon size use `preferences.system.ui_scale` (1
-when background Blender reports 0), never the pixel size times the resolution
-scale, which would count that scale twice. Drawing reads only the controller's
-cached state: no file, store or session access, decode or property write. The
-icon is built in the controller's timer, outside drawing.
+with a close button, then status text wrapped to the box, **Cancel** while
+loading, the waveform icon when ready and **Retry** after an error or
+cancellation. Blender clips a label wider than its row, and its interface font
+is proportional, so status text wraps by the width Blender's interface font
+measures at the widget text size, not by a character count. The available width
+is the drawn region's less the panel, box and icon space of the sidebar layout.
+In Studio it is the width Studio requests for its popup: Blender lays a popup
+out before it sizes the popup's region, which is 0 px wide on that first draw,
+and a popup's context region is the header that opened it. Lines break only at
+ordinary spaces, never after a hyphen in a word that fits: a value keeps its
+unit ("1.00 s", "44.1 kHz") and a wrapped line ends with its `·` separator. A
+word wider than the whole line splits after its last hyphen that fits, else
+after its last character that fits. Text and icon size use
+`preferences.system.ui_scale` (1 when background Blender reports 0), never the
+pixel size times the resolution scale, which would count that scale twice.
+Drawing reads only the controller's cached state: no file, store or session
+access, decode or property write. The icon is built in the controller's timer,
+outside drawing.
 
 Installed exact-ZIP tests on Blender 5.1.2 macOS arm64 cover the descriptor
 rows and their operators, recording-layout draws with file and store reads
-refused, the UI-scale sizing, the Jobs panel drawing the box, and an offline
-waveform decoded by the real child Blender. Physical input, focus, viewport
-interaction, screenshots at UI scales 1.0 and 2.0, an opened system or animation
-player and human listening are not yet recorded; they remain #189 and #68
+refused, the UI-scale sizing, measured wrapping in a 561 px sidebar at an
+interface scale of 2 (UI scale 1.0 on a Retina display), in a sized popup and
+in Studio's first draw before its popup is sized, the Jobs panel drawing the
+box, and an offline waveform decoded by the real child Blender.
+
+Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
+1.0, with system mouse and key events and a ZIP built before the measured
+wrapping, showed the rows in the sidebar Jobs panel and on the Studio Jobs page.
+**Play video** opened the system player; **Play in Blender** opened Blender's
+animation player, which Escape closed with Blender's window frontmost again; and
+**Waveform** went from its loading lines to the summary and envelope icon. A
+screenshot from the second pass sets the waveform text inset. The measured
+wrapping itself has no desktop evidence yet. Play audio, Cancel, Retry and close
+on the desktop, viewport interaction, screenshots at UI scale 2.0, other
+platforms and human listening are not yet recorded; they remain #189 and #68
 acceptance.
 
 ## Saved static model confirmation

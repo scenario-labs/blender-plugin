@@ -274,9 +274,13 @@ establish live generation or full render-lane desktop acceptance.
   can take keyboard focus; follow the isolated-profile validation procedure.
 - Saved shared video and audio results offer **Play**, **Play in Blender** for
   video and **Waveform** for audio in their saved-job controls. Retained
-  prototype results keep Play and Add to sequencer, without a waveform. These
-  controls have installed-ZIP native tests only: no desktop interaction,
-  screenshot, UI-scale or human listening evidence exists yet, which remains
+  prototype results keep Play and Add to sequencer, without a waveform. Beyond
+  installed-ZIP native tests, two partial physical desktop passes on macOS arm64
+  Blender 5.1.2 at UI scale 1.0 opened a saved video in the system player and in
+  Blender's animation player and drew a waveform, before its status text wrapped
+  by measured width. Play audio, Cancel, Retry and close on the desktop, the
+  measured wrapping, UI scale 2.0, other platforms and human listening have no
+  desktop evidence yet, which remains
   [#189](https://github.com/scenario-labs/blender-plugin/issues/189), #66 and
   [#68](https://github.com/scenario-labs/blender-plugin/issues/68) work. Local MCP
   cannot read waveform envelopes yet, and no MCP tool launches a player. See the

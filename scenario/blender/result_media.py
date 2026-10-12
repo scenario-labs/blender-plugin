@@ -19,7 +19,6 @@ unregisters. No local MCP tool launches a player.
 import array
 import logging
 import subprocess
-import textwrap
 import threading
 from collections import OrderedDict
 from concurrent.futures import CancelledError
@@ -42,7 +41,8 @@ from ..core.jobs.result_previews import (
 )
 from ..core.jobs.results import PREVIEW_STATES, ResultError
 from ..core.jobs.workers import WorkerError
-from . import runtime
+from ..core.ui.text_wrap import NO_BREAK
+from . import label_wrap, runtime
 
 _log = logging.getLogger("scenario")
 # At most this many copies and bytes stay for reuse; player-pinned ones stay too.
@@ -52,6 +52,12 @@ PLAYER_LIMIT = 2
 LOADING_INTERVAL = 0.1
 IDLE_INTERVAL = 1.0
 WAVEFORM_SIZE = (256, 96)
+# Interface units of the sidebar that the waveform box's status text cannot use:
+# from the region's left edge to the first line's text (panel, job box, this box
+# and the icon) and from this box's right content edge past the category tabs,
+# measured as 100 on Blender 5.1.2, plus a few units of slack. Labels clip text
+# wider than their row.
+TEXT_INSET = 106
 _WAITING = {
     PreviewState.QUEUED: "Waiting for the preview lane...",
     PreviewState.DECODE: "Decoding the verified saved audio in an offline Blender process...",
@@ -108,29 +114,33 @@ def _discard(copy):
 
 
 def _channels(count):
-    return "Mono" if count == 1 else "Stereo" if count == 2 else f"{count} channels"
+    return "Mono" if count == 1 else "Stereo" if count == 2 else f"{count}{NO_BREAK}channels"
 
 
 def _duration(seconds):
     if seconds < 10:
-        return f"{seconds:.2f} s"
+        return f"{seconds:.2f}{NO_BREAK}s"
     if seconds < 60:
-        return f"{seconds:.1f} s"
+        return f"{seconds:.1f}{NO_BREAK}s"
     whole = round(seconds)
     return f"{whole // 60}:{whole % 60:02d}"
 
 
 def summary(envelope):
-    """One status line for a decoded envelope, from cached values only."""
+    """One status line for a decoded envelope, from cached values only.
+
+    No-break spaces keep each value with its unit, and each separator with the
+    part before it, so a wrapped line never starts with a unit or a separator.
+    """
     parts = [
         "Verified saved audio",
         _duration(envelope.seconds),
         _channels(envelope.channels),
-        f"{envelope.sample_rate / 1000:g} kHz",
+        f"{envelope.sample_rate / 1000:g}{NO_BREAK}kHz",
     ]
     if envelope.silent:
         parts.append("Silent")
-    return " · ".join(parts)
+    return f"{NO_BREAK}· ".join(parts)
 
 
 def _admit(context_id, request_id, expected_revision, asset_id, kinds):
@@ -705,11 +715,6 @@ class SCENARIO_OT_close_saved_waveform(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def _wrapped(layout, message, icon, columns):
-    for index, line in enumerate(textwrap.wrap(message, width=columns)):
-        layout.label(text=line, icon=icon if index == 0 else "NONE")
-
-
 def draw(layout, record):
     """The selected waveform for this view; only cached state is read here."""
     selected = controller.selection
@@ -725,20 +730,14 @@ def draw(layout, record):
     header = box.row(align=True)
     header.label(text=f"Waveform: {selected.label}", icon="SOUND")
     header.operator("scenario.close_saved_waveform", text="", icon="X", emboss=False)
-    # Blender's custom-interface multiplier already includes the resolution scale;
-    # the pixel size is a line width derived from the same DPI, so multiplying it
-    # by view.ui_scale would count that scale twice. Background mode reports 0.
-    scale = context.preferences.system.ui_scale or 1.0
-    width = context.region.width if context.region is not None else 300
-    columns = max(12, int((width / scale - 80) / 7))
     icon = "ERROR" if selected.status == "ERROR" else "INFO"
-    _wrapped(box, selected.message, icon, columns)
+    for index, line in enumerate(label_wrap.label_lines(context, selected.message, TEXT_INSET)):
+        box.label(text=line, icon=icon if index == 0 else "NONE")
     if selected.status == "LOADING":
         box.operator("scenario.cancel_saved_waveform", text="Cancel", icon="CANCEL")
     elif selected.status == "READY":
-        box.template_icon(
-            icon_value=selected.icon_id, scale=max(3.0, min(8.0, (width / scale - 80) / 20))
-        )
+        width = label_wrap.region_width(context) / label_wrap.ui_scale(context)
+        box.template_icon(icon_value=selected.icon_id, scale=max(3.0, min(8.0, (width - 80) / 20)))
     elif "saved_revision" in record.meta:
         retry = box.operator("scenario.preview_saved_waveform", text="Retry", icon="FILE_REFRESH")
         retry.context_id, retry.request_id = selected.context_id, selected.request_id

@@ -17,6 +17,7 @@ from . import (
     film_review_controls,
     film_scene_controls,
     film_timeline_controls,
+    label_wrap,
     library_view,
     panels,
     runtime,
@@ -122,6 +123,16 @@ def draw_connection(layout, context):
 
 
 def draw_view(layout, context, *, width):
+    """Draw the selected page in a popup laid out ``width`` interface units wide.
+
+    Wrapped labels measure against that width: Blender lays the popup out before
+    it sizes the popup's region, which is 0 px wide on the first draw.
+    """
+    with label_wrap.popup_layout(width):
+        _draw_page(layout, context, width)
+
+
+def _draw_page(layout, context, width):
     view = context.window_manager.scenario_studio_view
     header = layout.row()
     header.label(text="Scenario Studio", icon="SHADERFX")

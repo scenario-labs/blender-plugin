@@ -9,11 +9,11 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-12",
     "base_revision": "759f764dff9c9d9b1f50efecdd46835471f19189",
-    "limits": "Reviewed that waveform tests synthesize their PCM and compressed tones at runtime and otherwise read only the documented first-party synthetic silence and Film tone fixtures; no new media file is committed. Media rights for the existing fixtures keep their documented provenance. Re-checked after the main-thread lock test changed: it also decodes its runtime-generated five-minute MP3 tone in process as a control and commits no new media. After this review, the unreleased prototype waveform preview was retired; its sources here were replaced by their successors, result_media.py and test_result_media.py, without re-reviewing this topic's other claims. The current saved media claims are evidenced by this document's saved-media-playback topic.",
+    "limits": "Reviewed that waveform tests synthesize their PCM and compressed tones at runtime and otherwise read only the documented first-party synthetic silence and Film tone fixtures; no new media file is committed. Media rights for the existing fixtures keep their documented provenance. Re-checked after the main-thread lock test changed: it also decodes its runtime-generated five-minute MP3 tone in process as a control and commits no new media. When the unreleased prototype waveform preview was retired, its sources here were replaced by their successors, result_media.py and test_result_media.py, without re-reviewing this topic's other claims. The current saved media claims are evidenced by this document's saved-media-playback topic. On 2026-10-12 test_result_media.py was re-checked after it added a 1 s stereo 44.1 kHz tone: it still writes 16-bit PCM WAV tones at runtime and commits no media file; the other sources are unchanged. The Studio first-draw test added later that day reuses the same generated stereo tone and commits no media file.",
     "sources": {
       "tests/unit/test_audio_waveform.py": "8a165f722f77ca93f8ca5478ce913cea1b672677b6440f5f27e70d1d96201081",
       "tests/unit/test_audio_decode.py": "b9ec6010f524620c8597566d654eeebef5044bd4b317aecb313e59b8cf9da734",
-      "tests/blender/test_result_media.py": "07c7686367b0fd38838a82ceafcafb2bd549063335aba11720420985feb1da9a",
+      "tests/blender/test_result_media.py": "b3c16d6844bd2bdfc4631913c53b26db050d4520f021ac7b4af7e567a516e73c",
       "tests/blender/test_result_previews.py": "fd31993233db037d73220f4c5e67355da6af5688c864fbe2f62848f228af4c80",
       "tests/blender/test_waveform_worker.py": "5e03524a94fcedee799c9030c9b6a17ee872d9b8982349602c60bb369a62a230"
     }

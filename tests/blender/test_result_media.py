@@ -16,7 +16,6 @@ import stat
 import struct
 import subprocess
 import tempfile
-import textwrap
 import threading
 import time
 import unittest
@@ -25,24 +24,46 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import blf
 import bpy
-from helpers import draw_job_panels, drawn_texts, online_access, submodule, temp_credentials
+from helpers import (
+    draw_in_studio,
+    draw_job_panels,
+    drawn_texts,
+    online_access,
+    submodule,
+    temp_credentials,
+)
 
 MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 64
 
 
-def tone(seconds=0.25, rate=8000, amplitude=0.5):
-    """Synthetic mono PCM: a 200 Hz tone generated here, never recorded media."""
+def tone(seconds=0.25, rate=8000, amplitude=0.5, channels=1):
+    """Synthetic PCM: a 200 Hz tone generated here, never recorded media."""
     frames = int(seconds * rate)
     values = [
         round(32767 * amplitude * math.sin(2 * math.pi * 200 * frame / rate))
         for frame in range(frames)
+        for _channel in range(channels)
     ]
     stream = io.BytesIO()
     with wave.open(stream, "wb") as sound:
-        sound.setparams((1, 2, rate, 0, "NONE", "not compressed"))
-        sound.writeframes(struct.pack(f"<{frames}h", *values))
+        sound.setparams((channels, 2, rate, 0, "NONE", "not compressed"))
+        sound.writeframes(struct.pack(f"<{len(values)}h", *values))
     return stream.getvalue()
+
+
+def text_width(line, scale):
+    """Pixels Blender's interface font takes for a label line at this interface scale."""
+    blf.size(0, bpy.context.preferences.ui_styles[0].widget.points * scale)
+    return blf.dimensions(0, line)[0]
+
+
+# Interface units of the sidebar that the waveform box's status text cannot use,
+# measured in the physical desktop check (Blender 5.1.2, macOS Retina, sidebar
+# with its category tabs) from the region's edges to the first status line's
+# text and to the box's right content edge. Wider lines would be clipped.
+LABEL_MARGIN = 100
 
 
 class Layout:
@@ -77,6 +98,15 @@ class _Properties:
 
     def __setattr__(self, name, value):
         self._values[name] = value
+
+
+def preferences(ui_scale, **others):
+    """Synthetic preferences with this custom-interface scale and Blender's text styles."""
+    return SimpleNamespace(
+        system=SimpleNamespace(ui_scale=ui_scale),
+        ui_styles=bpy.context.preferences.ui_styles,
+        **others,
+    )
 
 
 class FakePlayer:
@@ -487,7 +517,10 @@ class ResultMediaTests(unittest.TestCase):
         self.settle(lambda: selected.status != "LOADING")
         self.assertEqual(selected.status, "READY", selected.message)
         self.assertEqual(selected.label, "Audio (1)")
-        self.assertEqual(selected.message, "Verified saved audio · 0.25 s · Mono · 8 kHz")
+        self.assertEqual(
+            selected.message,
+            "Verified saved audio\u00a0· 0.25\u00a0s\u00a0· Mono\u00a0· 8\u00a0kHz",
+        )
         self.assertGreaterEqual(selected.icon_id, 0)  # Background builds have no drawable ID.
         icon = self.media.controller._previews["waveform"]
         self.assertEqual(tuple(icon.image_size), (256, 96))
@@ -513,28 +546,45 @@ class ResultMediaTests(unittest.TestCase):
         self.assertEqual(layout.calls[-1][0], "icon")
         self.assertEqual(selected.status, "READY")
 
+    def draw_waveform(self, view, preferences, width=800, popup=None, studio=None):
+        """The waveform box's draw calls in a region `width` pixels wide or a popup `popup`
+        pixels wide, drawn inside Studio's view `studio` interface units wide if given."""
+        layout = Layout()
+        context = SimpleNamespace(
+            region=SimpleNamespace(width=width),
+            region_popup=None if popup is None else SimpleNamespace(width=popup),
+            preferences=preferences,
+        )
+        with patch.object(self.media, "bpy", SimpleNamespace(context=context)):
+            if studio is None:
+                self.media.draw(layout, view)
+            else:
+                draw_in_studio(lambda: self.media.draw(layout, view), studio)
+        return layout.calls
+
+    def status_lines(self, view, width, scale, popup=None, studio=None):
+        """The status labels below the waveform box's header."""
+        calls = self.draw_waveform(view, preferences(scale), width, popup, studio)
+        return [call[1] for call in calls if call[0] == "label"][1:]
+
+    def assert_fits(self, lines, message, pixels, scale):
+        self.assertEqual(" ".join(lines), message)  # Breaks only at ordinary spaces.
+        for line in lines:
+            self.assertLessEqual(text_width(line, scale), pixels, line)
+
     def test_waveform_draw_scales_with_blenders_custom_ui_scale(self):
         view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
         selected = self.waveform(view)
         self.settle(lambda: selected.status == "READY")
-
-        def draw(preferences, width=800):
-            layout = Layout()
-            context = SimpleNamespace(region=SimpleNamespace(width=width), preferences=preferences)
-            with patch.object(self.media, "bpy", SimpleNamespace(context=context)):
-                self.media.draw(layout, view)
-            return layout.calls
-
         # Blender 5.2.1 on Retina at a resolution scale of 2 reports system.ui_scale
         # 4 and pixel size 4; multiplying by the resolution scale would size for 8.
-        retina = SimpleNamespace(
-            system=SimpleNamespace(ui_scale=4.0, pixel_size=4.0),
-            view=SimpleNamespace(ui_scale=2.0),
-        )
-        calls = draw(retina)
-        self.assertEqual(calls, draw(SimpleNamespace(system=SimpleNamespace(ui_scale=4.0))))
-        columns = int((800 / 4 - 80) / 7)
-        lines = textwrap.wrap(selected.message, width=columns)
+        retina = preferences(4.0, view=SimpleNamespace(ui_scale=2.0))
+        retina.system.pixel_size = 4.0
+        calls = self.draw_waveform(view, retina)
+        self.assertEqual(calls, self.draw_waveform(view, preferences(4.0)))
+        lines = [call[1] for call in calls if call[0] == "label"][1:]
+        self.assertGreater(len(lines), 1)
+        self.assert_fits(lines, selected.message, 800 - LABEL_MARGIN * 4, 4.0)
         self.assertEqual(
             [call for call in calls if call[0] in ("label", "icon")],
             [
@@ -546,9 +596,70 @@ class ResultMediaTests(unittest.TestCase):
         )
         # Background Blender reports a custom-interface scale of 0; draw uses 1.
         self.assertEqual(
-            draw(SimpleNamespace(system=SimpleNamespace(ui_scale=0.0))),
-            draw(SimpleNamespace(system=SimpleNamespace(ui_scale=1.0))),
+            self.draw_waveform(view, preferences(0.0)), self.draw_waveform(view, preferences(1.0))
         )
+
+    def test_waveform_text_fills_the_sidebar_and_keeps_values_with_units(self):
+        # The physical desktop check's sidebar: Blender 5.1.2 on a Retina Mac at UI
+        # scale 1.0 reports system.ui_scale 2, and the sidebar was 561 px wide. A
+        # 7 px per character estimate wrapped at about half the box and split the
+        # duration from its unit: "... audio · 1.00" / "s · Stereo · 44.1 kHz".
+        width, scale = 561, 2.0
+        pixels = width - LABEL_MARGIN * scale
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone(1.0, 44100, channels=2))])
+        started, stopped, patcher = self.blocked_decode()
+        selected = self.waveform(view)
+        self.settle(started.is_set)
+        decoding = self.status_lines(view, width, scale)
+        self.assert_fits(decoding, selected.message, pixels, scale)
+        self.assertEqual(len(decoding), 2, decoding)  # The estimate needed three.
+        self.assertEqual(bpy.ops.scenario.cancel_saved_waveform(), {"FINISHED"})
+        self.settle(lambda: stopped == ["ScenarioPreview"])
+        self.settle(self.idle)
+        patcher.stop()
+        selected = self.waveform(view)
+        self.settle(lambda: selected.status != "LOADING")
+        self.assertEqual(selected.status, "READY", selected.message)
+        self.assertEqual(
+            selected.message,
+            "Verified saved audio\u00a0· 1.00\u00a0s\u00a0· Stereo\u00a0· 44.1\u00a0kHz",
+        )
+        ready = self.status_lines(view, width, scale)
+        self.assert_fits(ready, selected.message, pixels, scale)
+        self.assertEqual(len(ready), 2, ready)
+        for line in ready[1:]:
+            # Neither a unit nor a separator starts a wrapped line.
+            self.assertNotRegex(line, r"^(s|kHz|channels|·)(\s|$)")
+
+    def test_waveform_in_a_popup_wraps_to_the_popup_not_the_invoking_region(self):
+        # A popup's context region is the one it was invoked from, such as the
+        # 3D View header, which spans the area; Blender sized this popup's region.
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+        selected = self.waveform(view)
+        self.settle(lambda: selected.status == "READY")
+        lines = self.status_lines(view, 2400, 2.0, popup=600)
+        self.assertGreater(len(lines), 1)
+        self.assert_fits(lines, selected.message, 600 - LABEL_MARGIN * 2.0, 2.0)
+        self.assertEqual(self.status_lines(view, 2400, 2.0), [selected.message])
+
+    def test_waveform_in_studio_wraps_to_the_requested_width_from_the_first_draw(self):
+        # Blender builds a popup's layout before it sizes the popup's region, so
+        # Studio's first draw finds that region 0 px wide; a refresh finds it
+        # sized to the requested width plus the popup's margins.
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone(1.0, 44100, channels=2))])
+        selected = self.waveform(view)
+        self.settle(lambda: selected.status == "READY")
+        scale, requested = 2.0, 300
+        first = self.draw_waveform(view, preferences(scale), 2400, popup=0, studio=requested)
+        refreshed = self.draw_waveform(
+            view, preferences(scale), 2400, popup=(requested + 24) * scale, studio=requested
+        )
+        self.assertEqual(first, refreshed)
+        lines = [call[1] for call in first if call[0] == "label"][1:]
+        self.assertEqual(len(lines), 2, lines)
+        self.assert_fits(lines, selected.message, (requested - LABEL_MARGIN) * scale, scale)
+        # The icon also sizes from the requested width, not the 3.0 minimum.
+        self.assertEqual([call[2] for call in first if call[0] == "icon"], [8.0])
 
     def blocked_decode(self):
         """Hold the offline decoder until it is canceled, like a long decode."""

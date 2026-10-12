@@ -219,7 +219,9 @@ default does not move it. Each LoRA keeps its own strength in form order, so
 removing one never shifts another's strength. When the base's description
 changes, the fields take its new range, but a strength outside it is kept and
 the price is blocked with the range until the user edits it; nothing changes
-silently.
+silently. On a base that declares no range, including after the form switches to
+one, each LoRA loses its field, as a LoRA chosen there gets none, and the form is
+priced again with what that base sends, described below.
 
 A LoRA without a strength, such as an ID adopted from an earlier text field, gets
 a **Set strength** button when the base declares a range: the strength then starts

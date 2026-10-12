@@ -12,7 +12,7 @@ import copy
 import sqlite3
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import test_generation as generation_tests
@@ -333,6 +333,166 @@ class TrainedSectionTests(unittest.TestCase):
         self.deliver_default_only(FLUX1, 0.7)  # a catalog refresh: no dirty intent of its own
         self.assertEqual(self.lane.estimate_state, "PENDING")
         self.assert_sends_the_base_default(self.lane.trained[0], 0.7)
+
+    def reload_early(self, body):
+        """Reload a FLUX.1 Dev job before the trained list arrives: its LoRAs have no kind yet."""
+        self.trained.clear()
+        records = submodule("core.jobs.records")
+        job = records.JobRecord.new(
+            "image", "image", FLUX1, body, meta={"prompt": trained_tests.PROMPT}
+        )
+        self.runtime.state.jobs_view[:] = [job]
+        operator = types.SimpleNamespace(local_id=job.local_id, report=MagicMock())
+        operators = submodule("blender.operators")
+        self.assertEqual(
+            operators.SCENARIO_OT_reload_generation.execute(operator, bpy.context), {"FINISHED"}
+        )
+
+    def deliver_list(self):
+        state = self.runtime.state
+        manager, catalog = self.runtime.ensure_manager(), self.runtime.ensure_catalog()
+        self.assertTrue(self.trained.request(manager, catalog))
+        self.settle()
+        self.assertTrue(state.trained_loaded, state.trained_error)
+
+    def deliver(self, record, *, scale=None, accepts=None):
+        """A background refresh of `record`'s description (mark_dirty=False) with these changes."""
+        record = copy.deepcopy(record)
+        for field in record["inputs"]:
+            if field["name"] == "lorasScale" and scale is not None:
+                field.update(scale)
+            elif field["name"] == "loras" and accepts is not None:
+                field["modelTypes"] = accepts
+        catalog = submodule("core.api.catalog")
+        self.generation.set_models([catalog.ModelRecord.from_api(record)], {}, mark_dirty=False)
+        return record
+
+    def test_a_lora_reloaded_before_the_list_loses_its_field_on_a_base_without_a_range(self):
+        """Its kind is still empty, yet only a LoRA has a strength: it sends that base's default."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        self.reload_early({"prompt": trained_tests.PROMPT, "loras": [LORA_A], "lorasScale": [1.5]})
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.kind, slot.has_scale, round(slot.scale, 4)), ("", True, 1.5))
+        self.deliver_default_only(ZIMAGE, 0.6)
+        self.lane.model_id = ZIMAGE  # its update runs on_model_changed, as the Model box does
+        self.assertFalse(self.lane.trained[0].has_scale)
+        self.deliver_list()  # names it a LoRA: the strength the job sent is not sent again
+        self.assertEqual(self.lane.trained[0].kind, "lora")
+        self.assert_sends_the_base_default(self.lane.trained[0], 0.6)
+
+    def test_a_lora_reloaded_before_the_list_takes_the_range_its_base_declares_now(self):
+        self.load_catalog()
+        self.open_trained()
+        self.reload_early({"prompt": trained_tests.PROMPT, "loras": [LORA_A], "lorasScale": [1.5]})
+        self.deliver(self.details[FLUX1], scale={"max": 1.2})
+        slot = self.lane.trained[0]
+        self.assertEqual((slot.kind, slot.fmin, round(slot.fmax, 4)), ("", 0.0, 1.2))
+        self.assertEqual(round(slot.scale, 4), 1.5)  # kept, never changed silently
+        self.deliver_list()
+        self.assertEqual(self.errors(), ["LoRA Scale: use a strength from 0 to 1.2."])
+        self.assertIn(("scale", "Strength (0 to 1.2)"), self.section().props())
+        self.lane.trained[0].scale = 1.5
+        self.assertEqual(round(self.lane.trained[0].scale, 4), 1.2)
+        self.assertEqual(self.body()["lorasScale"], [1.2])
+
+    def test_a_refresh_changing_the_range_reprices_a_quoted_form(self):
+        """A kept strength the new range refuses never leaves a ready price and Generate on."""
+        self.load_catalog()
+        self.open_trained()
+        self.pick(LORA_A, 1.5)
+        self.lane.estimate_state = "READY"  # a price for the strength of 1.5 within 0 to 2
+        narrowed = self.deliver(self.details[FLUX1], scale={"max": 1.2})
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.errors(), ["LoRA Scale: use a strength from 0 to 1.2."])
+        # The same range read again, stored as 32-bit bounds, keeps a quoted form quoted.
+        self.lane.trained[0].scale = 1.0
+        self.lane.estimate_state = "READY"
+        self.deliver(narrowed)
+        self.assertEqual(self.lane.estimate_state, "READY")
+
+    def test_a_refresh_changing_what_a_lora_without_a_strength_sends_reprices_a_quoted_form(self):
+        """No slot changes, but the declared default it sends, or the route, does."""
+        flux1 = copy.deepcopy(self.details[FLUX1])
+        next(f for f in flux1["inputs"] if f["name"] == "lorasScale")["default"] = 0.7
+        self.details[FLUX1] = flux1
+        self.load_catalog()
+        self.open_trained()
+        self.lane.model_id = FLUX1
+        self.add_unscaled(LORA_A, "Public LoRA")
+        self.assertEqual(self.body()["lorasScale"], [0.7])
+        self.lane.estimate_state = "READY"
+        lowered = self.deliver(flux1, scale={"default": 0.5})
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.body()["lorasScale"], [0.5])
+        self.assertIn(
+            ("Strength: the base model's default (0.5)", "BLANK1"), self.section().labels()
+        )
+        self.lane.estimate_state = "READY"
+        self.deliver(lowered)  # read again unchanged
+        self.assertEqual(self.lane.estimate_state, "READY")
+        self.deliver(lowered, accepts=["flux.2-lora"])  # the base no longer runs this LoRA
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(len(self.errors()), 1)
+        self.assertIn("flux.1-lora", self.errors()[0])
+
+    def test_a_base_model_refresh_in_the_catalog_reprices_the_trained_choice_it_changes(self):
+        """The catalog's default models (Z-Image) are refreshed through set_catalog."""
+        self.load_catalog()
+        self.open_trained()
+        self.deliver_default_only(ZIMAGE, 0.6)
+        self.lane.model_id = ZIMAGE
+        self.add_unscaled(LORA_A, "Public LoRA")
+        self.assertEqual(self.body()["lorasScale"], [0.6])
+        state, catalog = self.runtime.state, submodule("core.api.catalog")
+        zimage = copy.deepcopy(self.details[ZIMAGE])
+        next(f for f in zimage["inputs"] if f["name"] == "lorasScale")["default"] = 0.4
+        listed = list(state.records.values())
+        self.lane.estimate_state = "READY"
+        self.generation.set_catalog(listed, [catalog.ModelRecord.from_api(zimage)], warmup=True)
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.body()["lorasScale"], [0.4])
+        self.lane.estimate_state = "READY"
+        again = catalog.ModelRecord.from_api(copy.deepcopy(zimage))
+        self.generation.set_catalog(listed, [again], warmup=True)
+        self.assertEqual(self.lane.estimate_state, "READY")
+
+    def test_job_views_and_render_inspection_record_the_strength_each_pick_sends(self):
+        """A LoRA without a strength sends its base's declared default; a composition sends none."""
+        flux1 = copy.deepcopy(self.details[FLUX1])
+        for field in flux1["inputs"]:
+            if field["name"] == "lorasScale":
+                field.pop("min"), field.pop("max")
+                field["default"] = 0.7
+        self.details[FLUX1] = flux1
+        self.load_catalog()
+        self.open_trained()
+        self.highlight(LORA_A)
+        self.assertEqual(bpy.ops.scenario.pick_model(lane="image"), {"FINISHED"})
+        (slot,) = self.lane.trained
+        self.assertFalse(slot.has_scale)
+        self.assertEqual(self.body()["lorasScale"], [0.7])
+        meta = self.generation.request_meta(bpy.context, "image")
+        self.assertEqual(
+            meta["trained_models"],
+            [{"model_id": LORA_A, "name": slot.name, "kind": "lora", "strength": 0.7}],
+        )
+        render = self.scene.scenario.lane_state("render_image")
+        self.open_trained("render_image")
+        self.highlight(LORA_A)
+        self.assertEqual(bpy.ops.scenario.pick_model(lane="render_image"), {"FINISHED"})
+        self.assertFalse(render.trained[0].has_scale)
+        result = submodule("mcp.tools_scenario").render_form({"lane": "render_image"})
+        self.assertEqual(
+            result["trained_models"], [{"model_id": LORA_A, "kind": "lora", "strength": 0.7}]
+        )
+        self.open_trained()
+        self.pick(COMPOSITION)
+        (slot,) = self.lane.trained
+        self.assertEqual(
+            self.generation.request_meta(bpy.context, "image")["trained_models"],
+            [{"model_id": COMPOSITION, "name": slot.name, "kind": "composition", "strength": None}],
+        )
 
     def reset_scale(self, index):
         """What Blender's Reset to Default Value (Backspace over the field) does: assign

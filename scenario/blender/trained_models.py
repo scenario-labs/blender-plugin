@@ -11,6 +11,8 @@ local MCP and the quote check use. trained_section draws the choice with its
 strengths, and trained_defaults keeps the explicit per-scope project defaults.
 """
 
+import math
+
 import bpy
 from bpy.props import IntProperty, StringProperty
 
@@ -547,12 +549,23 @@ def lora_strength(model_id, lora_id):
     return trained_offers.strength(slot, runtime.state.trained_records.get(lora_id))
 
 
+def _same_range(slot, strength):
+    """Whether a slot holds this range already; its 32-bit bounds never read back 1.2 exactly."""
+    return math.isclose(slot.fmin, strength.minimum, rel_tol=1e-6, abs_tol=1e-9) and (
+        math.isclose(slot.fmax, strength.maximum, rel_tol=1e-6, abs_tol=1e-9)
+    )
+
+
 def sync_bounds(lane_state):
     """Give each LoRA strength control the range its base declares now (main thread, not draw).
 
-    Called when the base's description is (re)loaded or the base changes. A
-    strength outside a narrowed range is kept, not changed silently: the
-    request then refuses it with the range until the user edits it.
+    Called when the base's description is (re)loaded or the base changes. Every
+    strength control counts, including one Reload gave a LoRA before the trained
+    list named its kind (restore); a composition never has one. A strength
+    outside a narrowed range is kept, not changed silently: the request then
+    refuses it with the range until the user edits it. A changed range reprices
+    the form, so a background catalog refresh never leaves a price standing for
+    a strength the request now refuses.
 
     A base that takes LoRAs but declares no range drops each control, as
     write_slots gives none on that base: the LoRA then sends the base's declared
@@ -560,22 +573,25 @@ def sync_bounds(lane_state):
     described yet, or without LoRA inputs, changes nothing.
     """
     strength = base_strength(lane_state.model_id)
+    controls = [
+        slot
+        for slot in lane_state.trained
+        if slot.has_scale and slot.kind != catalog.TRAINED_COMPOSITION
+    ]
     if strength is None:
         if base_slot(lane_state.model_id) is None:
             return
-        dropped = False
-        for slot in lane_state.trained:
-            if slot.kind == catalog.TRAINED_LORA and slot.has_scale:
-                slot.has_scale = False  # a plain property: no update tags the scene
-                dropped = True
-        if dropped:
-            props.mark_estimate_dirty(lane_state)
-        return
-    for slot in lane_state.trained:
-        if slot.kind != catalog.TRAINED_LORA or not slot.has_scale:
-            continue
-        if (slot.fmin, slot.fmax) != (strength.minimum, strength.maximum):
-            slot.fmin, slot.fmax = strength.minimum, strength.maximum
+        for slot in controls:
+            slot.has_scale = False  # a plain property: no update tags the scene
+        changed = bool(controls)
+    else:
+        changed = False
+        for slot in controls:
+            if not _same_range(slot, strength):
+                slot.fmin, slot.fmax = strength.minimum, strength.maximum
+                changed = True
+    if changed:
+        props.mark_estimate_dirty(lane_state)
 
 
 def set_strength(lane_state, index):
@@ -620,14 +636,30 @@ def selection_label(lane_state, base_name):
     return trained_offers.selection_label(base_name, [slot_name(s) for s in lane_state.trained])
 
 
+def sent_strength(lane_state, slot):
+    """The strength a slot sends, as trained_routes.apply resolves it (read-only, safe in draw).
+
+    A LoRA sends its own strength (slot_scale), otherwise the declared default of
+    the lane's base. None for a composition, which applies its own strengths, and
+    for a LoRA that cannot send one: no declared default, a base not described
+    yet, or a model the trained list has not named.
+    """
+    scale = slot_scale(slot)
+    if scale is not None or slot.kind != catalog.TRAINED_LORA:
+        return scale
+    base = base_slot(lane_state.model_id)
+    default = base.scale_default if base is not None else None
+    return None if default is None else float(default)
+
+
 def selection_meta(lane_state):
-    """The chosen trained models for job views: IDs, names, kinds and strengths sent."""
+    """The chosen trained models for job views: IDs, names, kinds and the strength each sent."""
     return [
         {
             "model_id": slot.model_id,
             "name": slot_name(slot),
             "kind": slot.kind,
-            "strength": slot_scale(slot),
+            "strength": sent_strength(lane_state, slot),
         }
         for slot in lane_state.trained
     ]

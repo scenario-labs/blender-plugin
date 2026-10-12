@@ -147,10 +147,7 @@ def process_catalog_events():
 
 
 def set_catalog(records, detailed, *, warmup=False):
-    for rec in detailed:
-        runtime.state.records[rec.id] = rec
-        runtime.state.model_errors.pop(rec.id, None)
-        _schemas.pop(rec.id, None)
+    changed = _store_details(detailed)
     for rec in records:
         runtime.state.records.setdefault(rec.id, rec)
     for lane in props.GENERATION_LANES:
@@ -166,8 +163,11 @@ def set_catalog(records, detailed, *, warmup=False):
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
             restore_model_key(lane_state)
-            # a catalog refresh must not re-price forms that are already quoted
-            on_model_changed(bpy.context, lane_state, mark_dirty=False)
+            # A catalog refresh must not re-price forms that are already quoted, unless
+            # it changed the LoRA inputs their trained choice runs through.
+            on_model_changed(
+                bpy.context, lane_state, mark_dirty=_trained_inputs_changed(lane_state, changed)
+            )
     if bpy.context.scene is not None:
         refresh_3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
         refresh_edit3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
@@ -189,11 +189,31 @@ def restore_model_key(lane_state):
         lane_state["model_id"] = valid.index(key)
 
 
-def set_models(detailed, failed, *, mark_dirty=True):
+def _store_details(detailed):
+    """Keep fresh model descriptions; returns the IDs whose declared LoRA inputs changed.
+
+    A form whose trained choice runs through such a base is priced again even
+    when none of its slots changes: the declared default a LoRA without its own
+    strength sends, or whether the choice runs at all, may differ. Slots that do
+    change are repriced by trained_models.sync_bounds.
+    """
+    changed = set()
     for rec in detailed:
+        before = trained_models.base_slot(rec.id)
         runtime.state.records[rec.id] = rec
         runtime.state.model_errors.pop(rec.id, None)
         _schemas.pop(rec.id, None)
+        if trained_models.base_slot(rec.id) != before:
+            changed.add(rec.id)
+    return changed
+
+
+def _trained_inputs_changed(lane_state, changed):
+    return lane_state.model_id in changed and len(lane_state.trained) > 0
+
+
+def set_models(detailed, failed, *, mark_dirty=True):
+    changed = _store_details(detailed)
     for model_id, reason in failed.items():
         runtime.set_message(f"{model_id}: {reason}")
     succeeded = {r.id for r in detailed}
@@ -217,7 +237,9 @@ def set_models(detailed, failed, *, mark_dirty=True):
                 on_model_changed(
                     bpy.context,
                     lane_state,
-                    mark_dirty=mark_dirty or lane_state.model_id in dirty_models,
+                    mark_dirty=mark_dirty
+                    or lane_state.model_id in dirty_models
+                    or _trained_inputs_changed(lane_state, changed),
                 )
             elif lane_state.model_id in unavailable:
                 lane_state.last_error = unavailable[lane_state.model_id]

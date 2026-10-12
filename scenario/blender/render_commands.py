@@ -123,12 +123,13 @@ def inspect(scene, lane):
         "parameters": {
             key: value for key, value in values.items() if enabled.get(key) and key not in hidden
         },
-        # LoRAs or a composition chosen in the native picker; quotes and generation include them.
+        # LoRAs or a composition chosen in the native picker; quotes and generation include them,
+        # with the strength each sends (a LoRA without its own sends the base's declared default).
         "trained_models": [
             {
                 "model_id": slot.model_id,
                 "kind": slot.kind,
-                "strength": trained_models.slot_scale(slot),
+                "strength": trained_models.sent_strength(state, slot),
             }
             for slot in state.trained
         ],

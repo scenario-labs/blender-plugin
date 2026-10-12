@@ -31,15 +31,21 @@ establish live generation or full render-lane desktop acceptance.
   dry run resolves that asset ID (an unknown ID returns HTTP 404) but does not
   check which inputs may be combined: on 2026-10-10 it priced a Seedance 2.0 Fast
   first frame sent with the scene clip. The service accepts that submission, then
-  the job fails because an image and reference videos aren't allowed together.
-  Seedance 2.x, Minimax H3 and Wan 3.0 state that limit only in input description
-  text. Their first frame is now sent as image 1 of the reference images with the
-  clip, and every shared quote path refuses a first frame sent with reference
-  images or videos on these models (see the input-exclusivity limits below). No
-  successful paid Render Video job has used a first frame sent this way, so how
-  closely the clip opens on that image is unverified. The native control has
-  installed tests only: its desktop interaction and the undo step recorded from
-  the maintenance pump are unproven on Blender 5.0, 5.1 and 5.2. The handoff
+  the job fails because an image and reference videos aren't allowed together
+  (the service reimburses failed generation jobs). Seedance 2.x, Minimax H3 and
+  Wan 3.0 state that limit only in input description text. Their first frame is
+  now sent as image 1 of the reference images with the clip, and every shared
+  quote path refuses a first frame sent with reference images or videos on these
+  models (see the input-exclusivity limits below). On 2026-10-10 one paid
+  Seedance 2.0 Fast job sent a handed-off frame this way from local MCP and
+  succeeded, on a build that preceded the merged control. No Minimax H3 or Wan
+  3.0 job has run, and how closely a clip opens on its image has not been
+  reviewed. Seedance 2.0 Mini's first-frame exclusivity is a known service-side
+  issue, already reported to the Scenario backend team. A physical desktop pass
+  on macOS arm64 Blender 5.1.2, at UI scales 1.0 and 2.0 on pre-merge builds,
+  confirmed, bound and removed a handed-off frame and undid and redid the binding
+  as one step; Blender 5.0 and 5.2 and the merged build have no desktop evidence,
+  and capturing the scene clip for a ready quote was not exercised there. The handoff
   stores no file path, so the blend shows no first-frame thumbnail. Render forms
   accept a written look or the default look with automatic Spark disabled. An
   empty automatic look requires its own exact Spark quote, approval and guarded
@@ -197,7 +203,13 @@ establish live generation or full render-lane desktop acceptance.
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.
   Other image results, such as WebP, or JPEG and ACES-labelled OpenEXR outside
-  World, stay saved with the job without import.
+  World, stay saved with the job without import. The World review's format line
+  for an ACES-labelled result, *ACES-labelled OpenEXR (float, AP0 as
+  ACES2065-1)*, comes from the server's media type. On 2026-10-10 the EXR
+  original of a paid HDRi Skybox result declared no primaries, so Blender
+  decoded it as Linear Rec.709 under that line; only the file's own declarations
+  select the color space (see
+  [OpenEXR color primaries](WORLD_APPLICATION.md#openexr-color-primaries)).
 - Saved GLB, JSON glTF, FBX, OBJ and mesh PLY results import as a new group, but
   package binding without persisted asset lineage is conservative: several OBJ or
   glTF files, several MTLs or several maps for one slot stay unbound and are
@@ -262,9 +274,16 @@ establish live generation or full render-lane desktop acceptance.
   only after a text edit that received a composition. After another edit, such
   as an Outliner rename cancelled with Esc, selecting an input method can route
   keys to it while no field is editing; by that reading, letter keys then miss
-  viewport shortcuts too. Installed tests simulate these events; physical
-  composition, candidate-window placement and other platforms' input methods
-  remain unverified under #66.
+  viewport shortcuts too. Installed tests simulate these events. A physical pass
+  on macOS arm64 Blender 5.1.2 with a French layout opened the F2 field at the
+  pointer at UI scales 1.0 and 2.0 (at 2.0 it covers the prompt line and its
+  caret), typed dead keys directly and, after an Outliner rename cancelled with
+  Esc, brought a whole Japanese composition into the prompt without losing
+  keys. With the Japanese input source selected by the test driver rather than
+  by a person, the F2 field received raw romaji, as Blender's own fields did,
+  and a composition there took three Esc or Return presses to cancel or apply.
+  Composition with an input source a person selects, candidate-window placement
+  and other platforms' input methods remain unverified under #66.
 - The composer's [job strip](UI_STYLE.md#compact-job-strip) shows only jobs
   submitted from that scene and form in the current Blender session: jobs from
   before a restart, recovered cloud jobs, workflows and Film tasks are not bound
@@ -275,6 +294,14 @@ establish live generation or full render-lane desktop acceptance.
   desktop interaction, alternate UI scales and screenshots remain #66 work.
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
+- Film looks for `ffprobe`, and video capture also for `ffmpeg`, only on the
+  `PATH` that Blender's process inherits. On macOS, Blender started from Finder
+  or the Dock does not get a terminal's `PATH`, so tools installed by a package
+  manager such as Homebrew are reported missing even though they run in a
+  terminal. A desktop pass on macOS arm64 Blender 5.1.2 with such a `PATH`
+  stopped review preparation with *Install ffprobe on PATH before inspecting
+  Film media*; export instead falls back to its weaker Blender decode check.
+  Start Blender from a terminal whose `PATH` includes the tools.
 - Saved shared video and audio results offer **Play**, **Play in Blender** for
   video and **Waveform** for audio in their saved-job controls. Retained
   prototype results keep Play and Add to sequencer, without a waveform. Beyond
@@ -382,12 +409,16 @@ establish live generation or full render-lane desktop acceptance.
   that is already a member is refused as a whole and writes nothing, as the
   service was observed to behave; the review then reads the asset back as
   verified without another request. This is not yet checked live from this
-  repository. DELETE body survival through the production edge, name uniqueness,
-  tag normalization and service limits are unverified live. On macOS, Japanese
-  IME composition did not start in the Organize dialog's Tags field, as in
-  Blender's own text fields, where pasting the text worked. Apply on a desktop,
-  and the card placement and read-enabled controls described in the UI contract,
-  still need a physical desktop check under
+  repository. On 2026-10-10 a free live run from a pre-merge build applied and
+  read back one asset's collection add and removal and tag changes, through local
+  MCP and the native operators in background Blender, so that removal's DELETE
+  body reached the service; name uniqueness, tag normalization and service limits
+  are unverified live. On macOS, Japanese IME composition did not start in the
+  Organize dialog's Tags field, as in Blender's own text fields, where pasting the
+  text worked. A read-only physical pass on macOS arm64 Blender 5.1.2 checked the
+  card placement and read-enabled controls at UI scales 1.0 and 2.0; at 2.0 only
+  the review card's header shows at the bottom of the Studio popup until it is
+  scrolled. Apply on a desktop still needs a physical check under
   [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
 
 ## Verification

@@ -150,7 +150,8 @@ def _base_waiting(base_id, read):
     """Why a base without its description cannot be checked yet, or the reason it never will.
 
     A default starts at most one description read per base and selection: a read
-    that delivers no inputs is not repeated by every pump tick.
+    that delivers no inputs is not repeated by every pump tick. A read that could
+    not start is not counted, so the next pump tick tries to start it again.
     """
     from . import generation
 
@@ -165,9 +166,8 @@ def _base_waiting(base_id, read):
     context = owner.context_id if owner is not None else None
     if context is not None and _reads.get(base_id) == context:
         return "", "Its base model's description declares no inputs."
-    if read:
+    if read and generation.request_model(base_id, mark_dirty=False):
         _reads[base_id] = context
-        generation.request_model(base_id, mark_dirty=False)
     return "loading its base model.", ""
 
 

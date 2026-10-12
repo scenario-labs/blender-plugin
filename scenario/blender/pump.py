@@ -69,6 +69,7 @@ def _process():
     # Forms without an explicit choice take the scope's project default before any price.
     try:
         changed |= trained_defaults.apply_pending()
+        _failures.pop("defaults", None)  # a failure that comes back after this is new
     except Exception as error:  # never let it stop pricing; report each new failure once
         if type(error).__name__ != _failures.get("defaults"):
             _failures["defaults"] = type(error).__name__

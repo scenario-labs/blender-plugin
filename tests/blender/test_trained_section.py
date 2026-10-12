@@ -252,6 +252,33 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertEqual(round(slot.scale, 4), 1.2)
         self.assertEqual(self.body()["lorasScale"], [1.2])
 
+    def test_resetting_a_strength_gives_the_base_s_starting_strength(self):
+        """Backspace over the field must not switch the LoRA off with a strength of 0.
+
+        Blender's Reset to Default Value assigns the property's RNA default and
+        runs its update, as the assignment below does.
+        """
+        self.load_catalog()
+        self.open_trained()
+        self.pick(LORA_A, 0.35)
+        (slot,) = self.lane.trained
+        reset = type(slot).bl_rna.properties["scale"].default
+        self.lane.estimate_state = "READY"
+        slot.scale = reset  # the captured FLUX.1 Dev base declares no default
+        self.assertEqual(round(slot.scale, 4), 1.0)
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.body()["lorasScale"], [1.0])
+        declared = copy.deepcopy(self.details[FLUX1])
+        for field in declared["inputs"]:
+            if field["name"] == "lorasScale":
+                field["default"] = 0.6
+        catalog = submodule("core.api.catalog")
+        self.generation.set_models([catalog.ModelRecord.from_api(declared)], {}, mark_dirty=False)
+        slot.scale = 0.35
+        slot.scale = reset
+        self.assertEqual(round(slot.scale, 4), 0.6)
+        self.assertEqual(self.body()["lorasScale"], [0.6])
+
     def test_composition_concepts_are_listed_read_only(self):
         self.load_catalog()
         self.open_trained()
@@ -609,6 +636,33 @@ class TrainedSectionTests(unittest.TestCase):
         self.assertFalse(len(self.lane.trained))
         self.assertIn("Its base model's description declares no inputs.", self.errors()[0])
 
+    def test_a_base_read_that_could_not_start_is_tried_again(self):
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        catalog = submodule("core.api.catalog")
+        self.runtime.state.records[FLUX1] = catalog.ModelRecord.from_api(
+            trained_tests.row(self.details[FLUX1])
+        )
+        self.release(self.lane)
+        render = self.scene.scenario.lane_state("render_image")
+        render.model_id = ZIMAGE  # no form shows the base whose description is missing
+        reads = len(self.gets(FLUX1))
+        with patch.object(self.generation, "request_model", return_value=False) as refused:
+            for _tick in range(3):
+                self.defaults.apply_pending()
+                self.settle()
+            self.assertEqual(refused.call_count, 3)  # a start that failed is not a read
+            reason = self.errors()[0]
+        self.assertIn("loading its base model.", reason)
+        self.assertNotIn("declares no inputs", reason)
+        self.assertEqual(len(self.gets(FLUX1)), reads)
+        self.defaults.apply_pending()  # the read starts now
+        self.settle()
+        self.assertTrue(self.defaults.apply_pending())
+        self.assertEqual(len(self.gets(FLUX1)), reads + 1)
+        self.assertEqual((self.lane.model_key, len(self.lane.trained)), (FLUX1, 2))
+
     def test_an_automatic_default_keeps_origins_captured_before_it(self):
         """A default landing in a form without a choice is not a scene edit (#387).
 
@@ -712,6 +766,27 @@ class TrainedSectionTests(unittest.TestCase):
             pump._process()
         self.assertEqual(len(logs.records), 1)  # reported once per failure type
         self.assertEqual(self.lane.model_key, "")
+
+    def test_the_pump_reports_a_failure_again_after_defaults_recover(self):
+        self.load_catalog()
+        pump = submodule("blender.pump")
+        self.addCleanup(pump._failures.clear)
+        pump._failures.clear()
+
+        def failing():
+            return patch.object(
+                self.defaults, "apply_pending", side_effect=RuntimeError("synthetic")
+            )
+
+        with self.assertLogs("scenario.pump", "ERROR") as logs:
+            with failing():
+                pump._process()
+                pump._process()
+            with patch.object(self.defaults, "apply_pending", return_value=False):
+                pump._process()  # the step recovers
+            with failing():
+                pump._process()
+        self.assertEqual(len(logs.records), 2)  # the recurrence is reported again
 
     # -- compact composer and job views ----------------------------------------------
     def test_composer_chip_and_job_views_name_the_trained_choice(self):

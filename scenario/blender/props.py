@@ -308,8 +308,30 @@ class ScenarioParamValue(bpy.types.PropertyGroup):
     has_range: BoolProperty(default=False)
 
 
+# The strength's RNA default, which Blender's Reset to Default Value (Backspace
+# over the field) assigns. No base declares it: the update below replaces it with
+# the base's starting strength instead of a 0.0 that would switch the LoRA off.
+# A power of two, so 32-bit storage keeps it exact.
+STRENGTH_RESET = -(2.0**100)
+
+
+def _reset_strength(lane_state):
+    """The strength a reset LoRA gets: its base's declared default, otherwise 1.0."""
+    from ..core.api import trained_offers
+    from . import trained_models
+
+    if lane_state is None:
+        return trained_offers.DEFAULT_STRENGTH
+    strength = trained_models.base_strength(lane_state.model_id)
+    return strength.initial if strength is not None else trained_offers.DEFAULT_STRENGTH
+
+
 def _on_trained_update(self, context):
     if self.has_scale:
+        if self.scale == STRENGTH_RESET:
+            # This assignment runs the callback once more, which bounds it and reprices.
+            self.scale = _reset_strength(_find_lane_state(context, self.lane, self))
+            return
         value = min(max(self.scale, self.fmin), self.fmax)
         if value != self.scale:
             self.scale = value  # this assignment runs the callback once more, within bounds
@@ -333,6 +355,7 @@ class ScenarioTrainedSlot(bpy.types.PropertyGroup):
     scale: FloatProperty(
         name="Strength",
         description="LoRA strength, within the range the base model declares",
+        default=STRENGTH_RESET,
         precision=2,
         step=5,
         update=_on_trained_update,

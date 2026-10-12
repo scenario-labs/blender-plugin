@@ -75,8 +75,12 @@ class ComposerJobStripTests(unittest.TestCase):
         self.enterContext(patch.object(self.draw, "blf", self.fake_blf))
 
     # -- fixtures -----------------------------------------------------------------
-    def submit_image(self, progress=0.42, status="in-progress"):
-        """One Image form job, polled once: the strip's current job for this scene lane."""
+    def submit_image(self, progress=0.42, status="in-progress", job_type="inference"):
+        """One Image form job, polled once: the strip's current job for this scene lane.
+
+        Scenario reports it as `job_type`. Only a poll that confirms an inference job offers Cancel
+        generation; captured model generations report custom."""
+        self.jobs.job_type = job_type
         self.jobs.remote_status, self.jobs.remote_progress = status, progress
         self.jobs.ui_quote()
         view = self.generation.submit_generation(bpy.context, "image")
@@ -250,7 +254,6 @@ class ComposerJobStripTests(unittest.TestCase):
         area_regions[-1] = beside
         self.assertEqual(self.draw.overlap_vertical_insets(area, beside), (0.0, 0.0))
         self.assertEqual(self.draw.overlap_vertical_insets(None, self.region), (0.0, 0.0))
-        # A card dragged up under the headers hides its tray instead of placing it under them.
         area_regions[-1] = self.region
         self.context.area = area
         self.submit_image()
@@ -258,7 +261,17 @@ class ComposerJobStripTests(unittest.TestCase):
         self.assertGreaterEqual(tray.y, 120.0)
         self.assertLessEqual(tray.top, 848.0)
         self.assertLessEqual(tray.right, 1300.0)
+        # A card dragged up stays whole in the viewport, its top under the headers: the tray moves
+        # below it, clear of the headers, instead of under them.
         self.composer.offset = (0.0, 2000.0)
+        geometry = self.draw.composer_geometry(self.context, self.composer)
+        card, tray = geometry.layout.card_rect, geometry.strip.rect
+        self.assertGreater(card.top, 848.0)
+        self.assertFalse(geometry.strip.hidden)
+        self.assertLessEqual(tray.top, card.y)
+        self.assertGreaterEqual(tray.y, 120.0)
+        # With the shelf reaching the card, neither side is clear: the tray hides instead.
+        area_regions[2].height = card.y
         geometry = self.draw.composer_geometry(self.context, self.composer)
         self.assertTrue(geometry.strip.hidden)
         self.assertIsNone(geometry.signature())
@@ -310,6 +323,18 @@ class ComposerJobStripTests(unittest.TestCase):
         target.execute.assert_not_called()
         self.assertEqual(self.jobs.cancel_calls, [])
         self.assertEqual(len(self.jobs.paid), 1)
+
+    def test_a_job_not_confirmed_as_inference_offers_no_cancel_chip(self):
+        # Scenario documents cancellation only for inference jobs; a captured model generation
+        # reports custom, so its tray offers Inspect alone, as its Jobs row offers no Cancel.
+        view = self.submit_image(job_type="custom")
+        shown = self.drawn()
+        self.assertIn("Generating 42%", shown.line)
+        self.assertEqual([chip.key for chip in shown.geometry.job.chips], ["inspect"])
+        self.assertNotIn("Cancel generation", shown.chips)
+        recovery = submodule("blender.job_recovery")
+        self.assertNotIn("cancel", [item.key for item in recovery.result_actions(view)])
+        self.assertEqual(self.jobs.cancel_calls, [])
 
     def test_result_actions_dispatch_alone_or_through_the_job_card(self):
         self.jobs.result_fixture()

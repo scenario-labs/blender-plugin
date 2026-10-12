@@ -247,3 +247,22 @@ def test_picks_from_a_saved_payload_restore_the_route_it_names():
         assert read(slot, payload) == (), payload
     kontext = LoraSlot.from_record(BASES[KONTEXT])
     assert read(kontext, {"modelId": COMPOSITION}) == ()
+
+
+def test_saved_ids_count_a_payload_s_trained_models_without_a_valid_slot():
+    read = trained_offers.saved_ids
+    payload = {"modelId": COMPOSITION, "loras": [LORA_A, LORA_B, LORA_A, 5], "lorasScale": [1]}
+    assert read(BASES[FLUX1], payload) == [COMPOSITION, LORA_A, LORA_B]
+    changed = deepcopy(BASES[FLUX1])
+    changed["uiConfig"]["lorasComponent"]["scaleInput"] = "missing"
+    with pytest.raises(ValueError):
+        LoraSlot.from_record(changed)  # picks_from_payload has no slot to read
+    assert read(changed, {"loras": [LORA_A]}) == [LORA_A]
+    for raw, saved in (
+        (BASES[FLUX1], {"prompt": "a cabin"}),
+        (BASES[FLUX1], None),
+        ({**BASES[FLUX1], "uiConfig": {}}, {"loras": [LORA_A]}),
+        ({"uiConfig": {"lorasComponent": "loras"}}, {"loras": [LORA_A]}),
+        (None, {"loras": [LORA_A]}),
+    ):
+        assert read(raw, saved) == [], (raw, saved)

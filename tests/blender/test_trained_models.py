@@ -14,7 +14,7 @@ import tempfile
 import threading
 import types
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import bpy
 import httpx
@@ -284,6 +284,64 @@ class TrainedModelTests(unittest.TestCase):
             "Could not check every base model: Could not read base model descriptions",
         )
 
+    def test_a_stopped_base_scan_leaves_unread_bases_for_the_next_trained_chip(self):
+        extra = [
+            {
+                "id": f"model_base-{number}",
+                "name": f"Zz Base {number}",
+                "type": "custom",
+                "capabilities": ["txt2img"],
+                "privacy": "public",
+                "status": "trained",
+            }
+            for number in range(1, 6)
+        ]
+        self.public.extend(extra)
+        self.load_catalog()
+        self.open_trained()
+        # Three descriptions after the captured bases fail in a row, which stops the scan.
+        self.assertEqual([len(self.gets(record["id"])) for record in extra], [1, 1, 1, 0, 0])
+        self.assertTrue(self.trained.scan_status("image").startswith("Could not check"))
+        for record in extra:
+            self.details[record["id"]] = {
+                **record,
+                "inputs": [{"name": "prompt", "type": "string"}],
+            }
+        self.open_trained()  # "choose Trained again to retry"
+        self.assertEqual([len(self.gets(record["id"])) for record in extra], [1, 1, 1, 1, 1])
+        self.assertEqual(self.trained.scan_status("image"), "")
+        self.open_trained()  # failed reads wait for an explicit refresh
+        self.assertEqual([len(self.gets(record["id"])) for record in extra], [1, 1, 1, 1, 1])
+
+    def test_the_open_dialog_is_refreshed_when_base_descriptions_arrive(self):
+        self.load_catalog()
+        self.picker.prepare(bpy.context, "image", "trained")  # starts the base reads
+        studio = submodule("blender.studio")
+
+        class Dialog:
+            layout = picker_tests.FakeLayout()
+
+        dialog, region = Dialog(), MagicMock()
+        self.addCleanup(studio._popups.pop, dialog, None)
+        context = types.SimpleNamespace(window_manager=self.wm, region_popup=region)
+        self.picker.SCENARIO_OT_pick_model.draw(dialog, context)
+        self.assertTrue(self.trained.scan_status("image").startswith("Checking base models"))
+        region.tag_refresh_ui.assert_not_called()
+        self.settle()
+        region.tag_refresh_ui.assert_called()
+        rows = {item.model_id: item for item in self.wm.scenario_picker_items}
+        self.assertTrue(rows[STUDIO_LORA].available)
+
+    def test_a_reopened_picker_highlights_the_forms_trained_choice(self):
+        self.load_catalog()
+        self.open_trained()
+        self.assertEqual(self.pick(COMPOSITION), {"FINISHED"})
+        self.open_trained()
+        items = self.wm.scenario_picker_items
+        self.assertEqual(items[self.wm.scenario_picker_index].model_id, COMPOSITION)
+        offer = self.picker.highlighted_offer()
+        self.assertEqual(self.picker.trained_effect(offer, self.picker.chosen_base()), "")
+
     def test_dialog_draw_reads_the_trained_choice_without_writing_it(self):
         self.load_catalog()
         self.open_trained()
@@ -533,6 +591,63 @@ class TrainedModelTests(unittest.TestCase):
         self.assertEqual(self.body()["lorasScale"], [0.3])
         self.assertEqual(bpy.ops.scenario.reload_generation(local_id=plain.local_id), {"FINISHED"})
         self.assertFalse(len(self.lane.trained))
+
+    def test_reload_parameters_never_invents_a_strength_the_job_did_not_send(self):
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description, which declares no default
+        records = submodule("core.jobs.records")
+        body = {"prompt": PROMPT, "loras": [LORA_A]}
+        job = records.JobRecord.new("image", "image", FLUX1, body, meta={"prompt": PROMPT})
+        self.runtime.state.jobs_view[:] = [job]
+        self.assertEqual(bpy.ops.scenario.reload_generation(local_id=job.local_id), {"FINISHED"})
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.model_id, slot.has_scale), (LORA_A, False))
+        request = self.generation.build_request(self.scene, "image", for_estimate=True)
+        self.assertEqual(request.errors, ["LoRA Scale: provide a strength for each LoRA."])
+
+    def test_reload_parameters_warns_about_loras_the_base_can_no_longer_describe(self):
+        self.load_catalog()
+        self.open_trained()
+        records = submodule("core.jobs.records")
+        body = {"prompt": PROMPT, "loras": [LORA_A, STUDIO_LORA], "lorasScale": [0.3, 0.6]}
+        job = records.JobRecord.new("image", "image", FLUX1, body, meta={"prompt": PROMPT})
+        self.runtime.state.jobs_view[:] = [job]
+        # The base's LoRA inputs changed since the job ran: its strength input is gone.
+        record = self.runtime.state.records[FLUX1]
+        record.raw["uiConfig"]["lorasComponent"]["scaleInput"] = "missing"
+        operator = types.SimpleNamespace(local_id=job.local_id, report=MagicMock())
+        operators = submodule("blender.operators")
+        result = operators.SCENARIO_OT_reload_generation.execute(operator, bpy.context)
+        self.assertEqual(result, {"FINISHED"})
+        self.assertFalse(len(self.lane.trained))
+        ((levels, message), _kwargs) = operator.report.call_args
+        self.assertEqual(levels, {"WARNING"})
+        self.assertIn("2 trained model(s) could not be restored", message)
+        # A stack this slot cannot describe (misaligned strengths) is not restored silently either.
+        record.raw["uiConfig"]["lorasComponent"]["scaleInput"] = "lorasScale"
+        misaligned = {"prompt": PROMPT, "loras": [LORA_A], "lorasScale": [0.3, 0.6]}
+        self.assertEqual(self.trained.restore(self.lane, "image", record, misaligned), 1)
+        self.assertEqual(self.trained.restore(self.lane, "image", record, {"prompt": PROMPT}), 0)
+
+    def test_an_adopted_id_replaces_a_price_error_saved_with_the_file(self):
+        """A file saved by an earlier version keeps its refusal until the adopted choice reprices."""
+        self.load_catalog()
+        self.open_trained()  # reads the FLUX.1 Dev description
+        params_ui = submodule("blender.params_ui")
+        self.lane.model_id = FLUX1
+        params_ui.sync_params(self.lane, self.generation.schema_for(FLUX1), FLUX1)
+        item = self.lane.params.add()
+        item.name, item.ptype, item.model_id = "modelId", "model", FLUX1
+        item.str_value, item.enabled = LORA_A, True
+        self.lane.estimate_state = "ERROR"
+        self.lane.estimate_error = "LoRA or Composition Model is a LoRA."
+        # The catalog delivery after opening the file synchronizes the form without repricing it.
+        self.generation.on_model_changed(bpy.context, self.lane, mark_dirty=False)
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.model_id, slot.kind, slot.has_scale), (LORA_A, "lora", False))
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        request = self.generation.build_request(self.scene, "image", for_estimate=True)
+        self.assertEqual(request.errors, ["LoRA Scale: provide a strength for each LoRA."])
 
     def test_an_id_typed_by_an_earlier_version_becomes_the_trained_choice(self):
         """Earlier versions drew the base's LoRA inputs as text; a saved ID is kept, not dropped."""

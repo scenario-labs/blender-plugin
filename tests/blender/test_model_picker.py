@@ -485,6 +485,29 @@ class ModelPickerTests(unittest.TestCase):
         self.assertEqual([len(r) for r in self.picker.chip_rows(range(6))], [6])
         self.assertEqual([len(r) for r in self.picker.chip_rows(range(7))], [4, 3])
 
+    def test_dialog_list_keeps_ok_and_cancel_inside_a_short_window(self):
+        dialogs = Mock(return_value={"RUNNING_MODAL"})
+
+        def rows_for(height, scale):
+            operator = types.SimpleNamespace(lane="image", category="all", layout=FakeLayout())
+            context = types.SimpleNamespace(
+                window_manager=types.SimpleNamespace(invoke_props_dialog=dialogs),
+                window=types.SimpleNamespace(height=height),
+                preferences=types.SimpleNamespace(system=types.SimpleNamespace(ui_scale=scale)),
+            )
+            with patch.object(self.picker, "prepare"):
+                result = self.picker.SCENARIO_OT_pick_model.invoke(operator, context, None)
+            self.assertEqual(result, {"RUNNING_MODAL"})
+            self.picker.SCENARIO_OT_pick_model.draw(operator, bpy.context)
+            (call,) = [c for node in operator.layout.walk() for c in node.named("template_list")]
+            return call[2]["rows"]
+
+        # A 917 pt window on a Retina display: system UI scale 2 at a resolution scale of 1, 4 at 2.
+        self.assertEqual(rows_for(1834, 2.0), 10)
+        self.assertEqual(rows_for(1834, 4.0), 3)
+        self.assertEqual(rows_for(900, 4.0), self.picker.MIN_LIST_ROWS)
+        self.assertEqual(rows_for(0, 0.0), 10)  # no window size (background): the usual list
+
     def test_dialog_draw_material_lane_shows_a_centred_header_without_tabs(self):
         self.picker.prepare(bpy.context, "material")
         root = self.draw_dialog()

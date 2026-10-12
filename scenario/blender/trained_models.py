@@ -136,7 +136,15 @@ def _refresh_picker():
 def _scan(lane):
     return runtime.state.trained_scans.setdefault(
         lane,
-        {"pending": False, "checked": 0, "total": 0, "failed": 0, "error": "", "attempted": set()},
+        {
+            "pending": False,
+            "checked": 0,
+            "total": 0,
+            "failed": 0,
+            "error": "",
+            "ids": (),  # the running scan's models, in read order
+            "attempted": set(),  # models a scan reached; only a refresh reads them again
+        },
     )
 
 
@@ -145,7 +153,8 @@ def request_bases(lane):
 
     Runs only for a picker showing trained models, never on catalog refresh.
     Descriptions are cached per connection, so each base is read at most once
-    unless an explicit refresh retries failures. Returns whether reads are pending.
+    unless an explicit refresh retries failures. Models a stopped scan never
+    reached are read by the next call. Returns whether reads are pending.
     """
     lane = trained_lane(lane)
     runtime.sync_catalog_context()  # may retire the connection and its scans first
@@ -176,8 +185,7 @@ def request_bases(lane):
     ids = trained_offers.base_candidates(lane, list(state.records.values()), scan["attempted"])
     if not ids:
         return False
-    scan.update(pending=True, checked=0, total=len(ids), failed=0, error="")
-    scan["attempted"].update(ids)
+    scan.update(pending=True, checked=0, total=len(ids), failed=0, error="", ids=tuple(ids))
     manager.fetch_base_schemas(connection, lane, ids)
     return True
 
@@ -188,6 +196,9 @@ def on_bases(payload):
     scan = _scan(payload["lane"])
     if payload["detailed"]:
         generation.set_models(payload["detailed"], {}, mark_dirty=False)
+    # Only the models this scan reached count as attempted: when three failures in a
+    # row stop it, the next Trained chip reads the rest.
+    scan["attempted"].update(scan["ids"][: payload["checked"]])
     scan.update(
         checked=payload["checked"],
         total=payload["total"],
@@ -288,19 +299,24 @@ def apply_to(lane_state, record, body):
         return body, "Refresh the model; its LoRA inputs could not be read."
 
 
-def _resolved(chosen, slot):
-    """Give every LoRA with a strength control a concrete, bounded strength."""
+def _resolved(chosen, slot, *, visible_start=True):
+    """Give every LoRA with a strength control a bounded strength.
+
+    A new choice without one starts at the control's visible value. With
+    visible_start=False (a saved job), a LoRA saved without a strength keeps
+    none unless the base declares a default, so the price asks for one (#376).
+    """
     strength = trained_offers.strength(slot)
-    return [
-        (
-            model_id,
-            kind,
-            strength.clamp(strength.initial if scale is None else scale)
-            if kind == catalog.TRAINED_LORA and strength is not None
-            else None,
-        )
-        for model_id, kind, scale in chosen
-    ]
+    resolved = []
+    for model_id, kind, scale in chosen:
+        value = None
+        if kind == catalog.TRAINED_LORA and strength is not None:
+            if scale is not None:
+                value = strength.clamp(scale)
+            elif visible_start or slot.scale_default is not None:
+                value = strength.initial
+        resolved.append((model_id, kind, value))
+    return resolved
 
 
 def _write(lane_state, lane, chosen, slot, scope):
@@ -364,29 +380,39 @@ def choose(context, lane, offer, base_id, scale=None):
 
 
 def restore(lane_state, lane, record, payload):
-    """Rebuild the lane's choice from a saved payload; returns how many models were skipped.
+    """Rebuild the lane's choice from a saved payload; returns how many models it could not restore.
 
     Called by Reload parameters: the form gets exactly the job's LoRAs and
     composition when they are still listed, and nothing from the former form.
+    A LoRA the job sent without a strength gets none here either. Models in
+    inputs the base's current schema cannot describe count as not restored.
     """
     lane_state.trained.clear()
     props.mark_estimate_dirty(lane_state)
+    saved = len(trained_offers.saved_ids(record.raw, payload))
     try:
         slot = LoraSlot.from_record(record.raw)
     except ValueError:
         slot = None
     wanted = trained_offers.picks_from_payload(slot, payload) if slot is not None else ()
+    named = max(saved, len(wanted))
     scope = current_scope()
     if not wanted or scope is None:
-        return len(wanted)
+        return named
     kinds = {item.id: kind for kind, item in runtime.state.trained_pairs}
     chosen = [
         (pick.model_id, kinds[pick.model_id], pick.scale)
         for pick in wanted
         if kinds.get(pick.model_id) in catalog.USABLE_TRAINED_KINDS
     ]
-    _write(lane_state, trained_lane(lane), _resolved(chosen, slot), slot, scope)
-    return len(wanted) - len(chosen)
+    _write(
+        lane_state,
+        trained_lane(lane),
+        _resolved(chosen, slot, visible_start=False),
+        slot,
+        scope,
+    )
+    return named - len(chosen)
 
 
 def adopt_typed(lane_state, item):
@@ -398,8 +424,9 @@ def adopt_typed(lane_state, item):
     choice instead of disappearing silently from the request: it runs when it
     is listed and the base accepts it, otherwise it blocks the price with the
     reason, and the Model row offers its remove button. A choice saved without
-    a connection gets no scope tag and must be chosen again. Returns whether a
-    choice was added.
+    a connection gets no scope tag and must be chosen again. The form is priced
+    again, so a price error saved with the file gives way to the current reason.
+    Returns whether a choice was added.
     """
     value = item.str_value.strip()
     if item.ptype != "model" or not item.enabled or not value or len(lane_state.trained):
@@ -412,6 +439,7 @@ def adopt_typed(lane_state, item):
     slot.kind = kind if kind in catalog.USABLE_TRAINED_KINDS else ""
     slot.name = state.trained_records[value].name if slot.kind else value
     slot[SCOPE] = current_scope() or ""
+    props.mark_estimate_dirty(lane_state)
     return True
 
 
@@ -491,4 +519,4 @@ def unregister():
         try:
             bpy.utils.unregister_class(cls)
         except RuntimeError:
-            pass
+            pass  # already unregistered (a partial registration or tests swapping the module)

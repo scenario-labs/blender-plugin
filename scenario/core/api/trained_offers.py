@@ -27,6 +27,7 @@ __all__ = [
     "offers",
     "picks_from_payload",
     "runs",
+    "saved_ids",
     "strength",
 ]
 
@@ -232,3 +233,23 @@ def picks_from_payload(slot, payload):
     ):
         return ()
     return tuple(Pick(item, float(value)) for item, value in zip(loras, scales, strict=True))
+
+
+def saved_ids(raw, payload):
+    """Model IDs a saved payload holds in the LoRA inputs a base record names, read leniently.
+
+    Unlike picks_from_payload, this needs no valid slot: a restore can still
+    count the trained models of a job whose base's LoRA inputs changed since.
+    """
+    ui = raw.get("uiConfig") if isinstance(raw, dict) else None
+    component = ui.get("lorasComponent") if isinstance(ui, dict) else None
+    if not isinstance(component, dict) or not isinstance(payload, dict):
+        return []
+    ids = []
+    for key in ("modelIdInput", "modelInput"):
+        name = component.get(key)
+        value = payload.get(name) if isinstance(name, str) and name else None
+        for item in value if isinstance(value, list) else [value]:
+            if isinstance(item, str) and item and item not in ids:
+                ids.append(item)
+    return ids

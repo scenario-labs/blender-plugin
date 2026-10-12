@@ -38,6 +38,12 @@ log = logging.getLogger("scenario.picker")
 # Thumbnails fetched per refilter: the rows a user can scroll to before typing again.
 THUMB_LIMIT = 40
 CHIPS_PER_ROW = 6  # more category chips than this wrap onto two centred rows
+LIST_ROWS = 10  # list rows when the window has room for the whole dialog
+MIN_LIST_ROWS = 2
+UNIT = 20  # one interface row in pixels at a UI scale of 1
+# The dialog's height without its list rows, in interface rows: title, tabs, chips,
+# search, the list frame, the highlighted model's box and the OK/Cancel row.
+DIALOG_ROWS = 19
 RECENT_FILE = "recent_models.json"
 TRAINED = model_filter.TRAINED_CATEGORY
 _ctx = {
@@ -237,7 +243,9 @@ def _refilter_trained(wm):
     chosen = lane_state.trained if lane_state is not None else ()
     highlighted = chosen[0].model_id if len(chosen) else ""
     items = wm.scenario_picker_items
-    if 0 <= wm.scenario_picker_index < len(items):
+    # Keep a highlighted trained row; a base model row left by another chip (prepare
+    # passes through All) gives way to the form's current choice.
+    if 0 <= wm.scenario_picker_index < len(items) and items[wm.scenario_picker_index].kind:
         highlighted = items[wm.scenario_picker_index].model_id
     items.clear()
     index = 0
@@ -275,10 +283,17 @@ def trained_view_open(wm=None):
 
 
 def refresh_trained():
-    """Rebuild trained rows when their records or base descriptions change (main thread, not draw)."""
+    """Rebuild trained rows when their records or base descriptions change (main thread, not draw).
+
+    The open dialog is a temporary popup region that an area redraw misses, so it is
+    refreshed through the same helper as Studio's popup.
+    """
     wm = bpy.context.window_manager
     if trained_view_open(wm):
         refilter(wm)
+        from . import studio
+
+        studio.redraw_popups()
 
 
 def refilter(wm):
@@ -635,6 +650,21 @@ def category_labels(record):
 
 
 # -- dialog layout --------------------------------------------------------------------
+def list_rows(context):
+    """List rows that keep the whole dialog, OK and Cancel included, inside the window.
+
+    Blender keeps a dialog within its window but never shrinks it, so at a large
+    UI scale a ten-row list would push OK and Cancel off-screen. The window height
+    is in pixels; the system UI scale includes the display density.
+    """
+    window = getattr(context, "window", None)
+    if window is None or not window.height:
+        return LIST_ROWS
+    scale = context.preferences.system.ui_scale or 1.0
+    rows = int(window.height / scale / UNIT) - DIALOG_ROWS
+    return max(MIN_LIST_ROWS, min(LIST_ROWS, rows))
+
+
 def chip_rows(chips, per_row=CHIPS_PER_ROW):
     """The category chips as one row, or two balanced rows when there are more than `per_row` (Video has 8, Image
     with its Trained chip and 3D have 9, Audio 5)."""
@@ -755,9 +785,14 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
 
     def invoke(self, context, event):
         prepare(context, self.lane, self.category)
+        self._rows = list_rows(context)
         return context.window_manager.invoke_props_dialog(self, width=620)
 
     def draw(self, context):
+        from . import studio
+
+        # Base descriptions keep arriving while the dialog is open; the pump refreshes it.
+        studio.track_popup(self, getattr(context, "region_popup", None))
         wm = context.window_manager
         layout = self.layout
         layout.separator()  # breathing room under the title, as in the composer
@@ -782,7 +817,7 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
             "scenario_picker_items",
             wm,
             "scenario_picker_index",
-            rows=10,
+            rows=getattr(self, "_rows", LIST_ROWS),
         )
         if is_trained_view(wm):
             if not wm.scenario_picker_items:

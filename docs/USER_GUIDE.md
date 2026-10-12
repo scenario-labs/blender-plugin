@@ -240,10 +240,12 @@ names the base models that run it, for example **LoRA via FLUX.1 Dev**. A greyed
 row explains why it cannot run in this form.
 
 Highlight a LoRA, check the base under **Runs with** (or choose one under **Run
-with** when several fit), set its **Strength** within the range the base declares
-(it starts at 1 when the base declares no default), and click OK. The form
-switches to that base and adds the LoRA; choose another LoRA the same way to stack
-it, or choose a LoRA again to change its strength. A composition already combines
+with** when several fit), set its **Strength** within the range the base declares,
+and click OK. As in Scenario's web app, the strength starts at the LoRA's own
+strength when it declares one, otherwise at 0.75, kept within that range;
+resetting the field returns to that value. The form switches to that base and
+adds the LoRA; choose another LoRA the same way to stack it, or choose a LoRA
+again to change its strength. A composition already combines
 its LoRAs with their own strengths, so it replaces the form's choice. The box says
 before OK whether your choice adds to or replaces what the form holds.
 

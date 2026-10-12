@@ -302,19 +302,24 @@ def apply_to(lane_state, record, body):
 def _resolved(chosen, slot, *, visible_start=True):
     """Give every LoRA with a strength control a bounded strength.
 
-    A new choice without one starts at the control's visible value. With
-    visible_start=False (a saved job), a LoRA saved without a strength keeps
-    none unless the base declares a default, so the price asks for one (#376).
+    A new choice without one starts at the control's visible value: the LoRA's
+    own declared strength, otherwise the web app's default (trained_offers.strength).
+    With visible_start=False (a saved job), a LoRA saved without a strength keeps
+    none unless the base declares a default, the strength the service applied, so
+    the price asks for one (#376).
     """
-    strength = trained_offers.strength(slot)
+    records = runtime.state.trained_records
     resolved = []
     for model_id, kind, scale in chosen:
         value = None
+        strength = trained_offers.strength(slot, records.get(model_id))
         if kind == catalog.TRAINED_LORA and strength is not None:
             if scale is not None:
                 value = strength.clamp(scale)
-            elif visible_start or slot.scale_default is not None:
+            elif visible_start:
                 value = strength.initial
+            elif slot.scale_default is not None:
+                value = strength.clamp(slot.scale_default)
         resolved.append((model_id, kind, value))
     return resolved
 

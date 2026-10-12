@@ -132,18 +132,63 @@ def test_unavailable_offers_explain_why_and_follow_available_ones():
 def test_strength_uses_declared_bounds_and_a_visible_starting_value():
     slot = LoraSlot.from_record(BASES[FLUX1])
     strength = trained_offers.strength(slot)
-    assert strength == trained_offers.Strength(0.0, 2.0, 0.05, 1.0)
+    # The Scenario web app's starting strength when the LoRA declares none.
+    assert trained_offers.DEFAULT_STRENGTH == 0.75
+    assert strength == trained_offers.Strength(0.0, 2.0, 0.05, 0.75)
     assert strength.clamp(0.800000011920929) == 0.8  # 32-bit storage reads back exactly
     assert strength.clamp(-1) == 0.0 and strength.clamp(9) == 2.0
+    # A base's declared default fills an omitted strength (trained_routes.apply); it
+    # does not move the visible start.
     declared = deepcopy(BASES[FLUX1])
     scale_input(declared)["default"] = 0.65
-    assert trained_offers.strength(LoraSlot.from_record(declared)).initial == 0.65
-    scale_input(declared)["default"] = 7
-    assert trained_offers.strength(LoraSlot.from_record(declared)).initial == 2.0
+    assert trained_offers.strength(LoraSlot.from_record(declared)).initial == 0.75
+    narrow = deepcopy(BASES[FLUX1])
+    scale_input(narrow).update({"min": 0.9, "max": 1.5})
+    assert trained_offers.strength(LoraSlot.from_record(narrow)).initial == 0.9  # clamped
+    scale_input(narrow).update({"min": 0.1, "max": 0.5})
+    assert trained_offers.strength(LoraSlot.from_record(narrow)).initial == 0.5
     for change in ({"min": 3}, {"max": None}, {"min": None}):
         changed = deepcopy(BASES[FLUX1])
         scale_input(changed).update(change)
         assert trained_offers.strength(LoraSlot.from_record(changed)) is None
+
+
+def test_a_lora_starts_at_its_own_declared_strength_within_the_base_range():
+    slot = LoraSlot.from_record(BASES[FLUX1])
+    # The captured public LoRA lists itself as its first concept, with scale 0.8.
+    assert PUBLIC[LORA_A]["concepts"][0] == {"modelId": LORA_A, "scale": 0.8}
+    assert trained_offers.declared_strength(PUBLIC[LORA_A]) == 0.8
+    assert trained_offers.declared_strength(record(PUBLIC[LORA_A])) == 0.8
+    assert trained_offers.strength(slot, record(PUBLIC[LORA_A])).initial == 0.8
+    assert trained_offers.strength(slot, PUBLIC[LORA_A]) == trained_offers.Strength(
+        0.0, 2.0, 0.05, 0.8
+    )
+    # A base declaring its own default does not override the LoRA's strength.
+    defaulted = deepcopy(BASES[FLUX1])
+    scale_input(defaulted)["default"] = 0.65
+    assert trained_offers.strength(LoraSlot.from_record(defaulted), PUBLIC[LORA_A]).initial == 0.8
+    # The first concept's scale counts, clamped to the base's declared range.
+    first = {"concepts": [{"modelId": "self", "scale": 1.6}, {"modelId": "x", "scale": 0.2}]}
+    assert trained_offers.declared_strength(first) == 1.6
+    assert trained_offers.strength(slot, first).initial == 1.6
+    above = {"concepts": [{"modelId": "self", "scale": 7}]}
+    assert trained_offers.strength(slot, above).initial == 2.0
+    below = {"concepts": [{"modelId": "self", "scale": -1}]}
+    assert trained_offers.strength(slot, below).initial == 0.0
+    # Without a usable first scale, the LoRA starts at the web app's default.
+    for raw in (
+        PUBLIC[KONTEXT_LORA],  # carries no concepts
+        {},
+        {"concepts": []},
+        {"concepts": None},
+        {"concepts": [{"modelId": "self"}, {"modelId": "x", "scale": 0.4}]},
+        {"concepts": [{"modelId": "self", "scale": True}]},
+        {"concepts": [{"modelId": "self", "scale": "0.9"}]},
+        {"concepts": [{"modelId": "self", "scale": float("nan")}]},
+        {"concepts": [{"modelId": "self", "scale": float("inf")}]},
+    ):
+        assert trained_offers.declared_strength(raw) is None, raw
+        assert trained_offers.strength(slot, raw).initial == trained_offers.DEFAULT_STRENGTH, raw
 
 
 def test_a_lora_needs_a_strength_control_or_a_declared_default():

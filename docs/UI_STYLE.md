@@ -165,12 +165,14 @@ dialog at the current UI scale, so OK and Cancel stay on screen.
 The highlighted model's box shows its kind, **Runs with** for a single base or a
 **Run with** choice among several (the form's current base when it runs the model,
 otherwise **Choose a base model**; OK refuses until one is chosen), and for a LoRA
-a **Strength** field bounded by the base's declared range. Without a declared
-default, the strength starts at the visible value 1 within that range. The chosen
-base and strength stay while base descriptions keep arriving and the rows are
-rebuilt; another row or a new dialog starts again from the form, and a new
-dialog highlights the form's first trained model. A
-composition shows how many LoRAs it combines with their own strengths. One line
+a **Strength** field bounded by the base's declared range. As in the Scenario web
+app, it starts at the LoRA's own strength (the scale of the first entry of its
+concepts, when its record carries one), otherwise at 0.75, clamped to that range;
+Reset to Default Value returns the field to that start. A base's declared default
+does not move the start. The chosen base and strength stay while base
+descriptions keep arriving and the rows are rebuilt; another row or a new dialog
+starts again from the form, and a new dialog highlights the form's first trained
+model. A composition shows how many LoRAs it combines with their own strengths. One line
 states the effect on the form: adding to the LoRAs already chosen, changing this
 LoRA's strength, or replacing the form's trained models. Choosing through another
 base, choosing a composition, or choosing a LoRA over a composition replaces the

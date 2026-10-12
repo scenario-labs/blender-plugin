@@ -9,6 +9,7 @@ summaries carry no schema, so a base counts only once its details were read;
 callers read those details lazily and in lane order (base_candidates).
 """
 
+import math
 from dataclasses import dataclass
 
 from . import catalog
@@ -22,6 +23,7 @@ __all__ = [
     "Strength",
     "base_candidates",
     "concepts",
+    "declared_strength",
     "lora_bases",
     "merged",
     "offers",
@@ -31,9 +33,11 @@ __all__ = [
     "strength",
 ]
 
-# Visible starting strength of a LoRA when its base declares bounds but no default.
-# The user sees and can change it before any price; it is never added silently.
-DEFAULT_STRENGTH = 1.0
+# Visible starting strength of a newly chosen LoRA, and of a reset strength field,
+# when the trained model declares none: the Scenario web app's default. It is kept
+# within the base's declared range, and the user sees and can change it before any
+# price; it is never added silently.
+DEFAULT_STRENGTH = 0.75
 # Base model descriptions one lane may read to find LoRA slots, per connection.
 MAX_BASE_READS = 400
 # Strength resolution sent to the service. Blender stores 32-bit floats, so 0.8
@@ -55,12 +59,19 @@ class Strength:
         return round(min(max(float(value), self.minimum), self.maximum), STRENGTH_DIGITS)
 
 
-def strength(slot):
-    """The LoRA strength control of a slot, or None when its scale input declares no bounds."""
+def strength(slot, record=None):
+    """The LoRA strength control of a slot, or None when its scale input declares no bounds.
+
+    It starts at the strength the trained `record` declares for itself, otherwise
+    at DEFAULT_STRENGTH, as the Scenario web app does, clamped to the base's
+    declared range. A base's declared default does not change the start; it only
+    fills a strength a request omits (trained_routes.apply).
+    """
     low, high = slot.scale_min, slot.scale_max
     if low is None or high is None or low > high:
         return None
-    initial = slot.scale_default if slot.scale_default is not None else DEFAULT_STRENGTH
+    declared = declared_strength(record) if record is not None else None
+    initial = DEFAULT_STRENGTH if declared is None else declared
     initial = min(max(initial, low), high)
     return Strength(
         float(low), float(high), slot.scale_step, round(float(initial), STRENGTH_DIGITS)
@@ -204,6 +215,19 @@ def concepts(record):
                 )
             )
     return pairs
+
+
+def declared_strength(record):
+    """The strength a trained model declares for itself, or None.
+
+    That is the scale of the first entry of its concepts, when the record
+    carries one: a published LoRA lists itself there with its strength.
+    """
+    pairs = concepts(record)
+    scale = pairs[0][1] if pairs else None
+    if scale is None or not math.isfinite(scale):
+        return None
+    return float(scale)
 
 
 def picks_from_payload(slot, payload):

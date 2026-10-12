@@ -262,13 +262,14 @@ class TrainedModelTests(unittest.TestCase):
         self.assertEqual(self.wm.scenario_picker_base, FLUX1)
         self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.55)
         self.highlight(LORA_A)
-        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)  # another row starts anew
+        # Another row starts anew, at that LoRA's own declared strength.
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.8)
         self.highlight(STUDIO_LORA)
-        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)
         self.wm.scenario_picker_strength = 0.3
         self.open_trained()  # a new dialog starts from the form, not from the last dialog
         self.highlight(STUDIO_LORA)
-        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)
 
     def test_an_unusable_base_batch_ends_the_scan_instead_of_hanging(self):
         self.load_catalog()
@@ -387,7 +388,7 @@ class TrainedModelTests(unittest.TestCase):
         self.open_trained()
         self.highlight(STUDIO_LORA)
         self.assertEqual(self.wm.scenario_picker_base, FLUX1)
-        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.0)  # visible start
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)  # visible start
         self.wm.scenario_picker_strength = 5.0
         self.assertEqual(round(self.wm.scenario_picker_strength, 4), 2.0)  # declared maximum
         self.lane.estimate_state = "READY"
@@ -408,12 +409,12 @@ class TrainedModelTests(unittest.TestCase):
         self.open_trained()
         self.assertEqual(self.pick(LORA_A), {"FINISHED"})
         self.assertEqual(self.body()["loras"], [STUDIO_LORA, LORA_A])
-        self.assertEqual(self.body()["lorasScale"], [0.85, 1.0])
+        self.assertEqual(self.body()["lorasScale"], [0.85, 0.8])  # LORA_A's own strength
         self.open_trained()
         self.highlight(STUDIO_LORA)
         self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.85)  # its current strength
         self.assertEqual(self.pick(STUDIO_LORA, 0.4), {"FINISHED"})
-        self.assertEqual(self.body()["lorasScale"], [0.4, 1.0])
+        self.assertEqual(self.body()["lorasScale"], [0.4, 0.8])
         self.open_trained()
         self.assertEqual(self.pick(COMPOSITION), {"FINISHED"})
         body = self.body()
@@ -424,6 +425,70 @@ class TrainedModelTests(unittest.TestCase):
         self.highlight(FLUX2_LORA)
         self.assertEqual(bpy.ops.scenario.pick_model(lane="image"), {"CANCELLED"})
         self.assertEqual([slot.model_id for slot in self.lane.trained], [COMPOSITION])
+
+    def test_a_new_lora_starts_at_its_own_strength_or_the_web_app_default(self):
+        """As in the Scenario web app: the LoRA's first concept scale, otherwise 0.75."""
+        self.load_catalog()
+        self.open_trained()
+        rna = bpy.types.WindowManager.bl_rna.properties["scenario_picker_strength"]
+        self.assertEqual(rna.default, self.picker.STRENGTH_RESET)
+        self.highlight(STUDIO_LORA)  # a private LoRA whose record declares no strength
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)
+        self.wm.scenario_picker_strength = 1.3
+        self.wm.scenario_picker_strength = rna.default  # what Reset to Default Value assigns
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)
+        self.highlight(LORA_A)  # its record lists itself as a concept with scale 0.8
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.8)
+        self.wm.scenario_picker_strength = 1.3
+        self.wm.scenario_picker_strength = rna.default
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.8)
+        self.assertEqual(self.pick(LORA_A), {"FINISHED"})
+        self.assertEqual(self.body()["lorasScale"], [0.8])
+        # A strength field never set for this base sends the LoRA's start, never the reset value.
+        self.open_trained()
+        self.highlight(STUDIO_LORA)
+        self.picker._ctx["strength"] = None  # the field update then leaves the value alone
+        self.wm.scenario_picker_strength = rna.default
+        self.assertEqual(self.wm.scenario_picker_strength, self.picker.STRENGTH_RESET)
+        self.assertEqual(
+            self.picker.apply_trained_choice(bpy.context, "image"), (STUDIO_LORA, "image")
+        )
+        self.assertEqual(self.body()["lorasScale"], [0.8, 0.75])
+
+    def test_the_starting_strength_stays_within_the_base_range(self):
+        scale = next(f for f in self.details[FLUX1]["inputs"] if f["name"] == "lorasScale")
+        scale.update({"min": 0.78, "max": 1.5})
+        plain = {**self.details[STUDIO_LORA], "id": "model_studio-plain", "name": "Plain LoRA"}
+        self.private.append(plain)
+        self.details[STUDIO_LORA]["concepts"] = [{"modelId": STUDIO_LORA, "scale": 1.9}]
+        self.load_catalog()
+        self.open_trained()
+        self.highlight("model_studio-plain")
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.78)  # 0.75, raised
+        self.highlight(STUDIO_LORA)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 1.5)  # its own 1.9, lowered
+        self.highlight(LORA_A)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.8)  # within the range
+        self.assertEqual(self.pick(STUDIO_LORA), {"FINISHED"})
+        self.assertEqual(self.body()["lorasScale"], [1.5])
+
+    def test_reload_parameters_restores_the_base_default_the_job_ran_with(self):
+        scale = next(f for f in self.details[FLUX1]["inputs"] if f["name"] == "lorasScale")
+        scale["default"] = 0.65
+        self.load_catalog()
+        self.open_trained()
+        records = submodule("core.jobs.records")
+        body = {"prompt": PROMPT, "loras": [LORA_A]}
+        job = records.JobRecord.new("image", "image", FLUX1, body, meta={"prompt": PROMPT})
+        self.runtime.state.jobs_view[:] = [job]
+        self.assertEqual(bpy.ops.scenario.reload_generation(local_id=job.local_id), {"FINISHED"})
+        (slot,) = self.lane.trained
+        self.assertEqual((slot.model_id, slot.has_scale), (LORA_A, True))
+        self.assertEqual(round(slot.scale, 4), 0.65)  # the base default, not the LoRA's 0.8
+        # A new choice still starts at the LoRA's own strength or the web app's default.
+        self.open_trained()
+        self.highlight(STUDIO_LORA)
+        self.assertEqual(round(self.wm.scenario_picker_strength, 4), 0.75)
 
     def test_the_quote_reads_trained_models_fresh_and_prices_the_exact_payload(self):
         self.load_catalog()

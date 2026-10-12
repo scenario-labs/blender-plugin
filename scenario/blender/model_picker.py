@@ -46,6 +46,10 @@ UNIT = 20  # one interface row in pixels at a UI scale of 1
 DIALOG_ROWS = 19
 RECENT_FILE = "recent_models.json"
 TRAINED = model_filter.TRAINED_CATEGORY
+# The picker strength's RNA default, which Blender's Reset to Default Value assigns.
+# No base declares it: its update replaces it with the highlighted LoRA's starting
+# strength (trained_offers.strength). A power of two, so 32-bit storage keeps it exact.
+STRENGTH_RESET = -(2.0**100)
 _ctx = {
     "lane": "",
     "records": [],
@@ -420,7 +424,8 @@ def _current_scale(offer, base):
 
 def _on_base_change(self, context):
     offer, base = highlighted_offer(self), chosen_base(self)
-    strength = trained_offers.strength(base.slot) if base is not None else None
+    record = offer.record if offer is not None else None
+    strength = trained_offers.strength(base.slot, record) if base is not None else None
     _ctx["strength"] = strength
     _ctx["choice"] = (offer.id, base.id) if offer is not None and base is not None else None
     if offer is None or strength is None or offer.kind != TRAINED_LORA:
@@ -455,6 +460,10 @@ def _on_highlight(self, context):
 def _on_strength_change(self, context):
     strength = _ctx.get("strength")
     if strength is None:
+        return
+    if self.scenario_picker_strength == STRENGTH_RESET:
+        # A reset starts again from the LoRA's own strength or the web app's default.
+        self.scenario_picker_strength = strength.initial
         return
     value = strength.clamp(self.scenario_picker_strength)
     if abs(value - self.scenario_picker_strength) > 1e-6:
@@ -638,6 +647,8 @@ def apply_trained_choice(context, lane):
         return None, None
     base = chosen_base(wm)
     scale = wm.scenario_picker_strength if offer.kind == TRAINED_LORA else None
+    if scale == STRENGTH_RESET:
+        scale = None  # never set for this base: the choice starts at the LoRA's starting strength
     target = trained_models.choose(
         context, lane or _ctx["lane"], offer, base.id if base else "", scale
     )
@@ -946,7 +957,7 @@ def register():
     wm.scenario_picker_strength = FloatProperty(
         name="Strength",
         description="LoRA strength, within the range the base model declares",
-        default=trained_offers.DEFAULT_STRENGTH,
+        default=STRENGTH_RESET,
         precision=2,
         step=5,
         update=_on_strength_change,

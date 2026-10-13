@@ -20,16 +20,31 @@ not current quotes.
 
 ## Install
 
-This handbook follows current development, which can be ahead of downloadable
-releases. Check [native download availability](https://blender.scenario.com/repo/)
-and the release notes before installing. Historical `v*` ZIPs are earlier
+Install Scenario from its official extension repository, so that Blender can
+offer you its updates:
+
+1. Turn on **Allow Online Access** under Edit > Preferences > System > Network. Blender needs it to reach the repository, and Scenario's network operators refuse to run while it is off.
+2. Open Edit > Preferences > Get Extensions > Repositories, choose **Add Remote Repository** and enter `https://blender.scenario.com/repo/index.json`.
+3. Find Scenario in Get Extensions and install it. Blender installs it from that repository and enables it.
+4. In Scenario, open Organization settings > API Keys > Add API Key and obtain the key and its secret. Follow the [API-key quick start](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key) for current account and access requirements.
+5. Edit > Preferences > Add-ons > Scenario: leave Credentials set to **Saved in Blender**, paste the key and the secret, and press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`).
+
+**Install from a ZIP instead.** Download `scenario-<version>.zip` from the
+[releases page](https://github.com/scenario-labs/blender-plugin/releases) and keep
+it zipped; you can [verify it](#verify-your-download) first. Drag it onto any
+Blender window, or use Edit > Preferences > Get Extensions > Install from Disk.
+Blender installs it into its local repository and enables it; then continue with
+step 4. A ZIP copy does not update itself: install each new release ZIP the same
+way and restart Blender so the new code loads. To move to the official repository
+later, follow [Switch from a ZIP to the repository](#switch-from-a-zip-to-the-repository).
+Never keep a ZIP copy and a repository copy installed together.
+
+This handbook is published from current development, so it can describe changes
+that are not in the latest release yet. The [release notes](../CHANGELOG.md) list
+what each release contains, and each automated release attaches the handbook for
+its version as `scenario-handbook-<version>.html`. Historical `v*` ZIPs are earlier
 experimental builds: their features, controls and Blender requirements may differ
 from this guide. Use the requirements and instructions attached to that release.
-
-1. Download `scenario-<version>.zip` from the [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
-2. Drag the zip onto any Blender window, or use Edit > Preferences > Get Extensions > Install from Disk. Blender installs it into your user extensions and enables it. Updating: install the new zip the same way; Blender replaces the old version. Restart Blender after an update so the new code loads.
-3. In Scenario, open Organization settings > API Keys > Add API Key and obtain the key and its secret. Follow the [API-key quick start](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key) for current account and access requirements.
-4. Edit > Preferences > Add-ons > Scenario: leave Credentials set to **Saved in Blender**, paste the key and the secret, and press Test connection. Pick an Output Folder (default `~/Downloads/Scenario`). Blender's **Allow Online Access** must be on under Edit > Preferences > System > Network; network operators refuse to run while it is off.
 
 For automation, select **Credentials > Environment** to use `SCENARIO_API_KEY`
 and `SCENARIO_API_SECRET` from the environment that launched Blender. Both are
@@ -73,11 +88,10 @@ with installation instructions, update guidance and links to support.
 ### Updates
 
 The public handbook is at [blender.scenario.com](https://blender.scenario.com/).
-The official native repository uses `https://blender.scenario.com/repo/index.json`.
-Check the [downloads page](https://blender.scenario.com/repo/) before setting up
-the repository. Until the first verified adopted-package release is published,
-the index is intentionally unavailable and native checks cannot succeed.
-Historical `v*` releases are available only as manual ZIP downloads.
+The official native repository uses `https://blender.scenario.com/repo/index.json`,
+and its [downloads page](https://blender.scenario.com/repo/) lists the releases it
+offers, starting with 0.10.0. Historical `v*` releases are available only as manual
+ZIP downloads.
 
 Open Edit > Preferences > Add-ons > Scenario > **Updates** to see the installed
 version and whether the official repository is configured. Enable **Allow Online
@@ -99,20 +113,53 @@ Scenario cannot re-enable its own repository while unloaded. Re-enable the
 existing entry to recover its saved settings, then check for updates. Do not
 remove the repository or install a second copy as a recovery step.
 
-For a fresh native installation, add the repository URL through Get Extensions >
-Repositories > Add Remote Repository, then find and install Scenario. Updates to
-that installation stay in the same repository and keep its preferences and storage.
+A copy installed from the repository, as described in [Install](#install), updates
+in place: updates stay in the same repository and keep its preferences and storage.
 Save Blender preferences if automatic preference saving is disabled.
 
-A copy installed from a manual ZIP belongs to Blender's local repository. Adding
-the official repository does not move that copy, its credentials or its stored
-jobs. Continue updating that copy with **Install from Disk**, selecting the same
-local repository, and restart Blender. Do not install a second copy expecting its
-settings or history to transfer. There is no prototype-data migration.
+A copy installed from a ZIP belongs to Blender's local repository and does not
+update itself. Adding the official repository, including with **Set up official
+repository**, does not move that copy, its credentials or its stored jobs; its
+Updates panel then says it was installed outside the official repository. Either
+keep updating that copy with **Install from Disk**, selecting the same local
+repository, and restart Blender; or
+[switch to the repository](#switch-from-a-zip-to-the-repository). Do not install
+a second copy expecting its settings or history to transfer. There is no
+prototype-data migration.
 
-Native controls target Blender 5.0, 5.1 and 5.2. Production install/update and state
-preservation evidence remains part of the first adopted-release acceptance; a
-local preview or a synthetic update test is not evidence of a published release.
+Native controls target Blender 5.0, 5.1 and 5.2. Installing 0.10.0 from the
+repository was verified on macOS with Blender 5.0.1, 5.1.2 and 5.2.1. 0.10.0 is the
+first release the repository offers, so an update from one published release to
+the next, keeping preferences and stored jobs, will be verified with the next
+release.
+
+### Switch from a ZIP to the repository
+
+A ZIP copy and a repository copy are separate installations: each has its own
+credentials, preferences and storage, and nothing moves from one to the other.
+Uninstalling a copy makes Blender delete that copy's storage: its stored jobs, its
+caches and the media files played by the video, sound and Film review strips that
+Scenario added to your scenes. Images and models already added to a scene are
+stored in your `.blend` file once you save it, and your Output Folder is not
+touched.
+
+If your projects use such strips, either keep the ZIP copy and update it with
+**Install from Disk**, or relink each strip after switching. Its original file is
+in your Output Folder, under a name that contains the asset ID the strip keeps in
+its `scenario_asset` custom property.
+
+To switch:
+
+1. Let running generations finish. The new copy does not track jobs the ZIP copy submitted.
+2. Uninstall the ZIP copy from Edit > Preferences > Get Extensions, then restart Blender.
+3. Install from the repository as in [Install](#install), steps 1 to 3. If the Scenario repository is already listed under Repositories, for example after **Set up official repository**, do not add it again.
+4. Enter your API key and secret again (Install step 5), with any Project ID or Output Folder you had set.
+
+Jobs stored by the ZIP copy do not migrate. Your past generations remain in your
+Scenario project: turn on **Project history (cloud)** under
+[Generations](#generations) to see them, and choose **Save for recovery** on a
+completed model job to read it into the new copy's saved history. Files already
+saved in your Output Folder stay where they are. Never keep both copies installed.
 
 ### Verify your download
 
@@ -789,7 +836,8 @@ and the current limits of online-access and agent controls.
 - Results: your Output Folder (`~/Downloads/Scenario` by default), `<kind>/<YYYYMMDD>/<date>_<model>_<asset id>_<n>.<ext>`.
 - Film videos: the new `.mp4` file you choose; **Export video...** suggests your Output Folder's `Film` subfolder, and agents can export only inside the Output Folder. Export staging stays in the extension's user state until discarded or the session ends.
 - Captures, Prompt Spark stills and Edit 3D exports: the extension cache (`captures/`, `exports/` under Blender's extension user directory), thumbnails of models in `thumbs/`. **Play** copies of saved video and audio go to `media-playback/` there, and decoded waveforms and result previews to `result-previews/`; both are disposable.
-- Job registry, recent models and model cache: the extension's own user directory under Blender's extensions folder; delete it yourself for a clean removal.
+- Video, sound and Film review strips that Scenario adds play from verified copies in `media-import/` and `film-review/` under the extension's own user directory.
+- Job registry, recent models and model cache: the extension's own user directory under Blender's extensions folder. Uninstalling Scenario makes Blender delete that whole directory, including the caches and strip media above; see [Switch from a ZIP to the repository](#switch-from-a-zip-to-the-repository).
 - Your key: saved as plain text in Blender's `userpref.blend` preferences file. Select Credentials > Environment to use `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` instead; switching sources does not erase saved values. Clear both saved fields and save preferences to remove them; rotate the key in Scenario if it leaks.
 
 ## Known limits

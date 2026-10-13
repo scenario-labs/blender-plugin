@@ -36,34 +36,48 @@ relying on a workflow; shared runtime and interface adoption remain in progress.
 
 ## Install
 
-1. Download `scenario-<version>.zip` from the
-   [releases page](https://github.com/scenario-labs/blender-plugin/releases). Keep it zipped.
-   Verify your download: for releases that include `SHA256SUMS`, save the ZIP,
-   `scenario-handbook-<version>.html` and `SHA256SUMS` together, check them with
-   `sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the GitHub CLI, run
-   `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`
-   ([details](docs/USER_GUIDE.md#verify-your-download)). Historical `v*` releases have neither.
-2. Drag the ZIP onto a Blender window, or use Edit > Preferences > Get Extensions
-   > Install from Disk. The extension appears as "Scenario" in Blender's Add-ons list.
-3. In Scenario, open Organization settings > API Keys > Add API Key and follow
+Install from the official extension repository so that Blender can offer updates:
+
+1. Turn on **Allow Online Access** under Edit > Preferences > System > Network.
+2. Open Edit > Preferences > Get Extensions > Repositories, choose **Add Remote
+   Repository** and enter `https://blender.scenario.com/repo/index.json`.
+3. Find Scenario in Get Extensions and install it. It appears as "Scenario" in
+   Blender's Add-ons list.
+4. In Scenario, open Organization settings > API Keys > Add API Key and follow
    the instructions to obtain the key and secret.
-4. Open Edit > Preferences > Add-ons > Scenario. Leave **Credentials** set to
+5. Open Edit > Preferences > Add-ons > Scenario. Leave **Credentials** set to
    **Saved in Blender**, paste the key and secret, then press **Test connection**.
    Choose an Output Folder for generated files.
 
+To install from a ZIP instead, download `scenario-<version>.zip` from the
+[releases page](https://github.com/scenario-labs/blender-plugin/releases) and keep
+it zipped. Verify your download: for releases that include `SHA256SUMS`, save the
+ZIP, `scenario-handbook-<version>.html` and `SHA256SUMS` together, check them with
+`sha256sum -c SHA256SUMS` (macOS: `shasum -a 256 -c SHA256SUMS`) and, with the
+GitHub CLI, run `gh attestation verify scenario-<version>.zip -R scenario-labs/blender-plugin`
+([details](docs/USER_GUIDE.md#verify-your-download)). Historical `v*` releases have
+neither. Drag the ZIP onto a Blender window, or use Edit > Preferences > Get
+Extensions > Install from Disk, then continue with step 4. A ZIP copy does not
+update itself; see [Updates](#updates).
+
 ### Updates
 
-Open **Preferences > Add-ons > Scenario > Updates** for repository setup,
-update checks and Blender's native Get Extensions manager. The official repository
-address is `https://blender.scenario.com/repo/index.json`; it becomes available after
-the first verified adopted-package release. Enable **Allow Online Access** before
-checking. Updates are installed only when you choose them in Blender.
+A copy installed from the official repository updates through Blender. Open
+**Preferences > Add-ons > Scenario > Updates** for update checks and Blender's
+native Get Extensions manager. Enable **Allow Online Access** before checking.
+Updates are installed only when you choose them in Blender. The repository offers
+releases from 0.10.0 on.
 
-A ZIP installed into Blender's local repository can still be updated with
-**Install from Disk**, followed by a restart. Adding the official repository does
-not migrate that installation's preferences or storage. See the
-[update guide](docs/USER_GUIDE.md#updates) for fresh installs, compatibility and
-manual fallback.
+A ZIP copy lives in Blender's local repository and does not update itself. Keep
+updating it with **Install from Disk**, followed by a restart, or switch to the
+repository: uninstall the ZIP copy first, install Scenario from the repository,
+then enter your key and secret again. Uninstalling deletes the ZIP copy's storage,
+including its stored jobs and the media that video and sound strips added by
+Scenario play from; past generations remain available under **Project history
+(cloud)** in Generations. Never keep both copies installed. Read
+[Switch from a ZIP to the repository](docs/USER_GUIDE.md#switch-from-a-zip-to-the-repository)
+before switching, and the [update guide](docs/USER_GUIDE.md#updates) for
+compatibility and manual fallback.
 
 ### Why not extensions.blender.org
 

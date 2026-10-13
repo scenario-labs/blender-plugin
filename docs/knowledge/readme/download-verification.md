@@ -8,12 +8,12 @@
     "path": "README.md",
     "scope": "download-verification",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-09",
-    "base_revision": "b57c398f35fb2148c82fb8b26f6a40564d3f52ef",
-    "limits": "Reviewed the README install-step verification pointer against the release workflow's ZIP and handbook build, SHA256SUMS contents, provenance attestation subjects and the user guide's Verify your download section. No release was built, published or downloaded; checksum and attestation verification of a published asset remains release acceptance.",
+    "reviewed_at": "2026-10-13",
+    "base_revision": "34ce22e8a4b037312334d98fbec6641da45a9a45",
+    "limits": "2026-10-13: the README's verification instructions moved, unchanged in substance, into the paragraph for installing from a ZIP; the user guide's Verify your download section is unchanged. The published 0.10.0 ZIP and handbook passed shasum -a 256 -c SHA256SUMS and gh attestation verify, recorded in the release-acceptance Publication section. .github/workflows/release-please.yml was not re-reviewed. Earlier (2026-10-09): reviewed the README install-step verification pointer against the release workflow's ZIP and handbook build, SHA256SUMS contents, provenance attestation subjects and the user guide's Verify your download section.",
     "sources": {
       ".github/workflows/release-please.yml": "d729fcc5f0e069b8eddce853ba24751ab0055b4f40ef2285f80445147ca1ffa3",
-      "docs/USER_GUIDE.md": "ab6f2bc57592631e9de286fb4bd3e77f7cc9ecd766beba271647b04910986a52"
+      "docs/USER_GUIDE.md": "8b284a0978ab368af8a995024463c80c85212decd5f2e883b83c97cea013c5ed"
     }
   }
 }

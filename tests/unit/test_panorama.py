@@ -731,3 +731,33 @@ def test_world_candidates_exclude_declared_material_maps():
         assert not panorama.world_candidate("image/png", role)
     for unsupported in ("image/webp", "model/gltf-binary", "video/mp4", ""):
         assert not panorama.world_candidate(unsupported)
+
+
+@pytest.mark.parametrize(
+    ("size", "expected"),
+    [
+        ((8, 4), True),
+        ((4, 2), True),
+        ((8192, 4096), True),
+        ((4096, 4096), False),
+        ((1920, 1080), False),
+        ((2048, 1023), False),
+        ((2, 1), False),
+        ((16384, 8192), False),
+        ((0, 0), False),
+    ],
+)
+def test_world_size_is_the_preflight_2_to_1_rule(size, expected):
+    """The saved-job World offer applies the rule application enforces on the bytes."""
+    assert panorama.is_world_size(*size) is expected
+    for make in (png, jpeg, exr):
+        if expected:
+            assert (panorama.inspect_panorama(make(*size)).width, expected) == (size[0], True)
+        else:
+            with pytest.raises(panorama.PanoramaError, match="2:1"):
+                panorama.inspect_panorama(make(*size))
+
+
+@pytest.mark.parametrize("size", [(8.0, 4), (8, 4.0), (True, 1), ("8", "4"), (None, 4)])
+def test_world_size_requires_integer_dimensions(size):
+    assert panorama.is_world_size(*size) is False

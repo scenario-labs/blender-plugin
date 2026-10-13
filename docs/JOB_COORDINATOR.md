@@ -553,7 +553,7 @@ remote job and asset, without a receipt. The caller, which owns the waiting
 step projection, supplies that step's asset IDs.
 
 The [preview lane](#application-owned-workers) runs six commands with the cache
-root supplied by the application. `prepare_result_previews(work, root=...)`
+root supplied by the application, and a seventh, `world_sizes`, without it. `prepare_result_previews(work, root=...)`
 rechecks that each target still holds the same receipt (a review target, the
 same `remote` workflow job), reads verified cache
 entries, issues private decode copies for images and audio, and reads server
@@ -580,8 +580,14 @@ downloaded video or audio receipt at the exact saved revision. It first removes
 copies the owner listed in `discard` and sweeps stale ones not in `keep`, returns
 an unchanged `reuse` copy of the same receipt instead of copying again, and
 rechecks the record at receipt level afterwards. A cancellation or inactive
-coordinator after copying removes the new copy. Only `prepare_result_previews`
-reads the network. None of these commands transitions a job, changes its
+coordinator after copying removes the new copy.
+`world_sizes(targets)` takes up to 128 (request ID, asset ID, receipt SHA-256)
+triples naming downloaded World candidates and reads at most the first 2 MiB of
+each file. It returns each triple with the declared width and height, or none
+when the record no longer holds that receipt as a candidate, the file cannot be
+read or those bytes declare no size. It neither hashes nor copies; the
+[World offer](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) uses it only
+as a display filter. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
 revision, claims application or submits work. See
 [result previews](RESULT_PREVIEWS.md) for renditions, limits and the polling
 window.

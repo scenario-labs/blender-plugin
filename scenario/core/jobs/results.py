@@ -4,6 +4,7 @@
 
 import hashlib
 import os
+import re
 import tempfile
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -11,7 +12,7 @@ from pathlib import Path
 from ..api.sdk_adapter import AdapterError
 from ..config import ext_for_mime
 from ..scene import splats
-from ..scene.panorama import MAX_FILE_BYTES
+from ..scene.panorama import MAX_FILE_BYTES, world_candidate
 from . import playback
 from . import result_previews as previews
 from .result_metadata import (
@@ -44,6 +45,12 @@ PREVIEW_STATES = frozenset(
     {JobState.READY, JobState.APPLYING, JobState.APPLY_FAILED, JobState.APPLIED}
 )
 PREVIEW_METADATA_CHUNK = 100
+# Leading bytes of a saved image read for its declared size in the World offer,
+# the bound the preview lane uses for a still's declared layout. A JPEG frame
+# header or an OpenEXR header beyond them reads as undeclared.
+WORLD_HEADER_BYTES = previews.LOCAL_HEADER_BYTES
+# Most saved results one World size check reads.
+WORLD_SIZE_LIMIT = 128
 
 
 @dataclass(frozen=True)
@@ -1019,6 +1026,62 @@ class ResultCommands:
                 playback.discard(root, copy.directory)
             raise StoreConflict("Result changed during playback preparation")
         return copy
+
+    def world_sizes(self, targets, *, cancel):
+        """Declared pixel sizes of saved World candidates, read from their file headers.
+
+        Preview-lane work for the World offer only. Each target is a
+        (request_id, asset_id, sha256) triple naming one downloaded result; the
+        answer appends (width, height), or None when the job no longer holds
+        that receipt as a World candidate, its file cannot be read or its first
+        ``WORLD_HEADER_BYTES`` declare no size. It reads only those bytes: it
+        never hashes, fetches, applies or writes the job store, and World
+        application still checks the actual file.
+        """
+        try:
+            targets = tuple(
+                (_identity(request_id), _identity(asset_id), sha256)
+                for request_id, asset_id, sha256 in targets
+            )
+        except (TypeError, ValueError):
+            raise ResultError("Choose saved World candidates to measure") from None
+        if not 1 <= len(targets) <= WORLD_SIZE_LIMIT or not all(
+            isinstance(sha256, str) and re.fullmatch(r"[a-f0-9]{64}", sha256)
+            for *_, sha256 in targets
+        ):
+            raise ResultError("Choose saved World candidates to measure")
+        sizes = []
+        for target in targets:
+            if cancel.is_set():
+                raise previews.PreviewCanceled("The World size check was canceled")
+            sizes.append((*target, self._world_size(*target)))
+        return tuple(sizes)
+
+    def _world_size(self, request_id, asset_id, sha256):
+        with self._guard():
+            record = self._store.get(request_id)
+        if record is None or record.state not in PREVIEW_STATES:
+            return None
+        item = next(
+            (
+                item
+                for item in record.results
+                if item.asset.asset_id == asset_id
+                and item.receipt is not None
+                and item.receipt.sha256 == sha256
+                and world_candidate(item.asset.media_type, item.asset.texture_role)
+            ),
+            None,
+        )
+        if item is None:
+            return None
+        try:
+            source, _ = _open(self._directory(record, create=False) / item.receipt.name)
+            with source:
+                head = source.read(WORLD_HEADER_BYTES)
+        except (OSError, ResultError, TransferError):
+            return None
+        return previews.local_image_size(head)
 
     def _owned_preview(self, request):
         if not isinstance(request, previews.DecodeRequest) or request.key.scope != (

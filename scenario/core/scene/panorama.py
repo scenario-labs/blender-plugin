@@ -101,8 +101,24 @@ def world_candidate(media_type, texture_role=None):
     return media_type in WORLD_MEDIA_TYPES and texture_role is None
 
 
+def is_world_size(width, height):
+    """Whether pixel dimensions fit a World panorama: 2:1 within the pixel limit.
+
+    Application checks the dimensions its preflight reads from the actual bytes;
+    the saved-job World offer applies the same rule to a header's declared size.
+    """
+    return (
+        type(width) is int
+        and type(height) is int
+        and width >= 4
+        and height >= 2
+        and width == height * 2
+        and width * height <= MAX_PIXELS
+    )
+
+
 def _dimensions(file_format, width, height, *, panorama=True):
-    if panorama and (width < 4 or height < 2 or width != height * 2 or width * height > MAX_PIXELS):
+    if panorama and not is_world_size(width, height):
         raise PanoramaError("Use a 2:1 panorama within the supported pixel limit")
     if width < 1 or height < 1 or width * height > MAX_PIXELS:
         raise PanoramaError("Use an image within the supported pixel limit")

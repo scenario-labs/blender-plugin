@@ -610,6 +610,8 @@ attempts.
 
 Choose **Set panorama as World (N)** on a saved 2:1 PNG, JPEG or OpenEXR result,
 including an [Environment](#environment) result, and confirm the scene and World.
+The button appears only for images that can be 2:1. Until Blender has read an
+image's size, it stays offered and the confirmation still checks the image.
 Blender uses the image as the environment and keeps your original World. A rotated
 JPEG, or an EXR in a color space Blender would misread, is refused; see
 [accepted files](WORLD_APPLICATION.md#accepted-local-files).

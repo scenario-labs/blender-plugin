@@ -320,7 +320,8 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
         )
     if action == "apply_world":
         # The projection lists World candidates without material maps, which share their
-        # media types. Numbering counts every saved asset, as the import buttons do.
+        # media types, or images whose header shows they are not 2:1. Numbering counts
+        # every saved asset, as the import buttons do.
         candidates = frozenset(view.meta.get("world_assets", ()))
         return tuple(
             SavedJobAction(

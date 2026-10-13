@@ -1210,11 +1210,18 @@ PNG or JPEG as LDR, or OpenEXR as float with ACES AP0 in ACES2065-1.
 Invoke computes that text; drawing only displays it. Explain the
 2:1/equirectangular requirement, packed image, preserved original World, LDR/HDR
 distinction and session-local restore limit. The action's presence is a
-media-type offer that excludes results declaring a texture role; byte
-compatibility is checked during application, never in drawing. Drawing reads the
-saved-job projection's candidate list and numbers each button by the result's
-position among all results, like the model import buttons such as
-**Import GLB model (N)**. Cancel discards the prepared handle.
+media-type offer that excludes results declaring a texture role and images whose
+file header, read for the current download receipt, declares a size that is not
+2:1 within the World pixel limit. The job owner reads those headers on the
+preview lane and keeps the sizes in memory; drawing never reads a file, a size or
+the job store. A size not read yet, or a header that declares none, keeps the
+button, so a late or inconclusive display read never hides a usable panorama: a
+square image can show the button for a moment after its download. Byte
+compatibility is still checked during application, never in drawing, and that
+check remains the authority. Drawing reads the saved-job projection's candidate
+list and numbers each button by the result's position among all results, like
+the model import buttons such as **Import GLB model (N)**. Cancel discards the
+prepared handle.
 
 After completed application, **Restore previous World** uses a separate prepared
 approval. It names the current scene/World and explains that edited owned data

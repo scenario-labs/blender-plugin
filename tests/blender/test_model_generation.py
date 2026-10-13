@@ -277,6 +277,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.settle()
         for _ in range(10):
             if not owner._commands:
+                # Film and first-frame tests borrow this helper without the one below.
+                ModelGenerationTests.settle_world_sizes(self)
                 return
             for _, task in tuple(owner._commands.values()):
                 try:
@@ -285,6 +287,30 @@ class ModelGenerationTests(unittest.TestCase):
                     pass  # Assert persisted outcome and main-thread delivery below.
             self.runtime.sync_catalog_context()
         self.fail("Result pipeline did not settle")
+
+    def settle_world_sizes(self):
+        """Project the World size reads the last poll queued, so the World offer is final."""
+        owner = self.runtime.state.model_jobs
+        for _ in range(10):
+            if owner is None or owner._world_read is None:
+                return
+            try:
+                owner._world_read[0].result(5)
+            except Exception:
+                pass  # A failed read leaves sizes unknown; the poll below records that.
+            owner.poll()
+        self.fail("World size reads did not settle")
+
+    def hold_world_sizes(self):
+        """Forget the World sizes read so far and keep the preview lane from reading more."""
+        owner = self.runtime.state.model_jobs
+        self.settle_world_sizes()
+        owner._world_sizes.clear()
+        self.enterContext(
+            patch.object(owner.session, "world_sizes", side_effect=RuntimeError("held"))
+        )
+        owner.poll()
+        return owner
 
     def test_ui_and_mcp_deliver_verified_packed_results_without_another_submission(self):
         self.result_fixture()
@@ -773,6 +799,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
+        self.settle_world_sizes()
         self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
         return result["local_id"]
 
@@ -2176,10 +2203,10 @@ class ModelGenerationTests(unittest.TestCase):
         ]
 
     def saved_panorama(self, asset_id="saved-panorama"):
-        """Run one Flux skybox job to a saved, downloaded 360 result."""
+        """Run one Flux skybox job to a saved, downloaded 2:1 360 result."""
         model_id = self.use_model(self.recorded_model("model_scenario-skybox-flux"))
         self.job_model_id = model_id
-        self.result_fixture()
+        self.result_bytes, self.remote_status = self.image_bytes(8, 4), "success"
         self.result_assets = {asset_id: {"type": "skybox-base-360"}}
         quote = self.panorama_estimate(model_id, {"prompt": "a dome"})
         result = self.mcp_submit(quote, parameters={"prompt": "a dome"})
@@ -3866,6 +3893,19 @@ class ModelGenerationTests(unittest.TestCase):
         operator.cancel(fake, context)
         self.assertEqual(len(self.paid), 1)
 
+    def image_bytes(self, width, height, *, jpeg=False):
+        """A Blender-written PNG or JPEG of the given size."""
+        image = bpy.data.images.new("Synthetic panorama", width=width, height=height)
+        try:
+            image.pixels[:] = [0.25, 0.5, 0.75, 1.0] * (width * height)
+            image.file_format = "JPEG" if jpeg else "PNG"
+            path = self.runtime.paths().state_dir / ("panorama.jpg" if jpeg else "panorama.png")
+            image.filepath_raw = str(path)
+            image.save()
+            return path.read_bytes()
+        finally:
+            bpy.data.images.remove(image)
+
     def recovered_panorama(self, *, jpeg=False, media_type=None, data=None, width=8, height=4):
         before_worlds = set(bpy.data.worlds)
 
@@ -3875,16 +3915,7 @@ class ModelGenerationTests(unittest.TestCase):
 
         self.addCleanup(cleanup)
         if data is None:
-            image = bpy.data.images.new("Synthetic panorama", width=width, height=height)
-            try:
-                image.pixels[:] = [0.25, 0.5, 0.75, 1.0] * (width * height)
-                image.file_format = "JPEG" if jpeg else "PNG"
-                path = self.runtime.paths().state_dir / ("panorama.jpg" if jpeg else "panorama.png")
-                image.filepath_raw = str(path)
-                image.save()
-                data = path.read_bytes()
-            finally:
-                bpy.data.images.remove(image)
+            data = self.image_bytes(width, height, jpeg=jpeg)
         self.result_bytes = data
         self.result_media_type = media_type or ("image/jpeg" if jpeg else "image/png")
         self.remote_status = "success"
@@ -4126,10 +4157,71 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(bpy.context.scene.world, previous)
         self.assertEqual((len(self.calls), len(self.paid)), before)
 
-    def test_nonpanoramic_saved_jpeg_fails_locally_with_retry_state(self):
-        self.assert_local_world_failure_keeps_retry_state(
-            self.recovered_panorama(jpeg=True, width=4, height=4)
-        )
+    def world_buttons(self, request_id):
+        """World buttons as drawn: from the projected offer, without a store read or a size read."""
+        owner = self.runtime.state.model_jobs
+        view = owner.views[request_id]
+        with (
+            patch.object(owner.store, "get", side_effect=AssertionError("store read in draw")),
+            patch.object(owner.session, "world_sizes", side_effect=AssertionError("read in draw")),
+        ):
+            drawn = self.drawn_controls(view)
+        return [text for idname, text, _ in drawn if idname == "scenario.apply_saved_world"]
+
+    def assert_world_offer(self, request_id, size, offered):
+        """Native buttons and MCP job_status follow the size the saved header declares."""
+        owner = self.runtime.state.model_jobs
+        self.assertEqual(owner._world_sizes[(request_id, "result-image")][1], size)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual("apply_world" in status["actions"], offered)
+        expected = ["Set panorama as World (1)"] if offered else []
+        self.assertEqual(self.world_buttons(request_id), expected)
+        before = self.store.get(request_id), len(self.calls), len(self.paid)
+        if offered:
+            self.assertEqual(self.prepare_world(request_id)["purpose"], "world")
+        else:
+            with self.assertRaisesRegex(self.request_error, "not a 2:1 panorama"):
+                self.prepare_world(request_id)
+            self.assertFalse(owner._application_approvals)
+        self.assertEqual((self.store.get(request_id), len(self.calls), len(self.paid)), before)
+
+    def test_saved_2_to_1_png_is_offered_as_world(self):
+        request_id = self.recovered_panorama(width=8, height=4)
+        self.assert_world_offer(request_id, (8, 4), True)
+
+    def test_saved_2_to_1_jpeg_is_offered_as_world(self):
+        request_id = self.recovered_panorama(jpeg=True, width=16, height=8)
+        self.assert_world_offer(request_id, (16, 8), True)
+
+    def test_saved_square_jpeg_is_not_offered_as_world(self):
+        request_id = self.recovered_panorama(jpeg=True, width=4, height=4)
+        self.assert_world_offer(request_id, (4, 4), False)
+
+    def test_saved_16_by_9_png_is_not_offered_as_world(self):
+        request_id = self.recovered_panorama(width=16, height=9)
+        self.assert_world_offer(request_id, (16, 9), False)
+
+    def test_unread_world_size_keeps_the_offer_and_application_refuses_the_image(self):
+        # Until this session reads the header, a 1:1 JPEG stays offered; the
+        # confirmation-time preflight of the actual bytes remains the authority.
+        request_id = self.recovered_panorama(jpeg=True, width=4, height=4)
+        self.hold_world_sizes()
+        self.assertEqual(self.world_buttons(request_id), ["Set panorama as World (1)"])
+        self.assert_local_world_failure_keeps_retry_state(request_id)
+        self.assertNotIn((request_id, "result-image"), self.runtime.state.model_jobs._world_sizes)
+
+    def test_header_without_a_readable_size_keeps_the_offer_for_application(self):
+        # Metadata segments push a 1:1 JPEG's frame header past the bytes the offer reads.
+        limit = submodule("core.jobs.results").WORLD_HEADER_BYTES
+        filler = b"\xff\xef\xff\xff" + b"\x00" * 0xFFFD
+        data = self.image_bytes(4, 4, jpeg=True)
+        padded = data[:2] + filler * (limit // len(filler) + 1) + data[2:]
+        request_id = self.recovered_panorama(media_type="image/jpeg", data=padded)
+        owner = self.runtime.state.model_jobs
+        self.assertIsNone(owner._world_sizes[(request_id, "result-image")][1])
+        self.assertIn("apply_world", self.tools.job_status({"job_id": request_id})["actions"])
+        self.assertEqual(self.world_buttons(request_id), ["Set panorama as World (1)"])
+        self.assert_local_world_failure_keeps_retry_state(request_id)
 
     def test_mislabelled_saved_panorama_fails_locally_with_retry_state(self):
         # PNG bytes saved as image/jpeg must not be described or applied as JPEG.
@@ -4170,17 +4262,33 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(bpy.context.scene.world, previous)
         self.assertEqual(len(self.paid), 1)
 
-    def test_nonpanoramic_saved_image_reports_local_failure_without_replacing_world(self):
-        request_id = self.recovered_images()
+    def test_nonpanoramic_saved_image_is_refused_before_review_without_replacing_world(self):
+        request_id = self.recovered_images()  # a 3 x 5 PNG
+        owner = self.runtime.state.model_jobs
         previous = bpy.context.scene.world
-        before = len(self.calls), len(self.paid)
-        deferred = self.tools.apply_result_application(
-            self.import_args(self.prepare_world(request_id))
+        before = self.store.get(request_id), len(self.calls), len(self.paid)
+        self.assertEqual(self.world_buttons(request_id), [])
+        with self.assertRaisesRegex(self.request_error, "not a 2:1 panorama"):
+            self.prepare_world(request_id)
+        # The native operator refuses the same asset before its confirmation opens.
+        args = self.recovery_args(request_id, "apply_world")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_world
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            purpose="world",
+            layout=MagicMock(),
+            report=MagicMock(),
         )
-        status = deferred.finish(deferred.run())
-        self.assertEqual(status["status"], "apply_failed", status)
+        wm = MagicMock()
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"CANCELLED"})
+        wm.invoke_props_dialog.assert_not_called()
+        self.assertFalse(owner._application_approvals)
         self.assertEqual(bpy.context.scene.world, previous)
-        self.assertEqual((len(self.calls), len(self.paid)), before)
+        self.assertEqual((self.store.get(request_id), len(self.calls), len(self.paid)), before)
 
     def test_native_world_operator_uses_prepared_mcp_approval_for_apply_and_restore(self):
         request_id = self.recovered_panorama()
@@ -4834,6 +4942,8 @@ class ModelGenerationTests(unittest.TestCase):
     def test_failed_reuse_keeps_completed_generation_and_original_images(self):
         request_id = self.recovered_images()
         self.finish_application(self.prepare_import(request_id))
+        # An unread size keeps the 3 x 5 PNG offered, so its World reuse fails locally.
+        self.hold_world_sizes()
         before = set(bpy.data.images), bpy.context.scene.world, len(self.calls), len(self.paid)
         status = self.finish_application(self.prepare_world(request_id))
         self.assertEqual(status["status"], "applied")

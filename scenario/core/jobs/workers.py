@@ -318,6 +318,10 @@ class JobWorkers:
             keep=tuple(os.fspath(path) for path in keep),
         )
 
+    def world_sizes(self, targets):
+        """Queue a header read of saved World candidates on the preview lane."""
+        return self._enqueue_preview(self._coordinator.world_sizes, tuple(targets))
+
     def cancel_preview(self, task):
         with self._preview_condition:
             cancel = self._preview_cancels.get(task)

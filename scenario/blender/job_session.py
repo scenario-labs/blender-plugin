@@ -362,6 +362,19 @@ class JobSession:
         _main_thread()
         self._workers.cancel_preview(task)
 
+    def world_sizes(self, targets):
+        """Queue a header read of saved World candidates on the preview lane.
+
+        Targets are (request_id, asset_id, receipt SHA-256) triples. The task
+        resolves to each target with its declared (width, height) or None. Like
+        playback copies it is not a session completion, so ``drain`` never
+        returns it, and it resolves no origin and grants no application authority.
+        """
+        _main_thread()
+        if not self._active:
+            raise OriginUnavailable("This job connection is no longer active")
+        return self._workers.world_sizes(targets)
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():

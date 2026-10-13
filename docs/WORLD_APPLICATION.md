@@ -218,23 +218,41 @@ the selected asset's declared format: PNG or JPEG as LDR, or OpenEXR as a float
 container whose ACES AP0 primaries use `ACES2065-1`.
 MCP uses `prepare_result_application` with `purpose: world` and a selected
 `asset_id`, followed by the same `apply_result_application` command after approval.
-Inspection and the confirmation dialog do not read media or contact Scenario.
+The confirmation dialog reads no media and contacts no Scenario service.
 The existing worker verifies receipts, then `apply_recovered_world` rechecks the
 approved destination and saves the recovered application claim before mutation.
 The primitive still verifies the actual panorama bytes, packs the image and
-preserves the previous World. An unrelated ordinary image fails locally without
-replacing anything. No automatic download or generation retry follows failure.
+preserves the previous World. An image that fails these checks fails locally
+without replacing anything. No automatic download or generation retry follows
+failure.
 
-The action is offered by supported image media type, not a claim that every
-image is panoramic. A result whose saved metadata declares a texture role, such
-as the albedo, normal, roughness or metallic map of a 3D package or a texture
-set, is a material map: neither the button nor MCP World preparation offers it.
+The action is offered by supported image media type and declared size, not a
+claim that every image is panoramic. A result whose saved metadata declares a
+texture role, such as the albedo, normal, roughness or metallic map of a 3D
+package or a texture set, is a material map: neither the button nor MCP World
+preparation offers it. Neither offers an image whose file header, read for its
+current download receipt, declares a size that is not 2:1 within the
+32-megapixel World limit, such as a square or 16:9 image. MCP preparation
+refuses such an asset with `This saved image is not a 2:1 panorama within the
+World pixel limit`, and `job_status` omits `apply_world` when no supported image
+remains.
+
+The saved job records no image dimensions, so Blender reads them. After a
+download, a saved-job inspection or a restart, the job owner queues one read of
+at most the first 2 MiB of each World candidate on the preview lane, never while
+drawing and never on the main thread, and keeps each declared size in memory,
+bound to the receipt digest. Until that read finishes, or when those bytes
+declare no size (for example a JPEG whose metadata pushes its frame header
+further), the image stays offered: a late or inconclusive display read must not
+hide a usable panorama, and the application check decides. A square image can
+therefore show the button for a moment after its download until the read
+finishes.
+
 N is the result's position among all of the job's results, the number that
 model imports such as **Import GLB model (N)** and the strip actions use. The
 confirmation explicitly chooses equirectangular use; actual 2:1 dimensions and
-supported container checks occur during application. The saved job does not
-record image dimensions, so an ordinary image without a texture role is still
-offered and fails locally.
+supported container checks still occur during application on the actual bytes,
+which remain the authority.
 PNG and JPEG remain LDR, and an accepted EXR does not prove measured HDR range or
 seamless content. Known application failure, including a media type that does not
 match the actual container, is reported with panorama requirements and keeps the

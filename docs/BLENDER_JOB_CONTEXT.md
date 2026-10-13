@@ -571,6 +571,13 @@ unregistering clear the selection and remove copies no running player reads,
 including copies evicted for a Play whose lane command, which removes them
 first, has not run: deactivation cancels a queued command.
 
+`world_sizes` queues the coordinator's header read of saved World candidates on
+the same preview lane and returns its task, which is not a session completion
+either. The model job owner queues at most one such read at a time from its
+maintenance poll for downloaded candidates whose current receipt has no read
+size, keeps the declared sizes in memory and stops offering an image whose size
+is not 2:1; see [World candidates](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval).
+
 The main-thread [preview controller](../scenario/blender/result_previews.py)
 is the scheduler's Blender-side owner for
 [automatic previews](RESULT_PREVIEWS.md#automatic-previews-in-blender). Its own

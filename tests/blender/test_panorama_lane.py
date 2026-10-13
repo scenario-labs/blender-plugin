@@ -414,6 +414,8 @@ class EnvironmentJobTests(unittest.TestCase):
         _, result = self.fixture.saved_panorama()
         self.runtime.state.reset()
         self.assertEqual(bpy.ops.scenario.inspect_saved_jobs(), {"FINISHED"})
+        # The restarted session reads the saved 2:1 header again before its offer is final.
+        self.fixture.settle_world_sizes()
         view = self.runtime.state.model_jobs.views[result["local_id"]]
         self.assertEqual(view.kind, "model")  # restarted jobs are generic
         labels = [item.label for item in self.actions(view)]

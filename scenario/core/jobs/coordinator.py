@@ -809,6 +809,17 @@ class JobCoordinator:
                 playback.discard(root, copy.directory)
             raise
 
+    def world_sizes(self, targets, *, cancel):
+        """Preview-lane command: declared sizes of saved World candidates from file headers.
+
+        Display only: the sizes filter the World offer and authorize nothing.
+        """
+        sizes = self._results.world_sizes(targets, cancel=cancel)
+        with self._result_guard():
+            if cancel.is_set():
+                raise PreviewCanceled("The World size check was canceled")
+        return sizes
+
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.
 

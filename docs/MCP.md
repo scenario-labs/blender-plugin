@@ -183,8 +183,14 @@ See [saved Gaussian splat import](MESH_APPLICATION.md#saved-gaussian-splat-impor
 
 For one unapplied saved panorama, pass `purpose: world` and its `asset_id` to
 `prepare_result_application`. A result whose saved metadata declares a texture
-role is a material map and is refused; `job_status` omits `apply_world` when every
-supported image is one. Show the scene, current World and returned `format`
+role is a material map and is refused. So is an image whose downloaded file header
+declares a size that is not 2:1 within the World pixel limit, such as a square or
+16:9 image, with `This saved image is not a 2:1 panorama within the World pixel
+limit`. `job_status` omits `apply_world` when no supported image remains, the same
+rule that decides the native **Set panorama as World (N)** buttons. Blender reads
+each header in the background after a download or a saved-job inspection; until
+it has, or when the header declares no size, the image stays offered and the
+apply command's own check decides. Show the scene, current World and returned `format`
 before approval. `format` states the saved media type's declared format, such as
 `JPEG (LDR)` or an OpenEXR whose ACES AP0 primaries use ACES2065-1; restoration
 returns `null`. The same apply command verifies and packs a supported 2:1 PNG,

@@ -24,7 +24,7 @@ from ..core.jobs.coordinator import (
     cancellable_job,
 )
 from ..core.jobs.records import JobRecord
-from ..core.jobs.results import ResultError
+from ..core.jobs.results import WORLD_SIZE_LIMIT, ResultError
 from ..core.jobs.store import (
     JobOrigin,
     JobState,
@@ -36,7 +36,7 @@ from ..core.jobs.store import (
 from ..core.jobs.workers import WorkerError
 from ..core.scene import panorama_contract
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
-from ..core.scene.panorama import world_candidate
+from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
 from ..core.ui.saved_job_actions import WorkflowSteps
@@ -75,6 +75,8 @@ CANCEL_UNSUPPORTED = (
     "Scenario documents cancellation only for inference jobs and has not confirmed "
     "this job as one; nothing was sent and the job keeps running"
 )
+# Shared by the native World operator and MCP prepare_result_application.
+NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -109,6 +111,8 @@ _SETTLED = frozenset(
 # Access holds them until it is allowed again; Jobs rows draw an offline line
 # and MCP reports `delivery_offline` for a job this session advances by itself.
 NEEDS_SCENARIO = frozenset({JobState.REMOTE, JobState.CANCEL_REQUESTED, JobState.SUCCEEDED})
+# Saved states whose results the World offer reads sizes for: those it can offer.
+_WORLD_STATES = frozenset({JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED})
 # Prototype display statuses of shared views, which the Jobs and Generations
 # panels split with JobRecord.is_terminal. A SUCCEEDED job whose results this
 # session downloads has none saved yet, so it must not read as the terminal
@@ -179,7 +183,11 @@ def _snapshot(body):
 
 
 def _world_assets(record):
-    """Saved results offered as panoramas, in result order; material maps are excluded."""
+    """Saved World candidates by metadata, in result order; material maps are excluded.
+
+    ModelJobs offers them less those whose header, read for the current
+    receipt, declares a size that cannot be a 2:1 World panorama.
+    """
     return tuple(
         item.asset.asset_id
         for item in record.results
@@ -374,6 +382,12 @@ class ModelJobs:
         self._failures = {}
         self._first_frame_destinations = {}
         self._first_frames = {}
+        # (request_id, asset_id) -> (receipt SHA-256, declared (width, height) or
+        # None): sizes of World candidates read from their file headers on the
+        # preview lane, for the World offer only. Memory only; application still
+        # checks the actual bytes. `_world_read` is the (task, targets) in flight.
+        self._world_sizes = {}
+        self._world_read = None
         self._plans = {}
         self._model_imports = {}
         self.cloud_reads = {}
@@ -584,6 +598,7 @@ class ModelJobs:
         if not self.session.active:
             return
         self._poll_cloud_reads()
+        self._finish_world_sizes()
         for request_id, task in tuple(self.submissions.items()):
             if task.done():
                 outcomes = self.session.drain(task=task)
@@ -773,6 +788,7 @@ class ModelJobs:
                 # projection can never pause delivery or skip the next poll.
                 self._observe(request_id, observed)
         online = self._online_seen = self._online()
+        unread_sizes = []
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
@@ -787,8 +803,9 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
-            # Drawing reads World candidates here; it has no saved texture roles.
-            view.meta["world_assets"] = _world_assets(record)
+            # Drawing reads the World offer here; it has no saved texture roles or sizes.
+            view.meta["world_assets"] = self._world_offer(record)
+            unread_sizes.extend(self._unread_world_sizes(record))
             # Server-declared 360 results, for their label and the Make HDRI prefill.
             view.meta["panoramas"] = _panoramas(record)
             view.meta["panorama_inputs"] = tuple(
@@ -840,6 +857,73 @@ class ModelJobs:
                     self._commands[request_id] = (command, task)
                 except Exception:
                     self._pause(request_id, "Result delivery could not start; inspect saved jobs")
+        self._read_world_sizes(unread_sizes)
+
+    def _unread_world_sizes(self, record):
+        """World candidates of an offerable job whose current receipt has no read size."""
+        if record.state not in _WORLD_STATES:
+            return ()
+        request_id = record.intent.request_id
+        return tuple(
+            (request_id, item.asset.asset_id, item.receipt.sha256)
+            for item in record.results
+            if item.receipt is not None
+            and world_candidate(item.asset.media_type, item.asset.texture_role)
+            and self._world_sizes.get((request_id, item.asset.asset_id), (None,))[0]
+            != item.receipt.sha256
+        )
+
+    def _read_world_sizes(self, targets):
+        """Queue one preview-lane header read of unread World candidates; nothing is read here."""
+        if self._world_read is not None or not targets:
+            return
+        targets = tuple(targets[:WORLD_SIZE_LIMIT])
+        try:
+            task = self.session.world_sizes(targets)
+        except Exception:
+            # A full or retired preview lane: the offer keeps them; a later poll reads them.
+            return
+        self._world_read = (task, targets)
+
+    def _finish_world_sizes(self):
+        """Record a finished header read; a failed read leaves those sizes unknown."""
+        if self._world_read is None or not self._world_read[0].done():
+            return
+        task, targets = self._world_read
+        self._world_read = None
+        try:
+            read = {tuple(item[:3]): item[3] for item in task.result()}
+        except Exception:
+            read = {}
+        for request_id, asset_id, sha256 in targets:
+            self._world_sizes[(request_id, asset_id)] = (
+                sha256,
+                read.get((request_id, asset_id, sha256)),
+            )
+
+    def _not_world(self, record):
+        """World candidates whose header, read for the current receipt, cannot be 2:1."""
+        request_id = record.intent.request_id
+        receipts = {
+            item.asset.asset_id: item.receipt.sha256
+            for item in record.results
+            if item.receipt is not None
+        }
+        refused = set()
+        for asset_id in _world_assets(record):
+            sha256, size = self._world_sizes.get((request_id, asset_id), (None, None))
+            if size is not None and sha256 == receipts.get(asset_id) and not is_world_size(*size):
+                refused.add(asset_id)
+        return refused
+
+    def _world_offer(self, record):
+        """World candidates this session offers, in result order.
+
+        A candidate whose size is not read yet, or whose header declares none,
+        stays offered: the confirmation-time check of the actual bytes decides.
+        """
+        refused = self._not_world(record)
+        return tuple(asset_id for asset_id in _world_assets(record) if asset_id not in refused)
 
     def _pause(self, request_id, message):
         self._paused.add(request_id)
@@ -1380,7 +1464,7 @@ class ModelJobs:
                 and len(record.intent.mesh_sources[0].mesh_source.objects) == 1
             ):
                 actions.append("apply_mesh_source")
-        if reusable and _world_assets(record):
+        if reusable and self._world_offer(record):
             actions.append("apply_world")
         if reusable and first_frame_handoff.eligible_assets(record):
             actions.append("use_first_frame")
@@ -1881,8 +1965,11 @@ class ModelJobs:
             type(expected_revision) is not int
             or record is None
             or record.revision != expected_revision
-            or action not in self.actions(record)
         ):
+            raise ScenarioError(0, "Inspect the current saved World result again")
+        if not restore and asset_id in self._not_world(record):
+            raise ScenarioError(0, NOT_WORLD_SIZE)
+        if action not in self.actions(record):
             raise ScenarioError(0, "Inspect the current saved World result again")
         if scene != bpy.context.scene or len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Choose the destination and finish existing reviews first")
@@ -1892,7 +1979,7 @@ class ModelJobs:
         if restore:
             self._world_application(request_id, destination)
         else:
-            candidates = _world_assets(record)
+            candidates = self._world_offer(record)
             selected = [
                 item.asset.media_type
                 for item in record.results

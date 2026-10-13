@@ -76,9 +76,14 @@ def _batch(w, h, r):
 
 
 def rect(x, y, w, h, color, radius=8.0):
+    """A filled rounded rectangle, alpha blended.
+
+    Each shape enables blending itself: blf.draw turns it off, so a translucent colour drawn after
+    any text would paint opaque, such as the progress bar's dim track under the tray's line."""
     if w <= 0 or h <= 0:
         return
     shader = _shader_get()
+    gpu.state.blend_set("ALPHA")
     with gpu.matrix.push_pop():
         gpu.matrix.translate((x, y, 0))
         shader.uniform_float("color", color)

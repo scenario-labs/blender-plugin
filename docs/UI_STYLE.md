@@ -716,9 +716,20 @@ changes; an unconfirmed submission offering only Inspect; a job Scenario has
 not confirmed as an inference job offering no cancellation; a double-click on
 the background and on a chip; and **Resume download** through the real operator
 downloading once without a paid request.
+
+Blender's text drawing turns GPU blending off, as offscreen draws on Blender
+5.0.1, 5.1.2 and 5.2.1 show, and the tray draws its line before its bar, so
+every filled shape enables alpha blending itself. Without that, a physical
+Blender 5.1.2 macOS check saw the dim track paint as bright as the fill: the bar
+looked full at every percentage, like the states that report none. Installed tests
+draw the tray and the pill's line through the composer's own shape and text
+primitives over a recording GPU that turns blending off after text, and check
+the dim track, the fill's width at the reported fraction and the blending of
+every translucent shape.
 Physical desktop evidence is pending: the dialogs and popup a chip opens from
-inside the composer modal, viewport input afterwards, alternate UI scales and
-screenshots need an unlocked desktop session under #66 and #68.
+inside the composer modal, viewport input afterwards, alternate UI scales,
+the bar's fill after the blending fix and screenshots need an unlocked desktop
+session under #66 and #68.
 
 ## What Blender cannot do (so we do not fake it)
 

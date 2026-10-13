@@ -8,12 +8,79 @@ operator call each click makes, and run the real operator where it needs no wind
 
 import contextlib
 import unittest
+from dataclasses import dataclass
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import bpy
 import test_model_generation
 from helpers import online_access, submodule
+
+
+@dataclass(frozen=True)
+class Shape:
+    """One filled shape as the GPU drew it: its box, colour and the blend mode then in effect."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+    color: tuple
+    blend: str
+
+
+class RecordingGPU:
+    """Stands in for `gpu` and `batch_for_shader` under the composer's real primitives.
+
+    Records each filled shape at its translated position with the colour and blend mode in effect
+    when it is drawn. Background Blender has no GPU, so the blend mode is modelled: drawing text
+    turns blending off, as `blf.draw` does on an offscreen buffer in Blender 5.0.1, 5.1.2 and
+    5.2.1."""
+
+    def __init__(self):
+        self.shapes = []
+        self.blend = "NONE"
+        self.offset = (0.0, 0.0)
+        self.color = None
+        self.state = SimpleNamespace(
+            blend_set=self.blend_set,
+            blend_get=lambda: self.blend,
+            line_width_set=lambda width: None,
+        )
+        self.matrix = SimpleNamespace(push_pop=self.push_pop, translate=self.translate)
+        shader = SimpleNamespace(uniform_float=self.uniform_float)
+        self.shader = SimpleNamespace(from_builtin=lambda name: shader)
+
+    def blend_set(self, mode):
+        self.blend = mode
+
+    @contextlib.contextmanager
+    def push_pop(self):
+        saved = self.offset
+        try:
+            yield
+        finally:
+            self.offset = saved
+
+    def translate(self, vector):
+        self.offset = (self.offset[0] + vector[0], self.offset[1] + vector[1])
+
+    def uniform_float(self, name, value):
+        if name == "color":
+            self.color = tuple(value)
+
+    def batch_for_shader(self, shader, kind, content):
+        xs = [point[0] for point in content["pos"]]
+        ys = [point[1] for point in content["pos"]]
+
+        def draw(_shader):
+            if kind != "TRI_FAN":
+                return  # the opaque lines of the resize grip and the dismiss cross
+            x, y = self.offset
+            box = (x + min(xs), y + min(ys), max(xs) - min(xs), max(ys) - min(ys))
+            self.shapes.append(Shape(*(round(v, 6) for v in box), self.color, self.blend))
+
+        return SimpleNamespace(draw=draw)
 
 
 class RecordingOps:
@@ -128,6 +195,33 @@ class ComposerJobStripTests(unittest.TestCase):
         shown.geometry = self.draw.composer_geometry(self.context, self.composer)
         shown.line = next((s for s in shown.texts if " · " in s), None)
         return shown
+
+    def painted(self):
+        """Run the real draw handler and the composer's own `rect` and `text` over a RecordingGPU.
+
+        Returns the shapes drawn and the geometry they were drawn for."""
+        gpu = RecordingGPU()
+        blf = SimpleNamespace(**vars(self.fake_blf))
+        blf.draw = lambda *args: gpu.blend_set("NONE")  # as Blender's text drawing leaves it
+        fakes = {
+            "bpy": SimpleNamespace(context=self.context),
+            "gpu": gpu,
+            "blf": blf,
+            "batch_for_shader": gpu.batch_for_shader,
+            "_shader": None,
+            "_batches": {},
+        }
+        with contextlib.ExitStack() as stack:
+            for name, value in fakes.items():
+                stack.enter_context(patch.object(self.draw, name, value))
+            self.draw.draw_composer()
+        self.assertEqual(gpu.blend, "NONE")  # the handler leaves blending off, as Blender expects
+        return gpu.shapes, self.draw.composer_geometry(self.context, self.composer)
+
+    @staticmethod
+    def on(shapes, bar):
+        """The shapes drawn from `bar`'s origin, in drawing order."""
+        return [s for s in shapes if (s.x, s.y) == (round(bar.x, 6), round(bar.y, 6))]
 
     def chip_point(self, key):
         strip = self.draw.composer_geometry(self.context, self.composer).strip
@@ -270,6 +364,46 @@ class ComposerJobStripTests(unittest.TestCase):
         self.assertIsNone(geometry.signature())
         pill = geometry.layout.pill_rect
         self.assertEqual(geometry.hit(pill.x + pill.w / 2, pill.y + pill.h / 2), ("expand",))
+
+    # -- the bar as the GPU draws it -------------------------------------------------
+    # The tray's line and the pill's prompt and Generate label are drawn before the bar, and text
+    # drawing leaves blending off. A dim track drawn then paints as bright as the fill, so the bar
+    # read full at every percentage on the desktop.
+
+    def test_tray_bar_fills_its_fraction_over_a_blended_dim_track(self):
+        self.submit_image(progress=0.37)
+        shapes, geometry = self.painted()
+        bar = geometry.strip.progress_rect
+        track, fill = self.on(shapes, bar)
+        self.assertEqual((track.color, fill.color), (self.draw.ACCENT_DIM, self.draw.ACCENT))
+        self.assertEqual((track.w, fill.w), (int(bar.w), int(bar.w * 0.37)))
+        self.assertEqual((track.blend, fill.blend), ("ALPHA", "ALPHA"))
+        # The card, the tray and the track are translucent; each one blends.
+        translucent = [s for s in shapes if s.color[3] < 1.0]
+        self.assertGreaterEqual(len(translucent), 3)
+        self.assertEqual({s.blend for s in translucent}, {"ALPHA"})
+
+    def test_tray_bar_without_a_percentage_is_a_blended_dim_track(self):
+        for status, progress in (("queued", None), ("in-progress", 0.004)):
+            with self.subTest(status=status, progress=progress):
+                self.submit_image(progress=progress, status=status)
+                shapes, geometry = self.painted()
+                bar = geometry.strip.progress_rect
+                (track,) = self.on(shapes, bar)
+                self.assertEqual(
+                    (track.color, track.w, track.blend),
+                    (self.draw.ACCENT_DIM, int(bar.w), "ALPHA"),
+                )
+
+    def test_pill_line_fills_its_fraction_over_a_blended_dim_track(self):
+        self.submit_image(progress=0.72)
+        self.composer.expanded = False
+        shapes, geometry = self.painted()
+        bar = geometry.strip.indicator_rect
+        track, fill = self.on(shapes, bar)
+        self.assertEqual((track.color, fill.color), (self.draw.ACCENT_DIM, self.draw.ACCENT))
+        self.assertEqual((track.w, fill.w), (int(bar.w), int(bar.w * 0.72)))
+        self.assertEqual((track.blend, fill.blend), ("ALPHA", "ALPHA"))
 
     def test_header_and_asset_shelf_heights_keep_the_tray_clear(self):
         area_regions = [

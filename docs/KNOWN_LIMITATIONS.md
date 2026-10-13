@@ -197,6 +197,11 @@ establish live generation or full render-lane desktop acceptance.
   ([#65](https://github.com/scenario-labs/blender-plugin/issues/65),
   [#66](https://github.com/scenario-labs/blender-plugin/issues/66)). See
   [waiting workflow steps](UI_STYLE.md#waiting-workflow-steps).
+- Installing 0.10.0 from the official extension repository was verified on macOS
+  with Blender 5.0.1, 5.1.2 and 5.2.1. 0.10.0 is the first release the repository
+  offers, so an update from one published release to the next, keeping
+  preferences and stored jobs, will be verified with the next release (see the
+  [user guide](USER_GUIDE.md#updates)).
 
 ## Creation and scene application
 

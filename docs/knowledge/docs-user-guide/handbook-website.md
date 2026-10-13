@@ -10,11 +10,11 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-10-13",
     "base_revision": "34ce22e8a4b037312334d98fbec6641da45a9a45",
-    "limits": "2026-10-13, after 0.10.0 was published: the manifest's website is https://blender.scenario.com/, the handbook returns HTTP 200 and HTTP redirects to HTTPS, and the hosted index.json lists scenario 0.10.0 with that website. The guide's Website-link paragraph is unchanged. Earlier (2026-09-26): inspected the custom-domain manifest contract and guide navigation; live read-back confirmed handbook HTTP 200, custom domain and enforced HTTPS, and the repository homepage. Packaged manifest validation is distinct from publication or native update acceptance. No broader repository access, policy or release settings were changed. 2026-10-13 digest note: refreshed after the reference upload and required-argument fixes edited this document's upload and MCP text; this topic's claims were not re-reviewed.",
+    "limits": "2026-10-13, after 0.10.0 was published: the manifest's website is https://blender.scenario.com/, the handbook returns HTTP 200 and HTTP redirects to HTTPS, and the hosted index.json lists scenario 0.10.0 with that website. The guide's Website-link paragraph is unchanged. Earlier (2026-09-26): inspected the custom-domain manifest contract and guide navigation; live read-back confirmed handbook HTTP 200, custom domain and enforced HTTPS, and the repository homepage. Packaged manifest validation is distinct from publication or native update acceptance. No broader repository access, policy or release settings were changed. 2026-10-13 digest note: refreshed after the reference upload and required-argument fixes edited this document's upload and MCP text; this topic's claims were not re-reviewed. 2026-10-13 readability note: refreshed after an editorial rewrite moved the Website-link sentence into Updates; it still says the Get Extensions Website link opens this handbook at blender.scenario.com. This topic's claims were not re-reviewed.",
     "sources": {
       "scenario/blender_manifest.toml": "b77719e7bab76f1dcc159c7c281c404e70bf8d5ad9614beb757ebb34aff29110",
       "tests/unit/test_manifest.py": "36722722e3b8fe6c351acb1aad9b121d547f26ba07e50dd197af82600ac525dc",
-      "docs/USER_GUIDE.md": "130be16c69cac769b69142c97c613410ce173b0945695306c37b1d851598d6a5",
+      "docs/USER_GUIDE.md": "708bd8cfa153a6d73e1b4d4f43a0af9889508c343e77eda4a70dbc83421d15ed",
       ".github/workflows/pages.yml": "b7e6c7c8f3b0b8cbe76595fbb9bb4a9a8ce0191dbb239872157f9c9e9fea8143"
     }
   }

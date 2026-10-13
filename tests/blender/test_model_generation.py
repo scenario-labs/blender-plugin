@@ -2505,6 +2505,10 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_render_form_waits_for_the_description_and_inspection_survives_a_failed_read(self):
         self.catalog_reads()
+        file_state = submodule("blender.file_state")
+        marks = self.enterContext(
+            patch.object(file_state, "mark_modified", wraps=file_state.mark_modified)
+        )
         lane_name = "render_image"
         self.render_form_lane(lane_name)
         self.forget_description()
@@ -2535,6 +2539,16 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_call("render_form", inspect)
         self.assertFalse(result.get("isError"), result)
         self.assertEqual(len(self.calls), 3)
+        marks.assert_not_called()  # waits, failed reads and refusals leave the file unmarked
+        # A configure that waits for the description changes the form once, then marks it.
+        self.forget_description()
+        result = self.mcp_call(
+            "render_form", {**inspect, "action": "configure", "settings": {"look": "copper"}}
+        )
+        self.assertFalse(result.get("isError"), result)
+        self.assertEqual(json.loads(result["content"][0]["text"])["look"], "copper")
+        self.assertEqual(marks.call_count, 1)
+        self.assertEqual(len(self.calls), 4)
         self.assertEqual(self.paid, [])
 
     def test_mcp_render_cannot_skip_scene_upload_or_automatic_spark_approval(self):

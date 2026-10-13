@@ -14,7 +14,7 @@
     "sources": {
       "scenario/blender_manifest.toml": "b77719e7bab76f1dcc159c7c281c404e70bf8d5ad9614beb757ebb34aff29110",
       "tests/unit/test_manifest.py": "36722722e3b8fe6c351acb1aad9b121d547f26ba07e50dd197af82600ac525dc",
-      "docs/USER_GUIDE.md": "a9e84d847e233ba08cacc75cc0fcbc8c0c7eae455e2862ff8584fe447d0bf90b",
+      "docs/USER_GUIDE.md": "5a627dd3a18d30092ce168797c91e1e971c4bd5f27d955f55fb91a10eb7e338d",
       ".github/workflows/pages.yml": "b7e6c7c8f3b0b8cbe76595fbb9bb4a9a8ce0191dbb239872157f9c9e9fea8143"
     }
   }

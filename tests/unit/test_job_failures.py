@@ -78,6 +78,33 @@ def test_a_hint_alone_or_repeated_is_shown_once():
 
 
 @pytest.mark.parametrize(
+    ("error", "hint", "expected"),
+    [
+        # The hint extends the error: only the longer text is shown.
+        (
+            "Input mesh is too dense",
+            "Input mesh is too dense. Reduce it below 30,000 faces.",
+            "Input mesh is too dense. Reduce it below 30,000 faces.",
+        ),
+        # The error already says what the hint repeats, in another case and punctuation.
+        (
+            "Input mesh is too dense. Reduce it below 30,000 faces.",
+            "input mesh is too dense!",
+            "Input mesh is too dense. Reduce it below 30,000 faces.",
+        ),
+        # Repeated whitespace does not hide a repeat.
+        (
+            "Input  mesh is too dense",
+            "Input mesh is too\tdense, retry",
+            "Input mesh is too dense, retry",
+        ),
+    ],
+)
+def test_an_error_and_hint_that_contain_each_other_are_shown_once(error, hint, expected):
+    assert failures.reason(failed_job(error, hint)) == expected
+
+
+@pytest.mark.parametrize(
     "status",
     ["success", "canceled", "in-progress", "queued", "pending", "warming-up", "finalizing", None],
 )
@@ -121,6 +148,33 @@ def test_links_keep_their_place_but_lose_credentials_query_and_fragment():
 def test_unparseable_links_are_removed():
     cleaned = failures.reason(failed_job("Bad host https://[::1/x?token=t here"))
     assert cleaned == f"Bad host {failures.LINK_REMOVED} here"
+
+
+@pytest.mark.parametrize(
+    ("text", "secret"),
+    [
+        ('Rejected {"apiKey": "sk-abc123456"}', "sk-abc123456"),
+        ("Rejected {'client_secret':'cs-abc123456'}", "cs-abc123456"),
+        ("Rejected aws_secret_access_key=abc123456 for the bucket", "abc123456"),
+        ("Rejected X-Goog-Signature=abc123456&X-Goog-Date=1", "abc123456"),
+        ("Rejected github_token: abc123456", "abc123456"),
+        ("Rejected Authorization: token abc123456", "abc123456"),
+        ("Rejected Proxy-Authorization: Digest abc123456", "abc123456"),
+        ("Rejected note: password=abc123456", "abc123456"),
+        ("Rejected https://host/p;jsessionid=abc123456", "abc123456"),
+        ("Mirror user:abc123456@cdn.example.com/a failed", "abc123456"),
+        ("Mirror (user:abc123456@cdn.example.com/a) failed", "abc123456"),
+    ],
+)
+def test_credentials_in_other_shapes_are_replaced(text, secret):
+    cleaned = failures.reason(failed_job(text))
+    assert secret not in cleaned, cleaned
+    assert cleaned.startswith(text.split(" ")[0])
+
+
+def test_names_that_only_contain_a_credential_word_keep_their_value():
+    text = "Requested max_tokens: 4096 exceeds the limit; tokenizer: v2"
+    assert failures.reason(failed_job(text)) == text
 
 
 def test_credential_shaped_values_are_replaced():
@@ -190,11 +244,50 @@ def test_long_reasons_are_bounded_and_keep_the_support_id():
     assert early.startswith(INTERNAL) and early.endswith("…")
 
 
-def test_a_support_id_inside_a_removed_query_is_still_given():
-    text = f"See https://status.example.com/incident?ref={SUPPORT_ID} for details"
-    assert failures.reason(failed_job(text)) == (
-        f"See https://status.example.com/incident for details (error id {SUPPORT_ID})"
-    )
+def test_an_id_only_in_removed_content_is_never_brought_back():
+    # The support id comes from the cleaned text alone: a query, userinfo, data
+    # URI or credential that cleaning removed never returns as "(error id ...)".
+    for text in (
+        f"See https://status.example.com/incident?ref={SUPPORT_ID} for details",
+        f"See https://user:{SUPPORT_ID}secret@cdn.example.com/a.png for details",
+        f"See https://user:{SUPPORT_ID}@cdn.example.com/a.png for details",
+        f"See cdn.example.com/a?ref={SUPPORT_ID} for details",
+        f"See user:{SUPPORT_ID}@cdn.example.com/a for details",
+    ):
+        cleaned = failures.reason(failed_job(text + " " + "x" * 500))
+        assert "error_" not in cleaned and "error id" not in cleaned, cleaned
+        assert failures.reason(failed_job(text)).endswith(" for details"), text
+
+
+def test_the_live_double_space_before_the_id_reads_as_one():
+    text = "An internal error occurred. Please contact support and provide this id:  " + SUPPORT_ID
+    assert failures.reason(failed_job(text)) == INTERNAL
+
+
+@pytest.mark.parametrize("marker", ["[redacted]", "[link removed]", "[data removed]"])
+@pytest.mark.parametrize("offset", range(-12, 4))
+def test_cutting_never_splits_a_marker_word_or_the_support_id(marker, offset):
+    source = {
+        "[redacted]": "password: hunter2hunter2",
+        "[link removed]": "https://[::1/x",
+        "[data removed]": "data:image/png;base64,iVBORw0KGgo=",
+    }[marker]
+    words = "word " * 200
+    text = words[: failures.MAX_LENGTH + offset - len(marker)] + source + " tail " + INTERNAL
+    full = failures.clean(text)
+    cleaned = failures.reason(failed_job(text))
+    assert len(cleaned) <= failures.MAX_LENGTH
+    body = cleaned.split("…")[0]
+    # The cut ends at a word boundary of the cleaned text, so a marker is whole or absent.
+    assert full.startswith(body) and full[len(body)] == " ", body[-30:]
+    assert body.count("[") == body.count("]")
+    # The id is given once, after the ellipsis.
+    assert cleaned.endswith(f"… (error id {SUPPORT_ID})") and cleaned.count(SUPPORT_ID) == 1
+
+
+def test_a_cut_inside_one_long_word_still_ends_with_an_ellipsis():
+    cleaned = failures.reason(failed_job("x" * 1000))
+    assert cleaned == "x" * (failures.MAX_LENGTH - 1) + "…"
 
 
 def test_lowercase_words_after_error_are_not_support_ids():

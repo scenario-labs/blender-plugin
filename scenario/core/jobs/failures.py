@@ -10,16 +10,25 @@ hint for the user explaining what went wrong and how to resolve it"). The
 coordinator validates the job ID and commits that status as the saved `failed`
 state; this module only reads the retrieval that observed it.
 
-The text comes from the service, so it is untrusted display text. Control,
-format and line characters become single spaces. Links keep their scheme, host
-and path but lose credentials, query and fragment, and a query string left on
-a link without a scheme is dropped. Data URIs, bearer and basic credentials,
-JSON web tokens and values after credential names (`password:`, `api_key=`,
-`token=` and similar) are replaced; a value after a credential name that is
-exactly a support id, quoted or not, is kept. The result is bounded to
-MAX_LENGTH, and a support error id (`error_` followed by letters and digits) is
-always kept, appended when cutting or link cleaning would lose it, because
-support needs it. Text inside a redacted credential is never appended back.
+The text comes from the service, so it is untrusted display text, and one
+pipeline (`clean`) prepares everything shown. Control, format and line
+characters become single spaces. Links keep their scheme, host and path but
+lose credentials, query and fragment; `user:password@` before a host without a
+scheme is dropped, as is a query string left on such a link. Data URIs, bearer
+and basic credentials, JSON web tokens, an Authorization value with its scheme
+word, and the value after any name ending in a credential word (`password`,
+`api_key`, `"apiKey"`, `aws_secret_access_key`, `X-Amz-Signature`, `token` and
+similar, quoted or not) are replaced. A value after such a name that is exactly
+a support id (lowercase `error_` and 6 to 64 letters and digits with a capital
+or digit), quoted or not, is kept, because support needs it.
+
+When `metadata.error` and `metadata.hint` contain each other, ignoring case,
+spacing and final punctuation, only the longer is shown. The joined text is cut
+to MAX_LENGTH at a word boundary, so no marker, word or id is split, and when
+the cut drops the first support id of the cleaned text it is appended. The id
+is only ever taken from the cleaned text: an id that appeared only in removed
+content, such as a link's query or userinfo, is not shown.
+
 Like remote progress, a reason is bound to the record that produced it, kept
 in memory by its owner and never persisted.
 """
@@ -47,15 +56,39 @@ _LINK = re.compile(r"(?i)\b[a-z][a-z0-9+.-]{0,31}://\S+")
 _DATA = re.compile(r"(?i)\bdata:[a-z0-9.+-]+/[^\s,]*,\S*")
 # A query string on a link without a scheme, such as `host/path?key=value`.
 _QUERY = re.compile(r"(?<=[^\s?])\?[^\s?]*=\S*")
+# `user:password@` starting a token before a host, on a link without a scheme.
+_USERINFO = re.compile(r"(?<![^\s(\[<\"'])[^\s/@:()\[\]<>\"']+:[^\s/@]+@(?=[A-Za-z0-9])")
 _SCHEME_CREDENTIAL = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}")
-_NAMED_CREDENTIAL = re.compile(
-    r"(?i)(?<![A-Za-z0-9])("
-    r"(?:x-)?(?:api[_-]?key|api[_-]?secret|client[_-]?secret|secret|access[_-]?token|"
-    r"refresh[_-]?token|token|password|passwd|authorization|signature|credentials?|cookie|"
-    r"session[_-]?id))"
-    r"(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+_VALUE = r"(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+# An Authorization header's whole value, including its scheme word (token, Digest...).
+_AUTHORIZATION = re.compile(
+    r"(?i)(?<![A-Za-z0-9])((?:proxy-)?authorization[\"']?\s*[:=]\s*)"
+    r"(?:[A-Za-z][A-Za-z0-9-]*\s+)?" + _VALUE
 )
+# Any `name: value` or `name=value`, the name optionally closed by a quote as in JSON.
+_NAME = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})[\"']?\s*[:=]\s*")
+_VALUE_AT = re.compile(_VALUE)
+# A name is a credential when, lowercased without separators, it ends with one of
+# these, as in film_case_study's key filter, plus session and signed-URL key ids.
+_CREDENTIAL_WORDS = (
+    "apikey",
+    "apisecret",
+    "accesskey",
+    "privatekey",
+    "secret",
+    "password",
+    "passwd",
+    "credential",
+    "credentials",
+    "authorization",
+    "token",
+    "cookie",
+    "signature",
+    "sessionid",
+    "keypairid",
+)
+_MARKERS = re.compile("|".join(map(re.escape, (REDACTED, LINK_REMOVED, DATA_REMOVED))))
 # Scenario-style identifier: `error_` and letters and digits with at least one
 # capital or digit, so words such as error_code are not mistaken for one.
 _SUPPORT_ID = re.compile(
@@ -104,18 +137,33 @@ def _drop_query(match):
     return _split_trailing(match.group(0))[1]
 
 
-def _named_credential(match):
-    """Redact a value after a credential name unless it is exactly a support id.
+def _exact_support_id(value):
+    """Whether a credential value is exactly a support id, quoted or before punctuation.
 
-    The id may be quoted or followed by punctuation; anything else shaped like
-    one (another case, length or character) is redacted like any value.
+    Anything else shaped like one (another case, length or character) is not.
     """
-    value = match.group(3)
     if len(value) > 1 and value[0] in "\"'" and value[-1] == value[0]:
         value = value[1:-1]
-    if _SUPPORT_ID.fullmatch(_split_trailing(value)[0]):
-        return match.group(0)
-    return match.group(1) + match.group(2) + REDACTED
+    return _SUPPORT_ID.fullmatch(_split_trailing(value)[0]) is not None
+
+
+def _redact_named(text):
+    """Replace the value after every name ending in a credential word.
+
+    Names are read left to right without consuming the value of a name that is
+    not a credential, so `note: password=x` still reaches `password`.
+    """
+    parts, position = [], 0
+    while (match := _NAME.search(text, position)) is not None:
+        name = re.sub(r"[^a-z0-9]", "", match.group(1).lower())
+        value = _VALUE_AT.match(text, match.end()) if name.endswith(_CREDENTIAL_WORDS) else None
+        parts.append(text[position : match.end()])
+        position = match.end()
+        if value is not None:
+            parts.append(value.group(0) if _exact_support_id(value.group(0)) else REDACTED)
+            position = value.end()
+    parts.append(text[position:])
+    return "".join(parts)
 
 
 def _visible(value):
@@ -125,45 +173,58 @@ def _visible(value):
     )
 
 
-def _redact_credentials(text):
-    text = _SCHEME_CREDENTIAL.sub(lambda match: f"{match.group(1)} {REDACTED}", text)
-    text = _JWT.sub(REDACTED, text)
-    return _NAMED_CREDENTIAL.sub(_named_credential, text)
-
-
 def clean(value):
-    """One service string as safe single-line text, unbounded; "" for anything else."""
+    """One service string as safe single-line text, unbounded; "" for anything else.
+
+    This is the only path from service text to anything shown, the support id included.
+    """
     if not isinstance(value, str):
         return ""
     text = _LINK.sub(_link, _visible(value))
+    text = _USERINFO.sub("", text)
     text = _DATA.sub(DATA_REMOVED, text)
     text = _QUERY.sub(_drop_query, text)
-    return _SPACES.sub(" ", _redact_credentials(text)).strip()
+    text = _AUTHORIZATION.sub(lambda match: match.group(1) + REDACTED, text)
+    text = _SCHEME_CREDENTIAL.sub(lambda match: f"{match.group(1)} {REDACTED}", text)
+    text = _JWT.sub(REDACTED, text)
+    return _SPACES.sub(" ", _redact_named(text)).strip()
 
 
-def _kept_support_id(value):
-    """The support id to keep from one service string, or None.
+def _cut(text, room):
+    """At most ``room`` characters of cleaned ``text``, ending at a word boundary.
 
-    Links stay in place, so an id in a query string that cleaning drops is
-    still found; an id-shaped part of a redacted credential or data URI is not.
+    A cut inside a marker or support id moves before it. Otherwise a cut inside
+    a word moves back to the last space when that keeps at least half the room;
+    only a single word longer than that is split.
     """
-    if not isinstance(value, str):
-        return None
-    return support_id(_redact_credentials(_DATA.sub(DATA_REMOVED, _visible(value))))
+    if len(text) <= room:
+        return text
+    end = room
+    for match in (*_MARKERS.finditer(text), *_SUPPORT_ID.finditer(text)):
+        if match.start() < end < match.end():
+            end = match.start()
+    if text[end] != " ":
+        space = text.rfind(" ", 0, end)
+        if space >= room // 2:
+            end = space
+    return text[:end].rstrip()
 
 
-def _bound(text, support):
-    """Cut ``text`` to MAX_LENGTH with an ellipsis, always keeping ``support``."""
-    if support is not None and support in text:
-        if len(text) <= MAX_LENGTH:
-            return text
-        kept = text[: MAX_LENGTH - 1].rstrip()
-        if support in kept:
-            return kept + "…"
-    suffix = f" (error id {support})" if support is not None else ""
-    if len(text) + len(suffix) <= MAX_LENGTH:
-        return text + suffix
-    return text[: MAX_LENGTH - len(suffix) - 1].rstrip() + "…" + suffix
+def _bound(text):
+    """Cut cleaned ``text`` to MAX_LENGTH with an ellipsis, keeping its first support id."""
+    if len(text) <= MAX_LENGTH:
+        return text
+    kept = _cut(text, MAX_LENGTH - 1)
+    support = support_id(text)
+    if support is None or support in kept:
+        return kept + "…"
+    suffix = f" (error id {support})"
+    return _cut(text, MAX_LENGTH - len(suffix) - 1) + "…" + suffix
+
+
+def _same(text):
+    """Comparison form: case-folded, single-spaced, without final punctuation."""
+    return " ".join(text.casefold().split()).rstrip(".!?;:, ")
 
 
 def reason(response):
@@ -171,24 +232,26 @@ def reason(response):
 
     ``response`` is one decoded `GET /jobs/{jobId}` job record. Only a
     `failure` status has a reason: its `metadata.error`, then its
-    `metadata.hint` when that adds something. Other types are ignored.
+    `metadata.hint`, or only the longer when one contains the other. Other
+    types are ignored.
     """
     if not isinstance(response, dict) or response.get("status") != "failure":
         return None
     metadata = response.get("metadata")
     if not isinstance(metadata, dict):
         return None
-    values = [metadata.get(name) for name in FIELDS]
-    parts = []
-    for part in (clean(value) for value in values):
-        if part and not any(part in earlier for earlier in parts):
-            parts.append(part)
+    error, hint = (clean(metadata.get(name)) for name in FIELDS)
+    # When one contains the other, only the longer says everything.
+    if error and hint and _same(hint) in _same(error):
+        hint = ""
+    elif error and hint and _same(error) in _same(hint):
+        error = ""
+    parts = [part for part in (error, hint) if part]
     if not parts:
         return None
     if len(parts) > 1 and parts[0][-1] not in ".!?":
         parts[0] += "."
-    support = next((found for found in map(_kept_support_id, values) if found), None)
-    return _bound(" ".join(parts), support)
+    return _bound(" ".join(parts))
 
 
 def observe(snapshot):

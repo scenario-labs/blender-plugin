@@ -1001,20 +1001,31 @@ Scenario gave. SDK 2.2.0 and the [job retrieval reference](https://docs.scenario
 document two optional strings in `Job.metadata`: `error` ("Eventual error for
 the job") and `hint` ("Actionable hint for the user explaining what went wrong
 and how to resolve it"). [`failures.observe`](../scenario/core/jobs/failures.py)
-joins them, the hint only when it adds something, into one `RemoteFailure`
-bound to the record's remote job ID and saved revision. It treats the text as
-untrusted: control, format and line characters become spaces; links keep
-scheme, host and path without credentials, query or fragment; a query left on a
-link without a scheme, data URIs, bearer and basic credentials, JSON web tokens
-and values after credential names read `[redacted]` or are removed; and the
-result is cut to 400 characters with an ellipsis. A support error id
-(lowercase `error_` followed by 6 to 64 letters and digits with a capital or
-digit) is always kept, because support asks for it: after a credential name
-only a value that is exactly such an id, quoted or not, stays in place, so
-`api_key=ERROR_...` and other look-alikes are redacted. The id is appended when
-cutting or link cleaning would lose it, but never taken from inside a redacted
-credential. Other statuses, other types and unreadable values give no reason;
-a failed reading drops it and logs only its error type.
+joins them into one `RemoteFailure` bound to the record's remote job ID and
+saved revision; when one contains the other, ignoring case, spacing and final
+punctuation, only the longer is kept. One cleaning pipeline prepares all the
+text shown, because the text is untrusted:
+
+- Control, format and line characters become single spaces.
+- Links keep scheme, host and path without credentials, query or fragment.
+  Before a host without a scheme, `user:password@` and a query string are
+  dropped, and data URIs are removed.
+- Bearer and basic credentials, JSON web tokens, an Authorization value with
+  its scheme word, and the value after any name ending in a credential word
+  (`password`, `api_key`, a JSON `"apiKey"`, `aws_secret_access_key`,
+  `X-Amz-Signature`, `token` and similar) read `[redacted]`. After such a name,
+  only a value that is exactly a support id, quoted or not, stays in place, so
+  `api_key=ERROR_...` and other look-alikes are redacted.
+- The result is cut to 400 characters at a word boundary with an ellipsis, so
+  no marker, word or id is split.
+
+A support error id (lowercase `error_` followed by 6 to 64 letters and digits
+with a capital or digit) is kept because support asks for it: when the cut
+drops the first one in the cleaned text, it is appended. It is taken only from
+the cleaned text, so an id that appeared only in removed content, such as a
+link's query or userinfo, a data URI or a redacted credential, is not shown.
+Other statuses, other types and unreadable values give no reason; a failed
+reading drops it and logs only its error type.
 
 Each maintenance poll sets a `failed` view's error to that reason while the
 record keeps the reading's remote ID and revision, else to none: nothing else

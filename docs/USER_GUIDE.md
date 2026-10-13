@@ -1076,7 +1076,8 @@ upload state.
 Inputs of other kinds, or with listed allowed asset IDs, use Library or an ID.
 
 Choose **Request workflow price**, then **Generate**. The separate confirmation
-shows the server-normalized inputs, original scene and complete exact CU price.
+shows the server-normalized inputs under the labels the form shows, the original
+scene and the complete exact CU price.
 If the workflow repeats steps in a loop (For Each), Scenario prices one pass
 through the loop. The button then reads **Generate (from N CU)** and a warning
 explains that the final charge can be higher. The same happens when the

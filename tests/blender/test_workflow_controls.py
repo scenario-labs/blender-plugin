@@ -331,6 +331,8 @@ class WorkflowControlTests(unittest.TestCase):
             window_manager=SimpleNamespace(
                 invoke_props_dialog=MagicMock(return_value={"RUNNING_MODAL"})
             ),
+            # The warning measures its lines with the interface font.
+            preferences=bpy.context.preferences,
         )
         cls = self.ui.SCENARIO_OT_generate_workflow
         self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
@@ -344,6 +346,120 @@ class WorkflowControlTests(unittest.TestCase):
         # The session result row keeps the approved quote as a lower bound.
         (result,) = self.fixture.runtime.state.model_jobs.views.values()
         self.assertEqual(self.result_costs(result), ["from 0.123 CU"])
+
+    def confirmation(self, *, scale=1.0):
+        """The Generate confirmation's drawn labels as (text, icon), on Blender's first draw.
+
+        Blender lays a popup out before it sizes the popup's region, so that region
+        is 0 px wide, and the context region is the one the dialog was invoked
+        from, such as a header that spans the whole area.
+        """
+        operator = SimpleNamespace(report=MagicMock(), layout=MagicMock())
+        context = SimpleNamespace(
+            scene=self.scene,
+            window_manager=SimpleNamespace(
+                invoke_props_dialog=MagicMock(return_value={"RUNNING_MODAL"})
+            ),
+            region=SimpleNamespace(width=2400),
+            region_popup=SimpleNamespace(width=0),
+            preferences=SimpleNamespace(
+                system=SimpleNamespace(ui_scale=scale),
+                ui_styles=bpy.context.preferences.ui_styles,
+            ),
+        )
+        cls = self.ui.SCENARIO_OT_generate_workflow
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        before = self.ui.signature(self.form)
+        cls.draw(operator, context)
+        self.assertEqual(self.ui.signature(self.form), before)
+        self.assertFalse(self.fixture.paid)
+        return [
+            (c.kwargs.get("text"), c.kwargs.get("icon"))
+            for c in operator.layout.label.call_args_list
+        ]
+
+    def form_labels(self):
+        """The labels the Studio form draws beside its inputs' values."""
+        layout = MagicMock()
+        self.ui.draw(layout, bpy.context)
+        value = layout.box.return_value.row.return_value.row.return_value
+        return [call.kwargs["text"] for call in value.prop.call_args_list]
+
+    def test_confirmation_names_inputs_by_the_labels_the_form_shows(self):
+        # A physical check read "Image4:" and "Images1:" in the confirmation where
+        # the form showed each workflow input's own label.
+        self.fixture.workflow["inputs"][0]["label"] = "Product / brand reference"
+        self.price()
+        self.assertEqual(self.form_labels(), ["Product / brand reference", "Count"])
+        texts = [text for text, _ in self.confirmation()]
+        self.assertIn('Product / brand reference: "a cup"', texts)
+        self.assertIn("Count: 1", texts)
+        self.assertFalse([text for text in texts if text.startswith("Prompt")], texts)
+
+    def test_confirmation_uses_the_parameter_name_when_an_input_has_no_label(self):
+        self.fixture.workflow["inputs"][0]["label"] = ""
+        self.price()
+        # Without a label the form shows the input's readable parameter name; so does the confirmation.
+        self.assertEqual(self.form_labels(), ["Prompt", "Count"])
+        texts = [text for text, _ in self.confirmation()]
+        self.assertIn('Prompt: "a cup"', texts)
+        self.assertIn("Count: 1", texts)
+
+    def warning_lines(self, labels):
+        return [text for text, icon in labels if icon in {"ERROR", "BLANK1"}]
+
+    def assert_fits(self, lines, units, scale):
+        import blf
+
+        blf.size(0, bpy.context.preferences.ui_styles[0].widget.points * scale)
+        for line in lines:
+            self.assertLessEqual(blf.dimensions(0, line)[0], units * scale, line)
+
+    def test_loop_warning_wraps_by_the_measured_width_between_its_sentences(self):
+        # A physical check saw the warning, wrapped at 60 characters, break after
+        # "covers one" in both the confirmation and Studio's wide form.
+        self.fixture.workflow["flow"] = [
+            {"id": "loop", "type": "for-each", "loopBodyNodeIds": ["node-a"]},
+            {"id": "node-a", "type": "custom-model"},
+        ]
+        warning = self.price().cost_warning
+        sentences = [
+            "This workflow repeats steps in a loop.",
+            "The price covers one loop pass; the final charge can be higher.",
+        ]
+        self.assertEqual(warning, " ".join(sentences))
+        for scale in (1.0, 2.0):
+            with self.subTest(ui_scale=scale):
+                # Measured against the dialog's declared width, not its unsized
+                # region or the wide region it was invoked from. The whole warning
+                # needs two lines there, so each sentence takes its own.
+                lines = self.warning_lines(self.confirmation(scale=scale))
+                self.assertEqual(lines, sentences)
+                self.assert_fits(lines, self.ui.CONFIRMATION_WIDTH - self.ui.WARNING_INSET, scale)
+        studio = submodule("blender.studio")
+        navigation = bpy.context.window_manager.scenario_studio_view
+        self.addCleanup(setattr, navigation, "page", navigation.page)
+        navigation.page = "WORKFLOWS"
+        scale = submodule("blender.label_wrap").ui_scale(bpy.context)
+        for width in (960, 240):
+            with self.subTest(studio_width=width):
+                layout = MagicMock()
+                studio.draw_view(layout, bpy.context, width=width)
+                lines = self.warning_lines(
+                    (call.kwargs.get("text"), call.kwargs.get("icon"))
+                    for call in layout.label.call_args_list
+                )
+                self.assertEqual(" ".join(lines), warning)
+                if width == 960:
+                    # Studio's wide page fits the whole warning on one line.
+                    self.assertEqual(lines, [warning])
+                else:
+                    self.assertGreater(len(lines), 2)
+                    # No line runs one sentence into the next.
+                    heads = [" ".join(lines[:count]) for count in range(1, len(lines))]
+                    self.assertIn(sentences[0], heads)
+                self.assert_fits(lines, width - self.ui.WARNING_INSET, scale)
+        self.assertFalse(self.fixture.paid)
 
     def result_costs(self, record):
         layout = MagicMock()

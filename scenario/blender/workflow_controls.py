@@ -4,6 +4,7 @@
 
 import functools
 import json
+import re
 import textwrap
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -21,12 +22,18 @@ from ..core.api.errors import ScenarioError
 from ..core.schema.forms import display_label, schema_defaults, validate_parameters
 from ..core.schema.params import parse_schema
 from ..core.ui.costs import workflow_loop_warning
-from . import file_state, reference_form, runtime, workflow_steps
+from . import file_state, label_wrap, reference_form, runtime, workflow_steps
 
 # Persisted ID properties on workflow file inputs. A marker blocks pricing until
 # its upload attaches or is explicitly resolved; the request records provenance.
 UPLOAD_MARKER = "_scenario_workflow_upload"
 UPLOAD_REQUEST = "_scenario_workflow_upload_request"
+# Interface units requested for the Generate workflow confirmation.
+CONFIRMATION_WIDTH = 540
+# Interface units a warning line drawn straight in a popup's layout, as in the
+# confirmation or on Studio's Workflows page, cannot use: the first line's icon
+# and the label's text and clipping margins, plus slack.
+WARNING_INSET = 64
 
 
 def _json(value):
@@ -181,6 +188,11 @@ def parameters(form):
     if errors:
         raise ValueError("\n".join(errors))
     return values
+
+
+def input_labels(form):
+    """The label the form draws beside each input's value, by parameter name."""
+    return {item.name: item.label for item in form.inputs if item.label}
 
 
 def signature(form):
@@ -440,20 +452,27 @@ class SCENARIO_OT_generate_workflow(bpy.types.Operator):
             self._scene_name = context.scene.name
             self._quote_id, self._cost = view.ticket.identifier, view.cost
             self._warning = view.cost_warning
-            self._title = context.scene.scenario_workflow.title
+            form = context.scene.scenario_workflow
+            self._title = form.title
             self._payload = view.ticket.quote.estimate.payload
+            # The quote is current for this form, so its inputs are the ones priced.
+            self._labels = input_labels(form)
         except Exception:
             return _error(self, "Request a current workflow price first")
-        return context.window_manager.invoke_props_dialog(self, width=540)
+        return context.window_manager.invoke_props_dialog(self, width=CONFIRMATION_WIDTH)
 
     def draw(self, context):
         self.layout.label(text=self._title)
         self.layout.label(text=f"Scene: {self._scene_name}")
         for name, value in self._payload.items():
-            for line in textwrap.wrap(f"{display_label(name)}: {_json(value)}", 70):
+            # Name each value as the form does; a value it has no input for keeps its readable name.
+            label = self._labels.get(name) or display_label(name)
+            for line in textwrap.wrap(f"{label}: {_json(value)}", 70):
                 self.layout.label(text=line)
         self.layout.label(text=f"Exact price: {self._cost} CU")
-        _warn(self.layout, self._warning)
+        # Blender lays a popup out before sizing it; wrapped lines measure the requested width.
+        with label_wrap.popup_layout(CONFIRMATION_WIDTH):
+            _warn(self.layout, context, self._warning)
         self.layout.label(text="Submit once. Inspect saved jobs after an uncertain response.")
         self.layout.label(text="Results require separate application.")
         self.layout.label(text="Approval and selection steps wait for your review in Jobs.")
@@ -471,8 +490,22 @@ class SCENARIO_OT_generate_workflow(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def _warn(layout, text):
-    for index, line in enumerate(textwrap.wrap(text, 60)):
+def _warn(layout, context, text):
+    """Draw a warning wrapped by the width the interface font measures for it.
+
+    A warning that needs more than one line starts each sentence on a line of
+    its own, so no line ends with the first words of the next sentence.
+    """
+    if not text:
+        return
+    lines = label_wrap.label_lines(context, text, WARNING_INSET)
+    if len(lines) > 1:
+        lines = [
+            line
+            for sentence in re.split(r"(?<=\.) +", text)
+            for line in label_wrap.label_lines(context, sentence, WARNING_INSET)
+        ]
+    for index, line in enumerate(lines):
         layout.label(text=line, icon="ERROR" if index == 0 else "BLANK1")
 
 
@@ -552,7 +585,7 @@ def draw(layout, context):
         text = f"Generate ({'from ' if view.cost_warning else ''}{view.cost} CU)"
     row.operator("scenario.generate_workflow", text=text, icon="PLAY")
     if ready and view.cost_warning:
-        _warn(layout, view.cost_warning)
+        _warn(layout, context, view.cost_warning)
 
 
 CLASSES = (

@@ -2414,15 +2414,22 @@ inclusion checkbox omits it from the request, allowing declared defaults.
 
 **Request workflow price** starts a shared session quote. **Generate** opens a
 separate confirmation with normalized inputs, scene and the full exact CU price.
+Each input value is named by the label the form draws for it, so an input
+without a schema label keeps its readable parameter name, as in the form.
 Cancel submits nothing; confirmation rechecks the form, scene, selected session
 and original quote. When the workflow definition has loop nodes, or its loop
 coverage cannot be checked (for example, a node type the extension does not
-know), the button reads **Generate (from N CU)** and a wrapped warning states
+know), the button reads **Generate (from N CU)** and a warning states
 that the price covers one loop pass and the final charge can be higher. The
 confirmation repeats it, and the submitted job's session result row shows
-**from N CU**. A recovered workflow job shows **from N CU** too, because the
-saved record keeps no loop count. The warning does not disable approval.
-Drawing is read-only and never starts catalog or job workers.
+**from N CU**. The warning wraps by the width Blender's interface font measures
+(`label_wrap`); when it needs more than one line, each sentence starts its own
+line. The confirmation declares its requested popup width, so its first draw
+wraps like Studio's. Installed tests draw the confirmation as that first draw,
+at UI scale 1.0 and 2.0, and Studio's page 960 and 240 units wide; the desktop
+look awaits the physical recheck under #66. A recovered workflow job shows
+**from N CU** too, because the saved record keeps no loop count. The warning
+does not disable approval. Drawing is read-only and never starts catalog or job workers.
 Page search/navigation use unsaved WindowManager state; scene form edits require
 a new price. The maintenance pump completes metadata and quote requests even
 after the popup closes. Saved jobs use the existing Jobs and Results controls.

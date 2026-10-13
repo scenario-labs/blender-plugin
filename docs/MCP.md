@@ -69,8 +69,10 @@ completion, so it is not a time estimate. A restarted job reports progress only 
 [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 For a `failed` job, `error` is the reason Scenario gave, read from the same
 retrieval that observed the failure: its `metadata.error`, then its
-`metadata.hint`, cleaned to one line of at most 400 characters with its support
-error id (`error_...`) kept. It is also never persisted, so a job that failed
+`metadata.hint`, each shown as one line when it is plain text and otherwise
+replaced by "Scenario reported more details that are not shown here."; when neither is plain text, `error` is "Scenario reported a failure without a readable reason."
+It is at most 400 characters, with its support error id (`error_...`) kept from
+plain text. It is also never persisted, so a job that failed
 before a restart reports `null`. `list_local_jobs` reads only saved records and
 has no error field; see [failure reasons](BLENDER_JOB_CONTEXT.md#failure-reasons).
 

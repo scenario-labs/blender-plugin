@@ -1002,53 +1002,40 @@ document two optional strings in `Job.metadata`: `error` ("Eventual error for
 the job") and `hint` ("Actionable hint for the user explaining what went wrong
 and how to resolve it"). [`failures.observe`](../scenario/core/jobs/failures.py)
 joins them into one `RemoteFailure` bound to the record's remote job ID and
-saved revision; when one contains the other, ignoring case, spacing and final
-punctuation, only the longer is kept. The text is untrusted, so one cleaning
-pipeline prepares all the text shown. It is conservative by default: when in
-doubt it redacts, and only a small explicit allowlist keeps harmless names
-readable.
+saved revision. The text is untrusted, so nothing is rewritten or redacted: an
+allowlist gate, made only of plain string operations, shows each part as it is
+when it is plain text and otherwise replaces it with a fixed sentence. After at
+most 4,096 characters are read and control, format and space characters become
+single spaces, a part is shown only when:
 
-- Line breaks end clauses; other control, format and space characters become
-  spaces.
-- Links keep scheme, host and path without credentials, query or fragment.
-  `something:something@` userinfo reads `[redacted]@`: in a link (`scheme://`
-  or `//`) only in the authority, so an `@` in the path (`brick@2x.png`,
-  `/@handle`) keeps the link, and in any other token whatever precedes it. A
-  query string on a link without a scheme is dropped, and data URIs are
-  removed.
-- Bearer and basic credentials and JSON web tokens read `[redacted]`.
-- A credential name is any `name:` or `name=`, quoted as in JSON or not, whose
-  letters and digits contain `key`, `secret`, `token`, `password`, `passwd`,
-  `pwd`, `auth`, `credential`, `signature`, `session` or `cookie`, or that has
-  `sig` as a word, unless it is an allowlisted harmless name such as
-  `max_tokens`, `tokenizer`, `keyframe`, `keyword` or `author`. Its whole value
-  reads `[redacted]`: a quoted value to its closing quote, where a backslash
-  escapes a quote and a quote left open runs to the end of its line or of the
-  text, otherwise everything up to the end of its clause (`, ; & ) ] }`, a
-  quote, a line break, the next `name:` or the end). A value that starts with exactly a support id keeps that
-  id, and the rest of its clause is redacted, so `api_key=ERROR_...` and other
-  look-alikes are redacted.
-- Any remaining run of 24 or more letters, digits and `+/_.-` is redacted when
-  one of its `/`- or `.`-separated parts is at least 12 characters long and
-  mixes letters and digits, as base64, hex, JWT-like secrets and UUIDs do, or
-  when the whole run, without its known IDs, still has 24 or more letters and
-  digits, mixes them and has words averaging 8 or more characters, as a secret
-  split into all-letter and all-digit segments does; hosts and paths are made
-  of shorter words. Known IDs are a support id and a Scenario resource ID:
-  `model_`, `job_`, `asset_`, `team_`, `proj_`, `col_`, `workflow_`, `upload_`
-  or `apiu_` followed by 20 to 24 letters and digits, as recorded fixtures
-  show, or a public model's hyphenated lowercase slug. Anything longer glued to
-  a prefix is not an ID.
-- The result is cut to 400 characters at a word boundary with an ellipsis, so
-  no marker, word or id is split.
+- every character is a letter, a digit, a space or one of
+  `. , ; : ' " ( ) - ! ? / % _`, and the part contains no `//`;
+- every space-separated token, without surrounding punctuation, is an exact
+  support id, a Scenario resource ID, a word of letters (with hyphens or
+  apostrophes inside) shorter than 32 characters, or another token shorter than
+  12 characters that switches between letters and digits at most twice, so
+  `4096x4096`, `720p` and `H3` pass and short random strings do not;
+- a `/` only joins two words shorter than 12 characters;
+- no token contains a credential word (`key`, `secret`, `token`, `password`,
+  `passwd`, `pwd`, `auth`, `credential`, `signature`, `session`, `cookie`, or
+  `sig` alone), except harmless words such as `keyframe`, `keyword` or
+  `author`.
 
-A support error id (lowercase `error_` followed by 6 to 64 letters and digits
-with a capital or digit) is kept because support asks for it: when the cut
-drops the first one in the cleaned text, it is appended. It is taken only from
-the cleaned text, so an id that appeared only in removed content, such as a
-link's query or userinfo, a data URI or a redacted credential, is not shown.
-Other statuses, other types and unreadable values give no reason; a failed
-reading drops it and logs only its error type.
+A Scenario resource ID is `model_`, `job_`, `asset_`, `team_`, `proj_`, `col_`,
+`workflow_`, `upload_` or `apiu_` followed by 20 to 24 letters and digits, as
+recorded fixtures show, or a public model's lowercase hyphenated slug of 2 to 9
+words. A support error id is lowercase `error_` followed by 6 to 64 letters and
+digits with a capital or digit.
+
+A part that is not plain text reads "Scenario reported more details that are
+not shown here.", and nothing is taken from it, not even a support id. When
+neither part is plain text, the reason is "Scenario reported a failure without
+a readable reason." When both are shown and one contains the other, ignoring
+case, spacing and final punctuation, only the longer is kept. The joined text
+is cut to 400 characters at a word boundary with an ellipsis, never inside a
+support id; when the cut drops the first support id of the shown text, it is
+appended. Missing, blank and non-text values give no part, and other statuses
+give no reason; a failed reading drops it and logs only its error type.
 
 Each maintenance poll sets a `failed` view's error to that reason while the
 record keeps the reading's remote ID and revision, else to none: nothing else

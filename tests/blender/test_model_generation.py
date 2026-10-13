@@ -1063,7 +1063,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 2)
 
     def test_failed_job_reason_reaches_generations_details_and_mcp_without_being_saved(self):
-        """Scenario's metadata.error and hint for a failure, cleaned, on every surface."""
+        """Scenario's plain-text metadata.error on every surface; a hint with a link is not shown."""
         support = "error_Fx7Kq2Lm9Rt4Vw8Yz3Bc6Dn1"
         message = (
             f"An internal error occurred. Please contact support and provide this id: {support}"
@@ -1071,7 +1071,8 @@ class ModelGenerationTests(unittest.TestCase):
         signed = "https://cdn.cloud.scenario.com/part.glb?X-Amz-Signature=SIGNED"  # secrets-allow: synthetic fixture
         self.remote_status, self.remote_progress = "failure", 0.1
         self.remote_metadata = {"error": message, "hint": f"Retry later; see {signed}"}
-        expected = f"{message}. Retry later; see https://cdn.cloud.scenario.com/part.glb"
+        failures = submodule("core.jobs.failures")
+        expected = f"{message}. {failures.NOT_SHOWN}"
         self.ui_quote()
         ui = self.generation.submit_generation(bpy.context, "image")
         mcp = self.mcp_submit(self.mcp_quote())

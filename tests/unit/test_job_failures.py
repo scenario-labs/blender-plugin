@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Read and clean Scenario's reason for a failed job without Blender or network access.
+"""Show Scenario's reason for a failed job only when it is plain text; no Blender or network.
 
 No captured failed-job response exists under tests/fixtures. The failed record
 below is synthetic: the recorded Patina `GET /jobs/{jobId}` reply with the
@@ -24,6 +24,15 @@ from scenario.core.jobs.store import JobState
 RECORDED = Path(__file__).parents[1] / "fixtures" / "patina-copper-512" / "job.json"
 SUPPORT_ID = "error_Q7fK2mXv9LpR4tNc8WbZ3hYd"
 INTERNAL = f"An internal error occurred. Please contact support and provide this id: {SUPPORT_ID}"
+# The live error's shape, with its double space before the id, and a live hint.
+LIVE_ERROR = (
+    "An internal error occurred. Please contact support and provide this id:  " + SUPPORT_ID
+)
+LIVE_HINT = (
+    "The generation took too long to complete. Try retrying with a lower resolution, "
+    + "shorter duration, or simpler prompt settings, then submit again."
+)
+GENERIC = (failures.UNREADABLE, "Rejected. " + failures.NOT_SHOWN)
 
 
 def failed_job(error=INTERNAL, hint=None, *, status="failure"):
@@ -58,6 +67,12 @@ def test_synthetic_failed_job_follows_the_sdk_contract_and_yields_its_message():
     parsed = JobRetrieveResponse.model_validate({"job": job}).job
     assert (parsed.status, parsed.metadata.error) == ("failure", INTERNAL)
     assert failures.reason(job) == INTERNAL
+
+
+def test_the_live_error_and_hint_are_shown_in_full():
+    assert failures.reason(failed_job(LIVE_ERROR)) == INTERNAL
+    assert failures.reason(failed_job(None, LIVE_HINT)) == LIVE_HINT
+    assert failures.reason(failed_job(LIVE_ERROR, LIVE_HINT)) == f"{INTERNAL}. {LIVE_HINT}"
 
 
 def test_an_actionable_hint_follows_the_error_as_one_sentence():
@@ -126,124 +141,72 @@ def test_missing_blank_or_non_text_values_give_no_reason(value):
 
 def test_control_format_and_line_characters_become_single_spaces():
     text = "Model\nfailed:\r\n\tinput\x00rejected retry‮ later​ now"
-    assert failures.reason(failed_job(text)) == ("Model failed: input rejected retry later now")
+    assert failures.reason(failed_job(text)) == "Model failed: input rejected retry later now"
 
 
-def test_links_keep_their_place_but_lose_credentials_query_and_fragment():
-    text = (
-        "Download failed for https://user:pass@cdn.example.com:8443/a/b.png?X-Amz-Signature=abc"  # secrets-allow: synthetic fixture
-        "&X-Amz-Credential=def#frag. See https://docs.example.com/errors/mesh, "  # secrets-allow: synthetic fixture
-        "or (cdn.example.com/c.glb?Key-Pair-Id=K&Policy=P) and data:image/png;base64,iVBORw0KGgo="  # secrets-allow: synthetic fixture
+def test_a_part_that_is_not_plain_text_is_replaced_and_nothing_is_taken_from_it():
+    hidden = f"See https://status.example.com/incident?ref={SUPPORT_ID} for details"
+    assert failures.reason(failed_job(hidden)) == failures.UNREADABLE
+    assert failures.reason(failed_job("Rejected", hidden)) == "Rejected. " + failures.NOT_SHOWN
+    assert failures.reason(failed_job(hidden, "Try again later.")) == (
+        f"{failures.NOT_SHOWN} Try again later."
     )
-    cleaned = failures.reason(failed_job(text))
-    assert cleaned == (
-        "Download failed for https://cdn.example.com:8443/a/b.png. "
-        "See https://docs.example.com/errors/mesh, or (cdn.example.com/c.glb) and "
-        f"{failures.DATA_REMOVED}"
-    )
-    for leak in ("user", "pass", "Signature", "Credential", "frag", "Key-Pair", "Policy", "iVBOR"):
-        assert leak not in cleaned
+    for error, hint in ((hidden, None), ("Rejected", hidden), (hidden, hidden)):
+        assert "error_" not in failures.reason(failed_job(error, hint))
 
 
-def test_unparseable_links_are_removed():
-    cleaned = failures.reason(failed_job("Bad host https://[::1/x?token=t here"))
-    assert cleaned == f"Bad host {failures.LINK_REMOVED} here"
-
-
-@pytest.mark.parametrize(
-    ("text", "secret"),
-    [
-        ('Rejected {"apiKey": "sk-abc123456"}', "sk-abc123456"),
-        ("Rejected {'client_secret':'cs-abc123456'}", "cs-abc123456"),
-        ("Rejected aws_secret_access_key=abc123456 for the bucket", "abc123456"),
-        ("Rejected X-Goog-Signature=abc123456&X-Goog-Date=1", "abc123456"),
-        ("Rejected github_token: abc123456", "abc123456"),
-        ("Rejected Authorization: token abc123456", "abc123456"),
-        ("Rejected Proxy-Authorization: Digest abc123456", "abc123456"),
-        ("Rejected note: password=abc123456", "abc123456"),
-        ("Rejected https://host/p;jsessionid=abc123456", "abc123456"),
-        ("Mirror user:abc123456@cdn.example.com/a failed", "abc123456"),
-        ("Mirror (user:abc123456@cdn.example.com/a) failed", "abc123456"),
-    ],
-)
-def test_credentials_in_other_shapes_are_replaced(text, secret):
-    cleaned = failures.reason(failed_job(text))
-    assert secret not in cleaned, cleaned
-    assert cleaned.startswith(text.split(" ")[0])
-
-
-def test_names_that_only_contain_a_credential_word_keep_their_value():
-    text = "Requested max_tokens: 4096 exceeds the limit; tokenizer: v2"
-    assert failures.reason(failed_job(text)) == text
-
-
-def test_credential_shaped_values_are_replaced():
-    bearer = "Bearer " + "abcdefghijklmnop" * 2
-    jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlX3ZhbHVl"
-    text = (
-        f"Authorization: {bearer}; api_key=sk_abc123456 apiSecret: 'two words' "
-        f"token={jwt} password: hunter2hunter2 sessionId=s3ss10n"
-    )
-    cleaned = failures.reason(failed_job(text))
-    for secret in ("abcdefghijklmnop", "sk_abc123456", "two words", "eyJ", "hunter2", "s3ss10n"):
-        assert secret not in cleaned
-    assert "api_key=[redacted]" in cleaned and "password: [redacted]" in cleaned
-    assert cleaned.count(failures.REDACTED) >= 6
-
-
-def test_ordinary_words_and_the_support_id_survive_cleaning():
-    text = f"Token limit reached for this model. Provide this token: {SUPPORT_ID}"
-    assert failures.reason(failed_job(text)) == text
-
-
-@pytest.mark.parametrize(
-    "value",
-    [
-        "error_abcDEF123",
-        '"error_abcDEF123"',
-        "'error_abcDEF123'",
-        "error_abcDEF123.",
-        '"error_abcDEF123").',
-    ],
-)
-def test_a_genuine_support_id_after_a_credential_name_is_kept_as_written(value):
-    for name in ("token=", "token: ", "API_KEY="):
-        for text in (f"Quote {name}{value}", f"Quote {name}{value}, then retry"):
-            assert failures.reason(failed_job(text)) == text
-
-
-def test_words_after_a_support_id_in_a_credential_clause_are_redacted():
-    text = "Quote token=error_abcDEF123 sEcr3tKey99, then retry"
-    assert failures.reason(failed_job(text)) == (
-        f"Quote token=error_abcDEF123 {failures.REDACTED}, then retry"
-    )
-
-
-# Every leak raised in review so far, and the shapes the conservative design targets:
-# (text, secrets that must not appear in the reason).
+# Every leak raised in review so far, the five of the last round, and shapes the
+# gate targets: (text, secrets that must not appear in the reason). Each of
+# them is not plain text, so it is replaced by a fixed sentence.
 ADVERSARIAL = [
     # Look-alike support ids after a credential name.
     ("Rejected api_key=ERROR_realSecretToken123 now", ["realSecret"]),
     ("Rejected api_key=Error_realSecretToken123", ["realSecret"]),
-    # An id-shaped password in a link's userinfo is not appended back.
+    ("Rejected api_key=error_realsecrettoken now", ["realsecret"]),
+    ("Rejected api_key=error_ab1 now", ["error_ab1"]),
+    ("Rejected api_key=tok.error_realSecretToken123.x now", ["realSecret"]),
+    ('Rejected api_key="ERROR_realSecretToken123" now', ["realSecret"]),
+    # Ids that appeared only inside removed content.
     ("See https://user:error_AbcDEF123secret@host.example/path", ["AbcDEF123secret", "error_"]),
-    # *_key names.
+    (f"See https://status.example.com/incident?ref={SUPPORT_ID} now", [SUPPORT_ID]),
+    (f"See user:{SUPPORT_ID}@cdn.example.com/a for details", [SUPPORT_ID]),
+    # Links, queries, fragments and data URIs.
+    (
+        "Download failed for https://user:pass@cdn.example.com:8443/a/b.png?X-Amz-Signature=abc",  # secrets-allow
+        ["user:pass", "Signature", "abc"],
+    ),
+    ("See cdn.example.com/c?Key-Pair-Id=K&Policy=P", ["Key-Pair-Id"]),  # secrets-allow
+    ("Image data:image/png;base64,iVBORw0KGgo= rejected", ["iVBORw0KGgo"]),
+    ("Bad host https://[::1/x?token=t here", ["token=t"]),
+    # Credential names and values in every earlier shape.
     ("Signing failed: secret_key=abc123", ["abc123"]),
     ("Signing failed: master_key: abc123", ["abc123"]),
     ("Signing failed: signing_key=abc123", ["abc123"]),
     ("Signing failed: client_key=abc123", ["abc123"]),
     ("Signing failed: session_key=abc123", ["abc123"]),
     ("Signing failed: SecretKey=abc123", ["abc123"]),
-    # A whole multi-word value, up to the end of its clause.
+    ('Rejected {"apiKey": "sk-abc123456"}', ["sk-abc123456"]),
+    ("Rejected {'client_secret':'cs-abc123456'}", ["cs-abc123456"]),
+    ("Rejected aws_secret_access_key=abc123456 for the bucket", ["abc123456"]),
+    ("Rejected X-Goog-Signature=abc123456&X-Goog-Date=1", ["abc123456"]),
+    ("Rejected github_token: abc123456", ["abc123456"]),
+    ("Rejected Authorization: token abc123456", ["abc123456"]),
+    ("Rejected Proxy-Authorization: Digest abc123456", ["abc123456"]),
+    ("Rejected note: password=abc123456", ["abc123456"]),
+    ("Rejected https://host/p;jsessionid=abc123456", ["abc123456"]),
+    ("Rejected Authorization: Bearer abcdefghijklmnop", ["abcdefghijklmnop"]),
+    ("Rejected token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.c2lnbmF0dXJl", ["eyJ"]),
     ("Rejected token: Signed sEcr3tKey99", ["sEcr3tKey99", "Signed"]),
     ("Rejected github_token: Signed sEcr3tKey99, retry", ["sEcr3tKey99"]),
     ("Rejected x-api-key = Custom sEcr3tKey99; retry", ["sEcr3tKey99"]),
     ("Rejected auth: Digest sEcr3tKey99", ["sEcr3tKey99"]),
     ("Rejected sig=sEcr3tKey99&next=1", ["sEcr3tKey99"]),
+    ("Rejected sig: sEcr3tKey99", ["sEcr3tKey99"]),
     ("Rejected pwd: hunter2 hunter3", ["hunter2", "hunter3"]),
     ("Rejected cookie: a=1; b=2", ["a=1"]),
     ('Rejected {"credentials": "one two three"}', ["one two three"]),
-    ("Rejected password: line one\nnext line kept", ["line one", "one"]),
+    ("Rejected password: line one\nnext line kept", ["line one"]),
+    ("Quote token=error_abcDEF123 sEcr3tKey99, then retry", ["sEcr3tKey99"]),
     # Userinfo glued after any character, with or without a scheme.
     ("Mirror path/user:pAss123@host.example failed", ["pAss123"]),
     ("Mirror x:user:pAss123@host.example failed", ["pAss123"]),
@@ -252,192 +215,148 @@ ADVERSARIAL = [
     ("Mirror <x>user:pAss123@host.example failed", ["pAss123"]),
     ("Mirror a@user:pAss123@host.example failed", ["pAss123"]),
     ("Mirror user:pAss123@ host.example failed", ["pAss123"]),
-    # Opaque 24+ character tokens that mix letters and digits.
+    ("Mirror //user:pAss123@host.example/x failed", ["pAss123"]),
+    # Long tokens that mix letters and digits, whole or in segments.
     ("Signed with dGhpcyBpcyBhIHNlY3JldCB2YWx1ZQ== today", ["dGhpcyBpcy"]),
     ("Digest 0123456789abcdef0123456789abcdef01234567 rejected", ["0123456789abcdef"]),
     ("Session aBcDeF123456gHiJkL789012.mNoPqR345678sTuVwX901234.x", ["aBcDeF123456"]),
     ("Upload to /bucket/aBcDeF123456gHiJkL789012/x.png failed", ["aBcDeF123456"]),
+    ("Key abcdefghijkl.123456789012.mnopqrstuvwx used", ["abcdefghijkl", "123456789012"]),
+    ("Key ABCDEFGHIJKLMNOP/1234567890123456 used", ["ABCDEFGHIJKLMNOP"]),
+    ("Request 3f2a9c1e-8b7d-4e6f-a5c3-1d2e3f4a5b6c failed", ["3f2a9c1e"]),
+    ("Signed with s3ss10n now", ["s3ss10n"]),
     # Unterminated and escaped quotes in a credential value.
     ('Rejected token: "secret value never closed', ["secret value", "never closed"]),
     ("Rejected password: 'hunter2 hunter3", ["hunter2", "hunter3"]),  # secrets-allow
     ('Rejected token: "abc\\"def secret" retry', ["def", "secret"]),
-    ("Rejected secret='abc\\'xyz secret' retry", ["xyz", "secret'"]),
+    ("Rejected secret='abc\\'xyz secret' retry", ["xyz"]),
     ('Rejected token: "line one\\\nline two', ["line one"]),
     # A secret glued to a resource-id prefix, or longer than any resource id.
     ("Glued job_KWxxsnSdVXDFZRMsoCvLTmKYsEcr3tKey99abc here", ["sEcr3tKey99"]),
     ("Glued asset_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6 here", ["a1b2c3d4e5f6a1b2"]),
     ("Glued model_abcdef0123456789abcdef0123456789abcd here", ["abcdef0123456789"]),
     ("Glued model_a-abcdef0123456789abcdef0123456789 here", ["abcdef0123456789"]),
-    # Segments that are each all letters or all digits.
-    ("Key abcdefghijkl.123456789012.mnopqrstuvwx used", ["abcdefghijkl", "123456789012"]),
-    ("Key ABCDEFGHIJKLMNOP/1234567890123456 used", ["ABCDEFGHIJKLMNOP"]),
-    # Userinfo in a protocol-relative link's authority.
-    ("Mirror //user:pAss123@host.example/x failed", ["pAss123"]),
+    # The five of the last review round.
+    ('Rejected "\\' + "!\\" * 40, ["!\\!\\"]),
+    ("Rejected '\\" + "&\\" * 40, ["&\\&\\"]),
+    ("Fetch https://host.example/data/user:pAss123@file failed", ["pAss123"]),
+    ("Key ab12cde.fg34hij.kl56mno.pq78rst used", ["ab12cde", "pq78rst"]),
+    ("Copy //cdn.internal/old/user:S3cr3tPass99@ backup.internal", ["S3cr3tPass99"]),
 ]
 
 
 @pytest.mark.parametrize(("text", "secrets"), ADVERSARIAL)
-def test_adversarial_reasons_never_show_a_secret(text, secrets):
-    for error, hint in ((text, None), (None, text), ("Rejected", text)):
-        cleaned = failures.reason(failed_job(error, hint))
+def test_adversarial_reasons_show_only_a_fixed_sentence(text, secrets):
+    for error, hint in ((text, None), (None, text), ("Rejected", text), (text, text)):
+        shown = failures.reason(failed_job(error, hint))
+        assert shown in GENERIC, shown
         for secret in secrets:
-            assert secret not in cleaned, cleaned
-        assert text not in cleaned, cleaned
+            assert secret not in shown, shown
 
 
-def test_a_quote_left_open_at_the_read_limit_still_redacts_its_value():
-    head = "x " * ((failures.MAX_INPUT - 20) // 2)
-    cleaned = failures.clean(head + 'token: "secret value continues past the limit')
-    assert cleaned.endswith(f"token: {failures.REDACTED}") and "secret" not in cleaned
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ('token: "open value\nnext line kept', "token: [redacted] next line kept"),
-        ("password: line one\nnext line kept", "password: [redacted] next line kept"),
-        ("token: abc def, retry later", "token: [redacted], retry later"),
-        ("token: abc def; retry", "token: [redacted]; retry"),
-        ("(token: abc def) retry", "(token: [redacted]) retry"),
-        ('{"apiKey": "a b", "model": "x"}', '{"apiKey": [redacted], "model": "x"}'),
-        (
-            "api_key=sk1 apiSecret: 'two words' model: x",
-            "api_key=[redacted] apiSecret: [redacted] model: x",
-        ),
-        ("secret: dGVzdA== now", "secret: [redacted]"),
-    ],
-)
-def test_a_credential_value_runs_to_the_end_of_its_clause(text, expected):
-    assert failures.reason(failed_job(text)) == expected
-
-
-# Ordinary text stays readable: the live error, the prototype-era message, sizes,
-# dates, links, e-mail addresses and Scenario resource ids.
+# Ordinary text stays readable: sizes, dates, percentages, model names, links
+# between two words, e-mail-free prose and Scenario resource ids.
 READABLE = [
-    "An internal error occurred. Please contact support and provide this id: " + SUPPORT_ID,
-    (
-        "The model file is too large for processing. Try reducing the resolution or "
-        + "simplifying the geometry of your input, then retry the generation. "
-        + "[Error ID: error_Uq14k1SGmKWhPfv4HZ4hyZRN]"
-    ),
+    INTERNAL,
+    LIVE_HINT,
     "Input image is 8192 x 8192 pixels; the maximum is 4096 x 4096.",
+    "Upscale to 4096x4096 is not supported for GPT Image 2; use 2048x2048 or less.",
+    "Seedance 2.5 accepts videos of 5 to 10 seconds at 720p or 1080p.",
+    "The generation used 95% of its time budget on 2026-10-13 at 00:20:58.",
     (
         "Model model_tencent-uv-unwrapping could not read asset asset_4Aufp4GxmMozUQUL36d5C6Jr "
         + "for job job_KWxxsnSdVXDFZRMsoCvLTmKY in proj_FIXTURE00000000000000000."
     ),
-    "authorId: apiu_FIXTURE0000000000000000 has no access to workflow_aBcDeF123456gHiJkL789012",
-    "Requested max_tokens: 4096 exceeds the limit; tokenizer: v2",
-    "Keyframe 24 is missing; keyframes: 1-48 were expected.",
-    "Retry after 2026-10-13T00:20:58Z; see https://docs.scenario.com/api/python/resources/jobs",
-    "Contact support@scenario.com with the id.",
-    "Model design: v2 (signal level 3), keyword: fox",
-    "Token limit reached for this model; try a shorter prompt.",
-    # A harmless @ in a link's path or a schemeless file name keeps the whole link.
-    "Could not load https://cdn.example.com/textures/brick@2x.png for this model.",
-    "See https://example.com/@scenario for updates.",
-    "The texture brick@2x.png is too large.",
-    # Paths and hosts made of short words keep their digits.
-    "Bucket eu-west-3.storage.googleapis.com/bucket2026/archive is full.",
-    "Write to renders/frame0001/beauty.exr failed.",
-    "Upload texture/1024/normal-map-final.png again.",
-    "Model model_hunyuan-world-image-to-skybox is unavailable.",
+    "Model model_hunyuan-world-image-to-skybox is unavailable (workflow_aBcDeF123456gHiJkL789012).",
+    "Retry after 5 minutes (rate limit: 10 requests per minute).",
+    "The input/output ratio is too high; keyframes 1-48 were expected.",
+    "Internationalization of text-to-video prompts isn't supported yet!",
+    "La génération a échoué : réessayez avec une résolution plus basse.",
+    'The prompt "a red fox" was rejected by the content filter.',
+    "Rendering at x86_64 speed reached 3.5 fps on the H3 model.",
 ]
 
 
 @pytest.mark.parametrize("text", READABLE)
 def test_ordinary_reasons_stay_readable(text):
     assert failures.reason(failed_job(text)) == text
+    assert failures.reason(failed_job(None, text)) == text
 
 
 @pytest.mark.parametrize(
-    "value",
+    ("token", "showable"),
     [
-        "ERROR_realSecretToken123",
-        "Error_realSecretToken123",
-        "error_realsecrettoken",  # lowercase only: not a support id
-        "error_ab1",  # too short
-        "error_realSecret-Token123",
-        "tok.error_realSecretToken123.x",  # an id-shaped part of a secret is not appended
-        '"ERROR_realSecretToken123"',
-        "error_" + "A" * 65,  # too long
+        ("and/or", True),
+        ("input/output", True),
+        ("a/b/c", False),
+        ("/path", False),
+        ("averyveryverylongword/b", False),
+        ("Internationalization", True),
+        ("text-to-video", True),
+        ("abcdefghijklmnopqrstuvwxyzabcdef", False),  # letters, 32 or more
+        ("4096x4096", True),
+        ("a1b2", False),
+        ("model_patina-material", True),
+        ("model_" + "x" * 30, False),
+        ("keyframe", True),
+        ("monkey", False),
+        ("sig", False),
+        ("design", True),
+        (SUPPORT_ID, True),
+        ("error_occurred", False),
     ],
 )
-def test_values_that_only_look_like_a_support_id_are_redacted(value):
-    cleaned = failures.reason(failed_job(f"Rejected api_key={value} now"))
-    assert cleaned.startswith(f"Rejected api_key={failures.REDACTED}")
-    assert "realSecret" not in cleaned and "realsecret" not in cleaned
-    assert "AAAAAAAA" not in cleaned
+def test_token_rules(token, showable):
+    shown = failures.reason(failed_job(f"Check {token} now"))
+    assert (shown == f"Check {token} now") is showable, shown
 
 
 def test_long_reasons_are_bounded_and_keep_the_support_id():
     head = "The provider rejected the request. " * 40
-    cleaned = failures.reason(failed_job(head + INTERNAL))
-    assert len(cleaned) <= failures.MAX_LENGTH
-    assert cleaned.startswith("The provider rejected the request.")
-    assert cleaned.endswith(f"… (error id {SUPPORT_ID})")
+    shown = failures.reason(failed_job(head + INTERNAL))
+    assert len(shown) <= failures.MAX_LENGTH
+    assert shown.startswith("The provider rejected the request.")
+    assert shown.endswith(f"… (error id {SUPPORT_ID})")
     # An id already inside the kept text is not repeated.
     early = failures.reason(failed_job(INTERNAL + " " + head))
     assert len(early) <= failures.MAX_LENGTH and early.count(SUPPORT_ID) == 1
     assert early.startswith(INTERNAL) and early.endswith("…")
 
 
-def test_an_id_only_in_removed_content_is_never_brought_back():
-    # The support id comes from the cleaned text alone: a query, userinfo, data
-    # URI or credential that cleaning removed never returns as "(error id ...)".
-    for text in (
-        f"See https://status.example.com/incident?ref={SUPPORT_ID} for details",
-        f"See https://user:{SUPPORT_ID}secret@cdn.example.com/a.png for details",
-        f"See https://user:{SUPPORT_ID}@cdn.example.com/a.png for details",
-        f"See cdn.example.com/a?ref={SUPPORT_ID} for details",
-        f"See user:{SUPPORT_ID}@cdn.example.com/a for details",
-    ):
-        cleaned = failures.reason(failed_job(text + " " + "x" * 500))
-        assert "error_" not in cleaned and "error id" not in cleaned, cleaned
-        assert failures.reason(failed_job(text)).endswith(" for details"), text
-
-
-def test_the_live_double_space_before_the_id_reads_as_one():
-    text = "An internal error occurred. Please contact support and provide this id:  " + SUPPORT_ID
-    assert failures.reason(failed_job(text)) == INTERNAL
-
-
-@pytest.mark.parametrize("marker", ["[redacted]", "[link removed]", "[data removed]"])
 @pytest.mark.parametrize("offset", range(-12, 4))
-def test_cutting_never_splits_a_marker_word_or_the_support_id(marker, offset):
-    source = {
-        "[redacted]": "password: hunter2hunter2",
-        "[link removed]": "https://[::1/x",
-        "[data removed]": "data:image/png;base64,iVBORw0KGgo=",
-    }[marker]
+def test_cutting_never_splits_a_word_or_the_support_id(offset):
     words = "word " * 200
-    text = words[: failures.MAX_LENGTH + offset - len(marker)] + source + " tail " + INTERNAL
-    full = failures.clean(text)
-    cleaned = failures.reason(failed_job(text))
-    assert len(cleaned) <= failures.MAX_LENGTH
-    body = cleaned.split("…")[0]
-    # The cut ends at a word boundary of the cleaned text, so a marker is whole or absent.
+    text = words[: failures.MAX_LENGTH + offset].rstrip() + " " + SUPPORT_ID + " tail " + INTERNAL
+    full = " ".join(text.split())
+    shown = failures.reason(failed_job(text))
+    assert len(shown) <= failures.MAX_LENGTH
+    body = shown.split("…")[0]
     assert full.startswith(body) and full[len(body)] == " ", body[-30:]
-    assert body.count("[") == body.count("]")
-    # The id is given once, after the ellipsis.
-    assert cleaned.endswith(f"… (error id {SUPPORT_ID})") and cleaned.count(SUPPORT_ID) == 1
-
-
-def test_a_cut_inside_one_long_word_still_ends_with_an_ellipsis():
-    cleaned = failures.reason(failed_job("x" * 1000))
-    assert cleaned == "x" * (failures.MAX_LENGTH - 1) + "…"
+    assert shown.count(SUPPORT_ID) == 1
 
 
 def test_lowercase_words_after_error_are_not_support_ids():
     assert failures.support_id("error_occurred and error_code") is None
-    assert failures.support_id(f"x {SUPPORT_ID} y") == SUPPORT_ID
+    assert failures.support_id(f"x {SUPPORT_ID}. y") == SUPPORT_ID
+    assert failures.support_id(None) is None
 
 
-def test_huge_values_are_bounded_quickly():
-    hostile = ("a.b-" * 50_000) + "token=" + ("x" * 50_000) + "\n" * 10_000
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        '"\\' + "!\\" * 50_000,
+        "'\\" + "&\\" * 50_000,
+        "a:" * 50_000 + "@",
+        "a.b-" * 50_000 + "token=" + "x" * 50_000,
+        "x " * 100_000,
+        "é" * 100_000,
+    ],
+)
+def test_pathological_inputs_finish_in_linear_time(hostile):
     started = time.perf_counter()
-    cleaned = failures.reason(failed_job(hostile, hostile))
-    assert time.perf_counter() - started < 2
-    assert len(cleaned) <= failures.MAX_LENGTH
+    shown = failures.reason(failed_job(hostile, hostile))
+    assert time.perf_counter() - started < 0.5
+    assert len(shown) <= failures.MAX_LENGTH
 
 
 def test_observe_binds_the_reason_to_the_failed_record_that_produced_it():

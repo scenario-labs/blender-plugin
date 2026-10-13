@@ -141,6 +141,62 @@ def test_tool_errors_and_unknown_tools():
     assert bad["error"]["code"] == -32600
 
 
+def test_missing_required_arguments_are_refused_before_the_handler_runs():
+    reg, calls = protocol.Registry(), []
+    reg.add(
+        protocol.ToolSpec(
+            "status",
+            "Requires two arguments",
+            {
+                "type": "object",
+                "properties": {
+                    "context_id": {"type": "string"},
+                    "reference_id": {"type": "string"},
+                },
+                "required": ["context_id", "reference_id"],
+            },
+            calls.append,
+        )
+    )
+
+    def executor(handler, arguments):
+        calls.append(("executor", arguments))
+        return handler(arguments)
+
+    for arguments, text in (
+        (None, "Missing required arguments: context_id, reference_id"),
+        ({"reference_id": "handle"}, "Missing required argument: context_id"),
+        ({"context_id": "context"}, "Missing required argument: reference_id"),
+        (["context", "handle"], "Tool arguments must be a JSON object"),
+    ):
+        response = protocol.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 13,
+                "method": "tools/call",
+                "params": {"name": "status", "arguments": arguments},
+            },
+            reg,
+            INFO,
+            executor=executor,
+        )
+        assert response["result"]["isError"] is True
+        assert response["result"]["content"][0]["text"] == f"ValueError: {text}"
+    assert calls == []
+    complete = {"context_id": "context", "reference_id": "handle"}
+    protocol.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 14,
+            "method": "tools/call",
+            "params": {"name": "status", "arguments": complete},
+        },
+        reg,
+        INFO,
+    )
+    assert calls == [complete]
+
+
 def test_image_results_and_executor_hook():
     reg = registry()
     shot = protocol.handle_message(

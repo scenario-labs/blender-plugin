@@ -134,11 +134,6 @@ establish live generation or full render-lane desktop acceptance.
   versions that share a title collide when extracted side by side. A second
   end-to-end run with two versions met all three ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#68](https://github.com/scenario-labs/blender-plugin/issues/68)).
-- The local MCP server does not check a tool's required arguments before running
-  it, so the tool reports an omitted one in its own terms:
-  `reference_upload_status` without `context_id` answers that the upload context
-  changed, and without `reference_id` it fails as an unexpected error that points
-  to the Blender console. Send every argument the tool's schema marks required.
 - Local MCP `job_status` lists `files` only for image results imported
   automatically in the current session. A ready video, an image not imported
   automatically, other result kinds and every job after a restart list none;

@@ -518,6 +518,10 @@ client to inspect the operation before retrying. This does not cancel remote
 jobs or establish whether an HTTP client's independent timeout happened before
 or after dispatch.
 
+A call that omits an argument its input schema lists as required, or whose
+arguments are not an object, is refused before the tool runs with
+`ValueError: Missing required argument: <name>` (or the plural form); argument
+values are still checked by each tool.
 A failed tool call returns an `isError` result with one line, `Type: message`,
 and no traceback. The message is returned only when the extension wrote it: a
 validation error or refusal raised by the tool or by extension code it calls,

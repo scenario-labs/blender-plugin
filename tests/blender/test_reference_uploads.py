@@ -15,7 +15,7 @@ from unittest.mock import patch
 import bpy
 import httpx
 import test_session_uploads as fixture_module
-from helpers import FRAME_NOTIFYING, recording_context, submodule
+from helpers import FRAME_NOTIFYING, mcp_call, recording_context, submodule
 
 
 class ReferenceUploadTests(unittest.TestCase):
@@ -238,6 +238,21 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertEqual(ticket.record.state.value, "prepared")
         self.assertEqual(self.fixture.calls, [])
         self.fixture.uploader.upload.assert_not_called()
+
+    def test_status_without_a_required_argument_names_it(self):
+        result = self.start()
+        for arguments, missing in (
+            ({"reference_id": result["reference_id"]}, "context_id"),
+            ({"context_id": result["context_id"]}, "reference_id"),
+        ):
+            with self.subTest(missing=missing):
+                response = mcp_call("reference_upload_status", arguments)["result"]
+                self.assertTrue(response["isError"])
+                self.assertEqual(
+                    response["content"][0]["text"],
+                    f"ValueError: Missing required argument: {missing}",
+                )
+        self.assertEqual(self.tools.reference_upload_status(result)["error"], None)
 
     def test_lost_initialization_response_is_saved_and_never_replayed(self):
         calls = []

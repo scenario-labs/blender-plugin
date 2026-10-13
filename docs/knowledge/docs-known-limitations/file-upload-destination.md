@@ -20,7 +20,7 @@
       "scenario/blender/workflow_uploads.py": "70e6543b1546ce6ec67e48b07ab7b5605e86be349e19abb6aa0e9de5da778151",
       "scenario/mcp/tools_scenario.py": "f9e4447cc3b1a1cae05f5fd3148940f25f39c3bbfbbc62b876ab524b5af0d83f",
       "tests/unit/test_job_origins.py": "1065f4125092c4171d4e680bce2cb48641f5335a1a4d4b6589ba704cf9779be6",
-      "tests/blender/test_reference_uploads.py": "edd9bdce1d58acf708f111f77706e8d25e418bafcfa3fd550373a5be0c5bd890",
+      "tests/blender/test_reference_uploads.py": "567e65da79edb8878fa09163962e1363ffe754ada8a070ba0e12d8858fdf735b",
       "tests/blender/test_reference_form.py": "96e9f097cb981141f1a4a1774adde0c09b880d699d20e68a556544a75f8bb21f",
       "tests/blender/test_workflow_uploads.py": "dd47d5900ae5c69e4380e56b96e66b00a93366a60566920789034c4a3bc575a8",
       "tests/blender/test_job_session.py": "098a513567a9ac9e846283075420900298d53a9595462b63af178957ef2955df"

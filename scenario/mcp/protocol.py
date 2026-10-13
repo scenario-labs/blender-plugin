@@ -159,6 +159,20 @@ def to_content(value):
     return [{"type": "text", "text": json.dumps(value, indent=1, default=str)}]
 
 
+def _check_arguments(spec, arguments):
+    """Refuse a call that omits an argument its input schema requires, before any work.
+
+    Handlers would otherwise read a missing context as a changed one, or fail
+    on a missing key. Only presence is checked; handlers still validate values.
+    """
+    if not isinstance(arguments, dict):
+        raise ValueError("Tool arguments must be a JSON object")
+    missing = [name for name in spec.input_schema.get("required", ()) if name not in arguments]
+    if missing:
+        plural = "s" if len(missing) > 1 else ""
+        raise ValueError(f"Missing required argument{plural}: {', '.join(missing)}")
+
+
 def handle_message(message, registry, server_info, executor=None):
     if not isinstance(message, dict) or "method" not in message:
         return _error(
@@ -192,6 +206,7 @@ def handle_message(message, registry, server_info, executor=None):
             return _error(msg_id, INVALID_PARAMS, f"Unknown tool: {name}")
         arguments = params.get("arguments") or {}
         try:
+            _check_arguments(spec, arguments)
             if executor is not None and not spec.offthread:
                 value = executor(spec.handler, arguments)
             else:

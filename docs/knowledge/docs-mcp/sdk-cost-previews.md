@@ -10,7 +10,7 @@
     "coverage": "source-reviewed",
     "reviewed_at": "2026-09-25",
     "base_revision": "76b624d697f6a944fb53b831fd33b097ed95bfcd",
-    "limits": "Source and synthetic SDK transport review covers active UI/MCP cost previews, exact Decimal/response retention, numeric MCP cost details, dryRun query placement, stale credential/form rejection, original-scene delivery including copied/deleted scenes, nested input snapshots and MCP main-thread preparation/delivery around off-thread network work. Installed-ZIP suites on Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64 each pass all 349 tests, including the new estimate cases. No live/paid calls, durable submission, authoritative identity/project discovery, complete platform/input acceptance or human approval is claimed.",
+    "limits": "Source and synthetic SDK transport review covers active UI/MCP cost previews, exact Decimal/response retention, numeric MCP cost details, dryRun query placement, stale credential/form rejection, original-scene delivery including copied/deleted scenes, nested input snapshots and MCP main-thread preparation/delivery around off-thread network work. Installed-ZIP suites on Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64 each pass all 349 tests, including the new estimate cases. No live/paid calls, durable submission, authoritative identity/project discovery, complete platform/input acceptance or human approval is claimed. Scoped 2026-10-13 check, not a full re-review: test_mcp_deferred adds a finish that hands a second step back to the request thread, as estimate_cost does after waiting for a model description; preparation and every delivery still run on the main thread. The claims above are unchanged; the review date and base revision are unchanged.",
     "sources": {
       "scenario/core/api/sdk_catalog.py": "0f9fb941bc72d2dab9f256186db600a30164ee56b0c5279cc736ff3e6a11ed29",
       "scenario/core/jobs/manager.py": "088ceef062935811ff282f628c0302792b370f27cf6b8557cc1f5547f314ecbd",
@@ -21,7 +21,7 @@
       "scenario/mcp/tools_scenario.py": "45fdb75a07d6fb8542012795a9866ae1fcd8f4092d8092f15750eabfc68351f7",
       "tests/unit/test_sdk_catalog.py": "fa896966a7d37e16731d94ef76a203e952a1d2ed704705ba172c755449bac6e2",
       "tests/unit/test_catalog_delivery.py": "239e88efa293138a3b7ed5aa1a6d7ab31e4d0abf55f8a71035a556213e4c9348",
-      "tests/unit/test_mcp_deferred.py": "f560070df327d3d1c348a727c12f076833e50057fb7020d92b2840fdda8e4093",
+      "tests/unit/test_mcp_deferred.py": "29f47a77d4cf521f4175a27d9d6739ebdda7d02c9dad33a8722b345a6da7ffee",
       "tests/blender/test_sdk_estimates.py": "336d65dd8c202da455a4bba046b4ed827a0763bbe5b75b050e653fdf04e4abc7",
       "tests/blender/run_all.py": "d92ca29db0cf20316d75d80c4e7d5e69fa6eb9a6498ae2a6e858bf466fc9e35e"
     }

@@ -13,15 +13,17 @@ sections keep their own candidate identities and dates.
 
 Reviewed on 2026-10-12 against `main` at
 `ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged, and brought up
-to date with `main` at `3720c9e36eb8ec73382f7158bf4c69c67322eda9`, after #423
-merged. Since that first review, #403 to #406, #408, #409, #416 to #420, #422
-and #423 have merged; #423 fixes the preview pager's fit in the sidebar, a
-defect found by the [pager desktop check](#previews-and-playback). Still open:
-#410 (trained-model strengths and project defaults), #411 (MCP trained models
-and defaults) and release PR #70. The final candidate is not built yet. This
-section records which evidence each retained capability has, of which kind,
-and what remains with its owner. It does not certify the final archive,
-authorize publication or close #68.
+to date with `main` at `df2fac37c5e605854718811ffaf74384d8341033`, after #411
+merged. Since that first review, #403 to #406, #408 to #411, #416 to #420, #422
+to #424, #426 and #428 have merged. Desktop checks found the preview pager and
+composer progress bar defects that #423 and #424 fix, and the
+[end-to-end production run](#end-to-end-production-run) found the media tool
+lookup and Film review defects that #426 and #428 fix. Still open: #425
+(reasons for failed jobs), #427 (MCP waits for a model description), #429
+(local MCP scene changes mark the file modified) and release PR #70. The final
+candidate is not built yet. This section records which evidence each retained
+capability has, of which kind, and what remains with its owner. It does not
+certify the final archive, authorize publication or close #68.
 
 ### Release candidate identity
 
@@ -35,10 +37,10 @@ authorize publication or close #68.
 
 Until then, the latest integrated evidence is:
 
-- `main` at `2e89cae8` passes
-  [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38314348872):
-  7,191 unit tests with the known SDK authentication expected failure on Python
-  3.11 and 3.13, and 1,139 installed baseline tests per job, five skips each, on
+- `main` at `df2fac37` passes
+  [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38344728434):
+  7,243 unit tests with the known SDK authentication expected failure on Python
+  3.11 and 3.13, and 1,244 installed baseline tests per job, five skips each, on
   Linux x64 and Windows x64 with Blender 5.0.1, 5.1.2 and 5.2.1, with the same
   install, update and offline restart checks as the run below.
 - `main` at `ff8d29d8` passes
@@ -72,14 +74,27 @@ Until then, the latest integrated evidence is:
 | Unit | Locked offline pytest, without Blender or network access. |
 | Installed | The exact packaged ZIP in an isolated profile, `tools/test_blender.py --suite all`, with synthetic service responses; macOS 27.0.1 arm64 unless stated. |
 | Hosted CI | `ci-ok`, including the Linux x64 and Windows x64 baseline on Blender 5.0.1, 5.1.2 and 5.2.1. |
-| Desktop | An exact ZIP in a fresh profile, driven by real operating-system mouse and keyboard events on macOS 27.0.1 arm64 (Retina, French keyboard layout), with inspected screenshots. Blender 5.1.2 at UI scales 1.0 and 2.0 unless stated. A spend guard kept every session free: reads, dry-run quotes and, where stated, free uploads. |
+| Desktop | An exact ZIP in a fresh profile, driven by real operating-system mouse and keyboard events on macOS 27.0.1 arm64 (Retina, French keyboard layout), with inspected screenshots. Blender 5.1.2 at UI scales 1.0 and 2.0 unless stated. A spend guard kept sessions free unless stated: reads, dry-run quotes and, where stated, free uploads. The paid desktop pass and the #424 recheck of 2026-10-13 ran without it, with generation authorized by the maintainer. |
 | Free live | Real service reads, dry-run quotes, uploads or organization writes, without generation. |
 | Paid live | Billed generation authorized beforehand by the maintainer for its scope and budget. The service reimburses failed generation jobs. |
 
-Most desktop and live checks ran on pre-merge pull request heads, named per
-lane. Saved results reached isolated profiles through read-only cloud recovery.
-Unit, installed and hosted results for each merged pull request are in its
-description. Quote values, saved identities and private reports stay private.
+Most desktop and live checks before 2026-10-13 ran on pre-merge pull request
+heads, named per lane; the 2026-10-13 checks ran on `main`. Saved results
+reached isolated profiles through read-only cloud recovery. Unit, installed and
+hosted results for each merged pull request are in its description. Quote
+values, saved identities and private reports stay private.
+
+On 2026-10-13, besides the [preview pager check](#previews-and-playback), three
+sessions on macOS arm64 with Blender 5.1.2 added evidence on `main`, named in
+their lanes:
+
+- the **paid desktop pass**: an exact ZIP built from `2e89cae8`, at UI scale
+  1.0, with generation authorized by the maintainer;
+- the **#423 and #424 recheck**: an exact ZIP built from `dad196a8`, at UI scales
+  1.0 and 2.0, offline for the pager and with authorized generation for the
+  progress bar;
+- the [end-to-end production run](#end-to-end-production-run) through local MCP
+  on `3720c9e3`.
 
 ### Lane summary
 
@@ -87,18 +102,18 @@ description. Quote values, saved identities and private reports stay private.
 | --- | --- | --- |
 | [Image](#image) | Paid hosted smoke; free live quotes and UI/MCP parity on desktop | Passed |
 | [Material](#material) | Paid hosted smoke; installed application on 5.0.1, 5.1.2 and 5.2.1 | Passed |
-| [Render Image and Render Video](#render-image-and-render-video) | Paid live, including a first frame; desktop handoff | Pending: first-frame capture and quote on desktop |
+| [Render Image and Render Video](#render-image-and-render-video) | Paid live, including a first frame; desktop handoff, clip capture and ready quote | Passed |
 | [Audio](#audio) | Paid hosted smoke; installed; desktop waveform | Pending: human listening |
-| [3D generation and imports](#3d-generation-and-imports) | Paid hosted smoke; desktop GLB and OBJ imports of live results | Pending: FBX import |
-| [Splats](#splats) | Installed on 5.0.1, 5.1.2 and 5.2.1 | Pending: import of real splat results |
-| [Panorama and World](#panorama-and-world) | Paid live; desktop on pre-rebase heads | Pending: desktop recheck of the merged lane |
-| [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; desktop recheck; #410 and #411 open |
-| [Workflows](#workflows) | Paid live decisions; free live uploads; desktop forms | Pending: desktop review dialogs, previews and uploads |
-| [Film](#film) | Installed; desktop dialogs; export in background Blender | Pending: desktop rerun after #407 and #408 |
-| [Previews and playback](#previews-and-playback) | Free live; desktop on pre-merge heads and the merged pager | Pending: pager recheck after #423 on the candidate; human listening |
+| [3D generation and imports](#3d-generation-and-imports) | Paid hosted smoke; paid desktop FBX import; desktop GLB and OBJ imports | Pending: mesh PLY; no glTF JSON producer |
+| [Splats](#splats) | Paid desktop SPZ generation and import; installed on 5.0.1, 5.1.2 and 5.2.1 | Pending: splat PLY; 1,000,000-point viewport |
+| [Panorama and World](#panorama-and-world) | Paid live, including the end-to-end run; desktop on pre-rebase heads | Pending: desktop recheck of the merged lane |
+| [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; desktop recheck of the merged UI |
+| [Workflows](#workflows) | Paid desktop step review and uploads; paid live decisions | Passed at UI scale 1.0; pending: UI scale 2.0 |
+| [Film](#film) | Paid end-to-end run through local MCP; desktop dialogs | Pending: desktop rerun after #407, #408 and #428 |
+| [Previews and playback](#previews-and-playback) | Free live; desktop, including the pager after #423 | Pending: human listening |
 | [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
-| [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1 | Pending: job card; IME by a person |
-| [MCP parity](#mcp-parity) | Free and paid live through local MCP | Passed for the tools on `ff8d29d8`; pending: #404 and #420 tools on merged heads; #411 open |
+| [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1; paid job strip and card | Pending: UI scale 2.0 of the strip; IME by a person |
+| [MCP parity](#mcp-parity) | Free and paid live through local MCP, including the end-to-end run | Passed for the tools on `ff8d29d8`; pending: later tools on merged heads; #427 and #429 open |
 
 ### Image
 
@@ -154,14 +169,17 @@ description. Quote values, saved identities and private reports stay private.
   frame** in sidebar and Studio Jobs; confirmations for Minimax H3, Seedance 2.0
   Fast, Kling V3 Omni Video and Kling O1 Reference Video; the reference-image
   routing lines; binding, removal and refusal of a second handoff; Esc and
-  focus; one undo step with redo. Capturing and uploading the scene clip, the
-  ready quote and its request body were not exercised.
+  focus; one undo step with redo. Those builds did not capture the scene clip.
+- **Desktop, paid pass:** a saved GPT Image 2 result handed off as the first
+  frame of Minimax H3, the Render Video default; **Capture and upload scene**
+  captured and uploaded the clip; the free quote became ready, and the request
+  built for it sends the frame as reference image 1 and the clip in the reference
+  videos, with no separate image field. The quote was not submitted.
 - **Service:** Seedance 2.0 Mini's first-frame exclusivity is a known
   service-side issue, already reported to the Scenario backend team. No
   Seedance 2.0 Mini job was submitted.
-- **Status:** pending. The first-frame clip capture, upload and ready quote on
-  the desktop need a session without the desktop spend guard, which the agent
-  permission rules refused. Owner: the maintainer, under #66 and #68.
+- **Status:** passed. The clip capture and quote ran at UI scale 1.0 on Blender
+  5.1.2 only, and no Minimax H3 or Wan 3.0 job has run.
 
 ### Audio
 
@@ -197,23 +215,30 @@ description. Quote values, saved identities and private reports stay private.
   OBJ map color spaces; the OBJ normal-strength fix that #413 merged. The tested
   builds lacked #402, so an import had no undo step of its own and left the file
   unmodified; desktop Undo and the save prompt after #402 are not rechecked.
-- **Paid live:** the hosted smoke 3D job reached `READY`. Only Meshy 7's package
-  has been imported from a live result; no catalog model was found producing
-  JSON glTF.
-- **Status:** pending. FBX and mesh PLY imports of real results need a paid
-  generation in the GUI, which the agent permission rules refused. Owner: the
-  maintainer, under #65 and #68.
+- **Desktop, paid pass:** Tencent UV Unwrapping from an uploaded mesh snapshot
+  returned an FBX primary result with OBJ alternates. **Apply** opened a card
+  with a paged preview row and the FBX and OBJ imports; the FBX review and its
+  import into a new group passed, with the selection unchanged. A first attempt
+  failed on the service and showed no reason in the extension, which #425
+  addresses.
+- **Paid live:** the hosted smoke 3D job reached `READY`. Meshy 7's and Tencent
+  UV Unwrapping's packages have been imported from live results; no catalog
+  model was found producing JSON glTF.
+- **Status:** pending. No mesh PLY import of a real result has run, and no
+  catalog model produces JSON glTF. Owner: the maintainer, under #65 and #68.
 
 ### Splats
 
 - **Installed and hosted CI:** #414 (point-cloud import) passes installed
   suites on 5.0.1, 5.1.2 and 5.2.1; #356 (bounded decoders) on 5.1.2 and in
   hosted CI.
-- **Live and desktop:** none. No saved splat result was available. The one
-  planned paid splat generation was stopped before sending, and the agent
-  permission rules refused a retry.
-- **Status:** pending: SPZ and PLY splat generation and import, default axes and
-  a 1,000,000-point viewport check. Owner: the maintainer, under #65 and #68.
+- **Desktop, paid pass:** TripoSplat from an uploaded image returned one SPZ.
+  Its import review and import as a coloured point cloud of 262,144 points
+  passed, upright with the default axes and with the selection unchanged.
+  TripoSplat returned no PLY, and the only PLY splat producer found was over
+  the pass's per-job budget.
+- **Status:** pending: PLY splat generation and import, and a 1,000,000-point
+  viewport check. Owner: the maintainer, under #65 and #68.
 
 ### Panorama and World
 
@@ -230,6 +255,8 @@ description. Quote values, saved identities and private reports stay private.
   originals, and resuming that saved job without a new submission then verified
   a 3072 x 1536 PNG. World application and restore of the PNG and EXR matched
   the baseline exactly. HY World was quoted, not run.
+- **Paid live, end-to-end run:** a Skybox GPT panorama applied as World and
+  converted to an HDRI through local MCP on `3720c9e3`.
 - **Desktop (pre-rebase #415 to #417 heads):** the Environment tab and modes in
   the sidebar and Studio, verified-model lists, settings, the upscale cap, 17
   free quotes, World application of PNG, OpenEXR and JPEG panoramas with
@@ -244,8 +271,9 @@ description. Quote values, saved identities and private reports stay private.
 
 - **Installed and hosted CI:** #357, #363, #371, #374 and #376 are merged, and
   #409 merged on 2026-10-12 as `6a6b4c75`: the model picker's trained LoRAs and
-  compositions. #410 (strengths and project defaults) and #411 (MCP trained
-  models and defaults) are open.
+  compositions. On 2026-10-13 #410 merged as `3111664b`, adding strengths and
+  project defaults, and #411 as `df2fac37`, adding MCP trained models and
+  defaults.
 - **Free live:** on a pre-merge #411 head through local MCP in background
   Blender 5.1.2: public trained models listed, exact quotes equal to the #374
   contracts, byte-identical form and MCP payloads, scoped defaults and local
@@ -256,14 +284,14 @@ description. Quote values, saved identities and private reports stay private.
 - **Desktop (pre-rebase #409 and #410 heads, 23 free quotes):** the picker with
   public LoRAs and compositions, search, base choice, stacking, strength edits,
   per-project default Save, Use, Clear and Replace, one fresh quote per change,
-  Esc and focus. Merged #409 fixes four findings from that pass and open #410
-  the strength that Backspace reset to 0.0, without a desktop recheck. With
+  Esc and focus. #409 fixes four findings from that pass and #410 the strength
+  that Backspace reset to 0.0, without a desktop recheck. With
   #410 a LoRA starts at the model's declared strength or, without one, at 0.75,
   the Scenario web app default; the tested build predates that rule.
 - **Status:** pending. Private LoRAs and compositions need credentials that own
-  them: a human check for the maintainer under #97. Restart persistence, a
-  desktop recheck of the merged picker, and #410 and #411 once merged also
-  remain.
+  them: a human check for the maintainer under #97. Restart persistence and a
+  desktop recheck of the merged picker, strengths and defaults also remain, and
+  #411's tools ran live only on a pre-merge head.
 
 ### Workflows
 
@@ -286,16 +314,29 @@ description. Quote values, saved identities and private reports stay private.
   pre-fix heads of #403 to #405; the merged code has no paid recheck.
 - **Desktop (pre-rebase heads):** the workflow picker, input form, Library
   reference, Generate confirmation and, on #395's head, the loop-cost warning.
-- **Status:** pending. The merged step review dialogs and their **Load
-  previews** (#405, #406), and desktop uploads into inputs, need a paid run and
-  a session without the desktop spend guard, which the agent permission rules
-  refused. Owner: the maintainer, under #66 and #68.
+- **Desktop, paid pass:** a local file and viewport and camera captures were
+  uploaded into workflow inputs, each after its own confirmation and without
+  generating. A public ForEach workflow's dry-run price showed the loop-cost
+  warning in the form and the confirmation; a workflow without a loop did not.
+  A private test workflow with a selection and three approvals, created through
+  the documented API and deleted afterwards, ran once. The review dialog loaded
+  the candidates' previews, Esc closed it without sending, two of three
+  candidates were chosen and an approval was sent. A decision sent from a dialog
+  after its step was decided elsewhere was refused with *The workflow step
+  changed; review it again*, and **Stop workflow** at the last approval canceled
+  the job with only the step that had run charged.
+- **Status:** passed at UI scale 1.0 on one private test workflow. The review
+  dialogs at UI scale 2.0, concurrent decisions and rejection inside a loop
+  remain. Owner: #65 and #66.
 
 ### Film
 
 - **Installed and hosted CI:** #361, #364 and #407 are merged, and #408 merged on
   2026-10-12 as `fc8b2231` after its Windows hosted jobs passed: the portable
-  case-study bundle.
+  case-study bundle. On 2026-10-13 #426 merged as `0aa86d74`, finding `ffmpeg`
+  and `ffprobe` in standard install folders when Blender is started from the
+  Dock, and #428 as `3556dfba`, explaining why a Film review cannot gather its
+  sources and warning when a loaded recipe declares none.
 - **Desktop (pre-fix #407 and #408 heads):** the Film panel, recipe loading, the
   saved upload picker, review preparation, discard and invalidation, building the
   review scene, the export file browser and render confirmation passed. Every
@@ -304,11 +345,18 @@ description. Quote values, saved identities and private reports stay private.
   commands in background Blender wrote a valid 1920 x 1080, 24 fps H.264 MP4
   and a complete bundle that reopened offline. #407 fixes the synchronization
   with an installed reproduction.
-- **Paid live:** none; shot building needs paid hero models.
+- **Paid live:** the [end-to-end production run](#end-to-end-production-run)
+  built previz and final reviews through local MCP, exported a 20 s 1080p MP4
+  with audio and saved a case-study bundle, after working around the two
+  defects that #426 and #428 later fixed. Its media came from uploads; no Film
+  model task ran.
 - **Status:** pending: a desktop rerun of export, cancel, Open folder, Copy
-  SHA-256 and the case-study save after #407 and #408, since the fix landed after
-  the pass, and human playback review. Owner: #66 and #68. Film stays
-  experimental.
+  SHA-256 and the case-study save after #407, #408 and #428, since the fixes
+  landed after the pass, and human playback review. Film cannot capture or
+  export an artist-built multi-shot scene or take a saved generation result as a
+  task source; see the
+  [known limitations](../KNOWN_LIMITATIONS.md#runtime-and-authentication).
+  Owner: #66 and #68. Film stays experimental.
 
 ### Previews and playback
 
@@ -341,14 +389,18 @@ description. Quote values, saved identities and private reports stay private.
   row's arrows were about 1.65 times as tall as its tiles, where the
   [UI contract](../UI_STYLE.md#saved-result-previews) makes them as tall as the
   icons, and its tiles were about 30% smaller than those of an unpaged row in
-  the same panel. In Studio and in a widened sidebar the arrows
-  matched the tiles. #423 (`3720c9e3`) then merged, fitting a paged row so its
-  arrows stay as tall as its tiles; the physical recheck at UI scales 1.0 and
-  2.0 is pending and will run on the release candidate ZIP.
-- **Status:** pending: the physical recheck of #423's pager fit in the
-  default-width sidebar at UI scales 1.0 and 2.0, on the release candidate ZIP
-  (#66 and #68); human listening and Play audio (the maintainer, under #189
-  and #68); the waveform and Studio's Results page at UI scale 2.0; and the
+  the same panel. In Studio and in a widened sidebar the arrows matched the
+  tiles. #423 (`3720c9e3`) then merged to fit a paged row.
+- **Desktop, #423 and #424 recheck:** offline with synthetic saved jobs, at UI
+  scales 1.0 and 2.0, a paged row's arrows were as tall as its tiles' icon cells
+  in Jobs, Generations and Studio, nothing was clipped, captions kept their
+  numbers, real clicks paged forward, clamped at the end and returned, and an
+  unpaged row was unchanged. Blender insets each image in its cell, so in the
+  default-width sidebar the arrows still reach about 9 px (scale 1.0) or 18 px
+  (scale 2.0) beyond the visible image, and paged tiles stay about 30% smaller
+  than unpaged ones: a design note, not a defect against the UI contract.
+- **Status:** pending: human listening and Play audio (the maintainer, under
+  #189 and #68); the waveform and Studio's Results page at UI scale 2.0; and the
   waveform alignment fix proposed on #189.
 
 ### Library organization
@@ -370,7 +422,8 @@ description. Quote values, saved identities and private reports stay private.
 ### Composer and IME
 
 - **Installed and hosted CI:** #353, #358, #362, #365, #369, #397, #398, #401
-  and #421.
+  and #421, and #424, merged on 2026-10-13 as `dad196a8`, which draws the job
+  strip's progress bar to its reported fraction.
 - **Desktop on the 0.10.0 build from #70 (offline):** physical journeys on
   Blender 5.0.1, 5.1.2 and 5.2.1 LTS at 2x backing and 5.2.1 LTS at 1x opened
   Studio on the first click from a focused prompt (5 of 5 each), committed
@@ -385,11 +438,24 @@ description. Quote values, saved identities and private reports stay private.
   [input method limits](../KNOWN_LIMITATIONS.md#interface-and-capture)). A
   refused Generate ended the composer session in that build; #401 fixes it,
   without a desktop recheck.
+- **Desktop, paid pass:** real jobs drove the
+  [compact job strip](../UI_STYLE.md#compact-job-strip) through Submitting,
+  Generating with a percentage, Finalizing, Downloading results, Importing,
+  Ready to apply, Applied and Generation failed. **Inspect** opened the job card
+  with Esc and viewport focus returning, **Reuse** and **Apply** opened their
+  reviews, and the cross dismissed the tray. The determinate progress bar was
+  drawn full at every fraction, which #424 fixes. The service never reported a
+  queued state, so Waiting was not seen, and Cancel was not offered because no
+  job reported `inference`.
+- **Desktop, #423 and #424 recheck:** with authorized generation at UI scale
+  1.0, the strip and the collapsed pill filled to the reported 3% over a dim
+  track, states without a percentage showed only the track, and the idle
+  composer drew no bar. After a job is applied, the collapsed pill keeps the
+  job's grey done line until the job is dismissed, as documented; whether that
+  reads as a full bar is a design question.
 - **Status:** pending:
-  - The [compact job strip](../UI_STYLE.md#compact-job-strip) and its job card
-    have no desktop evidence. Their states need one paid generation in the GUI,
-    which the agent permission rules refused. Owner: the maintainer, under #66
-    and #68.
+  - The job strip and card at UI scale 2.0, the Waiting state, and Cancel on an
+    `inference` job (#65 and #66).
   - IME composition after F2 with an input source a person selects, and the
     candidate window: a human check under #66.
   - #401's endings after an error or a file load, and UI scales 1.25 and 1.5,
@@ -404,32 +470,62 @@ description. Quote values, saved identities and private reports stay private.
   price for Image, Video, 3D, Material and Audio forms; trained-model payloads
   byte-identical to the form; organization; preview inspection matching the
   tiles; World application and restore; Render quotes and generation over
-  prepared native forms; workflow approval and rejection.
-- **Status:** passed for the tools on `main` at `ff8d29d8`. #404's
-  `workflow_job_steps` and `decide_workflow_step` and #420's
-  `inspect_result_previews` merged with installed tests; the live workflow
-  decisions and preview inspection above ran on pre-merge heads, so the merged
-  tools have no live recheck yet. #411's trained-model tools are open. No
-  third-party MCP client session is recorded.
+  prepared native forms; workflow approval and rejection. The end-to-end run
+  used uploads, model schemas, quotes, generation, waits, result application,
+  World, organization and the Film tools on `3720c9e3`.
+- **Status:** passed for the tools on `main` at `ff8d29d8` and those the
+  end-to-end run used. #404's `workflow_job_steps` and `decide_workflow_step`
+  and #411's trained-model tools ran live only on pre-merge heads. The
+  end-to-end run found that the first quote of an uncached model fails while its
+  description loads (#427) and that local MCP scene changes leave the file
+  unmodified (#429); both fixes are open. No third-party MCP client session is
+  recorded.
+
+### End-to-end production run
+
+On 2026-10-13 a maintainer-authorized production test drove an exact ZIP built
+from `main` at `3720c9e3` through local MCP, in Blender 5.1.2 on macOS arm64.
+It is evidence for the shared runtime and its MCP tools, not for desktop
+interaction.
+
+- It built a 20 s multi-shot action sequence in Blender: generated character and
+  prop images, image-to-3D models imported as GLB, a panorama applied as World
+  with an HDRI conversion, a blockout, four cameras with a bullet-time orbit and
+  a previz render.
+- Seedance 2.5 rendered the final video from a previz segment and reference
+  stills. The Film lane assembled it into a 20 s 1080p MP4 with audio and saved
+  a case-study bundle.
+- Fixed since: Film could not find `ffprobe` and `ffmpeg` in a Blender started
+  from the Dock (#426), and a final Film review hid its cause behind a generic
+  error (#428).
+- Under review: a failed job showed no reason (#425), the first quote of an
+  uncached model failed while its description loaded (#427), and local MCP scene
+  changes left the file unmodified, so quitting gave no save prompt (#429).
+- Feature gaps, now among the
+  [known limitations](../KNOWN_LIMITATIONS.md#runtime-and-authentication):
+  Film cannot capture or export an artist-built multi-shot scene, Render Video
+  cannot use an already-rendered previz video as its motion reference, and Film
+  cannot take a saved generation result as a task source, so its case-study
+  ledger lacks that cost.
 
 ### Pending checks
 
 | Check | Lane | Owner | Reason |
 | --- | --- | --- | --- |
-| Job strip and job card from a real generation | Composer | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
-| Workflow step review dialogs, their previews and desktop uploads into inputs | Workflows | Maintainer, #66 and #68 | Paid GUI action refused by the agent permission rules |
-| First-frame clip capture, upload and ready quote | Render Video | Maintainer, #66 and #68 | Needs the desktop spend guard off, refused by the agent permission rules |
-| Splat and FBX imports of real results | Splats, 3D | Maintainer, #65 and #68 | Paid generation refused by the agent permission rules |
+| Job strip and job card at UI scale 2.0, the Waiting state and Cancel on an `inference` job | Composer | #65 and #66 | The paid pass ran at UI scale 1.0; no job reported a queued state or `inference` |
+| Workflow review dialogs at UI scale 2.0, concurrent decisions and rejection inside a loop | Workflows | #65 and #66 | The paid pass ran at UI scale 1.0 on one private test workflow |
+| Render Video handoff and clip capture on Blender 5.0 and 5.2 | Render Video | #66 and #68 | Desktop passes ran on Blender 5.1.2 only |
+| PLY splat and mesh PLY imports of real results, and a 1,000,000-point splat viewport | Splats, 3D | Maintainer, #65 and #68 | The only PLY splat producer found was over the pass's per-job budget; no mesh PLY job ran |
+| Failed-job reasons, MCP quotes of uncached models, and the file marked modified after local MCP changes | Jobs, MCP | #65 and #68 | #425, #427 and #429 are open |
 | IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Human check |
 | Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Human check |
 | Private LoRAs and compositions | Trained models | Maintainer, #97 | Human check; the test credentials own none |
-| Trained-model picker, strengths and project defaults on merged heads | Trained models | #97 | #409's fixes merged after the desktop pass; #410 and #411 are open |
-| Export and case-study save after #407 and #408 | Film | #66 and #68 | The fix landed after the desktop pass |
+| Trained-model picker, strengths and project defaults on merged heads | Trained models | #97 | #409's and #410's fixes merged after the desktop pass |
+| Desktop export and case-study save after #407, #408 and #428 | Film | #66 and #68 | The fixes landed after the desktop pass; the end-to-end run used local MCP |
 | Library Apply from the dialog | Library | #66 | Write-capable desktop session refused by the agent permission rules |
 | Merged Environment lane, its rebased tab row, local panorama upload and From image | Panorama | #98 and #66 | #416 merged after the desktop pass; uploads need the spend guard off |
-| Preview pager fit in the default-width sidebar at UI scales 1.0 and 2.0, on the release candidate ZIP | Previews | #66 and #68 | #423 merged the fix after the 2026-10-13 desktop check found the defect; no physical recheck yet |
 | Folder and link buttons on the shared launcher | Previews, Film | #68 | #422 has native tests only; no physical check of the buttons |
-| `workflow_job_steps`, `decide_workflow_step` and `inspect_result_previews` on merged heads, then #411's tools | MCP | #65 and #68 | Live evidence ran on pre-merge heads; #411 is open |
+| `workflow_job_steps`, `decide_workflow_step` and #411's trained-model tools on merged heads | MCP | #65 and #68 | Their live evidence ran on pre-merge heads |
 | #401 session endings and #402 import Undo and save prompt | Composer, 3D | #66 and #68 | Fixes merged after the desktop passes |
 | Weekly macOS and Windows rerun | Platforms | #399 and #400 | Stale expectation corrected by #396 |
 | First scheduled monthly paid smoke run | CI | #40 | Not run yet |
@@ -449,6 +545,14 @@ description. Quote values, saved identities and private reports stay private.
 - A retrieved workflow job omits step links on several node types, so the
   extension cannot always tell which steps feed a loop.
 - A wrong secret and an unknown project both return HTTP 403.
+- In the paid desktop pass no job reported a queued state; jobs went from
+  submission straight to generating. GPT Image 2 reported only 3%, while
+  TripoSplat and Tencent UV Unwrapping reported several intermediate fractions.
+- A failed job carries its reason in the job's metadata, which the extension
+  does not show yet (#425).
+- A 20 s Seedance 2.5 1080p take failed on the service after about 32 minutes as
+  taking too long; takes of 13 s and 7 s succeeded. Their progress stayed near
+  91% for most of each run.
 
 ## Earlier 0.9.9 candidate and decision
 
@@ -988,13 +1092,13 @@ array constraints for both schema spellings. These remain synthetic checks.
 
 ## Issue disposition
 
-GitHub state reviewed on 2026-10-12, last after #420 merged, is separate from
-candidate acceptance:
+GitHub state reviewed on 2026-10-12 and rechecked on 2026-10-13 after #411
+merged is separate from candidate acceptance:
 
 | Scope | State and release implication |
 | --- | --- |
 | #64, #65, #66, #68 | Open. SDK service-path cleanup and shared commands are implemented; the [0.10.0 evidence by lane](#0100-evidence-by-lane) records retained-capability, desktop and live evidence and the [pending checks](#pending-checks). Their checklists are not yet ticked. |
-| #97, #99 | Open. The model picker's trained LoRAs and compositions (#409) merged on 2026-10-12; trained-model strengths and project defaults (#410) and MCP trained models and defaults (#411) are open, and provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close these scopes. |
+| #97, #99 | Open. The model picker's trained LoRAs and compositions (#409) merged on 2026-10-12, and trained-model strengths and project defaults (#410) and MCP trained models and defaults (#411) on 2026-10-13; private trained models and a desktop recheck of the merged UI remain, and provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close these scopes. |
 | #98 | Open. #415's closing reference closed it on 2026-10-12, and it was reopened the same day. The native Environment lane (#416) and panorama smoke cases (#417) merged on 2026-10-12; its authorized live seam, pole and dynamic-range item and the desktop recheck of the merged lane remain. |
 | #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |

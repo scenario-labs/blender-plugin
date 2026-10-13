@@ -550,8 +550,13 @@ class WorkflowCommandTests(unittest.TestCase):
 
     def test_approval_is_sent_once_from_any_scene_and_polling_resumes(self):
         local_id = self.paused_workflow(self.approval())
+        entered, release = threading.Event(), threading.Event()
 
+        # Hold the reply so the repeat below meets the command in flight. Once the
+        # decision lands, the step is gone and the refusal would name it instead.
         def proceed(request):
+            entered.set()
+            self.assertTrue(release.wait(5))
             self.waiting(self.approval("success"))
 
         self.decision_reply = proceed
@@ -562,8 +567,12 @@ class WorkflowCommandTests(unittest.TestCase):
             bpy.context.window.scene = other
             owner, task = self.decide(local_id, "check", "approve")
             self.assertIn(local_id, owner._commands)
-            with self.assertRaisesRegex(Exception, "current job command"):
-                self.decide(local_id, "check", "approve")
+            self.assertTrue(entered.wait(5))
+            try:
+                with self.assertRaisesRegex(Exception, "current job command"):
+                    self.decide(local_id, "check", "approve")
+            finally:
+                release.set()
             task.result(5)
             owner.poll()
         finally:

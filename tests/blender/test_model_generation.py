@@ -2545,6 +2545,17 @@ class ModelGenerationTests(unittest.TestCase):
     def test_first_render_quote_and_submission_wait_for_the_model_description(self):
         self.catalog_reads()
         model_id = self.model["id"]
+        description = ("GET", f"/v1/models/{model_id}", None)
+
+        def requests(since):
+            """Requests since `since`, without job status reads: after each submission a
+            worker reads the job's status, and a slow runner can deliver it in a later window."""
+            return [
+                (call.method, call.url.path, call.url.params.get("dryRun"))
+                for call in self.calls[since:]
+                if not (call.method == "GET" and "/jobs/" in call.url.path)
+            ]
+
         for lane_name in ("render_image", "render_video"):
             with self.subTest(lane=lane_name):
                 self.render_form_lane(lane_name)
@@ -2555,8 +2566,8 @@ class ModelGenerationTests(unittest.TestCase):
                 quote = json.loads(result["content"][0]["text"])
                 # The description read, then the quote's own metadata read and dry run.
                 self.assertEqual(
-                    [(call.method, call.url.params.get("dryRun")) for call in self.calls[start:]],
-                    [("GET", None), ("GET", None), ("POST", "true")],
+                    requests(start),
+                    [description, description, ("POST", f"/v1/generate/custom/{model_id}", "true")],
                 )
                 self.forget_description()
                 paid, start = len(self.paid), len(self.calls)
@@ -2571,7 +2582,7 @@ class ModelGenerationTests(unittest.TestCase):
                 )
                 self.assertFalse(result.get("isError"), result)
                 self.settle()
-                self.assertEqual(self.calls[start].method, "GET")  # the description read
+                self.assertEqual(requests(start)[0], description)
                 self.assertEqual(len(self.paid), paid + 1)
                 self.assertEqual(json.loads(self.paid[-1].content)["reference"], ["scene-snapshot"])
         self.assertEqual(len(self.store.records()), 2)

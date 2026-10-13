@@ -92,8 +92,8 @@ jobs.
 Edit > Preferences > Add-ons > Scenario > **Updates** shows your version and whether
 the official repository is set up. With **Allow Online Access** on:
 
-- **Set up official repository** adds it (repeating this reuses the same one).
-- **Check for updates** refreshes its listing. It installs nothing.
+- **Set up official repository** shows while the repository is missing or turned off. It adds it, or turns the existing one back on, never a second copy.
+- **Check for updates** takes its place once the repository is set up. It refreshes the listing and installs nothing.
 - **Open Get Extensions** opens Blender's extension manager, where you install or update. It lists only releases for your Blender version and platform, and shows download errors.
 
 If no compatible release appears, keep your version and read the release notes. A
@@ -107,8 +107,8 @@ repository**; its Updates panel says it was installed outside it. Keep updating 
 with **Install from Disk** into the same local repository, or
 [switch to the repository](#switch-from-a-zip-to-the-repository).
 
-If the Updates controls disappear after you disabled Scenario's repository, enable
-that repository again under Get Extensions > **Repositories** (Scenario can't do it
+If Scenario disappears, Updates controls included, after you disabled its repository,
+enable that repository again under Get Extensions > **Repositories** (Scenario can't do it
 while unloaded). Don't remove it or install a second copy to recover.
 
 This handbook lives at [blender.scenario.com](https://blender.scenario.com/), which
@@ -516,15 +516,16 @@ Generate a 360 panorama for the scene World. Modes:
 
 - **Generate**: from a prompt, with Scenario Skybox Flux or GPT.
 - **From image**: from one image of a place, with HY World.
-- **HDRI**: convert a saved panorama into an HDR OpenEXR environment.
-- **Upscale**: upscale a saved panorama or a local 2:1 image.
+- **HDRI**: convert a saved panorama or a local 2:1 image into an HDR OpenEXR environment.
+- **Upscale**: upscale a saved panorama or a local 2:1 image. To stay within the 32-megapixel World limit, a saved panorama upscales 2x at most, and an upscaled one can't be upscaled again.
 
 Panorama inputs take a **Saved panorama** (a downloaded result Scenario marks as
 360) or a local 2:1 PNG or JPEG, which **Upload reference** checks before sending.
 Results stay saved until you apply them. **Set panorama as World (N)**
 [applies one](#apply-a-saved-panorama-to-world), and **Make HDRI (N)** opens the
-HDRI form with it. Review seams and lighting yourself; output formats and sizes
-aren't confirmed yet ([#98](https://github.com/scenario-labs/blender-plugin/issues/98)).
+HDRI form with it. Review seams and lighting yourself: the extension doesn't
+measure them, and HY World hasn't been checked with a live run yet
+([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 
 ## Jobs and results
 
@@ -569,9 +570,10 @@ When a generation fails, a red marker shows the reason Scenario gave, including 
 error ID (`error_...`) support asks for; **Copy error** in Details copies it. The
 reason isn't saved, so after a restart only the marker remains.
 
-Prices include add-on fees such as quality checks. A workflow shows the total of
-its steps, or **Cost unavailable** if one can't be read; its steps are listed too,
-so don't add them up again.
+This session's results show the price you approved. In cloud history, prices
+include add-on fees such as quality checks, and a workflow shows the total of its
+steps, or **Cost unavailable** if one can't be read; its steps are listed too, so
+don't add them up again.
 
 **Saved jobs.** **Inspect saved jobs** lets you resume downloads and apply results,
 even after a restart. Opening a saved job never generates again or imports by
@@ -642,27 +644,30 @@ it rather than applying again. See
 ## Expanded Studio view
 
 **Studio**, next to **Scenario** in the viewport header, opens larger pages:
-**Create** (the same form as the sidebar), **Workflows**, **Library**, **Film**,
+**Create** (the same form as the sidebar), **Film**, **Workflows**, **Library**,
 **Jobs**, **Results** and **Connection**. Switching pages keeps your work; press Esc
 or click outside to go back to Blender while jobs keep running.
 
 ### Run a workflow
 
-1. Open **Studio > Workflows**, choose **Private** or **Public**, and pick a workflow (or enter its ID).
-2. Choose **Load workflow inputs** and confirm.
-3. Fill in the inputs. Tick an input to send it; unticked inputs use the workflow's default. File inputs accept an upload, a Library asset or an asset ID.
+1. Open **Studio > Workflows**, choose **Private** or **Public**, and pick a workflow, or enter its ID and choose **Load workflow inputs**.
+2. Confirm to load its inputs.
+3. Fill in the inputs. Tick an input to send it; unticked inputs use the workflow's default, if it has one. File inputs accept an upload, a Library asset or an asset ID; the input shows which it takes.
 4. Choose **Request workflow price**, then **Generate**, and confirm.
 
 The form saves with the scene, but prices and approvals don't survive a restart.
 
-Uploads into workflow inputs work like form references. A snapshot captures the
+To upload into a workflow input, choose a **File** and **Upload file**, or a
+snapshot button, and confirm; uploading generates nothing. A snapshot captures the
 scene as it is: editing the scene, changing the frame or rendering stops a snapshot
 that is still sending, and it can't resume. If an upload doesn't attach, choose
-**Inspect uploads** to attach or cancel it, **Stop waiting** to free the input and
-keep its values, or **Clear reference** to empty it. See
-[workflow uploads](SDK_UPLOADS.md#workflow-input-attachment) for every case.
+**Inspect uploads** to attach it, or to cancel it if it never started sending;
+**Stop waiting** to free the input and keep its values; or **Clear reference** to
+empty it. See [workflow uploads](SDK_UPLOADS.md#workflow-input-attachment) for the
+technical details.
 
-Workflows that loop (For Each) show **Generate (from N CU)**: Scenario prices one
+Workflows that loop (For Each), or that Blender can't check for loops, show
+**Generate (from N CU)**: Scenario prices one
 pass, so the final charge can be higher. Check the loop's item count before you
 confirm.
 
@@ -678,17 +683,19 @@ checked against the approved price. Stopping keeps completed steps charged.
 
 ### Browse Library assets
 
-**Studio > Library** lists your assets, or public ones with **Public assets**.
-Search by text, or browse a collection by its ID. **Use as reference** adds an asset
+In **Studio > Library**, choose **Refresh** to list your assets, or public ones with
+**Public assets**. Search by text, or browse a collection by its ID, then choose
+**Refresh** again. **Use as reference** adds an asset
 to a model form or, with **Reference destination** set to **Workflow**, to a
 workflow input, after you confirm. Existing references are kept, so remove one
-first to replace it. Changing credentials, the Project ID or the open file clears
+first to replace it; in a workflow, **Clear reference** empties the whole input. Changing credentials, the Project ID or the open file clears
 the Library.
 
 ### Organize Library assets
 
 **Organize** on an asset adds it to or removes it from a collection, adds or removes
-tags, or creates a new collection. Choose **OK** to see a review, then **Apply** to
+tags, or adds it to a new collection. To pick an existing collection, choose
+**Load collections** first. Choose **OK** to see a review, then **Apply** to
 send it, within 10 minutes. The card then shows what Scenario reports, such as
 **Verified** or **Refused**. If it says **Unconfirmed**, refresh and check the
 asset: nothing is resent automatically. These changes are free but immediate, and
@@ -741,7 +748,7 @@ save the file yourself.
 Prices are in Creative Units (CU) and depend on the model, settings and references.
 
 - **Generate (N CU)** is the price of the form as it stands.
-- **from N CU** means the final price may be higher: some references aren't uploaded yet, or a workflow loops.
+- **from N CU** means the final price may be higher: some references aren't uploaded yet, or a workflow loops or can't be checked for loops.
 - **Price shown after the upload** means a required mesh or capture is still missing.
 - Prompt helpers and Blockout designs are paid separately.
 - With an empty Render Image or Render Video look and automatic Spark on, the look has its own price before the render's. Turn Spark off to use the photoreal default instead.

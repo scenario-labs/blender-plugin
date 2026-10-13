@@ -7,19 +7,19 @@
     "path": "docs/USER_GUIDE.md",
     "scope": "workflow-library-references",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-09",
-    "base_revision": "721f16a3539989b8d122cd8529efc0853ada561a",
-    "limits": "Reviewed explicit Library model/workflow targeting, full-form reference confirmations, persisted scope/value bindings, incremental array editing with full pricing validation, both file-array schema spellings, saved file-enum choices and explicit clearing, unchanged-form clearing, and removed-scene dialog safety. Native fixtures exercise shared SDK quote/MCP submission with synthetic responses; no live service calls or spending occurred. Exact packaged checks are recorded in the release acceptance guide. Physical interaction/screenshots, focus, viewport and DPI evidence remain pending. Direct workflow uploads, interactive nodes, general cancellation and organization writes remain separate. Remaining desktop acceptance is tracked under #66/#68 separately from review readiness. This UI layer does not close full issue or release scope. Re-reviewed on 2026-10-10 for workflow_controls drawing the waiting-step section above the form and registry registering workflow_steps; the Library reference steps are unchanged by them; only the fingerprints of scenario/blender/workflow_controls.py and scenario/blender/registry.py were refreshed.",
+    "reviewed_at": "2026-10-13",
+    "base_revision": "a0a0c9259535a483acff2f3d52a9e161449ececc",
+    "limits": "Reviewed against the shortened guide's claims for this topic: file inputs accept a Library asset or an asset ID (step 3 of Run a workflow); Use as reference with Reference destination set to Workflow adds an asset to a workflow input after confirmation; existing references are kept, so one is removed first to replace it. Checked against library_view.py (the Workflow destination, a confirmation naming the asset, scene, workflow and input, attachment only through an issued approval after an origin check), workflow_references.py (only matching, unmarked inputs of the loaded workflow are offered; attachment rechecks the form signature, connection scope and value; Clear reference or Clear references empties and unticks the whole input after confirmation), core/schema/forms.py append_file_reference (a single input must be empty; arrays append without duplicates within their maximum and allowed values; minimums are left to pricing), workflow_controls.py (typed asset IDs, the Clear button, and pricing that refuses a Library-bound input whose value or connection changed) and registry.py. Correction proposed for the guide: a workflow input has no per-reference removal, so replacing one array entry means Clear references and new selections. The implementation still enforces the persisted connection binding, saved file-enum choices and removed-scene refusal that the guide no longer describes. Unit tests run: tests/unit/test_forms.py, 40 passed. Installed native tests in test_workflow_references.py were read, not run. The release acceptance guide's desktop check of the Library reference ran on pre-rebase heads, before these sources. Native desktop interaction (Library and Workflows pages, the confirmation dialog, focus, DPI, IME), other platforms and live acceptance remain under #66/#68. No live service calls or spending occurred, and this does not close issue or release scope.",
     "sources": {
-      "docs/USER_GUIDE.md": "b5509f4b085bde32aad31175caa1887f31ad6844acea2826ffbc60946e32651d",
-      "scenario/blender/workflow_references.py": "fdba9ab838d66a9ed6fcd1bc06f5486bc1c2ce1023d99a5c15ae8d01b431cc04",
-      "scenario/blender/workflow_controls.py": "4de1c7929e512739c96b15f6229f708fd9153fd358f24e9a383647d3117ef8ee",
-      "scenario/blender/library_view.py": "e4dcca18c81a3c34456e9f76194f59d55200c637c1554daa8524b29cb9751e7e",
-      "scenario/blender/registry.py": "effd72a4ab072e9eafbe74112cafe270aafcd3f8f89e3fee370ef6a143377009",
-      "scenario/core/schema/forms.py": "bc1e91677c33f2a0f9ff0a8ce7be51ba238653aab52d9d88e3e37fd23ab962b4",
+      "docs/USER_GUIDE.md": "d81c4fbc7ccd6fd05b987dfc9a77f191ad567cc0486b2f9983b755402bad526b",
+      "scenario/blender/workflow_references.py": "64eb574c5c8c377dcfbe91c91f0dab27ffcbb52445f68628c460aa0274ff5535",
+      "scenario/blender/workflow_controls.py": "8b515b7c19fb0c6b4bc797a612a6158dac0bbecffb2a8254d259cb1a4ae956fd",
+      "scenario/blender/library_view.py": "b6a0757506308b0a106a914389d6a25fad9533bc132018e5b904f183c4633737",
+      "scenario/blender/registry.py": "c3a880832b4cf47ce530ecea582a5c73e53c8f346d5a6521b7c023bab31cd9e3",
+      "scenario/core/schema/forms.py": "6c13428b31421d71aa28f2f8fd2c95c7594eaa31fcadd49fc92782c462e274f6",
       "tests/blender/test_workflow_references.py": "f882cfa2a0ba49f0ad354f0b9bab1f2a6ba6a5ee08dde71c0a6910ea88f1aba7",
-      "tests/unit/test_forms.py": "a0270aa6b7665770d7f3938440e28fc68f6747a4a549ee5220189317b690fda1",
-      "tests/blender/run_all.py": "0c167da4d582bd9eda230638ec4259ba22357c857ffd240b58485cbdd07a26a1"
+      "tests/unit/test_forms.py": "dfd29abbabf2674e05d5dccb8e2d07c76f75f6215a684986cdab373369866e03",
+      "tests/blender/run_all.py": "bcce33605252d54bbc0e78e45f0806809c9ec1b515b0c0fe0e97f0a4372b0944"
     }
   }
 }

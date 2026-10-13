@@ -7,23 +7,22 @@
     "path": "docs/USER_GUIDE.md",
     "scope": "native-workflow-controls",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-09",
-    "base_revision": "7e468fb915d91cbdeb0f67de37a61cb1b51aa497",
-    "limits": "Reviewed native workflow forms, saved schema/choice reconstruction, shared metadata/quote commands, exact normalized-payload confirmation, scene/form guards and runtime retirement. Installed synthetic tests cover shared UI/MCP approval, single use, input changes, navigation, continuing jobs, form reopen and conditional/default values. Physical input, screenshots, scrolling, DPI, live workflows, integrated reference upload/library selection, interactive nodes and general workflow cancellation remain unverified or unimplemented. Remaining desktop and live acceptance is tracked under #66/#68 separately from review readiness. This does not establish complete issue or release acceptance. No paid or live service calls were made. Review follow-up verifies shared always-required inclusion, idle projection/unused-price reclamation and catalog-only session delivery without weakening form/quote guards. Rebased candidate passes 1,105 installed tests on each supported Blender version and 3,852 unit tests with the known SDK authentication expected failure. Intentional exception handlers now document their recovery boundaries. Re-reviewed on 2026-10-10 for the Generate confirmation's new waiting-step and stop sentences and their installed assertion; the form and approval steps described here are unchanged, and the edited waiting-step paragraph is covered by the waiting-workflow-steps topic; only the fingerprint of tests/blender/test_workflow_controls.py was refreshed. Scoped 2026-10-13 note, not a re-review: the Generate confirmation names each payload value by the label the form draws for its input (workflow_controls.input_labels, read when the dialog opens), and a value without one keeps display_label's readable parameter name, as in the form. Installed tests in tests/blender/test_workflow_controls.py draw the form and the confirmation with recording layouts on the packaged ZIP, macOS arm64 Blender 5.1.2 only; the label test failed on the previous code, and the no-label test, which pins the unchanged fallback, passed on both. No desktop screenshot is claimed (#66). The fingerprints of workflow_controls.py and test_workflow_controls.py are left as they were: both had drifted from this topic's review before this change.",
+    "reviewed_at": "2026-10-13",
+    "base_revision": "a0a0c9259535a483acff2f3d52a9e161449ececc",
+    "limits": "Source review of the current guide's Run a workflow steps 1 to 4 and its sentence that the form saves with the scene while prices and approvals do not survive a restart. The guide now keeps these steps short and links reference docs for upload detail. Checked against workflow_controls: the Private and Public buttons read that catalog; up to 40 rows, filtered by Search, each open the Load workflow inputs confirmation, as does the button beside the Workflow ID field; each input's include checkbox starts ticked when the input has a default or is always required, and an unticked input is left out of the payload; values are validated with forms and params before Request workflow price; Generate stays disabled as Generate (request price) until a current quote for the unchanged form exists, then opens a confirmation whose OK submits once. Also checked: the Workflows page in studio, the scene-saved form and its registration in registry, in-memory quotes, single use, the exact price, unchanged inputs and scene, and the online check in model_jobs and job_session, and the in-memory owner that runtime retires with the connection. The upload and Library parts of the file-input sentence belong to the workflow-input-uploads and workflow-library-references topics; this review only confirmed that a file input takes an asset ID and draws those controls, and that no upload is offered for a file input with listed allowed values or a kind other than image, audio, video or 3D. Installed tests in tests/blender/test_workflow_controls.py, with the shared fixture and quote lifecycle tests in tests/blender/test_workflow_commands.py, were read, not run: loading, pricing, single-use exact approval, changed inputs, pending metadata, page navigation, retired connections, reopening a saved form with its choices rebuilt, and always-required inputs. Offline unit tests in test_forms.py passed with the workflow cost topic's suites (337 tests). scenario/mcp/tools_scenario.py was removed as a source: the current guide makes no claim about MCP workflow commands, whose evidence belongs to docs/MCP.md. Not verified: native desktop interaction, screenshots, other operating systems, DPI and Blender versions, and live workflows. No paid or live service call was made.",
     "sources": {
-      "docs/USER_GUIDE.md": "38d4320f10ffa3184c88a9fdaeba336dc9891e81e25ea9f1a376c33e14317569",
-      "scenario/blender/workflow_controls.py": "9f6a20ca93d3a2051183b918b2c791f64a2c8f29bd89b84fe13b92777542849f",
-      "scenario/blender/runtime.py": "75fd5dc75d7321b15a070fd634ec9f832cda3f04e65f72fd8425a7436d17d009",
-      "scenario/blender/registry.py": "bd10f5774a17555183deb09fc77edf18b0ed524b5b44d147ef0ac1aa5a0dacc5",
-      "scenario/blender/studio.py": "5c0829aeed2faaba49ca20e9f87099753876c81f0397e02d4cdaacea1d26b89c",
-      "scenario/blender/model_jobs.py": "bffb88d51557165fbdd5c22c89087c7a690ad15c17607a543b4a2cbc905ea00c",
-      "scenario/blender/job_session.py": "e8878bb6b527d478199b0e4d3023736f2823c5a57204b6ce43e8a5fe924e58f1",
-      "scenario/core/schema/forms.py": "f13c662733ae8badc4a16c21f32b545e93c55d8f1dee2c8816cfce8b940df33a",
-      "scenario/mcp/tools_scenario.py": "f0d8e6bf2476a81bbf354a6e006e5c49872f9e3772ac729c2806e0f13bd81310",
-      "tests/blender/test_workflow_controls.py": "afc505d09463a3566164253e59b3c4b13739af20076556d3160af93a21e361da",
-      "tests/blender/test_workflow_commands.py": "dcae5af50aa9e4530d734d84e578bf417c0816f14a98fac1b33e830161bb3e85",
-      "tests/blender/run_all.py": "c5cba1b723a3f76c62a76c87902b24e64ad59d67fa9db3f1342185048dae4519",
-      "scenario/core/schema/params.py": "b26c51fbe84dd3eb71a690c39231ff8a332ef42d937b574e3c1102e97d8cd8e7"
+      "docs/USER_GUIDE.md": "d81c4fbc7ccd6fd05b987dfc9a77f191ad567cc0486b2f9983b755402bad526b",
+      "scenario/blender/workflow_controls.py": "8b515b7c19fb0c6b4bc797a612a6158dac0bbecffb2a8254d259cb1a4ae956fd",
+      "scenario/blender/runtime.py": "c8303eead552a5de421c69c56cb754c2d463f117909b46273c791d46275eb707",
+      "scenario/blender/registry.py": "c3a880832b4cf47ce530ecea582a5c73e53c8f346d5a6521b7c023bab31cd9e3",
+      "scenario/blender/studio.py": "41e0e0305bb47e3c82809fdfcddf34a89406198f2745e0009cfde697575b217c",
+      "scenario/blender/model_jobs.py": "956e032cbe134fc57a3f0aa2e996a1f06388b80f8f0561b16bd703763995240e",
+      "scenario/blender/job_session.py": "b20ae0be8fbec16510d6750fa50757f7830ebf937f65649e186c16ee9068fb28",
+      "scenario/core/schema/forms.py": "6c13428b31421d71aa28f2f8fd2c95c7594eaa31fcadd49fc92782c462e274f6",
+      "tests/blender/test_workflow_controls.py": "9128647ac6f788430919835a8d2d057bd7c426075b586a3c51c929fde8149578",
+      "tests/blender/test_workflow_commands.py": "636c2e5a69c4a7a2e4a4aceff171d939af8bddb46a57d77d297fe661bbd1e312",
+      "tests/blender/run_all.py": "bcce33605252d54bbc0e78e45f0806809c9ec1b515b0c0fe0e97f0a4372b0944",
+      "scenario/core/schema/params.py": "1ba1ce2def667a7aef448aae35afe2c12372d747efa29fbfed9f9511978a7783"
     }
   }
 }

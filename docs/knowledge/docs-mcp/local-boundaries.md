@@ -28,7 +28,7 @@
       "tests/unit/test_mcp_boundaries.py": "c005b2dcad4850f4d26f9dc94319b1a639cf67104fc3e00c1926af8f64d0f66f",
       "tests/unit/test_mcp_server.py": "fdac22d35ad7c8ff11a54356e082d62ba0665682ccdc99e98d35a71a6d71a6ae",
       "tests/unit/test_upload_policy.py": "7ded06734b745eea6099cabaa8982703451390b8d97beedb0013c5e180cdba26",
-      "tests/unit/test_manifest.py": "44fbc7b386c73f44058ead517c82336638dca2777ad1acf62c287f181e2e6dba",
+      "tests/unit/test_manifest.py": "1bc7fdac519ac6d13cd902519dcacaeed09f9b02564cbca38bbefa1d09506cee",
       "tests/blender/test_mcp_server.py": "2822c5ee916e990ac156422aa30c45242e19aafae0207011a16c507552f0245e",
       "tests/blender/test_mcp_security.py": "5f4c1301743a6258a268fcea7f4180aadba927f3a86f831979bbd02935c04958",
       "tests/blender/test_reference_uploads.py": "09d89d2e30c9c8b910c0ce8059154cafee32383f423f32b02bd77a057e08cc86"

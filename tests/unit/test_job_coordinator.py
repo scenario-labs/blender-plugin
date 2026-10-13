@@ -180,7 +180,7 @@ def test_other_payloads_scopes_and_confirmed_jobs_do_not_block(setup, tmp_path):
     )
     # Another credential scope keeps its own records, even in the same database.
     elsewhere = replace(SCOPE, project_id="other-project")
-    other_adapter = SDKAdapter(
+    with SDKAdapter(
         Credentials("selected", "secret"),
         online=lambda: True,
         base_url=elsewhere.service,
@@ -188,16 +188,13 @@ def test_other_payloads_scopes_and_confirmed_jobs_do_not_block(setup, tmp_path):
         project_id=elsewhere.project_id,
         team_id=elsewhere.team_id,
         transport=httpx.MockTransport(lambda r: httpx.Response(200, content=QUOTE)),
-    )
-    try:
+    ) as other_adapter:
         other_store = JobStore(tmp_path / "jobs.sqlite3", elsewhere)
         other_coordinator = JobCoordinator(other_adapter, other_store)
         estimate = other_adapter.estimate_model(MODEL, {"prompt": "fixture"})
         assert other_coordinator.prepare(estimate, ORIGIN).intent.payload_sha256 == (
             prepared.intent.payload_sha256
         )
-    finally:
-        other_adapter.close()
 
 
 def test_a_confirmed_remote_job_does_not_block_an_identical_request(setup):

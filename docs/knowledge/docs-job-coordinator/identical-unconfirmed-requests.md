@@ -22,7 +22,7 @@
       "scenario/blender/blockout_jobs.py": "c388284557a0418ba5a036ecc0a184ad6d6c72f82d1fcff8191fe9d5ed3068f8",
       "scenario/core/ui/saved_job_actions.py": "c511896cc54a046231f6a84b6b3a0fe5a4f3ac9ff92f46fe4d3610453eb69def",
       "scenario/mcp/tools_scenario.py": "704d598cc6bbdff6a9a26866f2c376c19033790ad6d1feec39de4976b75ba293",
-      "tests/unit/test_job_coordinator.py": "e0911f0446556e26fd55579672986d328b2486fd267016d97371274226c6c2a5",
+      "tests/unit/test_job_coordinator.py": "076d7f6fbea637dbc70f868bebd5aa9ec902c62d1fd3227e4bce6be32791f1d0",
       "tests/unit/test_job_workers.py": "7658f7b7edf6fcfacf146be5cc1f2b9041dbfe98cbd0450ddd82b026a85b45c1",
       "tests/unit/test_job_store.py": "762ca179b749d662bd26b67cfd0c52a4058dc1d23935847bbd332b999e12d5c0",
       "tests/unit/test_sdk_adapter.py": "e496061f89d60da284ae056478c85c254b2cffc77992904e1b86a344a381b01b",

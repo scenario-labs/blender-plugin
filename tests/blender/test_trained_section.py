@@ -183,7 +183,7 @@ class TrainedSectionTests(unittest.TestCase):
             {"lane": "image", "category": "trained"},
         )
         self.assertIn(
-            ("Experimental: LoRAs and compositions not accepted", "EXPERIMENTAL"), root.labels()
+            ("Experimental: LoRAs and compositions in testing", "EXPERIMENTAL"), root.labels()
         )
         self.lane.estimate_state = "READY"
         self.lane.trained[1].scale = 0.35

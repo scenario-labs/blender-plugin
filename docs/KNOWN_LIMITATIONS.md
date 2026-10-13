@@ -310,6 +310,13 @@ establish live generation or full render-lane desktop acceptance.
 - The prototype composer and sidebar expose different controls. Model schema
   loading, long-prompt editing and compact/expanded behavior need the native
   acceptance in [#66](https://github.com/scenario-labs/blender-plugin/issues/66).
+- The model picker is rebuilt when the trained list, base descriptions or new
+  thumbnails arrive, and Blender drops a click on **OK** that lands on such a
+  rebuild without a message: click again. It is no longer rebuilt on every
+  maintenance tick, which made **OK** need two or three clicks, but a physical
+  check of the single click is pending in
+  [#440](https://github.com/scenario-labs/blender-plugin/issues/440). As in any
+  Blender dialog, a click outside a field being edited only ends the edit.
 - Input methods (IME) cannot compose in the composer prompt. Blender composes
   only in its own text fields and gives add-ons neither the composition text nor
   a Python type for its composition events, so the composer receives raw keys

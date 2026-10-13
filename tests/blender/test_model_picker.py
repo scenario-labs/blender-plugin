@@ -350,8 +350,8 @@ class ModelPickerTests(unittest.TestCase):
         )
         wm = bpy.context.window_manager
         for lane, model_id, expected in (
-            ("audio", "model_speech-to-text", "Experimental: speech-to-text not accepted"),
-            ("3d", "model_video-to-motion", "Experimental: video-to-motion not accepted"),
+            ("audio", "model_speech-to-text", "Experimental: speech-to-text in testing"),
+            ("3d", "model_video-to-motion", "Experimental: video-to-motion in testing"),
             ("audio", "model_ace-step-1-5", None),
             ("image", "model_openai-gpt-image-2", None),
         ):
@@ -398,8 +398,8 @@ class ModelPickerTests(unittest.TestCase):
         )
         scene = bpy.context.scene
         for lane, model_id, expected in (
-            ("audio", "model_speech-studio", "Experimental: speech-to-text not accepted"),
-            ("video", "model_motion-clip", "Experimental: video-to-motion not accepted"),
+            ("audio", "model_speech-studio", "Experimental: speech-to-text in testing"),
+            ("video", "model_motion-clip", "Experimental: video-to-motion in testing"),
             ("audio", "model_ace-step-1-5", None),
             ("image", "model_z-image", None),
         ):
@@ -585,6 +585,9 @@ class ModelPickerTests(unittest.TestCase):
             patch.object(self.picker, "threading", types.SimpleNamespace(Thread=tracked_thread))
         )
         wm = bpy.context.window_manager
+        arrived = self.picker._thumbs_arrived
+        arrived.clear()
+        self.addCleanup(arrived.clear)
 
         with online_access(False):
             items = self.picker.prepare(bpy.context, "image")
@@ -594,6 +597,7 @@ class ModelPickerTests(unittest.TestCase):
         self.assertEqual(started, [])
         download.assert_not_called()
         self.assertNotIn(record.id, self.picker._pending_thumbs)
+        self.assertFalse(arrived.is_set())
 
         with online_access(True):
             self.picker.prepare(bpy.context, "image")
@@ -602,6 +606,10 @@ class ModelPickerTests(unittest.TestCase):
         self.assertFalse(started[0].is_alive())
         download.assert_called_once_with(url, cached, timeout=30, retries=1)
         self.assertNotIn(record.id, self.picker._pending_thumbs)
+        # The worker signals the pump, which refreshes an open dialog once (main thread).
+        self.assertTrue(arrived.is_set())
+        self.assertFalse(self.picker.refresh_thumbnails())  # background Blender drew no dialog
+        self.assertFalse(arrived.is_set())
 
         # The gate only blocks downloads; an already cached thumbnail still shows offline.
         cached.write_bytes(b"cached thumbnail")
@@ -636,9 +644,12 @@ class ModelPickerTests(unittest.TestCase):
         self.assertEqual([thread.name for thread in held], [f"scenario-thumb-{record.id}"])
         with online_access(False):
             wm.scenario_picker_query = "thumbnail"  # an offline refilter mirrors the change
+        self.picker._thumbs_arrived.clear()
+        self.addCleanup(self.picker._thumbs_arrived.clear)
         run_worker(held[0])
         download.assert_not_called()
         self.assertNotIn(record.id, self.picker._pending_thumbs)
+        self.assertFalse(self.picker._thumbs_arrived.is_set())  # nothing arrived to show
 
         # The selected catalog's permission Event, which the pump syncs, wins over that mirror.
         sdk_catalog = submodule("core.api.sdk_catalog")

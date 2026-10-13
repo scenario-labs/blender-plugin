@@ -290,7 +290,9 @@ that can run it, for example **LoRA via FLUX.1 Dev**; a greyed row says why it c
 run in this form.
 
 Highlight a LoRA, tick its base under **Runs with**, set its **Strength** and click
-OK. The form switches to that base and adds the LoRA. Strength starts at the LoRA's
+OK; one click is enough, but if you just typed the strength, that first click only
+confirms the value, so click OK again. The form switches to that base and adds the
+LoRA. Strength starts at the LoRA's
 own value, or 0.75, within the range the base allows. Add more LoRAs the same way to
 stack them. A composition already combines its LoRAs, so it replaces the form's
 choice; the picker tells you before OK.
@@ -304,8 +306,8 @@ became inaccessible are refused before pricing. Choices belong to the credential
 and project that made them; choose again after switching.
 
 **Reload parameters** restores a generation's LoRAs or composition when they are
-still available, and says how many it couldn't restore. In the composer, the model
-chip shows the choice as **FLUX.1 Dev · Studio LoRA (+1)**.
+still available, and says how many it couldn't restore. The **Model** button and the
+composer's model chip show the choice as **FLUX.1 Dev · Studio LoRA (+1)**.
 
 #### Project defaults for LoRAs
 
@@ -317,8 +319,9 @@ the default by itself. If the default can no longer run, the form says
 clear it; it never falls back to the base model alone. Defaults of other
 credentials or projects are never used.
 
-Trained models are experimental: results with them haven't been fully verified, and
-training stays in Scenario's web app.
+Trained models are experimental, marked **Experimental: LoRAs and compositions in
+testing** in the picker and the **Trained models** box: they run, but results with
+them haven't been fully verified. Training stays in Scenario's web app.
 
 ### Video
 

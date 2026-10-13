@@ -45,7 +45,7 @@ def _tick():
 
 
 def _process():
-    from . import file_state, mcp_service, studio
+    from . import file_state, mcp_service, model_picker, studio
 
     changed = generation.process_catalog_events()
     mcp_service.process_pending()
@@ -107,6 +107,9 @@ def _process():
     if changed:
         redraw()
     studio.redraw_popups()
+    # The model picker is a dialog with OK: it is refreshed only when what it shows changes,
+    # here once new thumbnails are cached (model_picker._dialogs explains why).
+    model_picker.refresh_thumbnails()
 
 
 def _job_row(row, jobs):

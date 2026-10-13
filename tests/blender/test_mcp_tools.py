@@ -166,7 +166,7 @@ class McpToolsTests(unittest.TestCase):
         listed = {item["id"]: item for item in self.ts.list_models({"lane": "audio"})["models"]}
         self.assertEqual(
             listed["model_speech-studio"]["capability_status"],
-            "Experimental: speech-to-text not accepted",
+            "Experimental: speech-to-text in testing",
         )
         self.assertEqual(listed["model_music"]["capability_status"], "")
         self.assertNotIn("status", listed["model_music"])

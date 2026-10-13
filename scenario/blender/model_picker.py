@@ -15,6 +15,7 @@ the highlighted model's box stay full width."""
 import logging
 import textwrap
 import threading
+from weakref import WeakKeyDictionary
 
 import bpy
 from bpy.props import (
@@ -66,6 +67,13 @@ _pending_lock = threading.Lock()
 # Worker-safe mirror of Blender's online access for thumbnails when no catalog is selected. Only the main thread sets
 # or clears it, each time the picker asks for a thumbnail; download workers read it without touching bpy.
 _online_access = threading.Event()
+# Set by a download worker once a thumbnail is cached; the pump then refreshes the open dialog once.
+_thumbs_arrived = threading.Event()
+# The open dialog's popup region, keyed weakly by its operator like Studio's popups. Only a change in what the dialog
+# shows refreshes it (refresh_dialog), never a pump tick: Blender rebuilds a refreshed dialog, and its OK and Cancel
+# buttons refer to the block they were built in, so they never match their rebuilt copies. A highlight or press on OK
+# is then dropped and the click cancelled, which made OK need several clicks while the pump refreshed it every tick.
+_dialogs = WeakKeyDictionary()
 _enum_cache = {}  # keeps enum item tuples alive for Blender
 
 
@@ -108,6 +116,7 @@ def _fetch_thumbnail(url, path, model_id, allowed, key=None):
         # Online access may have been withdrawn since the row asked; a later refilter retries.
         if allowed():
             download_file(url, path, timeout=30, retries=1)
+            _thumbs_arrived.set()  # the pump shows it in an open dialog
     except Exception as err:  # a missing thumbnail is cosmetic; never surface it as a job error
         # The error type only: transfer messages can carry the signed thumbnail URL.
         log.debug("thumbnail %s failed: %s", model_id, type(err).__name__)
@@ -286,18 +295,40 @@ def trained_view_open(wm=None):
     return _ctx["open"] and bool(_ctx["lane"]) and is_trained_view(wm)
 
 
-def refresh_trained():
-    """Rebuild trained rows when their records or base descriptions change (main thread, not draw).
+def refresh_dialog():
+    """Rebuild the open dialog because what it shows changed (main thread, not draw).
 
-    The open dialog is a temporary popup region that an area redraw misses, so it is
-    refreshed through the same helper as Studio's popup.
+    The dialog is a temporary popup region that an area redraw misses. Never call
+    this on a timer: each rebuild drops a highlight or press on OK (see _dialogs).
+    Returns whether a dialog was tagged.
     """
+    if not _ctx["open"]:
+        return False
+    tagged = False
+    for operator, region in list(_dialogs.items()):
+        try:
+            region.tag_refresh_ui()
+            tagged = True
+        except ReferenceError:
+            _dialogs.pop(operator, None)
+    return tagged
+
+
+def refresh_thumbnails():
+    """Main thread, once per pump tick: refresh the open dialog once new thumbnails are cached."""
+    if not _thumbs_arrived.is_set():
+        return False
+    # A thumbnail cached after this clear sets it again and is shown on a later tick.
+    _thumbs_arrived.clear()
+    return refresh_dialog()
+
+
+def refresh_trained():
+    """Rebuild trained rows when their records or base descriptions change (main thread, not draw)."""
     wm = bpy.context.window_manager
     if trained_view_open(wm):
         refilter(wm)
-        from . import studio
-
-        studio.redraw_popups()
+        refresh_dialog()
 
 
 def refilter(wm):
@@ -800,10 +831,11 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self, width=620)
 
     def draw(self, context):
-        from . import studio
-
-        # Base descriptions keep arriving while the dialog is open; the pump refreshes it.
-        studio.track_popup(self, getattr(context, "region_popup", None))
+        # Base descriptions and thumbnails keep arriving while the dialog is open; their
+        # deliveries refresh it through refresh_dialog, never every pump tick.
+        region = getattr(context, "region_popup", None)
+        if region is not None:
+            _dialogs[self] = region
         wm = context.window_manager
         layout = self.layout
         layout.separator()  # breathing room under the title, as in the composer
@@ -876,9 +908,11 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
 
     def cancel(self, context):
         _ctx["open"] = False
+        _dialogs.clear()  # one picker dialog at a time shares _ctx
 
     def execute(self, context):
         _ctx["open"] = False  # OK closes the dialog, whether or not the choice applies
+        _dialogs.clear()
         if is_trained_view(context.window_manager):
             try:
                 model_id, target = apply_trained_choice(context, self.lane)
@@ -904,14 +938,16 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
 
 def draw_model_row(layout, lane_state, lane):
     """A "Model" section (like Clip to render / Camera path): a header, then a wide button opening the picker
-    (its icon next to the model name) and the native dropdown at the right as a fallback. A model offering an
-    unaccepted capability adds its read-only experimental status below. The Image and Render Image forms then
-    show their "Trained models" section: the chosen LoRAs with strengths, Add and the project default."""
+    (its icon next to the model name, followed by a trained choice as on the composer's chip) and the native
+    dropdown at the right as a fallback. A model offering an unaccepted capability adds its read-only experimental
+    status below. The Image and Render Image forms then show their "Trained models" section: the chosen LoRAs with
+    strengths, Add and the project default."""
     box = layout.box()
     box.label(text="Model", icon="NODE_MATERIAL")
     record = runtime.state.records.get(lane_state.model_id)
     if record is not None:
-        label = record.name
+        # "Base · LoRA (+n)", the composer chip's label, read from the form's slots only.
+        label = trained_models.selection_label(lane_state, record.name)
         icon_kwargs = icons.kwargs(model_filter.modality_of(record) or modality_for_lane(lane))
     else:
         label = "Choose a model..." if runtime.state.catalog_loaded else "Loading models..."
@@ -979,6 +1015,7 @@ def unregister():
     ):
         if hasattr(wm, name):
             delattr(wm, name)
+    _dialogs.clear()
     for cls in reversed(CLASSES):
         try:
             bpy.utils.unregister_class(cls)

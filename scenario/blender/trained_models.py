@@ -21,12 +21,14 @@ from ..core.api import catalog, trained_offers
 from ..core.api.errors import ScenarioError
 from ..core.api.trained_routes import LoraSlot, Pick, RouteError, apply
 from ..core.schema.forms import lora_component, record_schema
+from ..core.ui import capability_status
 from . import props, runtime
 from .reference_form import scope_key
 
 SCOPE = "_scenario_trained_scope"
 LANES = ("image", "render_image")
-EXPERIMENTAL = "Experimental: LoRAs and compositions not accepted"
+# Trained models run; only their acceptance is pending, so the line must not read as a refusal.
+EXPERIMENTAL = capability_status.label("LoRAs and compositions")
 LOADING = "Loading trained models"
 OTHER_SCOPE = "A trained model was chosen for another connection or project; choose it again"
 KIND_LABELS = {catalog.TRAINED_LORA: "LoRA", catalog.TRAINED_COMPOSITION: "Composition"}

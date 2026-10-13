@@ -11,8 +11,17 @@ speech-to-text and video-to-motion handling has not been accepted (#190).
 UNACCEPTED_CAPABILITIES = {"audio2txt": "speech-to-text", "video23d": "video-to-motion"}
 
 
+def label(subject):
+    """The status line of a capability that runs but is still in testing.
+
+    It must read as experimental, never as a refusal: "not accepted" on its own
+    read as if the service refused the model, although it runs.
+    """
+    return f"Experimental: {subject} in testing"
+
+
 def model_status(capabilities):
     """Short status for a model offering an unaccepted capability, or ""."""
     offered = {str(capability).lower() for capability in capabilities or ()}
     names = [name for capability, name in UNACCEPTED_CAPABILITIES.items() if capability in offered]
-    return f"Experimental: {', '.join(names)} not accepted" if names else ""
+    return label(", ".join(names)) if names else ""

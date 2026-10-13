@@ -126,7 +126,7 @@ across applications remain #66 desktop acceptance.
 
 ## The model chooser
 
-A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a wide button (icon + model name) that opens the picker, with the native dropdown as a small fallback on the right. Its one-line description belongs in the picker, not the panel.
+A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a wide button (icon + model name) that opens the picker, with the native dropdown as a small fallback on the right. A form with a trained choice names it on that button as the composer's chip does (**FLUX.1 Dev · Studio LoRA (+1)**, see [trained models section](#trained-models-section-and-project-defaults)). Its one-line description belongs in the picker, not the panel.
 
 A form is described as loading its model only while that description read is
 pending. A failed read shows its sanitized reason in the form and composer note,
@@ -159,10 +159,20 @@ Trained chip opens: in lane order, once per connection, with a progress line and
 the reason when reading stops. A catalog refresh never starts these reads, and
 neither does a trained list that arrives after the dialog closed on this chip.
 Descriptions a stopped scan never reached are read the next time the chip opens;
-only a refresh lets a later Trained chip retry the ones that failed. The open
-dialog is refreshed as descriptions arrive, through the same popup refresh as
-Studio. Its list shows ten rows, fewer when the window is too short for the whole
-dialog at the current UI scale, so OK and Cancel stay on screen.
+only a refresh lets a later Trained chip retry the ones that failed. Its list
+shows ten rows, fewer when the window is too short for the whole dialog at the
+current UI scale, so OK and Cancel stay on screen.
+
+The open dialog is rebuilt only when what it shows changes: when the trained list
+or base descriptions arrive, and once newly downloaded thumbnails are cached.
+Unlike Studio's popups, a pump tick never refreshes it. Blender rebuilds a
+refreshed dialog and matches its old buttons to the new ones, but OK and Cancel
+refer to the block they were built in, so they never match: a rebuild while OK
+is highlighted or held drops that state and cancels the click without a message.
+Refreshed on every tick, OK sometimes needed two or three clicks. A click that
+lands on one of the remaining rebuilds can still be lost. As in any Blender
+dialog, a click outside a field being edited, such as a typed **Strength**, only
+ends that edit; the next click reaches OK.
 
 The highlighted model's box shows its kind, **Runs with** for a single base or a
 **Run with** choice among several (the form's current base when it runs the model,
@@ -180,8 +190,8 @@ LoRA's strength, or replacing the form's trained models. Choosing through anothe
 base, choosing a composition, or choosing a LoRA over a composition replaces the
 form's choice; that line says so before OK. The whole new choice is checked against
 the base's current schema before the form changes, and then the price is
-invalidated. The box ends with **Experimental: LoRAs and compositions not
-accepted**. Drawing reads this state only.
+invalidated. The box ends with **Experimental: LoRAs and compositions in testing** (see
+[experimental status](#experimental-status)). Drawing reads this state only.
 
 The base's LoRA inputs are never drawn as text fields. Every request writes the
 form's choice into the base's declared inputs with the same route function local
@@ -280,7 +290,10 @@ operators.
 The compact composer's model chip names the choice as **Base · LoRA (+n)**. A
 long LoRA name is shortened before the count, so the number of further LoRAs
 stays readable; with a trained choice the chip opens the picker on the Trained
-chip. Strengths are
+chip. The **Model** box's button in the sidebar, Studio and Render Image shows the
+same label from the same helper; Blender clips it when the sidebar is narrow, and
+it keeps opening the picker on All, since **Add LoRA or composition** sits in
+the Trained models box below. Drawing it reads the form's slots only. Strengths are
 edited in the sidebar or Studio, and the composer note says so (**Edit LoRA
 strength in the sidebar or Studio**) when nothing more urgent is shown. Job views
 name the base with its trained choice the same way while the session that
@@ -441,15 +454,21 @@ Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icon
 Film and capabilities whose result handling is not accepted keep an explicit
 experimental status. It describes acceptance only: it never hides or blocks a
 model, task, estimate or approval. Use the built-in `EXPERIMENTAL` icon and
-short wording. Drawing reads the status and changes nothing.
+short wording. A capability line reads **Experimental: _capability_ in testing**
+(`capability_status.label`): it says the capability runs and is still being
+tested, never that it is refused. Wording such as *not accepted* read as if
+Scenario refused a model that runs. Drawing reads the status and changes nothing.
 
 - The **Film** sidebar panel shows **Experimental** on the right of its header,
   visible while collapsed and above its nested panels. Studio reuses panel bodies
   only, so it draws the same line on every Film page.
+- The picker's highlighted LoRA or composition box and the **Trained models** box
+  end with **Experimental: LoRAs and compositions in testing**
+  ([trained models](#trained-models-in-the-picker)).
 - For models offering `audio2txt` or `video23d`, the model picker's
   highlighted-model box and the persistent **Model** row show a read-only
-  **Experimental: speech-to-text not accepted** or
-  **Experimental: video-to-motion not accepted** label. The Model row is shared
+  **Experimental: speech-to-text in testing** or
+  **Experimental: video-to-motion in testing** label. The Model row is shared
   by the sidebar and Studio lanes, Render Image/Video and Edit 3D; the viewport
   composer's model chip does not show it. These models can be submitted and
   results stay in saved jobs; provider behavior and result handling are not
@@ -458,8 +477,9 @@ short wording. Drawing reads the status and changes nothing.
   transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 
 Installed native tests assert the registered header preset draw call, the Studio
-line, the picker status and the Model row status. Physical placement in a desktop
-session has not been captured.
+line, the picker status and the Model row status, and a unit test keeps every
+capability line free of refusal wording. Physical placement in a desktop session
+has not been captured.
 
 ## Composer placement
 

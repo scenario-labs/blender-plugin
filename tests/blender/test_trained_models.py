@@ -335,15 +335,69 @@ class TrainedModelTests(unittest.TestCase):
             layout = picker_tests.FakeLayout()
 
         dialog, region = Dialog(), MagicMock()
-        self.addCleanup(studio._popups.pop, dialog, None)
+        self.addCleanup(self.picker._dialogs.clear)
         context = types.SimpleNamespace(window_manager=self.wm, region_popup=region)
         self.picker.SCENARIO_OT_pick_model.draw(dialog, context)
+        self.assertNotIn(dialog, studio._popups)  # never among the popups every tick refreshes
         self.assertTrue(self.trained.scan_status("image").startswith("Checking base models"))
         region.tag_refresh_ui.assert_not_called()
         self.settle()
         region.tag_refresh_ui.assert_called()
         rows = {item.model_id: item for item in self.wm.scenario_picker_items}
         self.assertTrue(rows[STUDIO_LORA].available)
+
+    def test_pump_ticks_never_rebuild_the_open_dialog_under_its_ok_button(self):
+        # Blender rebuilds a refreshed dialog, and its OK button refers to the block it was
+        # built in, so it never matches its rebuilt copy: a refresh between the press and
+        # the release of OK cancelled the click silently. The pump refreshed the open
+        # picker on every tick, so OK sometimes needed two or three clicks.
+        self.load_catalog()
+        self.open_trained()  # every base is described: nothing the dialog shows is pending
+        pump, studio = submodule("blender.pump"), submodule("blender.studio")
+
+        class Dialog:
+            layout = picker_tests.FakeLayout()
+
+        dialog, region = Dialog(), MagicMock()
+        self.addCleanup(self.picker._dialogs.clear)
+        self.addCleanup(self.picker._thumbs_arrived.clear)
+        self.picker._thumbs_arrived.clear()
+        context = types.SimpleNamespace(window_manager=self.wm, region_popup=region)
+        self.picker.SCENARIO_OT_pick_model.draw(dialog, context)
+        with patch.object(pump, "redraw"), patch.object(self.generation, "request_estimate"):
+            for _ in range(4):
+                pump._process()
+            region.tag_refresh_ui.assert_not_called()
+            # Studio's popups still refresh every tick; they have no OK button.
+            popup = MagicMock()
+            self.addCleanup(studio._popups.pop, Dialog, None)
+            studio._popups[Dialog] = popup
+            pump._process()
+            popup.tag_refresh_ui.assert_called_once()
+            region.tag_refresh_ui.assert_not_called()
+            # A cached thumbnail is shown by one refresh, then the ticks leave it alone.
+            self.picker._thumbs_arrived.set()
+            for _ in range(3):
+                pump._process()
+            region.tag_refresh_ui.assert_called_once()
+            region.reset_mock()
+            # So is a delivery that changes the rows.
+            self.trained.on_catalog(
+                self.runtime.state.trained_pairs, self.runtime.state.trained_private
+            )
+            region.tag_refresh_ui.assert_called_once()
+            pump._process()
+            region.tag_refresh_ui.assert_called_once()
+            # OK applies the highlighted row; a closed dialog is never refreshed again.
+            self.highlight(STUDIO_LORA)
+            self.assertEqual(bpy.ops.scenario.pick_model(lane="image"), {"FINISHED"})
+            self.assertEqual([slot.model_id for slot in self.lane.trained], [STUDIO_LORA])
+            region.reset_mock()
+            self.picker._thumbs_arrived.set()
+            pump._process()
+            self.picker.refresh_trained()
+            self.assertFalse(self.picker.refresh_dialog())
+            region.tag_refresh_ui.assert_not_called()
 
     def test_a_row_highlighted_before_its_bases_arrive_runs_with_its_only_base(self):
         self.load_catalog()
@@ -392,7 +446,7 @@ class TrainedModelTests(unittest.TestCase):
         self.assertIn({"text": "Private LoRA"}, labels)
         self.assertIn({"text": "Runs with FLUX.1 Dev"}, labels)
         self.assertIn(
-            {"text": "Experimental: LoRAs and compositions not accepted", "icon": "EXPERIMENTAL"},
+            {"text": "Experimental: LoRAs and compositions in testing", "icon": "EXPERIMENTAL"},
             labels,
         )
         props = [call[1][1] for node in root.walk() for call in node.named("prop")]
@@ -637,7 +691,11 @@ class TrainedModelTests(unittest.TestCase):
         self.pick(LORA_A, 1.25)
         root = picker_tests.FakeLayout()
         before = [(slot.model_id, round(slot.scale, 4)) for slot in self.lane.trained]
-        submodule("blender.panels").draw_model_row(root, self.lane, "image")
+        panels = submodule("blender.panels")
+        panels.draw_model_row(root, self.lane, "image")
+        # The Model button names the trained choice after its base, as the composer chip does.
+        self.assertEqual(self.model_button(root), "FLUX.1 Dev · Studio LoRA (+1)")
+        self.assertEqual(self.model_button(root), panels.model_button_text(self.lane))
         labels = [call[2] for node in root.walk() for call in node.named("label")]
         # The Trained models section under the Model row names each LoRA above its strength.
         self.assertIn({"text": "Studio LoRA", "icon": "SHADERFX"}, labels)
@@ -660,6 +718,44 @@ class TrainedModelTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.trained_remove(lane="image", index=-1), {"FINISHED"})
         self.assertEqual(self.lane.estimate_state, "PENDING")
         self.assertFalse(len(self.lane.trained))
+        root = picker_tests.FakeLayout()
+        panels.draw_model_row(root, self.lane, "image")
+        self.assertEqual(self.model_button(root), "FLUX.1 Dev")  # the base alone again
+
+    def test_model_row_names_a_composition_after_its_base_without_writing(self):
+        self.load_catalog()
+        self.open_trained()
+        self.assertEqual(self.pick(COMPOSITION), {"FINISHED"})
+        name = self.runtime.state.trained_records[COMPOSITION].name
+        before = (
+            self.lane.model_id,
+            [(slot.model_id, slot.kind, slot.name) for slot in self.lane.trained],
+            self.lane.estimate_state,
+        )
+        self.manager.join(5)
+        calls = len(self.calls)
+        root = picker_tests.FakeLayout()
+        submodule("blender.panels").draw_model_row(root, self.lane, "image")
+        self.manager.join(5)
+        self.assertEqual(len(self.calls), calls)  # drawing sends no request
+        self.assertEqual(self.model_button(root), f"FLUX.1 Dev · {name}")
+        after = (
+            self.lane.model_id,
+            [(slot.model_id, slot.kind, slot.name) for slot in self.lane.trained],
+            self.lane.estimate_state,
+        )
+        self.assertEqual(before, after)
+
+    @staticmethod
+    def model_button(root):
+        """The text of the Model box's picker button (the first scenario.pick_model button)."""
+        texts = [
+            call[2]["text"]
+            for node in root.walk()
+            for call in node.named("operator")
+            if call[1][0] == "scenario.pick_model"
+        ]
+        return texts[0]
 
     def test_slot_strength_stays_within_its_declared_range_and_reprices(self):
         self.load_catalog()

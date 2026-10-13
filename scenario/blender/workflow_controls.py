@@ -211,6 +211,16 @@ def signature(form):
     return _json(value)
 
 
+def _loaded(form):
+    """Everything load_form writes, for the file-modified mark.
+
+    signature() is the approval identity: its stored schema carries the inputs'
+    labels and descriptions, but not the displayed title, which a reload of a
+    renamed workflow changes alone.
+    """
+    return signature(form), form.title
+
+
 @dataclass
 class WorkflowView:
     scene: object
@@ -306,7 +316,7 @@ class WorkflowControls:
                         form = view.scene.scenario_workflow
                         # Delivered by maintenance, after the load operator has returned. A
                         # refused schema changes nothing; a failure part-way still marks.
-                        read = functools.partial(signature, form)
+                        read = functools.partial(_loaded, form)
                         with file_state.marking("Scenario workflow form", read):
                             load_form(form, result)
                         view.cost = view.cost_warning = ""

@@ -135,7 +135,10 @@ def select_objects(args):
 def set_frame(args):
     scene = bpy.context.scene
     frame = int(args["frame"])
-    with file_state.marking("Scenario MCP frame", lambda: scene.frame_current):
+    # frame_set also resets the subframe.
+    with file_state.marking(
+        "Scenario MCP frame", lambda: (scene.frame_current, scene.frame_subframe)
+    ):
         scene.frame_set(frame)
     return {"frame_current": scene.frame_current}
 

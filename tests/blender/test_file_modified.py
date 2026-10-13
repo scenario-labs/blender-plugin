@@ -242,6 +242,15 @@ class SceneToolTests(unittest.TestCase):
         self.assertEqual(marks, [])
         assert_unmarked(self)
 
+    def test_a_frame_that_only_clears_the_subframe_marks_the_file(self):
+        scene = bpy.context.scene
+        scene.frame_subframe = 0.5
+        with file_marks(self) as marks:
+            self.tools.set_frame({"frame": scene.frame_current})
+        self.assertEqual(scene.frame_subframe, 0.0)
+        self.assertEqual(marks, ["Scenario MCP frame"])
+        self.assertTrue(bpy.data.is_dirty)
+
     def test_a_failure_after_the_path_changed_still_marks_it(self):
         planner = submodule("blender.shot_planner")
         waypoints = [{"position": [6, 0, 2]}, {"position": [0, 6, 2]}]
@@ -718,6 +727,20 @@ class WorkflowTests(fixture(workflow_tests.WorkflowControlTests)):
         self.assertEqual(self.form.title, "Fixture workflow")
         self.assertEqual(marks, ["Scenario workflow form"])
         self.assertTrue(bpy.data.is_dirty)
+
+    def test_a_reload_that_changes_only_the_title_marks_the_file(self):
+        self.form.workflow_id = "fixture-workflow"
+        bpy.context.view_layer.update()
+        self.assertFalse(self.wait(self.owner.start(self.scene, "load")).error)
+        signature = self.ui.signature(self.form)
+        self.fixture.workflow["name"] = "Renamed workflow"  # Renamed in Scenario since.
+        with file_marks(self, clean=False) as marks:
+            view = self.wait(self.owner.start(self.scene, "load"))
+        self.assertFalse(view.error)
+        self.assertEqual(self.form.title, "Renamed workflow")
+        # The title is not part of the approval identity.
+        self.assertEqual(self.ui.signature(self.form), signature)
+        self.assertEqual(marks, ["Scenario workflow form"])
 
     def test_a_refused_workflow_schema_leaves_the_file_clean(self):
         self.form.workflow_id = "fixture-workflow"

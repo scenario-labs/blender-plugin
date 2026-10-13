@@ -208,8 +208,109 @@ def test_ordinary_words_and_the_support_id_survive_cleaning():
 )
 def test_a_genuine_support_id_after_a_credential_name_is_kept_as_written(value):
     for name in ("token=", "token: ", "API_KEY="):
-        text = f"Quote {name}{value} to support"
-        assert failures.reason(failed_job(text)) == text
+        for text in (f"Quote {name}{value}", f"Quote {name}{value}, then retry"):
+            assert failures.reason(failed_job(text)) == text
+
+
+def test_words_after_a_support_id_in_a_credential_clause_are_redacted():
+    text = "Quote token=error_abcDEF123 sEcr3tKey99, then retry"
+    assert failures.reason(failed_job(text)) == (
+        f"Quote token=error_abcDEF123 {failures.REDACTED}, then retry"
+    )
+
+
+# Every leak raised in review so far, and the shapes the conservative design targets:
+# (text, secrets that must not appear in the reason).
+ADVERSARIAL = [
+    # Look-alike support ids after a credential name.
+    ("Rejected api_key=ERROR_realSecretToken123 now", ["realSecret"]),
+    ("Rejected api_key=Error_realSecretToken123", ["realSecret"]),
+    # An id-shaped password in a link's userinfo is not appended back.
+    ("See https://user:error_AbcDEF123secret@host.example/path", ["AbcDEF123secret", "error_"]),
+    # *_key names.
+    ("Signing failed: secret_key=abc123", ["abc123"]),
+    ("Signing failed: master_key: abc123", ["abc123"]),
+    ("Signing failed: signing_key=abc123", ["abc123"]),
+    ("Signing failed: client_key=abc123", ["abc123"]),
+    ("Signing failed: session_key=abc123", ["abc123"]),
+    ("Signing failed: SecretKey=abc123", ["abc123"]),
+    # A whole multi-word value, up to the end of its clause.
+    ("Rejected token: Signed sEcr3tKey99", ["sEcr3tKey99", "Signed"]),
+    ("Rejected github_token: Signed sEcr3tKey99, retry", ["sEcr3tKey99"]),
+    ("Rejected x-api-key = Custom sEcr3tKey99; retry", ["sEcr3tKey99"]),
+    ("Rejected auth: Digest sEcr3tKey99", ["sEcr3tKey99"]),
+    ("Rejected sig=sEcr3tKey99&next=1", ["sEcr3tKey99"]),
+    ("Rejected pwd: hunter2 hunter3", ["hunter2", "hunter3"]),
+    ("Rejected cookie: a=1; b=2", ["a=1"]),
+    ('Rejected {"credentials": "one two three"}', ["one two three"]),
+    ("Rejected password: line one\nnext line kept", ["line one", "one"]),
+    # Userinfo glued after any character, with or without a scheme.
+    ("Mirror path/user:pAss123@host.example failed", ["pAss123"]),
+    ("Mirror x:user:pAss123@host.example failed", ["pAss123"]),
+    ("Mirror (x)user:pAss123@host.example failed", ["pAss123"]),
+    ("Mirror [x]user:pAss123@host.example failed", ["pAss123"]),
+    ("Mirror <x>user:pAss123@host.example failed", ["pAss123"]),
+    ("Mirror a@user:pAss123@host.example failed", ["pAss123"]),
+    ("Mirror user:pAss123@ host.example failed", ["pAss123"]),
+    # Opaque 24+ character tokens that mix letters and digits.
+    ("Signed with dGhpcyBpcyBhIHNlY3JldCB2YWx1ZQ== today", ["dGhpcyBpcy"]),
+    ("Digest 0123456789abcdef0123456789abcdef01234567 rejected", ["0123456789abcdef"]),
+    ("Session aBcDeF123456gHiJkL789012.mNoPqR345678sTuVwX901234.x", ["aBcDeF123456"]),
+    ("Upload to /bucket/aBcDeF123456gHiJkL789012/x.png failed", ["aBcDeF123456"]),
+]
+
+
+@pytest.mark.parametrize(("text", "secrets"), ADVERSARIAL)
+def test_adversarial_reasons_never_show_a_secret(text, secrets):
+    for error, hint in ((text, None), (None, text), ("Rejected", text)):
+        cleaned = failures.reason(failed_job(error, hint))
+        for secret in secrets:
+            assert secret not in cleaned, cleaned
+        assert text not in cleaned, cleaned
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("password: line one\nnext line kept", "password: [redacted] next line kept"),
+        ("token: abc def, retry later", "token: [redacted], retry later"),
+        ("token: abc def; retry", "token: [redacted]; retry"),
+        ("(token: abc def) retry", "(token: [redacted]) retry"),
+        ('{"apiKey": "a b", "model": "x"}', '{"apiKey": [redacted], "model": "x"}'),
+        (
+            "api_key=sk1 apiSecret: 'two words' model: x",
+            "api_key=[redacted] apiSecret: [redacted] model: x",
+        ),
+        ("secret: dGVzdA== now", "secret: [redacted]"),
+    ],
+)
+def test_a_credential_value_runs_to_the_end_of_its_clause(text, expected):
+    assert failures.reason(failed_job(text)) == expected
+
+
+# Ordinary text stays readable: the live error, the prototype-era message, sizes,
+# dates, links, e-mail addresses and Scenario resource ids.
+READABLE = [
+    "An internal error occurred. Please contact support and provide this id: " + SUPPORT_ID,
+    "The model file is too large for processing. Try reducing the resolution or "
+    "simplifying the geometry of your input, then retry the generation. "
+    "[Error ID: error_Uq14k1SGmKWhPfv4HZ4hyZRN]",
+    "Input image is 8192 x 8192 pixels; the maximum is 4096 x 4096.",
+    "Model model_tencent-uv-unwrapping could not read asset asset_4Aufp4GxmMozUQUL36d5C6Jr "
+    "for job job_KWxxsnSdVXDFZRMsoCvLTmKY in proj_FIXTURE00000000000000000.",
+    "authorId: apiu_FIXTURE0000000000000000 has no access to workflow_aBcDeF123456gHiJkL789012",
+    "Requested max_tokens: 4096 exceeds the limit; tokenizer: v2",
+    "Keyframe 24 is missing; keyframes: 1-48 were expected.",
+    "Retry after 2026-10-13T00:20:58Z; see https://docs.scenario.com/api/python/resources/jobs",
+    "Contact support@scenario.com with the id.",
+    "Model design: v2 (signal level 3), keyword: fox",
+    "Token limit reached for this model; try a shorter prompt.",
+]
+
+
+@pytest.mark.parametrize("text", READABLE)
+def test_ordinary_reasons_stay_readable(text):
+    assert failures.reason(failed_job(text)) == text
 
 
 @pytest.mark.parametrize(

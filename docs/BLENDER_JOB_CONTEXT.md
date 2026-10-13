@@ -1003,19 +1003,34 @@ the job") and `hint` ("Actionable hint for the user explaining what went wrong
 and how to resolve it"). [`failures.observe`](../scenario/core/jobs/failures.py)
 joins them into one `RemoteFailure` bound to the record's remote job ID and
 saved revision; when one contains the other, ignoring case, spacing and final
-punctuation, only the longer is kept. One cleaning pipeline prepares all the
-text shown, because the text is untrusted:
+punctuation, only the longer is kept. The text is untrusted, so one cleaning
+pipeline prepares all the text shown. It is conservative by default: when in
+doubt it redacts, and only a small explicit allowlist keeps harmless names
+readable.
 
-- Control, format and line characters become single spaces.
+- Line breaks end clauses; other control, format and space characters become
+  spaces.
 - Links keep scheme, host and path without credentials, query or fragment.
-  Before a host without a scheme, `user:password@` and a query string are
-  dropped, and data URIs are removed.
-- Bearer and basic credentials, JSON web tokens, an Authorization value with
-  its scheme word, and the value after any name ending in a credential word
-  (`password`, `api_key`, a JSON `"apiKey"`, `aws_secret_access_key`,
-  `X-Amz-Signature`, `token` and similar) read `[redacted]`. After such a name,
-  only a value that is exactly a support id, quoted or not, stays in place, so
-  `api_key=ERROR_...` and other look-alikes are redacted.
+  Any `something:something@` userinfo, glued to whatever precedes it and with
+  or without a scheme, reads `[redacted]@`. A query string on a link without a
+  scheme is dropped, and data URIs are removed.
+- Bearer and basic credentials and JSON web tokens read `[redacted]`.
+- A credential name is any `name:` or `name=`, quoted as in JSON or not, whose
+  letters and digits contain `key`, `secret`, `token`, `password`, `passwd`,
+  `pwd`, `auth`, `credential`, `signature`, `session` or `cookie`, or that has
+  `sig` as a word, unless it is an allowlisted harmless name such as
+  `max_tokens`, `tokenizer`, `keyframe`, `keyword` or `author`. Its whole value
+  reads `[redacted]`: a quoted value to its closing quote, otherwise everything
+  up to the end of its clause (`, ; & ) ] }`, a quote, a line break, the next
+  `name:` or the end). A value that starts with exactly a support id keeps that
+  id, and the rest of its clause is redacted, so `api_key=ERROR_...` and other
+  look-alikes are redacted.
+- Any remaining run of 24 or more letters, digits and `+/_.-` is redacted when
+  one of its `/`- or `.`-separated parts is at least 12 characters long and
+  mixes letters and digits, as base64, hex or JWT-like secrets do, unless that
+  part is exactly a support id or a Scenario resource ID (`model_`, `job_`,
+  `asset_`, `team_`, `proj_`, `col_`, `workflow_`, `upload_`, `apiu_`). A UUID
+  is redacted too.
 - The result is cut to 400 characters at a word boundary with an ellipsis, so
   no marker, word or id is split.
 

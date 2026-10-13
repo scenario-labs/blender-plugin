@@ -10,24 +10,43 @@ hint for the user explaining what went wrong and how to resolve it"). The
 coordinator validates the job ID and commits that status as the saved `failed`
 state; this module only reads the retrieval that observed it.
 
-The text comes from the service, so it is untrusted display text, and one
-pipeline (`clean`) prepares everything shown. Control, format and line
-characters become single spaces. Links keep their scheme, host and path but
-lose credentials, query and fragment; `user:password@` before a host without a
-scheme is dropped, as is a query string left on such a link. Data URIs, bearer
-and basic credentials, JSON web tokens, an Authorization value with its scheme
-word, and the value after any name ending in a credential word (`password`,
-`api_key`, `"apiKey"`, `aws_secret_access_key`, `X-Amz-Signature`, `token` and
-similar, quoted or not) are replaced. A value after such a name that is exactly
-a support id (lowercase `error_` and 6 to 64 letters and digits with a capital
-or digit), quoted or not, is kept, because support needs it.
+The text comes from the service, so it is untrusted display text. One
+pipeline (`clean`) prepares everything shown, and it is conservative by
+default: when in doubt it redacts, and only a small explicit allowlist keeps
+harmless names readable.
 
-When `metadata.error` and `metadata.hint` contain each other, ignoring case,
-spacing and final punctuation, only the longer is shown. The joined text is cut
-to MAX_LENGTH at a word boundary, so no marker, word or id is split, and when
-the cut drops the first support id of the cleaned text it is appended. The id
-is only ever taken from the cleaned text: an id that appeared only in removed
-content, such as a link's query or userinfo, is not shown.
+1. Line breaks are kept as clause ends; other control, format and space
+   characters become spaces. Only the first MAX_INPUT characters are read.
+2. Links keep their scheme, host and path, without credentials, query or
+   fragment. Any `something:something@` userinfo, glued to whatever precedes
+   it and with or without a scheme, reads `[redacted]@`. A query string left on
+   a link without a scheme is dropped, and data URIs are removed.
+3. Bearer and basic credentials and JSON web tokens read `[redacted]`.
+4. A credential name is any `name:` or `name=`, quoted as in JSON or not, whose
+   letters and digits contain `key`, `secret`, `token`, `password`, `passwd`,
+   `pwd`, `auth`, `credential`, `signature`, `session` or `cookie`, or that has
+   `sig` as a word, unless it is an allowlisted harmless name (`max_tokens`,
+   `tokenizer`, `keyframe`, `keyword`, `author`...). Its whole value is
+   redacted: a quoted value to its closing quote, otherwise everything up to
+   the end of its clause (`, ; & ) ] }`, a quote, a line break, the next
+   `name:` or the end). A value that starts with exactly a support id keeps
+   that id, and the rest of its clause is redacted.
+5. Any remaining run of 24 or more letters, digits and `+/_.-` (with `=`
+   padding) is redacted
+   when one of its `/`- or `.`-separated parts is at least 12 characters long
+   and mixes letters and digits, as base64, hex or JWT-like secrets do, unless
+   that part is exactly a support id or a Scenario resource id (`model_`,
+   `job_`, `asset_`, `team_`, `proj_`, `col_`, `workflow_`, `upload_`,
+   `apiu_`).
+
+A support error id (lowercase `error_` and 6 to 64 letters and digits with a
+capital or digit) is kept because support needs it. When `metadata.error` and
+`metadata.hint` contain each other, ignoring case, spacing and final
+punctuation, only the longer is shown. The joined text is cut to MAX_LENGTH at
+a word boundary, so no marker, word or id is split, and when the cut drops the
+first support id of the cleaned text it is appended. The id is only ever taken
+from the cleaned text: an id that appeared only in removed content is not
+shown.
 
 Like remote progress, a reason is bound to the record that produced it, kept
 in memory by its owner and never persisted.
@@ -50,44 +69,64 @@ LINK_REMOVED = "[link removed]"
 DATA_REMOVED = "[data removed]"
 
 _HIDDEN = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp", "Zs"})
-_SPACES = re.compile(r" {2,}")
+# Line ends stay clause ends until the final whitespace collapse.
+_LINE_ENDS = frozenset("\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029")
 _TRAILING = ".,;:!?)]}'\""
 _LINK = re.compile(r"(?i)\b[a-z][a-z0-9+.-]{0,31}://\S+")
 _DATA = re.compile(r"(?i)\bdata:[a-z0-9.+-]+/[^\s,]*,\S*")
 # A query string on a link without a scheme, such as `host/path?key=value`.
 _QUERY = re.compile(r"(?<=[^\s?])\?[^\s?]*=\S*")
-# `user:password@` starting a token before a host, on a link without a scheme.
-_USERINFO = re.compile(r"(?<![^\s(\[<\"'])[^\s/@:()\[\]<>\"']+:[^\s/@]+@(?=[A-Za-z0-9])")
 _SCHEME_CREDENTIAL = re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}")
 _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}")
-_VALUE = r"(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
-# An Authorization header's whole value, including its scheme word (token, Digest...).
-_AUTHORIZATION = re.compile(
-    r"(?i)(?<![A-Za-z0-9])((?:proxy-)?authorization[\"']?\s*[:=]\s*)"
-    r"(?:[A-Za-z][A-Za-z0-9-]*\s+)?" + _VALUE
-)
 # Any `name: value` or `name=value`, the name optionally closed by a quote as in JSON.
-_NAME = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})[\"']?\s*[:=]\s*")
-_VALUE_AT = re.compile(_VALUE)
-# A name is a credential when, lowercased without separators, it ends with one of
-# these, as in film_case_study's key filter, plus session and signed-URL key ids.
+_NAME = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})[\"']?[ \t]*[:=][ \t]*")
+# The next `name:` after a space ends an unquoted value.
+_NEXT_NAME = re.compile(r" (?=[A-Za-z][A-Za-z0-9_.-]{0,63}[\"']?[ \t]*[:=])")
+_QUOTED = re.compile(r"\"[^\"\n]*\"|'[^'\n]*'")
+_CLAUSE_END = re.compile(r"[,;&)\]}\n\"']")
 _CREDENTIAL_WORDS = (
-    "apikey",
-    "apisecret",
-    "accesskey",
-    "privatekey",
+    "key",
     "secret",
+    "token",
     "password",
     "passwd",
+    "pwd",
+    "auth",
     "credential",
-    "credentials",
-    "authorization",
-    "token",
-    "cookie",
     "signature",
-    "sessionid",
-    "keypairid",
+    "session",
+    "cookie",
 )
+# Whole names, letters and digits only, that contain a credential word but are not one.
+_HARMLESS_NAMES = frozenset(
+    {
+        "author",
+        "authorid",
+        "authorname",
+        "authors",
+        "inputtokens",
+        "keyframe",
+        "keyframes",
+        "keyword",
+        "keywords",
+        "maxnewtokens",
+        "maxtokens",
+        "mintokens",
+        "numtokens",
+        "outputtokens",
+        "tokencount",
+        "tokenizer",
+        "tokens",
+        "totaltokens",
+    }
+)
+_WORDS = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
+# `=` only as trailing base64 padding, so `name=value` stays two parts.
+_OPAQUE_RUN = re.compile(r"(?<![A-Za-z0-9+/=_.-])[A-Za-z0-9+/_.-]{24,}=*(?![A-Za-z0-9+/=_.-])")
+_PARTS = re.compile(r"[/.]")
+# Scenario resource identifiers, as recorded fixtures and job records show them;
+# model IDs may also contain hyphens.
+_RESOURCE_ID = re.compile(r"(?:model|job|asset|team|proj|col|workflow|upload|apiu)_[A-Za-z0-9-]+")
 _MARKERS = re.compile("|".join(map(re.escape, (REDACTED, LINK_REMOVED, DATA_REMOVED))))
 # Scenario-style identifier: `error_` and letters and digits with at least one
 # capital or digit, so words such as error_code are not mistaken for one.
@@ -137,39 +176,115 @@ def _drop_query(match):
     return _split_trailing(match.group(0))[1]
 
 
-def _exact_support_id(value):
-    """Whether a credential value is exactly a support id, quoted or before punctuation.
+def _redact_userinfo(text):
+    """Replace `something:something@` userinfo in every whitespace-separated token.
 
-    Anything else shaped like one (another case, length or character) is not.
+    The token's last `@` ends it; everything before, from the token's start
+    except opening brackets and quotes, is the userinfo when it has a colon.
+    E-mail addresses have no colon there and stay readable.
     """
-    if len(value) > 1 and value[0] in "\"'" and value[-1] == value[0]:
-        value = value[1:-1]
-    return _SUPPORT_ID.fullmatch(_split_trailing(value)[0]) is not None
+
+    def token(word):
+        at = word.rfind("@")
+        if at <= 0 or ":" not in word[:at]:
+            return word
+        before = word[:at]
+        lead = len(before) - len(before.lstrip("([<{\"'"))
+        return before[:lead] + REDACTED + word[at:]
+
+    return re.sub(r"[^\s]+", lambda match: token(match.group(0)), text)
+
+
+def _credential_name(name):
+    """Whether a `name:` or `name=` introduces a secret; conservative by default."""
+    compact = re.sub(r"[^a-z0-9]", "", name.lower())
+    if compact in _HARMLESS_NAMES:
+        return False
+    if any(word in compact for word in _CREDENTIAL_WORDS):
+        return True
+    return any(word.lower() == "sig" for word in _WORDS.findall(name))
+
+
+def _clause_end(text, start):
+    """End of an unquoted value: its clause delimiter, the next `name:` or the end."""
+    end = len(text)
+    for match in _CLAUSE_END.finditer(text, start):
+        # The closing bracket of an earlier marker does not end the clause.
+        if match.group() == "]" and any(
+            text.startswith(marker, match.end() - len(marker))
+            for marker in (REDACTED, LINK_REMOVED, DATA_REMOVED)
+        ):
+            continue
+        end = match.start()
+        break
+    following = _NEXT_NAME.search(text, start, end)
+    if following is not None:
+        end = following.start()
+    while end > start and text[end - 1] in " \t":
+        end -= 1
+    return end
+
+
+def _redacted_value(value):
+    """A credential value as shown: redacted, except a leading exact support id."""
+    quote = value[0] if len(value) > 1 and value[0] in "\"'" and value[-1] == value[0] else ""
+    inner = value[1:-1] if quote else value
+    first, _, rest = inner.partition(" ")
+    if not _SUPPORT_ID.fullmatch(_split_trailing(first)[0]):
+        return REDACTED
+    shown = f"{first} {REDACTED}" if rest.strip() else first
+    return f"{quote}{shown}{quote}"
 
 
 def _redact_named(text):
-    """Replace the value after every name ending in a credential word.
+    """Replace the whole value after every credential name, left to right.
 
-    Names are read left to right without consuming the value of a name that is
-    not a credential, so `note: password=x` still reaches `password`.
+    A name that is not a credential's does not consume its value, so
+    `note: password=x` still reaches `password`.
     """
     parts, position = [], 0
     while (match := _NAME.search(text, position)) is not None:
-        name = re.sub(r"[^a-z0-9]", "", match.group(1).lower())
-        value = _VALUE_AT.match(text, match.end()) if name.endswith(_CREDENTIAL_WORDS) else None
         parts.append(text[position : match.end()])
         position = match.end()
-        if value is not None:
-            parts.append(value.group(0) if _exact_support_id(value.group(0)) else REDACTED)
-            position = value.end()
+        if not _credential_name(match.group(1)):
+            continue
+        quoted = _QUOTED.match(text, position)
+        end = quoted.end() if quoted is not None else _clause_end(text, position)
+        if end > position:
+            parts.append(_redacted_value(text[position:end]))
+            position = end
     parts.append(text[position:])
     return "".join(parts)
 
 
+def _mixed(part):
+    return any(char.isalpha() for char in part) and any(char.isdigit() for char in part)
+
+
+def _known_id(part):
+    return bool(_SUPPORT_ID.fullmatch(part) or _RESOURCE_ID.fullmatch(part))
+
+
+def _redact_opaque(text):
+    """Redact long runs with a part that mixes letters and digits, unless it is a known id."""
+
+    def run(match):
+        token = match.group(0)
+        if _known_id(token):
+            return token
+        for part in _PARTS.split(token):
+            if len(part) >= 12 and _mixed(part) and not _known_id(part):
+                return REDACTED
+        return token
+
+    return _OPAQUE_RUN.sub(run, text)
+
+
 def _visible(value):
-    """The first MAX_INPUT characters, with hidden and line characters as spaces."""
+    """The first MAX_INPUT characters: line ends as newlines, other hidden ones as spaces."""
     return "".join(
-        " " if unicodedata.category(char) in _HIDDEN else char for char in value[:MAX_INPUT]
+        "\n" if char in _LINE_ENDS else " " if unicodedata.category(char) in _HIDDEN else char
+        for char in value[:MAX_INPUT]
     )
 
 
@@ -181,13 +296,13 @@ def clean(value):
     if not isinstance(value, str):
         return ""
     text = _LINK.sub(_link, _visible(value))
-    text = _USERINFO.sub("", text)
+    text = _redact_userinfo(text)
     text = _DATA.sub(DATA_REMOVED, text)
     text = _QUERY.sub(_drop_query, text)
-    text = _AUTHORIZATION.sub(lambda match: match.group(1) + REDACTED, text)
     text = _SCHEME_CREDENTIAL.sub(lambda match: f"{match.group(1)} {REDACTED}", text)
     text = _JWT.sub(REDACTED, text)
-    return _SPACES.sub(" ", _redact_named(text)).strip()
+    text = _redact_opaque(_redact_named(text))
+    return " ".join(text.split())
 
 
 def _cut(text, room):

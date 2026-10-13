@@ -71,15 +71,19 @@ class DuplicateRequestError(QuoteError):
     reviewed, which lasts for this coordinator's session only.
     """
 
-    def __init__(self, request_id):
+    def __init__(self, request_id, sending=False):
         super().__init__(
-            f"An identical request ({request_id[:8]}) has no confirmed outcome, so sending "
+            f"An identical request ({request_id[:8]}) is still being sent; wait until Scenario "
+            "confirms it, then try again"
+            if sending
+            else f"An identical request ({request_id[:8]}) has no confirmed outcome, so sending "
             "this one could charge twice. Check it in Jobs or mark it reviewed there, then retry"
         )
         self.request_id = request_id
+        self.sending = sending
 
     def __reduce__(self):
-        return type(self), (self.request_id,)
+        return type(self), (self.request_id, self.sending)
 
 
 class RouteQuoteError(QuoteError):
@@ -1340,7 +1344,9 @@ class JobCoordinator:
             reviewed = frozenset(self._reviewed)
         for record in self._store.unconfirmed(estimate.operation, estimate.target_id, digest):
             if record.state in UNCONFIRMED and record.intent.request_id not in reviewed:
-                raise DuplicateRequestError(record.intent.request_id)
+                raise DuplicateRequestError(
+                    record.intent.request_id, sending=record.state == JobState.SUBMITTING
+                )
 
     def mark_unconfirmed_reviewed(self, request_id, *, expected_revision):
         """Let identical requests through again for this session; sends and saves nothing."""

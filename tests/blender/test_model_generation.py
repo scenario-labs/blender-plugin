@@ -1705,7 +1705,7 @@ class ModelGenerationTests(unittest.TestCase):
 
     def test_a_price_check_that_returns_a_job_stops_automatic_prices(self):
         jobs_module, pump = submodule("blender.model_jobs"), submodule("blender.pump")
-        self.addCleanup(jobs_module._ESTIMATES_STOPPED.clear)
+        self.addCleanup(submodule("core.api.sdk_adapter").ESTIMATE_STARTED_JOB.clear)
         self.dry_run_job = "started-1"
         state = self.lane_price()
         self.assertEqual(state.estimate_state, "ERROR")
@@ -1724,6 +1724,24 @@ class ModelGenerationTests(unittest.TestCase):
         # An explicit agent price is refused the same way; nothing is ever submitted.
         with self.assertRaisesRegex(Exception, "job started-1"):
             self.mcp_quote()
+        self.assertEqual((self.paid, self.store.records()), ([], ()))
+
+    def test_a_superseded_price_check_that_returned_a_job_still_stops_automatic_prices(self):
+        jobs_module = submodule("blender.model_jobs")
+        self.addCleanup(submodule("core.api.sdk_adapter").ESTIMATE_STARTED_JOB.clear)
+        self.dry_run_job = "started-2"
+        scene = bpy.context.scene
+        self.generation.request_estimate(scene, "image")
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The answer below is discarded unread, as a superseded price is.
+        # The form moved on before the answer was delivered, so finish_quote never reads it.
+        scene.scenario.lane_state("image").estimate_key = "superseded"
+        self.runtime.sync_catalog_context()
+        self.assertEqual(self.runtime.state.model_previews, {})
+        self.assertTrue(jobs_module.automatic_estimates_stopped())
         self.assertEqual((self.paid, self.store.records()), ([], ()))
 
     def test_shared_wait_does_not_block_main_thread_result_delivery(self):

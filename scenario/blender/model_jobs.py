@@ -15,7 +15,7 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
-from ..core.api.sdk_adapter import EstimateStartedJob
+from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, EstimateStartedJob
 from ..core.jobs import failures, progress, workflow_nodes
 from ..core.jobs.coordinator import (
     UNCONFIRMED,
@@ -94,9 +94,6 @@ STEP_POLL_INTERVAL = 15.0
 DECIDE = "decide_workflow_node"
 # What happened to one finished decision command; see ModelJobs.decision_outcome.
 DECISION_OUTCOMES = ("applied", "refused", "uncertain", "not_sent")
-# Set once a price check returns a job; automatic pricing then stays off until
-# Blender restarts, whichever connection or job context asked.
-_ESTIMATES_STOPPED = threading.Event()
 
 
 class AutomaticEstimatesStopped(ScenarioError):
@@ -111,7 +108,8 @@ class AutomaticEstimatesStopped(ScenarioError):
 
 
 def automatic_estimates_stopped():
-    return _ESTIMATES_STOPPED.is_set()
+    """A price check returned a job in this Blender session, through any connection or path."""
+    return ESTIMATE_STARTED_JOB.is_set()
 
 
 # Saved states this session never advances by itself; READY is settled too
@@ -499,7 +497,6 @@ class ModelJobs:
                 ticket.quote = self.session.deliver(completions[0], lambda value, *_: value)
             except EstimateStartedJob as error:
                 ticket.used = True
-                _ESTIMATES_STOPPED.set()
                 raise AutomaticEstimatesStopped(error) from None
             except Exception:
                 if ticket.operation == "workflow":

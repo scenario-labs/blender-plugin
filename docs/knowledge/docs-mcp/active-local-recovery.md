@@ -24,7 +24,7 @@
       "tests/blender/test_mcp_contracts.py": "cf979d470a2d3eda533009d2081fbcb021a63e24c4a64e5c3b78441e9e2b6a9a",
       "scenario/mcp/server.py": "2268544089dbab0e37a8ee64544942afb1b0970eab8f32201b13e7d9995e6db1",
       "tests/unit/test_mcp_server.py": "6631822e89fcdaa0d696f5a34fe899de177f0baafe837b4447a55477691b31c4",
-      "scenario/blender/model_jobs.py": "e8a81c2f386fc5edb944da8e13e02a5d9769450d16fe8e34c215380a2535bcfc",
+      "scenario/blender/model_jobs.py": "320357d976cbc763c3ca2594af722e9351b50f8c9da9654dcb8f79c8a397cc99",
       "scenario/core/ui/saved_job_actions.py": "c511896cc54a046231f6a84b6b3a0fe5a4f3ac9ff92f46fe4d3610453eb69def"
     }
   }

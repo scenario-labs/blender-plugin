@@ -87,7 +87,8 @@ A request is refused while another one in the same credential scope, with the
 same operation, target and `payload_sha256`, is still `submitting` or
 `uncertain`. Such a request may have been sent without a confirmed job, so a
 second one could be charged twice. `DuplicateRequestError`, a `QuoteError`,
-names the earlier request. The check runs after the free dry run but before a
+names the earlier request: one still `submitting` asks the user to wait for
+Scenario's answer, while an `uncertain` one asks for a review. The check runs after the free dry run but before a
 quote is returned, again before preparation, and once more inside the
 submission claim under the coordinator lock, so concurrent identical
 submissions send at most one. A confirmed `remote` job never blocks: repeating a
@@ -105,9 +106,10 @@ offers it as the native `mark_reviewed` action behind a confirmation; MCP
 let a possible duplicate through.
 
 A dry-run response that carries a job raises `EstimateStartedJob` in the adapter
-and issues no `Estimate`. `ModelJobs.finish_quote` turns it into
-`AutomaticEstimatesStopped`, naming the job, and automatic form pricing stays
-off until Blender restarts. Nothing is resubmitted. Cloud adoption accepts only
+and issues no `Estimate`. The adapter also records the event for the process, so
+automatic form pricing stays off until Blender restarts even when that quote was
+superseded or discarded unread. `ModelJobs.finish_quote` turns a delivered error
+into `AutomaticEstimatesStopped`, naming the job. Nothing is resubmitted. Cloud adoption accepts only
 completed jobs, so the user saves that job from history once it finishes.
 
 ## Local capture queue

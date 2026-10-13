@@ -70,6 +70,11 @@ class EstimateStartedJob(AdapterError):
         return type(self), (self.job_id,)
 
 
+# Set once any dry run in this process returns a job. It is recorded where the response is
+# read, so a superseded, drained or orphaned quote still stops automatic pricing.
+ESTIMATE_STARTED_JOB = threading.Event()
+
+
 def _started_job(result):
     """Return (True, job ID or None) when an estimate response names a job."""
     if "job" not in result and "jobId" not in result:
@@ -1444,6 +1449,7 @@ class SDKAdapter:
         result = _json(raw, exact=True)
         started, job_id = _started_job(result)
         if started:
+            ESTIMATE_STARTED_JOB.set()
             raise EstimateStartedJob(job_id)
         cost = result.get("creativeUnitsCost")
         if isinstance(cost, bool) or not isinstance(cost, (int, Decimal)) or cost < 0:

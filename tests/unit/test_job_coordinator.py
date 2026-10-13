@@ -158,6 +158,19 @@ def test_an_unconfirmed_request_refuses_an_identical_one_until_reviewed(setup, o
         identical(fresh, adapter, operation)
 
 
+def test_a_request_still_being_sent_asks_to_wait_rather_than_review(setup):
+    coordinator, store, prepared, _, adapter = setup()
+    record = store.get(prepared.intent.request_id)
+    store.transition(
+        record.intent.request_id, expected_revision=record.revision, state=JobState.SUBMITTING
+    )
+    with pytest.raises(DuplicateRequestError) as refused:
+        identical(coordinator, adapter, "model")
+    assert refused.value.sending is True
+    assert "still being sent; wait until Scenario confirms it" in str(refused.value)
+    assert "mark it reviewed" not in str(refused.value)
+
+
 def test_a_claim_is_refused_when_an_identical_request_became_unconfirmed(setup):
     coordinator, store, first, requests, adapter = setup(lost_submission)
     second = identical(coordinator, adapter, "model")

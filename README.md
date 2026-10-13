@@ -84,7 +84,9 @@ compatibility and manual fallback.
 The [Blender Extensions terms](https://extensions.blender.org/terms-of-service/)
 restrict extensions whose functionality depends on external registration, keys
 or payments, including access to external services. Scenario requires an account
-and API credentials, so this extension is distributed through GitHub releases.
+and API credentials, so this extension is distributed through its own repository
+at `https://blender.scenario.com/repo/index.json`, with each release's ZIP also
+attached to its GitHub release.
 Its manifest declares the permissions it uses and their reasons.
 
 ## Quick start

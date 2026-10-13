@@ -6,9 +6,9 @@ Blender opened from the macOS Dock or Finder gets launchd's PATH
 (``/usr/bin:/bin:/usr/sbin:/sbin``), not the shell's, so Homebrew and MacPorts
 tools are not on it. Lookup checks the current PATH first, then a fixed list of
 well-known absolute install folders for the platform; Windows uses PATH only.
-It never changes the environment, downloads or runs anything, and never
-searches the working directory or a relative PATH entry. Every caller uses this
-one lookup, so a dialog and the work it describes agree on which tool runs.
+It never changes the environment, downloads or runs anything, and never uses a
+match from the working directory or a relative PATH entry. Every caller uses
+this one lookup, so a dialog and the work it describes agree on which tool runs.
 """
 
 import os
@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 FFMPEG, FFPROBE = "ffmpeg", "ffprobe"
+# CPython's default when PATHEXT is unset.
+_WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.JS;.WS;.MSC"
 
 # Checked after PATH, in order. Only fixed absolute folders belong here.
 DIRECTORIES = {
@@ -32,14 +34,38 @@ def _platform():
     return "linux" if sys.platform.startswith("linux") else sys.platform
 
 
+def _in_directory(directory, name):
+    """An executable regular file for ``name`` in one folder, or None."""
+    suffixes = ("",)
+    if _platform() == "win32":
+        source = os.environ.get("PATHEXT") or _WINDOWS_PATHEXT
+        suffixes = tuple(ext.rstrip(".") for ext in source.split(os.pathsep) if ext.rstrip("."))
+    for suffix in suffixes:
+        candidate = Path(directory, name + suffix)
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
 def _on_path(name):
     path = os.environ.get("PATH")
+    directories = None
     if path is not None:
         # An empty or relative entry names the working directory; skip it.
-        path = os.pathsep.join(entry for entry in path.split(os.pathsep) if os.path.isabs(entry))
+        directories = [entry for entry in path.split(os.pathsep) if os.path.isabs(entry)]
+        path = os.pathsep.join(directories)
     found = shutil.which(name, path=path)
-    # Windows can search the working directory first; never use that result.
-    return found if found and os.path.isabs(found) else None
+    if not found or os.path.isabs(found):
+        return found
+    # On Windows, shutil.which searches the working directory first, even with
+    # an explicit path (Python 3.13 unless NoDefaultCurrentDirectoryInExePath is
+    # set), and stops at a match there. Never use it: check each absolute PATH
+    # folder directly, in order, as which would have after the working directory.
+    for directory in directories or ():
+        candidate = _in_directory(directory, name)
+        if candidate:
+            return candidate
+    return None
 
 
 def find(name):
@@ -47,13 +73,12 @@ def find(name):
     if not name or os.path.basename(name) != name or name in (os.curdir, os.pardir):
         raise ValueError("Look up a bare tool name")
     found = _on_path(name)
-    if found:
-        return Path(found).resolve()
-    for directory in DIRECTORIES.get(_platform(), ()):
-        candidate = Path(directory, name)
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate.resolve()
-    return None
+    if not found:
+        for directory in DIRECTORIES.get(_platform(), ()):
+            found = _in_directory(directory, name)
+            if found:
+                break
+    return Path(found).resolve() if found else None
 
 
 def missing(names, purpose):

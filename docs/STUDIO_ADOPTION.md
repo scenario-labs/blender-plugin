@@ -232,12 +232,14 @@ checks the current PATH first, then fixed install folders: `/opt/homebrew/bin`,
 on Linux. Windows uses PATH only. Blender opened from the macOS Dock or Finder
 gets launchd's PATH, `/usr/bin:/bin:/usr/sbin:/sbin`, which lacks Homebrew and
 MacPorts. Lookup accepts only executable regular files and returns their resolved
-absolute path. It never changes the environment, runs a program, or searches the
-working directory or a relative PATH entry. `/snap/bin` is excluded: a strictly
-confined snap's home access excludes the hidden extension storage these tools
-read. No preference or environment variable selects another tool path. A missing
-tool's error names it, lists the places searched and, on macOS, says that apps
-opened from the Dock or Finder do not inherit the shell PATH.
+absolute path. It never changes the environment, runs a program, or uses a match
+from the working directory or a relative PATH entry. On Windows, `shutil.which`
+searches the working directory first and stops at a match there; lookup then
+checks each absolute PATH folder directly, with PATHEXT. `/snap/bin` is excluded:
+a strictly confined snap's home access excludes the hidden extension storage
+these tools read. No preference or environment variable selects another tool
+path. A missing tool's error names it, lists the places searched and, on macOS,
+says that apps opened from the Dock or Finder do not inherit the shell PATH.
 
 The first-party [Film video export](FILM_PLAN.md#offline-film-video-export-primitive)
 needs no external encoder: an offline Blender child uses Blender's built-in

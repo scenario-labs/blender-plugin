@@ -7,8 +7,10 @@ Homebrew and MacPorts. These fakes stand in for the standard folders.
 """
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -121,6 +123,50 @@ def test_windows_uses_path_only(folders, monkeypatch):
     assert tools.find("ffprobe") == expected.resolve()
     message = tools.missing(["ffprobe"], "before inspecting Film media")
     assert message == "Install ffprobe before inspecting Film media: not found on PATH."
+
+
+def windows_which(monkeypatch, *, needs_curdir=True):
+    """Run CPython's own win32 branch of shutil.which on this host.
+
+    Python 3.11 (Blender 5.0) always searches the working directory first on
+    Windows, even with an explicit path. Python 3.13 (Blender 5.1 and 5.2) does
+    so when NeedCurrentDirectoryForExePath is true, which is the default unless
+    NoDefaultCurrentDirectoryInExePath is set. A working-directory match is
+    returned as a relative path and ends the search.
+    """
+    monkeypatch.setattr(tools, "_platform", lambda: "win32")
+    monkeypatch.setenv("PATHEXT", ".EXE")
+    monkeypatch.setattr(shutil, "sys", SimpleNamespace(platform="win32"))
+    needs = SimpleNamespace(NeedCurrentDirectoryForExePath=lambda cmd: needs_curdir)
+    monkeypatch.setattr(shutil, "_winapi", needs, raising=False)
+
+
+@posix
+@pytest.mark.parametrize("needs_curdir", [True, False])
+def test_windows_working_directory_match_does_not_hide_the_path_tool(
+    folders, tmp_path, monkeypatch, needs_curdir
+):
+    path, _, _ = folders
+    work = tmp_path / "work"
+    tool(work, "ffprobe.EXE")  # For example beside the open .blend file.
+    expected = tool(path, "ffprobe.EXE")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(tmp_path / "empty"), "bin", str(path)]))
+    monkeypatch.chdir(work)
+    windows_which(monkeypatch, needs_curdir=needs_curdir)
+    assert tools.find("ffprobe") == expected.resolve()
+
+
+@posix
+def test_windows_never_returns_a_working_directory_match(folders, tmp_path, monkeypatch):
+    path, brew, _ = folders
+    work = tmp_path / "work"
+    tool(work, "ffprobe.EXE")
+    tool(work / "bin", "ffprobe.EXE")
+    tool(brew, "ffprobe.EXE")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(path), "bin", "."]))
+    monkeypatch.chdir(work)
+    windows_which(monkeypatch)
+    assert tools.find("ffprobe") is None
 
 
 def test_missing_message_names_tools_folders_and_the_dock_hint(monkeypatch):

@@ -305,3 +305,20 @@ class McpUploadPolicyTests(unittest.TestCase):
         self.lane.first_frame_path = str(path)  # Now the user's choice.
         self.assertEqual(self.tools.render_form(arguments), {})
         prepare.assert_called_once()
+
+    def test_render_form_prepares_the_checked_target_of_a_chosen_link(self):
+        render_commands = submodule("blender.render_commands")
+        render_references = submodule("blender.render_references")
+        generation = submodule("blender.generation")
+        prepare = self.enterContext(patch.object(render_references, "prepare"))
+        self.enterContext(patch.object(generation, "await_description"))
+        self.enterContext(patch.object(render_commands, "inspect", return_value={}))
+        self.enterContext(patch.object(self.runtime, "sync_catalog_context"))
+        arguments = {"lane": "render_video", "action": "prepare", "role": "first_frame"}
+        path = self.file(self.outside)
+        link = self.link(self.outside / f"policy-{uuid.uuid4().hex}.png", path)
+        self.lane.first_frame_path = str(link)  # the user's choice, through a link
+        self.assertEqual(self.tools.render_form(arguments), {})
+        # Prepared from the checked target, never the link a later read would follow.
+        self.assertEqual(self.lane.first_frame_path, str(path))
+        prepare.assert_called_once()

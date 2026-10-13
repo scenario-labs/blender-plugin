@@ -17,7 +17,7 @@
       "scenario/mcp/tools_scenario.py": "7f82a77aa9f76e6907f07d5a716e154a44a2a56735326d9cf20dbfbc5d52b007",
       "scenario/mcp/stdio_shim.py": "0d04b4b776711511460758cc7c00a83f88eb61a90cf9e7c46f0ca2bb270e8bb6",
       "scenario/blender/reference_uploads.py": "688f20c80bffe9ee16c602867ee1c03132e3f174c6bdaf866b0e9472bdca53ba",
-      "scenario/blender/render_commands.py": "c49dd046a555163775183ddc51b67a0bc8e72798db9b3ca026e86ae8a9b9680c",
+      "scenario/blender/render_commands.py": "0dbf976a7eba20e72aa605f2fb17f3c7e0aeab660393608378afae7435334510",
       "scenario/blender/props.py": "e54659bed4261351a8b1f7b1eeb5751bf17e2251c153d37dbc05b2b93cc219cb",
       "scenario/blender/workflow_controls.py": "31a09e870e27947c72018bb357f6be7203fd1adff1fb04d4144c31323da2da99",
       "scenario/blender/operators.py": "8881ad17a319551e5cfb3af00937651df50b4584adfa7b4221d506baa2269475",
@@ -30,7 +30,7 @@
       "tests/unit/test_upload_policy.py": "7ded06734b745eea6099cabaa8982703451390b8d97beedb0013c5e180cdba26",
       "tests/unit/test_manifest.py": "1bc7fdac519ac6d13cd902519dcacaeed09f9b02564cbca38bbefa1d09506cee",
       "tests/blender/test_mcp_server.py": "2822c5ee916e990ac156422aa30c45242e19aafae0207011a16c507552f0245e",
-      "tests/blender/test_mcp_security.py": "5f4c1301743a6258a268fcea7f4180aadba927f3a86f831979bbd02935c04958",
+      "tests/blender/test_mcp_security.py": "e5b8731062a87cc970ec6cc602311f73e89beac012d2ac76ce575ffc26a373b8",
       "tests/blender/test_reference_uploads.py": "09d89d2e30c9c8b910c0ce8059154cafee32383f423f32b02bd77a057e08cc86"
     }
   }

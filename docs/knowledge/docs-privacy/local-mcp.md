@@ -15,7 +15,7 @@
       "scenario/blender/registry.py": "c3a880832b4cf47ce530ecea582a5c73e53c8f346d5a6521b7c023bab31cd9e3",
       "scenario/blender/operators.py": "8881ad17a319551e5cfb3af00937651df50b4584adfa7b4221d506baa2269475",
       "scenario/blender/reference_uploads.py": "688f20c80bffe9ee16c602867ee1c03132e3f174c6bdaf866b0e9472bdca53ba",
-      "scenario/blender/render_commands.py": "c49dd046a555163775183ddc51b67a0bc8e72798db9b3ca026e86ae8a9b9680c",
+      "scenario/blender/render_commands.py": "0dbf976a7eba20e72aa605f2fb17f3c7e0aeab660393608378afae7435334510",
       "scenario/blender_manifest.toml": "d9272c0810c168b1558ce0891fecf062a3974dcbc9bbae1a89777b911a1bfcef",
       "scenario/mcp/server.py": "775c22ecdb8e7aad7fec1044f431564812c60bc49febb7e1f6eb3e14d57fb29a",
       "scenario/mcp/tools_scenario.py": "7f82a77aa9f76e6907f07d5a716e154a44a2a56735326d9cf20dbfbc5d52b007",

@@ -361,7 +361,11 @@ def execute(context, args):
     if action == "prepare" and role == render_references.FIRST_FRAME and state.first_frame_path:
         # Only local MCP reaches this command: an agent uploads a local first frame only
         # under upload_reference's allowlist, refused before anything is read or sent.
-        reference_uploads.agent_upload_path(state.first_frame_path)
+        allowed = str(reference_uploads.agent_upload_path(state.first_frame_path))
+        # Prepare from the checked file, as upload_reference does, never from a path whose
+        # link a later read could follow somewhere else.
+        if state.first_frame_path != allowed:
+            state.first_frame_path = allowed
     if action == "inspect":
         _apply_default(context.scene)  # inspect's first step: await the model it leaves
     # Before any change: preparation needs the model's inputs, while inspection and

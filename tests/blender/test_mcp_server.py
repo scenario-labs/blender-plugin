@@ -233,3 +233,74 @@ class McpServerTests(unittest.TestCase):
                 response.read()
             finally:
                 connection.close()
+
+    def host_request(self, method, path, hosts, *, token="tok", port=None):
+        """Send one request with exactly these Host headers; return (status, JSON body)."""
+        connection = http.client.HTTPConnection("127.0.0.1", port or self.server.port, timeout=5)
+        try:
+            connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
+            for host in hosts:
+                connection.putheader("Host", host)
+            if token:
+                connection.putheader("Authorization", f"Bearer {token}")
+            body = b"" if method != "POST" else json.dumps({"id": 1, "method": "ping"}).encode()
+            connection.putheader("Content-Length", str(len(body)))
+            connection.endheaders(body)
+            response = connection.getresponse()
+            payload = response.read()
+            return response.status, (json.loads(payload) if payload else None)
+        finally:
+            connection.close()
+
+    def test_rebinding_host_is_refused_before_routing(self):
+        port = self.server.port
+        with patch.object(self.server, "handle") as dispatch:
+            for method, path in [
+                ("GET", "/health"),
+                ("POST", "/mcp"),
+                ("GET", "/mcp"),
+                ("DELETE", "/mcp"),
+                ("OPTIONS", "/mcp"),
+            ]:
+                for host in ("evil.example", f"evil.example:{port}", "127.0.0.1.evil.example"):
+                    with self.subTest(method=method, path=path, host=host):
+                        status, body = self.host_request(method, path, [host])
+                        self.assertEqual((status, body), (403, {"error": "forbidden host"}))
+                for hosts in ([], ["localhost", "localhost"]):
+                    with self.subTest(method=method, path=path, hosts=hosts):
+                        status, _body = self.host_request(method, path, hosts)
+                        self.assertEqual(status, 400)
+            dispatch.assert_not_called()
+
+    def test_loopback_hosts_with_and_without_port_are_accepted(self):
+        port = self.server.port
+        for host in ("localhost", f"localhost:{port}", "127.0.0.1", f"[::1]:{port}", "[::1]"):
+            with self.subTest(host=host):
+                status, body = self.host_request("GET", "/health", [host], token=None)
+                self.assertEqual(status, 200)
+                self.assertTrue(body["ok"])
+                status, body = self.host_request("POST", "/mcp", [host])
+                self.assertEqual((status, body["result"]), (200, {}))
+
+    def test_idle_connection_is_closed_by_the_server(self):
+        server_mod = submodule("mcp.server")
+        self.assertEqual(server_mod.IDLE_TIMEOUT, 60.0)
+        idle = server_mod.McpServer(
+            "127.0.0.1", 0, "tok", self.server.registry, {}, timeout=5.0, idle_timeout=0.2
+        )
+        idle.start()
+        try:
+            port = idle._httpd.server_port
+            with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+                client.settimeout(3)
+                self.assertEqual(client.recv(1), b"")  # Closed without a response.
+            status, _body = self.host_request("GET", "/health", ["localhost"], port=port)
+            self.assertEqual(status, 200)
+        finally:
+            idle.stop()
+
+    def test_non_loopback_bind_address_is_refused(self):
+        server_mod = submodule("mcp.server")
+        for host in ("0.0.0.0", "192.168.1.20", "::", "localhost"):
+            with self.subTest(host=host), self.assertRaisesRegex(ValueError, "binds only"):
+                server_mod.McpServer(host, 0, "tok", self.server.registry, {})

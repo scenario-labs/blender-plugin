@@ -396,6 +396,14 @@ def _on_prompt_update(self, context):
     mark_estimate_dirty(self)
 
 
+def _on_first_frame_path(self, context):
+    mark_estimate_dirty(self)
+    from .reference_uploads import note_chosen_file
+
+    # The user's choice here lets local MCP upload this file (an agent's change does not).
+    note_chosen_file(self.first_frame_path)
+
+
 def _on_match_timeline(self, context):
     mark_estimate_dirty(self)
     from . import generation
@@ -501,7 +509,7 @@ class ScenarioLaneState(bpy.types.PropertyGroup):
         name="First frame",
         description="Choose an image to upload as the first frame of the video",
         subtype="FILE_PATH",
-        update=_on_prompt_update,
+        update=_on_first_frame_path,
     )
     use_first_frame: BoolProperty(
         name="Use as first frame",

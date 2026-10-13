@@ -3,10 +3,12 @@
 """Local MCP server over Streamable HTTP. The HTTP thread never touches bpy: tool handlers run on the
 main thread through process_pending(), called by the pump (GUI) or serve_blocking() (headless)."""
 
+import contextlib
 import hmac
 import http.server
 import json
 import logging
+import math
 import queue
 import socket
 import socketserver
@@ -19,7 +21,60 @@ from . import protocol
 log = logging.getLogger("scenario.mcp")
 MAX_BODY = 10 * 1024 * 1024
 REJECT_DRAIN_TIMEOUT = 1.0
+# A socket read or write that makes no progress for this long ends the connection, so an idle
+# keep-alive connection or a stalled request no longer holds a server thread. It never applies
+# while a request waits for Blender's main thread or a job: that wait reads nothing.
+IDLE_TIMEOUT = 60.0
+BIND_HOST = "127.0.0.1"
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_running = threading.local()
+
+
+def host_allowed(value):
+    """DNS-rebinding guard: the Host header must name loopback, with an optional port.
+
+    127.0.0.1, localhost or [::1] in any letter case, optionally followed by :port. A browser
+    sends the host name of the page it loaded, so a rebound page is refused even though its
+    name now resolves to 127.0.0.1.
+    """
+    if not isinstance(value, str):
+        return False
+    value = value.strip(" \t").lower()
+    if value.startswith("[::1]"):
+        name, rest = "::1", value[5:]
+    else:
+        # An unbracketed IPv6 address splits at its first colon and is refused.
+        name, colon, port = value.partition(":")
+        rest = colon + port
+    if name not in LOOPBACK_HOSTS:
+        return False
+    if not rest:
+        return True
+    port = rest[1:]
+    return (
+        rest[0] == ":"
+        and port.isascii()
+        and port.isdecimal()
+        and len(port) <= 5
+        and 0 < int(port) <= 65535
+    )
+
+
+def executing_tool():
+    """True while this thread runs an agent's tool call on Blender's main thread.
+
+    Blender glue uses it to tell an agent's change to a file field from the user's choice.
+    """
+    return getattr(_running, "depth", 0) > 0
+
+
+@contextlib.contextmanager
+def _running_tool():
+    _running.depth = getattr(_running, "depth", 0) + 1
+    try:
+        yield
+    finally:
+        _running.depth -= 1
 
 
 def origin_allowed(origin):
@@ -117,11 +172,26 @@ class _HTTPServer(http.server.ThreadingHTTPServer):
 
 
 class McpServer:
-    def __init__(self, host, port, token, registry, server_info, timeout=120.0, blender_version=""):
+    def __init__(
+        self,
+        host,
+        port,
+        token,
+        registry,
+        server_info,
+        timeout=120.0,
+        blender_version="",
+        idle_timeout=IDLE_TIMEOUT,
+    ):
+        if host != BIND_HOST:
+            raise ValueError(f"The local MCP server binds only to {BIND_HOST}")
         if not isinstance(token, str) or not token.strip():
             raise ValueError("A nonempty local MCP bearer token is required")
+        if type(idle_timeout) not in (int, float) or not 0 < idle_timeout < math.inf:
+            raise ValueError("idle_timeout must be a positive number of seconds")
         self.host, self.port, self.token = host, int(port), token
         self.registry, self.server_info, self.timeout = registry, server_info, timeout
+        self.idle_timeout = idle_timeout
         self.blender_version = blender_version
         self.calls_served = 0
         self._queue = queue.Queue()
@@ -200,7 +270,8 @@ class McpServer:
             if not admitted:
                 continue
             try:
-                result = pending.handler(pending.arguments)
+                with _running_tool():
+                    result = pending.handler(pending.arguments)
             except Exception as err:  # delivered to the HTTP thread as a tool error
                 pending.finish(error=err)
             except BaseException:
@@ -233,6 +304,8 @@ class McpServer:
 def _make_handler(server):
     class Handler(http.server.BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        # StreamRequestHandler.setup applies it to every read and write on the connection.
+        timeout = server.idle_timeout
 
         def log_message(self, fmt, *args):
             log.debug("http %s", fmt % args)
@@ -289,7 +362,16 @@ def _make_handler(server):
                 # rejected bytes are never parsed, queued or retried.
                 pass
 
-        def _origin_ok(self):
+        def _admitted(self):
+            """Check Host, then Origin, before any routing, authentication or body read."""
+            hosts = self.headers.get_all("Host", [])
+            if len(hosts) != 1:
+                # RFC 9112 section 3.2: a request without exactly one Host gets 400.
+                self._reject(400, {"error": "exactly one Host header is required"})
+                return False
+            if not host_allowed(hosts[0]):
+                self._reject(403, {"error": "forbidden host"})
+                return False
             origins = self.headers.get_all("Origin", [])
             if len(origins) > 1 or not origin_allowed(origins[0] if origins else None):
                 self._reject(403, {"error": "forbidden origin"})
@@ -297,10 +379,11 @@ def _make_handler(server):
             return True
 
         def do_OPTIONS(self):
-            self._reject(403, {"error": "forbidden origin"})
+            if self._admitted():  # Browser preflights are never offered.
+                self._reject(403, {"error": "forbidden origin"})
 
         def do_GET(self):
-            if not self._origin_ok():
+            if not self._admitted():
                 return
             if self.path.rstrip("/") == "/health":
                 return self._send(
@@ -314,12 +397,12 @@ def _make_handler(server):
             )
 
         def do_DELETE(self):
-            if not self._origin_ok():
+            if not self._admitted():
                 return
             self._send(200 if self._authorized() else 401, {})
 
         def do_POST(self):
-            if not self._origin_ok():
+            if not self._admitted():
                 return
             if self.path.rstrip("/") != "/mcp":
                 return self._reject(404, {"error": "not found"})

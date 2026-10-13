@@ -25,6 +25,7 @@ from ..core.jobs.transfers import ResultDownloader, StoragePolicy
 from ..core.jobs.upload_sources import UploadSources
 from ..core.jobs.upload_store import UploadStore
 from ..core.jobs.upload_transfers import PartUploader, S3UploadPolicy
+from ..mcp.upload_policy import ChosenFiles
 from .job_session import JobSession, OriginUnavailable, reap_retired
 
 log = logging.getLogger("scenario")
@@ -92,6 +93,9 @@ class RuntimeState:
         self.mcp = None
         self.mcp_token = ""
         self.mcp_error = ""
+        # Files the user chose in the extension's file fields this session; local MCP may
+        # upload them (reference_uploads.agent_upload_path). Main thread only.
+        self.chosen_files = ChosenFiles()
         self.cli_handle = None
         self.composer = None
         self.composer_modal_running = False

@@ -145,6 +145,10 @@ class SCENARIO_OT_add_reference(bpy.types.Operator):
         if self.source == "FILE":
             ref.filepath = self.filepath
             ref.label = os.path.basename(self.filepath)
+            from .reference_uploads import note_chosen_file
+
+            # Chosen in the file browser: local MCP may upload it (an agent's call may not add it).
+            note_chosen_file(self.filepath)
         else:
             ref.label = {k: v for k, v, _ in props.REFERENCE_SOURCES}[self.source]
         props.mark_estimate_dirty(lane_state)

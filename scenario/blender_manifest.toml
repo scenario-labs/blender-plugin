@@ -40,7 +40,7 @@ wheels = [
 ]
 
 [permissions]
-network = "Generate with your Scenario account (api.cloud.scenario.com)"
+network = "Scenario API (api.cloud.scenario.com), local agents on 127.0.0.1"
 files = "Save generated media to disk and import it into the scene"
 clipboard = "Copy asset ids, errors and MCP setup; paste into the prompt"
 

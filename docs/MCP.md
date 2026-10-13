@@ -212,7 +212,10 @@ for single-user/UV restrictions, supported maps, rollback and no-global-undo lim
 (the default), `audio`, `video` or `3d`. The kind must match the filename extension;
 an omitted kind never infers a different media type. For example, a WAV input
 uses `{"path": "/chosen/reference.wav", "kind": "audio"}`. See the
-[format policy and limits](SDK_UPLOADS.md#active-reference-uploads).
+[format policy and limits](SDK_UPLOADS.md#active-reference-uploads). The file must be
+one the extension saved in its own folders or one the user chose in Blender this
+session; any other path is refused before it is read
+([agent file uploads](#agent-file-uploads)).
 
 Poll `reference_upload_status` until `imported` before using the returned asset ID
 in a model or workflow estimate. Status, `list_reference_uploads` and recovery return saved
@@ -490,7 +493,8 @@ The Blender integration binds only to `127.0.0.1`. MCP operations require the
 bearer token, checked with a constant-time comparison. `/health` is unauthenticated
 and reports availability, Blender version and server name/version. Native clients
 may omit Origin; a supplied Origin must be an HTTP(S) loopback origin. Other
-origins and browser CORS preflights are refused. This is local access control,
+origins and browser CORS preflights are refused. Every request first passes the
+[Host check](#request-boundaries). This is local access control,
 not a promise that a token-holding program is safe.
 
 Early POST and Origin rejections send the complete HTTP error with
@@ -554,6 +558,76 @@ policy check before a long render, not a sandbox: with Python
 execution enabled, a token holder can still write elsewhere. Report vulnerabilities through
 [SECURITY.md](../SECURITY.md); see [privacy and local data](PRIVACY.md) for uploads,
 credential storage and data handling.
+
+### Request boundaries
+
+Every request, `/health` included, must carry exactly one `Host` header naming
+`127.0.0.1`, `localhost` or `[::1]`, with or without a port, in any letter case.
+The server checks it before routing, authentication and the Origin check. A missing
+or repeated `Host` returns 400; any other name returns 403 `forbidden host`, with the
+same early-rejection teardown as an Origin refusal. A DNS-rebinding page reaches the
+port under its own host name, which its browser sends as `Host`, so it can neither
+read `/health` nor call `/mcp`, even without an `Origin` header. MCP clients, the
+stdio bridge and `curl` send the host of the URL they were given; use the copied
+`127.0.0.1` URL, because a URL naming this computer another way is refused.
+
+Each connection has a 60-second idle timeout: a socket read or write that makes no
+progress for 60 seconds closes the connection, so an idle keep-alive connection or
+a stalled request no longer holds a server thread. A request waiting for Blender's
+main thread, or in `wait_for_job`, reads nothing from its socket meanwhile, so a
+tool that takes longer still answers within the tool's own limits (120 seconds,
+170 for `wait_for_job`). The timeout bounds each read, not a whole request: a client
+that sends a byte at least every 60 seconds keeps its thread, and only programs on
+this computer can connect. The server refuses any bind address other than
+`127.0.0.1`; the GUI start and the headless command both use it.
+
+### Agent file uploads
+
+`upload_reference` uploads a local file only when one of these holds:
+
+- the extension produced it in its own user folders, the Scenario folder under
+  Blender's extension user directory that holds saved results, previews, captures
+  and staging; or
+- the user chose it in Blender during the current Blender session: a reference file
+  picked with a generation form's **Upload** button, or a file set in the Render
+  Video first-frame field or a workflow input's **File** field, through the file
+  browser or typed into the field.
+
+Every other path, including the Output Folder, which can point anywhere, is refused
+with `UploadRefused` before the file is opened, copied or sent. The path is resolved
+first: `~` is expanded, a blend-relative `//` path is made absolute and every link is
+followed. The result must be an existing regular file inside one of those folders,
+or a file the user chose, compared by resolved path; the resolved file is what is
+uploaded. A link inside the extension's folders that points outside is refused, and
+a missing file receives the same refusal as a file outside the allowlist, so a
+refusal does not reveal which files exist. `render_form` `prepare` with the
+`first_frame` role applies the same rule, so a `first_frame_path` an agent set through
+`configure` is refused until the user chooses that file.
+
+Choices are recorded on Blender's main thread when one of those fields changes or
+the **Upload** file browser confirms a file, outside a local MCP tool call: a value an agent
+writes while its tool runs is never a choice. They are kept in memory by resolved
+path, up to the 256 most recent, and forgotten when Blender quits or the extension
+is disabled; a path saved in a blend file in an earlier session must be chosen again.
+This policy does not apply to the user's own uploads from forms and does not bind
+Python execution: with **Allow connected agents to run Python** on, an agent can
+read and send files with your permissions.
+
+### Default start and upload decisions
+
+The maintainers recorded two decisions in
+[#448](https://github.com/scenario-labs/blender-plugin/issues/448):
+
+- **Upload policy:** an allowlist, rather than a native confirmation that names each
+  file. The extension already uploads its own captures directly, so
+  `upload_reference` mostly serves files the user chose; Scenario Blender Studio
+  0.2.0 likewise accepts only its own capture, export and playblast folders.
+- **Server default:** local MCP keeps starting automatically in GUI sessions when
+  **Allow Online Access** is on, protected by its token and the Origin, Host,
+  idle-timeout and loopback-bind checks above. **Stop MCP server** in **Scenario >
+  Agents (MCP)** closes it for the rest of the session. The extension's network
+  permission text and [PRIVACY.md](PRIVACY.md#the-local-mcp-server) disclose the
+  loopback listener. The headless `scenario_blender` command stays an explicit start.
 
 ## Local server and mcp.scenario.com
 
@@ -631,6 +705,13 @@ No credentials, service requests or registry writes are needed for cold reads.
 
 - **401:** the token is missing or differs from the server's current token. Copy
   the setup again; check the actual port and the client's launch environment.
+- **403 `forbidden host` or 400:** the client named the server other than
+  `127.0.0.1`, `localhost` or `[::1]`, or sent no `Host`; use the copied URL. See
+  [request boundaries](#request-boundaries).
+- **`upload_reference` refused:** choose the file in Blender (a form's **Upload**
+  button, the first-frame field or a workflow input's **File** field) and call it
+  again, or capture the scene with `capture_reference`; see
+  [agent file uploads](#agent-file-uploads).
 - **No free port from 9876:** all four candidate ports are busy. Choose a different
   MCP Port and copy the newly displayed URL.
 - **Allow Online Access is off:** enable it in Blender's System preferences before

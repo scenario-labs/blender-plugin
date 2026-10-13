@@ -191,6 +191,13 @@ def test_network_permission_matches_code():
     assert declared == bool(uses), f"Network imports: {uses}; declared={declared}"
 
 
+def test_network_permission_discloses_the_api_and_the_local_listener():
+    # Local MCP starts by default in GUI sessions with Online Access on (#448).
+    reason = permissions()["network"]
+    assert "api.cloud.scenario.com" in reason
+    assert "127.0.0.1" in reason
+
+
 def test_permission_reasons_follow_manifest_rules():
     declared = permissions()
     assert declared

@@ -892,6 +892,9 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertTrue(all("/uploads" in r.url.path for r, _ in self.fixture.calls))
 
     def test_invalid_kind_or_extension_rejects_before_staging_or_network(self):
+        for name in ("clip.mp4", "sound.exe", "mesh.glb"):
+            # Existing files in the (patched) extension folder: only their type is wrong.
+            (self.fixture.root / name).write_bytes(b"data")
         before = set(self.fixture.root.rglob("*"))
         for kind in (None, [], {}, 3, "", "asset", "model", "audio", "video", "3d"):
             with self.subTest(kind=kind), self.assertRaises(self.module.UploadNotStarted):

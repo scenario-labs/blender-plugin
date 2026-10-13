@@ -63,6 +63,44 @@ class UploadNotStarted(ScenarioError):
     """Local validation or queue admission failed before any task was accepted."""
 
 
+def note_chosen_file(path):
+    """Remember a file the user chose in one of the extension's file fields (main thread).
+
+    The fields' update callbacks and the Upload file browser call this. A change made
+    while a local MCP tool runs is the agent's, not the user's choice, and is not recorded.
+    Only an existing regular file is kept, by its resolved path, for this Blender session.
+    """
+    from ..mcp import server
+    from . import runtime
+
+    if not isinstance(path, str) or not path or server.executing_tool():
+        return None
+    return runtime.state.chosen_files.record(bpy.path.abspath(path))
+
+
+def agent_upload_path(path):
+    """The resolved file an agent may upload, or UploadRefused before anything is read or sent.
+
+    Allowed: a file inside the extension's user folders, which only the extension writes, or
+    a file the user chose this session (``note_chosen_file``). Callers upload the returned
+    path. The Output Folder is not one of these folders: it can point anywhere.
+    """
+    from ..mcp import upload_policy
+    from . import runtime
+
+    if not isinstance(path, str) or not path:
+        raise upload_policy.UploadRefused()
+    folders = runtime.paths()
+    roots = (
+        Path(bpy.utils.extension_path_user(runtime.PACKAGE)),
+        folders.state_dir,
+        folders.cache_dir,
+    )
+    return upload_policy.allowed_upload(
+        bpy.path.abspath(path), roots=roots, chosen=runtime.state.chosen_files
+    )
+
+
 def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False):
     """Capture into private temporary storage retained through asynchronous staging."""
     from . import capture, mesh_export, mesh_provenance, runtime

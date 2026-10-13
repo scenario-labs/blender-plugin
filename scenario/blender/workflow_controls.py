@@ -52,6 +52,13 @@ def _choices(self, context):
     return runtime.state.enum_cache[key]
 
 
+def _on_upload_path(self, context):
+    from .reference_uploads import note_chosen_file
+
+    # The user's choice here lets local MCP upload this file (an agent's change does not).
+    note_chosen_file(self.upload_path)
+
+
 class ScenarioWorkflowInput(bpy.types.PropertyGroup):
     name: StringProperty()
     label: StringProperty()
@@ -70,6 +77,7 @@ class ScenarioWorkflowInput(bpy.types.PropertyGroup):
         subtype="FILE_PATH",
         # Uploads resolve blend-relative paths with bpy.path.abspath.
         options={"PATH_SUPPORTS_BLEND_RELATIVE"},
+        update=_on_upload_path,
     )
 
 

@@ -2253,13 +2253,17 @@ def capture_reference(args):
 
 
 def upload_reference(args):
+    from ..blender.reference_uploads import agent_upload_path
+
     path = args.get("path")
     if not isinstance(path, str) or not path:
         raise ValueError("Choose a local reference path to upload")
+    # The allowlist refuses before anything is read or sent; upload the resolved file.
+    allowed = agent_upload_path(path)
     owner = runtime.ensure_reference_uploads()
     ticket = owner.start(
         bpy.context.scene,
-        bpy.path.abspath(path),
+        allowed,
         kind=args.get("kind", "image"),
         external=True,
     )
@@ -3328,6 +3332,7 @@ SPECS = (
             "  - kind: optional string, image (default), audio, video or 3d; must match the file extension.\n"
             "Returns: context_id, reference_id, staging/upload state, request_id when persisted, kind and content_type after staging, and note.\n"
             'Example: {"path": "/chosen/reference.png"}.\n'
+            "Only two kinds of file are accepted: one the extension saved in its own folders (such as a downloaded result), or one the user chose in Blender during this session (a form's Upload button, the Render Video first-frame field or a workflow File field). Any other path, including the Output Folder, is refused with UploadRefused before anything is read or sent; ask the user to choose the file in Blender, or use capture_reference for the scene. Links are followed, so a link to an outside file is refused too.\n"
             "This sends the selected file to Scenario without conversion or sidecar discovery. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then pass asset_id in estimate_cost or estimate_workflow parameters. Do not repeat an uncertain upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."
         ),
@@ -3771,7 +3776,7 @@ SPECS = (
             "  - lane: required render_image or render_video.\n"
             "  - action: inspect (default), configure, prepare or remove.\n"
             "  - settings: configure edits model_id, look, capture_source (CAMERA/VIEWPORT), force_solid, spark_enabled, first_frame_path, use_first_frame, match_timeline, scalar parameters, style_assets (replaces unmarked styles) and, for render_image, trained: [{model_id, scale}] replacing the form's LoRAs (one strength each, at most 4 decimals; an omitted one starts where the native picker starts it) or composition, checked like a picker choice ([] removes them). Optional parameters accept null to disable them. Choose a model from list_models. Remove references before changing models.\n"
-            "  - role: prepare explicitly captures/uploads scene or uploads the selected first_frame file using the shared reference lifecycle. Repeated preparation refuses an occupied slot.\n"
+            "  - role: prepare explicitly captures/uploads scene or uploads the selected first_frame file using the shared reference lifecycle. Repeated preparation refuses an occupied slot. The first_frame file follows upload_reference's rule: one the extension saved or one the user chose in Blender this session; a first_frame_path set through configure is otherwise refused before anything is read or sent.\n"
             "  - reference_key: remove requires the exact key from a fresh inspection; detaches only that reference and does not cancel its saved upload. Inspect uncertain uploads before preparing another.\n"
             "Returns: current settings, trained_models (LoRAs or a composition chosen in the native picker or with trained, with kind and strength; quotes and generation include them), references with reference_key/upload_id/source_result, first_frame_route, preparation errors, ready_to_estimate and spark_required. Uploaded snapshots remain fixed when capture settings or the scene change. For render_video, first_frame_route gives the first frame's input, label and sent_as: first_frame for the model's own first-frame input, or reference_image with a reason and note when the image becomes image 1 of that input (exclusive: the model says its first frame cannot be combined with reference videos such as the scene clip; no_first_frame_input). It is null when no image input can go with the clip, and for render_image. Requests sending two file inputs whose descriptions say they can't be combined are refused before any quote; settings described that way are not checked. A first frame handed from a saved image (prepare_result_application purpose video_first_frame) keeps an empty first_frame_path and reports source_result: its saved request_id and asset_id, and saved=true while this credential scope still holds that verified download; source_result is null for other references.\n"
             'Example: {"lane":"render_image","action":"configure","settings":{"look":"copper sculpture","capture_source":"CAMERA"}}.\n'

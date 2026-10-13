@@ -737,6 +737,10 @@ The local `scenario-blender` server connects agents to your open scene. The host
 `mcp.scenario.com` server covers platform-wide collections, training, workflows and
 usage; connect both if you need both.
 
+The local server starts on its own while **Allow Online Access** is on and accepts
+connections only from this computer, and an agent can upload only files Scenario
+saved or files you chose in Blender during this session.
+
 Copy a client setup from the **Agents (MCP)** panel. It contains a live token, so
 keep it out of screenshots, logs and source control. **Allow connected agents to
 run Python** is off by default. For headless use, run

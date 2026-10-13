@@ -213,11 +213,26 @@ player or your system player.
 
 ## The local MCP server
 
-The server binds to `127.0.0.1`, using the port selected in Preferences (default `9876`). Calls
+In a Blender window, the server starts by itself with the extension whenever
+**Allow Online Access** is on, and listens for local agents until Blender quits or
+you choose **Stop MCP server** in **Scenario > Agents (MCP)**; the extension's
+network permission names this `127.0.0.1` listener. Background Blender starts it
+only with the explicit `scenario_blender` command. The server binds to `127.0.0.1`
+and refuses any other address, using the port selected in Preferences (default
+`9876`), so only programs on this computer can connect. Every request must name
+`127.0.0.1`, `localhost` or `[::1]` as its `Host`, which stops a web page that
+rebinds its own domain to this computer from reading even the server's version
+status, and the server closes a connection that sends nothing for 60 seconds while
+it waits to read a request. Calls
 require the local session token. Blender normally generates it for the session;
 an explicitly supplied token must be changed by its owner. This is a local
 connection, not Scenario's API credential, and programs holding it can read the
 scene, take captures and request generation that spends your Scenario credits.
+An agent can send a local file to your Scenario account only when the extension
+saved it in its own folders or you chose it in Blender during this session, in a
+reference **Upload** file browser, the Render Video first-frame field or a workflow
+input's **File** field; any other path, including the Output Folder, is refused
+before the file is read. See [agent file uploads](MCP.md#agent-file-uploads).
 MCP `generate` requires the unchanged shared quote ID and exact approved cost.
 Prompt, Blockout and Film commands likewise expose separate estimate/approval
 steps. Collection and tag changes need a separate review and apply call; once
@@ -228,7 +243,8 @@ approval. These controls do not establish that an agent has obtained your
 permission: only connect agents you authorize to perform those actions.
 
 Arbitrary Python execution is disabled by default. Enabling it gives a connected
-agent code execution in Blender with your user's permissions. That switch is not
+agent code execution in Blender with your user's permissions, including reading
+and sending files the upload rule above would refuse. That switch is not
 a sandbox for Python or for the other scene and generation tools. The
 [MCP reference](MCP.md#security-model) describes access controls and connection setup.
 

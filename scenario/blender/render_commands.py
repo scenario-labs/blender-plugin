@@ -19,6 +19,7 @@ from . import (
     params_ui,
     props,
     reference_form,
+    reference_uploads,
     render_lanes,
     render_references,
     runtime,
@@ -357,6 +358,10 @@ def execute(context, args):
     role = args.get("role")
     if action == "prepare" and role not in {render_references.SCENE, render_references.FIRST_FRAME}:
         raise ValueError("Choose the scene or first_frame role")
+    if action == "prepare" and role == render_references.FIRST_FRAME and state.first_frame_path:
+        # Only local MCP reaches this command: an agent uploads a local first frame only
+        # under upload_reference's allowlist, refused before anything is read or sent.
+        reference_uploads.agent_upload_path(state.first_frame_path)
     if action == "inspect":
         _apply_default(context.scene)  # inspect's first step: await the model it leaves
     # Before any change: preparation needs the model's inputs, while inspection and

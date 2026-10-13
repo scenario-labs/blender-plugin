@@ -292,9 +292,8 @@ run in this form.
 Highlight a LoRA, tick its base under **Runs with**, set its **Strength** and click
 OK; one click is enough, but if you just typed the strength, that first click only
 confirms the value, so click OK again. The form switches to that base and adds the
-LoRA. Strength starts at the LoRA's
-own value, or 0.75, within the range the base allows. Add more LoRAs the same way to
-stack them. A composition already combines its LoRAs, so it replaces the form's
+LoRA. Strength starts at the LoRA's own value, or 0.75, within the range the base
+allows. Add more LoRAs the same way to stack them. A composition already combines its LoRAs, so it replaces the form's
 choice; the picker tells you before OK.
 
 Your choice appears in the **Trained models** box under **Model** (in the sidebar,

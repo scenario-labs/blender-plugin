@@ -1593,9 +1593,12 @@ and the SDK methods listed in [asset organization writes](SDK_ADOPTION.md#asset-
 with no raw API fallback. Collection rename and deletion, model collections and
 tag listing are not provided locally. The already-member refusal of an add (a
 400 that writes nothing) is the behavior the service was observed to have, not
-yet checked live from this repository. Name uniqueness, DELETE body survival
-through the production edge, tag normalization and service limits are
-unverified live; a tag the service normalizes reads back as `UNCONFIRMED`.
+yet checked live from this repository. On 2026-10-10 a free live run from a
+pre-merge build applied and read back one asset's collection add and removal
+and tag changes through these tools and the native operators, so a removal's
+DELETE body reached the service through the production edge. Name uniqueness,
+tag normalization and service limits are unverified live; a tag the service
+normalizes reads back as `UNCONFIRMED`.
 Studio's [Library organization](UI_STYLE.md#library-organization) controls
 prepare and apply the same reviews, one asset at a time, and disable Organize
 on pages loaded with Public assets. Desktop interaction and live acceptance

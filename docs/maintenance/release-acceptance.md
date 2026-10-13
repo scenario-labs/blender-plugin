@@ -13,14 +13,13 @@ sections keep their own candidate identities and dates.
 
 Reviewed on 2026-10-12 against `main` at
 `ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged, and brought up
-to date with `main` at `df2fac37c5e605854718811ffaf74384d8341033`, after #411
+to date with `main` at `3fa9c6f6b52254b6c806127ec93d661f4541afb4`, after #431
 merged. Since that first review, #403 to #406, #408 to #411, #416 to #420, #422
-to #424, #426 and #428 have merged. Desktop checks found the preview pager and
-composer progress bar defects that #423 and #424 fix, and the
-[end-to-end production run](#end-to-end-production-run) found the media tool
-lookup and Film review defects that #426 and #428 fix. Still open: #425
-(reasons for failed jobs), #427 (MCP waits for a model description), #429
-(local MCP scene changes mark the file modified) and release PR #70. The final
+to #429 and #431 have merged. Desktop checks found the defects that #423, #424
+and #431 fix, and the [end-to-end production run](#end-to-end-production-run)
+found those that #425 to #429 fix. #423 and #424 passed a physical recheck;
+the other fixes have no physical or live recheck yet. Still open: #432 (pager
+arrows sized to the visible preview image) and release PR #70. The final
 candidate is not built yet. This section records which evidence each retained
 capability has, of which kind, and what remains with its owner. It does not
 certify the final archive, authorize publication or close #68.
@@ -37,10 +36,10 @@ certify the final archive, authorize publication or close #68.
 
 Until then, the latest integrated evidence is:
 
-- `main` at `df2fac37` passes
-  [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38344728434):
-  7,243 unit tests with the known SDK authentication expected failure on Python
-  3.11 and 3.13, and 1,244 installed baseline tests per job, five skips each, on
+- `main` at `3fa9c6f6` passes
+  [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38357059612):
+  7,444 unit tests with the known SDK authentication expected failure on Python
+  3.11 and 3.13, and 1,269 installed baseline tests per job, five skips each, on
   Linux x64 and Windows x64 with Blender 5.0.1, 5.1.2 and 5.2.1, with the same
   install, update and offline restart checks as the run below.
 - `main` at `ff8d29d8` passes
@@ -113,7 +112,7 @@ their lanes:
 | [Previews and playback](#previews-and-playback) | Free live; desktop, including the pager after #423 | Pending: human listening |
 | [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
 | [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1; paid job strip and card | Pending: UI scale 2.0 of the strip; IME by a person |
-| [MCP parity](#mcp-parity) | Free and paid live through local MCP, including the end-to-end run | Passed for the tools on `ff8d29d8`; pending: later tools on merged heads; #427 and #429 open |
+| [MCP parity](#mcp-parity) | Free and paid live through local MCP, including the end-to-end run | Passed for the tools on `ff8d29d8`; pending: later tools and the #427 and #429 fixes on merged heads |
 
 ### Image
 
@@ -220,7 +219,7 @@ their lanes:
   with a paged preview row and the FBX and OBJ imports; the FBX review and its
   import into a new group passed, with the selection unchanged. A first attempt
   failed on the service and showed no reason in the extension, which #425
-  addresses.
+  (`eebca7ce`) since fixed, without a physical recheck.
 - **Paid live:** the hosted smoke 3D job reached `READY`. Meshy 7's and Tencent
   UV Unwrapping's packages have been imported from live results; no catalog
   model was found producing JSON glTF.
@@ -299,7 +298,10 @@ their lanes:
   on 2026-10-12 #403 (`ae791f5c`, step decisions through shared jobs), #404
   (`96e5dfa3`, MCP `workflow_job_steps` and `decide_workflow_step`), #405
   (`5a175b2c`, step review in Studio and Jobs) and #406 (`c90955dd`, private
-  review previews) merged.
+  review previews) merged. On 2026-10-13 #431 merged as `3fa9c6f6`: the Generate
+  workflow confirmation names inputs by their form labels and wraps the
+  loop-cost warning by measured width, two findings of the paid desktop pass
+  below, without a physical recheck yet.
 - **Free live:** a local file uploaded into a public workflow's input (one part,
   imported, receipt-verified), pricing held while uploading, and **Use saved
   upload** reuse that discards the earlier quote.
@@ -398,7 +400,8 @@ their lanes:
   unpaged row was unchanged. Blender insets each image in its cell, so in the
   default-width sidebar the arrows still reach about 9 px (scale 1.0) or 18 px
   (scale 2.0) beyond the visible image, and paged tiles stay about 30% smaller
-  than unpaged ones: a design note, not a defect against the UI contract.
+  than unpaged ones: a design note, not a defect against the UI contract. #432,
+  open, sizes the arrows to the visible image instead.
 - **Status:** pending: human listening and Play audio (the maintainer, under
   #189 and #68); the waveform and Studio's Results page at UI scale 2.0; and the
   waveform alignment fix proposed on #189.
@@ -476,9 +479,10 @@ their lanes:
 - **Status:** passed for the tools on `main` at `ff8d29d8` and those the
   end-to-end run used. #404's `workflow_job_steps` and `decide_workflow_step`
   and #411's trained-model tools ran live only on pre-merge heads. The
-  end-to-end run found that the first quote of an uncached model fails while its
-  description loads (#427) and that local MCP scene changes leave the file
-  unmodified (#429); both fixes are open. No third-party MCP client session is
+  end-to-end run found that the first quote of an uncached model failed while
+  its description loaded and that local MCP scene changes left the file
+  unmodified. #427 (`f163b460`) and #429 (`87202239`) fixed them on 2026-10-13
+  with installed tests and no live recheck. No third-party MCP client session is
   recorded.
 
 ### End-to-end production run
@@ -495,12 +499,13 @@ interaction.
 - Seedance 2.5 rendered the final video from a previz segment and reference
   stills. The Film lane assembled it into a 20 s 1080p MP4 with audio and saved
   a case-study bundle.
-- Fixed since: Film could not find `ffprobe` and `ffmpeg` in a Blender started
-  from the Dock (#426), and a final Film review hid its cause behind a generic
-  error (#428).
-- Under review: a failed job showed no reason (#425), the first quote of an
-  uncached model failed while its description loaded (#427), and local MCP scene
-  changes left the file unmodified, so quitting gave no save prompt (#429).
+- Fixed since, with installed tests and no live recheck: Film could not find
+  `ffprobe` and `ffmpeg` in a Blender started from the Dock (#426, `0aa86d74`); a
+  final Film review hid its cause behind a generic error (#428, `3556dfba`); a
+  failed job showed no reason (#425, `eebca7ce`); the first quote of an uncached
+  model failed while its description loaded (#427, `f163b460`); and local MCP
+  scene changes left the file unmodified, so quitting gave no save prompt (#429,
+  `87202239`).
 - Feature gaps, now among the
   [known limitations](../KNOWN_LIMITATIONS.md#runtime-and-authentication):
   Film cannot capture or export an artist-built multi-shot scene, Render Video
@@ -516,7 +521,8 @@ interaction.
 | Workflow review dialogs at UI scale 2.0, concurrent decisions and rejection inside a loop | Workflows | #65 and #66 | The paid pass ran at UI scale 1.0 on one private test workflow |
 | Render Video handoff and clip capture on Blender 5.0 and 5.2 | Render Video | #66 and #68 | Desktop passes ran on Blender 5.1.2 only |
 | PLY splat and mesh PLY imports of real results, and a 1,000,000-point splat viewport | Splats, 3D | Maintainer, #65 and #68 | The only PLY splat producer found was over the pass's per-job budget; no mesh PLY job ran |
-| Failed-job reasons, MCP quotes of uncached models, and the file marked modified after local MCP changes | Jobs, MCP | #65 and #68 | #425, #427 and #429 are open |
+| Failed-job reasons, MCP quotes of uncached models, and the file marked modified after local MCP changes, on a live run | Jobs, MCP | #65 and #68 | #425, #427 and #429 merged with installed tests only |
+| Generate workflow confirmation labels and loop-warning wrap after #431, and pager arrows after #432 | Workflows, previews | #66 and #68 | #431 merged without a physical recheck; #432 is open |
 | IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Human check |
 | Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Human check |
 | Private LoRAs and compositions | Trained models | Maintainer, #97 | Human check; the test credentials own none |
@@ -549,7 +555,7 @@ interaction.
   submission straight to generating. GPT Image 2 reported only 3%, while
   TripoSplat and Tencent UV Unwrapping reported several intermediate fractions.
 - A failed job carries its reason in the job's metadata, which the extension
-  does not show yet (#425).
+  shows since #425.
 - A 20 s Seedance 2.5 1080p take failed on the service after about 32 minutes as
   taking too long; takes of 13 s and 7 s succeeded. Their progress stayed near
   91% for most of each run.

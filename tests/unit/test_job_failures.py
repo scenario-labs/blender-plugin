@@ -259,7 +259,7 @@ ADVERSARIAL = [
     ("Upload to /bucket/aBcDeF123456gHiJkL789012/x.png failed", ["aBcDeF123456"]),
     # Unterminated and escaped quotes in a credential value.
     ('Rejected token: "secret value never closed', ["secret value", "never closed"]),
-    ("Rejected password: 'hunter2 hunter3", ["hunter2", "hunter3"]),
+    ("Rejected password: 'hunter2 hunter3", ["hunter2", "hunter3"]),  # secrets-allow
     ('Rejected token: "abc\\"def secret" retry', ["def", "secret"]),
     ("Rejected secret='abc\\'xyz secret' retry", ["xyz", "secret'"]),
     ('Rejected token: "line one\\\nline two', ["line one"]),

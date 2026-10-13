@@ -371,6 +371,22 @@ class FilmCompositionControlsTests(unittest.TestCase):
         self.ready()
         self.assertFalse(self.fixture.calls)
 
+    def test_final_composition_without_audio_tracks_or_score_names_the_missing_score(self):
+        raw = copy.deepcopy(self.media.raw)
+        del raw["audio_tracks"]
+        self.film.load_recipe(self.scene, raw)
+        review = self.prepare()
+        with self.assertRaises(submodule("core.scene.film_plan").FilmSourceError):
+            review.task.result(5)
+        status = self.status()
+        self.assertEqual(status["phase"], "ERROR")
+        self.assertIn('looping score task "score"', status["error"])
+        self.assertIn('"audio_tracks": []', status["error"])
+        raw["audio_tracks"] = []
+        self.film.load_recipe(self.scene, raw)
+        self.ready()
+        self.assertFalse(self.fixture.calls)
+
     def test_mode_navigation_is_scene_local_and_preserves_a_ready_price(self):
         review = self.quoted()
         manager = bpy.context.window_manager

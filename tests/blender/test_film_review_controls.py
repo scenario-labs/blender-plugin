@@ -403,6 +403,66 @@ class FilmReviewControlTests(unittest.TestCase):
             self.mcp_prepare(include_master="yes")
         self.assertFalse(self.media.calls or self.media.downloads)
 
+    def test_final_review_without_audio_tracks_or_score_names_the_missing_score(self):
+        raw = json.loads(json.dumps(self.media.raw))
+        del raw["audio_tracks"]
+        loaded = self.tools.film_recipe({"action": "load", "recipe": raw})
+        identifier = self.mcp_prepare()
+        # A first-party recipe reason is shown as it is, not logged as a failure.
+        with self.assertNoLogs("scenario.film_review"):
+            status = self.settle(identifier)
+        self.assertEqual(status["phase"], "ERROR")
+        self.assertIn('looping score task "score"', status["error"])
+        self.assertIn('"audio_tracks": []', status["error"])
+        self.assertFalse(self.copies())
+        self.assertEqual(self.state(), self.storage.JobState.READY)
+        # Loading and inspecting the recipe already warned with the same reason.
+        self.assertEqual(loaded["warnings"], [status["error"]])
+        self.assertEqual(self.tools.film_recipe({})["warnings"], [status["error"]])
+        # The documented fix: an explicit empty track list is a final cut without score.
+        raw["audio_tracks"] = []
+        self.assertEqual(self.tools.film_recipe({"action": "load", "recipe": raw})["warnings"], [])
+        status = self.settle(self.mcp_prepare())
+        self.assertEqual(status["phase"], "READY", status["error"])
+        self.assertEqual(status["audio_segments"], 0)
+        self.assertFalse(self.media.calls or self.media.downloads)
+
+    def test_unexpected_preparation_failure_is_logged_once_without_its_text(self):
+        private = RuntimeError("/private/fixture/review token=fixture-secret")
+        with patch.object(self.media.media, "composition_sources", side_effect=private):
+            identifier = self.mcp_prepare()
+            with self.assertLogs("scenario.film_review", "WARNING") as logs:
+                status = self.settle(identifier)
+        self.assertEqual((status["phase"], status["error"]), ("ERROR", self.module._PREPARE_FAILED))
+        (line,) = logs.output
+        self.assertIn("RuntimeError", line)
+        self.assertNotIn("private", line)
+        self.assertNotIn("secret", line)
+        with self.assertNoLogs("scenario.film_review"):
+            self.assertEqual(self.tools.film_review_status({"review_id": identifier}), status)
+        self.assertFalse(self.copies())
+
+    def test_ready_check_logs_unexpected_failures_once_and_names_source_reasons(self):
+        identifier = self.mcp_prepare()
+        private = RuntimeError("/private/fixture/review token=fixture-secret")
+        with patch.object(self.builder, "_plan", side_effect=private):
+            with self.assertLogs("scenario.film_review", "WARNING") as logs:
+                status = self.settle(identifier)
+        self.assertEqual((status["phase"], status["error"]), ("ERROR", self.module._PREPARE_FAILED))
+        (line,) = logs.output
+        self.assertIn("RuntimeError", line)
+        self.assertNotIn("private", line)
+        self.assertFalse(self.copies())
+        reason = "Audio track bed extends beyond its source. Shorten it or enable loop."
+        source_error = submodule("core.scene.film_plan").FilmSourceError(reason)
+        identifier = self.mcp_prepare()
+        with patch.object(self.builder, "_plan", side_effect=source_error):
+            with self.assertNoLogs("scenario.film_review"):
+                status = self.settle(identifier)
+        self.assertEqual((status["phase"], status["error"]), ("ERROR", reason))
+        self.assertFalse(self.copies())
+        self.assertEqual(self.state(), self.storage.JobState.READY)
+
     def save_master(self, observations):
         """Save one downloaded final master bound to the composed current-source recipe."""
         draft = submodule("core.scene.film_finish").compose_recipe(

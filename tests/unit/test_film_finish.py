@@ -9,8 +9,19 @@ from fractions import Fraction
 import pytest
 
 from scenario.core.jobs.store import JobScope
-from scenario.core.scene.film_finish import AudioDuration, compose_recipe, compose_task
-from scenario.core.scene.film_plan import TaskAssets, resolve_references, validate_film_plan
+from scenario.core.scene.film_finish import (
+    AudioDuration,
+    compose_recipe,
+    compose_task,
+    recipe_warnings,
+    required_sources,
+)
+from scenario.core.scene.film_plan import (
+    FilmSourceError,
+    TaskAssets,
+    resolve_references,
+    validate_film_plan,
+)
 from scenario.core.scene.film_scene_plan import local_plan
 
 SCOPE = JobScope("https://fixture.invalid/v1", "account")
@@ -89,6 +100,64 @@ def test_explicit_empty_audio_tracks_means_silent_mix_without_implicit_score():
     assert len(compose_task(recipe, records, scope=SCOPE)["parameters"]["layers"]) == 2
 
 
+def test_omitted_audio_tracks_without_a_score_task_names_the_score_and_both_fixes():
+    recipe, records, _ = fixture()
+    recipe["tasks"] = [task for task in recipe["tasks"] if task["id"] != "score"]
+    with pytest.raises(FilmSourceError) as raised:
+        required_sources(recipe)
+    message = str(raised.value)
+    assert 'looping score task "score"' in message
+    assert '"audio_tracks": []' in message
+    assert "Declare the Film source" not in message
+    assert recipe_warnings(recipe) == [message]
+    # Composition planning reports the same reason; previs never plays the score.
+    with pytest.raises(FilmSourceError, match="score"):
+        compose_task(recipe, records, scope=SCOPE)
+    assert required_sources(recipe, mode="previs") == {"s0-previs": "video", "s1-previs": "video"}
+    # An explicit empty list is the documented way to have no score.
+    recipe["audio_tracks"] = []
+    assert required_sources(recipe) == {"s0-video": "video", "s1-video": "video"}
+    assert recipe_warnings(recipe) == []
+    # A declared score keeps the recipe contract's looping score unchanged.
+    recipe, _, _ = fixture()
+    assert required_sources(recipe)["score"] == "audio"
+    assert recipe_warnings(recipe) == []
+    # The review or composition's chosen score task is the one named.
+    with pytest.raises(FilmSourceError, match='score task "music"'):
+        required_sources(recipe, score_task_id="music")
+
+
+def test_undeclared_and_conflicting_sources_name_their_tasks():
+    recipe, _, _ = fixture()
+    recipe["audio_tracks"] = []
+    recipe["tasks"] = [task for task in recipe["tasks"] if task["id"] != "s1-video"]
+    with pytest.raises(FilmSourceError, match='source task "s1-video"') as raised:
+        required_sources(recipe)
+    assert "score" not in str(raised.value)
+    # Several missing tasks are listed in recipe order, then counted after five.
+    recipe["shots"] = [
+        {**recipe["shots"][0], "id": f"m{i}", "video_task": f"m{i}-video"} for i in range(7)
+    ]
+    del recipe["audio_tracks"]
+    with pytest.raises(FilmSourceError) as raised:
+        required_sources(recipe)
+    message = str(raised.value)
+    assert '"m0-video", "m1-video", "m2-video", "m3-video", "m4-video" and 2 more' in message
+    assert '"audio_tracks": []' not in message
+    # Both reasons are reported together, pictures first.
+    recipe["tasks"] = [task for task in recipe["tasks"] if task["id"] != "score"]
+    with pytest.raises(FilmSourceError) as raised:
+        required_sources(recipe)
+    message = str(raised.value)
+    assert message.index("m4-video") < message.index('looping score task "score"')
+    recipe, _, _ = fixture()
+    recipe["audio_tracks"] = [
+        {"id": "bed", "task": "s0-video", "kind": "music", "start": 0, "end": 5}
+    ]
+    with pytest.raises(FilmSourceError, match='"s0-video" is both'):
+        required_sources(recipe)
+
+
 def test_duck_boundaries_preserve_loop_phase_and_absolute_volume():
     recipe, records, frames = fixture()
     recipe["audio_tracks"] = [
@@ -125,7 +194,8 @@ def test_finite_dialogue_cannot_overrun_measured_source():
         {"id": "line", "task": "voice", "kind": "dialogue", "start": 1, "end": 4, "trim_start": 1}
     ]
     frames["voice"] = AudioDuration(SCOPE, "asset-voice", Fraction(119, 30))
-    with pytest.raises(ValueError, match="beyond"):
+    # The overrun names its recipe track, so review preparation can show it.
+    with pytest.raises(FilmSourceError, match="line extends beyond"):
         compose_task(recipe, records, scope=SCOPE, audio_durations=frames)
     frames["voice"] = replace(frames["voice"], seconds=Fraction(4))
     layer = compose_task(recipe, records, scope=SCOPE, audio_durations=frames)["parameters"][

@@ -15,6 +15,15 @@ from ..jobs.store import JobScope, _identity
 from .film_scene_plan import _keys, _label, _number, _vector, validate_scene_plan
 
 
+class FilmSourceError(ValueError):
+    """A recipe source task is undeclared, unsaved, mismatched or shorter than its use.
+
+    Messages name only validated recipe task and track identifiers, never paths,
+    credentials or another exception's text, so Film review and composition
+    preparation can show them as they are.
+    """
+
+
 def identifier(value: Any, label: str = "Identifier") -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]{0,95}", value):
         raise ValueError(f"{label} must contain only letters, numbers, hyphens and underscores.")
@@ -160,7 +169,11 @@ def validate_audio_tracks(raw: Any, fps: int, duration: float) -> list[dict]:
 
 
 def effective_audio_tracks(plan: dict, score_task_id: str = "score") -> list[dict]:
-    """Keep the legacy looping score only when the new track list is omitted."""
+    """Keep the legacy looping score only when the new track list is omitted.
+
+    The recipe contract then needs ``score_task_id`` as a declared task in final
+    mode; ``audio_tracks: []`` is the explicit way to have no score.
+    """
     if "audio_tracks" in plan:
         return validate_audio_tracks(plan["audio_tracks"], plan["fps"], plan["duration"])
     return [
@@ -191,7 +204,7 @@ def audio_segments(track: dict, fps: int, source_frames: int | None = None) -> l
         if source_frames < 1:
             raise ValueError("Audio source must contain at least one editorial frame.")
         if not looping and trim + end - start > source_frames:
-            raise ValueError(
+            raise FilmSourceError(
                 f"Audio track {track['id']} extends beyond its source. Shorten it or enable loop."
             )
         if looping:

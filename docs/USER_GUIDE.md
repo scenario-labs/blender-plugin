@@ -880,7 +880,8 @@ acceptance remain separate.
 Choose **Prepare composition**, wait for verification, then **Request price**.
 Review the separate **Generate** confirmation and its exact CU price. The master
 is saved as a job; your recipe and Blender scene remain unchanged. Missing saved
-media or `ffprobe` stops preparation. Cancel stops inspection or discards a pending
+media or `ffprobe` stops preparation; the error names the missing source task or
+tool. Cancel stops inspection or discards a pending
 price; discarding a review keeps saved media and jobs. After an error or restart,
 use **Inspect saved jobs** instead of repeating an uncertain generation. See
 [composition controls](FILM_PLAN.md#native-and-mcp-composition-controls) for MCP,
@@ -890,8 +891,12 @@ on macOS Blender 5.1.2; live provider and other OS/DPI acceptance remain pending
 **Film > Review** assembles saved source media into a new final or previs review
 scene. Choose **Prepare review** and confirm. Preparation copies up to 2 GiB of
 downloaded results and retained uploads into private storage and measures them
-with installed `ffprobe`; video frame rates must match the recipe. When the
-recipe's master is saved, you can include it as a muted alternate. Then choose
+with installed `ffprobe`; video frame rates must match the recipe. A final
+review needs each shot's video task and each audio track's task declared in the
+recipe. A recipe without `audio_tracks` adds a looping score from its `score`
+task, so declare that task, or add `"audio_tracks": []` for no score. If a
+missing or mismatched source stops preparation, **Error details** names it. When
+the recipe's master is saved, you can include it as a muted alternate. Then choose
 **Build review scene** and check its separate confirmation. Your working scene stays
 selected; select the new scene in the scene selector or Video Sequencer to watch
 it. Saved jobs record the generated sources as applied. Prepare and build one

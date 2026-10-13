@@ -55,7 +55,12 @@ Audio helpers validate dialogue, sound effects and music tracks, source trims,
 gains, looping and non-overlapping duck intervals. They calculate segments; they
 do not decode, play or import audio. An omitted `audio_tracks` retains the
 source's default looping score description; an explicit empty list disables it.
-Neither case authorizes producing a score. `continuity_audit` compares declared
+Neither case authorizes producing a score. With the list omitted, final review
+and composition need that score task, `score` unless the caller names another,
+among the recipe's `tasks`. A recipe without it still loads, and previs never
+uses the score; final preparation refuses it with a `FilmSourceError` that names
+the task and the `"audio_tracks": []` alternative. `film_recipe` load and
+inspection return the same text as a warning. `continuity_audit` compares declared
 adjacent object states and intentional changes. Its `visual_verification` result
 is always false: a matching declaration does not prove visual continuity.
 
@@ -535,15 +540,20 @@ downloads, reserves a take or changes a Blender scene.
 `compose_recipe` returns a separate JSON recipe with a new master task. Existing
 tasks and the caller's recipe remain unchanged; an existing master name is
 rejected. `audio_tracks: []` explicitly omits a score. An omitted track list
-retains the recipe contract's looping score at volume 0.4. All final audio needs
-an `AudioDuration` observation bound to its selected asset and exact scope.
+retains the recipe contract's looping score at volume 0.4, so its task must be
+declared. `required_sources` lists the declared source roles; an undeclared
+source raises `FilmSourceError` naming up to five tasks, plus both remedies for
+an implied score. `recipe_warnings` reports only that score case, without failing
+a load. All final audio needs an `AudioDuration` observation bound to its
+selected asset and exact scope.
 The caller must obtain that observation from verified saved media; supplying a
 value does not prove its duration or validate its bytes. Exact rational seconds
 are converted per track: floor for whole-frame loops, ceil for a finite partial
 last frame. The same source can serve both kinds without using the wrong
 rounding. Duck boundaries preserve loop phase and use absolute gains. The helper
-emits explicit segments, rejects finite-source overrun and more than 50 combined
-picture/audio layers, and does not truncate an excessive mix.
+emits explicit segments, rejects finite-source overrun (a `FilmSourceError`
+naming the track) and more than 50 combined picture/audio layers, and does not
+truncate an excessive mix.
 The recipe's 50-shot limit is separate from this combined composition budget.
 For example, 49 shots plus one unsegmented score fit; 50 shots plus that score
 are rejected before a draft is returned. Fifty shots still fit in previs mode
@@ -563,7 +573,9 @@ retains each source's request, revision, asset and task digest. Source resolutio
 validates the recipe scope and computes all transitive task digests once, reusing
 them for every selected source. `validate_composition_draft` rejects changed inputs or a newly
 reserved master. Neither helper acquires an approval or an atomic generation
-claim. API-key default scope needs no project discovery.
+claim. API-key default scope needs no project discovery. A missing, stale or
+mismatched source raises `FilmSourceError` naming its task, as does a missing
+master for a review that includes it. Its text holds only recipe identifiers.
 
 The resulting model task resolves through the existing Film task command and
 SDK `generate.with_raw_response.run_model` path. Its eventual estimate must fetch
@@ -689,7 +701,9 @@ invalidate it. Drawing reads cached status without polling, storage or network I
 
 **Cancel preparation** stops a local probe or discards a pending price when the
 request ends. **Discard review** releases only the handle after work ends, keeping
-source media and saved jobs. Errors remain readable and copyable. A failed or
+source media and saved jobs. Errors remain readable and copyable. A preparation
+stopped by a `FilmSourceError` or media inspection shows that reason, such as an
+undeclared score task; other failures show generic guidance. A failed or
 uncertain submission consumes approval before durable preparation; inspect saved
 jobs instead of repeating generation. A lost preparation acknowledgement can
 still expose its committed master request ID. No old quote is restored on restart.
@@ -702,7 +716,8 @@ or production; discarding a review does not free a spent identity.
 
 Installed synthetic controls tests cover UI/MCP sharing, exact-price rejection,
 source/recipe/scene invalidation, cancellation, uncertainty, lost acknowledgements,
-read-only drawing and saved-master discovery after reopening the owner. Synthetic
+read-only drawing, saved-master discovery after reopening the owner and the named
+error for a final recipe without `audio_tracks` or a score task. Synthetic
 desktop mouse/keyboard, focus, confirmation and viewport checks pass on macOS
 arm64 Blender 5.1.2; see [the exact ZIP evidence](UI_STYLE.md#film-composition-controls).
 Live provider/media acceptance and other OS/DPI behavior remain pending; local
@@ -901,6 +916,17 @@ preparation for its scene until its receipt is saved or it is dismissed. No buil
 is retried automatically, and
 **Error details** shows the complete error for copying.
 
+A preparation that fails shows its reason when it is first-party: a
+`FilmSourceError` names the missing, stale or mismatched source task, track or
+master, including the undeclared score of a recipe that omits `audio_tracks`,
+and a media inspection error names the tool or measurement. Any other failure,
+during preparation or the main-thread check before READY, shows "Inspect saved
+Film media, frame rates and the declared master before preparing again" and logs
+one warning on `scenario.film_review` with only the exception type and the file,
+line and function that raised it. Exception text can hold private paths, so it is
+never shown or logged. A changed recipe, scene or connection still reports the
+invalidation message without a log.
+
 Local MCP uses `film_recipe` inspection's `context_id` and `production_id` with
 `prepare_film_review`. Poll `film_review_status` until `READY`, show the returned
 timing, counts, size and master inclusion for explicit approval, then call
@@ -931,8 +957,11 @@ and ready reviews while a built review keeps its scene, recipe scene deletion, a
 included saved master built as muted movie and sound strips, and a previs review
 prepared and built beside a ready final review, which then fails and builds again
 after a fresh preparation. They also cover missing master
-and `ffprobe`, rollback, receipt-only recovery, inspected dismissal, the 16-handle
-bound, shutdown cleanup, read-only drawing, mode navigation, Edit Mode gating and
+and `ffprobe`, a final recipe without `audio_tracks` or a score task (its warning,
+named error and the `"audio_tracks": []` fix), source reasons and logged unexpected
+failures in preparation and the ready check, rollback, receipt-only recovery,
+inspected dismissal, the 16-handle bound, shutdown cleanup, read-only drawing,
+mode navigation, Edit Mode gating and
 the build operator's Undo-only options. The tests call the Undo/Redo handler
 directly rather than stepping Blender's undo history, and evaluate the dependency
 graph explicitly where a window would after a click or build.

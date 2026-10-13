@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 
 from ..scene.film_finish import compose_recipe, required_sources
-from ..scene.film_plan import TaskAssets, validate_film_plan
+from ..scene.film_plan import FilmSourceError, TaskAssets, validate_film_plan
 from .film_tasks import _recipe_context, _upload_evidence
 from .store import JobScope, JobState, StoreConflict, StoredJob, _identity, _json
 
@@ -38,7 +38,10 @@ class CompositionDraft:
 def composition_sources(
     store, recipe, *, production_id, mode="final", score_task_id="score", inspect_upload=None
 ):
-    """Observe exact typed outputs; metadata is not local file verification."""
+    """Observe exact typed outputs; metadata is not local file verification.
+
+    A missing, stale or mismatched source raises ``FilmSourceError`` naming its task.
+    """
     _identity(production_id)
     _, tasks, digests, _ = _recipe_context(store, recipe)
     observed = []
@@ -50,7 +53,9 @@ def composition_sources(
         if kind == "upload":
             attached = store.film_upload(production_id, task_id)
             if attached is None or attached.film_task.task_sha256 != task_sha256:
-                raise ValueError("Choose a matching imported Film upload")
+                raise FilmSourceError(
+                    f'Bind a current imported upload to the Film task "{task_id}"'
+                )
             current = _upload_evidence(
                 inspect_upload,
                 attached.film_task,
@@ -59,7 +64,10 @@ def composition_sources(
                 attached.upload_revision,
             )
             if current != attached or current.kind != media_kind:
-                raise ValueError("The Film upload scope, revision or media kind changed")
+                raise FilmSourceError(
+                    f'The upload bound to the Film task "{task_id}" changed or is not '
+                    f"{media_kind}; bind a matching upload again"
+                )
             request_id, revision, asset_id = (
                 current.upload_request_id,
                 current.upload_revision,
@@ -89,8 +97,9 @@ def composition_sources(
                 or len(saved.results) != 1
                 or not saved.results[0].asset.media_type.startswith(media_kind + "/")
             ):
-                raise ValueError(
-                    "Choose one matching completed Film output of the expected media kind"
+                raise FilmSourceError(
+                    f'Film task "{task_id}" needs one completed {media_kind} output saved '
+                    "for the current recipe"
                 )
             request_id, revision, asset_id = (
                 saved.intent.request_id,

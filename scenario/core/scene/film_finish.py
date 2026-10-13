@@ -13,6 +13,7 @@ from fractions import Fraction
 
 from ..jobs.store import JobScope, _identity
 from .film_plan import (
+    FilmSourceError,
     TaskAssets,
     audio_segments,
     effective_audio_tracks,
@@ -55,8 +56,21 @@ def _asset(records, task_id, scope):
     return observed.asset_ids[0]
 
 
+def _score_reason(score_task_id):
+    return (
+        "The recipe omits audio_tracks, so final mode plays the looping score task "
+        f'"{score_task_id}", which the recipe does not declare. Declare that task, '
+        'or add "audio_tracks": [] for no score'
+    )
+
+
 def required_sources(recipe, *, mode="final", score_task_id="score"):
-    """List exact declared source-task roles without reading or trusting outputs."""
+    """List exact declared source-task roles without reading or trusting outputs.
+
+    An undeclared source raises ``FilmSourceError`` naming the task. When the
+    missing task is the legacy score implied by an omitted ``audio_tracks``, the
+    message also names the explicit ``"audio_tracks": []`` alternative.
+    """
     if mode not in {"final", "previs"}:
         raise ValueError("Choose final or previs composition")
     plan = validate_film_plan(recipe)
@@ -65,15 +79,46 @@ def required_sources(recipe, *, mode="final", score_task_id="score"):
     for shot in plan["shots"]:
         task_id = shot.get(field, shot["id"] + ("-video" if mode == "final" else "-previs"))
         sources[task_id] = "video"
+    score = None
     if mode == "final":
-        for track in effective_audio_tracks(plan, identifier(score_task_id, "Score task")):
+        score = identifier(score_task_id, "Score task")
+        for track in effective_audio_tracks(plan, score):
             if sources.get(track["task"], "audio") != "audio":
-                raise ValueError("Picture and audio tracks need distinct typed source tasks")
+                raise FilmSourceError(
+                    f'Use separate picture and audio tasks; "{track["task"]}" is both '
+                    "a shot picture and an audio track"
+                )
             sources[track["task"]] = "audio"
     tasks = {item["id"] for item in plan["tasks"]}
-    if not sources.keys() <= tasks:
-        raise ValueError("Composition sources must be declared recipe tasks")
+    missing = [task_id for task_id in sources if task_id not in tasks]
+    if missing:
+        implied = "audio_tracks" not in plan and score in missing
+        others = [task_id for task_id in missing if not (implied and task_id == score)]
+        reasons = []
+        if others:
+            names = ", ".join(f'"{task_id}"' for task_id in others[:5])
+            if len(others) > 5:
+                names += f" and {len(others) - 5} more"
+            plural = "s" if len(others) > 1 else ""
+            reasons.append(f"Add the Film source task{plural} {names} to the recipe tasks")
+        if implied:
+            reasons.append(_score_reason(score))
+        raise FilmSourceError(". ".join(reasons))
     return sources
+
+
+def recipe_warnings(recipe, *, score_task_id="score"):
+    """Name the implicit final score a recipe leaves undeclared, without failing a load.
+
+    Omitting ``audio_tracks`` keeps the recipe contract's looping score, so final
+    review and composition need ``score_task_id`` as a declared task. Other
+    undeclared sources are reported when a review or composition is prepared.
+    """
+    plan = validate_film_plan(recipe)
+    score = identifier(score_task_id, "Score task")
+    if "audio_tracks" in plan or score in {task["id"] for task in plan["tasks"]}:
+        return []
+    return [_score_reason(score)]
 
 
 def compose_task(

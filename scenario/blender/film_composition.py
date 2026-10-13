@@ -12,7 +12,7 @@ import bpy
 from ..core.jobs.coordinator import OriginQuote
 from ..core.jobs.film_media import VerifiedComposition
 from ..core.jobs.media_probe import MediaProbeError
-from ..core.scene.film_plan import require_plan_scope
+from ..core.scene.film_plan import FilmSourceError, require_plan_scope
 from . import film_jobs
 from .film_application import _main_thread
 
@@ -149,9 +149,10 @@ class FilmCompositionCommands:
                     if len(completions) != 1 or completions[0].error is not None:
                         error = completions[0].error if len(completions) == 1 else None
                         review.phase = "ERROR"
+                        # Both first-party types name only local tools or recipe identifiers.
                         review.error = (
                             str(error)
-                            if isinstance(error, MediaProbeError)
+                            if isinstance(error, (MediaProbeError, FilmSourceError))
                             else "Inspect saved media and model requirements before preparing again"
                         )
                     else:

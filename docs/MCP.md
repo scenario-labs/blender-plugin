@@ -1028,6 +1028,11 @@ panel header and Studio's Film pages; the commands remain available.
 `film_recipe` loads or inspects the native scene's validated recipe and stable
 production identity. Loading preserves identity; `new_production` deliberately
 starts another production without submitting anything. Save the blend file.
+Every response has a `warnings` list. It is empty unless the recipe omits
+`audio_tracks` without declaring the `score` task: final review and composition
+then refuse it, so add that task or `"audio_tracks": []` for no score. A recipe
+with this warning still loads, and previs is unaffected. The warning assumes the
+default `score` task; preparation checks any other `score_task_id`.
 `estimate_film_task` uses that identity and task name to return resolved inputs
 and an exact shared SDK quote. `approve_film_task` consumes the quote with its
 verbatim CU cost before durable submission. `discard_film_estimate` releases an
@@ -1111,7 +1116,9 @@ the resolved model payload and full `cu_cost_exact`; obtain explicit approval of
 both before `generate_film_composition(review_id, approved_cost)`.
 
 Preparation needs retained upload files or downloaded results and installed
-`ffprobe`; it never uploads or downloads missing sources. The reviewed recipe
+`ffprobe`; it never uploads or downloads missing sources. A missing, stale or
+mismatched source, including the undeclared score above, ends the review in
+`ERROR` with an error naming its task. The reviewed recipe
 and original scene stay unchanged. Pricing/submission use the existing shared SDK
 model path. Cancel/discard release preparation or approval, preserving saved jobs
 and media. On an error, lost response or restart, inspect the recipe's declared
@@ -1131,7 +1138,11 @@ needs a Blender window in Object Mode; an Edit Mode rejection keeps the review.
 
 Preparation copies retained upload files or downloaded results into private
 extension storage and needs installed `ffprobe` and matching frame rates; it never
-uploads, downloads, generates or claims. Recipe, frame, scene or connection changes
+uploads, downloads, generates or claims. When preparation fails, `error` names the
+missing, stale or mismatched source task, track or master, such as the undeclared
+score of a final recipe that omits `audio_tracks`, or the media inspection problem.
+Other failures return generic guidance and log only their exception type and code
+location once. Recipe, frame, scene or connection changes
 invalidate the review and delete its copies; scene changes include selecting, adding
 or editing objects, and any Undo or Redo resets every captured origin. Building one
 review also invalidates any other unbuilt review for the same scene, so prepare and

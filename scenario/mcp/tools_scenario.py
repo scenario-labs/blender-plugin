@@ -669,18 +669,26 @@ def decide_workflow_step(args):
 
 def film_recipe(args):
     from ..blender import film_jobs
+    from ..core.scene.film_finish import recipe_warnings
 
     action = args.get("action", "inspect")
     scene = bpy.context.scene
     if action == "inspect":
         owner = runtime.ensure_film_jobs()
-        return {"context_id": runtime.state.job_context_id, **owner.inspect(scene)}
+        inspection = owner.inspect(scene)
+        raw, _ = film_jobs.recipe(scene)
+        return {
+            "context_id": runtime.state.job_context_id,
+            **inspection,
+            "warnings": recipe_warnings(raw),
+        }
     if action == "load":
-        plan = film_jobs.load_recipe(scene, args["recipe"])
+        raw = args["recipe"]
+        plan = film_jobs.load_recipe(scene, raw)
     elif action == "new_production":
         import uuid
 
-        _, plan = film_jobs.recipe(scene)
+        raw, plan = film_jobs.recipe(scene)
         scene.scenario_film.production_id = uuid.uuid4().hex
     else:
         raise ValueError("Choose inspect, load or new_production")
@@ -689,6 +697,7 @@ def film_recipe(args):
         "title": plan["title"],
         "tasks": plan["tasks"],
         "shots": [{"shot_id": shot["id"], "title": shot["title"]} for shot in plan["shots"]],
+        "warnings": recipe_warnings(raw),
     }
 
 
@@ -2387,7 +2396,7 @@ SPECS = (
             "Args: context_id and production_id are required from film_recipe inspection; mode is final (default) or previs, score_task_id defaults to score.\n"
             "Returns: review_id and PREPARING phase; poll film_composition_review until READY.\n"
             'Example: {"context_id": "current-context", "production_id": "saved-production", "mode": "final"}.\n'
-            "Film is experimental. Requires retained upload files or downloaded results and installed ffprobe. Uses the existing selected connection and recipe; no upload, download, scene mutation or generation. Reviews are session-local.\n"
+            "Film is experimental. Requires retained upload files or downloaded results and installed ffprobe. Uses the existing selected connection and recipe; no upload, download, scene mutation or generation. Reviews are session-local. A final recipe that omits audio_tracks plays score_task_id as its looping score, so that task must be declared; audio_tracks: [] means no score. An error names a missing or mismatched source task.\n"
             "Platform equivalent: none; local composition source verification."
         ),
         _schema(
@@ -2457,7 +2466,7 @@ SPECS = (
             "Args: context_id and production_id are required from film_recipe inspection; mode is final (default) or previs, score_task_id defaults to score, include_master defaults to false.\n"
             "Returns: review_id and PREPARING phase with the recipe scene, mode and frame timing; poll film_review_status until READY.\n"
             'Example: {"context_id": "current-context", "production_id": "saved-production", "mode": "final"}.\n'
-            "Film is experimental. Copies up to 2 GiB of downloaded results and retained upload files into private extension storage and measures them with installed ffprobe; video and Film frame rates must match. include_master adds the recipe's saved master as a muted alternate. Shares the single local media slot with capture and composition inspection. No download, upload, generation, claim or scene change; build_film_review requires separate approval. Keep the recipe scene selected and unchanged until building: object selection or edits, Undo or Redo, building another review for the scene, or leaving it and selecting it again invalidate the review. Reviews are session-local.\n"
+            "Film is experimental. Copies up to 2 GiB of downloaded results and retained upload files into private extension storage and measures them with installed ffprobe; video and Film frame rates must match. include_master adds the recipe's saved master as a muted alternate. Shares the single local media slot with capture and composition inspection. No download, upload, generation, claim or scene change; build_film_review requires separate approval. Keep the recipe scene selected and unchanged until building: object selection or edits, Undo or Redo, building another review for the scene, or leaving it and selecting it again invalidate the review. Reviews are session-local. A final recipe that omits audio_tracks plays score_task_id as its looping score, so that task must be declared; audio_tracks: [] means no score. An error names a missing or mismatched source task.\n"
             "Platform equivalent: none; local saved-media review preparation."
         ),
         _schema(
@@ -2907,7 +2916,7 @@ SPECS = (
         (
             "Inspect or load the current scene's Film recipe, or explicitly start a new production.\n"
             "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
-            "Returns: stable production_id, title, tasks and shots; inspection adds context_id and saved job/upload identities and states, including declared master jobs. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval.\n"
+            "Returns: stable production_id, title, tasks, shots and warnings; inspection adds context_id and saved job/upload identities and states, including declared master jobs. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval. warnings is empty unless audio_tracks is omitted without a declared score task, which final review and composition refuse.\n"
             'Example: {"action": "inspect"}.\n'
             "Film is experimental. Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
             "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"

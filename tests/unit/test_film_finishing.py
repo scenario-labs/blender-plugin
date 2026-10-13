@@ -27,6 +27,7 @@ from scenario.core.jobs.store import (
 )
 from scenario.core.jobs.upload_store import UploadIntent, UploadState, UploadStore
 from scenario.core.scene.film_finish import AudioDuration
+from scenario.core.scene.film_plan import FilmSourceError
 from scenario.core.scene.film_scene_plan import local_plan
 
 
@@ -207,6 +208,22 @@ def test_wrong_ambiguous_missing_or_unfinished_model_outputs_are_rejected(env, k
     saved_model(env, "shot-video", kind=kind, count=count, state=state)
     saved_upload(env)
     with pytest.raises(ValueError):
+        prepare(env)
+
+
+def test_missing_or_mismatched_saved_sources_name_their_task(env):
+    # Review and composition preparation show these first-party reasons as they are.
+    saved_upload(env, kind="image")
+    with pytest.raises(FilmSourceError, match='Film task "shot-video" needs one completed video'):
+        prepare(env)
+    saved_model(env, "shot-video")
+    with pytest.raises(FilmSourceError, match='upload bound to the Film task "score"'):
+        prepare(env)
+    # Editing the task after binding needs a fresh association.
+    env.recipe["tasks"][1]["title"] = "Score, renamed after binding"
+    with pytest.raises(
+        FilmSourceError, match='Bind a current imported upload to the Film task "score"'
+    ):
         prepare(env)
 
 

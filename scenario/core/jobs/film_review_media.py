@@ -10,7 +10,7 @@ from fractions import Fraction
 from pathlib import Path
 
 from ..scene.film_finish import AudioDuration, compose_recipe
-from ..scene.film_plan import TaskAssets, validate_film_plan
+from ..scene.film_plan import FilmSourceError, TaskAssets, validate_film_plan
 from . import media_probe
 from .film_finishing import CompositionSource, composition_sources
 from .film_tasks import _task_context
@@ -113,7 +113,10 @@ def _master(coordinator, recipe, production_id, mode, score_task_id, sources, fi
         or len(record.results) != 1
         or not record.results[0].asset.media_type.startswith("video/")
     ):
-        raise ValueError("Save the master for this exact Film recipe and its current sources first")
+        raise FilmSourceError(
+            f'Save the declared master "{task}" for this exact Film recipe and its current '
+            "sources first"
+        )
     return CompositionSource(
         task,
         coordinator.scope,

@@ -7,15 +7,17 @@ add no executor, store, service client or persisted state; restart drops them.
 """
 
 import logging
+import traceback
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import bpy
 
 from ..core.jobs.film_review_media import PreparedFilmReview
 from ..core.jobs.media_probe import MediaProbeError
 from ..core.jobs.workers import WorkerError
-from ..core.scene.film_plan import require_plan_scope
+from ..core.scene.film_plan import FilmSourceError, require_plan_scope
 from . import film_jobs, film_review, film_scene
 from .film_application import _main_thread
 
@@ -37,6 +39,28 @@ _UNCERTAIN = "Inspect the uncertain Film review before preparing another"
 _ACTIVE = {"PREPARING", "CANCELLING", "WAITING", "READY", "BUILDING"}
 _TERMINAL = {"BUILT", "ERROR", "CANCELLED", "DISCARDED"}
 _LIMIT = 16
+# First-party failures whose text names only local tools or recipe identifiers.
+_READABLE = (MediaProbeError, FilmSourceError)
+
+
+def _preparation_error(error):
+    """Return a readable first-party reason, or log another failure once and guide.
+
+    Other exception text can contain private paths, so the log names only the
+    exception type and the file, line and function that raised it.
+    """
+    if isinstance(error, _READABLE):
+        return str(error)
+    if error is None:
+        _log.warning("Film review preparation returned no result")
+        return _PREPARE_FAILED
+    location = "an unknown location"
+    frames = traceback.extract_tb(error.__traceback__)
+    if frames:
+        frame = frames[-1]
+        location = f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}"
+    _log.warning("Film review preparation failed: %s at %s", type(error).__name__, location)
+    return _PREPARE_FAILED
 
 
 @dataclass(eq=False)
@@ -217,10 +241,10 @@ class FilmReviewCommands:
 
     def _ready(self, review):
         completion = review.completion
-        error = _STALE
+        checked = False
         try:
             self._check(review, selected=True)
-            error = _PREPARE_FAILED
+            checked = True
             prepared = completion.result
             if (
                 self.session._issued.get(id(completion)) is not completion
@@ -240,10 +264,12 @@ class FilmReviewCommands:
                 prepared.score_task_id,
                 master,
             )
-        except Exception:
+        except Exception as error:
             self._release(completion)
             review.completion = None
-            review.phase, review.error = "ERROR", error
+            review.phase = "ERROR"
+            # A changed context is expected; any later failure is the preparation's own.
+            review.error = _preparation_error(error) if checked else _STALE
             return
         review.frames, review.fps = plan["total_frames"], plan["fps"]
         review.shots, review.audio_segments = len(pictures), len(audio)
@@ -268,9 +294,7 @@ class FilmReviewCommands:
                     if completion is None or completion.error is not None:
                         error = completion.error if completion is not None else None
                         review.phase = "ERROR"
-                        review.error = (
-                            str(error) if isinstance(error, MediaProbeError) else _PREPARE_FAILED
-                        )
+                        review.error = _preparation_error(error)
                     else:
                         # apply_film_review consumes this issued completion itself.
                         review.completion, review.phase = completion, "WAITING"

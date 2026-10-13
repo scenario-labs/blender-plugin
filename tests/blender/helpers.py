@@ -200,6 +200,32 @@ def isolated_manager():
                     original.add_note(message)
 
 
+def mcp_call(name, arguments, *, during=None):
+    """Serve one installed tool call as local MCP does, without a socket.
+
+    The request runs on a worker thread while this main thread pumps the server's
+    queue, so deferred tools wait off the main thread as they do in Blender.
+    `during(server, result)` runs after each pump. Returns the JSON-RPC response.
+    """
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    registry = submodule("blender.mcp_service").build_registry()
+    server = submodule("mcp.server").McpServer(
+        "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
+    )
+    message = {"id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        result = worker.submit(server.handle, message)
+        deadline = time.monotonic() + 5
+        while not result.done() and time.monotonic() < deadline:
+            server.process_pending()
+            if during is not None:
+                during(server, result)
+            time.sleep(0.001)
+        return result.result(1)
+
+
 def exr_attribute(name, kind, payload):
     return name + b"\0" + kind + b"\0" + struct.pack("<I", len(payload)) + payload
 

@@ -23,6 +23,7 @@ from helpers import (
     animated_glb,
     draw_job_panels,
     drawn_texts,
+    mcp_call,
     online_access,
     reset_scene,
     scanline_exr,
@@ -75,6 +76,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.status_after_cancel = "canceled"
         self.lose_response = False
         self.dry_run_costs = {}
+        self.failed_descriptions = 0  # model reads that Scenario answers with HTTP 503
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
         self.model = {
@@ -158,6 +160,9 @@ class ModelGenerationTests(unittest.TestCase):
                         },
                     )
                 model_id = request.url.path.rsplit("/", 1)[-1]
+                if self.failed_descriptions:
+                    self.failed_descriptions -= 1
+                    return httpx.Response(503, json={"reason": "private outage detail"})
                 return httpx.Response(
                     200, json={"model": self.extra_models.get(model_id, self.model)}
                 )
@@ -1694,6 +1699,43 @@ class ModelGenerationTests(unittest.TestCase):
         )
         return deferred.finish(deferred.run())
 
+    def render_form_lane(self, lane):
+        """A configured render form with an uploaded scene snapshot, ready to price."""
+        state = self.configure_ui_lane(lane)
+        references = submodule("blender.render_references")
+        ref = state.references.add()
+        ref.param_name, ref.source, ref.asset_id = "reference", "ASSET", "scene-snapshot"
+        ref[references.ROLE] = references.SCENE
+        return state
+
+    def catalog_reads(self):
+        """Description reads use the catalog worker this harness otherwise refuses."""
+        manager = submodule("core.jobs.manager").JobManager(None, None)
+        self.addCleanup(manager.join, 5)
+        self.addCleanup(manager.shutdown)
+        self.runtime.state.manager = manager
+        self.enterContext(patch.object(self.runtime, "ensure_manager", return_value=manager))
+
+    def forget_description(self):
+        """Keep only the list entry, as before this session's first read of the model."""
+        listed = {key: self.model[key] for key in ("id", "name", "type", "capabilities")}
+        model_id = self.model["id"]
+        self.runtime.state.records[model_id] = submodule("core.api.catalog").ModelRecord.from_api(
+            listed
+        )
+        self.generation._schemas.pop(model_id, None)
+        self.assertIsNone(self.generation.schema_for(model_id))
+        # An earlier read leaves its row in the connection's cache, which would answer at once.
+        catalog = self.runtime.ensure_catalog()
+        with catalog._condition:
+            catalog._records.pop(model_id, None)
+        self.assertIsNone(catalog.load_cached(model_id))
+
+    def mcp_call(self, name, arguments):
+        response = mcp_call(name, arguments)
+        self.assertNotIn("error", response)
+        return response["result"]
+
     def mcp_submit(self, quote, **changes):
         args = dict(
             lane=quote["lane"],
@@ -2426,6 +2468,74 @@ class ModelGenerationTests(unittest.TestCase):
                     deferred.finish(result)
         self.assertEqual(self.paid, [])
         self.assertEqual(self.store.records(), ())
+
+    def test_first_render_quote_and_submission_wait_for_the_model_description(self):
+        self.catalog_reads()
+        model_id = self.model["id"]
+        for lane_name in ("render_image", "render_video"):
+            with self.subTest(lane=lane_name):
+                self.render_form_lane(lane_name)
+                self.forget_description()
+                start = len(self.calls)
+                result = self.mcp_call("estimate_cost", {"lane": lane_name, "model_id": model_id})
+                self.assertFalse(result.get("isError"), result)
+                quote = json.loads(result["content"][0]["text"])
+                # The description read, then the quote's own metadata read and dry run.
+                self.assertEqual(
+                    [(call.method, call.url.params.get("dryRun")) for call in self.calls[start:]],
+                    [("GET", None), ("GET", None), ("POST", "true")],
+                )
+                self.forget_description()
+                paid, start = len(self.paid), len(self.calls)
+                result = self.mcp_call(
+                    "generate",
+                    {
+                        "lane": lane_name,
+                        "model_id": model_id,
+                        "quote_id": quote["quote_id"],
+                        "approved_cost": quote["cu_cost_exact"],
+                    },
+                )
+                self.assertFalse(result.get("isError"), result)
+                self.settle()
+                self.assertEqual(self.calls[start].method, "GET")  # the description read
+                self.assertEqual(len(self.paid), paid + 1)
+                self.assertEqual(json.loads(self.paid[-1].content)["reference"], ["scene-snapshot"])
+        self.assertEqual(len(self.store.records()), 2)
+
+    def test_render_form_waits_for_the_description_and_inspection_survives_a_failed_read(self):
+        self.catalog_reads()
+        lane_name = "render_image"
+        self.render_form_lane(lane_name)
+        self.forget_description()
+        result = self.mcp_call("render_form", {"lane": lane_name})
+        self.assertFalse(result.get("isError"), result)
+        form = json.loads(result["content"][0]["text"])
+        self.assertEqual(form["errors"], [])
+        self.assertTrue(form["ready_to_estimate"])
+        self.assertEqual([call.method for call in self.calls], ["GET"])
+        # A failed read leaves inspection answering with the form's own errors.
+        # Preparation needs the model's inputs: it reads again and reports a failure.
+        self.forget_description()
+        self.failed_descriptions = 2
+        inspect = {"lane": lane_name}
+        result = self.mcp_call("render_form", inspect)
+        self.assertFalse(result.get("isError"), result)
+        self.assertEqual(
+            json.loads(result["content"][0]["text"])["errors"], ["Model not loaded yet"]
+        )
+        result = self.mcp_call("render_form", {**inspect, "action": "prepare", "role": "scene"})
+        self.assertTrue(result.get("isError"), result)
+        self.assertEqual(
+            result["content"][0]["text"],
+            "ScenarioError: Could not load this model: Scenario request failed (HTTP 503); "
+            "call again to retry",
+        )
+        # Inspection never replaces a recorded failure with another read.
+        result = self.mcp_call("render_form", inspect)
+        self.assertFalse(result.get("isError"), result)
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(self.paid, [])
 
     def test_mcp_render_cannot_skip_scene_upload_or_automatic_spark_approval(self):
         lane_name = "render_image"

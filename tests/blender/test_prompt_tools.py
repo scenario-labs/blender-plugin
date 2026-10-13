@@ -14,6 +14,7 @@ import bpy
 import httpx
 from helpers import (
     assert_finished_without_download,
+    mcp_call,
     online_access,
     reset_scene,
     submodule,
@@ -50,6 +51,7 @@ class PromptToolsTests(unittest.TestCase):
         self.lose_response = False
         self.result_text = "A copper teapot\nSoft studio light"
         self.fail_read = False
+        self.render_model = None  # served to model description reads
         self.hold_quotes, self.held_quotes = None, threading.Semaphore(0)
         api, catalog, session = self.api, self.runtime.SDKCatalog, self.runtime.JobSession
 
@@ -58,6 +60,8 @@ class PromptToolsTests(unittest.TestCase):
             self.calls.append(request)
             self.assertNotIn("projectId", request.url.params)
             if request.method == "GET":
+                if "/models/" in request.url.path:
+                    return httpx.Response(200, json={"model": self.render_model})
                 if self.fail_read:
                     return httpx.Response(503)
                 index = int(request.url.path.rsplit("-", 1)[-1]) - 1
@@ -421,6 +425,7 @@ class PromptToolsTests(unittest.TestCase):
                 else []
             ),
         }
+        self.render_model = model
         record = submodule("core.api.catalog").ModelRecord.from_api(model)
         generation.set_catalog([record], [record])
         lane = self.scene.scenario.lane_state(lane_name)
@@ -463,6 +468,28 @@ class PromptToolsTests(unittest.TestCase):
                 self.assertEqual(lane.prompt, self.result_text)
                 self.assertTrue(self.mcp.render_form({"lane": lane_name})["ready_to_estimate"])
                 self.assertEqual(len(self.paid), paid + 1)
+
+    def test_mcp_render_look_price_waits_for_the_model_description(self):
+        self.render_lane()
+        generation = submodule("blender.generation")
+        model_id = self.render_model["id"]
+        listed = {key: self.render_model[key] for key in ("id", "name", "type", "capabilities")}
+        self.runtime.state.records[model_id] = submodule("core.api.catalog").ModelRecord.from_api(
+            listed
+        )
+        generation._schemas.pop(model_id, None)
+        self.assertIsNone(self.runtime.ensure_catalog().load_cached(model_id))
+        response = mcp_call("estimate_prompt", {"lane": "render_image", "action": "GENERATE"})
+        self.assertNotIn("error", response)
+        self.assertFalse(response["result"].get("isError"), response)
+        quote = json.loads(response["result"]["content"][0]["text"])
+        self.assertEqual(quote["cu_cost_exact"], "0.1234567890123456789")
+        # The description read the call started, then the look's dry run.
+        self.assertEqual(
+            [(call.method, call.url.path.rsplit("/", 1)[-1]) for call in self.calls],
+            [("GET", model_id), ("POST", "prompt")],
+        )
+        self.assertEqual(self.paid, [])
 
     def test_render_automatic_preparation_quotes_once_then_requires_approval(self):
         lane = self.render_lane()

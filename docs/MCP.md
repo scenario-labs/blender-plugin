@@ -648,15 +648,20 @@ consumed quote requires a fresh estimate. An estimate alone does not authorize
 spending. Failed or timed-out submissions must be inspected by their returned
 local ID, never blindly repeated.
 
-`model_schema`, `estimate_cost`, `render_form` and `generate` need the model's
-description. When this session has not loaded it yet, the call starts or joins
-its background read and waits up to 30 seconds for it on the MCP request thread.
-Blender's main thread stays free, then delivers the read and answers the call.
-These tools read the description before they quote, submit or change anything.
-If the read is still in flight after the wait, the call returns
-`The model description is still loading; call again in a few seconds. Nothing
-was quoted, submitted or changed`. A failed read returns its reason, and the
-next call reads the description again.
+`model_schema`, `estimate_cost` and `generate` on every lane, including the
+render lanes, `render_form` (`configure` and `prepare`) and the render-lane
+`estimate_prompt` need the model's description. When this session has not
+loaded it yet, the call starts or joins its background read and waits up to 30
+seconds for it on the MCP request thread. Blender's main thread stays free, then
+delivers the read and answers the call. These tools read the description before
+they quote, submit or change anything. If the read is still in flight after the
+wait, the call returns `The model description is still loading; call again in a
+few seconds. Nothing was quoted, submitted or changed`. A failed read returns its
+reason, and the next call reads the description again. `render_form` `inspect`
+and `remove` wait the same way, but still answer, with the form's errors, when
+the read fails or is still in flight. Reviewing a `video_first_frame`
+application never starts a read; it requires the Render Video model loaded, for
+example by `render_form`.
 
 All MCP model submissions persist intent before SDK dispatch. `job_status`,
 `wait_for_job` and `list_local_jobs` expose saved state across restart. Active

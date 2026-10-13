@@ -17,7 +17,7 @@ from ..blender.props import GENERATION_LANES as NATIVE_LANES
 from ..core import audio_waveform
 from ..core.api import catalog, trained_offers
 from ..core.api.catalog import GENERATION_LANES as LANES
-from ..core.api.catalog import models_for_lane
+from ..core.api.catalog import RENDER_LANES, models_for_lane
 from ..core.api.errors import ScenarioError
 from ..core.api.library import asset_summary as _asset_summary
 from ..core.api.trained_routes import LoraSlot
@@ -124,7 +124,9 @@ def _after_description(handler):
     (ModelLoading). The MCP request thread waits for that read's worker, never
     Blender's main thread; the main thread then delivers the read and runs the
     tool once more. Each tool reads the description before it quotes, submits
-    or changes anything, so the second run starts from the same state.
+    or changes anything, so the second run starts from the same state. A tool
+    that only inspects (an optional description) then answers with its own
+    errors instead of failing.
     """
 
     @functools.wraps(handler)
@@ -132,10 +134,13 @@ def _after_description(handler):
         try:
             return handler(args)
         except generation.ModelLoading as loading:
-            model_id = loading.model_id
+            model_id, required = loading.model_id, loading.required
         reader = generation.model_reader(model_id)
         if reader is None:
-            raise ScenarioError(0, DESCRIPTION_LOADING)
+            if required:
+                raise ScenarioError(0, DESCRIPTION_LOADING)
+            with generation.waited_for(model_id):
+                return handler(args)
         server = runtime.state.mcp
         deadline = time.monotonic() + DESCRIPTION_WAIT
 
@@ -149,11 +154,12 @@ def _after_description(handler):
         def finish(_):
             generation.process_catalog_events()
             failure = runtime.state.model_errors.get(model_id)
-            if failure and not generation.is_loading(model_id):
+            if required and failure and not generation.is_loading(model_id):
                 # Running the tool again would start another read; the next call does.
                 raise ScenarioError(0, f"{failure}; call again to retry")
             try:
-                return handler(args)
+                with generation.waited_for(model_id):
+                    return handler(args)
             except generation.ModelLoading:
                 raise ScenarioError(0, DESCRIPTION_LOADING) from None
 
@@ -1380,6 +1386,10 @@ def upload_film_capture(args):
 
 def estimate_prompt(args):
     """Quote the current native prompt field through the shared prompt facade."""
+    lane = args.get("lane", "image")
+    if lane in RENDER_LANES:
+        # A render look is prepared from the form model's inputs; load them first.
+        generation.await_description(bpy.context.scene.scenario.lane_state(lane).model_id)
     jobs = runtime.ensure_prompt_jobs()
     item = jobs.quote(bpy.context.scene, args.get("lane", "image"), args["action"])
 
@@ -3643,7 +3653,7 @@ SPECS = (
             },
             ["action"],
         ),
-        estimate_prompt,
+        _after_description(estimate_prompt),
         {"readOnlyHint": True},
     ),
     ToolSpec(

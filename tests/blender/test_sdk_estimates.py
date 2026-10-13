@@ -12,7 +12,14 @@ from unittest.mock import patch
 
 import bpy
 import httpx
-from helpers import isolated_manager, online_access, reset_scene, submodule, temp_credentials
+from helpers import (
+    isolated_manager,
+    mcp_call,
+    online_access,
+    reset_scene,
+    submodule,
+    temp_credentials,
+)
 
 
 class SDKEstimateTests(unittest.TestCase):
@@ -100,25 +107,7 @@ class SDKEstimateTests(unittest.TestCase):
             self.handlers.dispatch(event)
 
     def mcp_call(self, name, arguments, *, during=None):
-        """Serve one call as local MCP does: a request thread and a pumped main thread."""
-        registry = submodule("blender.mcp_service").build_registry()
-        server = submodule("mcp.server").McpServer(
-            "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
-        )
-        message = {
-            "id": 1,
-            "method": "tools/call",
-            "params": {"name": name, "arguments": arguments},
-        }
-        with ThreadPoolExecutor(max_workers=1) as worker:
-            result = worker.submit(server.handle, message)
-            deadline = time.monotonic() + 5
-            while not result.done() and time.monotonic() < deadline:
-                server.process_pending()
-                if during is not None:
-                    during(server, result)
-                time.sleep(0.001)
-            response = result.result(1)
+        response = mcp_call(name, arguments, during=during)
         self.assertNotIn("error", response)
         return response["result"]
 
@@ -228,7 +217,13 @@ class SDKEstimateTests(unittest.TestCase):
     def test_tools_that_need_a_description_wait_for_it(self):
         tools = submodule("mcp.tools_scenario")
         registry = submodule("blender.mcp_service").build_registry()
-        for name in ("model_schema", "estimate_cost", "render_form", "generate"):
+        for name in (
+            "model_schema",
+            "estimate_cost",
+            "render_form",
+            "generate",
+            "estimate_prompt",
+        ):
             with self.subTest(name):
                 handler = registry.get(name).handler
                 self.assertIs(getattr(handler, "__wrapped__", None), getattr(tools, name))

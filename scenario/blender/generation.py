@@ -5,6 +5,7 @@
 import logging
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import bpy
@@ -37,11 +38,16 @@ _MODEL_FAILED = "Could not load this model: "
 
 
 class ModelLoading(ScenarioError):
-    """A read of this model's description is in flight; retry after its delivery."""
+    """A read of this model's description is in flight; retry after its delivery.
 
-    def __init__(self, model_id, reason="Loading the model description"):
+    `required` is False when the caller can still answer without the description,
+    such as an inspection that reports the form's state.
+    """
+
+    def __init__(self, model_id, reason="Loading the model description", *, required=True):
         super().__init__(0, reason)
         self.model_id = model_id
+        self.required = required
 
 
 def reload_lane(record):
@@ -533,6 +539,45 @@ def ensure_record(model_id, *, mark_dirty=True):
             model_id, f"Loading the model description again; the last read failed: {reason}"
         )
     raise ModelLoading(model_id)
+
+
+_waited = set()  # descriptions the current local MCP call has already waited for
+
+
+@contextmanager
+def waited_for(model_id):
+    """Let an optional description wait end once (main thread, around one tool call)."""
+    _waited.add(model_id)
+    try:
+        yield
+    finally:
+        _waited.discard(model_id)
+
+
+def await_description(model_id, *, required=True):
+    """Make a form model's description available before a command uses it (main thread).
+
+    Returns at once without a chosen model or once its schema is loaded. Otherwise it
+    reads like ensure_record and raises ModelLoading while the read is in flight, which
+    local MCP waits for. A required description also raises a failed or refused read.
+    An optional one, for inspection, leaves a recorded failure, disabled online access
+    or an expired wait to the caller's own errors and never replaces a failure.
+    """
+    if not model_id or model_id == "NONE" or schema_for(model_id) is not None:
+        return
+    if not required and (
+        model_id in _waited or model_id in runtime.state.model_errors or not runtime.online()
+    ):
+        return
+    try:
+        ensure_record(model_id)
+    except ModelLoading as loading:
+        if required:
+            raise
+        raise ModelLoading(model_id, loading.reason, required=False) from None
+    except ScenarioError:
+        if required:
+            raise
 
 
 def on_model_changed(context, lane_state, mark_dirty=True):

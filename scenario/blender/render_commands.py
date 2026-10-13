@@ -66,6 +66,7 @@ def request(scene, lane, model_id, parameters=None):
     _apply_default(scene)
     if state.model_id != model_id:
         raise ValueError("The render model changed; configure render_form and estimate again")
+    generation.await_description(model_id)  # ModelLoading while its read is in flight
     result = generation.build_request(scene, lane, for_estimate=True)
     if result.errors:
         raise ScenarioError(0, "; ".join(result.errors))
@@ -346,21 +347,24 @@ def remove(scene, lane, key):
 def execute(context, args):
     runtime.sync_catalog_context()
     lane = args["lane"]
-    lane_state(context.scene, lane)
+    state = lane_state(context.scene, lane)
     action = args.get("action", "inspect")
     if action == "configure":
         return configure(context.scene, lane, args.get("settings", {}))
+    if action not in {"inspect", "prepare", "remove"}:
+        raise ValueError("Choose inspect, configure, prepare or remove")
+    role = args.get("role")
+    if action == "prepare" and role not in {render_references.SCENE, render_references.FIRST_FRAME}:
+        raise ValueError("Choose the scene or first_frame role")
+    # Before any change: preparation needs the model's inputs, while inspection and
+    # removal still answer, with the form's errors, when the description cannot load.
+    generation.await_description(state.model_id, required=action == "prepare")
     if action == "remove":
         return remove(context.scene, lane, args.get("reference_key"))
     if action == "prepare":
-        role = args.get("role")
-        if role not in {render_references.SCENE, render_references.FIRST_FRAME}:
-            raise ValueError("Choose the scene or first_frame role")
-        references = lane_state(context.scene, lane).references
+        references = state.references
         # A refusal adds no slot. A failed upload start removes its slot, unless the
         # upload was admitted or is uncertain: that marked slot stays and marks the file.
         with file_state.marking(MARK, lambda: len(references)):
             render_references.prepare(context, lane, role)
-    elif action != "inspect":
-        raise ValueError("Choose inspect, configure, prepare or remove")
     return inspect(context.scene, lane)

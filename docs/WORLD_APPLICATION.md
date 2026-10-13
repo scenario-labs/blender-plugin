@@ -238,15 +238,17 @@ World pixel limit`, and `job_status` omits `apply_world` when no supported image
 remains.
 
 The saved job records no image dimensions, so Blender reads them. After a
-download, a saved-job inspection or a restart, the job owner queues one read of
-at most the first 2 MiB of each World candidate on the preview lane, never while
-drawing and never on the main thread, and keeps each declared size in memory,
-bound to the receipt digest. Until that read finishes, or when those bytes
-declare no size (for example a JPEG whose metadata pushes its frame header
-further), the image stays offered: a late or inconclusive display read must not
-hide a usable panorama, and the application check decides. A square image can
-therefore show the button for a moment after its download until the read
-finishes.
+download, a saved-job inspection or a restart, the job owner reads at most the
+first 2 MiB of each World candidate on the preview lane, never while drawing and
+never on the main thread. Each read covers at most one preview batch of 32
+candidates, so previews and playback copies still get the lane, and the next poll
+reads the rest. The owner keeps each declared size in memory, bound to the
+receipt digest, for as long as the job is shown. Until a candidate is read, or
+when those bytes declare no size (for example a JPEG whose metadata pushes its
+frame header further), the image stays offered: a late or inconclusive display
+read must not hide a usable panorama, and the application check decides. A
+square image can therefore show the button for a moment after its download until
+the read finishes.
 
 N is the result's position among all of the job's results, the number that
 model imports such as **Import GLB model (N)** and the strip actions use. The

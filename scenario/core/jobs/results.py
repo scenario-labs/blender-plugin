@@ -49,8 +49,6 @@ PREVIEW_METADATA_CHUNK = 100
 # the bound the preview lane uses for a still's declared layout. A JPEG frame
 # header or an OpenEXR header beyond them reads as undeclared.
 WORLD_HEADER_BYTES = previews.LOCAL_HEADER_BYTES
-# Most saved results one World size check reads.
-WORLD_SIZE_LIMIT = 128
 
 
 @dataclass(frozen=True)
@@ -1036,8 +1034,13 @@ class ResultCommands:
         that receipt as a World candidate, its file cannot be read or its first
         ``WORLD_HEADER_BYTES`` declare no size. It reads only those bytes: it
         never hashes, fetches, applies or writes the job store, and World
-        application still checks the actual file.
+        application still checks the actual file. One check takes at most the
+        preview scheduler's ``BATCH_LIMIT`` targets, so it holds the single
+        preview lane no longer than a preview batch does.
         """
+        # Imported here: the scheduler imports the workers, which import this module.
+        from .preview_scheduler import BATCH_LIMIT
+
         try:
             targets = tuple(
                 (_identity(request_id), _identity(asset_id), sha256)
@@ -1045,7 +1048,7 @@ class ResultCommands:
             )
         except (TypeError, ValueError):
             raise ResultError("Choose saved World candidates to measure") from None
-        if not 1 <= len(targets) <= WORLD_SIZE_LIMIT or not all(
+        if not 1 <= len(targets) <= BATCH_LIMIT or not all(
             isinstance(sha256, str) and re.fullmatch(r"[a-f0-9]{64}", sha256)
             for *_, sha256 in targets
         ):

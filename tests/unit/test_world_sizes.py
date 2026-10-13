@@ -8,8 +8,9 @@ import threading
 
 import pytest
 
+from scenario.core.jobs.preview_scheduler import BATCH_LIMIT
 from scenario.core.jobs.result_previews import LOCAL_HEADER_BYTES, PreviewCanceled
-from scenario.core.jobs.results import WORLD_HEADER_BYTES, WORLD_SIZE_LIMIT, ResultError
+from scenario.core.jobs.results import WORLD_HEADER_BYTES, ResultError
 from scenario.core.jobs.store import JobIntent, JobState, ResultAsset
 from scenario.core.jobs.transfers import DownloadedResult
 from scenario.core.jobs.workers import JobWorkers
@@ -144,6 +145,14 @@ def test_unreadable_or_undeclared_headers_have_no_size(env):
     assert WORLD_HEADER_BYTES == LOCAL_HEADER_BYTES
 
 
+def test_one_check_reads_at_most_one_preview_batch(env):
+    # A full preview batch is accepted; the targets beyond it are refused above.
+    data = png(8, 4)
+    record, _ = saved(env, [(image("sky", "image/png", data), data)])
+    targets = targets_of(record, "sky") * BATCH_LIMIT
+    assert [size for *_, size in measure(env, targets)] == [(8, 4)] * BATCH_LIMIT
+
+
 @pytest.mark.parametrize(
     "targets",
     [
@@ -151,7 +160,7 @@ def test_unreadable_or_undeclared_headers_have_no_size(env):
         (("request", "sky"),),
         (("request", "sky", "not-a-digest"),),
         (("request", "", "a" * 64),),
-        (("request", "sky", "a" * 64),) * (WORLD_SIZE_LIMIT + 1),
+        (("request", "sky", "a" * 64),) * (BATCH_LIMIT + 1),
         None,
     ],
 )

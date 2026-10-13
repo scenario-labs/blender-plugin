@@ -581,11 +581,13 @@ copies the owner listed in `discard` and sweeps stale ones not in `keep`, return
 an unchanged `reuse` copy of the same receipt instead of copying again, and
 rechecks the record at receipt level afterwards. A cancellation or inactive
 coordinator after copying removes the new copy.
-`world_sizes(targets)` takes up to 128 (request ID, asset ID, receipt SHA-256)
-triples naming downloaded World candidates and reads at most the first 2 MiB of
-each file. It returns each triple with the declared width and height, or none
-when the record no longer holds that receipt as a candidate, the file cannot be
-read or those bytes declare no size. It neither hashes nor copies; the
+`world_sizes(targets)` takes at most one preview batch, the scheduler's
+`BATCH_LIMIT` of 32, of (request ID, asset ID, receipt SHA-256) triples naming
+downloaded World candidates, so it holds the lane no longer than a preview
+batch, and reads at most the first 2 MiB of each file. It returns each triple
+with the declared width and height, or none when the record no longer holds
+that receipt as a candidate, the file cannot be read or those bytes declare no
+size. It neither hashes nor copies; the
 [World offer](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) uses it only
 as a display filter. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
 revision, claims application or submits work. See

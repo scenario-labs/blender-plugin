@@ -23,8 +23,9 @@ from ..core.jobs.coordinator import (
     RemoteSnapshot,
     cancellable_job,
 )
+from ..core.jobs.preview_scheduler import BATCH_LIMIT
 from ..core.jobs.records import JobRecord
-from ..core.jobs.results import WORLD_SIZE_LIMIT, ResultError
+from ..core.jobs.results import ResultError
 from ..core.jobs.store import (
     JobOrigin,
     JobState,
@@ -82,8 +83,6 @@ _log = logging.getLogger("scenario.jobs")
 
 # Session-local first-frame outcomes reported by status; never persisted.
 _FIRST_FRAME_HISTORY = 128
-# World candidates whose header sizes are remembered; an evicted one is read again.
-_WORLD_SIZE_HISTORY = 512
 
 # Seconds between automatic refreshes of a known remote job. A reading becomes
 # stale once its scheduled refresh is overdue by the grace, so a longer
@@ -387,8 +386,9 @@ class ModelJobs:
         # (request_id, asset_id) -> (receipt SHA-256, declared (width, height) or
         # None): sizes of World candidates read from their file headers on the
         # preview lane, for the World offer only. Memory only; application still
-        # checks the actual bytes; the oldest entries beyond _WORLD_SIZE_HISTORY are
-        # dropped and read again when shown. `_world_read` is the (task, targets) in flight.
+        # checks the actual bytes. Each poll forgets the sizes of jobs no longer in
+        # `views`, so memory follows what is shown and a shown job is never read
+        # again for the same receipt. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
         self._plans = {}
@@ -860,6 +860,7 @@ class ModelJobs:
                     self._commands[request_id] = (command, task)
                 except Exception:
                     self._pause(request_id, "Result delivery could not start; inspect saved jobs")
+        self._prune_world_sizes()
         self._read_world_sizes(unread_sizes)
 
     def _unread_world_sizes(self, record):
@@ -880,7 +881,9 @@ class ModelJobs:
         """Queue one preview-lane header read of unread World candidates; nothing is read here."""
         if self._world_read is not None or not targets:
             return
-        targets = tuple(targets[:WORLD_SIZE_LIMIT])
+        # One preview batch at a time: the rest stay unread, and the poll that
+        # records this read queues the next batch.
+        targets = tuple(targets[:BATCH_LIMIT])
         try:
             task = self.session.world_sizes(targets)
         except Exception:
@@ -899,11 +902,16 @@ class ModelJobs:
         except Exception:
             read = {}
         for request_id, asset_id, sha256 in targets:
-            key = (request_id, asset_id)
-            self._world_sizes.pop(key, None)
-            while len(self._world_sizes) >= _WORLD_SIZE_HISTORY:
-                del self._world_sizes[next(iter(self._world_sizes))]
-            self._world_sizes[key] = (sha256, read.get((request_id, asset_id, sha256)))
+            self._world_sizes[(request_id, asset_id)] = (
+                sha256,
+                read.get((request_id, asset_id, sha256)),
+            )
+
+    def _prune_world_sizes(self):
+        """Forget the sizes of jobs no longer in `views`; shown ones keep theirs."""
+        for key in tuple(self._world_sizes):
+            if key[0] not in self.views:
+                del self._world_sizes[key]
 
     def _not_world(self, record):
         """World candidates whose header, read for the current receipt, cannot be 2:1."""

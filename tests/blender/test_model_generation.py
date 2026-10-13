@@ -4201,27 +4201,45 @@ class ModelGenerationTests(unittest.TestCase):
         request_id = self.recovered_panorama(width=16, height=9)
         self.assert_world_offer(request_id, (16, 9), False)
 
-    def test_world_size_memory_keeps_only_the_newest_reads(self):
-        # Header sizes stay in memory for the World offer only; the oldest are
-        # dropped past the bound and simply read again when shown.
-        from concurrent.futures import Future
-
-        self.recovered_panorama(width=8, height=4)
-        self.settle_world_sizes()
+    def test_world_sizes_follow_the_shown_jobs_without_reading_again(self):
+        # Sizes stay in memory only for jobs in the views: a poll forgets the
+        # others, while a shown job keeps its size and is not read again.
+        request_id = self.recovered_panorama(width=8, height=4)
         owner = self.runtime.state.model_jobs
+        shown = owner._world_sizes[(request_id, "result-image")]
+        self.assertEqual(shown[1], (8, 4))
+        owner._world_sizes[("hidden-request", "result-image")] = ("a" * 64, (4, 4))
+        reads = self.enterContext(patch.object(owner.session, "world_sizes"))
+        for _ in range(3):
+            owner.poll()
+        self.assertEqual(owner._world_sizes, {(request_id, "result-image"): shown})
+        reads.assert_not_called()
+        self.assertIsNone(owner._world_read)
+
+    def test_world_size_reads_take_one_preview_batch_and_continue_later(self):
+        # One read holds the preview lane for at most a preview batch; the next
+        # poll queues the rest instead of dropping them.
+        self.result_assets = {f"result-{index}": {} for index in range(5)}
+        request_id = self.recovered_panorama(width=8, height=4)
+        owner = self.runtime.state.model_jobs
+        self.enterContext(patch.object(submodule("blender.model_jobs"), "BATCH_LIMIT", 2))
         owner._world_sizes.clear()
-        jobs = submodule("blender.model_jobs")
-        targets = [(f"request-{index}", "asset", "sha") for index in range(5)]
-        task = Future()
-        task.set_result([(*target, (8, 4)) for target in targets])
-        self.enterContext(patch.object(jobs, "_WORLD_SIZE_HISTORY", 3))
-        owner._world_read = (task, targets)
-        owner._finish_world_sizes()
+        batches = []
+        for _ in range(10):
+            owner.poll()
+            if owner._world_read is None:
+                break
+            task, targets = owner._world_read
+            batches.append([asset_id for _, asset_id, _ in targets])
+            task.result(5)
         self.assertEqual(
-            list(owner._world_sizes),
-            [("request-2", "asset"), ("request-3", "asset"), ("request-4", "asset")],
+            batches, [["result-0", "result-1"], ["result-2", "result-3"], ["result-4"]]
         )
-        self.assertEqual(owner._world_sizes[("request-4", "asset")], ("sha", (8, 4)))
+        self.assertEqual(
+            {key: value[1] for key, value in owner._world_sizes.items()},
+            {(request_id, f"result-{index}"): (8, 4) for index in range(5)},
+        )
+        self.assertEqual(len(owner.views[request_id].meta["world_assets"]), 5)
 
     def test_unread_world_size_keeps_the_offer_and_application_refuses_the_image(self):
         # Until this session reads the header, a 1:1 JPEG stays offered; the

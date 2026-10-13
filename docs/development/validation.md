@@ -43,6 +43,9 @@ approved transition under #28/#64.
 informational schedule/manual jobs for Blender 5.1.2 on macOS Apple silicon and
 Windows x64. They fetch pinned official archives, run the full installed native
 suite in new profiles and retain logs, exact ZIPs and JSON reports for 14 days.
+The full suite runs as one Blender process with a 900-second `--timeout`: on
+2026-10-13 the hosted macOS runner needed more than the 300-second default while
+Windows finished in about three minutes.
 A separate Ubuntu reporter validates both OS identities and completed conclusions
 from the current run's latest job results before writing. It covers setup, test,
 timeout and artifact failures, retains earlier successful jobs on partial reruns,

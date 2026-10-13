@@ -60,7 +60,7 @@ jobs:
           BLENDER_VERSION: ${{ matrix.version }}
         run: |
           uv run --locked --no-env-file python tools/test_blender.py \
-            --expected-version "$BLENDER_VERSION" --suite all \
+            --expected-version "$BLENDER_VERSION" --suite all --timeout 900 \
             --artifacts "$RUNNER_TEMP/scenario-tests" 2>&1 | tee "$RUNNER_TEMP/blender-tests.log"
       - name: Preserve download logs, ZIP, reports and native logs
         if: always()

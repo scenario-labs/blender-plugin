@@ -521,6 +521,38 @@ interaction.
   cannot take a saved generation result as a task source, so its case-study
   ledger lacks that cost.
 
+A second maintainer-authorized run the same day used the same pre-release build
+from `main` at `3720c9e3`, in Blender 5.1.2 on macOS, entirely through local
+MCP. It remade the sequence for a photoreal look and smoother motion:
+
+- **Clay preview:** a limbless red capsule stand-in, animated on smooth Bezier
+  curves, replaced the character meshes, and a Workbench clay playblast was
+  rendered for each of the four cuts.
+- **Stills:** GPT Image 2.5 Sunburst generated one photoreal still per cut from
+  an EEVEE frame and an internal character sheet.
+- **Comparison:** on shot 1, Seedance 2.5 at 720p received the clay video with
+  the still only, the sheet only, or the still and the sheet. The still only gave
+  photoreal footage with weaker identity. The sheet only kept the identity but
+  reproduced the sheet's stylized cartoon look. The still and the sheet gave
+  photoreal footage with the closest identity.
+- **Two full versions:** sheet only, and still plus sheet, were each rendered as
+  one Seedance 2.5 1080p take per cut with native audio. Each was assembled
+  through the Film lane (recipe, upload binding, final review, export and case
+  study) into a 20 s, 1920 x 1080, 24 fps film with cuts at 5, 13 and 18 s.
+- **Generation defects left:** after the bullet-time snap, Seedance placed the
+  second landing about 2 to 2.5 s later than the clay preview, and a chest logo
+  came out as a blocky patch in the close-up.
+- **Found again:** a chosen-file reference upload stopped while the session
+  rendered or changed frames, as the
+  [user guide](../USER_GUIDE.md#run-a-workflow) already documents; a fix is
+  planned after 0.10.0.
+- **New limitations**, now among the
+  [known limitations](../KNOWN_LIMITATIONS.md#runtime-and-authentication):
+  the local MCP server does not check required tool arguments, `job_status`
+  lists no files for ready video results or for images not imported
+  automatically, and several versions in one production are hard to tell apart,
+  export and extract side by side.
+
 ### Pending checks
 
 | Check | Lane | Owner | Reason |
@@ -567,6 +599,9 @@ interaction.
 - A 20 s Seedance 2.5 1080p take failed on the service after about 32 minutes as
   taking too long; takes of 13 s and 7 s succeeded. Their progress stayed near
   91% for most of each run.
+- A character sheet given to Seedance 2.5 as its only image reference carries
+  the sheet's rendering style into the footage; a photoreal still keeps the
+  footage photoreal.
 
 ## Earlier 0.9.9 candidate and decision
 

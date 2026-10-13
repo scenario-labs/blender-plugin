@@ -124,6 +124,26 @@ establish live generation or full render-lane desktop acceptance.
   The end-to-end production run met all three
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
   [#68](https://github.com/scenario-labs/blender-plugin/issues/68)).
+- Several Film versions in one production are awkward to manage. Each final
+  review build adds a scene named after the recipe title,
+  `<title> / Final Review`, to which Blender appends `.001`, `.002` and so on;
+  the name does not say which version the scene holds. Export and case-study
+  sources list only the review scenes of the recipe currently loaded, so
+  exporting another version needs its recipe loaded again first. A case-study
+  ZIP's root folder comes from the recipe title alone, so case studies of
+  versions that share a title collide when extracted side by side. A second
+  end-to-end run with two versions met all three ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),
+  [#68](https://github.com/scenario-labs/blender-plugin/issues/68)).
+- The local MCP server does not check a tool's required arguments before running
+  it, so the tool reports an omitted one in its own terms:
+  `reference_upload_status` without `context_id` answers that the upload context
+  changed, and without `reference_id` it fails as an unexpected error that points
+  to the Blender console. Send every argument the tool's schema marks required.
+- Local MCP `job_status` lists `files` only for image results imported
+  automatically in the current session. A ready video, an image not imported
+  automatically, other result kinds and every job after a restart list none;
+  `results` still names each saved asset, its media type and whether it was
+  downloaded, without a local path.
 - Credentials use one explicitly selected pair (saved Blender preferences by
   default, environment only when selected). UI and MCP model jobs use credential-bound
   local storage. Preferences also allow an explicit optional project ID; changing

@@ -22,13 +22,13 @@ merged. Since that first review, #403 to #406, #408 to #411, #416 to #420 and
 other fixes have no physical or live recheck yet. Release PR #70 squash-merged
 as `4ccbca68` with the [final candidate](#release-candidate-identity)'s
 `scenario/` tree, and 0.10.0 was [published](#publication) on 2026-10-13.
-Publication authorizes nothing further: the first-release administration steps
-in the
-[release procedure](../RELEASING.md#first-automated-release-acceptance),
-removing the repository-admin tag-protection bypass and enabling immutable
-releases, stay with the maintainer and are pending. This section records which
-evidence each retained capability has, of which kind, and what remains with its
-owner. It does not close #68.
+Publication authorizes nothing further. On 2026-10-13 the maintainer completed
+the first-release administration steps in the
+[release procedure](../RELEASING.md#first-automated-release-acceptance):
+the tag ruleset no longer lets repository admins bypass it, and immutable
+releases are enabled. This section records which evidence each retained
+capability has, of which kind, and what remains with its owner. It does not
+close #68.
 
 ### Release candidate identity
 
@@ -91,7 +91,7 @@ Earlier integrated evidence:
 | Against the candidate | The published ZIP has the same 252 entries as the accepted candidate, with identical CRC and size; only the timestamps differ, which is why its SHA-256 differs from the candidate's `a040f769…`. |
 | Pages | The push-triggered [run 38392481374](https://github.com/scenario-labs/blender-plugin/actions/runs/38392481374) failed at 11:46 UTC with *Site release preparation failed*: the release was still a draft, and the site builder refuses an unfinished release by design. The [run 38392783278](https://github.com/scenario-labs/blender-plugin/actions/runs/38392783278) that the release workflow triggered built from the published bytes, passed its race check and deployed. The hosted `repo/index.json` lists `scenario` 0.10.0 with archive hash `sha256:372666…`. |
 | HTTPS install | On macOS 27.0.1 arm64, in a fresh isolated profile per version, Blender's `extension repo-add` with the hosted `index.json`, then `extension install --sync --enable scenario`, installed and enabled `bl_ext.<repo>.scenario` 0.10.0 on Blender 5.0.1, 5.1.2 and 5.2.1 LTS. The installed files matched all 252 ZIP entries. This is the first release this repository offers, so no HTTPS update from a previous release was possible; the package update probe with a synthetic predecessor is recorded for the candidate. |
-| Administration | The first-release steps in the [release procedure](../RELEASING.md#first-automated-release-acceptance), removing the repository-admin tag-protection bypass and enabling immutable releases, stay with the maintainer and are pending. |
+| Administration | Both first-release steps in the [release procedure](../RELEASING.md#first-automated-release-acceptance) were done on 2026-10-13 and read back through the GitHub API. The tag ruleset, active on tags, keeps its `refs/tags/v*` and `refs/tags/blender-plugin-v*` patterns and its creation, update, deletion and non-fast-forward rules; its only bypass actor is now the release App that published 0.10.0, and the repository-admin bypass is removed. Immutable releases are enabled for the repository. The 0.10.0 release was published before that setting, so it is not itself immutable; as the procedure says, historical releases are not edited to become immutable, and a broken release from now on needs a new version. |
 
 ### Human checks
 
@@ -629,7 +629,7 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 | First scheduled monthly paid smoke run | CI | #40 | Not run yet |
 | Final candidate installed suite, hosted CI, update and restart | All | #68 | Passed on #70 head `2b1bbcb8`; see the [release candidate identity](#release-candidate-identity). Repeat if the release commit's `scenario/` tree differs |
 | Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #36 and #68 | Passed on 2026-10-13; see [publication](#publication) |
-| Remove the repository-admin tag-protection bypass and enable immutable releases | Release | Maintainer | First-release administration steps; pending |
+| Remove the repository-admin tag-protection bypass and enable immutable releases | Release | Maintainer | Done on 2026-10-13 and read back; see [publication](#publication). The 0.10.0 release itself predates the setting and is not immutable |
 
 ### Service behavior observed live
 
@@ -1206,7 +1206,7 @@ was published is separate from candidate acceptance:
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
 | #37 | Closed for the native update repository foundation. The 0.10.0 HTTPS install from the hosted repository is recorded under [publication](#publication); an HTTPS update between two published releases awaits the next release (#36, #68). |
-| #36, #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. For #36, the 0.10.0 release workflow, checksums and attestations passed (see [publication](#publication)); its administration steps, removing the tag-protection bypass and enabling immutable releases, remain with the maintainer. Action pinning (#39) retains its own gate. |
+| #36, #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. For #36, the 0.10.0 release workflow, checksums and attestations passed, and the maintainer removed the repository-admin tag bypass and enabled immutable releases on 2026-10-13 (see [publication](#publication)). Action pinning (#39) retains its own gate. |
 | #45 | Closed on 2026-10-09 after the required-check update. |
 | #38 | Open. The publish-changelog run for 0.10.0 succeeded (run 38392753556); the entry's public visibility is not recorded here. |
 | #399, #400 | Open. The 2026-10-12 weekly macOS and Windows runs failed on a stale test expectation that #396 corrected; close after a passing rerun. |

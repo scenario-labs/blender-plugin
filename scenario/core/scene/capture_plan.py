@@ -1,12 +1,15 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Frame ranges, clip durations and Seedance prompt tagging. No bpy."""
+
 import math
 
 MIN_CLIP_SECONDS = 4.0  # Seedance's minimum output is 4 s; a 0.5 s reference clip failed with an internal error (2026-08-28)
 
 
-def frame_span(frame_start, frame_end, fps, use_preview=False, preview_start=None, preview_end=None):
+def frame_span(
+    frame_start, frame_end, fps, use_preview=False, preview_start=None, preview_end=None
+):
     start, end = frame_start, frame_end
     if use_preview and preview_start is not None and preview_end is not None:
         start, end = preview_start, preview_end
@@ -61,4 +64,3 @@ def tag_prompt(prompt, has_video, has_image):
     if has_image and "@image1" not in prompt:
         tags.append("@image1")
     return (" ".join(tags) + (" " if prompt and tags else "") + prompt).strip()
-

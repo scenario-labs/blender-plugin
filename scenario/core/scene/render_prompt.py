@@ -43,12 +43,8 @@ VIDEO_TEMPLATE = (
     "do not cut, retime or invent camera moves. "
     "Change only the rendering: materials, textures, lighting, shadows, atmosphere and colour.{first_frame}{style}"
 )
-VIDEO_FIRST_FRAME = (
-    " {image} shows how the finished first frame must look: match it exactly and stay consistent with it through the whole clip."
-)
-VIDEO_STYLE = (
-    " {images} are style references only: use their palette, materials and lighting; do not copy their objects, characters, text or composition into the scene."
-)
+VIDEO_FIRST_FRAME = " {image} shows how the finished first frame must look: match it exactly and stay consistent with it through the whole clip."
+VIDEO_STYLE = " {images} are style references only: use their palette, materials and lighting; do not copy their objects, characters, text or composition into the scene."
 
 
 def clean_look(prompt):
@@ -88,9 +84,14 @@ def video_prompt(look, image_count=0, first_frame=False, tagged=True):
         first = VIDEO_FIRST_FRAME.format(image="@image1" if tagged else "Reference image 1")
         next_index = 2
     if image_count >= next_index:
-        style = VIDEO_STYLE.format(images=_image_range(next_index, image_count, tagged).capitalize() if not tagged else _image_range(next_index, image_count, tagged))
+        style = VIDEO_STYLE.format(
+            images=_image_range(next_index, image_count, tagged).capitalize()
+            if not tagged
+            else _image_range(next_index, image_count, tagged)
+        )
     text = VIDEO_TEMPLATE.format(video=video, look=clean_look(look), first_frame=first, style=style)
     if not tagged:
-        text = text.replace("Re-render The reference video", "Re-render the reference video").replace("Keep The reference video", "Keep the reference video")
+        text = text.replace(
+            "Re-render The reference video", "Re-render the reference video"
+        ).replace("Keep The reference video", "Keep the reference video")
     return text
-

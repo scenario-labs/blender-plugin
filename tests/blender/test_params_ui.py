@@ -4,7 +4,6 @@ import json
 import unittest
 
 import bpy
-
 from helpers import FIXTURES, reset_scene, submodule
 
 
@@ -34,7 +33,10 @@ class ParamsUiTests(unittest.TestCase):
         self.assertEqual(width.int_value, 1024)
         self.assertEqual((width.fmin, width.fmax), (512.0, 2048.0))
         maps = self.lane.params["maps"]
-        self.assertEqual(self.params_ui.multi_selection(maps), ["basecolor", "normal", "roughness", "metalness", "height"])
+        self.assertEqual(
+            self.params_ui.multi_selection(maps),
+            ["basecolor", "normal", "roughness", "metalness", "height"],
+        )
         tiling = self.lane.params["tilingMode"]
         self.assertEqual(tiling.enum_value, "both")
         upscale = self.lane.params["upscaleFactor"]
@@ -48,7 +50,9 @@ class ParamsUiTests(unittest.TestCase):
         self.lane.params["height"].int_value = 512
         values, enabled = self.params_ui.collect_values(self.lane, schema)
         body = self.params.build_body(schema.specs, values, files={}, enabled=enabled)
-        recorded = json.loads((FIXTURES / "patina-copper-512" / "job.json").read_text())["job"]["metadata"]["input"]
+        recorded = json.loads((FIXTURES / "patina-copper-512" / "job.json").read_text())["job"][
+            "metadata"
+        ]["input"]
         recorded = {k: v for k, v in recorded.items() if k not in ("modelId", "seed")}
         for key, value in recorded.items():
             self.assertEqual(body.get(key), value, key)
@@ -67,7 +71,9 @@ class ParamsUiTests(unittest.TestCase):
         self.params_ui.sync_params(self.lane, schema, "model_patina-material")
         self.lane.params["width"].int_value = 768
         catalog = submodule("core.api.catalog")
-        gemini = json.loads((FIXTURES / "models" / "model_google-gemini-3-1-flash.json").read_text())["model"]
+        gemini = json.loads(
+            (FIXTURES / "models" / "model_google-gemini-3-1-flash.json").read_text()
+        )["model"]
         gschema = self.params.parse_schema(catalog.ModelRecord.from_api(gemini))
         self.params_ui.sync_params(self.lane, gschema, "model_google-gemini-3-1-flash")
         self.assertNotIn("width", [i.name for i in self.lane.params])
@@ -78,7 +84,7 @@ class ParamsUiTests(unittest.TestCase):
     def test_references_group_by_param(self):
         schema = patina_schema()
         ref = self.lane.references.add()
-        ref.param_name, ref.source, ref.filepath = "image", 'FILE', "/tmp/a.png"
+        ref.param_name, ref.source, ref.filepath = "image", "FILE", "/tmp/a.png"
         refs = self.params_ui.collect_file_refs(self.lane, schema)
         self.assertEqual([r.filepath for r in refs["image"]], ["/tmp/a.png"])
         self.assertEqual(refs.get("mask", []), [])
@@ -99,7 +105,9 @@ class ParamsUiTests(unittest.TestCase):
 
     def test_optional_params_without_default_start_disabled(self):
         catalog = submodule("core.api.catalog")
-        gpt = json.loads((FIXTURES / "models" / "model_openai-gpt-image-2.json").read_text())["model"]
+        gpt = json.loads((FIXTURES / "models" / "model_openai-gpt-image-2.json").read_text())[
+            "model"
+        ]
         schema = self.params.parse_schema(catalog.ModelRecord.from_api(gpt))
         lane = bpy.context.scene.scenario.lane_state("image")
         self.params_ui.sync_params(lane, schema, "model_openai-gpt-image-2")
@@ -107,6 +115,8 @@ class ParamsUiTests(unittest.TestCase):
         self.assertEqual(lane.params["width"].int_value, 1024)
         self.assertTrue(lane.params["numOutputs"].enabled)
         values, enabled = self.params_ui.collect_values(lane, schema)
-        body = self.params.build_body(schema.specs, dict(values, prompt="x"), files={}, enabled=enabled)
+        body = self.params.build_body(
+            schema.specs, dict(values, prompt="x"), files={}, enabled=enabled
+        )
         self.assertNotIn("width", body)
         self.assertEqual(body["numOutputs"], 1)

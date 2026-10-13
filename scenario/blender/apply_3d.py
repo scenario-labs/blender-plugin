@@ -1,13 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Import GLB/FBX/OBJ results, place them at the 3D cursor inside a 'Scenario' collection."""
+
 import logging
 
 import bpy
 from mathutils import Vector
 
-from . import runtime
 from ..core.scene import placement
+from . import runtime
 
 log = logging.getLogger("scenario.3d")
 
@@ -43,12 +44,15 @@ def _run_importer(kind, path):
 def _world_bbox(objects):
     points = []
     for obj in objects:
-        if obj.type != 'MESH':
+        if obj.type != "MESH":
             continue
         points.extend(obj.matrix_world @ Vector(corner) for corner in obj.bound_box)
     if not points:
         return None
-    return (tuple(min(p[i] for p in points) for i in range(3)), tuple(max(p[i] for p in points) for i in range(3)))
+    return (
+        tuple(min(p[i] for p in points) for i in range(3)),
+        tuple(max(p[i] for p in points) for i in range(3)),
+    )
 
 
 JOB_TAG = "scenario_job"
@@ -87,7 +91,9 @@ def import_model(context, path, at_cursor=True, collection_name="Scenario", loca
     if at_cursor and roots:
         bbox = _world_bbox(new_objects)
         if bbox is not None:
-            dx, dy, dz = placement.bottom_center_offset(bbox[0], bbox[1], tuple(scene.cursor.location))
+            dx, dy, dz = placement.bottom_center_offset(
+                bbox[0], bbox[1], tuple(scene.cursor.location)
+            )
             for root in roots:
                 root.location = (root.location.x + dx, root.location.y + dy, root.location.z + dz)
         context.view_layer.update()
@@ -103,13 +109,13 @@ def import_model(context, path, at_cursor=True, collection_name="Scenario", loca
 def _material_preview():
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
-            if area.type == 'VIEW_3D' and area.spaces.active.shading.type == 'SOLID':
-                area.spaces.active.shading.type = 'MATERIAL'
+            if area.type == "VIEW_3D" and area.spaces.active.shading.type == "SOLID":
+                area.spaces.active.shading.type = "MATERIAL"
 
 
 def place_next_to(context, objects, source):
     """Move `objects` so they sit to the right (+X) of `source`, bottoms aligned: an edited mesh lands beside its original."""
-    src_box = _world_bbox([source] + [c for c in source.children_recursive if c.type == 'MESH'])
+    src_box = _world_bbox([source] + [c for c in source.children_recursive if c.type == "MESH"])
     new_box = _world_bbox(objects)
     if src_box is None or new_box is None:
         return
@@ -139,7 +145,7 @@ def on_3d_result(rec):
     objects = import_model(bpy.context, primary, at_cursor=source is None, local_id=rec.local_id)
     if source is not None:
         place_next_to(bpy.context, objects, source)
-    meshes = [o for o in objects if o.type == 'MESH']
+    meshes = [o for o in objects if o.type == "MESH"]
     if source is not None and meshes:
         label = (rec.meta.get("model_name") or "edit").split(" - ")[-1][:24]
         for mesh in meshes:
@@ -147,13 +153,22 @@ def on_3d_result(rec):
     elif prompt and len(meshes) == 1:
         meshes[0].name = f"Scenario {prompt[:40]}"
     rec.meta["objects"] = [o.name for o in objects]
-    textured = sum(1 for o in meshes for s in o.material_slots if s.material and any(n.type == 'TEX_IMAGE' and n.image for n in s.material.node_tree.nodes))
+    textured = sum(
+        1
+        for o in meshes
+        for s in o.material_slots
+        if s.material and any(n.type == "TEX_IMAGE" and n.image for n in s.material.node_tree.nodes)
+    )
     _material_preview()
     extra = f", {len(alternates)} other mesh file(s) kept on disk" if alternates else ""
     where = f"next to {source.name}" if source is not None else "at the 3D cursor"
     if any(o.get("scenario_splat_points") for o in objects):
         pts = next(o for o in objects if o.get("scenario_splat_points"))
-        runtime.set_message(f"World loaded as a point cloud: {pts['scenario_splat_kept']:,} of {pts['scenario_splat_points']:,} splats {where}")
+        runtime.set_message(
+            f"World loaded as a point cloud: {pts['scenario_splat_kept']:,} of {pts['scenario_splat_points']:,} splats {where}"
+        )
         return objects
-    runtime.set_message(f"Imported {len(meshes)} mesh(es) {where} ({'textured' if textured else 'no textures'}){extra}")
+    runtime.set_message(
+        f"Imported {len(meshes)} mesh(es) {where} ({'textured' if textured else 'no textures'}){extra}"
+    )
     return objects

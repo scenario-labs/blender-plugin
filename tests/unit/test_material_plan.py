@@ -3,19 +3,29 @@
 import json
 
 from conftest import FIXTURES
+
 from scenario.core.jobs.records import JobRecord
 from scenario.core.scene import material_plan as mp
 
 
 def typed_fixture_files():
     manifest = json.loads((FIXTURES / "patina-copper-512" / "manifest.json").read_text())
-    return [(a["type"], str(FIXTURES / "patina-copper-512" / a["file"])) for a in manifest["assets"]]
+    return [
+        (a["type"], str(FIXTURES / "patina-copper-512" / a["file"])) for a in manifest["assets"]
+    ]
 
 
 def test_plan_maps_every_patina_type():
     plan = mp.plan_material("Copper", typed_fixture_files())
     assert plan.name == "Copper"
-    assert set(plan.textures) == {mp.ALBEDO, mp.NORMAL, mp.SMOOTHNESS, mp.METALLIC, mp.HEIGHT, mp.BASE}
+    assert set(plan.textures) == {
+        mp.ALBEDO,
+        mp.NORMAL,
+        mp.SMOOTHNESS,
+        mp.METALLIC,
+        mp.HEIGHT,
+        mp.BASE,
+    }
     assert plan.textures[mp.ALBEDO].endswith("albedo.png")
     assert plan.invert_smoothness and plan.has_displacement
     assert plan.color_space(mp.ALBEDO) == "sRGB" and plan.color_space(mp.BASE) == "sRGB"
@@ -39,4 +49,7 @@ def test_roles_from_record_pairs_files_with_asset_types():
     rec.asset_ids = ["a1", "a2"]
     rec.asset_types = {"a1": "texture-albedo", "a2": "texture-normal"}
     rec.files = ["/out/1.png", "/out/2.png"]
-    assert mp.roles_from_record(rec) == [("texture-albedo", "/out/1.png"), ("texture-normal", "/out/2.png")]
+    assert mp.roles_from_record(rec) == [
+        ("texture-albedo", "/out/1.png"),
+        ("texture-normal", "/out/2.png"),
+    ]

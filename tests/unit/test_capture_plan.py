@@ -5,7 +5,11 @@ from scenario.core.scene import capture_plan as cp
 
 def test_frame_span_uses_preview_range_when_asked():
     assert cp.frame_span(1, 250, 24) == (1, 250, 250 / 24)
-    assert cp.frame_span(1, 250, 24, use_preview=True, preview_start=10, preview_end=57) == (10, 57, 48 / 24)
+    assert cp.frame_span(1, 250, 24, use_preview=True, preview_start=10, preview_end=57) == (
+        10,
+        57,
+        48 / 24,
+    )
 
 
 def test_choose_duration_rounds_up_and_clamps():

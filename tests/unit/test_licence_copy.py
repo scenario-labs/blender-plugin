@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The extension zip must carry the GPL text (GPLv3 section 4): scenario/LICENSE mirrors the root LICENSE."""
+
 import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]

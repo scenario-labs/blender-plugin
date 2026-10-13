@@ -8,6 +8,7 @@ writes the JSON response on stdout. Standard library only; no bpy.
 
 Usage: python3 stdio_shim.py --url http://127.0.0.1:9876/mcp --token TOKEN
 """
+
 import argparse
 import json
 import sys
@@ -17,7 +18,16 @@ import urllib.request
 
 def forward(url, token, message, timeout=300):
     data = json.dumps(message).encode("utf-8")
-    req = urllib.request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": f"Bearer {token}"})
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            "Authorization": f"Bearer {token}",
+        },
+    )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read()
@@ -27,9 +37,17 @@ def forward(url, token, message, timeout=300):
         try:
             return json.loads(body)
         except ValueError:
-            return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32000, "message": f"HTTP {err.code}: {body[:200]!r}"}}
+            return {
+                "jsonrpc": "2.0",
+                "id": message.get("id"),
+                "error": {"code": -32000, "message": f"HTTP {err.code}: {body[:200]!r}"},
+            }
     except (urllib.error.URLError, OSError) as err:
-        return {"jsonrpc": "2.0", "id": message.get("id"), "error": {"code": -32001, "message": f"Blender is not reachable at {url}: {err}"}}
+        return {
+            "jsonrpc": "2.0",
+            "id": message.get("id"),
+            "error": {"code": -32001, "message": f"Blender is not reachable at {url}: {err}"},
+        }
 
 
 def main(argv=None):
@@ -45,7 +63,16 @@ def main(argv=None):
         try:
             message = json.loads(line)
         except ValueError as err:
-            out.write(json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": f"Parse error: {err}"}}) + "\n")
+            out.write(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {"code": -32700, "message": f"Parse error: {err}"},
+                    }
+                )
+                + "\n"
+            )
             out.flush()
             continue
         response = forward(args.url, args.token, message)

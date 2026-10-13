@@ -10,7 +10,6 @@ import pytest
 
 from tools import find_release_draft as recovery
 
-
 REPO = "scenario-labs/blender-plugin"
 TARGET = "a" * 40
 CURRENT = TARGET
@@ -37,7 +36,9 @@ def request_for(pages):
 
 
 def test_no_draft_ignores_published_and_other_namespace_releases():
-    request, calls = request_for([[dict(DRAFT, draft=False)], [dict(DRAFT, tag_name="skills-v1.0.0")]])
+    request, calls = request_for(
+        [[dict(DRAFT, draft=False)], [dict(DRAFT, tag_name="skills-v1.0.0")]]
+    )
     assert recovery.find_draft(REPO, CURRENT, request) == {"found": "false"}
     assert len(calls) == 1
 
@@ -45,28 +46,36 @@ def test_no_draft_ignores_published_and_other_namespace_releases():
 def test_original_workflow_can_recover_one_verified_draft_from_later_pages():
     request, calls = request_for([[], [DRAFT]])
     assert recovery.find_draft(REPO, CURRENT, request) == {
-        "found": "true", "tag_name": DRAFT["tag_name"], "sha": TARGET, "release_id": "123",
+        "found": "true",
+        "tag_name": DRAFT["tag_name"],
+        "sha": TARGET,
+        "release_id": "123",
     }
     assert len(calls) == 1
 
 
 def test_multiple_drafts_fail_instead_of_selecting_one():
-    request, calls = request_for([[DRAFT], [dict(DRAFT, id=124, tag_name="blender-plugin-v0.9.11")]])
+    request, calls = request_for(
+        [[DRAFT], [dict(DRAFT, id=124, tag_name="blender-plugin-v0.9.11")]]
+    )
     with pytest.raises(ValueError, match="Multiple"):
         recovery.find_draft(REPO, CURRENT, request)
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("changes, message", [
-    ({"author": {"login": "other-user"}}, "GitHub App"),
-    ({"author": None}, "GitHub App"),
-    ({"target_commitish": "main"}, "full commit SHA"),
-    ({"target_commitish": "a" * 39}, "full commit SHA"),
-    ({"tag_name": "blender-plugin-v0.9.10-rc.1"}, "stable"),
-    ({"tag_name": "blender-plugin-v0.9.10\nsha=bad"}, "stable"),
-    ({"prerelease": True}, "stable"),
-    ({"id": "123\nfound=false"}, "release ID"),
-])
+@pytest.mark.parametrize(
+    "changes, message",
+    [
+        ({"author": {"login": "other-user"}}, "GitHub App"),
+        ({"author": None}, "GitHub App"),
+        ({"target_commitish": "main"}, "full commit SHA"),
+        ({"target_commitish": "a" * 39}, "full commit SHA"),
+        ({"tag_name": "blender-plugin-v0.9.10-rc.1"}, "stable"),
+        ({"tag_name": "blender-plugin-v0.9.10\nsha=bad"}, "stable"),
+        ({"prerelease": True}, "stable"),
+        ({"id": "123\nfound=false"}, "release ID"),
+    ],
+)
 def test_unsafe_drafts_are_rejected(changes, message):
     request, calls = request_for([[dict(DRAFT, **changes)]])
     with pytest.raises(ValueError, match=message):
@@ -74,7 +83,9 @@ def test_unsafe_drafts_are_rejected(changes, message):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("other_sha", ["b" * 40, "c" * 40, "d" * 40], ids=["newer", "older", "unrelated"])
+@pytest.mark.parametrize(
+    "other_sha", ["b" * 40, "c" * 40, "d" * 40], ids=["newer", "older", "unrelated"]
+)
 def test_any_different_workflow_commit_must_rerun_the_original(other_sha):
     request, calls = request_for([[DRAFT]])
     with pytest.raises(ValueError, match=f"Rerun the original release workflow for {TARGET}"):
@@ -107,7 +118,13 @@ def test_gh_pagination_keeps_tokens_out_of_command_arguments(monkeypatch):
 
     monkeypatch.setattr(recovery.subprocess, "run", run)
     assert recovery.gh_json("repos/example/repo/releases?per_page=100", paginate=True) == [[DRAFT]]
-    assert calls[0][0] == ["gh", "api", "repos/example/repo/releases?per_page=100", "--paginate", "--slurp"]
+    assert calls[0][0] == [
+        "gh",
+        "api",
+        "repos/example/repo/releases?per_page=100",
+        "--paginate",
+        "--slurp",
+    ]
     assert calls[0][1]["check"] is True
 
 

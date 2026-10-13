@@ -37,11 +37,13 @@ def test_video_prompt_plain_words_for_models_without_tags():
     text = rp.video_prompt("oil painting", image_count=1, first_frame=False, tagged=False)
     assert text.startswith("The reference video is a playblast")
     assert "@video1" not in text and "@image" not in text
-    assert "Reference image 1 are style references only".lower() not in text.lower() or "reference image 1" in text.lower()
+    assert (
+        "Reference image 1 are style references only".lower() not in text.lower()
+        or "reference image 1" in text.lower()
+    )
     assert "re-render the reference video" in text.lower()
 
 
 def test_video_prompt_without_images_has_no_image_clauses():
     text = rp.video_prompt("photoreal")
     assert "@image" not in text and "style references" not in text
-

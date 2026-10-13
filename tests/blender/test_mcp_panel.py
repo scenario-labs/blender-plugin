@@ -15,4 +15,7 @@ class McpPanelTests(unittest.TestCase):
             self.assertIn("tok123", configs[key], key)
             self.assertIn("/mcp", configs[key], key)
         self.assertIn("stdio_shim.py", configs["claude_desktop"])
-        self.assertTrue(service.masked_token().endswith("...") or len(service.masked_token()) < len("tok123") + 4)
+        self.assertTrue(
+            service.masked_token().endswith("...")
+            or len(service.masked_token()) < len("tok123") + 4
+        )

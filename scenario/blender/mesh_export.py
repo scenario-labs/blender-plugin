@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Export the selected mesh objects as one GLB for the Edit 3D lane. Main thread only."""
+
 import logging
 import time
 
@@ -19,8 +20,8 @@ def export_dir():
 
 def source_objects(context):
     """The meshes to send: the selected mesh objects, else the active one if it is a mesh."""
-    meshes = [o for o in context.selected_objects if o.type == 'MESH']
-    if not meshes and context.active_object is not None and context.active_object.type == 'MESH':
+    meshes = [o for o in context.selected_objects if o.type == "MESH"]
+    if not meshes and context.active_object is not None and context.active_object.type == "MESH":
         meshes = [context.active_object]
     return meshes
 
@@ -43,8 +44,17 @@ def export_glb(context, objects, path=None):
         for obj in objects:
             obj.select_set(True)
         view_layer.objects.active = objects[0]
-        bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_apply=True, export_yup=True,
-                                  export_animations=False, export_texcoords=True, export_normals=True, export_materials='EXPORT')
+        bpy.ops.export_scene.gltf(
+            filepath=path,
+            export_format="GLB",
+            use_selection=True,
+            export_apply=True,
+            export_yup=True,
+            export_animations=False,
+            export_texcoords=True,
+            export_normals=True,
+            export_materials="EXPORT",
+        )
     finally:
         for obj in objects:
             obj.select_set(False)

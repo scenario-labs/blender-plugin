@@ -4,11 +4,10 @@
 
 import json
 import os
-from pathlib import Path
 import re
 import subprocess
 import sys
-
+from pathlib import Path
 
 PREFIX = "blender-plugin-v"
 RELEASE_APP = "gh-actions-token-retriever-public[bot]"
@@ -41,7 +40,9 @@ def find_draft(repo, current_sha, request=gh_json):
             if release.get("draft") is True and isinstance(tag, str) and tag.startswith(PREFIX):
                 drafts.append(release)
     if len(drafts) > 1:
-        raise ValueError("Multiple Blender release drafts exist; select and resolve them before retrying")
+        raise ValueError(
+            "Multiple Blender release drafts exist; select and resolve them before retrying"
+        )
     if not drafts:
         return {"found": "false"}
     draft = drafts[0]

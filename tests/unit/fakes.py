@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Fake HTTP transport: records requests, replays queued responses."""
+
 import json
 from collections import deque
 
@@ -19,7 +20,15 @@ class FakeTransport:
     def request(self, method, url, headers, body, timeout=None):
         from scenario.core.api.errors import NetworkError
 
-        self.calls.append({"method": method, "url": url, "headers": dict(headers), "body": body, "timeout": timeout})
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": dict(headers),
+                "body": body,
+                "timeout": timeout,
+            }
+        )
         if self.raise_network:
             self.raise_network -= 1
             raise NetworkError(0, "network: fake failure")

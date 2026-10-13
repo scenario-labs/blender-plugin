@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Job records and the persisted registry (survives Blender restarts)."""
+
 import json
 import os
 import pathlib
@@ -34,7 +35,16 @@ class JobRecord:
     @classmethod
     def new(cls, lane, kind, model_id, body, meta=None, now=None):
         now = now if now is not None else time.time()
-        return cls(local_id=uuid.uuid4().hex, lane=lane, kind=kind, model_id=model_id, body=dict(body), created_at=now, updated_at=now, meta=dict(meta or {}))
+        return cls(
+            local_id=uuid.uuid4().hex,
+            lane=lane,
+            kind=kind,
+            model_id=model_id,
+            body=dict(body),
+            created_at=now,
+            updated_at=now,
+            meta=dict(meta or {}),
+        )
 
     @property
     def is_terminal(self):
@@ -81,7 +91,9 @@ class JobRegistry:
     def save(self):
         with self._lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            payload = [r.to_dict() for r in sorted(self._records.values(), key=lambda r: r.created_at)]
+            payload = [
+                r.to_dict() for r in sorted(self._records.values(), key=lambda r: r.created_at)
+            ]
             tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
             tmp.write_text(json.dumps(payload), encoding="utf-8")
             tmp.replace(self.path)

@@ -1,12 +1,26 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Placement math, importer selection and primary-mesh choice for 3D results. No bpy."""
+
 import json
 import pathlib
 import struct
 
-_IMPORTERS = {".glb": "gltf", ".gltf": "gltf", ".fbx": "fbx", ".obj": "obj", ".spz": "spz", ".ply": "ply"}
-_FORMAT_RANK = {"gltf": 0, "fbx": 1, "obj": 2, "ply": 3, "spz": 4}  # splats come last: they are worlds, not meshes
+_IMPORTERS = {
+    ".glb": "gltf",
+    ".gltf": "gltf",
+    ".fbx": "fbx",
+    ".obj": "obj",
+    ".spz": "spz",
+    ".ply": "ply",
+}
+_FORMAT_RANK = {
+    "gltf": 0,
+    "fbx": 1,
+    "obj": 2,
+    "ply": 3,
+    "spz": 4,
+}  # splats come last: they are worlds, not meshes
 
 
 def importer_for(path):
@@ -57,12 +71,18 @@ def rank_mesh_files(paths):
         kind = importer_for(path)
         if kind is None:
             continue
-        info = glb_summary(path) if kind == "gltf" else {"images": 0, "pbr_textures": 0, "materials": 0}
+        info = (
+            glb_summary(path)
+            if kind == "gltf"
+            else {"images": 0, "pbr_textures": 0, "materials": 0}
+        )
         try:
             size = pathlib.Path(path).stat().st_size
         except OSError:
             size = 0
-        ranked.append((_FORMAT_RANK[kind], -info["pbr_textures"], -info["images"], -size, str(path), info))
+        ranked.append(
+            (_FORMAT_RANK[kind], -info["pbr_textures"], -info["images"], -size, str(path), info)
+        )
     ranked.sort()
     return [(entry[4], entry[5]) for entry in ranked]
 

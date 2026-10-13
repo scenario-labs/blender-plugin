@@ -1,12 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Circuit breaker for main-thread UI surfaces: a draw handler that keeps failing or stalls is removed, never left to freeze Blender."""
+
 import time
 
 
 class Breaker:
     def __init__(self, label, failures=5, stall=2.0, on_trip=None, clock=time.perf_counter):
-        self.label, self.failures, self.stall, self.on_trip, self.clock = label, failures, stall, on_trip, clock
+        self.label, self.failures, self.stall, self.on_trip, self.clock = (
+            label,
+            failures,
+            stall,
+            on_trip,
+            clock,
+        )
         self.consecutive = 0
         self.tripped = False
         self.reason = ""

@@ -405,7 +405,10 @@ full render-lane desktop acceptance.
   or Blender's None output, so they show the process, its decoding checks and
   its lifetime, not sound. A crash of Blender stops playback through the
   closed pipe of the child's standard input; that path is tested by closing the
-  pipe, not by crashing Blender.
+  pipe, not by crashing Blender. Disabling the extension waits up to about six
+  seconds for a child that does not stop; one that survives even the kill is
+  logged and left to its watcher thread, which removes its directory only if it
+  exits while Blender runs. That case is tested with a stand-in process.
 - Play first copies the saved file, up to 512 MiB, on the preview lane, so a
   large file waits for its copy and queues behind server thumbnail polls and
   waveform decodes there; Play audio too. Up to four copies or 1 GiB are kept

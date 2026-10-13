@@ -565,10 +565,13 @@ pending Play reuses, reports a launcher that exits with an error, and allows two
 animation players. For **Play audio** it starts one owned offline Blender
 process that plays the copy through Blender's audio engine
 ([in-extension audio playback](RESULT_PREVIEWS.md#in-extension-audio-playback)),
-pins that copy until the process exits, and polls it from its timer; another
-Play audio, **Stop audio**, retirement, a file load and unregistering stop it,
-and unregistering waits for it. A copy that arrives for a replaced Play audio or
-a retired context never starts one. For **Waveform** it asks `result_previews` for the envelope
+pins that copy until the process exits, and reads its phase from memory in its
+timer. The process's own watcher thread, not the main thread, reads its reports,
+kills it when it overstays and removes its directory. Another Play audio,
+**Stop audio**, retirement, a file load and unregistering stop it, and
+unregistering waits for it; a process that survives even the kill is kept with a
+warning while its watcher keeps reaping it. A copy that arrives for a replaced
+Play audio or a retired context never starts one. For **Waveform** it asks `result_previews` for the envelope
 rendition only, so no server still is polled, and polls its status from a timer;
 Cancel, and selecting another result's waveform while one loads, call the
 scheduler's `cancel`, which terminates a running decode. A late copy or envelope is discarded unless the

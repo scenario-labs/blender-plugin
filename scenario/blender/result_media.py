@@ -558,11 +558,9 @@ class MediaController:
     def _listen(self, copy, request):
         """Start Blender's audio engine on a ready copy; any other playback already stopped."""
         self._stop_listeners()
-        # Directories a crash left behind; running children keep theirs.
-        audio_player.sweep(
-            _listen_root(), keep=[listener.player.directory for listener in self._listeners]
-        )
         try:
+            # The player's watcher thread, not this one, sweeps directories a
+            # crash left behind and removes this child's once it exits.
             player = audio_player.start(copy.path, _listen_root(), request.spec)
         except audio_player.AudioPlayerError as error:
             runtime.set_message(str(error))
@@ -645,10 +643,13 @@ class MediaController:
         return self._release_listeners() or changed
 
     def _release_listeners(self):
-        """Forget children that exited, remove their directories and unpin their copies."""
+        """Forget children whose watcher saw them exit and removed their directory.
+
+        Reads only the players' memory; their copies are unpinned here.
+        """
         remaining, released = [], []
         for listener in self._listeners:
-            if listener.player.active or not listener.player.release():
+            if listener.player.active or not listener.player.released:
                 remaining.append(listener)
             else:
                 released.append(listener)
@@ -792,7 +793,10 @@ class MediaController:
         if self._play is not None:
             self._abandon(self._play)
             self._play = None
-        # Audio stops now; each child is released, with its copy, once it exits.
+        # Audio stops now. On a file load or connection change, cleanup is
+        # guaranteed without blocking: each child's watcher thread removes its
+        # directory once it exits, and the persistent timer then releases it
+        # with its copy.
         self._stop_listeners()
         self._release_listeners()
         for copy in self._copies.values():
@@ -809,19 +813,25 @@ class MediaController:
     def shutdown(self):
         """On unregister and Blender's exit: retire, end audio and leave external players running.
 
-        Each audio child is stopped and waited for, killed if it outlives the
-        grace period, and released with its copy. A running animation player or
-        system player launcher keeps its copy; the age sweep removes it later.
+        Cleanup here is synchronous: each audio child is stopped and waited for,
+        killed if it outlives the grace period, and its watcher removes its
+        directory before it is released with its copy. A child that survives
+        even the kill is kept, with a warning, rather than dropped: its watcher
+        thread keeps reaping it and removes its directory if it exits later. A
+        running animation player or system player launcher keeps its copy; the
+        age sweep removes it later.
         """
         self.retire()
         for listener in self._listeners:
             try:
-                listener.player.wait()
+                stopped = listener.player.wait()
             except Exception:
+                stopped = False
+            if not stopped:
                 # Never log process details; the next child still has to stop.
-                _log.warning("An audio playback process did not stop cleanly")
+                _log.warning("An audio playback process did not exit; it is still being stopped")
+        # Survivors stay listed, so nothing loses track of a running child.
         self._release_listeners()
-        self._listeners.clear()
         self._collect_abandoned()
         self._abandoned.clear()
         self._players.clear()

@@ -169,7 +169,6 @@ class AudioPlayerTests(unittest.TestCase):
     def stop_all(self):
         for player in self.started:
             player.wait()
-            player.release()
 
     def start(self, source, spec):
         player = self.player.start(source, self.root, spec)
@@ -186,8 +185,9 @@ class AudioPlayerTests(unittest.TestCase):
         self.fail(f"The audio player did not settle: {player.phase} {player.reason}")
 
     def assert_released(self, player):
-        self.settle(player, lambda: player.exited)
-        self.assertTrue(player.release())
+        # The player's watcher thread removes the directory once the child exits.
+        self.settle(player, lambda: player.released)
+        self.assertTrue(player.exited)
         self.assertFalse(player.directory.exists())
         self.assertEqual(list(self.root.iterdir()), [])
 
@@ -213,7 +213,8 @@ class AudioPlayerTests(unittest.TestCase):
         spec, record = recording_spec(self.work, seconds=60)
         player = self.start(self.media["wav"], spec)
         self.settle(player, lambda: player.phase == self.player.PLAYING)
-        self.assertFalse(player.release())  # A running child keeps its directory.
+        self.assertFalse(player.released)  # A running child keeps its directory.
+        self.assertTrue(player.directory.exists())
         started = time.monotonic()
         player.stop()
         self.assertEqual(player.phase, self.player.STOPPED)
@@ -232,8 +233,7 @@ class AudioPlayerTests(unittest.TestCase):
         player._process.stdin.close()
         self.assertEqual(player._process.wait(timeout=10), 0)
         self.assertEqual(notes(record)[-1], ("stop",))
-        player.poll()
-        self.assertEqual(player.phase, self.player.ENDED)
+        self.settle(player, lambda: player.phase == self.player.ENDED)
         self.assert_released(player)
 
     def test_undecodable_or_too_long_audio_fails_before_any_output_opens(self):

@@ -832,6 +832,15 @@ class ResultMediaTests(unittest.TestCase):
         self.fake_output()
         view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
         controller = self.media.controller
+        # Directory removal and the sweep happen on each player's watcher thread,
+        # never on Blender's main thread, which only reads the players' memory.
+        removals, remove = [], players._remove
+
+        def record(root, directory):
+            removals.append(threading.current_thread() is threading.main_thread())
+            return remove(root, directory)
+
+        self.enterContext(patch.object(players, "_remove", side_effect=record))
         for end in ("file-load", "connection", "unregister"):
             with self.subTest(end=end):
                 self.listen(view, "play:sound")
@@ -843,14 +852,55 @@ class ResultMediaTests(unittest.TestCase):
                     self.runtime.state.reset()
                 else:
                     controller.shutdown()
-                    # Unregistering waits: the child is gone before it returns.
+                    # Unregistering waits: the child is gone and its directory
+                    # removed before it returns.
                     self.assertTrue(listener.player.exited)
+                    self.assertTrue(listener.player.released)
+                    self.assertFalse(listener.player.directory.exists())
                     self.assertEqual(controller._listeners, [])
                 self.assertEqual(listener.player.phase, players.STOPPED)
                 self.settle(lambda: not controller._listeners)
                 self.assertEqual(list(self.listen_root().iterdir()), [])
                 self.assertEqual(self.copies(), [])
                 view = self.runtime.inspect_model_jobs().views["request"]
+        self.assertGreaterEqual(len(removals), 3)
+        self.assertNotIn(True, removals)
+
+    def test_unregistering_keeps_and_reports_a_child_that_does_not_exit(self):
+        players = submodule("core.jobs.audio_player")
+        controller = self.media.controller
+
+        class Survivor:
+            """Stands in for a child that outlives termination and the kill."""
+
+            phase, reason, seconds = players.STOPPED, "", None
+            active = released = False
+            waits = 0
+
+            def poll(self):
+                return False
+
+            def stop(self):
+                pass
+
+            def wait(self, timeout=players.STOP_GRACE):
+                Survivor.waits += 1
+                return False
+
+        survivor = self.media.Listening(
+            "context", None, "request", "sound", "audio (1)", object(), Survivor()
+        )
+        controller._listeners.append(survivor)
+        self.addCleanup(controller._listeners.remove, survivor)
+        with self.assertLogs("scenario", "WARNING") as logs:
+            controller.shutdown()
+        self.assertEqual(Survivor.waits, 1)
+        # Kept, not dropped: nothing loses track of a still running child.
+        self.assertIn(survivor, controller._listeners)
+        (line,) = logs.output
+        self.assertIn("did not exit", line)
+        self.assertNotIn(str(self.root), line)
+        self.assertNotIn("request", line)
 
     def test_drawing_never_starts_or_stops_audio(self):
         players = submodule("core.jobs.audio_player")

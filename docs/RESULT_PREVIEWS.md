@@ -271,14 +271,17 @@ sound ends.
 
 The child's standard input is its lifeline: the parent holds a pipe it never
 writes to, and the worker stops when it reaches its end, so a parent that exits
-or crashes stops playback too. **Stop audio** closes that pipe and terminates
-the child at once; one still running three seconds later is killed on the next
-poll. A child that reports neither playback nor a failure within 60 seconds of
-starting fails and is stopped, and a playing child is stopped ten seconds after
-the duration it reported, or after 600 seconds. A failure's reason names no path
-and never includes the child's output. Each `listen-*` directory is removed once
-its child has exited; the next Play audio removes any left a day earlier, for
-example by a crash.
+or crashes stops playback too. Each child has its own watcher thread, and only
+that thread touches the child's files: every 50 ms it reads the child's exit
+status and its two small reports and applies the deadlines. **Stop audio**
+closes the pipe and terminates the child at once; the watcher kills one still
+running three seconds later. A child that reports neither playback nor a
+failure within 60 seconds of starting fails and is stopped, and a playing child
+is stopped ten seconds after the duration it reported, or after 600 seconds. A
+failure's reason names no path and never includes the child's output. When it
+starts, the watcher removes `listen-*` directories left more than a day
+earlier, for example by a crash, and once its child has exited it removes that
+child's directory.
 
 The [saved media controller](../scenario/blender/result_media.py) runs on
 Blender's main thread. It prepares the copy on the preview lane like the other
@@ -287,12 +290,17 @@ discarded, until the child exits. At most one playback is active: another
 **Play audio** stops the playing one before the new copy is even prepared, and
 a copy that arrives for a request that a later Play replaced, or after the
 connection, project or file changed, never starts a child. Stop, a connection
-or project change, a file load and unregistering stop it too; unregistering,
-which Blender also does on exit, waits up to three seconds for the child, then
-kills it. Its persistent timer polls every quarter second while audio plays and
-every tenth of a second while a child starts or stops, reading the child's exit
-status and its two small reports. Drawing reads only the controller's memory:
-it never starts, polls or stops a child. Playback is local: it works with
+or project change, a file load and unregistering stop it too. After a file load
+or a connection change, cleanup completes without blocking: the watcher removes
+the directory once the child exits, and the controller then releases the child
+and its copy. Unregistering, which Blender also does on exit, is synchronous:
+it waits up to three seconds for the child and its directory, kills the child
+and waits three seconds more. A child that survives even the kill is kept, with
+a warning that names no path, rather than forgotten, and its watcher keeps
+reaping it. The controller's persistent timer reads each child's phase from
+memory every quarter second while audio plays and every tenth of a second while
+a child starts or stops; it never touches the file system for a child. Drawing
+reads only the controller's memory: it never starts, polls or stops a child. Playback is local: it works with
 Online Access disabled and makes no service request. No local MCP tool plays
 audio.
 

@@ -87,7 +87,8 @@ def copy(tmp_path):
     return source
 
 
-def launch(tmp_path, copy, spec, clock=None, **process):
+def launch(tmp_path, copy, spec, clock=None, watch=False, **process):
+    """Start a player on a fake child; unwatched unless ``watch``, so tests drive ``step``."""
     started = []
 
     def popen(command, **options):
@@ -97,7 +98,9 @@ def launch(tmp_path, copy, spec, clock=None, **process):
         started.append(child)
         return child
 
-    player = audio_player.start(copy, tmp_path / "players", spec, popen=popen, clock=clock)
+    player = audio_player.start(
+        copy, tmp_path / "players", spec, popen=popen, clock=clock, watch=watch
+    )
     (child,) = started
     return player, child
 
@@ -151,36 +154,49 @@ def test_the_child_runs_offline_isolated_with_a_lifeline_and_no_credentials(
 def test_playing_then_ending_follows_the_childs_report_and_exit(tmp_path, copy, spec):
     clock = Clock()
     player, child = launch(tmp_path, copy, spec, clock)
+    assert player.step() is False
     assert player.poll() is False
     report(player, "playing.json", {"format": 1, "seconds": 2.5})
+    assert player.step() is False
     assert player.poll() is True
     assert (player.phase, player.seconds) == (audio_player.PLAYING, 2.5)
     assert player.poll() is False
     child.code = 0
+    assert player.step() is True
     assert player.poll() is True
     assert (player.phase, player.reason) == (audio_player.ENDED, "")
     assert not player.active
     assert child.stdin.closed
-    assert player.release() is True
+    assert player.released
     assert not player.directory.exists()
+
+
+def test_a_child_that_reports_and_exits_between_steps_still_ends(tmp_path, copy, spec):
+    player, child = launch(tmp_path, copy, spec, Clock())
+    report(player, "playing.json", {"format": 1, "seconds": 0.1})
+    child.code = 0
+    assert player.step() is True
+    assert (player.phase, player.seconds) == (audio_player.ENDED, 0.1)
+    assert player.released
 
 
 def test_a_child_still_running_after_its_reported_duration_is_stopped(tmp_path, copy, spec):
     clock = Clock()
     player, child = launch(tmp_path, copy, spec, clock, exit_on=set())
     report(player, "playing.json", {"format": 1, "seconds": 2.0})
-    player.poll()
+    player.step()
     clock.now += 2.0 + audio_player.END_GRACE - 0.01
-    assert player.poll() is False
+    player.step()
+    assert player.phase == audio_player.PLAYING
     clock.now += 0.02
-    assert player.poll() is True
+    assert player.step() is False  # Still running: its directory stays.
     assert player.phase == audio_player.ENDED
     assert child.signals == ["terminate"]
-    assert player.release() is False  # Still running: its directory stays.
+    assert not player.released and player.directory.exists()
     clock.now += audio_player.STOP_GRACE
-    player.poll()
+    assert player.step() is True
     assert child.signals == ["terminate", "kill"]
-    assert player.release() is True
+    assert player.released
 
 
 @pytest.mark.parametrize(
@@ -196,10 +212,10 @@ def test_reported_durations_are_bounded_by_the_limit(tmp_path, copy, spec, value
     clock = Clock()
     player, child = launch(tmp_path, copy, spec, clock, exit_on=set())
     report(player, "playing.json", value)
-    player.poll()
+    player.step()
     assert (player.phase, player.seconds) == (audio_player.PLAYING, seconds)
     clock.now += (seconds or 600) + audio_player.END_GRACE
-    player.poll()
+    player.step()
     assert player.phase == audio_player.ENDED
 
 
@@ -219,6 +235,7 @@ def test_child_failures_map_to_fixed_sanitized_reasons(tmp_path, copy, spec, cod
     player, child = launch(tmp_path, copy, spec)
     report(player, "error.json", {"format": 1, "error": code})
     child.code = 1
+    assert player.step() is True
     assert player.poll() is True
     assert (player.phase, player.reason) == (audio_player.FAILED, message)
 
@@ -232,16 +249,16 @@ def test_a_failed_child_without_a_valid_report_has_a_generic_reason(tmp_path, co
     elif payload is not None:
         path.write_text(json.dumps(payload), encoding="utf-8")
     child.code = 1
-    player.poll()
+    player.step()
     assert player.reason == "Blender could not play this audio"
 
 
 def test_a_child_that_crashes_while_playing_fails(tmp_path, copy, spec):
     player, child = launch(tmp_path, copy, spec)
     report(player, "playing.json", {"format": 1, "seconds": 1})
-    player.poll()
+    player.step()
     child.code = -11
-    player.poll()
+    player.step()
     assert (player.phase, player.reason) == (
         audio_player.FAILED,
         "Blender could not play this audio",
@@ -252,8 +269,10 @@ def test_a_child_that_never_reports_fails_at_its_start_timeout(tmp_path, copy, s
     clock = Clock()
     player, child = launch(tmp_path, copy, spec, clock)
     clock.now += audio_player.START_TIMEOUT - 0.01
+    player.step()
     assert player.poll() is False
     clock.now += 0.02
+    player.step()
     assert player.poll() is True
     assert player.phase == audio_player.FAILED
     assert "did not start in time" in player.reason
@@ -265,26 +284,91 @@ def test_stop_closes_the_lifeline_terminates_once_and_kills_after_the_grace(tmp_
     player, child = launch(tmp_path, copy, spec, clock, exit_on=set())
     player.stop()
     assert (player.phase, player.active) == (audio_player.STOPPED, False)
+    assert player.poll() is False  # The owner asked for it: not news.
     assert child.stdin.closed and child.signals == ["terminate"]
     player.stop()
     assert child.signals == ["terminate"]
     # A late report never revives a stopped player.
     report(player, "playing.json", {"format": 1, "seconds": 1})
-    assert player.poll() is False
+    assert player.step() is False
     assert player.phase == audio_player.STOPPED
     clock.now += audio_player.STOP_GRACE
-    player.poll()
+    assert player.step() is True
     assert child.signals == ["terminate", "kill"]
-    assert player.release() is True
+    assert player.released
     assert not player.directory.exists()
 
 
+def test_the_owner_side_reads_memory_only(tmp_path, copy, spec, monkeypatch):
+    player, child = launch(tmp_path, copy, spec)
+    report(player, "playing.json", {"format": 1, "seconds": 1})
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the owner touched the file system")
+
+    for name in ("_report", "_remove", "sweep"):
+        monkeypatch.setattr(audio_player, name, refuse)
+    monkeypatch.setattr(audio_player.shutil, "rmtree", refuse)
+    for _ in range(3):
+        assert player.poll() is False
+        assert (player.phase, player.active, player.released) == (
+            audio_player.STARTING,
+            True,
+            False,
+        )
+    player.stop()
+    assert player.released is False
+
+
+def test_the_watcher_thread_alone_sweeps_and_removes_the_directory(
+    tmp_path, copy, spec, monkeypatch
+):
+    removed, swept = [], []
+    rmtree, sweep = audio_player.shutil.rmtree, audio_player.sweep
+
+    def record_rmtree(path, *args, **kwargs):
+        removed.append(threading.current_thread().name)
+        return rmtree(path, *args, **kwargs)
+
+    def record_sweep(*args, **kwargs):
+        swept.append(threading.current_thread().name)
+        return sweep(*args, **kwargs)
+
+    monkeypatch.setattr(audio_player.shutil, "rmtree", record_rmtree)
+    monkeypatch.setattr(audio_player, "sweep", record_sweep)
+    player, child = launch(tmp_path, copy, spec, watch=True)
+    report(player, "playing.json", {"format": 1, "seconds": 0.1})
+    child.code = 0
+    deadline = time.monotonic() + 5
+    while not player.released and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert player.released and not player.directory.exists()
+    assert player.poll() is True and player.phase == audio_player.ENDED
+    assert removed == ["ScenarioAudioPlayer"]
+    assert swept == ["ScenarioAudioPlayer"]
+
+
 def test_wait_is_bounded_and_kills_a_child_that_ignores_termination(tmp_path, copy, spec):
-    player, child = launch(tmp_path, copy, spec, exit_on=set())
-    assert player.wait(timeout=0.01) is True
-    assert child.signals == ["terminate", "kill"]
-    assert player.phase == audio_player.STOPPED
-    assert player.release() is True
+    for watch in (False, True):
+        player, child = launch(tmp_path, copy, spec, watch=watch, exit_on=set())
+        assert player.wait(timeout=0.5) is True
+        assert child.signals == ["terminate", "kill"]
+        assert player.phase == audio_player.STOPPED
+        assert player.released and not player.directory.exists()
+
+
+def test_wait_reports_a_child_that_survives_the_kill_and_keeps_reaping_it(tmp_path, copy, spec):
+    player, child = launch(tmp_path, copy, spec, watch=True, exit_on=set())
+    child.kill = lambda: child.signals.append("kill")  # Never exits, even when killed.
+    assert player.wait(timeout=0.05) is False
+    assert "kill" in child.signals and not player.released
+    assert player.directory.exists()
+    # The watcher still owns it: once the process finally exits, it is cleaned up.
+    child.code = -9
+    deadline = time.monotonic() + 5
+    while not player.released and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert player.released and not player.directory.exists()
 
 
 def test_a_failed_launch_or_missing_tools_leave_nothing(tmp_path, copy, spec):
@@ -310,7 +394,7 @@ def test_release_never_removes_a_directory_outside_its_root(tmp_path, copy, spec
     outside = tmp_path / "listen-outside"
     outside.mkdir()
     player.directory = outside
-    assert player.release() is True
+    assert player.step() is True
     assert outside.exists()
 
 

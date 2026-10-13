@@ -349,7 +349,9 @@ callback, such as the model or a LoRA strength, still invalidate. A default's
 different base model or a LoRA strength that way; a composition used on the
 form's current base changes only the form's trained list.
 Undo/redo and file loading
-invalidate captured state too. The one exception is
+invalidate captured state too. Recording an undo step does not: the
+[file-modified mark](architecture/blender.md#marking-the-file-modified) after a
+Scenario change tags no data and runs no history handler. The one exception is
 `JobSession.synchronizing(scenes)`, which a main-thread caller opens while it
 evaluates those scenes' own view layers: a scene that no window shows keeps tags
 from changes elsewhere until such an update, which then reports a change although
@@ -1259,7 +1261,8 @@ chosen first-frame file, enables the first frame and invalidates the Render
 Video and Prompt Spark prices. A failure removes the new slot and restores the
 file and enabled state. It then records one Blender undo step when global undo,
 the undo step count and a window context allow it, and status reports whether
-it did (`undo_recorded`). Background sessions have no desktop history. An
+it did (`undo_recorded`). Background sessions have no desktop history; without a
+step the binding still marks the file modified. An
 installed test enables global undo, lets the runner's window record the step,
 then checks that Undo removes the slot and restores the enabled state and Redo
 restores the slot, with no saved-job change or request. Whether the

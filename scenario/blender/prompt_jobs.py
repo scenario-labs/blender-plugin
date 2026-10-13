@@ -10,6 +10,7 @@ import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.store import JobState
+from . import file_state
 
 LABELS = {"GENERATE": "New prompt", "REWRITE": "Rewrite", "TRANSLATE": "Translate"}
 BUSY = {"QUOTING", "SUBMITTING", "POLLING", "READING"}
@@ -159,6 +160,8 @@ class PromptJobs:
             raise ScenarioError(0, "The returned prompt does not match this action")
         lane = self._binding(item, scene)
         lane.prompt = result.prompts[0]
+        # Delivered by maintenance, after the approval operator has returned.
+        file_state.mark_modified("Scenario prompt")
 
     def poll(self):
         if not self.session.active:

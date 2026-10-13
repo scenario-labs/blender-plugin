@@ -26,7 +26,15 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.result_metadata import IMAGE_SIGNATURE_TYPES, image_signature_matches
 from ..core.jobs.store import JobOrigin, ResultAsset, StoredJob
 from ..core.scene.panorama import MAX_FILE_BYTES
-from . import generation, props, reference_form, render_lanes, render_references, runtime
+from . import (
+    file_state,
+    generation,
+    props,
+    reference_form,
+    render_lanes,
+    render_references,
+    runtime,
+)
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -236,12 +244,15 @@ def _record_undo():
     from .mesh_result_application import _undo_enabled, _undo_push
 
     if not _undo_enabled():
+        # No desktop history: still mark the file modified, so Blender asks to save.
+        file_state.mark_modified("Scenario video first frame")
         return False
     try:
         _undo_push("Scenario video first frame")
     except Exception:
         # The binding is complete; a missing history step never repeats it.
         _log.warning("First frame bound, but Blender undo could not be recorded")
+        file_state.mark_modified("Scenario video first frame")
         return False
     return True
 

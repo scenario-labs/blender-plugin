@@ -68,6 +68,8 @@ class SCENARIO_OT_load_film(bpy.types.Operator, ImportHelper):
     bl_description = (
         "Validate and load a Film JSON recipe while preserving this production's identity"
     )
+    # Undo records the loaded recipe and marks the file modified, so Blender asks to save it.
+    bl_options = {"UNDO"}
     filename_ext = ".json"
     filter_glob: StringProperty(default="*.json", options={"HIDDEN"})
 
@@ -89,6 +91,7 @@ class SCENARIO_OT_new_film_production(bpy.types.Operator):
     bl_description = (
         "Start a distinct production using this recipe while keeping previous saved jobs"
     )
+    bl_options = {"UNDO"}
 
     def invoke(self, context, event):
         return context.window_manager.invoke_confirm(self, event)

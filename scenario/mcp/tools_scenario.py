@@ -10,7 +10,7 @@ from pathlib import Path
 
 import bpy
 
-from ..blender import generation, runtime, trained_defaults, trained_models
+from ..blender import file_state, generation, runtime, trained_defaults, trained_models
 from ..blender import result_previews as preview_tiles
 from ..blender.props import GENERATION_LANES as NATIVE_LANES
 from ..core import audio_waveform
@@ -352,7 +352,17 @@ def _generation_input(args, lane):
 def render_form(args):
     from ..blender import render_commands
 
-    return render_commands.execute(bpy.context, args)
+    action = args.get("action", "inspect")
+    try:
+        result = render_commands.execute(bpy.context, args)
+    except Exception:
+        if action == "prepare":
+            # A refused upload can keep its new, marked reference slot.
+            file_state.mark_modified("Scenario render form")
+        raise
+    if action != "inspect":
+        file_state.mark_modified("Scenario render form")
+    return result
 
 
 DEFAULT_ACTIONS = ("get", "set", "clear")
@@ -905,6 +915,7 @@ def film_recipe(args):
         scene.scenario_film.production_id = uuid.uuid4().hex
     else:
         raise ValueError("Choose inspect, load or new_production")
+    file_state.mark_modified("Scenario Film recipe")
     return {
         "production_id": scene.scenario_film.production_id,
         "title": plan["title"],
@@ -912,6 +923,14 @@ def film_recipe(args):
         "shots": [{"shot_id": shot["id"], "title": shot["title"]} for shot in plan["shots"]],
         "warnings": recipe_warnings(raw),
     }
+
+
+def _built(status, message):
+    """Mark the file modified once a Film build changed scene data, or may have."""
+    # The native build operators declare Undo; agents' builds are marked here.
+    if status.get("phase") in {"BUILT", "UNCERTAIN"}:
+        file_state.mark_modified(message)
+    return status
 
 
 def _film_owner(args):
@@ -1014,7 +1033,10 @@ def film_shot_review(args):
 
 
 def build_film_shot(args):
-    return runtime.ensure_film_jobs().session.film_shots.approve(args["review_id"])
+    return _built(
+        runtime.ensure_film_jobs().session.film_shots.approve(args["review_id"]),
+        "Scenario Film shot",
+    )
 
 
 def film_timeline_sources(args):
@@ -1043,7 +1065,10 @@ def film_timeline_review(args):
 
 
 def build_film_timeline(args):
-    return runtime.ensure_film_jobs().session.film_timeline.approve(args["review_id"])
+    return _built(
+        runtime.ensure_film_jobs().session.film_timeline.approve(args["review_id"]),
+        "Scenario Film timeline",
+    )
 
 
 def prepare_film_composition(args):
@@ -1127,7 +1152,10 @@ def film_review_status(args):
 
 
 def build_film_review(args):
-    return runtime.ensure_film_jobs().session.film_review.approve(args["review_id"])
+    return _built(
+        runtime.ensure_film_jobs().session.film_review.approve(args["review_id"]),
+        "Scenario Film review",
+    )
 
 
 def _output_folder():
@@ -1389,7 +1417,10 @@ def blockout_plan_status(args):
 
 
 def apply_blockout_plan(args):
-    return runtime.blockout_recovery(args["context_id"]).apply(args["review_id"])
+    result = runtime.blockout_recovery(args["context_id"]).apply(args["review_id"])
+    # The native Use saved plan operator declares Undo; an agent's approval is marked here.
+    file_state.mark_modified("Scenario Blockout plan")
+    return result
 
 
 def read_model_text(args):

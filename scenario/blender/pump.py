@@ -45,10 +45,12 @@ def _tick():
 
 
 def _process():
-    from . import mcp_service, studio
+    from . import file_state, mcp_service, studio
 
     changed = generation.process_catalog_events()
     mcp_service.process_pending()
+    # A change delivered during a sculpt or paint stroke is marked once it ends.
+    file_state.flush()
     manager = runtime.state.manager
     if manager is not None:
         for event in manager.drain():

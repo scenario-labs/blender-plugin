@@ -20,7 +20,7 @@ from ..core.api.errors import ScenarioError
 from ..core.schema.forms import display_label, schema_defaults, validate_parameters
 from ..core.schema.params import parse_schema
 from ..core.ui.costs import workflow_loop_warning
-from . import reference_form, runtime, workflow_steps
+from . import file_state, reference_form, runtime, workflow_steps
 
 # Persisted ID properties on workflow file inputs. A marker blocks pricing until
 # its upload attaches or is explicitly resolved; the request records provenance.
@@ -303,6 +303,8 @@ class WorkflowControls:
                         if view.ticket is not None and not view.ticket.used:
                             self.jobs.discard_workflow_quote(view.ticket.identifier)
                         load_form(view.scene.scenario_workflow, result)
+                        # Delivered by maintenance, after the load operator has returned.
+                        file_state.mark_modified("Scenario workflow form")
                         view.cost = view.cost_warning = ""
                     else:
                         result = self.jobs.session.deliver_workflow_catalog(outcomes[0])

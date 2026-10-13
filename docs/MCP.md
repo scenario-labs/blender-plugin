@@ -455,6 +455,21 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `list_generations` | List recent cloud generations using this Blender runtime's loaded history. | `limit`: integer<br>`older`: boolean<br>`refresh`: boolean | read-only annotation |
 <!-- tools:end -->
 
+### Unsaved scene changes
+
+Blender asks to save before quitting only when the open file is marked modified,
+and only an Undo History step marks it. A tool that changes the file records one
+step once its change is complete: `select_objects`, `set_frame`, `camera_path`,
+`execute_python`, `film_recipe` (`load` and `new_production`), `render_form`
+(`configure`, `remove` and `prepare`), `apply_blockout_plan` and the three Film
+`build_*` tools when they report `BUILT` or `UNCERTAIN`. World restoration through
+`apply_result_application` is marked at once. Results, plans, prompts and uploads
+that maintenance delivers later, such as automatically imported Image results,
+are marked when they land. Reading tools, quotes, catalog loads and saved-job
+inspection leave the file unmarked, and the step changes no data, so estimates
+and approvals stay current. No tool saves the file: ask the user to save it. See
+[marking the file modified](architecture/blender.md#marking-the-file-modified).
+
 ## Security model
 
 The Blender integration binds only to `127.0.0.1`. MCP operations require the
@@ -993,7 +1008,8 @@ including verification, durable claims and no generation or automatic retry.
 was recorded for a completed saved mesh edit. This applies to REMESH, UV and
 RETEXTURE and PARTS through `mesh_edit` and `mesh_source` review. Respect Blender's Global
 Undo and history limits; a false value does not mean application failed or may
-be repeated. Headless application does not create desktop history.
+be repeated. Headless application does not create desktop history; it still
+marks the file modified.
 
 Undo/Redo restores scene data without replaying service calls or changing durable
 job/application/spending records. The transient `mesh_edit` status becomes null
@@ -1055,8 +1071,9 @@ single-use and bound to the unchanged destination and saved record. Pass
 `discard: true` to the status command to discard a finished review. The complete
 plan stays in memory until approval; no result text is stored in job metadata.
 Use native **Build plan** separately for geometry. Native plan application has
-Undo; MCP consumers retain the same scope and destination guards without a
-promise of native Undo for direct tool calls.
+Undo. `apply_blockout_plan` keeps the same scope and destination guards and
+records one Undo History step after the plan changes, which marks the file
+modified.
 
 ## Cloud history and scoped saved results
 
@@ -1168,8 +1185,9 @@ ready review, claims all sources and builds a new scene while retaining the
 working scene. It must not be repeated after uncertainty.
 
 These four local Blender commands have no platform equivalent and make no
-generation/download request. They share native UI review handles but do not add a
-native operator Undo entry. Timeline approval uses the commands below;
+generation/download request. They share native UI review handles; a build records
+one Undo History step afterwards, like the native operator, which marks the file
+modified. Timeline approval uses the commands below;
 capture and export remain separate.
 
 ### Film capture commands
@@ -1204,7 +1222,8 @@ cleanup requires `inspected: true` and must never be replayed automatically.
 These four local commands have no platform equivalent, make no service call and
 never change saved jobs or import result files. Local scene markers establish
 recipe compatibility, not service provenance. They share the native command
-owner but do not create a native operator Undo entry. Capture, review assembly
+owner; a build records one Undo History step afterwards, like the native
+operator, which marks the file modified. Capture, review assembly
 and video export use the separate commands in this section.
 
 ### Film composition commands
@@ -1259,7 +1278,8 @@ scene until its receipt is saved or it is dismissed.
 
 These three local commands have no platform equivalent, make no service call and
 share the [native review controls](FILM_PLAN.md#native-and-mcp-review-controls).
-They do not create a native operator Undo entry. Handles expire with the session.
+A build records one Undo History step afterwards, like the native operator, which
+marks the file modified. Handles expire with the session.
 Installed synthetic tests cover them; desktop interaction and live media remain
 pending. Built review scenes export through the commands below.
 

@@ -54,6 +54,39 @@ def reset_scene():
     bpy.ops.wm.read_homefile(use_empty=True)
 
 
+# Blender 5.0 reports a background file as modified even right after reading it.
+# From 5.1, a file read in the background starts unmarked, as on the desktop.
+MARKS_OBSERVABLE = not bpy.app.background or bpy.app.version >= (5, 1, 0)
+
+
+def assert_unmarked(test, message=None):
+    """Check that the open file is not marked modified, where Blender can show it."""
+    if MARKS_OBSERVABLE:
+        test.assertFalse(bpy.data.is_dirty, message)
+
+
+@contextmanager
+def file_marks(test, *, clean=True):
+    """Record the messages of the marks that flag the open file modified inside the block.
+
+    Background Blender clears the modified flag only when it reads a file, so a
+    test that checks a change marks the file must start unmarked (``clean``).
+    The real mark still runs: callers also check ``bpy.data.is_dirty``.
+    """
+    if clean:
+        assert_unmarked(test, "The fixture already marked the file modified")
+    module = submodule("blender.file_state")
+    marks = []
+    mark = module.mark_modified
+
+    def record(message):
+        marks.append(message)
+        return mark(message)
+
+    with patch.object(module, "mark_modified", side_effect=record):
+        yield marks
+
+
 @contextmanager
 def temp_credentials(key="fixture-key", secret="fixture-secret"):
     """Restore the exact incoming preference values, including on setup failure."""

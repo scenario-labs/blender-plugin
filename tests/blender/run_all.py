@@ -70,6 +70,9 @@ BASELINE = (
     "test_local_capture",
     "test_job_session",
     "test_preview_decode",
+    # The file-modified mark itself; its other paths need the full suite's fixtures.
+    "test_file_modified.FileStateTests",
+    "test_file_modified.SceneToolTests",
     "test_organization_session",
     "test_asset_organization",
     "test_session_results",

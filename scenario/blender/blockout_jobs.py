@@ -12,6 +12,7 @@ import bpy
 from ..core.api.errors import ScenarioError
 from ..core.jobs.store import JobState
 from ..core.scene import blockout
+from . import file_state
 
 MODEL = "model_scenario-llm"
 CANCELED = "Blockout request canceled; nothing was sent to Scenario"
@@ -166,6 +167,8 @@ class BlockoutJobs:
         props = self._binding(item, scene)
         elements = parse_complete_plan(result.text)
         props.plan_json = json.dumps(elements)
+        # Delivered by maintenance, after the approval operator has returned.
+        file_state.mark_modified("Scenario Blockout plan")
         # Geometry is a separate explicit local action, never a late worker callback.
 
     def poll(self):

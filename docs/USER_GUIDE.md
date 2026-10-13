@@ -667,6 +667,11 @@ headless setup, token handling and the security model.
 For headless use, run `blender --background scene.blend --command scenario_blender`;
 see the reference for token configuration and online-access requirements.
 
+Scene changes an agent makes, and results Scenario imports or applies for you,
+mark the file modified, so Blender asks to save before you quit. With Global
+Undo on, each also adds a step to **Edit > Undo History**. Agents can't save the
+file: save it yourself to keep the changes.
+
 ![Agents panel in Blender 5.0 with the local server running and Python execution disabled](images/panel-mcp.png)
 
 ## Apply a saved panorama to World

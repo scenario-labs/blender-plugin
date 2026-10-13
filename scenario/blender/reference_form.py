@@ -16,7 +16,7 @@ from bpy.props import EnumProperty, IntProperty, StringProperty
 from ..core.api.errors import ScenarioError
 from ..core.jobs.upload_store import UploadState
 from ..core.jobs.uploads import UploadRecoveryAction
-from . import panorama_lane, props, runtime
+from . import file_state, panorama_lane, props, runtime
 
 _MARKER = "_scenario_reference_upload"
 _SCOPE = "_scenario_reference_scope"
@@ -451,6 +451,8 @@ def _deliver_binding(owner, token, binding):
     ref.label = (ref.label or "Reference") + " (uploaded snapshot)"
     binding.attached = True
     props.mark_estimate_dirty(_lane(binding.scene, binding.lane_name))
+    # Delivered by maintenance, after the upload operator or tool has returned.
+    file_state.mark_modified("Scenario reference upload")
 
 
 def scope_error(lane_state, *, references=None):

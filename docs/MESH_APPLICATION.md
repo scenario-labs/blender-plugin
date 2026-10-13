@@ -672,7 +672,8 @@ removes any Keep original copy; Redo restores the applied data and that copy.
 Automatic checkpoints require a desktop window, Global Undo enabled and at least
 two undo steps. The extension does not change preferences. Blender's history size
 and memory limits still apply, so Keep original and saving the blend file remain
-useful. Background application does not create desktop history. A failed initial
+useful. Background application does not create desktop history; it still marks
+the file modified, so Blender asks to save it. A failed initial
 checkpoint stops before import or source mutation. If the final checkpoint fails,
 the completed edit stays applied, a sanitized warning is logged, and
 `mesh_edit.undo_available` is false. It never becomes permission to repeat the edit.

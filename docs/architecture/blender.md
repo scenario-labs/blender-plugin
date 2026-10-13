@@ -27,10 +27,48 @@ playback launchers strip `SCENARIO_`, `PYTHON` and proxy variables, accept only
 absolute paths and `https` links, and a unit-test source scan rejects any other
 opener in `scenario/`.
 
+Mark the file modified after every main-thread change that no Undo operator
+records; see [marking the file modified](#marking-the-file-modified).
+
 New shared-runtime integration must use explicit account, project, scene and
 target identity. [JobSession](../BLENDER_JOB_CONTEXT.md) captures and validates
 origins; names alone cannot identify a deleted or replaced object. Closing a
 view must not cancel application-owned jobs or route their results elsewhere.
+
+## Marking the file modified
+
+Blender asks to save on quit only for a file marked modified (`bpy.data.is_dirty`),
+and only an undo push marks it: assigning data from Python, a timer or a local
+MCP tool leaves the file looking saved. An operator that declares `UNDO` records
+its own step. Every other main-thread change calls
+[`file_state.mark_modified`](../../scenario/blender/file_state.py) once it is
+complete: local MCP tools that change the file, and the results, World
+restoration, Blockout plans, Prompt Spark prompts, workflow forms and uploads
+that maintenance delivers whichever panel or tool started them. Each mark calls
+`bpy.ops.ed.undo_push` with a name such as **Scenario image import**, which Undo
+History lists when Global Undo is on. The operator needs a window; Blender runs
+app timers with its first window, and the helper supplies that window when a
+context has none. A saved model, mesh edit or first frame whose own desktop
+checkpoints were recorded is not marked again. Never mark from an operator that
+declares Undo, which would record a second identical step, or while drawing.
+
+No Python API sets `is_dirty` directly. Blender's `ED_undo_push` tags the file
+modified before it records a step, even when Global Undo is off or no steps are
+kept, so a push is the only route. A sculpt, paint or paint-curve stroke holds
+an open undo step that a push would close under another name, so a mark made
+during a stroke waits and the next pump tick records it once the stroke ends;
+reading a file drops a waiting mark. In background mode the first push creates
+Blender's undo stack.
+
+The push tags no data-block and runs no dependency-graph, undo or redo handler,
+so origins, quotes and approvals captured before it stay current; an installed
+test checks a session origin across a mark. Catalog seeding, restored model
+choices, estimate state and upload progress links stay unmarked: marking them
+would flag every opened file as modified (see
+[catalog delivery](runtime.md#active-sdk-catalog)). Local MCP has no save tool,
+and nothing saves the file for the user. Blender 5.0 reports every background
+file as modified, even right after reading it; from 5.1 a file read in the
+background starts unmarked, as on the desktop.
 
 ## Temporary preview decoding
 

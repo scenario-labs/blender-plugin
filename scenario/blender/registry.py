@@ -20,6 +20,7 @@ def _modules():
         blockout,
         composer,
         desktop,
+        file_state,
         film,
         job_recovery,
         library_view,
@@ -45,6 +46,7 @@ def _modules():
 
     modules = [
         props,
+        file_state,
         desktop,
         apply_video,
         result_media,

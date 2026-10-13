@@ -40,7 +40,7 @@ from ..core.scene.panorama import world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
 from ..core.ui.saved_job_actions import WorkflowSteps
-from . import first_frame_handoff
+from . import file_state, first_frame_handoff
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
@@ -2022,7 +2022,9 @@ class ModelJobs:
             self.session.validate_destination(ticket.destination, frame=ticket.frame)
         request_id = record.intent.request_id
         if is_world and ticket.restore:
-            self._world_application(request_id, ticket.destination).restore()
+            if self._world_application(request_id, ticket.destination).restore():
+                # Neither the native nor the agent restoration runs inside an Undo operator.
+                file_state.mark_modified("Scenario World restore")
             worlds = self._worlds[request_id]
             del worlds[ticket.destination.scene_id]
             if not worlds:

@@ -15,7 +15,7 @@ from bpy.props import EnumProperty, StringProperty
 from ..core.api.errors import ScenarioError
 from ..core.jobs.upload_store import UploadState
 from ..core.schema.forms import is_file_field
-from . import reference_form, runtime, workflow_controls, workflow_references
+from . import file_state, reference_form, runtime, workflow_controls, workflow_references
 
 _MARKER = workflow_controls.UPLOAD_MARKER
 _REQUEST = workflow_controls.UPLOAD_REQUEST
@@ -236,6 +236,7 @@ def release_canceled(owner, record):
     if record is None or record.state != UploadState.CANCELED:
         return
     request_id = record.intent.request_id
+    released = False
     for scene in tuple(bpy.data.scenes):
         for item in scene.scenario_workflow.inputs:
             token = item.get(_MARKER)
@@ -254,6 +255,10 @@ def release_canceled(owner, record):
             _drop_binding(owner, scene, item.name, token)
             owner.form_errors.append(_NOTHING_SENT[UploadState.CANCELED])
             _remember(owner, scene, item, _NOTHING_SENT[UploadState.CANCELED])
+            released = True
+    if released:
+        # Neither the native recovery operator nor its tool declares Undo.
+        file_state.mark_modified("Scenario workflow upload")
 
 
 def stop_waiting(scene, name, token):
@@ -477,6 +482,8 @@ def _deliver_binding(owner, token, binding):
         return
     del item[_MARKER]
     binding.attached = True
+    # Delivered by maintenance, after the upload operator has returned.
+    file_state.mark_modified("Scenario workflow upload")
 
 
 @dataclass(frozen=True, eq=False)

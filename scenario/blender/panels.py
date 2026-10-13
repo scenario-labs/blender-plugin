@@ -290,7 +290,8 @@ def generate_button_text(lane_state):
         return "Offline"
     if not runtime.credentials().valid:
         return "Set up credentials"
-    if lane_state.estimate_state == "READY":
+    if lane_state.estimate_state == "READY" or generation.repeat_label(lane_state):
+        # An unchanged form keeps its last price while it waits to offer Generate again.
         prefix = "from " if lane_state.estimate_partial else ""
         return f"Generate  ({prefix}{format_cu(lane_state.estimate_cu)} CU)"
     if lane_state.estimate_state == "PENDING":
@@ -303,7 +304,12 @@ def generate_enabled(lane_state, lane):
     if not runtime.online() or not runtime.credentials().valid or not lane_state.model_id:
         return False
     ticket = runtime.state.estimates.get(lane_state.estimate_key)
-    return lane_state.estimate_state == "READY" and ticket is not None and ticket.lane == lane
+    return (
+        lane_state.estimate_state == "READY"
+        and ticket is not None
+        and ticket.lane == lane
+        and not generation.repeat_holding(lane_state)
+    )
 
 
 def form_takes_prompt(lane_state, lane):

@@ -91,6 +91,8 @@ def _process():
             if lane != visible:
                 continue  # only the visible lane is priced; the others are quoted when shown
             lane_state = scene.scenario.lane_state(lane)
+            if generation.rearm_repeat(scene, lane, lane_state, now):
+                changed = True
             if (
                 lane_state.estimate_state == "PENDING"
                 and lane_state.estimate_dirty_at
@@ -104,6 +106,7 @@ def _process():
                 elif runtime.credentials().valid and runtime.online():
                     lane_state.estimate_dirty_at = 0.0
                     generation.request_estimate(scene, lane)
+                    generation.note_repeat_quote(scene, lane, lane_state)
                     changed = True
     if _jobs_changed():
         changed = True

@@ -51,6 +51,8 @@ class RuntimeState:
         self.review_previews = None
         self.model_previews = {}
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
+        # (scene session_uid, lane) -> generation.Repeat after Generate; see generation.repeat_*.
+        self.repeats = {}
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
         self.model_errors = {}  # model_id -> sanitized lane error of its last failed detail read

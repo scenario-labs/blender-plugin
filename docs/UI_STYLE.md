@@ -61,6 +61,7 @@ Every section header carries an icon so the panel reads as a stack of peers: `Mo
 ## Buttons
 
 - The **Generate** button is the one primary action: `row.scale_y = 1.5`, icon `PLAY`, and it always shows the live price (`Generate (15 CU)` / `Generate (from N CU)` / `Generate (estimating...)`).
+- After Generate, an unchanged form keeps showing its price, and Generate stays disabled until Scenario has confirmed the job and `generation.REPEAT_DELAY` (2 s) has passed. Meanwhile it fetches a fresh free quote, because each send consumes its own; a different price replaces the old one before Generate re-enables. Any edit prices the form normally instead.
 - Icon-only buttons keep Blender's fixed size; a button that must fill a row carries a short label (Blender never stretches an icon-only button). The three prompt tools are `New`, `Rewrite`, `Translate`.
 - Destructive actions (`Delete`, `Clear path`) ask for confirmation (`invoke_confirm`).
 

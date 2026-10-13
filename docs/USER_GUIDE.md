@@ -760,6 +760,7 @@ save the file yourself.
 Prices are in Creative Units (CU) and depend on the model, settings and references.
 
 - **Generate (N CU)** is the price of the form as it stands.
+- After you generate, the button keeps its price and comes back a moment later, once Scenario confirms the job. Change anything to price a different request.
 - **from N CU** means the final price may be higher: some references aren't uploaded yet, or a workflow loops or can't be checked for loops.
 - **Price shown after the upload** means a required mesh or capture is still missing.
 - Prompt helpers and Blockout designs are paid separately.

@@ -1204,6 +1204,80 @@ def process_model_jobs():
                 pass  # A removed scene cannot receive its old quote.
 
 
+# After Generate, an unchanged form keeps its price and re-enables once Scenario has
+# confirmed the job and at least this long has passed, so a double click cannot send
+# twice. Each send still needs its own free, single-use server quote.
+REPEAT_DELAY = 2.0
+
+
+@dataclass
+class Repeat:
+    """One form waiting to offer Generate again; in memory on the main thread only."""
+
+    request_id: str
+    not_before: float
+    key: str = ""  # the fresh quote's estimate_key once it is requested
+
+
+def _repeat(lane_state):
+    """The form's pending repeat, or None once an edit made it another request."""
+    try:
+        key = (lane_state.id_data.session_uid, props.lane_of(lane_state))
+    except (AttributeError, ReferenceError):
+        return None
+    entry = runtime.state.repeats.get(key)
+    if entry is None:
+        return None
+    if entry.key:
+        return entry if lane_state.estimate_key == entry.key else None
+    return entry if lane_state.estimate_state == "IDLE" else None
+
+
+def repeat_label(lane_state):
+    """Generate keeps the last price while the unchanged form waits; read-only for drawing."""
+    entry = _repeat(lane_state)
+    return entry is not None and lane_state.estimate_state in ("IDLE", "PENDING")
+
+
+def repeat_holding(lane_state):
+    """Generate stays disabled until the delay passed; read-only for drawing."""
+    entry = _repeat(lane_state)
+    return entry is not None and props.clock() < entry.not_before
+
+
+def rearm_repeat(scene, lane, lane_state, now):
+    """Price an unchanged form again once Scenario confirmed its last submission (pump only).
+
+    Returns True when the form changed. An edit, a removed scene or a finished repeat
+    drops the entry; the form's own state shows from then on.
+    """
+    key = (scene.session_uid, lane)
+    entry = runtime.state.repeats.get(key)
+    if entry is None:
+        return False
+    if _repeat(lane_state) is not entry:
+        del runtime.state.repeats[key]
+        return False
+    if entry.key:
+        if lane_state.estimate_state != "PENDING" and now >= entry.not_before:
+            del runtime.state.repeats[key]
+            return True
+        return False
+    jobs = runtime.state.model_jobs
+    if jobs is not None and entry.request_id in jobs.submissions:
+        return False  # still being sent: an identical quote would be refused
+    props.mark_estimate_dirty(lane_state)
+    lane_state.estimate_dirty_at = now - 1000.0  # price now; the delay gates Generate
+    return True
+
+
+def note_repeat_quote(scene, lane, lane_state):
+    """Remember which quote the pump requested for a repeating form."""
+    entry = runtime.state.repeats.get((scene.session_uid, lane))
+    if entry is not None and not entry.key and lane_state.estimate_key:
+        entry.key = lane_state.estimate_key
+
+
 def submit_generation(context, lane):
     runtime.sync_catalog_context()
     scene = context.scene
@@ -1245,6 +1319,9 @@ def submit_generation(context, lane):
     runtime.show_job_views((rec,))
     lane_state.estimate_state = "IDLE"
     lane_state.last_error = ""
+    runtime.state.repeats[(scene.session_uid, lane)] = Repeat(
+        rec.local_id, props.clock() + REPEAT_DELAY
+    )
     runtime.set_message("Generation queued; its submission is saved for recovery")
     return rec
 

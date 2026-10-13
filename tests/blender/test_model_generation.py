@@ -1771,6 +1771,80 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(jobs_module.automatic_estimates_stopped())
         self.assertEqual((self.paid, self.store.records()), ([], ()))
 
+    def pump_until_priced(self, lane="image"):
+        """Run the pump as Blender would and deliver any quote it asked for."""
+        pump = submodule("blender.pump")
+        for _ in range(5):
+            pump._process()
+            for ticket in tuple(self.runtime.state.model_previews.values()):
+                try:
+                    ticket.task.result(5)
+                except Exception:
+                    pass  # The lane state records the outcome.
+            self.runtime.sync_catalog_context()
+        return bpy.context.scene.scenario.lane_state(lane)
+
+    def repeat(self, lane="image"):
+        return self.runtime.state.repeats.get((bpy.context.scene.session_uid, lane))
+
+    def test_an_unchanged_form_offers_generate_again_after_a_short_delay(self):
+        panels = submodule("blender.panels")
+        self.ui_quote()
+        state = bpy.context.scene.scenario.lane_state("image")
+        label = panels.generate_button_text(state)
+        self.release.clear()
+        self.generation.submit_generation(bpy.context, "image")
+        # While the job is being sent, the form keeps its price and Generate stays off.
+        self.assertEqual(panels.generate_button_text(state), label)
+        self.assertFalse(panels.generate_enabled(state, "image"))
+        dry_runs = len([c for c in self.calls if c.url.params.get("dryRun") == "true"])
+        self.pump_until_priced()
+        self.assertEqual(
+            len([c for c in self.calls if c.url.params.get("dryRun") == "true"]), dry_runs
+        )
+        self.release.set()
+        self.settle()
+        state = self.pump_until_priced()
+        # Confirmed: a fresh free quote is ready, but the delay still holds Generate.
+        self.assertEqual(state.estimate_state, "READY")
+        self.assertEqual(panels.generate_button_text(state), label)
+        self.assertFalse(panels.generate_enabled(state, "image"))
+        self.repeat().not_before = 0.0
+        self.pump_until_priced()
+        self.assertIsNone(self.repeat())
+        self.assertTrue(panels.generate_enabled(state, "image"))
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.assertEqual(len(self.paid), 2)
+
+    def test_an_edit_while_waiting_prices_the_new_form_normally(self):
+        panels = submodule("blender.panels")
+        self.ui_quote()
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        state = bpy.context.scene.scenario.lane_state("image")
+        state.prompt = "a lamp"  # another request now
+        self.assertEqual(panels.generate_button_text(state), "Generate  (estimating...)")
+        state.estimate_dirty_at = submodule("blender.props").clock() - 10  # past the debounce
+        state = self.pump_until_priced()
+        self.assertIsNone(self.repeat())
+        self.assertEqual(state.estimate_state, "READY")
+        self.assertTrue(panels.generate_enabled(state, "image"))
+
+    def test_a_lost_submission_offers_no_repeat_and_names_the_earlier_request(self):
+        panels = submodule("blender.panels")
+        self.lose_response = True
+        self.ui_quote()
+        record = self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.lose_response = False
+        self.repeat().not_before = 0.0
+        state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "ERROR")
+        self.assertIn(record.local_id[:8], state.estimate_error)
+        self.assertFalse(panels.generate_enabled(state, "image"))
+        self.assertEqual(len(self.paid), 1)
+
     def test_shared_wait_does_not_block_main_thread_result_delivery(self):
         self.result_fixture()
         result = self.mcp_submit(self.mcp_quote())

@@ -9,31 +9,39 @@ passed the canonical native tests.
 ## Selected source
 
 Select Studio commit
-[`e2b0277064f0c502d46524fba1d006d0ac83f846`](https://github.com/edemaistre/scenario-blender-studio/commit/e2b0277064f0c502d46524fba1d006d0ac83f846),
-whose extension manifest declares **0.1.5**. Source inspection compares it with
-canonical commit
-[`3265dd5`](https://github.com/scenario-labs/blender-plugin/commit/3265dd5).
+[`204c847ad6f999e1050070a35e58af666b28ff9c`](https://github.com/edemaistre/scenario-blender-studio/tree/204c847ad6f999e1050070a35e58af666b28ff9c),
+tag `v0.2.0`, whose extension manifest declares **0.2.0**. On 2026-10-13 it was
+the upstream `main` with no later push. The source repository is public.
+Upstream paths below refer to this exact revision, not a moving branch.
 
-The selected commit is ten commits after the previously inspected Studio
-`bfeac2873f3a3cb9e2bef1fdf97a14431ce4c65f`. Those commits change documentation,
-website assets and validation evidence. The runtime, tests, packaging script
-and third-party notice file are unchanged. In both revisions the Git tree IDs are:
+It is one squashed commit after the 0.1.5 revision
+[`e2b0277064f0c502d46524fba1d006d0ac83f846`](https://github.com/edemaistre/scenario-blender-studio/commit/e2b0277064f0c502d46524fba1d006d0ac83f846)
+that the capability decisions below were first made against. It adds 43 modules
+under `src/scenario_studio/` and changes 23 more, including a second local MCP
+server (`bridge/`) and a second native N-panel registration (`sidebar/`). It
+removes the demos, distribution ZIPs, reports and website. The bundled
+`resources/`, the package `LICENSE.txt` and `THIRD_PARTY_NOTICES.md` are
+byte-identical to 0.1.5. Every module the table names exists at both revisions.
+The 0.2.0 differences and their owners are summarized in
+[Studio 0.2.0 additions](#studio-020-additions).
 
-| Source path | Git tree ID |
-| --- | --- |
-| `src/scenario_studio` | `e9db0dc9f820a3e52eda07a7aaea0b7d8171efa1` |
-| `tests` | `5d7f983ca4c0316189df5609fc6b5ea45f0e5318` |
+| Source path | 0.1.5 Git tree ID | 0.2.0 Git tree ID |
+| --- | --- | --- |
+| `src/scenario_studio` | `e9db0dc9f820a3e52eda07a7aaea0b7d8171efa1` | `a2aa89b773972e7d9470eca572fa4cb86c7e1275` |
+| `tests` | `5d7f983ca4c0316189df5609fc6b5ea45f0e5318` | `59fe4b46a0b70082cbf1418ffcf1be6ed0b14d23` |
+| `src/scenario_studio/resources` | `507b4863cd5f5ea51360cb06c8566794b52bfa92` | unchanged |
 
-Reproduce that comparison in a Studio checkout:
+Reproduce these identities in a Studio checkout:
 
 ```sh
-git diff --exit-code bfeac2873f3a3cb9e2bef1fdf97a14431ce4c65f e2b0277064f0c502d46524fba1d006d0ac83f846 -- src tests scripts/package_plugin.py THIRD_PARTY_NOTICES.md
-git rev-parse e2b0277064f0c502d46524fba1d006d0ac83f846:src/scenario_studio
-git rev-parse e2b0277064f0c502d46524fba1d006d0ac83f846:tests
+git rev-parse 'v0.2.0^{commit}'
+git rev-parse 204c847ad6f999e1050070a35e58af666b28ff9c:src/scenario_studio
+git rev-parse 204c847ad6f999e1050070a35e58af666b28ff9c:tests
+git diff --exit-code e2b0277064f0c502d46524fba1d006d0ac83f846 204c847ad6f999e1050070a35e58af666b28ff9c -- src/scenario_studio/resources src/scenario_studio/LICENSE.txt THIRD_PARTY_NOTICES.md
 ```
 
-Upstream paths below refer to this exact revision, not a moving branch. The
-source repository requires access; the provenance links do not grant it.
+Adaptations already merged keep the revision they came from: the sections below
+that name `e2b0277064f0c502d46524fba1d006d0ac83f846` record 0.1.5 provenance.
 
 ## One package and build
 
@@ -47,14 +55,15 @@ a second runtime or carry its registration alongside the canonical registration.
 Keep [tools/build.py](../tools/build.py), [tools/install.py](../tools/install.py)
 and [tools/test_blender.py](../tools/test_blender.py) as the build/install/native
 test path, exposed through [Makefile](../Makefile). Extend these for SDK wheels
-and notices. Do not adopt Studio's `scripts/package_plugin.py`, distribution
-ZIPs or independent release/version tooling.
+and notices. Do not adopt Studio's `Makefile`, `scripts/ci.sh`, `scripts/package.sh`,
+`scripts/package_plugin.py`, manifest `[build]` table, distribution ZIPs or
+independent release/version tooling.
 
-The canonical release baseline remains 0.9.9 at the inspected commit. Follow
+The canonical release baseline is 0.10.0, published on 2026-10-13. Follow
 [release-please-config.json](../release-please-config.json) and
 [.release-please-manifest.json](../.release-please-manifest.json): release-please
 updates the manifest and `scenario/__init__.py` together. Do not import Studio's
-0.1.5 package version or its unrelated 0.1.0 tooling metadata. Releases retain
+0.2.0 package version, its `version.py` or its tooling metadata. Releases retain
 `blender-plugin-vX.Y.Z` tags and `scenario-X.Y.Z.zip` files. No version bump or
 release is part of source selection.
 
@@ -67,7 +76,8 @@ consolidated baseline; the named issue or roadmap item owns the follow-up.
 Owners below are implementation issues, not assumed individual assignees.
 
 Canonical paths are relative to the repository root. Studio module names are
-relative to `src/scenario_studio/` at the selected revision.
+relative to `src/scenario_studio/`. The decisions were made against 0.1.5 and
+reconciled with 0.2.0 on 2026-10-13; see [Studio 0.2.0 additions](#studio-020-additions).
 
 | Capability | Decision and source | Owner and acceptance boundary |
 | --- | --- | --- |
@@ -102,6 +112,34 @@ G-items refer to [roadmap#674](https://github.com/scenario-labs/roadmap/issues/6
 The inventory preserves existing capabilities without declaring the broader
 G-items complete.
 
+## Studio 0.2.0 additions
+
+The 2026-10-13 source review of 0.2.0 against canonical `main` at
+`34ce22e8a4b037312334d98fbec6641da45a9a45` classified its new capabilities as
+follows. Upstream test counts, headless checks and its paid run used Studio's own
+package and remote-MCP client; they are not canonical evidence. Nothing listed
+here is imported. The decisions in the table above still apply where they overlap.
+
+| 0.2.0 capability | Decision | Owner |
+| --- | --- | --- |
+| Agent bridge (`bridge/`): loopback Streamable HTTP, token, typed tools, main-thread queue | Keep the canonical local server, which is already stricter on Origin, tokens, captures and errors. Do not ship a second server. Adapt its `Host` check, idle timeout and own-output file policy. | #65, #448 |
+| Agent spending: off by default, per-job and per-session CU limits, reserve/settle ledger | Adapt as a scoped, exact-decimal switch and ledger that covers every paid MCP tool | #447 |
+| Bridge scene binding, action log, guarded `undo_last`, form prefill for the user to submit | Adapt binding, log and prefill. Do not port `undo_last` as is: its scene hash misses mesh data, modifiers and keys. | #65 (roadmap#674 G19) |
+| Native sidebar (`sidebar/`) | Already covered by the canonical panels and shared runtime. Do not add a second registration. | #66 |
+| Text editing and key policy: word-grouped undo, shortcuts while typing, unfocused key blocking | Adapt undo and the typing pass-through set; decide the unfocused policy | #66 |
+| Read retries, poll backoff, control and transfer lanes, resumable downloads | Adapt through SDK per-request retries and the shared transfer policy. Paid and mutating calls stay at zero retries. | #451, #453 |
+| Unclear-submission block for the same request; estimate that returns a job | Adapt per credential scope | #452 |
+| No-spend switch for QA runs | Adapt at the shared spend boundary | #65 |
+| macOS Keychain secret, team/project picker, usage display, paste-key onboarding | Adapt with explicit selection and no inferred project; check the usage contract first | #67, roadmap#674 G08 |
+| Library kind filters, newest-first order, thumbnails, job-card time and charged CU | Adapt through SDK filters and the preview lane | #66 |
+| Redacted diagnostics export | Adapt with the allowlisted failure text, not regex redaction | #456 |
+| Camera takes and "Back to my camera" | Adapt; first scope the shot camera per scene | #454, #64 |
+| One render service with Blender's built-in H.264, progress and engine choice | Adapt in place of external ffmpeg for local capture | #64 |
+| Asset slots, revisions and refit; appearance states | Defer until blockout replacement and a product decision; appearance states conflict with ownership checks | roadmap#674 G15, #64 |
+| PBR options (DirectX normals, UV repeat, metalness override) | Adapt as explicit choices, never filename inference | #64 |
+| Film hardening: prepare-only arming, ledger, scoped client, model adapter, recipe identity | Already covered by the shared job store and Film task bindings. Adapt the model-neutral duration rule, the recipe canvas size and the 0.2.0 recipe keys; keep text verbatim. | #64, #455 |
+| Live findings: F12 renders the sequencer after media insertion; PATINA smoothness semantics | Both also apply to canonical | #449, #450 |
+
 ## Source intake and provenance
 
 The selected source history attributes runtime/test commits to **Emmanuel de
@@ -121,14 +159,27 @@ Use a reviewed file allowlist, rather than copying the repository wholesale:
   when source moves.
 - Fonts require `resources/Poppins-OFL.txt`; Tabler SVG icons require
   `resources/Tabler-LICENSE.txt`. Carry their notices into the ZIP alongside used
-  resources and record them in the canonical third-party notices. Review
-  `resources/icons.json` references when pruning unused icons.
+  resources and record their provenance under #24; the repository has no
+  separate third-party notices file. Review `resources/icons.json` references
+  when pruning unused icons. No new bundled asset arrived in 0.2.0.
 - Audit bundled `resources/models.json` and `resources/schemas.json` before use:
   retain only appropriate public metadata or synthetic offline fixtures, with
   schema refresh behavior. Review preview PNG provenance before including them.
 - Exclude upstream `demo/`, `dist/`, `reports/`, `docs/validation/`, website media,
   account-specific exports, historical instruction files, dependency files and
   release workflows. Rewrite public user guidance against the adopted behavior.
+- Also exclude, from 0.2.0: `llms.txt`; `BUGS.md`, `ROADMAP.md` and `CHANGELOG.md`,
+  which carry spend figures and a live job identifier (triage them into issues
+  instead); `docs/Agent Bridge.md` and `docs/Architecture.md` (rewrite against
+  adopted behavior); and `scripts/live_*` and `scripts/gui_qa_*` (ideas only: they
+  record a job identifier, assume macOS paths and read a stored credential file).
+  The `scripts/test_blender_*.py` checks load the source tree, not the packaged
+  ZIP; adapt them only as test contracts.
+- 0.2.0 arrives as one squashed commit, so its provenance is that commit:
+  record `204c847ad6f999e1050070a35e58af666b28ff9c` and the source path, and keep
+  its author and existing co-author trailer. Its Python files carry no SPDX
+  headers; adapted files take the canonical headers plus the attribution note
+  that existing adaptations use.
 - Normalize retained/imported Python in a separate mechanical change under #28
   before functional edits. Record its final squash SHA in
   `.git-blame-ignore-revs` only after merge. Enable full-tree lint when the
@@ -182,7 +233,7 @@ remain separate; this does not complete the media capability inventory.
 
 ## Adopted Film planning contracts
 
-The selected source's pure Film recipe and scene-plan helpers and their tests are
+The 0.1.5 source's pure Film recipe and scene-plan helpers and their tests are
 now relocated into `scenario/core/scene/film_plan.py` and `film_scene_plan.py`.
 Source intake and mechanical normalization remain separate commits with the
 original author preserved. The API-key adaptation makes recipe project selection

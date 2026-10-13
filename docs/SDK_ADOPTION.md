@@ -983,15 +983,15 @@ not automatically adopted by upgrading the bundle.
 ### Studio source
 
 The selected Studio candidate is
-[`e2b0277064f0c502d46524fba1d006d0ac83f846`](https://github.com/edemaistre/scenario-blender-studio/commit/e2b0277064f0c502d46524fba1d006d0ac83f846),
-version 0.1.5. Its runtime and test trees are unchanged from the previously
-inspected `bfeac2873f3a3cb9e2bef1fdf97a14431ce4c65f`; later commits add documentation
-and validation media. See [the source and capability inventory](STUDIO_ADOPTION.md)
+[`204c847ad6f999e1050070a35e58af666b28ff9c`](https://github.com/edemaistre/scenario-blender-studio/tree/204c847ad6f999e1050070a35e58af666b28ff9c),
+version 0.2.0, one squashed commit after the 0.1.5 revision the capability
+decisions were first made against. See [the source and capability inventory](STUDIO_ADOPTION.md)
 for tree identities, retained/replaced/deferred capabilities, ownership and intake
-boundaries. Version 0.1.5 adds generation progress and automatic asset previews to 0.1.4.
-Its `src/scenario_studio/client.py` still uses a custom remote-MCP client, including
-project discovery and a public-workflow HTTP path. Importing it unchanged would
-not satisfy the SDK-first contract.
+boundaries. Its `src/scenario_studio/client.py` still uses a custom remote-MCP
+client, now with usage, recommendation and bulk asset reads, and keeps a raw
+public-workflow HTTP path and a direct thumbnail download. Its read retries and
+download resume map to SDK per-request retries and the shared transfer policy,
+not to that client. Importing it unchanged would not satisfy the SDK-first contract.
 
 Before the adopted extension is accepted:
 

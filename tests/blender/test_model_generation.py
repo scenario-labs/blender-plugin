@@ -1809,6 +1809,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(state.estimate_state, "READY")
         self.assertEqual(panels.generate_button_text(state), label)
         self.assertFalse(panels.generate_enabled(state, "image"))
+        # Every path into Generate honours the hold, not only the drawn button.
+        with self.assertRaisesRegex(self.request_error, "available again in a moment"):
+            self.generation.submit_generation(bpy.context, "image")
         self.repeat().not_before = 0.0
         self.pump_until_priced()
         self.assertIsNone(self.repeat())
@@ -1816,6 +1819,40 @@ class ModelGenerationTests(unittest.TestCase):
         self.generation.submit_generation(bpy.context, "image")
         self.settle()
         self.assertEqual(len(self.paid), 2)
+
+    def test_a_repeat_ends_with_its_scope_its_scene_or_stopped_pricing(self):
+        self.ui_quote()
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.generation.clear_catalog()  # credentials or project changed
+        self.assertIsNone(self.repeat())
+        record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([record], [record])  # the new scope's catalog
+        repeats = self.runtime.state.repeats
+        repeats[(-1, "image")] = self.generation.Repeat("gone", 0.0)  # a removed scene
+        self.pump_until_priced()
+        self.assertNotIn((-1, "image"), repeats)
+        self.addCleanup(submodule("core.api.sdk_adapter").ESTIMATE_STARTED_JOB.clear)
+        self.ui_quote()
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        submodule("core.api.sdk_adapter").ESTIMATE_STARTED_JOB.set()
+        state = self.pump_until_priced()
+        # With automatic prices stopped, the form just stays idle: no error after a send.
+        self.assertIsNone(self.repeat())
+        self.assertEqual((state.estimate_state, state.estimate_error), ("IDLE", ""))
+
+    def test_an_offline_moment_keeps_the_repeat_waiting(self):
+        self.ui_quote()
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        with online_access(False):
+            state = self.pump_until_priced()
+            self.assertIsNotNone(self.repeat())
+            self.assertEqual(state.estimate_state, "IDLE")
+        state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY")
+        self.assertFalse(submodule("blender.panels").generate_enabled(state, "image"))
 
     def test_an_edit_while_waiting_prices_the_new_form_normally(self):
         panels = submodule("blender.panels")

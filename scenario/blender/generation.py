@@ -114,6 +114,7 @@ def clear_catalog():
     _pending_dirty_models.clear()
     runtime.state.estimates.clear()
     runtime.state.estimate_origins.clear()
+    runtime.state.repeats.clear()  # a repeat belongs to the retired scope's price
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -1263,12 +1264,25 @@ def rearm_repeat(scene, lane, lane_state, now):
             del runtime.state.repeats[key]
             return True
         return False
+    if model_jobs.automatic_estimates_stopped():
+        del runtime.state.repeats[key]  # no automatic prices this session; the form stays idle
+        return False
     jobs = runtime.state.model_jobs
     if jobs is not None and entry.request_id in jobs.submissions:
         return False  # still being sent: an identical quote would be refused
+    if not (runtime.credentials().valid and runtime.online()):
+        return False  # keep holding until a fresh quote can actually be requested
     props.mark_estimate_dirty(lane_state)
     lane_state.estimate_dirty_at = now - 1000.0  # price now; the delay gates Generate
     return True
+
+
+def prune_repeats():
+    """Forget repeats of scenes that no longer exist (pump only)."""
+    if runtime.state.repeats:
+        live = {scene.session_uid for scene in bpy.data.scenes}
+        for key in [key for key in runtime.state.repeats if key[0] not in live]:
+            del runtime.state.repeats[key]
 
 
 def note_repeat_quote(scene, lane, lane_state):
@@ -1290,6 +1304,8 @@ def submit_generation(context, lane):
     ticket = runtime.state.estimates.get(lane_state.estimate_key)
     if lane_state.estimate_state != "READY" or ticket is None:
         raise ScenarioError(0, "Wait for a fresh price before generating")
+    if repeat_holding(lane_state):
+        raise ScenarioError(0, "Generate is available again in a moment")
     # A rejected attempt can consume the handle before storage reports an
     # error. Never keep that price actionable or automatically reprice it.
     lane_state.estimate_state = "IDLE"

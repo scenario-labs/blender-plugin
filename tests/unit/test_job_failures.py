@@ -142,6 +142,42 @@ def test_ordinary_words_and_the_support_id_survive_cleaning():
     assert failures.reason(failed_job(text)) == text
 
 
+@pytest.mark.parametrize(
+    "value",
+    [
+        "error_abcDEF123",
+        '"error_abcDEF123"',
+        "'error_abcDEF123'",
+        "error_abcDEF123.",
+        '"error_abcDEF123").',
+    ],
+)
+def test_a_genuine_support_id_after_a_credential_name_is_kept_as_written(value):
+    for name in ("token=", "token: ", "API_KEY="):
+        text = f"Quote {name}{value} to support"
+        assert failures.reason(failed_job(text)) == text
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "ERROR_realSecretToken123",
+        "Error_realSecretToken123",
+        "error_realsecrettoken",  # lowercase only: not a support id
+        "error_ab1",  # too short
+        "error_realSecret-Token123",
+        "tok.error_realSecretToken123.x",  # an id-shaped part of a secret is not appended
+        '"ERROR_realSecretToken123"',
+        "error_" + "A" * 65,  # too long
+    ],
+)
+def test_values_that_only_look_like_a_support_id_are_redacted(value):
+    cleaned = failures.reason(failed_job(f"Rejected api_key={value} now"))
+    assert cleaned.startswith(f"Rejected api_key={failures.REDACTED}")
+    assert "realSecret" not in cleaned and "realsecret" not in cleaned
+    assert "AAAAAAAA" not in cleaned
+
+
 def test_long_reasons_are_bounded_and_keep_the_support_id():
     head = "The provider rejected the request. " * 40
     cleaned = failures.reason(failed_job(head + INTERNAL))

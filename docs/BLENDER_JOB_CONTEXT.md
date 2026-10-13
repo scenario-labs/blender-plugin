@@ -1008,9 +1008,12 @@ scheme, host and path without credentials, query or fragment; a query left on a
 link without a scheme, data URIs, bearer and basic credentials, JSON web tokens
 and values after credential names read `[redacted]` or are removed; and the
 result is cut to 400 characters with an ellipsis. A support error id
-(`error_` followed by letters and digits with a capital or digit) is always
-kept, appended when cutting or link cleaning would lose it, because support
-asks for it. Other statuses, other types and unreadable values give no reason;
+(lowercase `error_` followed by 6 to 64 letters and digits with a capital or
+digit) is always kept, because support asks for it: after a credential name
+only a value that is exactly such an id, quoted or not, stays in place, so
+`api_key=ERROR_...` and other look-alikes are redacted. The id is appended when
+cutting or link cleaning would lose it, but never taken from inside a redacted
+credential. Other statuses, other types and unreadable values give no reason;
 a failed reading drops it and logs only its error type.
 
 Each maintenance poll sets a `failed` view's error to that reason while the

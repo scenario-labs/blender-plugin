@@ -15,10 +15,13 @@ format and line characters become single spaces. Links keep their scheme, host
 and path but lose credentials, query and fragment, and a query string left on
 a link without a scheme is dropped. Data URIs, bearer and basic credentials,
 JSON web tokens and values after credential names (`password:`, `api_key=`,
-`token=` and similar) are replaced. The result is bounded to MAX_LENGTH, and a
-support error id (`error_` followed by letters and digits) is always kept,
-because support needs it. Like remote progress, a reason is bound to the record
-that produced it, kept in memory by its owner and never persisted.
+`token=` and similar) are replaced; a value after a credential name that is
+exactly a support id, quoted or not, is kept. The result is bounded to
+MAX_LENGTH, and a support error id (`error_` followed by letters and digits) is
+always kept, appended when cutting or link cleaning would lose it, because
+support needs it. Text inside a redacted credential is never appended back.
+Like remote progress, a reason is bound to the record that produced it, kept
+in memory by its owner and never persisted.
 """
 
 import re
@@ -31,7 +34,7 @@ from .store import JobState
 # The documented `Job.metadata` strings, in display order.
 FIELDS = ("error", "hint")
 MAX_LENGTH = 400
-# Only this much of each value is cleaned; the support id is searched in all of it.
+# Only this much of each value is read, for its text and for its support id.
 MAX_INPUT = 4096
 REDACTED = "[redacted]"
 LINK_REMOVED = "[link removed]"
@@ -51,8 +54,7 @@ _NAMED_CREDENTIAL = re.compile(
     r"(?:x-)?(?:api[_-]?key|api[_-]?secret|client[_-]?secret|secret|access[_-]?token|"
     r"refresh[_-]?token|token|password|passwd|authorization|signature|credentials?|cookie|"
     r"session[_-]?id))"
-    # A support id after a credential name is still the support id.
-    r"(\s*[:=]\s*)(?!error_)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+    r"(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
 )
 # Scenario-style identifier: `error_` and letters and digits with at least one
 # capital or digit, so words such as error_code are not mistaken for one.
@@ -102,20 +104,52 @@ def _drop_query(match):
     return _split_trailing(match.group(0))[1]
 
 
+def _named_credential(match):
+    """Redact a value after a credential name unless it is exactly a support id.
+
+    The id may be quoted or followed by punctuation; anything else shaped like
+    one (another case, length or character) is redacted like any value.
+    """
+    value = match.group(3)
+    if len(value) > 1 and value[0] in "\"'" and value[-1] == value[0]:
+        value = value[1:-1]
+    if _SUPPORT_ID.fullmatch(_split_trailing(value)[0]):
+        return match.group(0)
+    return match.group(1) + match.group(2) + REDACTED
+
+
+def _visible(value):
+    """The first MAX_INPUT characters, with hidden and line characters as spaces."""
+    return "".join(
+        " " if unicodedata.category(char) in _HIDDEN else char for char in value[:MAX_INPUT]
+    )
+
+
+def _redact_credentials(text):
+    text = _SCHEME_CREDENTIAL.sub(lambda match: f"{match.group(1)} {REDACTED}", text)
+    text = _JWT.sub(REDACTED, text)
+    return _NAMED_CREDENTIAL.sub(_named_credential, text)
+
+
 def clean(value):
     """One service string as safe single-line text, unbounded; "" for anything else."""
     if not isinstance(value, str):
         return ""
-    text = "".join(
-        " " if unicodedata.category(char) in _HIDDEN else char for char in value[:MAX_INPUT]
-    )
-    text = _LINK.sub(_link, text)
+    text = _LINK.sub(_link, _visible(value))
     text = _DATA.sub(DATA_REMOVED, text)
     text = _QUERY.sub(_drop_query, text)
-    text = _SCHEME_CREDENTIAL.sub(lambda match: f"{match.group(1)} {REDACTED}", text)
-    text = _JWT.sub(REDACTED, text)
-    text = _NAMED_CREDENTIAL.sub(lambda match: match.group(1) + match.group(2) + REDACTED, text)
-    return _SPACES.sub(" ", text).strip()
+    return _SPACES.sub(" ", _redact_credentials(text)).strip()
+
+
+def _kept_support_id(value):
+    """The support id to keep from one service string, or None.
+
+    Links stay in place, so an id in a query string that cleaning drops is
+    still found; an id-shaped part of a redacted credential or data URI is not.
+    """
+    if not isinstance(value, str):
+        return None
+    return support_id(_redact_credentials(_DATA.sub(DATA_REMOVED, _visible(value))))
 
 
 def _bound(text, support):
@@ -153,7 +187,7 @@ def reason(response):
         return None
     if len(parts) > 1 and parts[0][-1] not in ".!?":
         parts[0] += "."
-    support = next((found for found in map(support_id, values) if found), None)
+    support = next((found for found in map(_kept_support_id, values) if found), None)
     return _bound(" ".join(parts), support)
 
 

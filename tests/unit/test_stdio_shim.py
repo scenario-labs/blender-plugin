@@ -20,7 +20,9 @@ class _Stub(http.server.BaseHTTPRequestHandler):
             self.send_response(401)
             self.end_headers()
             return
-        payload = json.dumps({"jsonrpc": "2.0", "id": body.get("id"), "result": {"echo": body.get("method")}}).encode()
+        payload = json.dumps(
+            {"jsonrpc": "2.0", "id": body.get("id"), "result": {"echo": body.get("method")}}
+        ).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(payload)))
@@ -34,11 +36,15 @@ def test_shim_round_trips_requests_and_skips_notifications():
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}/mcp"
     try:
-        proc = subprocess.run([sys.executable, str(SHIM), "--url", url, "--token", "secret"],
-                              input='{"jsonrpc":"2.0","id":1,"method":"ping"}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n',
-                              capture_output=True, text=True, timeout=20)
-        lines = [json.loads(l) for l in proc.stdout.strip().splitlines()]
-        assert [l["id"] for l in lines] == [1, 2]
+        proc = subprocess.run(
+            [sys.executable, str(SHIM), "--url", url, "--token", "secret"],
+            input='{"jsonrpc":"2.0","id":1,"method":"ping"}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n',
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        lines = [json.loads(line) for line in proc.stdout.strip().splitlines()]
+        assert [message["id"] for message in lines] == [1, 2]
         assert lines[1]["result"] == {"echo": "tools/list"}
         assert proc.returncode == 0
     finally:

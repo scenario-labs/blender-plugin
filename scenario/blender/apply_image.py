@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bring image results into Blender: datablocks, Image Editor window, textures, planes."""
+
 import logging
 import pathlib
 
@@ -35,7 +36,7 @@ def show_in_image_editor(image):
     wm = bpy.context.window_manager
     for window in wm.windows:
         for area in window.screen.areas:
-            if area.type == 'IMAGE_EDITOR':
+            if area.type == "IMAGE_EDITOR":
                 area.spaces.active.image = image
                 _fit_view(window, area)
                 area.tag_redraw()
@@ -44,11 +45,13 @@ def show_in_image_editor(image):
         return False
     window = wm.windows[0]
     try:
-        with bpy.context.temp_override(window=window, screen=window.screen, area=window.screen.areas[0]):
+        with bpy.context.temp_override(
+            window=window, screen=window.screen, area=window.screen.areas[0]
+        ):
             bpy.ops.wm.window_new()
         new_window = wm.windows[-1]
         area = new_window.screen.areas[0]
-        area.type = 'IMAGE_EDITOR'
+        area.type = "IMAGE_EDITOR"
         area.spaces.active.image = image
         _fit_view(new_window, area)
         return True
@@ -59,13 +62,15 @@ def show_in_image_editor(image):
 
 def _fit_view(window, area):
     """Show the whole image (the editor keeps the previous zoom, which crops a portrait image to a square)."""
-    region = next((r for r in area.regions if r.type == 'WINDOW'), None)
+    region = next((r for r in area.regions if r.type == "WINDOW"), None)
     if region is None:
         return
 
     def _fit():
         try:
-            with bpy.context.temp_override(window=window, screen=window.screen, area=area, region=region):
+            with bpy.context.temp_override(
+                window=window, screen=window.screen, area=area, region=region
+            ):
                 bpy.ops.image.view_all(fit_view=True)
         except (RuntimeError, TypeError) as err:
             log.debug("view_all failed: %s", err)
@@ -73,16 +78,22 @@ def _fit_view(window, area):
 
     _fit()
     if not bpy.app.background:
-        bpy.app.timers.register(_fit, first_interval=0.05)  # a fresh window has no size yet on its first draw
+        bpy.app.timers.register(
+            _fit, first_interval=0.05
+        )  # a fresh window has no size yet on its first draw
 
 
 def material_with_image(name, image):
     mat = bpy.data.materials.new(name)
     tree = _ensure_nodes(mat)
     nodes, links = tree.nodes, tree.links
-    bsdf = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None) or nodes.new("ShaderNodeBsdfPrincipled")
-    output = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None) or nodes.new("ShaderNodeOutputMaterial")
-    if not any(l.to_node is output for l in links):
+    bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None) or nodes.new(
+        "ShaderNodeBsdfPrincipled"
+    )
+    output = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None) or nodes.new(
+        "ShaderNodeOutputMaterial"
+    )
+    if not any(link.to_node is output for link in links):
         links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
     tex = nodes.new("ShaderNodeTexImage")
     tex.image = image
@@ -127,14 +138,16 @@ def on_image_result(rec):
         names.append(image.name)
         if index == 0:
             show_in_image_editor(image)
-    runtime.set_message(f"{len(names)} image(s) ready from {rec.meta.get('model_name') or rec.model_id}")
+    runtime.set_message(
+        f"{len(names)} image(s) ready from {rec.meta.get('model_name') or rec.model_id}"
+    )
     return names
 
 
 def _first_region_3d(context):
     for window in context.window_manager.windows:
         for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
+            if area.type == "VIEW_3D":
                 return area.spaces.active.region_3d
     return None
 
@@ -142,7 +155,7 @@ def _first_region_3d(context):
 def _material_preview():
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:
-            if area.type == 'VIEW_3D':
+            if area.type == "VIEW_3D":
                 shading = area.spaces.active.shading
-                if shading.type == 'SOLID':
-                    shading.type = 'MATERIAL'
+                if shading.type == "SOLID":
+                    shading.type = "MATERIAL"

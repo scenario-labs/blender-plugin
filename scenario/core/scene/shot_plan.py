@@ -1,13 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Camera path planning for the Render Video lane: waypoints, frame schedules, one-click presets, a text parser. No bpy."""
+
 import math
 import re
 from dataclasses import dataclass
 
-SENSOR_WIDTH = 36.0      # mm, Blender's default camera sensor
-FILL = 0.7               # the subject fills about 70% of the frame at the preset distance
-MIN_SEGMENT_SHARE = 0.05  # a zero-length segment (two markers at the same spot) still gets 5% of the move time
+SENSOR_WIDTH = 36.0  # mm, Blender's default camera sensor
+FILL = 0.7  # the subject fills about 70% of the frame at the preset distance
+MIN_SEGMENT_SHARE = (
+    0.05  # a zero-length segment (two markers at the same spot) still gets 5% of the move time
+)
 DEFAULT_DURATION = 6.0
 DEFAULT_FOCAL = 35.0
 MIN_DURATION, MAX_DURATION = 1.0, 60.0
@@ -16,6 +19,7 @@ MIN_DURATION, MAX_DURATION = 1.0, 60.0
 @dataclass
 class Waypoint:
     """One camera pose. `rotation_euler` wins over `look_at`; with neither, the caller aims the camera."""
+
     position: tuple
     rotation_euler: tuple = None
     look_at: tuple = None
@@ -24,7 +28,7 @@ class Waypoint:
 
 
 def distance(a, b):
-    return math.sqrt(sum((float(x) - float(y)) ** 2 for x, y in zip(a, b)))
+    return math.sqrt(sum((float(x) - float(y)) ** 2 for x, y in zip(a, b, strict=False)))
 
 
 def frame_schedule(waypoints, duration, fps):
@@ -79,11 +83,12 @@ def frame_schedule(waypoints, duration, fps):
 
 # -- presets ------------------------------------------------------------------
 
+
 def _box(bbox_min, bbox_max):
     lo = tuple(float(v) for v in bbox_min)
     hi = tuple(float(v) for v in bbox_max)
-    centre = tuple((a + b) / 2.0 for a, b in zip(lo, hi))
-    extents = tuple(max(1e-3, b - a) for a, b in zip(lo, hi))
+    centre = tuple((a + b) / 2.0 for a, b in zip(lo, hi, strict=False))
+    extents = tuple(max(1e-3, b - a) for a, b in zip(lo, hi, strict=False))
     size = max(extents)
     diagonal = math.sqrt(sum(e * e for e in extents))
     return centre, size, diagonal
@@ -112,7 +117,9 @@ def _ring(centre, rx, ry, height, focal, steps=12, start=0.0, sweep=2 * math.pi,
             continue
         a = start + sweep * i / steps
         z = height + rise * (1.0 - math.cos(a)) / 2.0
-        out.append(_wp((centre[0] + rx * math.sin(a), centre[1] - ry * math.cos(a), z), centre, focal))
+        out.append(
+            _wp((centre[0] + rx * math.sin(a), centre[1] - ry * math.cos(a), z), centre, focal)
+        )
     return out
 
 
@@ -122,6 +129,7 @@ def _horizontal_radius(d, dz):
 
 
 # Orbits ---------------------------------------------------------------------
+
 
 def orbit(bbox_min, bbox_max, focal=DEFAULT_FOCAL, steps=12):
     """A full turn around the subject at a constant height, ending exactly where it started (steps + 1 waypoints)."""
@@ -160,11 +168,14 @@ def spiral_in(bbox_min, bbox_max, focal=DEFAULT_FOCAL, steps=12):
         a = 2 * math.pi * t
         r = d * (1.6 - 0.8 * t)
         z = centre[2] + size * (0.6 - 0.35 * t)
-        out.append(_wp((centre[0] + r * math.sin(a), centre[1] - r * math.cos(a), z), centre, focal))
+        out.append(
+            _wp((centre[0] + r * math.sin(a), centre[1] - r * math.cos(a), z), centre, focal)
+        )
     return out
 
 
 # Ellipses -------------------------------------------------------------------
+
 
 def ellipse_1(bbox_min, bbox_max, focal=DEFAULT_FOCAL, steps=12):
     """A wide 2:1 ellipse around the subject, twice as wide as deep, at a constant height."""
@@ -177,7 +188,9 @@ def ellipse_2(bbox_min, bbox_max, focal=DEFAULT_FOCAL, steps=12):
     """A tilted ellipse: low in front of the subject, rising over the far side, back down to the start."""
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
-    return _ring(centre, 1.3 * d, 0.9 * d, centre[2] + 0.1 * size, focal, steps=steps, rise=1.1 * size)
+    return _ring(
+        centre, 1.3 * d, 0.9 * d, centre[2] + 0.1 * size, focal, steps=steps, rise=1.1 * size
+    )
 
 
 def ellipse_3(bbox_min, bbox_max, focal=DEFAULT_FOCAL, steps=12):
@@ -189,12 +202,16 @@ def ellipse_3(bbox_min, bbox_max, focal=DEFAULT_FOCAL, steps=12):
 
 # Dolly, truck, pedestal, zoom -------------------------------------------------
 
+
 def dolly_in(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     """Straight in along the view axis, from far away up to the subject."""
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
     height = centre[2] + 0.25 * size
-    return [_wp((centre[0], centre[1] - 2.2 * d, height), centre, focal), _wp((centre[0], centre[1] - 0.8 * d, height), centre, focal)]
+    return [
+        _wp((centre[0], centre[1] - 2.2 * d, height), centre, focal),
+        _wp((centre[0], centre[1] - 0.8 * d, height), centre, focal),
+    ]
 
 
 def dolly_out(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
@@ -202,7 +219,7 @@ def dolly_out(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     return list(reversed(dolly_in(bbox_min, bbox_max, focal)))
 
 
-push_in = dolly_in    # names used by 0.6.0 scenes and the text parser
+push_in = dolly_in  # names used by 0.6.0 scenes and the text parser
 pull_back = dolly_out
 
 
@@ -248,17 +265,23 @@ def zoom_in(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
     position = (centre[0], centre[1] - 1.1 * d, centre[2] + 0.25 * size)
-    return [Waypoint(position, look_at=centre, focal=max(8.0, float(focal) / 2.0)), Waypoint(position, look_at=centre, focal=float(focal))]
+    return [
+        Waypoint(position, look_at=centre, focal=max(8.0, float(focal) / 2.0)),
+        Waypoint(position, look_at=centre, focal=float(focal)),
+    ]
 
 
 # Crane, arcs, top down --------------------------------------------------------
+
 
 def crane(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     """Low in front, rising to look down on the subject."""
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
-    return [_wp((centre[0], centre[1] - d, centre[2] - 0.2 * size), centre, focal),
-            _wp((centre[0], centre[1] - 0.9 * d, centre[2] + 1.2 * size), centre, focal)]
+    return [
+        _wp((centre[0], centre[1] - d, centre[2] - 0.2 * size), centre, focal),
+        _wp((centre[0], centre[1] - 0.9 * d, centre[2] + 1.2 * size), centre, focal),
+    ]
 
 
 def _arc(bbox_min, bbox_max, focal, direction, steps=4):
@@ -283,40 +306,67 @@ def top_down(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     """From high above the subject, descending towards it, looking down."""
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
-    return [_wp((centre[0], centre[1] - 0.15 * d, centre[2] + 2.2 * d), centre, focal),
-            _wp((centre[0], centre[1] - 0.25 * d, centre[2] + 1.4 * d), centre, focal),
-            _wp((centre[0], centre[1] - 0.35 * d, centre[2] + 0.9 * d), centre, focal)]
+    return [
+        _wp((centre[0], centre[1] - 0.15 * d, centre[2] + 2.2 * d), centre, focal),
+        _wp((centre[0], centre[1] - 0.25 * d, centre[2] + 1.4 * d), centre, focal),
+        _wp((centre[0], centre[1] - 0.35 * d, centre[2] + 0.9 * d), centre, focal),
+    ]
 
 
 # Other ----------------------------------------------------------------------
+
 
 def pan(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     """Left to right in front of the subject, wider than a truck, keeping it framed."""
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
     height = centre[2] + 0.2 * size
-    return [_wp((centre[0] - 0.9 * d, centre[1] - d, height), centre, focal),
-            _wp((centre[0], centre[1] - d, height), centre, focal),
-            _wp((centre[0] + 0.9 * d, centre[1] - d, height), centre, focal)]
+    return [
+        _wp((centre[0] - 0.9 * d, centre[1] - d, height), centre, focal),
+        _wp((centre[0], centre[1] - d, height), centre, focal),
+        _wp((centre[0] + 0.9 * d, centre[1] - d, height), centre, focal),
+    ]
 
 
 def flyover(bbox_min, bbox_max, focal=DEFAULT_FOCAL):
     """High and far, swooping down towards the subject."""
     centre, size, diagonal = _box(bbox_min, bbox_max)
     d = fit_distance(diagonal, focal)
-    return [_wp((centre[0] - 0.6 * d, centre[1] - 2.0 * d, centre[2] + 1.5 * size), centre, focal),
-            _wp((centre[0], centre[1] - 1.3 * d, centre[2] + 0.9 * size), centre, focal),
-            _wp((centre[0] + 0.3 * d, centre[1] - 0.8 * d, centre[2] + 0.4 * size), centre, focal)]
+    return [
+        _wp((centre[0] - 0.6 * d, centre[1] - 2.0 * d, centre[2] + 1.5 * size), centre, focal),
+        _wp((centre[0], centre[1] - 1.3 * d, centre[2] + 0.9 * size), centre, focal),
+        _wp((centre[0] + 0.3 * d, centre[1] - 0.8 * d, centre[2] + 0.4 * size), centre, focal),
+    ]
 
 
 PRESETS = {
     "orbit": ("Orbit", "A full turn around the subject, back to the start", orbit),
-    "orbit_high": ("Orbit high", "A full turn from above, looking down, back to the start", orbit_high),
-    "orbit_low": ("Orbit low", "A full turn from a hero angle below the centre, back to the start", orbit_low),
+    "orbit_high": (
+        "Orbit high",
+        "A full turn from above, looking down, back to the start",
+        orbit_high,
+    ),
+    "orbit_low": (
+        "Orbit low",
+        "A full turn from a hero angle below the centre, back to the start",
+        orbit_low,
+    ),
     "spiral_in": ("Spiral in", "One turn around the subject while closing in", spiral_in),
-    "ellipse_1": ("Ellipse 1", "A wide 2:1 ellipse around the subject, back to the start", ellipse_1),
-    "ellipse_2": ("Ellipse 2", "A tilted ellipse rising over the far side, back to the start", ellipse_2),
-    "ellipse_3": ("Ellipse 3", "A tight ellipse close to the subject, slow reveal of the back", ellipse_3),
+    "ellipse_1": (
+        "Ellipse 1",
+        "A wide 2:1 ellipse around the subject, back to the start",
+        ellipse_1,
+    ),
+    "ellipse_2": (
+        "Ellipse 2",
+        "A tilted ellipse rising over the far side, back to the start",
+        ellipse_2,
+    ),
+    "ellipse_3": (
+        "Ellipse 3",
+        "A tight ellipse close to the subject, slow reveal of the back",
+        ellipse_3,
+    ),
     "dolly_in": ("Dolly in", "Straight in, from far away up to the subject", dolly_in),
     "dolly_out": ("Dolly out", "Straight out, from the subject to a wide reveal", dolly_out),
     "truck_left": ("Truck left", "Lateral move to the left, subject kept in frame", truck_left),
@@ -335,7 +385,18 @@ PRESET_ALIASES = {"push_in": "dolly_in", "pull_back": "dolly_out"}
 PRESET_GROUPS = (
     ("Orbits", ("orbit", "orbit_high", "orbit_low", "spiral_in")),
     ("Ellipses", ("ellipse_1", "ellipse_2", "ellipse_3")),
-    ("Dolly & truck", ("dolly_in", "dolly_out", "truck_left", "truck_right", "pedestal_up", "pedestal_down", "zoom_in")),
+    (
+        "Dolly & truck",
+        (
+            "dolly_in",
+            "dolly_out",
+            "truck_left",
+            "truck_right",
+            "pedestal_up",
+            "pedestal_down",
+            "zoom_in",
+        ),
+    ),
     ("Crane & arcs", ("crane", "arc_left", "arc_right", "top_down")),
     ("Other", ("pan", "flyover")),
 )
@@ -378,7 +439,15 @@ def close_loop(waypoints):
     if len(waypoints) < 2 or _same_spot(waypoints[0], waypoints[-1]):
         return waypoints
     first = waypoints[0]
-    waypoints.append(Waypoint(first.position, rotation_euler=first.rotation_euler, look_at=first.look_at, focal=first.focal, hold=0.0))
+    waypoints.append(
+        Waypoint(
+            first.position,
+            rotation_euler=first.rotation_euler,
+            look_at=first.look_at,
+            focal=first.focal,
+            hold=0.0,
+        )
+    )
     return waypoints
 
 
@@ -402,26 +471,50 @@ _PRESET_PATTERNS = (
     ("ellipse_1", r"\bellip(?:se|sis|tical|soid)\w*"),
     ("spiral_in", r"\bspiral(?:s|ing|ling)?\b"),
     ("zoom_in", r"\bzoom(?:s|ing)?\s*in\b"),
-    ("dolly_out", r"\b(pulls?(?:ing)?\s*(?:back|out|away)|zoom(?:s|ing)?\s*out|dolly\s*(?:out|back)|away|reveal(?:s|ing)?|back\s*off)\b"),
-    ("dolly_in", r"\b(push(?:es|ing)?(?:\s*in)?|closer|close[- ]?up|dolly(?:\s*in)?|approach(?:es|ing)?|move\s*in)\b"),
+    (
+        "dolly_out",
+        r"\b(pulls?(?:ing)?\s*(?:back|out|away)|zoom(?:s|ing)?\s*out|dolly\s*(?:out|back)|away|reveal(?:s|ing)?|back\s*off)\b",
+    ),
+    (
+        "dolly_in",
+        r"\b(push(?:es|ing)?(?:\s*in)?|closer|close[- ]?up|dolly(?:\s*in)?|approach(?:es|ing)?|move\s*in)\b",
+    ),
     ("truck_left", r"\b(truck(?:s|ing)?|slide(?:s|ing)?|crab(?:s|bing)?)\s*(?:to\s+the\s+)?left\b"),
-    ("truck_right", r"\b(truck(?:s|ing)?|slide(?:s|ing)?|crab(?:s|bing)?)\s*(?:to\s+the\s+)?right\b"),
+    (
+        "truck_right",
+        r"\b(truck(?:s|ing)?|slide(?:s|ing)?|crab(?:s|bing)?)\s*(?:to\s+the\s+)?right\b",
+    ),
     ("pedestal_up", r"\b(pedestal|boom)\s*up\b"),
     ("pedestal_down", r"\b(pedestal|boom)\s*down\b"),
     ("arc_left", r"\barc(?:s|ing)?\s*(?:to\s+the\s+)?left\b"),
     ("arc_right", r"\barc(?:s|ing)?\s*(?:to\s+the\s+)?right\b"),
     ("top_down", r"\b(top[- ]?down|overhead|from\s+above|bird'?s?[- ]?eye|straight\s+down)\b"),
     ("orbit_low", r"\b(low[- ]angle|hero\s+angle|from\s+below|worm'?s?[- ]?eye)\b"),
-    ("orbit_high", r"\b(high[- ]angle|elevated|looking\s+down\s+(?:while\s+)?(?:orbit|circl|turn))\b"),
-    ("crane", r"\b(crane|ris(?:e|es|ing)|lift(?:s|ing)?|ascend(?:s|ing)?|up\s+and\s+over|tilt(?:s|ing)?\s*down)\b"),
+    (
+        "orbit_high",
+        r"\b(high[- ]angle|elevated|looking\s+down\s+(?:while\s+)?(?:orbit|circl|turn))\b",
+    ),
+    (
+        "crane",
+        r"\b(crane|ris(?:e|es|ing)|lift(?:s|ing)?|ascend(?:s|ing)?|up\s+and\s+over|tilt(?:s|ing)?\s*down)\b",
+    ),
     ("flyover", r"\b(fly(?:ing|over|by)?|fly-?over|drone|aerial|swoop(?:s|ing)?|over|bird)\b"),
-    ("pan", r"\b(pan(?:s|ning)?|left\s+to\s+right|right\s+to\s+left|sweep(?:s|ing)?|track(?:s|ing)?\s*(?:along|past)?|sideways|lateral)\b"),
-    ("orbit", r"\b(orbit(?:s|ing)?|turntable|around|circle(?:s|ing)?|spin(?:s|ning)?|revolv(?:e|es|ing)|360|rotate(?:s)?|turn(?:s)?\s*around)\b"),
+    (
+        "pan",
+        r"\b(pan(?:s|ning)?|left\s+to\s+right|right\s+to\s+left|sweep(?:s|ing)?|track(?:s|ing)?\s*(?:along|past)?|sideways|lateral)\b",
+    ),
+    (
+        "orbit",
+        r"\b(orbit(?:s|ing)?|turntable|around|circle(?:s|ing)?|spin(?:s|ning)?|revolv(?:e|es|ing)|360|rotate(?:s)?|turn(?:s)?\s*around)\b",
+    ),
 )
 _DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b", re.I)
 _FOCAL = re.compile(r"(\d+(?:\.\d+)?)\s*mm\b", re.I)
 # a pause the camera holds at the end of the move: "hold 2 s", "stay for 3 seconds", "pause 2", "linger 1.5s"
-_HOLD = re.compile(r"\b(?:hold|pause|wait|stay|linger)\w*\s*(?:for\s*)?(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)?\b", re.I)
+_HOLD = re.compile(
+    r"\b(?:hold|pause|wait|stay|linger)\w*\s*(?:for\s*)?(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)?\b",
+    re.I,
+)
 
 
 def plan_from_text(text):
@@ -441,7 +534,7 @@ def plan_from_text(text):
     rest = text
     if hmatch:
         hold = max(0.0, min(float(MAX_DURATION), float(hmatch.group(1))))
-        rest = text[:hmatch.start()] + " " + text[hmatch.end():]
+        rest = text[: hmatch.start()] + " " + text[hmatch.end() :]
     duration = DEFAULT_DURATION
     match = _DURATION.search(rest)
     if match:
@@ -459,4 +552,9 @@ def plan_from_text(text):
         focal = 24.0
     elif re.search(r"\b(tele|telephoto|long lens|tight)\b", rest):
         focal = 85.0
-    return {"preset": preset, "duration": round(duration, 3), "focal": focal, "hold": round(hold, 3)}
+    return {
+        "preset": preset,
+        "duration": round(duration, 3),
+        "focal": focal,
+        "hold": round(hold, 3),
+    }

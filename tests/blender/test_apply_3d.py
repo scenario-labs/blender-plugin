@@ -5,14 +5,13 @@ import unittest
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
-
 from helpers import reset_scene, submodule
+from mathutils import Vector
 
 
 def make_glb(path):
     bpy.ops.mesh.primitive_cube_add(location=(5, 5, 5))
-    bpy.ops.export_scene.gltf(filepath=str(path), use_selection=True, export_format='GLB')
+    bpy.ops.export_scene.gltf(filepath=str(path), use_selection=True, export_format="GLB")
     bpy.ops.object.delete()
 
 
@@ -28,7 +27,7 @@ class Apply3DTests(unittest.TestCase):
         bpy.context.scene.cursor.location = (2.0, -3.0, 1.0)
         objects = self.apply_3d.import_model(bpy.context, str(self.glb), at_cursor=True)
         self.assertGreaterEqual(len(objects), 1)
-        meshes = [o for o in objects if o.type == 'MESH']
+        meshes = [o for o in objects if o.type == "MESH"]
         self.assertEqual(len(meshes), 1)
         obj = meshes[0]
         bpy.context.view_layer.update()
@@ -59,10 +58,11 @@ class Apply3DTests(unittest.TestCase):
         rec = records.JobRecord.new(lane="3d", kind="3d", model_id="model_meshy-7-txt23d", body={})
         rec.files = [str(self.glb), str(obj_path), str(png)]
         rec.meta["prompt"] = "a cube"
-        before = len([o for o in bpy.data.objects if o.type == 'MESH'])
+        before = len([o for o in bpy.data.objects if o.type == "MESH"])
         objects = self.apply_3d.on_3d_result(rec)
-        after = len([o for o in bpy.data.objects if o.type == 'MESH'])
+        after = len([o for o in bpy.data.objects if o.type == "MESH"])
         self.assertEqual(after - before, 1)
+        self.assertEqual(len([o for o in objects if o.type == "MESH"]), 1)
         self.assertEqual(rec.meta["primary_mesh"], str(self.glb))
         self.assertEqual(rec.meta["mesh_alternates"], [str(obj_path)])
         self.assertTrue(hasattr(bpy.ops.scenario, "import_mesh_file"))

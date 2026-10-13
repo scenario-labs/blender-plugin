@@ -1,14 +1,31 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Decide how a set of typed texture files becomes a PBR material. No bpy."""
+
 from dataclasses import dataclass, field
 
-ALBEDO, NORMAL, SMOOTHNESS, ROUGHNESS, METALLIC, HEIGHT, BASE = "albedo", "normal", "smoothness", "roughness", "metallic", "height", "base"
+ALBEDO, NORMAL, SMOOTHNESS, ROUGHNESS, METALLIC, HEIGHT, BASE = (
+    "albedo",
+    "normal",
+    "smoothness",
+    "roughness",
+    "metallic",
+    "height",
+    "base",
+)
 
 ROLE_BY_TYPE = {
-    "texture-albedo": ALBEDO, "texture-basecolor": ALBEDO, "texture-normal": NORMAL, "texture-smoothness": SMOOTHNESS,
-    "texture-roughness": ROUGHNESS, "texture-metallic": METALLIC, "texture-metalness": METALLIC, "texture-height": HEIGHT,
-    "texture-displacement": HEIGHT, "inference-txt2img-texture": BASE, "inference-img2img-texture": BASE,
+    "texture-albedo": ALBEDO,
+    "texture-basecolor": ALBEDO,
+    "texture-normal": NORMAL,
+    "texture-smoothness": SMOOTHNESS,
+    "texture-roughness": ROUGHNESS,
+    "texture-metallic": METALLIC,
+    "texture-metalness": METALLIC,
+    "texture-height": HEIGHT,
+    "texture-displacement": HEIGHT,
+    "inference-txt2img-texture": BASE,
+    "inference-img2img-texture": BASE,
 }
 COLOR_ROLES = {ALBEDO, BASE}
 
@@ -45,4 +62,7 @@ def plan_material(name, typed_files):
 
 
 def roles_from_record(rec):
-    return [(rec.asset_types.get(asset_id, ""), path) for asset_id, path in zip(rec.asset_ids, rec.files)]
+    return [
+        (rec.asset_types.get(asset_id, ""), path)
+        for asset_id, path in zip(rec.asset_ids, rec.files, strict=False)
+    ]

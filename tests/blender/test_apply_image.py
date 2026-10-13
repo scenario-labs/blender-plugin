@@ -3,7 +3,6 @@
 import unittest
 
 import bpy
-
 from helpers import FIXTURES, reset_scene, submodule
 
 ALBEDO = str(FIXTURES / "patina-copper-512" / "albedo.png")
@@ -25,17 +24,21 @@ class ApplyImageTests(unittest.TestCase):
         img = self.apply_image.load_image(ALBEDO)
         mat = self.apply_image.apply_as_texture(cube, img)
         self.assertEqual(cube.active_material, mat)
-        tex = next(n for n in mat.node_tree.nodes if n.type == 'TEX_IMAGE')
-        bsdf = next(n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED')
+        tex = next(n for n in mat.node_tree.nodes if n.type == "TEX_IMAGE")
+        bsdf = next(n for n in mat.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
         self.assertEqual(tex.image, img)
-        link = next(l for l in mat.node_tree.links if l.to_node == bsdf and l.to_socket.name == "Base Color")
+        link = next(
+            link
+            for link in mat.node_tree.links
+            if link.to_node == bsdf and link.to_socket.name == "Base Color"
+        )
         self.assertEqual(link.from_node, tex)
 
     def test_add_as_plane_matches_aspect_and_cursor(self):
         img = self.apply_image.load_image(ALBEDO)
         bpy.context.scene.cursor.location = (1.0, 2.0, 3.0)
         plane = self.apply_image.add_as_plane(bpy.context, img)
-        self.assertEqual(plane.type, 'MESH')
+        self.assertEqual(plane.type, "MESH")
         self.assertAlmostEqual(plane.scale.x / plane.scale.y, 1.0, places=4)
         self.assertAlmostEqual(tuple(plane.location)[2], 3.0, places=4)
         self.assertEqual(len(plane.data.materials), 1)

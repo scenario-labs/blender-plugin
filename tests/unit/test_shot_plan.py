@@ -8,7 +8,7 @@ from scenario.core.scene import shot_plan as sp
 
 BOX = ((-1.0, -0.5, 0.0), (1.0, 0.5, 2.0))
 CENTRE = (0.0, 0.0, 1.0)
-DIAGONAL = math.sqrt(2 ** 2 + 1 ** 2 + 2 ** 2)
+DIAGONAL = math.sqrt(2**2 + 1**2 + 2**2)
 
 
 def _frames(keys):
@@ -20,6 +20,7 @@ def _dist(wp):
 
 
 # -- schedule ------------------------------------------------------------------
+
 
 def test_schedule_starts_at_one_ends_at_duration_and_is_monotonic():
     wps = [sp.Waypoint((0, 0, 0)), sp.Waypoint((1, 0, 0)), sp.Waypoint((3, 0, 0))]
@@ -35,7 +36,11 @@ def test_schedule_starts_at_one_ends_at_duration_and_is_monotonic():
 
 
 def test_schedule_holds_add_a_second_key_and_zero_length_segments_still_move():
-    wps = [sp.Waypoint((0, 0, 0), hold=1.0), sp.Waypoint((0, 0, 0)), sp.Waypoint((4, 0, 0), hold=0.5)]
+    wps = [
+        sp.Waypoint((0, 0, 0), hold=1.0),
+        sp.Waypoint((0, 0, 0)),
+        sp.Waypoint((4, 0, 0), hold=0.5),
+    ]
     keys = sp.frame_schedule(wps, 8.0, 24)
     indices = [i for _, i in keys]
     assert indices == [0, 0, 1, 2, 2]
@@ -62,11 +67,12 @@ def test_schedule_of_a_closed_orbit_is_even_and_ends_on_the_closing_waypoint():
     keys = sp.frame_schedule(wps, 12.0, 24)
     assert len(keys) == len(wps) == 13
     assert keys[0] == (1, 0) and keys[-1] == (288, 12)
-    gaps = [b - a for (a, _), (b, _) in zip(keys, keys[1:])]
+    gaps = [b - a for (a, _), (b, _) in zip(keys, keys[1:], strict=False)]
     assert max(gaps) - min(gaps) <= 1  # equal segments, equal time (rounding aside)
 
 
 # -- geometry helpers -----------------------------------------------------------
+
 
 def test_fit_distance_grows_with_focal_and_size():
     assert sp.fit_distance(2.0, 50.0) > sp.fit_distance(2.0, 24.0)
@@ -76,6 +82,7 @@ def test_fit_distance_grows_with_focal_and_size():
 
 
 # -- the library ---------------------------------------------------------------
+
 
 def test_library_has_about_twenty_grouped_presets_and_a_default():
     assert len(sp.PRESETS) == 20
@@ -118,7 +125,11 @@ def test_orbits_keep_their_distance_and_height():
         dists = [_dist(wp) for wp in wps]
         assert max(dists) - min(dists) < 1e-6, name
         assert len({round(wp.position[2], 6) for wp in wps}) == 1, name
-    assert sp.orbit_high(*BOX)[0].position[2] > sp.orbit(*BOX)[0].position[2] > sp.orbit_low(*BOX)[0].position[2]
+    assert (
+        sp.orbit_high(*BOX)[0].position[2]
+        > sp.orbit(*BOX)[0].position[2]
+        > sp.orbit_low(*BOX)[0].position[2]
+    )
     assert sp.orbit_low(*BOX)[0].position[2] < CENTRE[2]
 
 
@@ -145,7 +156,9 @@ def test_spiral_in_turns_once_and_ends_closer():
     assert _dist(wps[-1]) < 0.6 * _dist(wps[0])
     assert wps[0].position != wps[-1].position
     # same angle at start and end (both in front of the subject: x at the centre, negative Y side)
-    assert wps[0].position[0] == pytest.approx(CENTRE[0]) and wps[-1].position[0] == pytest.approx(CENTRE[0])
+    assert wps[0].position[0] == pytest.approx(CENTRE[0]) and wps[-1].position[0] == pytest.approx(
+        CENTRE[0]
+    )
     assert wps[0].position[1] < CENTRE[1] and wps[-1].position[1] < CENTRE[1]
 
 
@@ -154,8 +167,12 @@ def test_dolly_moves_and_their_aliases():
     assert _dist(a) > _dist(b)
     assert [w.position for w in sp.dolly_out(*BOX)] == [b.position, a.position]
     assert sp.push_in is sp.dolly_in and sp.pull_back is sp.dolly_out
-    assert sp.resolve_preset("push_in") == "dolly_in" and sp.resolve_preset("pull_back") == "dolly_out"
-    assert [w.position for w in sp.preset_waypoints("push_in", *BOX)] == [w.position for w in sp.dolly_in(*BOX)]
+    assert (
+        sp.resolve_preset("push_in") == "dolly_in" and sp.resolve_preset("pull_back") == "dolly_out"
+    )
+    assert [w.position for w in sp.preset_waypoints("push_in", *BOX)] == [
+        w.position for w in sp.dolly_in(*BOX)
+    ]
 
 
 def test_truck_and_pedestal_move_along_one_axis():
@@ -187,7 +204,9 @@ def test_crane_arcs_top_down_and_flyover():
     assert len(left) == len(right) == 5
     assert left[0].position == right[0].position  # both start in front
     assert left[-1].position[0] < CENTRE[0] < right[-1].position[0]
-    assert left[-1].position[1] == pytest.approx(CENTRE[1], abs=1e-6)  # a quarter turn ends beside the subject
+    assert left[-1].position[1] == pytest.approx(
+        CENTRE[1], abs=1e-6
+    )  # a quarter turn ends beside the subject
     top = sp.top_down(*BOX)
     assert top[0].position[2] > top[-1].position[2] > CENTRE[2]
     fly = sp.flyover(*BOX)
@@ -196,45 +215,69 @@ def test_crane_arcs_top_down_and_flyover():
 
 def test_unknown_preset_falls_back_to_orbit():
     assert sp.resolve_preset("nope") == "orbit"
-    assert [w.position for w in sp.preset_waypoints("nope", *BOX)] == [w.position for w in sp.orbit(*BOX)]
+    assert [w.position for w in sp.preset_waypoints("nope", *BOX)] == [
+        w.position for w in sp.orbit(*BOX)
+    ]
 
 
 # -- text parser ----------------------------------------------------------------
 
-@pytest.mark.parametrize("text,expected", [
-    ("slow orbit around the robot, 10s at 50mm", {"preset": "orbit", "duration": 15.0, "focal": 50.0}),
-    ("push in closer on the teapot", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0}),
-    ("dolly in on the hero", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0}),
-    ("pull back to reveal the whole city", {"preset": "dolly_out", "duration": 6.0, "focal": 35.0}),
-    ("dolly out, 5 s", {"preset": "dolly_out", "duration": 5.0, "focal": 35.0}),
-    ("fast drone flyover of the village", {"preset": "flyover", "duration": 3.6, "focal": 35.0}),
-    ("pan left to right, 4 seconds", {"preset": "pan", "duration": 4.0, "focal": 35.0}),
-    ("crane up over the castle, wide", {"preset": "crane", "duration": 6.0, "focal": 24.0}),
-    ("zoom in fast on a tight lens", {"preset": "zoom_in", "duration": 3.6, "focal": 85.0}),
-    ("ellipse around the car", {"preset": "ellipse_1", "duration": 6.0, "focal": 35.0}),
-    ("ellipse 2, 8s", {"preset": "ellipse_2", "duration": 8.0, "focal": 35.0}),
-    ("slow elliptical 3 move", {"preset": "ellipse_3", "duration": 9.0, "focal": 35.0}),
-    ("truck left along the facade", {"preset": "truck_left", "duration": 6.0, "focal": 35.0}),
-    ("truck to the right", {"preset": "truck_right", "duration": 6.0, "focal": 35.0}),
-    ("pedestal up slowly", {"preset": "pedestal_up", "duration": 9.0, "focal": 35.0}),
-    ("boom down", {"preset": "pedestal_down", "duration": 6.0, "focal": 35.0}),
-    ("arc left around the statue", {"preset": "arc_left", "duration": 6.0, "focal": 35.0}),
-    ("arc right", {"preset": "arc_right", "duration": 6.0, "focal": 35.0}),
-    ("spiral in on the tower", {"preset": "spiral_in", "duration": 6.0, "focal": 35.0}),
-    ("top down view descending", {"preset": "top_down", "duration": 6.0, "focal": 35.0}),
-    ("overhead shot", {"preset": "top_down", "duration": 6.0, "focal": 35.0}),
-    ("low angle orbit, hero shot", {"preset": "orbit_low", "duration": 6.0, "focal": 35.0}),
-    ("high angle turn around", {"preset": "orbit_high", "duration": 6.0, "focal": 35.0}),
-    ("", {"preset": "orbit", "duration": 6.0, "focal": 35.0}),
-    ("a 500 sec epic", {"preset": "orbit", "duration": 60.0, "focal": 35.0}),
-    # one move per path: when several are named, the first written wins (predictable from the text)
-    ("dolly in and then orbit", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0}),
-    ("orbit then dolly in closer", {"preset": "orbit", "duration": 6.0, "focal": 35.0}),
-    # a hold/pause is read out and does not become the move duration
-    ("dolly in 8 s, hold 2 s", {"preset": "dolly_in", "duration": 8.0, "focal": 35.0, "hold": 2.0}),
-    ("orbit, stay for 3 seconds", {"preset": "orbit", "duration": 6.0, "focal": 35.0, "hold": 3.0}),
-    ("push in and pause 1.5s", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0, "hold": 1.5}),
-])
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "slow orbit around the robot, 10s at 50mm",
+            {"preset": "orbit", "duration": 15.0, "focal": 50.0},
+        ),
+        ("push in closer on the teapot", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0}),
+        ("dolly in on the hero", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0}),
+        (
+            "pull back to reveal the whole city",
+            {"preset": "dolly_out", "duration": 6.0, "focal": 35.0},
+        ),
+        ("dolly out, 5 s", {"preset": "dolly_out", "duration": 5.0, "focal": 35.0}),
+        (
+            "fast drone flyover of the village",
+            {"preset": "flyover", "duration": 3.6, "focal": 35.0},
+        ),
+        ("pan left to right, 4 seconds", {"preset": "pan", "duration": 4.0, "focal": 35.0}),
+        ("crane up over the castle, wide", {"preset": "crane", "duration": 6.0, "focal": 24.0}),
+        ("zoom in fast on a tight lens", {"preset": "zoom_in", "duration": 3.6, "focal": 85.0}),
+        ("ellipse around the car", {"preset": "ellipse_1", "duration": 6.0, "focal": 35.0}),
+        ("ellipse 2, 8s", {"preset": "ellipse_2", "duration": 8.0, "focal": 35.0}),
+        ("slow elliptical 3 move", {"preset": "ellipse_3", "duration": 9.0, "focal": 35.0}),
+        ("truck left along the facade", {"preset": "truck_left", "duration": 6.0, "focal": 35.0}),
+        ("truck to the right", {"preset": "truck_right", "duration": 6.0, "focal": 35.0}),
+        ("pedestal up slowly", {"preset": "pedestal_up", "duration": 9.0, "focal": 35.0}),
+        ("boom down", {"preset": "pedestal_down", "duration": 6.0, "focal": 35.0}),
+        ("arc left around the statue", {"preset": "arc_left", "duration": 6.0, "focal": 35.0}),
+        ("arc right", {"preset": "arc_right", "duration": 6.0, "focal": 35.0}),
+        ("spiral in on the tower", {"preset": "spiral_in", "duration": 6.0, "focal": 35.0}),
+        ("top down view descending", {"preset": "top_down", "duration": 6.0, "focal": 35.0}),
+        ("overhead shot", {"preset": "top_down", "duration": 6.0, "focal": 35.0}),
+        ("low angle orbit, hero shot", {"preset": "orbit_low", "duration": 6.0, "focal": 35.0}),
+        ("high angle turn around", {"preset": "orbit_high", "duration": 6.0, "focal": 35.0}),
+        ("", {"preset": "orbit", "duration": 6.0, "focal": 35.0}),
+        ("a 500 sec epic", {"preset": "orbit", "duration": 60.0, "focal": 35.0}),
+        # one move per path: when several are named, the first written wins (predictable from the text)
+        ("dolly in and then orbit", {"preset": "dolly_in", "duration": 6.0, "focal": 35.0}),
+        ("orbit then dolly in closer", {"preset": "orbit", "duration": 6.0, "focal": 35.0}),
+        # a hold/pause is read out and does not become the move duration
+        (
+            "dolly in 8 s, hold 2 s",
+            {"preset": "dolly_in", "duration": 8.0, "focal": 35.0, "hold": 2.0},
+        ),
+        (
+            "orbit, stay for 3 seconds",
+            {"preset": "orbit", "duration": 6.0, "focal": 35.0, "hold": 3.0},
+        ),
+        (
+            "push in and pause 1.5s",
+            {"preset": "dolly_in", "duration": 6.0, "focal": 35.0, "hold": 1.5},
+        ),
+    ],
+)
 def test_plan_from_text(text, expected):
     expected.setdefault("hold", 0.0)  # existing cases have no hold
     assert sp.plan_from_text(text) == expected
@@ -250,8 +293,14 @@ def test_is_closed_marker_waypoints_and_close_loop():
         assert sp.distance(markers[0].position, markers[-1].position) > 1e-6
         closed = sp.close_loop(markers)
         assert len(closed) == len(markers) + 1
-        assert closed[-1].position == closed[0].position and closed[-1].focal == closed[0].focal and closed[-1].hold == 0.0
+        assert (
+            closed[-1].position == closed[0].position
+            and closed[-1].focal == closed[0].focal
+            and closed[-1].hold == 0.0
+        )
         assert sp.close_loop(closed) == closed  # already closed: nothing appended
     assert not sp.is_closed("dolly_in") and not sp.is_closed("push_in")
-    assert len(sp.marker_waypoints("dolly_in", lo, hi)) == len(sp.preset_waypoints("dolly_in", lo, hi))
+    assert len(sp.marker_waypoints("dolly_in", lo, hi)) == len(
+        sp.preset_waypoints("dolly_in", lo, hi)
+    )
     assert sp.close_loop([sp.Waypoint((0, 0, 0))]) == [sp.Waypoint((0, 0, 0))]

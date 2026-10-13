@@ -897,6 +897,7 @@ def result_actions(record):
         RESULT_TYPES,
         blockout_review=review,
         workflow_steps=workflow_steps(record),
+        listening=result_media.controller.listening(record.local_id),
     )
 
 

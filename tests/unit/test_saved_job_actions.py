@@ -752,40 +752,68 @@ def test_saved_360_results_are_labelled_and_ldr_ones_prefill_make_hdri():
     ]
 
 
-def play(asset_id, index, kind):
-    second = (
-        (
-            f"play_in_blender:{asset_id}",
+def play(asset_id, index, kind, playing=False):
+    if kind == "video":
+        return [
+            (
+                f"play:{asset_id}",
+                "playback",
+                "scenario.play_saved_media",
+                f"Play video ({index})",
+                "NONE",
+                dict(JOB, asset_id=asset_id, player="SYSTEM"),
+            ),
+            (
+                f"play_in_blender:{asset_id}",
+                "playback",
+                "scenario.play_saved_media",
+                f"Play in Blender ({index})",
+                "NONE",
+                dict(JOB, asset_id=asset_id, player="BLENDER"),
+            ),
+        ]
+    if playing:
+        stop = dict(JOB, asset_id=asset_id)
+        del stop["expected_revision"]
+        toggle = (
+            f"stop_audio:{asset_id}",
             "playback",
-            "scenario.play_saved_media",
-            f"Play in Blender ({index})",
+            "scenario.stop_saved_audio",
+            f"Stop audio ({index})",
             "NONE",
-            dict(JOB, asset_id=asset_id, player="BLENDER"),
+            stop,
         )
-        if kind == "video"
-        else (
+    else:
+        toggle = (
+            f"play:{asset_id}",
+            "playback",
+            "scenario.play_saved_audio",
+            f"Play audio ({index})",
+            "NONE",
+            dict(JOB, asset_id=asset_id),
+        )
+    return [
+        toggle,
+        (
             f"waveform:{asset_id}",
             "playback",
             "scenario.preview_saved_waveform",
             f"Waveform ({index})",
             "NONE",
             dict(JOB, asset_id=asset_id),
-        )
-    )
-    return [
+        ),
         (
-            f"play:{asset_id}",
+            f"system_player:{asset_id}",
             "playback",
             "scenario.play_saved_media",
-            f"Play {kind} ({index})",
+            f"Open in system player ({index})",
             "NONE",
             dict(JOB, asset_id=asset_id, player="SYSTEM"),
         ),
-        second,
     ]
 
 
-def test_downloaded_media_offer_play_and_waveform_or_blender_in_one_row_each():
+def test_downloaded_media_offer_players_waveform_and_the_system_player_in_rows():
     assets = (
         ("clip", "video/mp4"),
         ("texture", "image/png"),
@@ -804,18 +832,43 @@ def test_downloaded_media_offer_play_and_waveform_or_blender_in_one_row_each():
         AWAITING,
     ]
     playback = [item for item in items if item.group == "playback"]
+    # Video: one row. Audio: Play audio and Waveform, then the system player.
     assert [item.row for item in playback] == [
         "playback:clip",
         "playback:clip",
         "playback:sound",
         "playback:sound",
+        "system:sound",
         "playback:stem",
         "playback:stem",
+        "system:stem",
     ]
     assert all(not item.row for item in items if item.group != "playback")
     # Not job actions: MCP job_status never reports them.
-    assert {item.action for item in playback} == {"play", "play_in_blender", "waveform"}
+    assert {item.action for item in playback} == {
+        "play",
+        "play_in_blender",
+        "waveform",
+        "system_player",
+    }
     assert not {item.action for item in playback} & set(VOCABULARY)
+
+
+def test_the_playing_audio_result_offers_stop_and_the_others_play():
+    assets = (("clip", "video/mp4"), ("sound", "audio/wav"), ("stem", "audio/flac"))
+    subject = view((), "ready", assets)
+    items = sja.describe(subject, CONTEXT, PLAYABLE, listening="stem")
+    assert rows(items) == [
+        *play("clip", 1, "video"),
+        *play("sound", 2, "audio"),
+        *play("stem", 3, "audio", playing=True),
+        AWAITING,
+    ]
+    assert "stop_audio" not in VOCABULARY
+    # A video or another job's asset never turns into Stop.
+    for listening in ("clip", "absent", None):
+        described = sja.describe(subject, CONTEXT, PLAYABLE, listening=listening)
+        assert all(item.action != "stop_audio" for item in described)
 
 
 @pytest.mark.parametrize("state", ["applying", "apply_failed", "applied"])

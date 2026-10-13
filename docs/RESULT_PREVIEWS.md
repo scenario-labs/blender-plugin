@@ -7,8 +7,10 @@ Previews are read-only: they never submit, spend, apply, resolve a scene origin
 or write the job store. Their user interfaces are the private previews of
 [workflow review assets](#workflow-review-assets), the saved-job **Waveform**
 control, which draws audio envelopes decoded in an owned offline Blender process
-described below, **Play**, which opens
-[private player copies](#private-player-copies) made on the same lane, and
+described below, **Play video**, **Play in Blender** and **Open in system
+player**, which open [private player copies](#private-player-copies) made on the
+same lane, **Play audio**, which plays such a copy through Blender's audio engine
+in [another owned offline process](#in-extension-audio-playback), and
 [automatic previews](#automatic-previews-in-blender), which show stills in Jobs,
 Generations and the Studio pages that reuse them.
 [Local MCP](#local-mcp-inspection) reports the same states, still metadata and
@@ -200,8 +202,9 @@ reason instead of waiting. A failed decode caches nothing; Retry decodes again.
 
 ## Private player copies
 
-A desktop player opens a file by its name and extension, so **Play** and **Play
-in Blender** never hand it the saved result. The lane command
+A desktop player opens a file by its name and extension, so **Play video**,
+**Open in system player**, **Play in Blender** and **Play audio** never hand it
+the saved result. The lane command
 `prepare_playback` streams one downloaded receipt of a saved job in a previewable
 state into a new private `play-*` directory of `cache/media-playback`, rehashing
 it against the receipt while copying. It accepts the media types Film inspection
@@ -222,6 +225,76 @@ evicted copies until the command ends and removes any left, as when the
 connection retires and deactivation cancels the queued command. Copies hold the
 saved bytes; no URL, credential or prompt is written. They are disposable and
 safe to delete while no player reads them.
+
+## In-extension audio playback
+
+**Play audio** plays a saved audio result's private copy through Blender's
+audio engine without opening another application. Two designs were weighed:
+
+- Blender's `aud` module in the user's session would start sooner, but it
+  would decode generated media inside the session that holds unsaved work, and
+  its decoding holds Python's global interpreter lock, as measured for
+  [envelopes](#offline-audio-envelopes). A decoder failure there would reach
+  that session too. Its device would also be shared with the session's own
+  sequencer and scrubbing.
+- An owned offline Blender process, like the envelope decoder, keeps decoding
+  and the output device out of the user's session, and Stop is a process
+  ending rather than a request to a sound handle. Its cost is the child's
+  start-up: on macOS arm64, a digitally silent WAV started playing 0.6 to 0.85
+  seconds after the child started, with Blender 5.0.1, 5.1.2 and 5.2.1.
+
+The extension uses the owned process.
+[`audio_player`](../scenario/core/jobs/audio_player.py), without bpy, starts the
+session's Blender executable with `--offline-mode`, `--factory-startup`,
+`--disable-autoexec`, `--background` and `-noaudio`, the environment the
+envelope decoder uses, and a new private `listen-*` directory under
+`cache/audio-player` holding its request, disposable profile, temporary files
+and reports. Its standard output and errors are discarded. The standalone
+[`audio_player_worker.py`](../scenario/blender/audio_player_worker.py) does not
+load the extension. `-noaudio` keeps Blender from opening an output of its own;
+the worker opens only the one the request names, the **Audio Device** chosen in
+Blender's Preferences > System > Sound, read on the main thread. It opens that
+output with Blender's audio module defaults, 48 kHz stereo, not the sample rate,
+channels or mixing buffer chosen there. With **None** chosen, Play audio refuses
+before copying anything.
+
+Before opening the output, the worker opens the copy with Blender's audio
+module and its ffmpeg readers and checks it as envelopes do: at most 192 kHz
+and eight channels, a declared duration of at most 600 seconds, and a first
+quarter second that decodes to samples. A container that declares no duration
+still stops at 600 seconds. Failures use a fixed vocabulary: unreadable,
+unsupported rate or channels, no samples, too long, which names the system
+player instead, and an output that cannot play, such as Blender's None output,
+which accepts a sound but never plays it. The worker then plays the copy from
+its start, writes `playing.json` with the declared duration and exits when the
+sound ends.
+
+The child's standard input is its lifeline: the parent holds a pipe it never
+writes to, and the worker stops when it reaches its end, so a parent that exits
+or crashes stops playback too. **Stop audio** closes that pipe and terminates
+the child at once; one still running three seconds later is killed on the next
+poll. A child that reports neither playback nor a failure within 60 seconds of
+starting fails and is stopped, and a playing child is stopped ten seconds after
+the duration it reported, or after 600 seconds. A failure's reason names no path
+and never includes the child's output. Each `listen-*` directory is removed once
+its child has exited; the next Play audio removes any left a day earlier, for
+example by a crash.
+
+The [saved media controller](../scenario/blender/result_media.py) runs on
+Blender's main thread. It prepares the copy on the preview lane like the other
+players, then starts the child, so the copy stays pinned, never evicted or
+discarded, until the child exits. At most one playback is active: another
+**Play audio** stops the playing one before the new copy is even prepared, and
+a copy that arrives for a request that a later Play replaced, or after the
+connection, project or file changed, never starts a child. Stop, a connection
+or project change, a file load and unregistering stop it too; unregistering,
+which Blender also does on exit, waits up to three seconds for the child, then
+kills it. Its persistent timer polls every quarter second while audio plays and
+every tenth of a second while a child starts or stops, reading the child's exit
+status and its two small reports. Drawing reads only the controller's memory:
+it never starts, polls or stops a child. Playback is local: it works with
+Online Access disabled and makes no service request. No local MCP tool plays
+audio.
 
 ## Automatic previews in Blender
 
@@ -488,8 +561,19 @@ the waveform's desktop Cancel and Retry were not exercised. A later private
 check there confirmed that the system player opened the private read-only copy
 and that Blender's animation player started without `SCENARIO_`, `PYTHON` or
 proxy names in its environment; real Windows and Linux launchers remain
-unverified. Automatic previews have installed native tests on Blender 5.0.1,
-5.1.2 and 5.2.1 with synthetic images and a synthetic transport, drawn through
+unverified. Play audio has installed native tests on macOS arm64 Blender 5.0.1,
+5.1.2 and 5.2.1 that start real children: the installed worker runs with a
+recording output in place of a sound device on synthetic WAV, MP3, Ogg, FLAC,
+ADTS AAC and M4A files, and unmodified on Blender's None output. They cover
+playback to its end, Stop, the lifeline, replacement by a second Play, late
+copies, undecodable and too long audio, a missing executable, the start
+timeout, a file load, retirement and unregistering, and drawing that neither
+starts nor stops a child. A local check on the same three versions played a
+digitally silent WAV through the unmodified worker on the CoreAudio output, so
+nothing was audible. No human listening check, Windows or Linux output, or
+hosted run of these tests is recorded yet. Automatic previews have installed
+native tests on Blender 5.0.1, 5.1.2 and 5.2.1 with synthetic images and a
+synthetic transport, drawn through
 recording layouts. The same desktop passes showed their tiles loading and ready
 in Jobs and ready in Generations and Studio, and the last one showed **Retry
 preview (N)** preparing a still again after its cached file was removed during

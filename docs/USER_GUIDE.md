@@ -436,10 +436,14 @@ channel at the frame you confirm, as for video.
 
 ![Confirmed saved audio inserted once at the approved frame in Blender Sequencer](images/saved-media-result.png)
 
-**Play audio (N)** opens a private copy in your system player. **Waveform (N)** draws
-the audio under the job's controls without playing it, even offline, with its
-duration, channels and sample rate. Waveforms support common audio formats up to
-ten minutes; see [waveform limits](RESULT_PREVIEWS.md#offline-audio-envelopes).
+**Play audio (N)** plays the audio inside Blender, up to ten minutes long, through
+the output chosen in Preferences > System > Sound, even offline. While it plays,
+the button reads **Stop audio (N)**; playing another result stops the first.
+**Open in system player (N)** opens a private copy in your system player instead.
+**Waveform (N)** draws the audio under the job's controls without playing
+it, even offline, with its duration, channels and sample rate. Waveforms support
+common audio formats up to ten minutes; see
+[waveform limits](RESULT_PREVIEWS.md#offline-audio-envelopes).
 
 ### Render Image
 
@@ -565,7 +569,7 @@ and the actions for its kind:
 | Image | View image, Use as reference, Remove background, Apply as texture, Add as plane |
 | 3D | Add to scene, Select, Delete |
 | Video | Play, Play in Blender, Add video strip |
-| Audio | Play, Waveform, Add strip |
+| Audio | Play audio, Waveform, Open in system player, Add strip |
 
 - **Reload parameters** puts the lane, model, prompt, settings and references back into the form.
 - **Details** shows everything that was sent and returned.

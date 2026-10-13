@@ -370,30 +370,47 @@ full render-lane desktop acceptance.
   continues in #440.
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
-- Saved shared video and audio results offer **Play**, **Play in Blender** for
-  video and **Waveform** for audio in their saved-job controls. Retained
-  prototype results keep Play and Add to sequencer, without a waveform. Beyond
-  installed-ZIP native tests, partial physical desktop passes on macOS arm64
-  Blender 5.1.2 opened a saved video in the system player and in Blender's
-  animation player at UI scale 1.0, and drew a waveform in the sidebar at UI
-  scales 1.0 and 2.0. The last pass's ZIP wrapped the waveform status by
-  measured width, before later amendments for Studio's popup width and
-  hyphenated words, and kept the duration with its unit. On 2026-10-13 the
-  maintainer listened to a saved audio result through Play and drew its waveform
-  on the candidate ZIP; Play opens the system's default player, and an
-  in-extension player is
-  [#435](https://github.com/scenario-labs/blender-plugin/issues/435). The
-  waveform's Cancel, Retry and close on the desktop, clicking Play at UI scale
-  2.0, Studio at UI scale 2.0 and other platforms have no desktop evidence yet;
-  these [#189](https://github.com/scenario-labs/blender-plugin/issues/189)
-  follow-ups continue in #440. Local MCP
-  `inspect_result_previews` reads the same envelope as bounded levels, without
-  an image, and no MCP tool launches a player. See the
+- Saved shared video and audio results offer **Play video** and **Play in
+  Blender** for video, and **Play audio** (with **Stop audio**), **Waveform**
+  and **Open in system player** for audio in their saved-job controls. Retained
+  prototype results keep Play and Add to sequencer, without a waveform or
+  in-extension audio. Beyond installed-ZIP native tests, partial physical
+  desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system
+  player and in Blender's animation player at UI scale 1.0, and drew a waveform
+  in the sidebar at UI scales 1.0 and 2.0. The last pass's ZIP wrapped the
+  waveform status by measured width, before later amendments for Studio's popup
+  width and hyphenated words, and kept the duration with its unit. On 2026-10-13
+  the maintainer listened to a saved audio result through the system player and
+  drew its waveform on the 0.10.0 candidate ZIP. These passes predate
+  in-extension audio. Play audio and Stop audio on the desktop, listening
+  through them, the waveform's Cancel, Retry and close on the desktop, clicking
+  Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms have no
+  desktop evidence yet, which remains
+  [#440](https://github.com/scenario-labs/blender-plugin/issues/440) work. Local
+  MCP `inspect_result_previews` reads the same envelope as bounded levels,
+  without an image, and no MCP tool launches a player or plays audio. See the
   [supported limits](USER_GUIDE.md#audio).
+- **Play audio** starts a separate offline Blender process for each playback,
+  so sound starts after that process does: 0.6 to 0.85 seconds on macOS arm64
+  with Blender 5.0.1 to 5.2.1, measured with a digitally silent file; Windows
+  and Linux start-up, including antivirus scanning, is unmeasured. It plays from
+  the start to the end, up to ten minutes, with no pause, seeking, volume
+  control or playhead on the waveform. It uses the **Audio Device** chosen in
+  Preferences > System > Sound, opened with Blender's audio module defaults
+  (48 kHz stereo) rather than the sample rate, channels and mixing buffer chosen
+  there, and still plays when Blender itself was started with `-noaudio`. Only
+  macOS CoreAudio has been exercised, silently; WASAPI, PulseAudio, PipeWire,
+  JACK, OpenAL and SDL outputs, sandboxed Blender packages and human listening
+  are unverified. Installed tests replace the output with a recording stand-in
+  or Blender's None output, so they show the process, its decoding checks and
+  its lifetime, not sound. A crash of Blender stops playback through the
+  closed pipe of the child's standard input; that path is tested by closing the
+  pipe, not by crashing Blender.
 - Play first copies the saved file, up to 512 MiB, on the preview lane, so a
   large file waits for its copy and queues behind server thumbnail polls and
-  waveform decodes there. Up to four copies or 1 GiB are kept for reuse, plus any
-  copy a running animation player reads. The system player is tracked only
+  waveform decodes there; Play audio too. Up to four copies or 1 GiB are kept
+  for reuse, plus any copy a running animation player or audio playback reads.
+  The system player is tracked only
   until its launcher (`open`, `xdg-open` or, on Windows, an isolated Python
   helper) exits: an eviction, connection change, file load or disabling the
   extension can then remove a copy it still has open. Both launches strip

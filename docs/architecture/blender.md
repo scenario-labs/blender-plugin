@@ -27,6 +27,14 @@ playback launchers strip `SCENARIO_`, `PYTHON` and proxy variables, accept only
 absolute paths and `https` links, and a unit-test source scan rejects any other
 opener in `scenario/`.
 
+Decode and play generated media in owned offline Blender processes, never with
+`aud` in the user's session: audio envelopes come from
+[`waveform_worker.py`](../../scenario/blender/waveform_worker.py) and **Play
+audio** runs [`audio_player_worker.py`](../../scenario/blender/audio_player_worker.py),
+both started with `--offline-mode`, `--factory-startup`, `--disable-autoexec`,
+`--background` and `-noaudio` from bpy-free owners in `core.jobs`. See
+[in-extension audio playback](../RESULT_PREVIEWS.md#in-extension-audio-playback).
+
 Mark the file modified after every main-thread change that no Undo operator
 records; see [marking the file modified](#marking-the-file-modified).
 

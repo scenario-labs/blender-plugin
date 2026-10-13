@@ -155,7 +155,7 @@ Credentials > Environment supplies them. macOS still adds proxy settings from
 your login session to every application it launches. Up to four copies
 or 1 GiB are kept for reuse; the rest, and every copy when the connection
 changes, a file loads or the extension is disabled, are removed unless a running
-animation player or system player launcher still uses one. A copy left behind, for example one a player still
+animation player, system player launcher or audio playback still uses one. A copy left behind, for example one a player still
 read when the extension was disabled or a Windows player held open, is removed
 once a day old by the next Play. The system
 player is your operating system's default application. The extension starts it
@@ -165,6 +165,18 @@ isolated Python interpreter calling `os.startfile`. A player that is already
 running receives only the copy's path. What it records, such as recent files,
 is outside the extension's control. The **Play** and **Play in Blender** buttons
 of retained prototype results start their players the same way.
+**Play audio** plays the same kind of private copy through Blender's audio
+engine in a separate offline Blender process, not in your session. That process
+starts from the same filtered environment, without `SCENARIO_`, `BLENDER_`,
+`PYTHON` or proxy variables, does not load the extension, and makes no network
+request. It reads only the copy and sends its sound to the output device chosen
+in Blender's Preferences > System > Sound. Its request, disposable profile,
+temporary files and two small status files live in a private `listen-*`
+directory under `cache/audio-player`, without a URL, credential or prompt; its
+output is discarded. The directory is removed when the process ends, and one
+left by a crash is removed once a day old by the next Play audio. Stop, another
+Play audio, a connection change, a file load, disabling the extension and
+quitting Blender end the process; it also ends when Blender exits unexpectedly.
 Capture/export staging and thumbnails also use the extension's user state/cache
 directories. Explicit local output tools can write to the configured Output
 Folder, normally `~/Downloads/Scenario`.
@@ -209,7 +221,8 @@ clipboard history or screenshots are safe to publish without inspection.
 The clipboard is written by Copy buttons (asset IDs, errors and MCP setup) and by
 copy/cut in the composer; it is read when you paste into the composer. Clipboard
 managers may retain copied tokens or text. Play opens media locally in Blender's
-player or your system player.
+player or your system player, and Play audio plays it locally through Blender's
+audio engine.
 
 ## The local MCP server
 

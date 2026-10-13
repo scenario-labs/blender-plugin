@@ -1,20 +1,25 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Play and waveform controls for saved shared video and audio results.
+"""Play, Stop and waveform controls for saved shared video and audio results.
 
 The shared saved-job descriptors draw these controls. They never submit,
-download, spend, apply or change the scene or the job store. **Play** opens a
-private verified copy (``core.jobs.playback``) in the system player, and **Play
-in Blender** opens one in Blender's animation player, a separate process. Both
-start without Scenario credentials, Python start-up or proxy variables in their
-environment, never through ``wm.path_open``. **Waveform** asks the session's preview
-scheduler for the saved audio's envelope, which an owned offline Blender
-process decodes on the preview lane, then draws it from cached state.
+download, spend, apply or change the scene or the job store. **Play video** and
+**Open in system player** open a private verified copy (``core.jobs.playback``)
+in the system player, and **Play in Blender** opens a video copy in Blender's
+animation player, a separate process. Both start without Scenario credentials,
+Python start-up or proxy variables in their environment, never through
+``wm.path_open``. **Play audio** plays an audio copy through Blender's audio
+engine in an owned offline Blender process (``core.jobs.audio_player``), never
+in this session, and **Stop audio** ends it. **Waveform** asks the session's
+preview scheduler for the saved audio's envelope, which an owned offline
+Blender process decodes on the preview lane, then draws it from cached state.
 
 Copies are made on the preview lane; this module keeps their handles on
 Blender's main thread, reuses an unchanged copy, keeps a bounded number and
 removes them when the connection retires, a file loads or the extension
-unregisters. No local MCP tool launches a player.
+unregisters. At most one audio playback runs: another **Play audio**, Stop, a
+connection, project or file change, and unregistering, including at Blender's
+exit, stop it. No local MCP tool launches a player or plays audio.
 """
 
 import array
@@ -31,7 +36,7 @@ from bpy.app.handlers import persistent
 from bpy.props import EnumProperty, IntProperty, StringProperty
 
 from ..core import audio_waveform
-from ..core.jobs import playback
+from ..core.jobs import audio_player, playback
 from ..core.jobs.local_render import LocalRenderError, blender_path
 from ..core.jobs.result_previews import (
     ENVELOPE,
@@ -51,7 +56,11 @@ COPY_LIMIT = 4
 COPY_BYTES = 1024**3
 PLAYER_LIMIT = 2
 LOADING_INTERVAL = 0.1
+# While audio plays, Stop must reappear as Play soon after the sound ends.
+PLAYING_INTERVAL = 0.25
 IDLE_INTERVAL = 1.0
+# Blender's output that never plays; Preferences > System > Sound > Audio Device.
+NO_OUTPUT = "None"
 WAVEFORM_SIZE = (256, 96)
 # Interface units of the sidebar that the waveform box's status text cannot use:
 # from the region's left edge to the first line's text (panel, job box, this box
@@ -107,6 +116,10 @@ def _launch(binary, copy):
 
 def _root():
     return runtime.paths().cache_dir / "media-playback"
+
+
+def _listen_root():
+    return runtime.paths().cache_dir / "audio-player"
 
 
 def _discard(copy):
@@ -195,6 +208,21 @@ class PlayRequest:
     label: str
     binary: Path | None = None
     reuse: object = None
+    request_id: str = ""
+    spec: object = None  # audio_player.PlayerSpec for LISTEN
+
+
+@dataclass(eq=False)
+class Listening:
+    """One owned audio playback child and the private copy it reads, until it is released."""
+
+    context_id: str
+    session: object
+    request_id: str
+    asset_id: str
+    label: str
+    copy: object = field(repr=False)
+    player: object = field(repr=False)
 
 
 @dataclass(eq=False)
@@ -216,7 +244,9 @@ class MediaController:
     Only the latest Play request is honored. The waveform selection follows the
     preview scheduler's status for one saved audio result. Every result checks
     the context it was requested in, so a late copy or envelope is never shown
-    or opened after a credential, project or file change.
+    or opened after a credential, project or file change, and a late copy never
+    starts audio. At most one audio playback is active: starting another stops
+    it first.
     """
 
     def __init__(self):
@@ -225,6 +255,9 @@ class MediaController:
         self._copies = OrderedDict()  # PreviewKey -> PlaybackCopy, oldest first
         self._players = []  # (process, PlaybackCopy) for Blender animation players
         self._openers = []  # (process, PlaybackCopy) for system player launchers
+        # Audio playback children until they exit and are released, oldest
+        # first; at most the last one is active.
+        self._listeners = []
         self._abandoned = []  # lane tasks whose copies must be removed once done
         # (lane task, copy) evicted for a Play whose command discards it first;
         # tracked until that task ends, since deactivation cancels a queued one.
@@ -243,13 +276,42 @@ class MediaController:
         )
 
     def interval(self):
-        if self.loading:
+        # A child that starts, or has stopped but not yet exited, is polled quickly.
+        if self.loading or any(
+            item.player.phase != audio_player.PLAYING for item in self._listeners
+        ):
             return LOADING_INTERVAL
+        if self._listeners:
+            return PLAYING_INTERVAL
         if self.selection is not None or self._players or self._openers:
             return IDLE_INTERVAL
         return None
 
+    def listening(self, request_id):
+        """The saved audio asset of ``request_id`` that plays or prepares to play, or None.
+
+        Reads only this controller's memory, so drawing may call it.
+        """
+        pending = self._play
+        if (
+            pending is not None
+            and pending.player == "LISTEN"
+            and pending.request_id == request_id
+            and pending.context_id == runtime.state.job_context_id
+        ):
+            return pending.key.asset_id
+        for item in self._listeners:
+            if (
+                item.player.active
+                and item.request_id == request_id
+                and item.context_id == runtime.state.job_context_id
+            ):
+                return item.asset_id
+        return None
+
     def _pinned(self, copy):
+        if any(item.copy is copy for item in self._listeners):
+            return True
         return any(pinned is copy for _, pinned in (*self._players, *self._openers))
 
     def _cached(self, copy):
@@ -314,15 +376,20 @@ class MediaController:
         return evicted
 
     def play(self, context_id, request_id, expected_revision, asset_id, player):
-        """Queue a private copy for one saved result; the timer opens it when ready."""
+        """Queue a private copy for one saved result; the timer opens or plays it when ready.
+
+        ``player`` is SYSTEM (the system player), BLENDER (Blender's animation
+        player, video only) or LISTEN (Blender's audio engine in an owned
+        offline process, audio only). LISTEN stops any audio playing now.
+        """
         _main_thread()
-        if player not in ("SYSTEM", "BLENDER"):
-            raise MediaError("Choose the system player or Blender's animation player")
-        kinds = ("video",) if player == "BLENDER" else ("video", "audio")
+        if player not in ("SYSTEM", "BLENDER", "LISTEN"):
+            raise MediaError("Choose the system player or one of Blender's players")
+        kinds = {"BLENDER": ("video",), "LISTEN": ("audio",)}.get(player, ("video", "audio"))
         session, store, item, index = _admit(
             context_id, request_id, expected_revision, asset_id, kinds
         )
-        binary = None
+        binary = spec = None
         # Exited players and launchers no longer pin their copies.
         self._reap()
         if player == "BLENDER":
@@ -331,12 +398,23 @@ class MediaController:
                 raise MediaError("Play in Blender needs Blender's executable")
             if len(self._players) >= PLAYER_LIMIT:
                 raise MediaError("Close an open Blender animation player first")
+        elif player == "LISTEN":
+            device = runtime.audio_device()
+            if not device or device == NO_OUTPUT:
+                raise MediaError(
+                    "Blender's audio output is None; choose a device in Preferences > "
+                    "System > Sound, or open the system player"
+                )
+            spec = runtime.audio_player_spec(device)
+            if spec is None:
+                raise MediaError("Playing audio needs Blender's executable")
         self._bind(context_id)
         key = PreviewKey.for_result(store.scope, request_id, item)
         reuse = self._copies.get(key)
         evicted = self._evictions(key, item.receipt.size)
         keep = [copy.directory for copy in self._copies.values()]
         keep += [copy.directory for _, copy in (*self._players, *self._openers)]
+        keep += [listener.copy.directory for listener in self._listeners]
         try:
             task = session.prepare_playback(
                 request_id,
@@ -353,6 +431,9 @@ class MediaController:
             self._evicted.append((task, self._copies.pop(cached)))
         if self._play is not None:
             self._abandon(self._play)
+        if player == "LISTEN":
+            # The previous sound stops now, not when the new copy is ready.
+            self._stop_listeners()
         kind = playback.kind(item.asset.media_type)
         self._play = PlayRequest(
             context_id,
@@ -363,6 +444,8 @@ class MediaController:
             f"{kind} ({index})",
             binary,
             reuse,
+            request_id,
+            spec,
         )
         return task
 
@@ -397,6 +480,9 @@ class MediaController:
         return True
 
     def _open(self, copy, request):
+        if request.player == "LISTEN":
+            self._listen(copy, request)
+            return
         try:
             if request.player == "BLENDER":
                 self._players.append((_launch(request.binary, copy), copy))
@@ -466,6 +552,115 @@ class MediaController:
             else:
                 remaining.append((task, copy))
         self._evicted = remaining
+
+    # -- audio playback ---------------------------------------------------
+
+    def _listen(self, copy, request):
+        """Start Blender's audio engine on a ready copy; any other playback already stopped."""
+        self._stop_listeners()
+        # Directories a crash left behind; running children keep theirs.
+        audio_player.sweep(
+            _listen_root(), keep=[listener.player.directory for listener in self._listeners]
+        )
+        try:
+            player = audio_player.start(copy.path, _listen_root(), request.spec)
+        except audio_player.AudioPlayerError as error:
+            runtime.set_message(str(error))
+            return
+        except Exception:
+            runtime.set_message("Blender's audio engine could not start")
+            return
+        self._listeners.append(
+            Listening(
+                request.context_id,
+                request.session,
+                copy.request_id,
+                copy.asset_id,
+                request.label,
+                copy,
+                player,
+            )
+        )
+        runtime.set_message(f"Starting saved {request.label} in Blender's audio engine...")
+
+    def _stop_listeners(self):
+        """Stop every active playback at once; their children are released as they exit."""
+        stopped = False
+        for listener in self._listeners:
+            if listener.player.active:
+                listener.player.stop()
+                stopped = True
+        return stopped
+
+    def stop_listening(self, context_id, request_id, asset_id):
+        """Stop this saved audio result's playback, or its preparation; never blocks.
+
+        Returns whether anything was stopped. A Stop drawn for a result that no
+        longer plays does nothing, so it never stops another result's audio.
+        """
+        _main_thread()
+        stopped = None
+        pending = self._play
+        if (
+            pending is not None
+            and pending.player == "LISTEN"
+            and pending.context_id == context_id
+            and pending.request_id == request_id
+            and pending.key.asset_id == asset_id
+        ):
+            self._abandon(pending)
+            self._play = None
+            stopped = pending.label
+        for listener in self._listeners:
+            if (
+                listener.player.active
+                and listener.context_id == context_id
+                and listener.request_id == request_id
+                and listener.asset_id == asset_id
+            ):
+                listener.player.stop()
+                stopped = listener.label
+        if stopped is not None:
+            runtime.set_message(f"Stopped saved {stopped}")
+        self._release_listeners()
+        return stopped is not None
+
+    def _poll_listeners(self):
+        changed = False
+        for listener in self._listeners:
+            player = listener.player
+            if player.active and not self._current(listener.context_id, listener.session):
+                # A retired connection's audio never keeps playing.
+                player.stop()
+                changed = True
+            if not player.poll():
+                continue
+            changed = True
+            if player.phase == audio_player.PLAYING:
+                runtime.set_message(f"Playing saved {listener.label} in Blender's audio engine")
+            elif player.phase == audio_player.ENDED:
+                runtime.set_message(f"Saved {listener.label} finished playing")
+            elif player.phase == audio_player.FAILED:
+                runtime.set_message(player.reason)
+        return self._release_listeners() or changed
+
+    def _release_listeners(self):
+        """Forget children that exited, remove their directories and unpin their copies."""
+        remaining, released = [], []
+        for listener in self._listeners:
+            if listener.player.active or not listener.player.release():
+                remaining.append(listener)
+            else:
+                released.append(listener)
+        if not released:
+            return False
+        self._listeners = remaining
+        for listener in released:
+            copy = listener.copy
+            if not self._cached(copy) and not self._pinned(copy):
+                _discard(copy)
+        self._trim()
+        return True
 
     # -- waveform ---------------------------------------------------------
 
@@ -578,13 +773,14 @@ class MediaController:
             self._release_icon()
             changed = True
         changed |= self._finish_play()
+        changed |= self._poll_listeners()
         self._collect_abandoned()
         self._collect_evicted()
         changed |= self._update_waveform()
         return changed
 
     def retire(self):
-        """Forget the selection and pending play; remove copies no running player uses."""
+        """Forget the selection and pending play, stop audio; remove copies nothing uses."""
         _main_thread()
         # A player or launcher that exited since the last timer tick no longer
         # pins its copy, so that copy is removed here too.
@@ -596,6 +792,9 @@ class MediaController:
         if self._play is not None:
             self._abandon(self._play)
             self._play = None
+        # Audio stops now; each child is released, with its copy, once it exits.
+        self._stop_listeners()
+        self._release_listeners()
         for copy in self._copies.values():
             if not self._pinned(copy):
                 _discard(copy)
@@ -608,11 +807,21 @@ class MediaController:
         self._context = None
 
     def shutdown(self):
-        """On unregister: retire, collect finished lane tasks and leave players running.
+        """On unregister and Blender's exit: retire, end audio and leave external players running.
 
-        A running player or launcher keeps its copy; the age sweep removes it later.
+        Each audio child is stopped and waited for, killed if it outlives the
+        grace period, and released with its copy. A running animation player or
+        system player launcher keeps its copy; the age sweep removes it later.
         """
         self.retire()
+        for listener in self._listeners:
+            try:
+                listener.player.wait()
+            except Exception:
+                # Never log process details; the next child still has to stop.
+                _log.warning("An audio playback process did not stop cleanly")
+        self._release_listeners()
+        self._listeners.clear()
         self._collect_abandoned()
         self._abandoned.clear()
         self._players.clear()
@@ -694,8 +903,8 @@ class SCENARIO_OT_play_saved_media(bpy.types.Operator):
                 "or changed in the scene"
             )
         return (
-            "Open a verified private copy of this saved result in the system player; "
-            "nothing is generated, downloaded or changed in the scene"
+            "Open a verified private copy of this saved result in the system's default "
+            "app, outside Blender; nothing is generated, downloaded or changed in the scene"
         )
 
     def execute(self, context):
@@ -710,6 +919,57 @@ class SCENARIO_OT_play_saved_media(bpy.types.Operator):
             self.report({"ERROR"}, "Could not prepare a private copy; inspect saved jobs again")
             return {"CANCELLED"}
         runtime.set_message("Preparing a verified private copy...")
+        _start_timer()
+        _redraw()
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_play_saved_audio(bpy.types.Operator):
+    bl_idname = "scenario.play_saved_audio"
+    bl_label = "Play saved audio"
+    bl_description = (
+        "Play a verified private copy of this saved audio through Blender's audio engine, "
+        "in a separate offline Blender process; no other app opens, and nothing is "
+        "generated, downloaded or changed in the scene"
+    )
+    context_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    request_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN", "SKIP_SAVE"})
+    asset_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    @classmethod
+    def poll(cls, context):
+        return not bpy.app.background
+
+    def execute(self, context):
+        try:
+            controller.play(
+                self.context_id, self.request_id, self.expected_revision, self.asset_id, "LISTEN"
+            )
+        except MediaError as error:
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare a private copy; inspect saved jobs again")
+            return {"CANCELLED"}
+        runtime.set_message("Preparing a verified private copy...")
+        _start_timer()
+        _redraw()
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_stop_saved_audio(bpy.types.Operator):
+    bl_idname = "scenario.stop_saved_audio"
+    bl_label = "Stop saved audio"
+    bl_description = (
+        "Stop playing this saved audio; the saved result and its controls stay unchanged"
+    )
+    context_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    request_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    asset_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def execute(self, context):
+        controller.stop_listening(self.context_id, self.request_id, self.asset_id)
         _start_timer()
         _redraw()
         return {"FINISHED"}
@@ -802,6 +1062,8 @@ def draw(layout, record):
 
 CLASSES = (
     SCENARIO_OT_play_saved_media,
+    SCENARIO_OT_play_saved_audio,
+    SCENARIO_OT_stop_saved_audio,
     SCENARIO_OT_preview_saved_waveform,
     SCENARIO_OT_cancel_saved_waveform,
     SCENARIO_OT_close_saved_waveform,

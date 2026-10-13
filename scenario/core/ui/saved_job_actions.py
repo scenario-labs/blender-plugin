@@ -24,11 +24,12 @@ A running workflow job also gets rows from its owner's in-memory step
 projection (`WorkflowSteps`): one review control per waiting step, the decision
 being sent, the last decision's error, or why it cannot be canceled.
 
-Read-only playback controls (Play, Play in Blender and Waveform) are not job
-actions: they never change the job, the scene or spending. They follow the
-view's saved state and downloaded media types instead of ``ModelJobs.actions``,
-and MCP ``job_status`` does not report them; no MCP tool launches a desktop
-player.
+Read-only playback controls (Play video, Play in Blender, Play audio, Stop
+audio, Waveform and Open in system player) are not job actions: they never
+change the job, the scene or spending. They follow the view's saved state,
+downloaded media types and the audio its owner plays instead of
+``ModelJobs.actions``, and MCP ``job_status`` does not report them; no MCP tool
+launches a desktop player or plays audio.
 """
 
 import textwrap
@@ -111,6 +112,9 @@ PREFILL_STATES = frozenset({"ready", "applied", "apply_failed"})
 PLAYBACK_STATES = frozenset({"ready", "applying", "apply_failed", "applied"})
 PLAYBACK_OPERATOR = "scenario.play_saved_media"
 WAVEFORM_OPERATOR = "scenario.preview_saved_waveform"
+# Saved audio played inside Blender, in an owned offline process, and its Stop.
+AUDIO_OPERATOR = "scenario.play_saved_audio"
+STOP_AUDIO_OPERATOR = "scenario.stop_saved_audio"
 
 
 @dataclass(frozen=True, eq=False)
@@ -410,10 +414,86 @@ def _hdri_prefills(view, job):
     )
 
 
-def _playback(view, job, result_types):
-    """Play, then Play in Blender or Waveform, in one row per downloaded media result.
+def _video_playback(asset_id, index, asset, row):
+    return (
+        SavedJobAction(
+            f"play:{asset_id}",
+            "play",
+            "playback",
+            f"Play video ({index})",
+            operator=PLAYBACK_OPERATOR,
+            properties=(*asset, ("player", "SYSTEM")),
+            row=row,
+        ),
+        SavedJobAction(
+            f"play_in_blender:{asset_id}",
+            "play_in_blender",
+            "playback",
+            f"Play in Blender ({index})",
+            operator=PLAYBACK_OPERATOR,
+            properties=(*asset, ("player", "BLENDER")),
+            row=row,
+        ),
+    )
 
-    Numbering counts every saved asset, like per-asset applications.
+
+def _audio_playback(asset_id, index, asset, row, playing):
+    """Play audio or Stop audio and Waveform in one row, the system player in the next.
+
+    Stop names the playing asset but no revision: it stops that asset's audio
+    whatever the saved job's state.
+    """
+    if playing:
+        toggle = SavedJobAction(
+            f"stop_audio:{asset_id}",
+            "stop_audio",
+            "playback",
+            f"Stop audio ({index})",
+            operator=STOP_AUDIO_OPERATOR,
+            properties=tuple(item for item in asset if item[0] != "expected_revision"),
+            row=row,
+        )
+    else:
+        toggle = SavedJobAction(
+            f"play:{asset_id}",
+            "play",
+            "playback",
+            f"Play audio ({index})",
+            operator=AUDIO_OPERATOR,
+            properties=asset,
+            row=row,
+        )
+    return (
+        toggle,
+        SavedJobAction(
+            f"waveform:{asset_id}",
+            "waveform",
+            "playback",
+            f"Waveform ({index})",
+            operator=WAVEFORM_OPERATOR,
+            properties=asset,
+            row=row,
+        ),
+        SavedJobAction(
+            f"system_player:{asset_id}",
+            "system_player",
+            "playback",
+            f"Open in system player ({index})",
+            operator=PLAYBACK_OPERATOR,
+            properties=(*asset, ("player", "SYSTEM")),
+            row=f"system:{asset_id}",
+        ),
+    )
+
+
+def _playback(view, job, result_types, listening):
+    """One row per downloaded video result, two per audio result.
+
+    A video row has Play video, which opens the system player, and Play in
+    Blender. An audio row has Play audio, which plays inside Blender, or Stop
+    audio while `listening` names that asset, and Waveform; the next row opens
+    the system player. Numbering counts every saved asset, like per-asset
+    applications.
     """
     items = []
     for index, asset_id in enumerate(view.asset_ids, 1):
@@ -422,49 +502,24 @@ def _playback(view, job, result_types):
             continue
         asset = (*job, ("asset_id", asset_id))
         row = f"playback:{asset_id}"
-        items.append(
-            SavedJobAction(
-                f"play:{asset_id}",
-                "play",
-                "playback",
-                f"Play {kind} ({index})",
-                operator=PLAYBACK_OPERATOR,
-                properties=(*asset, ("player", "SYSTEM")),
-                row=row,
-            )
-        )
         if kind == "video":
-            second = SavedJobAction(
-                f"play_in_blender:{asset_id}",
-                "play_in_blender",
-                "playback",
-                f"Play in Blender ({index})",
-                operator=PLAYBACK_OPERATOR,
-                properties=(*asset, ("player", "BLENDER")),
-                row=row,
-            )
+            items.extend(_video_playback(asset_id, index, asset, row))
         else:
-            second = SavedJobAction(
-                f"waveform:{asset_id}",
-                "waveform",
-                "playback",
-                f"Waveform ({index})",
-                operator=WAVEFORM_OPERATOR,
-                properties=asset,
-                row=row,
-            )
-        items.append(second)
+            items.extend(_audio_playback(asset_id, index, asset, row, listening == asset_id))
     return items
 
 
-def describe(view, context_id, result_types, blockout_review=None, workflow_steps=None):
+def describe(
+    view, context_id, result_types, blockout_review=None, workflow_steps=None, listening=None
+):
     """Return one projected view's saved-job controls in drawing order.
 
     Reads only the in-memory view, the supplied Blockout review for the current
-    scene and the supplied workflow step projection; it performs no I/O and
-    changes nothing. A view that is not a shared job, or has no saved revision
-    yet, offers nothing. Playback controls follow the job actions and precede
-    the closing status rows.
+    scene, the supplied workflow step projection and `listening`, the asset ID
+    whose audio this view's owner plays or prepares to play; it performs no I/O
+    and changes nothing. A view that is not a shared job, or has no saved
+    revision yet, offers nothing. Playback controls follow the job actions and
+    precede the closing status rows.
     """
     meta = view.meta
     if not meta.get("shared_job") or "saved_revision" not in meta:
@@ -491,7 +546,7 @@ def describe(view, context_id, result_types, blockout_review=None, workflow_step
         items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
     items.extend(_hdri_prefills(view, job))
     if state in PLAYBACK_STATES:
-        items.extend(_playback(view, job, result_types))
+        items.extend(_playback(view, job, result_types, listening))
     # Session-local notes about the last import, such as splat thinning.
     for index, text in enumerate(meta.get("import_notices", ())):
         items.append(_status(f"import_notice:{index}", "", text, "INFO"))

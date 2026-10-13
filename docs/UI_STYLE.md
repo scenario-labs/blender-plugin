@@ -907,16 +907,27 @@ Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
 
 ## Saved media playback and waveform
 
-Each downloaded saved video or audio result gets one row of saved-job
-descriptors: **Play video (N)** with **Play in Blender (N)**, or **Play audio
-(N)** with **Waveform (N)**. Numbering counts every saved asset, like **Add
-video/audio strip (N)**. Jobs, Generations and the Studio pages that reuse them
-draw the same row from the same descriptors. These controls are read-only: they
+Each downloaded saved video result gets one row of saved-job descriptors:
+**Play video (N)**, which opens the system player, with **Play in Blender
+(N)**. Each downloaded saved audio result gets two: **Play audio (N)** with
+**Waveform (N)**, then **Open in system player (N)** on its own row. Play audio
+plays inside Blender, so its label names no other app; the system player's
+label says that one opens, and its own row keeps it whole in a narrow sidebar,
+where a third aligned button would clip it. While a result's audio prepares,
+starts or plays, its **Play audio (N)** button reads **Stop audio (N)** in the
+same place; the
+[in-extension playback](RESULT_PREVIEWS.md#in-extension-audio-playback) ends,
+or another result's Play audio starts, and it reads Play audio again. Only one
+result shows Stop. Numbering counts every saved asset, like **Add video/audio
+strip (N)**. Jobs, Generations and the Studio pages that reuse them draw the
+same rows from the same descriptors. These controls are read-only: they
 generate, download, apply and spend nothing and leave the scene unchanged, so
 they open no confirmation, and their tooltips say so. They are not job actions:
-MCP `job_status` does not list them, and no MCP tool launches a player. Play
-reports through the status line once the private copy opens or fails, and is
-unavailable in background Blender.
+MCP `job_status` does not list them, and no MCP tool launches a player or plays
+audio. Play reports through the status line once the private copy opens or
+fails, and Play audio when its sound starts, ends, stops or fails, with the
+reason; both are unavailable in background Blender. Drawing reads which result
+plays from the controller's memory; it never starts, polls or stops a child.
 
 The waveform box follows the job's controls: a `SOUND` header naming the result,
 with a close button, then status text wrapped to the box, **Cancel** while
@@ -943,7 +954,11 @@ rows and their operators, recording-layout draws with file and store reads
 refused, the UI-scale sizing, measured wrapping in a 561 px sidebar at an
 interface scale of 2 (UI scale 1.0 on a Retina display), in a sized popup and
 in Studio's first draw before its popup is sized, the Jobs panel drawing the
-box, and an offline waveform decoded by the real child Blender.
+box, and an offline waveform decoded by the real child Blender. Installed tests
+on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 check the audio rows, Stop audio
+replacing Play audio while a child prepares and plays and only for that result,
+and recording-layout and Jobs panel draws that refuse to start, poll or stop a
+child, with real children and a recording output instead of a sound device.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
 1.0, with system mouse and key events and a ZIP built before the measured
@@ -965,11 +980,14 @@ Environment credentials and a ZIP with that launch confirmed that **Play video**
 opened the system player on the private read-only copy, whose SHA-256 matched
 the saved result, and that **Play in Blender** started a player whose
 environment had no `SCENARIO_`, `PYTHON` or proxy names. On 2026-10-13 the
-maintainer listened through **Play audio** on the candidate ZIP (see the
-[human checks](maintenance/release-acceptance.md#human-checks)). The waveform's
-Cancel, Retry and close on the desktop, clicking **Play video** or **Play in
-Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport interaction and
-other platforms are not yet recorded; they continue in #440.
+maintainer listened through **Play audio** on the 0.10.0 candidate ZIP, when it
+opened the system player (see the
+[human checks](maintenance/release-acceptance.md#human-checks)). These passes
+predate the in-extension **Play audio**, **Stop audio** and **Open in system
+player** rows. Clicking them, listening through them, the waveform's Cancel,
+Retry and close on the desktop, clicking **Play video** or **Play in Blender**
+at UI scale 2.0, Studio at UI scale 2.0, viewport interaction and other
+platforms are not yet recorded; they continue in #440.
 
 ## Saved result previews
 

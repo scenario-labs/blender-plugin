@@ -1,12 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Installed Play, Play in Blender and waveform controls for saved shared results.
+"""Installed Play, Play in Blender, Play audio and waveform controls for saved shared results.
 
 Waveforms decode in the real offline Blender child. Players are patched: the
 system player launcher and the animation player process are recorded, never
-launched.
-Nothing contacts Scenario; drawing is checked through recording layouts, not
-physical input.
+launched. Play audio starts the real offline audio player child, running the
+installed worker with a recording output instead of a sound device, so nothing
+is audible. Nothing contacts Scenario; drawing is checked through recording
+layouts, not physical input.
 """
 
 import hashlib
@@ -36,6 +37,7 @@ from helpers import (
     submodule,
     temp_credentials,
 )
+from test_audio_player import notes, recording_spec
 
 MP4 = b"\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isomiso2" + b"\x00" * 64
 
@@ -198,6 +200,9 @@ class ResultMediaTests(unittest.TestCase):
     def cleanup(self):
         for player in (*self.players, *self.launchers):
             player.code = 0
+        # Audio children are processes: wait for each before the next test.
+        for listener in self.media.controller._listeners:
+            listener.player.wait()
         self.media.controller.poll()
         self.media.controller.retire()
         self.runtime.state.reset()
@@ -314,16 +319,19 @@ class ResultMediaTests(unittest.TestCase):
                 "Play in Blender (1)",
                 "Play audio (2)",
                 "Waveform (2)",
+                "Open in system player (2)",
                 "Downloaded result awaits application review",
             ],
         )
         layout = Layout()
         self.recovery.draw_controls(layout, view)
         rows = [index for index, call in enumerate(layout.calls) if call == ("row",)]
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)
         operators = [call[2] for call in layout.calls if call[0] == "operator"]
         self.assertEqual(operators, labels[:-1])
-        self.assertFalse(bpy.ops.scenario.play_saved_media.poll())  # No player in background.
+        # No player and no audio in background Blender.
+        self.assertFalse(bpy.ops.scenario.play_saved_media.poll())
+        self.assertFalse(bpy.ops.scenario.play_saved_audio.poll())
         self.assertEqual(self.requests, [])
 
     # -- play -----------------------------------------------------------------
@@ -369,7 +377,7 @@ class ResultMediaTests(unittest.TestCase):
             self.assertIs(player.options[stream], subprocess.DEVNULL)
         # A full cache never evicts the copy a running player reads.
         with patch.object(self.media, "COPY_LIMIT", 1):
-            self.play(view, "play:sound")
+            self.play(view, "system_player:sound")
             self.assertTrue(Path(path).is_file())
             self.assertEqual(len(self.copies()), 2)
             player.code = 0
@@ -377,7 +385,7 @@ class ResultMediaTests(unittest.TestCase):
             self.assertFalse(Path(path).exists())
         self.assertEqual(len(self.copies()), 1)
         with self.assertRaisesRegex(self.media.MediaError, "video"):
-            args = self.args(view, "play:sound")
+            args = self.args(view, "system_player:sound")
             self.media.controller.play(
                 args["context_id"], "request", args["expected_revision"], "sound", "BLENDER"
             )
@@ -392,7 +400,7 @@ class ResultMediaTests(unittest.TestCase):
         with patch.object(self.media, "COPY_LIMIT", 1):
             self.play(view, "play:clip")
             (first,) = self.copies()
-            self.play(view, "play:sound")
+            self.play(view, "system_player:sound")
             (second,) = self.copies()
         self.assertNotEqual(first, second)
         # The lane discarded the evicted copy, so the controller stops tracking it.
@@ -410,10 +418,10 @@ class ResultMediaTests(unittest.TestCase):
         with patch.object(self.media, "COPY_LIMIT", 1):
             self.play(view, "play_in_blender:clip")  # Pinned by its running player.
             self.launcher_code = None  # The system player launcher keeps running.
-            self.play(view, "play:sound")  # Over the limit, pinned by its launcher.
+            self.play(view, "system_player:sound")  # Over the limit, pinned by its launcher.
             reused = self.opened[-1]
             self.assertEqual(len(self.copies()), 2)
-            args = self.args(view, "play:sound")
+            args = self.args(view, "system_player:sound")
             task = controller.play(
                 args["context_id"], "request", args["expected_revision"], "sound", "SYSTEM"
             )
@@ -549,7 +557,7 @@ class ResultMediaTests(unittest.TestCase):
                 # first discards the copy that Play evicts, waits in the queue.
                 session.result_previews.request("request", asset_ids=("sound",))
                 self.settle(entered.is_set)
-                args = self.args(view, "play:sound")
+                args = self.args(view, "system_player:sound")
                 task = controller.play(
                     args["context_id"], "request", args["expected_revision"], "sound", "SYSTEM"
                 )
@@ -597,6 +605,293 @@ class ResultMediaTests(unittest.TestCase):
         ):
             # A running player still needs reaping, so the timer keeps its interval.
             self.assertEqual(self.media._tick(), self.media.IDLE_INTERVAL)
+
+    # -- audio playback -------------------------------------------------------
+
+    def fake_output(self, seconds=60):
+        """Play audio with the installed worker and a recording output, never a device."""
+        directory = Path(tempfile.mkdtemp(dir=self.root))
+        spec, record = recording_spec(directory, seconds=seconds)
+        self.enterContext(patch.object(self.runtime, "audio_device", return_value="Test"))
+        self.enterContext(patch.object(self.runtime, "audio_player_spec", return_value=spec))
+        return record
+
+    def listen(self, view, key):
+        args = self.args(view, key)
+        return self.media.controller.play(
+            args["context_id"],
+            args["request_id"],
+            args["expected_revision"],
+            args["asset_id"],
+            "LISTEN",
+        )
+
+    def phase(self, asset_id):
+        """The phase of the newest playback child of ``asset_id``, or None."""
+        listeners = [item for item in self.media.controller._listeners if item.asset_id == asset_id]
+        return listeners[-1].player.phase if listeners else None
+
+    def listen_root(self):
+        return self.root / "cache" / "audio-player"
+
+    def test_play_audio_plays_a_private_copy_inside_blender_and_stop_ends_it(self):
+        players = submodule("core.jobs.audio_player")
+        record = self.fake_output()
+        sound = tone()
+        view = self.saved([("sound", "sound.wav", "audio/wav", sound)])
+        saved = self.runtime.state.job_store.get("request")
+        data = (len(bpy.data.sounds), len(bpy.data.objects), len(bpy.data.scenes))
+        controller = self.media.controller
+        self.listen(view, "play:sound")
+        # Stop replaces Play while the private copy is prepared.
+        stop = self.control(view, "stop_audio:sound")
+        self.assertEqual(
+            (stop.label, stop.operator), ("Stop audio (1)", "scenario.stop_saved_audio")
+        )
+        self.settle(lambda: self.phase("sound") == players.PLAYING)
+        (listener,) = controller._listeners
+        self.assertEqual(listener.label, "audio (1)")
+        self.assertIn("Playing saved audio (1)", self.runtime.state.last_message)
+        self.assertEqual(controller.interval(), self.media.PLAYING_INTERVAL)
+        path = listener.copy.path
+        self.assertEqual(path.name, "media.wav")
+        self.assertEqual(path.parent.parent.resolve(), self.playback_root().resolve())
+        self.assertEqual(path.read_bytes(), sound)
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o400)
+        (directory,) = self.listen_root().iterdir()
+        self.assertTrue(directory.name.startswith("listen-"))
+        self.assertEqual(notes(record), [("device", "Test"), ("play", 8000.0, 1)])
+        self.assertEqual(self.opened, [])  # No other app opened.
+        properties = dict(self.control(view, "stop_audio:sound").properties)
+        self.assertNotIn("expected_revision", properties)
+        self.assertEqual(bpy.ops.scenario.stop_saved_audio(**properties), {"FINISHED"})
+        self.assertEqual(listener.player.phase, players.STOPPED)
+        self.assertEqual(self.runtime.state.last_message, "Stopped saved audio (1)")
+        self.assertEqual(self.control(view, "play:sound").label, "Play audio (1)")
+        self.settle(lambda: not controller._listeners)
+        self.assertEqual(list(self.listen_root().iterdir()), [])
+        self.assertTrue(path.is_file())  # Kept for reuse like any player copy.
+        # Offline (Online Access is disabled for these tests), nothing saved or
+        # applied changes and no service request was made.
+        self.assertEqual(self.runtime.state.job_store.get("request"), saved)
+        self.assertEqual((self.results / "sound.wav").read_bytes(), sound)
+        self.assertEqual((len(bpy.data.sounds), len(bpy.data.objects), len(bpy.data.scenes)), data)
+        self.assertFalse(bpy.app.online_access)
+        self.assertEqual(self.requests, [])
+
+    def test_saved_audio_that_ends_turns_stop_back_into_play(self):
+        players = submodule("core.jobs.audio_player")
+        self.fake_output(seconds=0.3)
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+        self.listen(view, "play:sound")
+        self.settle(lambda: self.phase("sound") == players.PLAYING)
+        self.settle(lambda: self.runtime.state.last_message == "Saved audio (1) finished playing")
+        self.assertNotEqual(self.phase("sound"), players.PLAYING)
+        self.assertEqual(self.control(view, "play:sound").label, "Play audio (1)")
+        self.settle(lambda: not self.media.controller._listeners)
+        self.assertEqual(list(self.listen_root().iterdir()), [])
+
+    def test_a_second_play_stops_the_first_at_once_and_plays_only_the_latest(self):
+        players = submodule("core.jobs.audio_player")
+        record = self.fake_output()
+        view = self.saved(
+            [
+                ("first", "first.wav", "audio/wav", tone(amplitude=0.25)),
+                ("second", "second.wav", "audio/wav", tone(rate=16000, amplitude=0.75)),
+            ]
+        )
+        controller = self.media.controller
+        self.listen(view, "play:first")
+        self.settle(lambda: self.phase("first") == players.PLAYING)
+        (first,) = controller._listeners
+        self.listen(view, "play:second")
+        # The first sound stops before the second copy is even ready.
+        self.assertEqual(first.player.phase, players.STOPPED)
+        self.assertEqual(self.control(view, "play:first").label, "Play audio (1)")
+        self.assertEqual(self.control(view, "stop_audio:second").label, "Stop audio (2)")
+        self.settle(
+            lambda: self.phase("second") == players.PLAYING and first not in controller._listeners
+        )
+        self.assertEqual([item.asset_id for item in controller._listeners], ["second"])
+        plays = [item for item in notes(record) if item[0] == "play"]
+        self.assertEqual(plays, [("play", 8000.0, 1), ("play", 16000.0, 1)])
+        # A Stop drawn for the first result never stops the second.
+        args = self.args(view, "play:first")
+        self.assertFalse(controller.stop_listening(args["context_id"], "request", "first"))
+        self.assertEqual(self.phase("second"), players.PLAYING)
+
+    def hold_lane(self):
+        """Hold the preview lane with a still poll, so Play commands wait in its queue."""
+        session = self.runtime.state.job_session
+        coordinator = session._coordinator
+        original = coordinator.prepare_result_previews
+        entered, release = threading.Event(), threading.Event()
+
+        def held(*args, **kwargs):
+            entered.set()
+            if not release.wait(10):
+                raise AssertionError("The test did not release the preview lane")
+            return original(*args, **kwargs)
+
+        self.addCleanup(release.set)
+        patcher = patch.object(coordinator, "prepare_result_previews", side_effect=held)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return session, entered, release
+
+    def test_a_late_copy_never_starts_audio(self):
+        players = submodule("core.jobs.audio_player")
+        controller = self.media.controller
+        for change in ("replaced", "connection"):
+            with self.subTest(change=change):
+                record = self.fake_output()
+                request_id = f"request-{change}"
+                view = self.saved(
+                    [
+                        ("first", "first.wav", "audio/wav", tone(amplitude=0.25)),
+                        ("second", "second.wav", "audio/wav", tone(rate=16000)),
+                    ],
+                    request_id=request_id,
+                )
+                session, entered, release = self.hold_lane()
+                session.result_previews.request(request_id, asset_ids=("first",))
+                self.settle(entered.is_set)
+                late = self.listen(view, "play:first")
+                if change == "replaced":
+                    self.listen(view, "play:second")
+                else:
+                    self.runtime.state.reset()  # Credentials, project or file changed.
+                release.set()
+                self.settle(lambda late=late: late.done() and not controller.loading)
+                if change == "replaced":
+                    self.settle(lambda: self.phase("second") == players.PLAYING)
+                    self.assertEqual(notes(record), [("device", "Test"), ("play", 16000.0, 1)])
+                else:
+                    self.assertEqual(controller._listeners, [])
+                    self.assertEqual(notes(record), [])
+                self.assertIsNone(self.phase("first"))
+                controller.retire()
+                self.settle(lambda: not controller._listeners)
+                self.runtime.state.reset()
+
+    def test_undecodable_saved_audio_reports_an_error_and_keeps_its_controls(self):
+        record = self.fake_output()
+        view = self.saved([("sound", "sound.mp3", "audio/mpeg", b"ID3\x04" + b"\x00" * 128)])
+        self.listen(view, "play:sound")
+        self.settle(
+            lambda: self.runtime.state.last_message == "Blender could not decode this audio"
+        )
+        self.settle(lambda: not self.media.controller._listeners)
+        self.assertEqual(notes(record), [])  # No output was opened.
+        labels = [item.label for item in self.recovery.result_actions(view)]
+        for label in ("Play audio (1)", "Waveform (1)", "Open in system player (1)"):
+            self.assertIn(label, labels)
+        self.assertEqual(list(self.listen_root().iterdir()), [])
+
+    def test_play_audio_refuses_without_an_executable_an_output_or_audio(self):
+        view = self.saved(
+            [
+                ("clip", "clip.mp4", "video/mp4", MP4),
+                ("sound", "sound.wav", "audio/wav", tone()),
+            ]
+        )
+        args = self.args(view, "play:sound")
+        controller = self.media.controller
+
+        def listen(asset_id="sound"):
+            controller.play(
+                args["context_id"], "request", args["expected_revision"], asset_id, "LISTEN"
+            )
+
+        with (
+            patch.object(self.runtime, "audio_device", return_value="CoreAudio"),
+            patch.object(self.runtime, "audio_player_spec", return_value=None),
+            self.assertRaisesRegex(self.media.MediaError, "executable"),
+        ):
+            listen()
+        for device in ("None", ""):
+            with (
+                self.subTest(device=device),
+                patch.object(self.runtime, "audio_device", return_value=device),
+                self.assertRaisesRegex(self.media.MediaError, "Preferences"),
+            ):
+                listen()
+        with self.assertRaisesRegex(self.media.MediaError, "audio"):
+            listen("clip")
+        with self.assertRaises(self.media.MediaError):
+            controller.play("another", "request", args["expected_revision"], "sound", "LISTEN")
+        self.assertIsNone(controller._play)
+        self.assertEqual(controller._listeners, [])
+        self.assertEqual(self.copies(), [])
+
+    def test_file_load_retirement_and_unregister_stop_audio_and_clean_up(self):
+        players = submodule("core.jobs.audio_player")
+        self.fake_output()
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+        controller = self.media.controller
+        for end in ("file-load", "connection", "unregister"):
+            with self.subTest(end=end):
+                self.listen(view, "play:sound")
+                self.settle(lambda: self.phase("sound") == players.PLAYING)
+                (listener,) = controller._listeners
+                if end == "file-load":
+                    self.media._file_load(None)
+                elif end == "connection":
+                    self.runtime.state.reset()
+                else:
+                    controller.shutdown()
+                    # Unregistering waits: the child is gone before it returns.
+                    self.assertTrue(listener.player.exited)
+                    self.assertEqual(controller._listeners, [])
+                self.assertEqual(listener.player.phase, players.STOPPED)
+                self.settle(lambda: not controller._listeners)
+                self.assertEqual(list(self.listen_root().iterdir()), [])
+                self.assertEqual(self.copies(), [])
+                view = self.runtime.inspect_model_jobs().views["request"]
+
+    def test_drawing_never_starts_or_stops_audio(self):
+        players = submodule("core.jobs.audio_player")
+        self.fake_output()
+        view = self.saved([("sound", "sound.wav", "audio/wav", tone())])
+        controller = self.media.controller
+        store = self.runtime.state.job_store
+        refuse = AssertionError("drawing started, stopped or polled audio")
+
+        def draw():
+            layout = Layout()
+            with (
+                patch.object(players, "start", side_effect=refuse),
+                patch.object(players.AudioPlayer, "stop", side_effect=refuse),
+                patch.object(players.AudioPlayer, "poll", side_effect=refuse),
+                patch.object(players.AudioPlayer, "wait", side_effect=refuse),
+                patch.object(subprocess, "Popen", side_effect=refuse),
+                patch.object(store, "get", side_effect=refuse),
+                patch.object(self.runtime, "ensure_job_session", side_effect=refuse),
+                patch.object(os, "open", side_effect=refuse),
+                patch.object(os, "stat", side_effect=refuse),
+                patch.object(os, "lstat", side_effect=refuse),
+            ):
+                self.recovery.draw_controls(layout, view)
+            return [call[2] for call in layout.calls if call[0] == "operator"]
+
+        self.listen(view, "play:sound")
+        pending = controller._play
+        self.assertIn("Stop audio (1)", draw())  # While the copy is prepared.
+        self.assertIs(controller._play, pending)
+        self.assertEqual(controller._listeners, [])
+        self.settle(lambda: self.phase("sound") == players.PLAYING)
+        (listener,) = controller._listeners
+        self.assertIn("Stop audio (1)", draw())
+        with (
+            patch.object(players.AudioPlayer, "stop", side_effect=refuse),
+            patch.object(players.AudioPlayer, "poll", side_effect=refuse),
+        ):
+            _, jobs, _, _ = draw_job_panels()
+        self.assertIn("Stop audio (1)", drawn_texts(jobs))
+        self.assertEqual(listener.player.phase, players.PLAYING)
+        self.assertFalse(listener.player.exited)
+        self.assertEqual(controller._listeners, [listener])
 
     # -- waveform -------------------------------------------------------------
 

@@ -562,7 +562,13 @@ passes. It reuses
 an unchanged copy of the same receipt, keeps at most four copies or 1 GiB plus
 any copy a running animation player or system player launcher uses or the
 pending Play reuses, reports a launcher that exits with an error, and allows two
-animation players. For **Waveform** it asks `result_previews` for the envelope
+animation players. For **Play audio** it starts one owned offline Blender
+process that plays the copy through Blender's audio engine
+([in-extension audio playback](RESULT_PREVIEWS.md#in-extension-audio-playback)),
+pins that copy until the process exits, and polls it from its timer; another
+Play audio, **Stop audio**, retirement, a file load and unregistering stop it,
+and unregistering waits for it. A copy that arrives for a replaced Play audio or
+a retired context never starts one. For **Waveform** it asks `result_previews` for the envelope
 rendition only, so no server still is polled, and polls its status from a timer;
 Cancel, and selecting another result's waveform while one loads, call the
 scheduler's `cancel`, which terminates a running decode. A late copy or envelope is discarded unless the

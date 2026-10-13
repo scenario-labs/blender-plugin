@@ -117,12 +117,16 @@ class ResultActionTests(unittest.TestCase):
             SimpleNamespace(task=None, phase="READY", identifier="fixture-review"),
         )
         operators = set()
-        for review in reviews:
+        controller = submodule("blender.result_media").controller
+        # Without audio playing, then while the saved sound plays (Stop audio).
+        for review, listening in zip(reviews, (None, "sound"), strict=True):
             jobs = SimpleNamespace(recovery=SimpleNamespace(current=lambda *_, r=review: r))
             self.runtime.state.blockout_jobs = jobs
             for action in ACTIONS:
                 view = self.view("applied", (action,), STILL, first_frame_assets=("still",))
-                for item in self.recovery.result_actions(view):
+                with patch.object(controller, "listening", return_value=listening):
+                    items = self.recovery.result_actions(view)
+                for item in items:
                     if item.operator is None:
                         continue
                     category, name = item.operator.split(".")
@@ -151,6 +155,8 @@ class ResultActionTests(unittest.TestCase):
                 "scenario.use_saved_blockout",
                 "scenario.use_saved_first_frame",
                 "scenario.play_saved_media",
+                "scenario.play_saved_audio",
+                "scenario.stop_saved_audio",
                 "scenario.preview_saved_waveform",
             },
         )
@@ -184,10 +190,11 @@ class ResultActionTests(unittest.TestCase):
                 "Play in Blender (2)",
                 "Play audio (3)",
                 "Waveform (3)",
+                "Open in system player (3)",
                 "Downloaded result awaits application review",
             ],
         )
-        self.assertEqual(layout.calls.count(("row",)), 2)
+        self.assertEqual(layout.calls.count(("row",)), 3)
         self.assertEqual(
             layout.calls[2][4],
             {

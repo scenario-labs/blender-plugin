@@ -16,6 +16,7 @@ from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
 from ..core.jobs.audio_decode import WaveformSpec
+from ..core.jobs.audio_player import PlayerSpec
 from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.model_defaults import ModelDefaults
@@ -191,6 +192,32 @@ def waveform_spec():
         if not executable.is_file() or not worker.is_file():
             return None
         return WaveformSpec(executable, worker)
+    except (OSError, ValueError):
+        return None
+
+
+def audio_device():
+    """The audio output chosen in Preferences > System > Sound, such as CoreAudio, or ''."""
+    try:
+        return str(bpy.context.preferences.system.audio_device)
+    except (AttributeError, TypeError):
+        return ""
+
+
+def audio_player_spec(device):
+    """The owned offline audio player for ``device``, resolved on the main thread; None without one.
+
+    Like the waveform decoder, it needs Blender's executable and the bundled worker.
+    """
+    binary = bpy.app.binary_path
+    if not binary:
+        return None
+    try:
+        executable = pathlib.Path(binary).resolve()
+        worker = pathlib.Path(__file__).with_name("audio_player_worker.py").resolve()
+        if not executable.is_file() or not worker.is_file():
+            return None
+        return PlayerSpec(executable, worker, device)
     except (OSError, ValueError):
         return None
 

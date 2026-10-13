@@ -44,12 +44,16 @@ sample lists. The native `tests/blender/test_result_media.py` and
 `tests/blender/test_waveform_worker.py` writes WAV, MP3, Ogg Vorbis, FLAC and
 Matroska AAC tones with Blender's audio module. The waveform decoder tests also
 read the documented synthetic `audio-silence.mp3`, `audio-silence.ogg` and
-`film-four-seconds-audio.mp4`, copying the latter as an M4A. Those signals
+`film-four-seconds-audio.mp4`, copying the latter as an M4A. The native
+`tests/blender/test_audio_player.py` writes WAV, MP3, Ogg Vorbis, FLAC and ADTS
+AAC tones the same ways, copies that M4A too and writes an undecodable MP3
+header; its children play to a recording stand-in or Blender's None output, so
+no test sound is audible. Those signals
 contain no provider output, recording or third-party media; they are
 first-party GPL test code and leave no new committed audio files. They cover
 PCM and compressed, mono and stereo, silent, undecodable, too long, canceled and
-timed-out input. Human listening is a separate check; it passed on the 0.10.0
-candidate.
+timed-out input. Human listening is a separate check; through the system player it passed on
+the 0.10.0 candidate, and listening through Play audio continues in #440.
 
 ## Synthetic video fixture
 

@@ -71,7 +71,9 @@ types, and still list a private custom model that reaches them.
 See [trained-model catalog reads](../SDK_ADOPTION.md#trained-model-catalog-reads).
 
 The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
-completions. Credential changes retire the context, discard its model/schema
+completions. An MCP call that needs a model description not loaded yet waits for
+its read's worker on the request thread, then delivers it on the main thread
+([MCP quote contract](../MCP.md#model-quote-and-submission-contract)). Credential changes retire the context, discard its model/schema
 caches and visible quotes, and reject late success/error events from the old
 context. Main-thread entry points and GUI ticks mirror Blender's online-access
 permission into a thread-safe event; each SDK request, including subsequent

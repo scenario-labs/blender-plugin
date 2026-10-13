@@ -4,7 +4,12 @@
 
 
 class ScenarioError(Exception):
-    """An HTTP-level or API-level failure. `status` is 0 for network failures."""
+    """An HTTP-level or API-level failure. `status` is 0 when there is no HTTP status.
+
+    Network failures and the extension's own refusals use status 0. The message
+    names the status before the reason only when there is one, so clients and
+    logs never see a bare "0" prefix.
+    """
 
     def __init__(self, status, reason, *, trace_id=None, body=None, path=None):
         self.status = int(status)
@@ -12,8 +17,9 @@ class ScenarioError(Exception):
         self.trace_id = trace_id
         self.body = body
         self.path = path
+        prefix = f"{self.status} " if self.status else ""
         suffix = f" (trace {trace_id})" if trace_id else ""
-        super().__init__(f"{self.status} {self.reason}{suffix}")
+        super().__init__(f"{prefix}{self.reason}{suffix}")
 
     @property
     def is_auth(self):

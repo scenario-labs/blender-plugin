@@ -52,3 +52,44 @@ def test_deferred_tool_work_runs_between_main_thread_preparation_and_delivery():
     assert phases[0][1] is main and phases[2][1] is main
     assert phases[1][1] is not main
     assert "1.234567890123456789" in response["result"]["content"][0]["text"]
+
+
+def test_a_finish_can_hand_more_work_to_the_request_thread():
+    """A tool waiting for a model description then quotes: each step returns to the main thread."""
+    import threading
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from scenario.mcp.protocol import DeferredTool, Registry, ToolSpec
+    from scenario.mcp.server import McpServer
+
+    phases = []
+    main = threading.current_thread()
+
+    def step(name, value=None):
+        phases.append((name, threading.current_thread()))
+        return value
+
+    def prepare(args):
+        step("prepare")
+        return DeferredTool(lambda: step("read"), deliver)
+
+    def deliver(_):
+        step("deliver")
+        return DeferredTool(lambda: step("quote", "1.25"), lambda cost: step("finish", cost))
+
+    registry = Registry()
+    registry.add(ToolSpec("estimate", "Price", {}, prepare))
+    server = McpServer("127.0.0.1", 0, "fixture-token", registry, {}, timeout=5)
+    message = {"id": 1, "method": "tools/call", "params": {"name": "estimate"}}
+    with ThreadPoolExecutor(max_workers=1) as worker:
+        result = worker.submit(server.handle, message)
+        deadline = time.monotonic() + 5
+        while not result.done() and time.monotonic() < deadline:
+            server.process_pending()
+            time.sleep(0.001)
+        response = result.result(1)
+    assert [name for name, _ in phases] == ["prepare", "read", "deliver", "quote", "finish"]
+    on_main = [name for name, thread in phases if thread is main]
+    assert on_main == ["prepare", "deliver", "finish"]
+    assert response["result"] == {"content": [{"type": "text", "text": "1.25"}]}

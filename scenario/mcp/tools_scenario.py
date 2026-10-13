@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """MCP tools that talk to Scenario through the add-on: catalog, cost, generate, results into the scene."""
 
+import functools
 import json
 import math
 import time
@@ -107,6 +108,58 @@ def _trained_listing(lane, query):
     if bases["pending"]:
         result["note"] = "base model descriptions are still being checked; call again for routes"
     return result
+
+
+DESCRIPTION_WAIT = 30.0  # seconds a call waits for the model description read it needs
+DESCRIPTION_LOADING = (
+    "The model description is still loading; call again in a few seconds. "
+    "Nothing was quoted, submitted or changed"
+)
+
+
+def _after_description(handler):
+    """Serve a tool whose model description may not be loaded yet.
+
+    The first call for an uncached model starts or joins its background read
+    (ModelLoading). The MCP request thread waits for that read's worker, never
+    Blender's main thread; the main thread then delivers the read and runs the
+    tool once more. Each tool reads the description before it quotes, submits
+    or changes anything, so the second run starts from the same state.
+    """
+
+    @functools.wraps(handler)
+    def tool(args):
+        try:
+            return handler(args)
+        except generation.ModelLoading as loading:
+            model_id = loading.model_id
+        reader = generation.model_reader(model_id)
+        if reader is None:
+            raise ScenarioError(0, DESCRIPTION_LOADING)
+        server = runtime.state.mcp
+        deadline = time.monotonic() + DESCRIPTION_WAIT
+
+        def run():
+            while reader.is_alive():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or (server is not None and not server.running):
+                    return
+                reader.join(min(0.1, remaining))
+
+        def finish(_):
+            generation.process_catalog_events()
+            failure = runtime.state.model_errors.get(model_id)
+            if failure and not generation.is_loading(model_id):
+                # Running the tool again would start another read; the next call does.
+                raise ScenarioError(0, f"{failure}; call again to retry")
+            try:
+                return handler(args)
+            except generation.ModelLoading:
+                raise ScenarioError(0, DESCRIPTION_LOADING) from None
+
+        return DeferredTool(run, finish)
+
+    return tool
 
 
 def list_models(args):
@@ -3648,11 +3701,12 @@ SPECS = (
             "  - model_id: required string, the exact model identifier from list_models. A LoRA or composition has no inputs of its own: it is refused with how to run it through a base from list_models(source=trained) routes.\n"
             "Returns: model_id, name, prompt_parameter, parameters[] with name, type, label, required, default, allowed_values, range (per item for number arrays), cost_impact, file_kind, model_types, min_items/max_items for arrays and role (lora_models, lora_strengths or composition) when present, and lora_component: the base's LoRA inputs (model_input, scale_input, model_id_input, model_types, model_id_types, min_items, max_items, scale_range, scale_step, scale_default) or null; lora_component_error explains a malformed one. File parameters take Scenario asset ids.\n"
             'Example: {"model_id": "model_example"}.\n'
-            "Prefer this before estimate_cost; do not guess parameter names or supported inputs. No LoRA strength is invented: pass one per LoRA within scale_range, at most 4 decimals, as the native strength fields send.\n"
+            "Prefer this before estimate_cost; do not guess parameter names or supported inputs. No LoRA strength is invented: pass one per LoRA within scale_range, at most 4 decimals, as the native strength fields send. "
+            "A first call for a model whose description is not loaded yet waits up to 30 seconds for it; if it is still loading, call again.\n"
             "Platform equivalent: model_schema_get."
         ),
         _schema({"model_id": {"type": "string"}}, ["model_id"]),
-        model_schema,
+        _after_description(model_schema),
         {"readOnlyHint": True},
     ),
     ToolSpec(
@@ -3751,7 +3805,7 @@ SPECS = (
             },
             ["lane"],
         ),
-        render_form,
+        _after_description(render_form),
     ),
     ToolSpec(
         "estimate_cost",
@@ -3763,7 +3817,7 @@ SPECS = (
             "  - lane: optional generation lane, default image. Every lane issues a single-use quote_id. Lane panorama accepts only list_models(lane=panorama) models and applies their contract: locked values (a different value is refused), lane defaults when unset, 2:1 sizes and reference rules. A panorama-kind reference must be the asset_id of a saved, downloaded 360 result of this account and project (job_status projection equirectangular, source asset); other asset IDs are refused. Upscale factors are capped for the 32-megapixel World limit: at most 2 for a reference of unknown size, which fits a 2:1 panorama up to 4096 pixels wide, and an upscaled result is not upscaled again. A changed model schema fails closed.\n"
             "Returns: model_id, lane, cu_cost, cu_cost_exact (decimal string), details, mesh_sources (local captured 3D input provenance) and quote_id bound to the lane, model, inputs, scene and credential context.\n"
             'Example: {"model_id": "model_example", "parameters": {"prompt": "a wooden crate"}}.\n'
-            "Call before generate and show the cost to the user; an estimate does not authorize spending. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"
+            "Call before generate and show the cost to the user; an estimate does not authorize spending. Like model_schema, a first call for a model whose description is not loaded yet waits up to 30 seconds for it. Speech-to-text (audio2txt) and video-to-motion (video23d) models are experimental: they can be estimated and generated and their results stay in saved jobs, but motion and transcription handling is not accepted. prepare_result_application imports a returned model or media file by file type only.\n"
             "Platform equivalent: model_run with dry_run."
         ),
         _schema(
@@ -3774,7 +3828,7 @@ SPECS = (
             },
             ["model_id"],
         ),
-        estimate_cost,
+        _after_description(estimate_cost),
         {"readOnlyHint": True},
     ),  # touches bpy (prefs, catalog): must run on the main thread
     ToolSpec(
@@ -3805,7 +3859,7 @@ SPECS = (
             },
             ["lane", "model_id", "quote_id", "approved_cost"],
         ),
-        generate,
+        _after_description(generate),
     ),
     ToolSpec(
         "job_status",

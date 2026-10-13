@@ -51,8 +51,13 @@ class JobManager:
         return self._spawn(self._run_connection_check, catalog, key)
 
     def fetch_models(self, catalog, model_ids, *, mark_dirty=True):
-        """Fetch detailed records for a few models without re-fetching the list."""
-        self._spawn(self._run_models, catalog, tuple(model_ids), mark_dirty)
+        """Fetch detailed records for a few models without re-fetching the list.
+
+        Returns the worker. It ends after queuing its "models" event, so a thread
+        other than the main thread can wait for the read; the main thread still
+        drains and applies that event.
+        """
+        return self._spawn(self._run_models, catalog, tuple(model_ids), mark_dirty)
 
     def fetch_trained(self, catalog):
         """Read the scope's private trained list again, then pair it with public LoRAs."""

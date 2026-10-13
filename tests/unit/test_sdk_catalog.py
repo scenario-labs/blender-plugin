@@ -297,7 +297,7 @@ def test_failed_reads_are_safe_and_leave_no_cached_record(response):
 )
 def test_unparseable_form_schema_is_rejected_before_caching(model):
     context, _ = catalog(lambda request: httpx.Response(200, json={"model": model}))
-    with pytest.raises(ScenarioError, match="^0 Scenario returned an invalid model description$"):
+    with pytest.raises(ScenarioError, match="^Scenario returned an invalid model description$"):
         context.get("fixture")
     assert context.load_cached("fixture") is None
     context.close()

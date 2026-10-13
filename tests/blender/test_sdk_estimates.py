@@ -30,6 +30,9 @@ class SDKEstimateTests(unittest.TestCase):
         self.trained = {}
         self.expected_project = None
         self.hold = None  # An Event that keeps dry runs in flight until it is set.
+        self.read_entered = threading.Event()  # A description read of the model started.
+        self.read_hold = None  # An Event that keeps description reads in flight until it is set.
+        self.read_failures = 0  # Description reads that Scenario answers with HTTP 503.
         self.response = b'{"creativeUnitsCost":1.1234567890123456789,"costDetails":{"base":1.25,"nested":{"parts":[0.5,2]}}}'
         self.model = {
             "id": "fixture-price",
@@ -50,6 +53,12 @@ class SDKEstimateTests(unittest.TestCase):
                     return httpx.Response(200, json={"model": self.trained[model_id]})
                 if model_id != self.model["id"]:
                     return httpx.Response(404, json={"reason": "not found"})
+                self.read_entered.set()
+                if self.read_hold is not None:
+                    self.assertTrue(self.read_hold.wait(5))
+                if self.read_failures:
+                    self.read_failures -= 1
+                    return httpx.Response(503, json={"reason": "private outage detail"})
                 return httpx.Response(200, json={"model": self.model})
             expected = {"dryRun": "true"}
             if self.expected_project is not None:
@@ -90,7 +99,8 @@ class SDKEstimateTests(unittest.TestCase):
         for event in self.manager.drain():
             self.handlers.dispatch(event)
 
-    def mcp_estimate(self):
+    def mcp_call(self, name, arguments, *, during=None):
+        """Serve one call as local MCP does: a request thread and a pumped main thread."""
         registry = submodule("blender.mcp_service").build_registry()
         server = submodule("mcp.server").McpServer(
             "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
@@ -98,21 +108,130 @@ class SDKEstimateTests(unittest.TestCase):
         message = {
             "id": 1,
             "method": "tools/call",
-            "params": {
-                "name": "estimate_cost",
-                "arguments": {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}},
-            },
+            "params": {"name": name, "arguments": arguments},
         }
         with ThreadPoolExecutor(max_workers=1) as worker:
             result = worker.submit(server.handle, message)
             deadline = time.monotonic() + 5
             while not result.done() and time.monotonic() < deadline:
                 server.process_pending()
+                if during is not None:
+                    during(server, result)
                 time.sleep(0.001)
             response = result.result(1)
         self.assertNotIn("error", response)
-        self.assertFalse(response["result"].get("isError"), response)
-        return json.loads(response["result"]["content"][0]["text"])
+        return response["result"]
+
+    def mcp_estimate(self):
+        result = self.mcp_call(
+            "estimate_cost",
+            {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}},
+        )
+        self.assertFalse(result.get("isError"), result)
+        return json.loads(result["content"][0]["text"])
+
+    def forget_description(self):
+        """Keep only the list entry, as before an agent's first call for this model."""
+        model_id = self.model["id"]
+        listed = {key: self.model[key] for key in ("id", "name", "type", "capabilities")}
+        self.runtime.state.records[model_id] = submodule("core.api.catalog").ModelRecord.from_api(
+            listed
+        )
+        self.generation._schemas.pop(model_id, None)
+        self.assertIsNone(self.generation.schema_for(model_id))
+        self.assertIsNone(self.catalog.load_cached(model_id))
+
+    def first_call(self, name, arguments):
+        """Call a tool for an undescribed model; its read is held while the call waits."""
+        self.forget_description()
+        self.read_hold = threading.Event()
+        self.addCleanup(self.read_hold.set)
+        observed = []
+
+        def during(server, result):
+            if self.read_entered.is_set() and not self.read_hold.is_set():
+                # The call's description read is in flight. A call that did not wait
+                # would have answered by now; this one waits on the request thread
+                # while Blender's main thread has nothing queued and stays free.
+                time.sleep(0.05)
+                observed.append((server.process_pending(), result.done()))
+                self.read_hold.set()
+
+        result = self.mcp_call(name, arguments, during=during)
+        self.assertEqual(observed, [(0, False)])
+        return result
+
+    def test_first_mcp_schema_waits_for_the_description_it_starts(self):
+        result = self.first_call("model_schema", {"model_id": self.model["id"]})
+        self.assertFalse(result.get("isError"), result)
+        schema = json.loads(result["content"][0]["text"])
+        self.assertEqual(schema["model_id"], self.model["id"])
+        self.assertEqual([item["name"] for item in schema["parameters"]], ["prompt"])
+        self.assertEqual([call.method for call in self.calls], ["GET"])
+        self.assertIsNotNone(self.generation.schema_for(self.model["id"]))
+
+    def test_first_mcp_quote_waits_for_the_description_it_starts(self):
+        result = self.first_call(
+            "estimate_cost", {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}}
+        )
+        self.assertFalse(result.get("isError"), result)
+        quote = json.loads(result["content"][0]["text"])
+        self.assertEqual(quote["cu_cost_exact"], "1.1234567890123456789")
+        self.assertIn(quote["quote_id"], self.runtime.state.model_jobs.quotes)
+        # The description read, then the quote's own fresh metadata read and dry run.
+        self.assertEqual([call.method for call in self.calls], ["GET", "GET", "POST"])
+        self.assertEqual(json.loads(self.calls[2].content), {"prompt": "a teapot"})
+
+    def test_a_description_still_loading_after_the_wait_is_retryable(self):
+        tools = submodule("mcp.tools_scenario")
+        self.forget_description()
+        self.read_hold = threading.Event()
+        self.addCleanup(self.read_hold.set)
+        arguments = {"model_id": self.model["id"], "parameters": {"prompt": "a teapot"}}
+        with patch.object(tools, "DESCRIPTION_WAIT", 0.05):
+            result = self.mcp_call("estimate_cost", arguments)
+        self.assertTrue(result.get("isError"), result)
+        self.assertEqual(
+            result["content"][0]["text"],
+            "ScenarioError: The model description is still loading; call again in a few "
+            "seconds. Nothing was quoted, submitted or changed",
+        )
+        self.assertTrue(self.read_entered.is_set())
+        jobs = self.runtime.state.model_jobs
+        self.assertFalse(jobs.quotes if jobs is not None else ())
+        self.assertFalse([call for call in self.calls if call.method == "POST"])
+        # The read continues. Once it is delivered, the next call answers without
+        # reading the description again.
+        self.read_hold.set()
+        self.manager.join(5)
+        self.assertFalse(self.manager.has_active())
+        result = self.mcp_call("model_schema", {"model_id": self.model["id"]})
+        self.assertFalse(result.get("isError"), result)
+        self.assertEqual([call.method for call in self.calls], ["GET"])
+
+    def test_a_failed_description_read_is_reported_and_read_again_on_the_next_call(self):
+        self.forget_description()
+        self.read_failures = 1
+        arguments = {"model_id": self.model["id"]}
+        result = self.mcp_call("model_schema", arguments)
+        self.assertTrue(result.get("isError"), result)
+        self.assertEqual(
+            result["content"][0]["text"],
+            "ScenarioError: Could not load this model: Scenario request failed (HTTP 503); "
+            "call again to retry",
+        )
+        result = self.mcp_call("model_schema", arguments)
+        self.assertFalse(result.get("isError"), result)
+        self.assertEqual(json.loads(result["content"][0]["text"])["model_id"], self.model["id"])
+        self.assertEqual([call.method for call in self.calls], ["GET", "GET"])
+
+    def test_tools_that_need_a_description_wait_for_it(self):
+        tools = submodule("mcp.tools_scenario")
+        registry = submodule("blender.mcp_service").build_registry()
+        for name in ("model_schema", "estimate_cost", "render_form", "generate"):
+            with self.subTest(name):
+                handler = registry.get(name).handler
+                self.assertIs(getattr(handler, "__wrapped__", None), getattr(tools, name))
 
     def test_offline_edits_keep_their_estimate_until_online_access_returns(self):
         pump = submodule("blender.pump")

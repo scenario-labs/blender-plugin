@@ -41,7 +41,10 @@ class ToolTimeout(Exception):
 
 @dataclass
 class DeferredTool:
-    """Main-thread preparation, HTTP-thread work, then main-thread delivery."""
+    """Main-thread preparation, HTTP-thread work, then main-thread delivery.
+
+    `finish` may return another DeferredTool to continue on the HTTP thread.
+    """
 
     run: object
     finish: object
@@ -193,7 +196,9 @@ def handle_message(message, registry, server_info, executor=None):
                 value = executor(spec.handler, arguments)
             else:
                 value = spec.handler(arguments)
-            if isinstance(value, DeferredTool):
+            # A finish may hand more work back, such as a quote after the model
+            # description it waited for; each step returns to the main thread.
+            while isinstance(value, DeferredTool):
                 deferred = value
                 completed = deferred.run()
                 value = (

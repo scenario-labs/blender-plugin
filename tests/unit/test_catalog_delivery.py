@@ -197,6 +197,30 @@ def test_background_schema_request_keeps_its_quote_intent():
     assert payload["mark_dirty"] is False
 
 
+def test_description_read_returns_a_worker_that_ends_after_its_event_is_queued():
+    entered, release = threading.Event(), threading.Event()
+
+    class Catalog:
+        def get(self, model_id, refresh=False):
+            entered.set()
+            assert release.wait(5)
+            return model_id
+
+    manager = JobManager(None, None)
+    worker = manager.fetch_models(Catalog(), ["selected"])
+    try:
+        assert entered.wait(5)
+        assert worker.is_alive()
+        assert manager.drain_catalog() == []
+    finally:
+        release.set()
+    # A caller off the main thread waits for the worker; delivery stays on the main thread.
+    worker.join(5)
+    assert not worker.is_alive()
+    [(name, payload)] = manager.drain_catalog()
+    assert name == "models" and payload["detailed"] == ["selected"]
+
+
 def test_failed_schema_requests_report_sanitized_reasons_without_hiding_neighbors():
     class Catalog:
         def get(self, model_id, refresh=False):

@@ -327,6 +327,15 @@ def test_extension_error_classes_keep_their_message_wherever_raised(error, caplo
     assert _logged(caplog, logging.DEBUG).exc_info[1] is error
 
 
+def test_a_failure_without_an_http_status_reaches_the_client_as_written():
+    refusal = ScenarioError(0, "The estimate context changed; estimate again")
+    assert _call(lambda args: _raise(refusal)) == (
+        "ScenarioError: The estimate context changed; estimate again"
+    )
+    denied = ScenarioError(403, "Access denied")
+    assert _call(lambda args: _raise(denied)) == "ScenarioError: 403 Access denied"
+
+
 @pytest.mark.parametrize(
     ("name", "kind"),
     [

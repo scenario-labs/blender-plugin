@@ -136,8 +136,10 @@ Online, a form with neither a pending read nor a failure recorded this session,
 such as one in a reopened file, offers the same retry instead of a saved error.
 A model-load error saved with the file is not drawn in the form, below Generate
 or in the composer note unless this session recorded it. With online access disabled, the form says so and offers no retry. An MCP call
-needing the description, such as `model_schema`, reports a recorded failure once
-while it starts the next read.
+needing the description, such as `model_schema`, starts the next read, or joins the
+pending one, and waits for it off the main thread
+([MCP quote contract](MCP.md#model-quote-and-submission-contract)); a read that
+fails again returns its new reason.
 
 ### Trained models in the picker
 

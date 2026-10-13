@@ -36,6 +36,14 @@ MODEL_OFFLINE = "Online access is disabled; the model description cannot load"
 _MODEL_FAILED = "Could not load this model: "
 
 
+class ModelLoading(ScenarioError):
+    """A read of this model's description is in flight; retry after its delivery."""
+
+    def __init__(self, model_id, reason="Loading the model description"):
+        super().__init__(0, reason)
+        self.model_id = model_id
+
+
 def reload_lane(record):
     """Return the recorded generation form, without guessing for Film or generic jobs.
 
@@ -96,6 +104,7 @@ def clear_catalog():
     _clear_model_failures(tuple(runtime.state.model_errors))
     _schemas.clear()
     _pending_models.clear()
+    _model_readers.clear()
     _pending_dirty_models.clear()
     runtime.state.estimates.clear()
     runtime.state.estimate_origins.clear()
@@ -239,6 +248,8 @@ def set_models(detailed, failed, *, mark_dirty=True):
     # Its eventual background retry still needs to re-arm the estimate timer.
     _pending_dirty_models.difference_update(succeeded)
     _pending_models.difference_update(succeeded | set(failed))
+    for model_id in succeeded | set(failed):
+        _model_readers.pop(model_id, None)
     for scene in bpy.data.scenes:
         for lane in props.GENERATION_LANES:
             lane_state = scene.scenario.lane_state(lane)
@@ -286,12 +297,21 @@ def lane_error(lane_state):
 
 
 _pending_models = set()
+_model_readers = {}  # model_id -> the worker reading its pending description
 _pending_dirty_models = set()
 
 
 def is_loading(model_id):
     """Whether this model's description read is in flight; read-only for drawing."""
     return model_id in _pending_models
+
+
+def model_reader(model_id):
+    """The worker of this model's in-flight description read, or None (main thread).
+
+    Another thread may wait for it to end; the read is delivered on the main thread.
+    """
+    return _model_readers.get(model_id) if model_id in _pending_models else None
 
 
 def request_model(model_id, *, mark_dirty=True):
@@ -317,7 +337,7 @@ def _start_model_read(model_id, mark_dirty):
         return err.reason or "Could not read the model description"
     _pending_models.add(model_id)
     _clear_model_failures((model_id,))
-    manager.fetch_models(catalog, [model_id], mark_dirty=mark_dirty)
+    _model_readers[model_id] = manager.fetch_models(catalog, [model_id], mark_dirty=mark_dirty)
     return ""
 
 
@@ -464,7 +484,8 @@ def request_models(model_ids, *, mark_dirty=True):
         return
     _pending_models.update(model_ids)
     _clear_model_failures(model_ids)
-    manager.fetch_models(catalog, list(model_ids), mark_dirty=mark_dirty)
+    reader = manager.fetch_models(catalog, list(model_ids), mark_dirty=mark_dirty)
+    _model_readers.update(dict.fromkeys(model_ids, reader))
 
 
 class WithoutInputs(ScenarioError):
@@ -478,10 +499,11 @@ class WithoutInputs(ScenarioError):
 def ensure_record(model_id, *, mark_dirty=True):
     """Read the selected connection's cache or queue a description for UI/MCP.
 
-    Both entry points run on the main thread and retry after asynchronous delivery.
+    Both entry points run on the main thread and retry after asynchronous delivery;
+    ModelLoading tells them a read is in flight, which local MCP waits for.
     A listed LoRA or composition, or a completed description without inputs,
     raises WithoutInputs instead: reading it again would return the same record,
-    so callers polling a "Loading" answer would never finish.
+    so callers waiting for a read would never finish.
     """
     process_catalog_events()
     record = runtime.state.records.get(model_id)
@@ -504,13 +526,13 @@ def ensure_record(model_id, *, mark_dirty=True):
     if refusal:
         raise ScenarioError(0, refusal)  # nothing is loading, so callers must not wait for it
     if failure is not None:
-        # The new read replaces the failure the form showed. Report it once so
-        # MCP callers see the same reason before polling the new read.
+        # The new read replaces the failure the form showed. Name it once for
+        # direct callers; local MCP waits for the new read instead.
         reason = failure.removeprefix(_MODEL_FAILED)
-        raise ScenarioError(
-            0, f"Loading the model description again; the last read failed: {reason}"
+        raise ModelLoading(
+            model_id, f"Loading the model description again; the last read failed: {reason}"
         )
-    raise ScenarioError(0, "Loading the model description")
+    raise ModelLoading(model_id)
 
 
 def on_model_changed(context, lane_state, mark_dirty=True):
@@ -526,7 +548,7 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     except ScenarioError as err:
         # A pending read and disabled online access are drawn from live state;
         # neither persists as the lane's error once access or the read changes.
-        deferred = err.reason.startswith("Loading") or err.reason == MODEL_OFFLINE
+        deferred = isinstance(err, ModelLoading) or err.reason == MODEL_OFFLINE
         if deferred and mark_dirty:
             # The estimate debounce may observe the missing schema before its
             # background completion. Re-arm pricing when that detail arrives.

@@ -624,6 +624,9 @@ No credentials, service requests or registry writes are needed for cold reads.
 - **Catalog is still loading:** retry after loading completes and inspect the
   extension's status for credential or service errors. This is separate from the
   local MCP bearer token.
+- **Model description is still loading:** the read took longer than the
+  [30-second wait](#model-quote-and-submission-contract); nothing was quoted,
+  submitted or changed. Call again; the call joins the same read.
 - **A tool reports `failed unexpectedly`:** open Blender's system console; the
   `scenario.mcp` error log has the traceback. Set Log Level to Debug in Scenario
   Preferences to also log tracebacks of ordinary validation failures.
@@ -644,6 +647,16 @@ is `image` when omitted. A changed lane, scene, credential context, input or
 consumed quote requires a fresh estimate. An estimate alone does not authorize
 spending. Failed or timed-out submissions must be inspected by their returned
 local ID, never blindly repeated.
+
+`model_schema`, `estimate_cost`, `render_form` and `generate` need the model's
+description. When this session has not loaded it yet, the call starts or joins
+its background read and waits up to 30 seconds for it on the MCP request thread.
+Blender's main thread stays free, then delivers the read and answers the call.
+These tools read the description before they quote, submit or change anything.
+If the read is still in flight after the wait, the call returns
+`The model description is still loading; call again in a few seconds. Nothing
+was quoted, submitted or changed`. A failed read returns its reason, and the
+next call reads the description again.
 
 All MCP model submissions persist intent before SDK dispatch. `job_status`,
 `wait_for_job` and `list_local_jobs` expose saved state across restart. Active

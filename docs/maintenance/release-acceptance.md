@@ -1,11 +1,11 @@
 # Consolidated extension release acceptance
 
-Release [#70](https://github.com/scenario-labs/blender-plugin/pull/70) remains on
-hold under [#68](https://github.com/scenario-labs/blender-plugin/issues/68).
-This record identifies the tested integration candidate and the evidence still
-needed before releasing 0.10.0. It does not replace the
-[release plan](release-plan.md), narrow retained-lane acceptance or authorize
-publication. OAuth remains deferred under #67. The
+Release [#70](https://github.com/scenario-labs/blender-plugin/pull/70) merged, and
+0.10.0 was [published](#publication) on 2026-10-13. This record identifies the
+accepted candidate, the published release and the evidence still pending under
+[#68](https://github.com/scenario-labs/blender-plugin/issues/68). It does not
+replace the [release plan](release-plan.md) or narrow retained-lane acceptance,
+and publication authorizes nothing further. OAuth remains deferred under #67. The
 [0.10.0 evidence by lane](#0100-evidence-by-lane) is the current summary; later
 sections keep their own candidate identities and dates.
 
@@ -18,12 +18,17 @@ merged. Since that first review, #403 to #406, #408 to #411, #416 to #420 and
 #422 to #432 have merged. Desktop checks found the defects that #423, #424 and
 #431 fix and the arrow overhang that #432 trims, and the
 [end-to-end production run](#end-to-end-production-run) found the defects that
-#425 to #429 fix. #423 and #424 passed a physical recheck;
-the other fixes have no physical or live recheck yet. Release PR #70 is open;
-its head is the [final candidate](#release-candidate-identity), and its merge
-and publication are left to the maintainer. This section records which evidence
-each retained capability has, of which kind, and what remains with its owner.
-It does not certify the published archive, authorize publication or close #68.
+#425 to #429 fix. #423, #424, #431 and #432 passed a physical recheck; the
+other fixes have no physical or live recheck yet. Release PR #70 squash-merged
+as `4ccbca68` with the [final candidate](#release-candidate-identity)'s
+`scenario/` tree, and 0.10.0 was [published](#publication) on 2026-10-13.
+Publication authorizes nothing further: the first-release administration steps
+in the
+[release procedure](../RELEASING.md#first-automated-release-acceptance),
+removing the repository-admin tag-protection bypass and enabling immutable
+releases, stay with the maintainer and are pending. This section records which
+evidence each retained capability has, of which kind, and what remains with its
+owner. It does not close #68.
 
 ### Release candidate identity
 
@@ -32,7 +37,7 @@ It does not certify the published archive, authorize publication or close #68.
 | Source commit | Release PR #70 head `2b1bbcb8ee6ed0166b2fe9e49d815f85eb916c58`, whose only parent is `main` `4dfca796e`. It changes only the two `scenario/` version lines (0.9.9 to 0.10.0), `.release-please-manifest.json` and `CHANGELOG.md`. Its `scenario/` tree is `42266ae53947454689af28d110c98bf72008bc7c`. A later release-please refresh that changes only documentation or the changelog keeps this tree; check the release commit's `scenario/` tree hash against this value before accepting it. |
 | Package | `scenario-0.10.0.zip`, built once from that commit with `tools/build.py` and Blender 5.0.1, the path the release workflow uses: SHA-256 `a040f769acb779ff9e912ebca6b0ec0e04dbf721d87a31cd1030b3c1c09b8c61`, 18,869,233 bytes, 252 entries and 21 bundled wheels, including scenario-sdk 2.2.0. Its 194 Python files under `scenario/` are byte-identical to the source. Every local run below used this exact ZIP. |
 | Hosted CI | [`ci-ok` success on `2b1bbcb8`](https://github.com/scenario-labs/blender-plugin/actions/runs/38360499341), all 15 jobs: 7,444 unit tests on Python 3.11 and 3.13 with the known SDK authentication expected failure (scenario-sdk-python#26), and 1,270 installed baseline tests with five skips per job on Linux x64 and Windows x64 with Blender 5.0.1, 5.1.2 and 5.2.1, each with the update fixture and the package update check. The separate [`links` workflow](https://github.com/scenario-labs/blender-plugin/actions/runs/38360499228), which is not a required check, failed on six GitHub 503 responses; its rerun failed on three, all GitHub pages answering 503 Service Unavailable, with no other link error. |
-| Release workflow | Runs only after the maintainer merges #70. Record then the release run, its Blender 5.1.2 and 5.2.1 validation jobs, the attestations, and the published ZIP's SHA-256, which differs from the local build's because each build makes its own archive. |
+| Release workflow | release-please [run 38392481347](https://github.com/scenario-labs/blender-plugin/actions/runs/38392481347) on the release commit `4ccbca68`, with its Blender 5.1.2 and 5.2.1 validation jobs and attestations; see [publication](#publication). The published ZIP's SHA-256 differs from the local build's because each build makes its own archive. |
 | Installed suite | On macOS 27.0.1 arm64, with no service requests and no credentials. `tools/test_blender.py --suite all` with the exact ZIP: 1,997 tests, 0 failures and 3 Windows-only skips on each of Blender 5.0.1, 5.1.2 and 5.2.1 LTS, with no network violations and the lifecycle and installed dependency sources verified. `tools/test_repository_update.py --candidate-zip` with that ZIP and `--test-predecessor` on each version: a synthetic 0.0.0 predecessor derived from the candidate updated to 0.10.0 through the native loopback repository, with store schema 10. State, scene, project scope, workflow references and uploads, the Environment lane, trained selection, model defaults and Film fixtures (6 seeded jobs with production, task and recipe hash, plus a Film upload) were preserved after the update and after an offline restart, with zero service requests. |
 
 - A hosted run on the superseded release head `9a388249` failed one timing
@@ -73,6 +78,49 @@ Earlier integrated evidence:
   same day. #399 and #400 stay open until a rerun passes. No weekly or manual
   macOS and Windows run on the candidate commit is recorded yet.
 
+### Publication
+
+0.10.0 was published on 2026-10-13 at 11:48:16 UTC as
+[`blender-plugin-v0.10.0`](https://github.com/scenario-labs/blender-plugin/releases/tag/blender-plugin-v0.10.0).
+
+| Item | Evidence |
+| --- | --- |
+| Release commit | #70 squash-merged as `4ccbca68dbb12abaf238eada10e16e5a0c9793b2`. Its `scenario/` tree is `42266ae53947454689af28d110c98bf72008bc7c`, the accepted candidate's, and the tag `blender-plugin-v0.10.0` resolves to that commit. |
+| Release workflow | release-please [run 38392481347](https://github.com/scenario-labs/blender-plugin/actions/runs/38392481347): release-please, assets (the Linux build with Blender 5.0.1, the handbook, `SHA256SUMS` and attestations), validate on Blender 5.1.2 and 5.2.1, publish and release-pr all succeeded. The publish-changelog [run 38392753556](https://github.com/scenario-labs/blender-plugin/actions/runs/38392753556) succeeded. |
+| Assets | `scenario-0.10.0.zip`, 18,869,233 bytes, SHA-256 `372666043f0e04eb9c17fe37ba78ebac82bb8e98b81f38f1b9487b8cf352bc38`; `scenario-handbook-0.10.0.html`, SHA-256 `f424ee3d7e041a1538805a15c41515017d72538642db5490c1dcebb7e1e4230c`; and `SHA256SUMS`. Downloaded into an empty directory, `shasum -a 256 -c SHA256SUMS` passes for both, and `gh attestation verify` passes for all three files. Each attestation names source commit `4ccbca68`, `refs/heads/main`, `.github/workflows/release-please.yml@refs/heads/main` and run 38392481347 attempt 1, so the provenance matches the original run. |
+| Against the candidate | The published ZIP has the same 252 entries as the accepted candidate, with identical CRC and size; only the timestamps differ, which is why its SHA-256 differs from the candidate's `a040f769…`. |
+| Pages | The push-triggered [run 38392481374](https://github.com/scenario-labs/blender-plugin/actions/runs/38392481374) failed at 11:46 UTC with *Site release preparation failed*: the release was still a draft, and the site builder refuses an unfinished release by design. The [run 38392783278](https://github.com/scenario-labs/blender-plugin/actions/runs/38392783278) that the release workflow triggered built from the published bytes, passed its race check and deployed. The hosted `repo/index.json` lists `scenario` 0.10.0 with archive hash `sha256:372666…`. |
+| HTTPS install | On macOS 27.0.1 arm64, in a fresh isolated profile per version, Blender's `extension repo-add` with the hosted `index.json`, then `extension install --sync --enable scenario`, installed and enabled `bl_ext.<repo>.scenario` 0.10.0 on Blender 5.0.1, 5.1.2 and 5.2.1 LTS. The installed files matched all 252 ZIP entries. This is the first release this repository offers, so no HTTPS update from a previous release was possible; the package update probe with a synthetic predecessor is recorded for the candidate. |
+| Administration | The first-release steps in the [release procedure](../RELEASING.md#first-automated-release-acceptance), removing the repository-admin tag-protection bypass and enabling immutable releases, stay with the maintainer and are pending. |
+
+### Human checks
+
+On 2026-10-13 the maintainer checked the accepted candidate ZIP on macOS with
+Blender 5.1.2. All of these passed:
+
+- credentials and the connection test;
+- IME after F2: composition, commit and Esc;
+- **Play audio** and **Waveform** on a saved audio result;
+- a private LoRA listed, applied with a strength and generated, with its
+  likeness confirmed.
+
+A private composition was not run because the account owns none. Physical
+rechecks the same day found #431's input labels and loop-warning wrap correct,
+and #432's pager arrows within 0 to 1 px of the visible image at UI scales 1.0
+and 2.0.
+
+### 0.10.1 follow-ups
+
+The human checks raised these items for 0.10.1:
+
+- **Play audio** opens the system's default player
+  ([#435](https://github.com/scenario-labs/blender-plugin/issues/435)).
+- The trained-model picker's experimental label reads like a refusal.
+- **OK** in the trained-model picker sometimes needs repeated clicks.
+- The sidebar Model box names only the base model, not the LoRA.
+- **Set panorama as World** is offered for images that are not 2:1.
+- Studio's pager arrows are about 1.2 interface units wide at UI scale 2.0.
+
 ### Evidence kinds
 
 | Kind | Meaning |
@@ -109,16 +157,16 @@ their lanes:
 | [Image](#image) | Paid hosted smoke; free live quotes and UI/MCP parity on desktop | Passed |
 | [Material](#material) | Paid hosted smoke; installed application on 5.0.1, 5.1.2 and 5.2.1 | Passed |
 | [Render Image and Render Video](#render-image-and-render-video) | Paid live, including a first frame; desktop handoff, clip capture and ready quote | Passed |
-| [Audio](#audio) | Paid hosted smoke; installed; desktop waveform | Pending: human listening |
+| [Audio](#audio) | Paid hosted smoke; installed; desktop waveform; human listening | Passed |
 | [3D generation and imports](#3d-generation-and-imports) | Paid hosted smoke; paid desktop FBX import; desktop GLB and OBJ imports | Pending: mesh PLY; no glTF JSON producer |
 | [Splats](#splats) | Paid desktop SPZ generation and import; installed on 5.0.1, 5.1.2 and 5.2.1 | Pending: splat PLY; 1,000,000-point viewport |
 | [Panorama and World](#panorama-and-world) | Paid live, including the end-to-end run; desktop on pre-rebase heads | Pending: desktop recheck of the merged lane |
-| [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; desktop recheck of the merged UI |
+| [Trained models](#trained-models) | Paid live; a private LoRA on the candidate | Pending: a private composition; project defaults and restart on a desktop |
 | [Workflows](#workflows) | Paid desktop step review and uploads; paid live decisions | Passed at UI scale 1.0; pending: UI scale 2.0 |
 | [Film](#film) | Paid end-to-end run through local MCP; desktop dialogs | Pending: desktop rerun after #407, #408 and #428 |
-| [Previews and playback](#previews-and-playback) | Free live; desktop, including the pager after #423 | Pending: pager recheck after #432; human listening |
+| [Previews and playback](#previews-and-playback) | Free live; desktop, including the pager after #432; human listening | Pending: waveform and Studio Results at UI scale 2.0 |
 | [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
-| [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1; paid job strip and card | Pending: UI scale 2.0 of the strip; IME by a person |
+| [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1; paid job strip and card; IME by a person | Pending: UI scale 2.0 of the strip; the IME candidate window |
 | [MCP parity](#mcp-parity) | Free and paid live through local MCP, including the end-to-end run | Passed for the tools on `ff8d29d8`; pending: later tools and the #427 and #429 fixes on merged heads |
 
 ### Image
@@ -202,10 +250,10 @@ their lanes:
   scales 1.0 and 2.0.
 - **Human:** the maintainer accepted the sound quality of the reviewed outputs
   on 2026-10-09.
-- **Status:** pending. Listening through the new **Play** controls (#418) is a
-  human check for the maintainer under #189 and #68; Play audio was not clicked
-  because the test machine's default handler adds files to a personal media
-  library.
+- **Status:** passed. The maintainer listened through **Play audio** and
+  checked **Waveform** on the candidate ZIP on 2026-10-13 (see the
+  [human checks](#human-checks)). Play audio opens the system's default player,
+  which #435 tracks for 0.10.1.
 
 ### 3D generation and imports
 
@@ -294,10 +342,11 @@ their lanes:
   that Backspace reset to 0.0, without a desktop recheck. With
   #410 a LoRA starts at the model's declared strength or, without one, at 0.75,
   the Scenario web app default; the tested build predates that rule.
-- **Status:** pending. Private LoRAs and compositions need credentials that own
-  them: a human check for the maintainer under #97. Restart persistence and a
-  desktop recheck of the merged picker, strengths and defaults also remain, and
-  #411's tools ran live only on a pre-merge head.
+- **Status:** pending. A private LoRA passed the maintainer's check on the
+  candidate ZIP (see the [human checks](#human-checks)); a private composition
+  was not run because the account owns none (#97). Project defaults and restart
+  persistence on a desktop also remain, and #411's tools ran live only on a
+  pre-merge head.
 
 ### Workflows
 
@@ -308,7 +357,7 @@ their lanes:
   review previews) merged. On 2026-10-13 #431 merged as `3fa9c6f6`: the Generate
   workflow confirmation names inputs by their form labels and wraps the
   loop-cost warning by measured width, two findings of the paid desktop pass
-  below, without a physical recheck yet.
+  below; a physical recheck on 2026-10-13 found both correct.
 - **Free live:** a local file uploaded into a public workflow's input (one part,
   imported, receipt-verified), pricing held while uploading, and **Use saved
   upload** reuse that discards the earlier quote.
@@ -408,11 +457,12 @@ their lanes:
   default-width sidebar the arrows still reach about 9 px (scale 1.0) or 18 px
   (scale 2.0) beyond the visible image, and paged tiles stay about 30% smaller
   than unpaged ones: a design note, not a defect against the UI contract. #432
-  (`4dfca796`) then sized the arrows to the visible image, with installed tests
-  only; its physical recheck is pending.
-- **Status:** pending: human listening and Play audio (the maintainer, under
-  #189 and #68); the waveform and Studio's Results page at UI scale 2.0; and the
-  waveform alignment fix proposed on #189.
+  (`4dfca796`) then sized the arrows to the visible image; a physical recheck
+  on 2026-10-13 found them within 0 to 1 px of it at UI scales 1.0 and 2.0.
+- **Status:** pending: the waveform and Studio's Results page at UI scale 2.0,
+  and the waveform alignment fix proposed on #189. Listening, Play audio and
+  the #432 recheck passed on 2026-10-13 (see the
+  [human checks](#human-checks)).
 
 ### Library organization
 
@@ -467,8 +517,10 @@ their lanes:
 - **Status:** pending:
   - The job strip and card at UI scale 2.0, the Waiting state, and Cancel on an
     `inference` job (#65 and #66).
-  - IME composition after F2 with an input source a person selects, and the
-    candidate window: a human check under #66.
+  - The IME candidate window. Composition after F2, commit and Esc passed the
+    maintainer's check on the candidate ZIP (see the
+    [human checks](#human-checks)); the candidate window was not recorded
+    (#66).
   - #401's endings after an error or a file load, and UI scales 1.25 and 1.5,
     on a desktop (#66).
 
@@ -562,11 +614,11 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 | Render Video handoff and clip capture on Blender 5.0 and 5.2 | Render Video | #66 and #68 | Desktop passes ran on Blender 5.1.2 only |
 | PLY splat and mesh PLY imports of real results, and a 1,000,000-point splat viewport | Splats, 3D | Maintainer, #65 and #68 | The only PLY splat producer found was over the pass's per-job budget; no mesh PLY job ran |
 | Failed-job reasons, MCP quotes of uncached models, and the file marked modified after local MCP changes, on a live run | Jobs, MCP | #65 and #68 | #425, #427 and #429 merged with installed tests only |
-| Generate workflow confirmation labels and loop-warning wrap after #431, and pager arrows after #432 | Workflows, previews | #66 and #68 | #431 and #432 merged without a physical recheck |
-| IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Human check |
-| Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Human check |
-| Private LoRAs and compositions | Trained models | Maintainer, #97 | Human check; the test credentials own none |
-| Trained-model picker, strengths and project defaults on merged heads | Trained models | #97 | #409's and #410's fixes merged after the desktop pass |
+| Generate workflow confirmation labels and loop-warning wrap after #431, and pager arrows after #432 | Workflows, previews | #66 and #68 | Passed on 2026-10-13: #431's labels and wrap, and #432's arrows within 0 to 1 px of the visible image at UI scales 1.0 and 2.0 |
+| IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Passed on the candidate ZIP on 2026-10-13; the candidate window was not recorded |
+| Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Passed on the candidate ZIP on 2026-10-13; Play audio opens the system default player (#435) |
+| Private LoRAs and compositions | Trained models | Maintainer, #97 | A private LoRA passed on the candidate ZIP on 2026-10-13; no private composition is owned, so none ran |
+| Trained-model picker, strengths and project defaults on merged heads | Trained models | #97 | The picker and a strength passed the human check; project defaults and restart persistence were not rechecked |
 | Desktop export and case-study save after #407, #408 and #428 | Film | #66 and #68 | The fixes landed after the desktop pass; the end-to-end run used local MCP |
 | Library Apply from the dialog | Library | #66 | Write-capable desktop session refused by the agent permission rules |
 | Merged Environment lane, its rebased tab row, local panorama upload and From image | Panorama | #98 and #66 | #416 merged after the desktop pass; uploads need the spend guard off |
@@ -576,7 +628,8 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 | Weekly macOS and Windows rerun | Platforms | #399 and #400 | Stale expectation corrected by #396 |
 | First scheduled monthly paid smoke run | CI | #40 | Not run yet |
 | Final candidate installed suite, hosted CI, update and restart | All | #68 | Passed on #70 head `2b1bbcb8`; see the [release candidate identity](#release-candidate-identity). Repeat if the release commit's `scenario/` tree differs |
-| Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #36 and #68 | After publication |
+| Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #36 and #68 | Passed on 2026-10-13; see [publication](#publication) |
+| Remove the repository-admin tag-protection bypass and enable immutable releases | Release | Maintainer | First-release administration steps; pending |
 
 ### Service behavior observed live
 
@@ -1141,8 +1194,8 @@ array constraints for both schema spellings. These remain synthetic checks.
 
 ## Issue disposition
 
-GitHub state reviewed on 2026-10-12 and rechecked on 2026-10-13 after #411
-merged is separate from candidate acceptance:
+GitHub state reviewed on 2026-10-12 and rechecked on 2026-10-13 after 0.10.0
+was published is separate from candidate acceptance:
 
 | Scope | State and release implication |
 | --- | --- |
@@ -1152,10 +1205,10 @@ merged is separate from candidate acceptance:
 | #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
-| #37 | Closed for the native update repository foundation. Exact 0.10.0 public delivery and update evidence still belong to #36/#68. |
-| #36, #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. Publication and provenance administration (#36) and action pinning (#39) retain their own gates. |
+| #37 | Closed for the native update repository foundation. The 0.10.0 HTTPS install from the hosted repository is recorded under [publication](#publication); an HTTPS update between two published releases awaits the next release (#36, #68). |
+| #36, #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. For #36, the 0.10.0 release workflow, checksums and attestations passed (see [publication](#publication)); its administration steps, removing the tag-protection bypass and enabling immutable releases, remain with the maintainer. Action pinning (#39) retains its own gate. |
 | #45 | Closed on 2026-10-09 after the required-check update. |
-| #38 | Open. Changelog publication waits for the website deployment and the first published release. |
+| #38 | Open. The publish-changelog run for 0.10.0 succeeded (run 38392753556); the entry's public visibility is not recorded here. |
 | #399, #400 | Open. The 2026-10-12 weekly macOS and Windows runs failed on a stale test expectation that #396 corrected; close after a passing rerun. |
 | #189 | Open. Saved shared video and audio results have Play, Play in Blender and Waveform controls on private verified copies and receipt-keyed envelopes from an offline Blender decoder, with installed-ZIP native tests. Partial private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system player and in Blender's animation player at UI scale 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0, the last on a ZIP whose waveform status wrapped by measured width before later amendments to that wrapping; they are not candidate acceptance. Local MCP `inspect_result_previews` reads the same preview states and envelopes, with installed-ZIP native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 only. Play audio, the waveform's Cancel and Retry on the desktop, Studio at UI scale 2.0, other platforms, and native listening acceptance are not yet recorded. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md) and obtain current-candidate sustained desktop evidence under #68; closure alone supplies no new runtime evidence. |

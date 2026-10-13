@@ -13,28 +13,35 @@ sections keep their own candidate identities and dates.
 
 Reviewed on 2026-10-12 against `main` at
 `ff8d29d879487719fde8fd9b4089438ae0ba2c78`, after #421 merged, and brought up
-to date with `main` at `3fa9c6f6b52254b6c806127ec93d661f4541afb4`, after #431
-merged. Since that first review, #403 to #406, #408 to #411, #416 to #420, #422
-to #429 and #431 have merged. Desktop checks found the defects that #423, #424
-and #431 fix, and the [end-to-end production run](#end-to-end-production-run)
-found those that #425 to #429 fix. #423 and #424 passed a physical recheck;
-the other fixes have no physical or live recheck yet. Still open: #432 (pager
-arrows sized to the visible preview image) and release PR #70. The final
-candidate is not built yet. This section records which evidence each retained
-capability has, of which kind, and what remains with its owner. It does not
-certify the final archive, authorize publication or close #68.
+to date with `main` at `4dfca796e1a082d89e0a0af091e78e161fa77fca`, after #432
+merged. Since that first review, #403 to #406, #408 to #411, #416 to #420 and
+#422 to #432 have merged. Desktop checks found the defects that #423, #424 and
+#431 fix and the arrow overhang that #432 trims, and the
+[end-to-end production run](#end-to-end-production-run) found the defects that
+#425 to #429 fix. #423 and #424 passed a physical recheck;
+the other fixes have no physical or live recheck yet. Release PR #70 is open;
+its head is the [final candidate](#release-candidate-identity), and its merge
+and publication are left to the maintainer. This section records which evidence
+each retained capability has, of which kind, and what remains with its owner.
+It does not certify the published archive, authorize publication or close #68.
 
 ### Release candidate identity
 
 | Item | Identity |
 | --- | --- |
-| Source commit | TODO(final candidate): the release-please commit that builds 0.10.0 |
-| Package | `scenario-0.10.0.zip`, SHA-256 TODO(final candidate) |
-| Hosted CI | TODO(final candidate): `ci-ok` run for that commit |
-| Release workflow | TODO(final candidate): release run, its 5.1.2 and 5.2.1 validation jobs and attestations |
-| Installed suite | TODO(final candidate): counts on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with update and offline restart |
+| Source commit | Release PR #70 head `2b1bbcb8ee6ed0166b2fe9e49d815f85eb916c58`, whose only parent is `main` `4dfca796e`. It changes only the two `scenario/` version lines (0.9.9 to 0.10.0), `.release-please-manifest.json` and `CHANGELOG.md`. Its `scenario/` tree is `42266ae53947454689af28d110c98bf72008bc7c`. A later release-please refresh that changes only documentation or the changelog keeps this tree; check the release commit's `scenario/` tree hash against this value before accepting it. |
+| Package | `scenario-0.10.0.zip`, built once from that commit with `tools/build.py` and Blender 5.0.1, the path the release workflow uses: SHA-256 `a040f769acb779ff9e912ebca6b0ec0e04dbf721d87a31cd1030b3c1c09b8c61`, 18,869,233 bytes, 252 entries and 21 bundled wheels, including scenario-sdk 2.2.0. Its 194 Python files under `scenario/` are byte-identical to the source. Every local run below used this exact ZIP. |
+| Hosted CI | [`ci-ok` success on `2b1bbcb8`](https://github.com/scenario-labs/blender-plugin/actions/runs/38360499341), all 15 jobs: 7,444 unit tests on Python 3.11 and 3.13 with the known SDK authentication expected failure (scenario-sdk-python#26), and 1,270 installed baseline tests with five skips per job on Linux x64 and Windows x64 with Blender 5.0.1, 5.1.2 and 5.2.1, each with the update fixture and the package update check. The separate [`links` workflow](https://github.com/scenario-labs/blender-plugin/actions/runs/38360499228), which is not a required check, failed on six GitHub 503 responses; its rerun failed on three, all GitHub pages answering 503 Service Unavailable, with no other link error. |
+| Release workflow | Runs only after the maintainer merges #70. Record then the release run, its Blender 5.1.2 and 5.2.1 validation jobs, the attestations, and the published ZIP's SHA-256, which differs from the local build's because each build makes its own archive. |
+| Installed suite | On macOS 27.0.1 arm64, with no service requests and no credentials. `tools/test_blender.py --suite all` with the exact ZIP: 1,997 tests, 0 failures and 3 Windows-only skips on each of Blender 5.0.1, 5.1.2 and 5.2.1 LTS, with no network violations and the lifecycle and installed dependency sources verified. `tools/test_repository_update.py --candidate-zip` with that ZIP and `--test-predecessor` on each version: a synthetic 0.0.0 predecessor derived from the candidate updated to 0.10.0 through the native loopback repository, with store schema 10. State, scene, project scope, workflow references and uploads, the Environment lane, trained selection, model defaults and Film fixtures (6 seeded jobs with production, task and recipe hash, plus a Film upload) were preserved after the update and after an offline restart, with zero service requests. |
 
-Until then, the latest integrated evidence is:
+- A hosted run on the superseded release head `9a388249` failed one timing
+  assertion on Linux Blender 5.0.1:
+  `test_mcp_wait.McpWaitTests.test_authenticated_wait_keeps_scene_executor_available`
+  took 0.556 s against a 0.5 s limit. It did not recur on the candidate, in
+  hosted CI or in the three local runs.
+
+Earlier integrated evidence:
 
 - `main` at `3fa9c6f6` passes
   [hosted CI](https://github.com/scenario-labs/blender-plugin/actions/runs/38357059612):
@@ -63,8 +70,8 @@ Until then, the latest integrated evidence is:
 - The weekly macOS arm64 and Windows x64 run on 2026-10-12 failed one stale
   expectation in `test_result_actions` on both platforms, one failure among
   1,369 tests with two skips on Blender 5.1.2; #396 corrected that test the
-  same day. #399 and #400 stay open until a rerun passes. TODO(final
-  candidate): the weekly or manual run on the final commit.
+  same day. #399 and #400 stay open until a rerun passes. No weekly or manual
+  macOS and Windows run on the candidate commit is recorded yet.
 
 ### Evidence kinds
 
@@ -109,7 +116,7 @@ their lanes:
 | [Trained models](#trained-models) | Paid live; desktop on pre-rebase heads | Pending: private trained models; desktop recheck of the merged UI |
 | [Workflows](#workflows) | Paid desktop step review and uploads; paid live decisions | Passed at UI scale 1.0; pending: UI scale 2.0 |
 | [Film](#film) | Paid end-to-end run through local MCP; desktop dialogs | Pending: desktop rerun after #407, #408 and #428 |
-| [Previews and playback](#previews-and-playback) | Free live; desktop, including the pager after #423 | Pending: human listening |
+| [Previews and playback](#previews-and-playback) | Free live; desktop, including the pager after #423 | Pending: pager recheck after #432; human listening |
 | [Library organization](#library-organization) | Free live writes; desktop read-only | Pending: desktop Apply |
 | [Composer and IME](#composer-and-ime) | Desktop on 5.0.1, 5.1.2 and 5.2.1; paid job strip and card | Pending: UI scale 2.0 of the strip; IME by a person |
 | [MCP parity](#mcp-parity) | Free and paid live through local MCP, including the end-to-end run | Passed for the tools on `ff8d29d8`; pending: later tools and the #427 and #429 fixes on merged heads |
@@ -400,8 +407,9 @@ their lanes:
   unpaged row was unchanged. Blender insets each image in its cell, so in the
   default-width sidebar the arrows still reach about 9 px (scale 1.0) or 18 px
   (scale 2.0) beyond the visible image, and paged tiles stay about 30% smaller
-  than unpaged ones: a design note, not a defect against the UI contract. #432,
-  open, sizes the arrows to the visible image instead.
+  than unpaged ones: a design note, not a defect against the UI contract. #432
+  (`4dfca796`) then sized the arrows to the visible image, with installed tests
+  only; its physical recheck is pending.
 - **Status:** pending: human listening and Play audio (the maintainer, under
   #189 and #68); the waveform and Studio's Results page at UI scale 2.0; and the
   waveform alignment fix proposed on #189.
@@ -522,7 +530,7 @@ interaction.
 | Render Video handoff and clip capture on Blender 5.0 and 5.2 | Render Video | #66 and #68 | Desktop passes ran on Blender 5.1.2 only |
 | PLY splat and mesh PLY imports of real results, and a 1,000,000-point splat viewport | Splats, 3D | Maintainer, #65 and #68 | The only PLY splat producer found was over the pass's per-job budget; no mesh PLY job ran |
 | Failed-job reasons, MCP quotes of uncached models, and the file marked modified after local MCP changes, on a live run | Jobs, MCP | #65 and #68 | #425, #427 and #429 merged with installed tests only |
-| Generate workflow confirmation labels and loop-warning wrap after #431, and pager arrows after #432 | Workflows, previews | #66 and #68 | #431 merged without a physical recheck; #432 is open |
+| Generate workflow confirmation labels and loop-warning wrap after #431, and pager arrows after #432 | Workflows, previews | #66 and #68 | #431 and #432 merged without a physical recheck |
 | IME composition after F2 with a person-selected input source | Composer | Maintainer, #66 | Human check |
 | Listening through Play and the system player | Audio, previews | Maintainer, #189 and #68 | Human check |
 | Private LoRAs and compositions | Trained models | Maintainer, #97 | Human check; the test credentials own none |
@@ -535,7 +543,7 @@ interaction.
 | #401 session endings and #402 import Undo and save prompt | Composer, 3D | #66 and #68 | Fixes merged after the desktop passes |
 | Weekly macOS and Windows rerun | Platforms | #399 and #400 | Stale expectation corrected by #396 |
 | First scheduled monthly paid smoke run | CI | #40 | Not run yet |
-| Final candidate installed suite, hosted CI, update and restart | All | #68 | TODO(final candidate) |
+| Final candidate installed suite, hosted CI, update and restart | All | #68 | Passed on #70 head `2b1bbcb8`; see the [release candidate identity](#release-candidate-identity). Repeat if the release commit's `scenario/` tree differs |
 | Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #36 and #68 | After publication |
 
 ### Service behavior observed live

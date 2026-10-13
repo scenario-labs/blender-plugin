@@ -470,9 +470,10 @@ Only an actual change is marked. A call refused before changing anything, such a
 invalid arguments, a refused recipe or a refused build, leaves the file unmarked,
 and so do an unchanged selection or frame, a reload of the same recipe and a build
 that built nothing. A call that fails after changing part of the scene still marks
-it. Reading tools, quotes, catalog loads, project defaults and saved-job inspection
-leave the file unmarked, and the step changes no data, so estimates and approvals
-stay current. No tool saves the file: ask the user to save it. See
+it. Reading tools, quotes, catalog loads, project defaults (including those
+`model_defaults` saves or clears) and saved-job inspection leave the file
+unmarked, and the step changes no data, so estimates and approvals stay current.
+No tool saves the file: ask the user to save it. See
 [marking the file modified](architecture/blender.md#marking-the-file-modified).
 
 ## Security model

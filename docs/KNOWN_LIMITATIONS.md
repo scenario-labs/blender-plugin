@@ -343,8 +343,8 @@ establish live generation or full render-lane desktop acceptance.
   every Play and decode rechecks the saved receipt.
 - Automatic result previews cover the first twelve jobs of Jobs and of
   Generations and show four results per job at a time; a job with more pages
-  through them with **‹** and **›**, whose fit beside the previews in the
-  sidebar at its default width awaits a physical desktop recheck. Which result
+  through them with **‹** and **›**, whose height beside the preview images in
+  the sidebar at its default width awaits a physical desktop recheck. Which result
   kinds receive a
   Scenario preview image, how long it takes and where a first-access redirect
   points are not established by live evidence; a preview missing after about

@@ -76,19 +76,26 @@ REQUEST_RETRY = (5.0, 10.0, 20.0, 40.0, 60.0)
 # box) and from the job box's right content edge past the category tabs,
 # measured as 90 on Blender 5.1.2, plus a few units of slack.
 TEXT_INSET = 96
-# The pager's arrows: one interface unit wide each, about 24 units with spacing,
-# as tall as the tiles' icons.
+# The pager's arrows: one icon scale step wide each and as tall as the tiles'
+# images. Blender 5.0 to 5.2 draw a preview image PREVIEW_INSET steps inside
+# every edge of its icon (PREVIEW_PAD in interface_widgets.cc), so each arrow
+# starts that far below the row's top, after a separator: 0.3 steps at factor 1.
 ARROW_UNITS = 1.0
-ARROW_WIDTH = 24
-# A tile row in interface units: each tile takes about 22 per icon scale step
-# with its spacing, and the panel and job box margins take 60 of the region.
-# Icons grow with the width up to ICON_MAX_SCALE. An unpaged row keeps at least
-# ICON_MIN_SCALE; a paged row may shrink to PAGED_MIN_SCALE to fit beside its
-# arrows, because Blender narrows the items of a row wider than its region but
-# not the arrows' height. A tile is 20 units wide per scale step: 35 at
-# PAGED_MIN_SCALE, wider than a caption's "(99)…" in Blender's UI font, which
-# measures 32 on Blender 5.1.2.
+PREVIEW_INSET = 0.15
+SEPARATOR_UNITS = 0.3
+# A tile row in interface units: an icon scale step is 20, an unpaged tile takes
+# about 22 per step with its spacing, and the panel and job box margins take 60
+# of the region. Icons grow with the width up to ICON_MAX_SCALE; an unpaged row
+# keeps at least ICON_MIN_SCALE. Blender estimates a caption 10 steps wide and
+# narrows every item of a row wider than its region, which narrows the images
+# but not the arrows, so a paged row sizes each tile's column to its share of
+# the row beside its arrows, with ITEM_SPACING between items. Its icons take
+# that share down to PAGED_MIN_SCALE; a narrower region still narrows the row.
+# A tile is 35 units wide at PAGED_MIN_SCALE, wider than a caption's "(99)…" in
+# Blender's UI font, which measures 32 on Blender 5.1.2.
+STEP_UNITS = 20
 TILE_UNITS = 22
+ITEM_SPACING = 8
 ROW_MARGIN = 60
 ICON_MIN_SCALE = 2.5
 ICON_MAX_SCALE = 5.0
@@ -743,25 +750,31 @@ def _named(caption):
     return caption.replace(" ", NO_BREAK)
 
 
-def _icon_scale(width, count, paged):
-    """The icon scale of ``count`` tiles in a row ``width`` interface units wide.
+def _row_size(width, count, paged):
+    """The icon scale of ``count`` tiles in a row ``width`` interface units wide,
+    and their columns' width in scale steps, or 0 where Blender sizes them.
 
-    A paged row leaves room for its two arrows and may take smaller icons than
-    an unpaged row, so that it fits and its arrows stay as tall as its icons.
+    A paged row sizes its columns to their share of the row beside its two
+    arrows, so that Blender narrows no item and its images keep their height.
     """
-    arrows = 2 * ARROW_WIDTH if paged else 0
-    smallest = PAGED_MIN_SCALE if paged else ICON_MIN_SCALE
-    fits = (width - ROW_MARGIN - arrows) / (TILE_UNITS * count)
-    return max(smallest, min(ICON_MAX_SCALE, fits))
+    if not paged:
+        fits = (width - ROW_MARGIN) / (TILE_UNITS * count)
+        return max(ICON_MIN_SCALE, min(ICON_MAX_SCALE, fits)), 0.0
+    spare = width - ROW_MARGIN - (count + 1) * ITEM_SPACING
+    share = (spare / STEP_UNITS - 2 * ARROW_UNITS) / count
+    icon_scale = max(PAGED_MIN_SCALE, min(ICON_MAX_SCALE, share))
+    return icon_scale, max(share, icon_scale)
 
 
-def _arrow(row, record, text, direction, enabled, height):
-    """One pager arrow beside the tiles, as tall as their icons; disabled at an end."""
+def _arrow(row, record, text, direction, enabled, icon_scale):
+    """One pager arrow beside the tiles, as tall as their images; disabled at an end."""
     column = row.column(align=True)
     column.enabled = enabled
     column.ui_units_x = ARROW_UNITS
-    column.scale_y = height
-    arrow = column.operator("scenario.page_result_previews", text=text)
+    column.separator(factor=PREVIEW_INSET / SEPARATOR_UNITS)
+    button = column.column(align=True)
+    button.scale_y = icon_scale - 2 * PREVIEW_INSET
+    arrow = button.operator("scenario.page_result_previews", text=text)
     arrow.context_id, arrow.request_id = controller.context_id, record.local_id
     arrow.direction = direction
 
@@ -781,12 +794,13 @@ def draw(layout, record):
     shown = [tile for tile in tiles if tile.asset_id]
     page = controller.pages.get(record.local_id)
     if shown:
-        icon_scale = _icon_scale(width, len(shown), page is not None)
+        icon_scale, columns = _row_size(width, len(shown), page is not None)
         row = layout.row(align=False)
         if page is not None:
             _arrow(row, record, PREVIOUS_ARROW, "PREVIOUS", page.previous, icon_scale)
         for tile in shown:
             column = row.column(align=True)
+            column.ui_units_x = columns
             column.template_icon(
                 icon_value=tile.icon_id or _builtin(KIND_ICON[tile.kind]), scale=icon_scale
             )

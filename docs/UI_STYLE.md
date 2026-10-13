@@ -961,8 +961,8 @@ draw-time thumbnail.
 Blender panels cannot scroll sideways, so a job with more than four previewable
 results gets a pager instead of a fifth tile: a **‹** button before the tiles,
 a **›** button after them, each one interface unit wide and as tall as the
-icons, and a range line such as `3-6 of 6` under the row. The range uses a
-hyphen-minus. A page steps by four and the last page ends at the last result,
+tiles' images, and a range line such as `3-6 of 6` under the row. The range uses
+a hyphen-minus. A page steps by four and the last page ends at the last result,
 so it is always full: six results show 1-4, then 3-6. An arrow at its end stays
 in place, drawn disabled, so the tiles never shift. The arrows run an operator
 that changes the job's page offset, transient state of the preview controller
@@ -976,11 +976,17 @@ Jobs and Results pages draw the same pager, because they draw the same tiles.
 Icon size follows the drawn region's width, or in Studio the width it requests
 for its popup, divided by `preferences.system.ui_scale` (1 when background
 Blender reports 0). An unpaged row's icons scale from 2.5 to 5 with that
-width. A paged row leaves room for its arrows and may take icons down to a
-scale of 1.75 so that it fits: Blender narrows the items of a row wider than
-its region but keeps the arrows' height, so an overflowing row's arrows stand
-taller than its icons. At 1.75 a caption's **(99)…** still fits under its
-icon. A region narrower than a row of those smallest icons still narrows it.
+width. An icon scale step is 20 interface units. Blender estimates a caption
+10 steps wide and narrows every item of a row wider than its region, which
+narrows the images but neither the icons' cells nor the arrows. A paged row
+therefore sets each tile's column to its share of the row beside its arrows,
+with Blender's 8 units between a row's items, and its icons take that share,
+from 1.75 up to 5. Blender 5.0 to 5.2 draw a preview image 0.15 steps inside
+every edge of its icon (`PREVIEW_PAD`), so each arrow starts 0.15 steps below
+the row's top, after a separator, and is 0.3 steps shorter than the icon: as
+tall as the image. At 1.75 a caption's **(99)…** still fits under its icon. A
+region narrower than a row of those smallest icons still narrows it, and there
+the images are shorter than the arrows.
 Status lines wrap like the waveform box's, by the width Blender's interface
 font measures less the sidebar's panel, job box and icon space, and a caption
 such as **Model (2)** stays whole on one line. Drawing
@@ -1007,11 +1013,19 @@ line, no pager for four results and viewport input after an arrow click
 working in Jobs, Generations and Studio. In the sidebar at its default width,
 280.5 interface units at both scales, the arrows were about 1.65 times as tall
 as the icons, because the paged row's icon scale was raised to 2.5 and the row
-overflowed; in Studio and in a widened sidebar they matched. Paged rows now
-fit as described above. Native tests check that at that width a paged row fits
-with both arrows as tall as its icon scale, that a narrower sidebar takes the
-1.75 floor, and that unpaged rows and wide regions keep their icon scale. The
-physical recheck of the fitted row at UI scales 1.0 and 2.0 is pending.
+overflowed; in Studio and in a widened sidebar they matched. Its recheck, with
+the arrows as tall as the icons, found them as tall as the icons' cells, 78
+and 156 px, but about 1.3 times as tall as the images, 60 and 119 px: Blender
+had inset each image and narrowed the tile columns, sized for their captions,
+below their icons. Blender 5.1.2's row layout and preview inset give exactly
+those images, the unpaged row's 85 and 170 px, and Studio's 188 and 177 px.
+Paged rows now size their columns and arrows as described above. Native tests
+check, in the sidebar at that width and in Studio, at interface scales 2 and 4,
+that a paged row's columns fill the row and are at least as wide as its icons,
+that each arrow starts 0.15 steps down and is as tall as the image, that a
+narrower sidebar takes the 1.75 floor, and that unpaged rows keep their icon
+scale. The physical recheck of these arrows at UI scales 1.0 and 2.0 is
+pending.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
 1.0, with system mouse and wheel events and ZIPs built before the measured

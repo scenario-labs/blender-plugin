@@ -77,9 +77,15 @@ REQUEST_RETRY = (5.0, 10.0, 20.0, 40.0, 60.0)
 # measured as 90 on Blender 5.1.2, plus a few units of slack.
 TEXT_INSET = 96
 # The pager's arrows: one icon scale step wide each and as tall as the tiles'
-# images. Blender 5.0 to 5.2 draw a preview image PREVIEW_INSET steps inside
-# every edge of its icon (PREVIEW_PAD in interface_widgets.cc), so each arrow
-# starts that far below the row's top, after a separator: 0.3 steps at factor 1.
+# images. Blender stretches a row's items with the row, so each arrow's button
+# sits in a layout that is not expanded: Blender marks such a layout as fixed
+# size when it measures the button's text, and a row with room to spare keeps
+# the width of a column whose items, here that layout and a separator, all have
+# a fixed size (ui_text_icon_width_ex and LayoutRow::resolve_impl in
+# interface_layout.cc). Blender 5.0 to 5.2 also draw a preview image
+# PREVIEW_INSET steps inside every edge of its icon (PREVIEW_PAD in
+# interface_widgets.cc), so each arrow starts that far below the row's top,
+# after a separator: 0.3 steps at factor 1.
 ARROW_UNITS = 1.0
 PREVIEW_INSET = 0.15
 SEPARATOR_UNITS = 0.3
@@ -773,6 +779,9 @@ def _arrow(row, record, text, direction, enabled, icon_scale):
     column.ui_units_x = ARROW_UNITS
     column.separator(factor=PREVIEW_INSET / SEPARATOR_UNITS)
     button = column.column(align=True)
+    # Not expanded, so that Blender keeps the arrow's width instead of
+    # stretching it with the row; the button still fills the arrow's column.
+    button.alignment = "CENTER"
     button.scale_y = icon_scale - 2 * PREVIEW_INSET
     arrow = button.operator("scenario.page_result_previews", text=text)
     arrow.context_id, arrow.request_id = controller.context_id, record.local_id

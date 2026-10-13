@@ -281,7 +281,9 @@ a failed redraw is logged and does not stop it:
   row sets each tile's column to its share of the row beside the arrows, so
   that Blender does not narrow it, and its icons take a scale from 1.75 up to
   five. Each arrow is as tall as the preview image, which Blender draws 0.15
-  icon scale steps inside every edge of its icon.
+  icon scale steps inside every edge of its icon, and one step wide in a
+  sublayout Blender keeps at that width, so a wider row such as Studio's does
+  not stretch it.
 - **Lifetime.** A connection, project or file change, and unregistering the
   extension, release the icons and tiles. A status read after that belongs to
   another connection and is never shown.

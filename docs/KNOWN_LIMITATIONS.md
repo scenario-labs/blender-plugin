@@ -445,9 +445,11 @@ full render-lane desktop acceptance.
   scales 1.0 and 2.0 found the arrows as tall as the tiles' icon cells, still
   about 9 px (scale 1.0) or 18 px (scale 2.0) beyond the visible image in the
   default-width sidebar, with paged tiles about 30% smaller than an unpaged
-  row's. #432 then sized the arrows to the preview images; their height beside
-  those images in the sidebar at its default width awaits a physical desktop
-  recheck. Which result kinds receive a
+  row's. #432 then sized the arrows to the preview images, and a physical
+  recheck on 2026-10-13 found them within 0 to 1 px of the images at UI scales
+  1.0 and 2.0, and Studio's arrows about 1.2 steps wide at 2.0, stretched past
+  their one step by the row. The arrows now keep one step at every UI scale;
+  that width awaits a physical desktop recheck. Which result kinds receive a
   Scenario preview image, how long it takes and where a first-access redirect
   points are not established by live evidence; a preview missing after about
   five minutes of online polling needs **Retry preview (N)**. Video clips and 3D

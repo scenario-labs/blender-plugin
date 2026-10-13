@@ -995,7 +995,7 @@ draw-time thumbnail.
 
 Blender panels cannot scroll sideways, so a job with more than four previewable
 results gets a pager instead of a fifth tile: a **‹** button before the tiles,
-a **›** button after them, each one interface unit wide and as tall as the
+a **›** button after them, each one icon scale step wide and as tall as the
 tiles' images, and a range line such as `3-6 of 6` under the row. The range uses
 a hyphen-minus. A page steps by four and the last page ends at the last result,
 so it is always full: six results show 1-4, then 3-6. An arrow at its end stays
@@ -1016,7 +1016,13 @@ width. An icon scale step is 20 interface units. Blender estimates a caption
 narrows the images but neither the icons' cells nor the arrows. A paged row
 therefore sets each tile's column to its share of the row beside its arrows,
 with Blender's 8 units between a row's items, and its icons take that share,
-from 1.75 up to 5. Blender 5.0 to 5.2 draw a preview image 0.15 steps inside
+from 1.75 up to 5. Each arrow is one step wide. Blender stretches a row's items
+with the row, and Studio's row, its requested width less the job box's 10
+units, is wider than a row sized with 60 units of margins: it stretched the
+arrows to about 1.2 steps at UI scale 2.0. Each arrow's button therefore sits in
+a sublayout aligned `CENTER`, which Blender treats as fixed size, so such a row
+gives its room to spare to the tiles and keeps the arrows one step wide at every
+UI scale. Blender 5.0 to 5.2 draw a preview image 0.15 steps inside
 every edge of its icon (`PREVIEW_PAD`), so each arrow starts 0.15 steps below
 the row's top, after a separator, and is 0.3 steps shorter than the icon: as
 tall as the image. At 1.75 a caption's **(99)…** still fits under its icon. A
@@ -1059,7 +1065,31 @@ check, in the sidebar at that width and in Studio, at interface scales 2 and 4,
 that a paged row's columns fill the row and are at least as wide as its icons,
 that each arrow starts 0.15 steps down and is as tall as the image, that a
 narrower sidebar takes the 1.75 floor, and that unpaged rows keep their icon
-scale. The physical recheck of these arrows at UI scales 1.0 and 2.0 is
+scale. A physical recheck on 2026-10-13 found the arrows within 0 to 1 px of
+the images at UI scales 1.0 and 2.0, and Studio's arrows about 1.2 steps wide at
+UI scale 2.0, wider than the intended step.
+
+The arrows now keep that step, as described above. Native tests on Blender
+5.0.1, 5.1.2 and 5.2.1 check, at interface scales 1, 1.5, 2, 3 and 4 (UI scales
+1.0, 1.5 and 2.0 on standard and Retina displays), in Studio at 329, 640 and
+960 units and in sidebars of 300 and 430 units, that the arrows are 20
+interface units wide in a sublayout that is not expanded, and that the same
+width in interface units draws the same row at every scale. A model of
+Blender's row layout, `LayoutRow::resolve_impl` stated in the tests, keeps
+those 20 units in rows up to Studio's full request and gives the room to spare
+to the tiles, while it stretches arrows in an expanded layout to about 1.2
+steps at 329 units. A narrow Studio, at 240 and 160 units, keeps one-step
+arrows beside tiles of 1.75, and the arrows still span the images in pixels at
+UI scales 1.0, 1.5 and 2.0. Run against the earlier `result_previews.py` on
+Blender 5.1.2, these width checks fail. An offline GUI probe of the exact ZIP
+on Blender 5.1.2 macOS arm64, in an isolated profile and with no input, drew
+the earlier and the new paged rows in a Properties editor layout as wide as a
+Studio request, around the job box Studio draws, not in Studio's popup itself.
+Measured in its screenshots, the earlier arrows were 1.21 and 1.23 steps wide
+at UI scale 2.0 and 329 units, and 1.05 and 1.08 at UI scale 1.0 and 960 units;
+the new ones were exactly one step in both, as tall as before. A row sized for
+the default sidebar drew about one step before and after. The physical recheck
+of the arrows' width in Studio and the sidebar at UI scales 1.0, 1.5 and 2.0 is
 pending.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale

@@ -71,6 +71,16 @@ SEPARATOR_UNITS = 0.3
 ICON_UNIT = 20
 ITEM_SPACING = 8
 ROW_MARGIN = 60
+# A pager arrow is one step wide. The 0.10.0 human check found Studio's arrows
+# about 1.2 steps wide at UI scale 2.0: Blender had stretched them with the row.
+ARROW_STEPS = 1.0
+# Interface scales (preferences.system.ui_scale) of UI scales 1.0, 1.5 and 2.0
+# on a standard display and on a Retina display, which doubles them.
+UI_SCALES = (1.0, 1.5, 2.0, 3.0, 4.0)
+# Studio draws a job's box directly in its popup's layout, so a tile row is the
+# requested width less the box's margins: 5 units on each side (the style's
+# boxspace in interface_style.cc).
+STUDIO_MARGIN = 10
 # The longest any wait here may take. Previews settle in well under a second on
 # hosted CI, so this is ample; a bound per wait keeps tiles that never settle,
 # as when no icon could be built on Windows, from adding up to the native
@@ -78,14 +88,65 @@ ROW_MARGIN = 60
 WAIT_SECONDS = 10
 
 
+def blender_row(items, width):
+    """The widths Blender 5.0 to 5.2 give the items of an expanded row ``width``
+    interface units wide, as ``LayoutRow::resolve_impl`` in interface_layout.cc
+    does, without its rounding to whole pixels.
+
+    ``items`` are (estimated width, fixed size) pairs. An item keeps its width
+    when it is fixed size, or when sharing the row would narrow it below two
+    steps or its own width if smaller; the others share the rest of the row in
+    proportion to their widths, so a row wider than its items stretches them.
+    Kept widths that do not fit the row are narrowed in proportion.
+    """
+
+    def fit(item, position, total, available, last):
+        if not available or not total:
+            return item
+        return available - position if last else item * available / total
+
+    width -= (len(items) - 1) * ITEM_SPACING
+    total = sum(size for size, _ in items)
+    kept, kept_width = [False] * len(items), 0.0
+    changed = True
+    while changed:
+        changed, position, remaining = False, 0.0, total
+        available = width - kept_width
+        for index, (size, fixed) in enumerate(items):
+            if kept[index]:
+                continue
+            last = index == len(items) - 1
+            shared = fit(size, position, total, available, last) if available > 0 else 0.0
+            position += shared
+            if fixed or shared < min(2 * ICON_UNIT, size):
+                kept[index], changed = True, True
+                kept_width += size if fixed else min(2 * ICON_UNIT, size)
+                remaining -= size
+        total = remaining
+    free = sum(size for (size, _), keep in zip(items, kept, strict=True) if not keep)
+    widths, kept_x, free_x = [], 0.0, 0.0
+    for index, ((size, fixed), keep) in enumerate(zip(items, kept, strict=True)):
+        last = index == len(items) - 1
+        if keep:
+            least = size if fixed else min(2 * ICON_UNIT, size)
+            drawn = fit(least, kept_x, kept_width, min(width, kept_width), last)
+            kept_x += drawn
+        else:
+            drawn = fit(size, free_x, free, width - kept_width, last)
+            free_x += drawn
+        widths.append(drawn)
+    return widths
+
+
 class Layout:
     """Records draw calls, including nested rows, columns and boxes, in order.
 
     Rows and columns record into the same list and inherit ``enabled`` and
     ``scale_y``, as Blender's sublayouts do, and a column inside a column its
-    width, ``ui_units_x``. An operator records whether its layout was enabled,
-    then the layout's ``scale_y`` and ``ui_units_x``; an icon records its scale
-    and its column's ``ui_units_x``.
+    width, ``ui_units_x``; ``alignment`` starts at ``EXPAND`` in each, as in
+    Blender. An operator records whether its layout was enabled, then the
+    layout's ``scale_y``, ``ui_units_x`` and ``alignment``; an icon records its
+    scale and its column's ``ui_units_x``.
     """
 
     def __init__(self, calls=None, enabled=True, scale_y=1.0, ui_units_x=0.0):
@@ -93,6 +154,7 @@ class Layout:
         self.enabled = enabled
         self.scale_y = scale_y
         self.ui_units_x = ui_units_x
+        self.alignment = "EXPAND"
 
     def box(self):
         self.calls.append(("box",))
@@ -124,6 +186,7 @@ class Layout:
                 self.enabled,
                 self.scale_y,
                 self.ui_units_x,
+                self.alignment,
             )
         )
         return _Properties(properties)
@@ -879,17 +942,36 @@ class ResultPreviewTileTests(unittest.TestCase):
 
     def tile_sizes(self, view, width, scale, popup=None, studio=None):
         """A row drawn as tile_calls draws it: its icons as (scale, column units
-        wide), its pager arrows as (units wide, scale_y) and the factors of the
-        separators above the arrows."""
+        wide), its pager arrows as (units wide, scale_y, their button layout's
+        alignment) and the factors of the separators above the arrows."""
         calls = self.tile_calls(view, width, scale, popup, studio)
         icons = [(call[2], call[3]) for call in calls if call[0] == "icon"]
         arrows = [
-            (call[7], call[6])
+            (call[7], call[6], call[8])
             for call in calls
             if call[0] == "operator" and call[1] == "scenario.page_result_previews"
         ]
         spacers = [call[1] for call in calls if call[0] == "separator"]
         return icons, arrows, spacers
+
+    @staticmethod
+    def drawn_row(sizes, width):
+        """Interface units Blender gives a paged row's arrows and tile columns, in
+        drawing order, in a row ``width`` interface units wide.
+
+        An arrow's column holds a separator and a sublayout with its button.
+        Blender gives a separator and an icon-only button a fixed size, and
+        marks a layout fixed size when it sizes a button's text in it with an
+        alignment other than EXPAND (``ui_text_icon_width_ex``). A layout whose
+        items all have a fixed size has one too. A tile column holds its caption
+        too, whose text Blender stretches with the row.
+        """
+        icons, arrows, _ = sizes
+        (first, *_), (last, *_) = arrows
+        before = (first * ICON_UNIT, arrows[0][2] != "EXPAND")
+        after = (last * ICON_UNIT, arrows[1][2] != "EXPAND")
+        tiles = [(columns * ICON_UNIT, False) for _, columns in icons]
+        return blender_row([before, *tiles, after], width)
 
     def assert_numbers_fit(self, icon_scale, titles):
         """Each caption's number with an ellipsis fits under an icon of that scale."""
@@ -905,8 +987,10 @@ class ResultPreviewTileTests(unittest.TestCase):
         ``width`` interface units wide; returns its icon scale.
 
         Its four icons share one scale, in columns at least that wide that fill
-        the row beside two one-unit arrows. Each arrow starts one preview margin
-        below the row's top, where the images start, and is as tall as them.
+        the row beside two one-step arrows, each in a layout that is not
+        expanded, so that Blender keeps that step. Each arrow starts one preview
+        margin below the row's top, where the images start, and is as tall as
+        them.
         """
         icons, arrows, spacers = sizes
         self.assertEqual(len(icons), 4)
@@ -916,9 +1000,10 @@ class ResultPreviewTileTests(unittest.TestCase):
         needed = 2 * ICON_UNIT + 4 * ICON_UNIT * columns + 5 * ITEM_SPACING + ROW_MARGIN
         self.assertAlmostEqual(needed, width)
         self.assertEqual(len(arrows), 2)
-        for units, height in arrows:
-            self.assertEqual(units, 1.0)
+        for units, height, alignment in arrows:
+            self.assertEqual(units, ARROW_STEPS)
             self.assertAlmostEqual(height, icon_scale - 2 * PREVIEW_PAD)
+            self.assertNotEqual(alignment, "EXPAND")
         self.assertEqual(len(spacers), 2)
         for factor in spacers:
             self.assertAlmostEqual(factor * SEPARATOR_UNITS, PREVIEW_PAD)
@@ -954,7 +1039,7 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertLess(smallest, 2.5)
         # Blender narrows such a row and its images with it; the arrows keep the
         # height of the smallest icons' images.
-        self.assertEqual(arrows, [(1.0, smallest - 2 * PREVIEW_PAD)] * 2)
+        self.assertEqual(arrows, [(ARROW_STEPS, smallest - 2 * PREVIEW_PAD, "CENTER")] * 2)
         self.assertEqual(spacers, [PREVIEW_PAD / SEPARATOR_UNITS] * 2)
         self.assert_numbers_fit(smallest, ["(99) Metallic"])
 
@@ -982,8 +1067,8 @@ class ResultPreviewTileTests(unittest.TestCase):
 
     def test_a_paged_row_in_a_wide_region_spreads_its_columns_beside_one_unit_arrows(self):
         # Studio and a widened sidebar fitted a paged row beside its arrows on
-        # the desktop. Each tile column takes its share of the row, so Blender
-        # widens neither arrow, and the icons take that share up to 5.
+        # the desktop. Each tile column takes its share of the row beside the
+        # one-step arrows, and the icons take that share up to 5.
         with online_access(False):
             view = self.six_maps()
         for scale in (2.0, 4.0):
@@ -998,19 +1083,94 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertAlmostEqual(self.assert_paged_row(sizes, 861 / 2.0), expected)
         self.assertAlmostEqual(sizes[0][0][1], expected)
 
-    def test_paged_arrows_span_the_drawn_images_in_pixels_at_ui_scales_1_and_2(self):
+    def test_paged_arrows_stay_one_step_wide_at_ui_scales_1_1_5_and_2(self):
+        # The 0.10.0 human check found Studio's arrows about 1.2 steps wide at UI
+        # scale 2.0, where Studio requested about 329 units: Blender had
+        # stretched the one-step arrows with the row, which is wider than the 60
+        # units of margins a row is sized for. At UI scales 1.0, 1.5 and 2.0, on
+        # standard and Retina displays, the arrows now stay one step, 20
+        # interface units, wide: Blender gives the row's room to spare to the
+        # tiles.
+        with online_access(False):
+            view = self.six_maps()
+        regions = (
+            ("studio", 329),
+            ("studio", 640),
+            ("studio", 960),
+            ("sidebar", 300),
+            ("sidebar", 430),
+        )
+        for surface, units in regions:
+            drawn = []
+            for scale in UI_SCALES:
+                with self.subTest(surface=surface, units=units, ui_scale=scale):
+                    if surface == "studio":
+                        sizes = self.tile_sizes(view, 2400, scale, popup=0, studio=units)
+                    else:
+                        sizes = self.tile_sizes(view, units * scale, scale)
+                    drawn.append(sizes)
+                    icon_scale = self.assert_paged_row(sizes, units)
+                    # Studio's job box takes 10 units of its request, so its row
+                    # is wider than the one sized here.
+                    for margin in (ROW_MARGIN, 30, STUDIO_MARGIN, 0):
+                        widths = self.drawn_row(sizes, units - margin)
+                        self.assertAlmostEqual(widths[0], ARROW_STEPS * ICON_UNIT)
+                        self.assertAlmostEqual(widths[-1], ARROW_STEPS * ICON_UNIT)
+                        for width in widths[1:-1]:
+                            # Each image keeps the icon's height in its column.
+                            self.assertGreaterEqual(width, icon_scale * ICON_UNIT - 1e-9)
+            # The same region in interface units draws the same row at every scale.
+            self.assertEqual(drawn, [drawn[0]] * len(UI_SCALES))
+        # A narrow Studio, down to its 160-unit minimum, keeps one-step arrows
+        # beside tiles of 1.75. Its row, the request less the job box, still
+        # fits them at 240 units; at 160 Blender narrows every item of the row
+        # in proportion, the arrows no more than the tiles.
+        for units in (240, 160):
+            with self.subTest(studio=units):
+                sizes = self.tile_sizes(view, 2400, 4.0, popup=0, studio=units)
+                icons, arrows, _ = sizes
+                self.assertEqual(icons, [(1.75, 1.75)] * 4)
+                self.assertEqual([arrow[0] for arrow in arrows], [ARROW_STEPS] * 2)
+                row = units - STUDIO_MARGIN
+                fits = min(1.0, (row - 5 * ITEM_SPACING) / (2 * ICON_UNIT + 4 * 35))
+                widths = self.drawn_row(sizes, row)
+                self.assertAlmostEqual(widths[0], ICON_UNIT * fits)
+                self.assertAlmostEqual(widths[-1], ICON_UNIT * fits)
+                for width in widths[1:-1]:
+                    self.assertGreaterEqual(width, 35 * fits - 1e-9)
+
+    def test_blender_stretches_an_arrow_in_an_expanded_layout_with_its_row(self):
+        # What the human check measured in Studio's 329-unit request at UI scale
+        # 2.0: one-step arrows, whose buttons sat in an expanded layout, beside
+        # four tiles of 2.3625 steps in columns as wide. Blender stretched them
+        # with the row, the request less Studio's job box, to about 1.2 steps.
+        tiles = [(2.3625 * ICON_UNIT, False)] * 4
+        row = 329 - STUDIO_MARGIN
+        stretched = blender_row([(ICON_UNIT, False), *tiles, (ICON_UNIT, False)], row)
+        self.assertAlmostEqual(stretched[0] / ICON_UNIT, 1.2, places=1)
+        self.assertAlmostEqual(stretched[-1], stretched[0])
+        # A fixed-size arrow keeps its width, and the tiles take the rest.
+        kept = blender_row([(ICON_UNIT, True), *tiles, (ICON_UNIT, True)], row)
+        self.assertAlmostEqual(kept[0], ICON_UNIT)
+        self.assertAlmostEqual(kept[-1], ICON_UNIT)
+        self.assertAlmostEqual(sum(kept), row - 5 * ITEM_SPACING)
+
+    def test_paged_arrows_span_the_drawn_images_in_pixels_at_ui_scales_1_1_5_and_2(self):
         # Blender draws an icon of scale s in a cell s x 20 x ui_scale pixels
         # tall and, in a column at least as wide, its image PREVIEW_PAD units
         # inside every edge. The recheck measured 60 and 119 px images under 78
         # and 156 px arrows in the default sidebar at UI scales 1.0 and 2.0, and
         # 188 and 177 px images under 200 and 201 px arrows in Studio, whose
-        # requested width at 2.0 was about 329 units.
+        # requested width at 2.0 was about 329 units. A second recheck found
+        # the arrows within 0 to 1 px of the images at both scales.
         with online_access(False):
             view = self.six_maps()
         cases = (
             ("sidebar", 561, 2.0, None),
+            ("sidebar", 900, 3.0, None),
             ("sidebar", 1122, 4.0, None),
             ("studio", 2400, 2.0, 960),
+            ("studio", 2400, 3.0, 640),
             ("studio", 2400, 4.0, 329),
         )
         for surface, pixels, scale, studio in cases:
@@ -1023,7 +1183,7 @@ class ResultPreviewTileTests(unittest.TestCase):
                 image_top = PREVIEW_PAD * unit
                 image_bottom = icon_scale * unit - PREVIEW_PAD * unit
                 self.assertEqual((len(arrows), len(spacers)), (2, 2))
-                for (_, height), factor in zip(arrows, spacers, strict=True):
+                for (_, height, _), factor in zip(arrows, spacers, strict=True):
                     top = factor * SEPARATOR_UNITS * unit
                     self.assertAlmostEqual(top, image_top)
                     self.assertAlmostEqual(top + height * unit, image_bottom)

@@ -26,8 +26,9 @@ single spaces, a part is showable only when:
   same rules;
 - no token contains a credential word (`key`, `secret`, `token`, `password`,
   `passwd`, `pwd`, `auth`, `credential`, `signature`, `session`, `cookie`, or
-  `sig` alone), also when digits stand for letters (`tok3n`), except a few
-  harmless words such as `keyframe` or `author`.
+  `sig` alone), also with its separators removed (`tok/en`, `pass_word`) or
+  digits standing for letters (`tok3n`), except a few harmless words such as
+  `keyframe` or `author`.
 
 A part that is not showable reads NOT_SHOWN, and nothing is taken from it. When
 `metadata.error` and `metadata.hint` contain each other, ignoring case, spacing
@@ -170,13 +171,21 @@ def _plain_word(word):
 
 
 def _credential(token):
-    """Whether a token holds a credential word, also when digits stand for letters (`tok3n`)."""
+    """Whether a token holds a credential word.
+
+    The token is read as written and with every separator removed, so a word
+    split as `tok/en`, `tok_en` or `pass/word` is found, and each form also
+    with digits read as the letters they stand for (`tok3n`). A token that is
+    a harmless word in either form (`keyframe`, `key-frame`) is not one.
+    """
     lowered = token.lower()
-    if lowered in _HARMLESS_WORDS:
+    joined = "".join(char for char in lowered if char.isalnum())
+    if lowered in _HARMLESS_WORDS or joined in _HARMLESS_WORDS:
         return False
-    for form in (lowered, lowered.translate(_LOOKALIKES)):
-        if form == "sig" or any(word in form for word in _CREDENTIAL_WORDS):
-            return True
+    for form in (lowered, joined):
+        for spelling in (form, form.translate(_LOOKALIKES)):
+            if spelling == "sig" or any(word in spelling for word in _CREDENTIAL_WORDS):
+                return True
     return False
 
 

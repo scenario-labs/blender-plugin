@@ -250,6 +250,15 @@ ADVERSARIAL = [
     # Digit-for-letter look-alikes of credential words, alone.
     ("Header tok3n rejected", ["tok3n"]),
     ("Use p4ssw0rd now", ["p4ssw0rd"]),
+    # A credential word split by a separator inside one token.
+    ("Rejected github_tok/en: abc123456", ["abc123456"]),
+    ("Rejected tok_en: abc123456", ["abc123456"]),
+    ("Rejected to-ken: abc123456", ["abc123456"]),
+    ("Rejected tok.en: abc123456", ["abc123456"]),
+    ("Use pass/word hunter2", ["hunter2"]),
+    ("Use s/ecret value", ["value"]),
+    ("Use s3/cr3t value", ["value"]),
+    ("Header s/ig rejected", ["s/ig"]),
 ]
 
 
@@ -283,6 +292,7 @@ READABLE = [
     'The prompt "a red fox" was rejected by the content filter.',
     "Rendering at x86_64 speed reached 3.5 fps on the H3 model.",
     "Set width/height to 1024 and keep the in/out points for GPT/Image 2.",
+    "The key-frame at 00:01:12 and the author's note were kept; id: " + SUPPORT_ID,
 ]
 
 
@@ -304,6 +314,13 @@ def test_ordinary_reasons_stay_readable(text):
         ("ok/s3ss10n", False),
         ("tok3n/abc", False),
         ("tok3n", False),
+        ("tok/en", False),
+        ("tok_en", False),
+        ("to-ken", False),
+        ("s/ecret", False),
+        ("pass/word", False),
+        ("key-frame", True),
+        ("key/word", False),  # its side `key` is checked alone too
         ("input/output", True),
         ("a/b/c", False),
         ("/path", False),

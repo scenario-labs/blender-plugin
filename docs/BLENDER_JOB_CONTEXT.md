@@ -1019,8 +1019,9 @@ single spaces, a part is shown only when:
   same rules, as in `width/height` or `in/out`;
 - no token contains a credential word (`key`, `secret`, `token`, `password`,
   `passwd`, `pwd`, `auth`, `credential`, `signature`, `session`, `cookie`, or
-  `sig` alone), also when digits stand for letters (`tok3n`, `s3ss10n`), except
-  harmless words such as `keyframe`, `keyword` or `author`.
+  `sig` alone), also with its separators removed (`tok/en`, `tok_en`,
+  `pass/word`) or digits standing for letters (`tok3n`, `s3ss10n`), except
+  harmless words such as `keyframe`, `key-frame`, `keyword` or `author`.
 
 A Scenario resource ID is `model_`, `job_`, `asset_`, `team_`, `proj_`, `col_`,
 `workflow_`, `upload_` or `apiu_` followed by 20 to 24 letters and digits, as

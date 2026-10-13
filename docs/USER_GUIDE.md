@@ -243,8 +243,10 @@ finishes, the reference is marked as uploaded and the form requests a fresh pric
 **Generate** uses that exact approved input and price; uploading alone never
 starts generation.
 
-Keep the scene, model and reference slot unchanged while the upload finishes.
-If they change, a late upload cannot replace the new selection. **Inspect uploads**
+Keep the model and reference slot unchanged while the upload finishes, and keep
+the scene unchanged for a viewport, camera or Render Result snapshot. A local file
+keeps uploading while you edit, play or render the scene. If any of these change,
+a late upload cannot replace the new selection. **Inspect uploads**
 shows saved progress and lets you refresh a known upload, cancel an unsubmitted
 preparation or clean up its finished staging copy. Cleanup keeps your original file.
 An uncertain upload is preserved without sending its bytes again. An upload that
@@ -1101,10 +1103,12 @@ progress and blocks pricing until the asset attaches, then requires a fresh pric
 A single input must be empty first; arrays append up to their maximum. The chosen
 file must exist and be readable.
 
-Leave the scene unchanged until the upload attaches. Editing the scene (for
-example moving an object) or changing the frame stops an upload that is still
-sending, and it cannot resume; once everything was sent, the import still
-finishes but does not attach automatically. If nothing had been sent yet, or the
+A chosen file keeps uploading and attaches while you edit, play or render the
+scene. A snapshot shows the scene as it was, so leave the scene unchanged until
+its upload attaches: editing the scene (for example moving an object), changing
+the frame or rendering stops a snapshot upload that is still sending, and it
+cannot resume; once everything was sent, the import still finishes but does not
+attach automatically. If nothing had been sent yet, or the
 file could not be prepared, the input is freed with its values kept and says that
 nothing was uploaded, so you can upload again; the note stays after undo or redo
 until you change the input, load another workflow or upload into it again.

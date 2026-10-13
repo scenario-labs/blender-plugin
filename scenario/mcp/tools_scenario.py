@@ -2257,7 +2257,12 @@ def upload_reference(args):
     if not isinstance(path, str) or not path:
         raise ValueError("Choose a local reference path to upload")
     owner = runtime.ensure_reference_uploads()
-    ticket = owner.start(bpy.context.scene, bpy.path.abspath(path), kind=args.get("kind", "image"))
+    ticket = owner.start(
+        bpy.context.scene,
+        bpy.path.abspath(path),
+        kind=args.get("kind", "image"),
+        external=True,
+    )
     return _reference_response(ticket.identifier)
 
 

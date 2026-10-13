@@ -693,7 +693,10 @@ for filesystem ownership, interruption and orphan limits.
 The optional thread-safe `origin_guard` also protects upload preparation and each
 durable initialization/part/finalization claim. Source reads and network calls
 remain outside the revision lock; inspection and explicit refresh preserve access
-to old-origin records. The [upload guide](SDK_UPLOADS.md#shared-worker-commands)
+to old-origin records. A chosen file's upload carries a
+[destination-only origin](BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime), which
+scene edits keep; preparing a paid request with such an origin is refused, so it
+can never stand in for inputs captured from the scene. The [upload guide](SDK_UPLOADS.md#shared-worker-commands)
 describes rejected staging and already-claimed response behavior.
 
 

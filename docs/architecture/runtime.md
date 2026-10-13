@@ -917,8 +917,11 @@ attachment, so existing pricing checks reject edited or cross-connection values.
 Stale, failed or retired bindings, including one whose upload **Upload again**
 abandoned, keep the marker and an inspectable error; saved uploads, including that
 restart's new upload, attach only through a separate single-use confirmation in
-the shared inspection view. Any scene edit, frame change or undo makes JobSession refuse the
-upload's next initialization, part or completion admission, and the ticket stops.
+the shared inspection view. For a snapshot, any scene edit, frame change, render or undo
+makes JobSession refuse the upload's next initialization, part or completion admission,
+and the ticket stops. A chosen file's upload binds only to its scene, so it continues
+through edits, frame changes and renders and stops only after undo, redo, removal of
+that scene or a file load.
 The exception to keeping the marker is a stopped ticket that `ReferenceUploads`
 reports as never having reached Scenario (failed staging, a refused admission
 while still prepared, or cancellation): the marker is removed and existing values

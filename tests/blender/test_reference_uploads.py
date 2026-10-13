@@ -4,6 +4,7 @@
 
 import json
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
@@ -57,7 +58,8 @@ class ReferenceUploadTests(unittest.TestCase):
     def start(self):
         return self.tools.upload_reference({"path": str(self.fixture.source)})
 
-    def settle(self):
+    def settle(self, change=None):
+        """Advance every ticket; ``change`` runs on the main thread before each pump."""
         for _ in range(12):
             for ticket in self.owner.references.values():
                 if ticket.task is not None:
@@ -68,6 +70,8 @@ class ReferenceUploadTests(unittest.TestCase):
                         # resulting ticket error and durable state below.
                         pass
                 ticket.next_poll = 0
+            if change is not None:
+                change()
             self.owner.poll()
             if all(
                 ticket.task is None and (ticket.error or ticket.record.state.value == "imported")
@@ -101,6 +105,129 @@ class ReferenceUploadTests(unittest.TestCase):
         self.fixture.uploader.upload.assert_called_once()
         self.assertEqual(self.fixture.uploader.upload.call_args.args[1], b"data")
         self.assertEqual(ticket.record.state.value, "imported")
+
+    def scene_updates(self):
+        """Scene updates that leave a file reference's bytes and destination unchanged."""
+        job_session = submodule("blender.job_session")
+        scene = self.fixture.scene
+        unrelated = bpy.data.objects.new("Unrelated to the upload", None)
+        scene.collection.objects.link(unrelated)
+        self.addCleanup(bpy.data.objects.remove, unrelated, do_unlink=True)
+        bpy.context.view_layer.update()
+
+        def frame_change():
+            scene.frame_set(scene.frame_current + 1)
+
+        def unrelated_edit():
+            unrelated.location.x += 1
+            bpy.context.view_layer.update()
+
+        def render_thread():
+            # A render calls the frame and dependency handlers on its own thread.
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pool.submit(job_session._scene_changed, None, None).result(5)
+
+        return frame_change, unrelated_edit, render_thread
+
+    def test_scene_updates_during_file_upload_do_not_stop_it(self):
+        put = self.fixture.uploader.upload.side_effect
+        cases = [
+            (change, every_step)
+            for change in self.scene_updates()
+            for every_step in (True, False)  # Before each command, or only mid-transfer.
+        ]
+        for index, (change, every_step) in enumerate(cases, 1):
+            with self.subTest(change=change.__name__, every_step=every_step):
+                path = self.typed_source("image", ".png", "image/png")
+                entered, release = threading.Event(), threading.Event()
+
+                def blocked(*args, entered=entered, release=release, **kwargs):
+                    entered.set()
+                    self.assertTrue(release.wait(5), "Fixture did not release the part")
+                    return put(*args, **kwargs)
+
+                self.fixture.uploader.upload.side_effect = blocked
+                result = self.tools.upload_reference({"path": str(path)})
+                ticket = self.owner.references[result["reference_id"]]
+                for _ in range(12):
+                    if ticket.command == "transfer_upload_part" and ticket.task is not None:
+                        # The scene changes while the signed part is being sent.
+                        self.assertTrue(entered.wait(5))
+                        change()
+                        release.set()
+                    if ticket.task is not None:
+                        try:
+                            ticket.task.result(5)
+                        except Exception:
+                            pass  # poll() records the error asserted below.
+                    if every_step:
+                        change()
+                    ticket.next_poll = 0
+                    self.owner.poll()
+                    if ticket.error or ticket.record.state.value == "imported":
+                        break
+                release.set()
+                status = self.tools.reference_upload_status(result)
+                self.assertIsNone(status["error"], status)
+                self.assertEqual(status["state"], "imported", status)
+                self.assertEqual(self.owner.imported(result["reference_id"]), "reference-asset")
+                self.assertEqual(self.fixture.uploader.upload.call_count, index)
+                posts = [r for r, _ in self.fixture.calls if r.method == "POST"]
+                self.assertEqual(len(posts), index * 2)  # One create and one completion each.
+
+    def test_file_upload_stops_when_its_scene_is_replaced_or_removed(self):
+        job_session = submodule("blender.job_session")
+        session = self.fixture.session
+        # Undo and Redo may replace the scene: a chosen file loses its destination.
+        result = self.tools.upload_reference({"path": str(self.fixture.source)})
+        ticket = self.owner.references[result["reference_id"]]
+        origin = ticket.task.result(5).intent.origin
+        self.assertTrue(submodule("core.jobs.origins").destination_only(origin))
+        job_session._history_pre(None)
+        self.settle()
+        status = self.tools.reference_upload_status(result)
+        self.assertEqual(status["state"], "prepared", status)
+        self.assertTrue(status["error"], status)
+        # A removed scene revokes its destination, even for a worker's next claim.
+        removed = bpy.data.scenes.new("Removed upload destination")
+        bpy.context.window.scene = removed
+        path = self.typed_source("image", ".png", "image/png")
+        result = self.tools.upload_reference({"path": str(path)})
+        record = self.owner.references[result["reference_id"]].task.result(5)
+        bpy.context.window.scene = self.fixture.scene
+        bpy.data.scenes.remove(removed)
+        session.prune_missing_scenes()
+        self.assertFalse(session._origins.current(record.intent.origin))
+        with self.assertRaises(self.fixture.module.OriginUnavailable):
+            session.initialize_upload(record.intent.request_id, expected_revision=record.revision)
+        with self.assertRaisesRegex(self.fixture.commands.UploadError, "origin changed"):
+            session._coordinator.initialize_upload(
+                record.intent.request_id, expected_revision=record.revision
+            )
+        self.assertEqual(self.fixture.calls, [])
+        self.fixture.uploader.upload.assert_not_called()
+
+    def test_restart_keeps_a_file_bound_only_to_its_destination(self):
+        parts = self.fixture.remote["parts"]
+        self.fixture.remote["parts"] = [{**parts[0], "url": "https://other.example.invalid/part"}]
+        result = self.start()
+        self.settle()
+        record = self.fixture.session.inspect_upload(
+            self.tools.reference_upload_status(result)["request_id"]
+        )
+        self.assertEqual(record.state.value, "uploading")
+        # Undo replaced the scene, so restart captures the selected scene again.
+        submodule("blender.job_session")._history_pre(None)
+        self.fixture.remote.update(id="upload-two", parts=parts)
+        command = self.owner.recover(record.intent.request_id, record.revision, "restart")
+        command.task.result(5)
+        self.settle(self.scene_updates()[0])
+        replacement = self.owner.references[command.reference_id]
+        self.assertEqual(replacement.record.state.value, "imported", replacement.error)
+        origin = replacement.record.intent.origin
+        self.assertNotEqual(origin, record.intent.origin)
+        self.assertTrue(submodule("core.jobs.origins").destination_only(origin))
+        self.fixture.uploader.upload.assert_called_once()
 
     def test_origin_change_after_staging_stops_before_network(self):
         ticket = self.owner.start(self.fixture.scene, self.fixture.source)
@@ -164,10 +291,14 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertIsNone(status["error"])
         self.fixture.uploader.upload.assert_called_once()
 
-    def test_imported_reference_cannot_attach_after_scene_change(self):
+    def test_imported_file_reference_survives_edits_but_not_a_replaced_scene(self):
         result = self.start()
         self.settle()
+        # A chosen file's bytes never depended on the scene's content.
         self.fixture.session.invalidate_scene(self.fixture.scene)
+        self.assertEqual(self.owner.imported(result["reference_id"]), "reference-asset")
+        # Undo and redo can replace the scene, so its identity is no longer proven.
+        submodule("blender.job_session")._history_pre(None)
         with self.assertRaises(self.fixture.module.OriginUnavailable):
             self.owner.imported(result["reference_id"])
         self.runtime.state.job_context_id = "replacement-context"
@@ -633,18 +764,21 @@ class ReferenceUploadTests(unittest.TestCase):
                 self.assertEqual(status["state"], "imported", status)
                 self.assertEqual((scene.frame_current, scene.use_preview_range), (4, preview))
 
-    def test_frame_change_after_capture_still_stops_upload_before_network(self):
+    def test_scene_update_after_capture_still_stops_upload_before_network(self):
         scene = self.fixture.scene
         self.scene_camera()
         scene.frame_set(4)
+        changes = self.scene_updates()
         for source in ("CAMERA", "CAMERA_CLIP"):
-            with self.subTest(source=source):
-                result = self.gui_capture(source, [])
-                scene.frame_set(scene.frame_current + 1)
-                self.settle()
-                status = self.tools.reference_upload_status(result)
-                self.assertNotEqual(status["state"], "imported", status)
-                self.assertTrue(status["error"], status)
+            for change in changes:
+                with self.subTest(source=source, change=change.__name__):
+                    result = self.gui_capture(source, [])
+                    # A snapshot of the scene stays bound to the revision it showed.
+                    change()
+                    self.settle()
+                    status = self.tools.reference_upload_status(result)
+                    self.assertNotEqual(status["state"], "imported", status)
+                    self.assertTrue(status["error"], status)
         self.assertEqual(self.fixture.calls, [])
         self.fixture.uploader.upload.assert_not_called()
 

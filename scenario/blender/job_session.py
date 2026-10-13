@@ -383,12 +383,33 @@ class JobSession:
         except ReferenceError:
             return False
 
+    def capture_destination(self, scene):
+        """Capture only the scene a payload is for, when that payload does not come from it.
+
+        A file the user chose keeps its bytes whatever the scene does, so scene,
+        frame and render updates keep this origin. Removing the scene, Undo/Redo,
+        file loading and retirement revoke it, and delivery still requires the
+        selected scene. Never use it to price, submit or apply scene content.
+        """
+        return self._origins.capture_destination(self._scene_identity(scene, ()))
+
     def capture_many(self, scene, targets):
         """Validate one current scene-membership snapshot before recording any origins."""
         _main_thread()
+        targets = tuple(targets)
+        scene_id = self._scene_identity(scene, targets)
+        origins = []
+        for target in targets:
+            target_id = self._identity(self._targets, target) if target is not None else None
+            if target_id is not None:
+                self._target_scenes.setdefault(target_id, set()).add(scene_id)
+            origins.append(self._origins.capture(scene_id, target_id))
+        return tuple(origins)
+
+    def _scene_identity(self, scene, targets):
+        _main_thread()
         if not self._active:
             raise OriginUnavailable("This job context is inactive")
-        targets = tuple(targets)
         try:
             if scene not in tuple(bpy.data.scenes):
                 raise OriginUnavailable("The originating scene is unavailable")
@@ -397,14 +418,7 @@ class JobSession:
                 raise OriginUnavailable("The target is not in the originating scene")
         except ReferenceError:
             raise OriginUnavailable("The original scene or target was removed") from None
-        scene_id = self._identity(self._scenes, scene)
-        origins = []
-        for target in targets:
-            target_id = self._identity(self._targets, target) if target is not None else None
-            if target_id is not None:
-                self._target_scenes.setdefault(target_id, set()).add(scene_id)
-            origins.append(self._origins.capture(scene_id, target_id))
-        return tuple(origins)
+        return self._identity(self._scenes, scene)
 
     def retain_mesh_source(self, origin, source, target):
         """Retain a bounded live export guard; saved metadata cannot recreate it."""
@@ -1820,7 +1834,7 @@ class JobSession:
             except ReferenceError:
                 present = False
             if not present:
-                self._origins.invalidate(scene_id)
+                self._origins.remove(scene_id)
                 del self._scenes[scene_id]
                 for scene_ids in self._target_scenes.values():
                     scene_ids.discard(scene_id)
@@ -1974,9 +1988,10 @@ def _load_pre(_):
 def _scene_changed(scene, depsgraph=None):
     # Rendering can invoke frame/dependency handlers on a render thread. Never
     # inspect bpy data there: conservatively invalidate the pure revision state.
+    # Rendering changes no scene's identity, so destination-only origins remain.
     if threading.current_thread() is not threading.main_thread():
         for session in _session_snapshot():
-            session._origins.reset()
+            session._origins.reset(keep_destinations=True)
         return
     sessions = _session_snapshot()
     # A deleted scene cannot emit its own update. Inspect all captured scenes

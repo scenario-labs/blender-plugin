@@ -13,6 +13,7 @@ from weakref import WeakSet
 import bpy
 
 from ..core.api.errors import ScenarioError
+from ..core.jobs.origins import destination_only
 from ..core.jobs.upload_store import UploadState
 from ..core.jobs.uploads import UploadPlanUnavailable, UploadRecoveryAction
 from ..core.jobs.workers import WorkerError
@@ -217,10 +218,19 @@ class ReferenceUploads:
         origin=None,
         mesh_source=None,
         expected_sha256=None,
+        external=False,
     ):
-        """Upload the chosen typed reference once; never quote or generate."""
+        """Upload the chosen typed reference once; never quote or generate.
+
+        ``external`` marks a file the user chose, whose bytes do not come from the
+        scene: its upload binds to the scene it is for, not to the scene's current
+        content, so editing, playing or rendering the scene does not stop it.
+        Snapshots of the scene keep the default, which any scene update stops.
+        """
         task = None
         try:
+            if external and (origin, temporary, mesh_source) != (None, None, None):
+                raise ValueError("A scene snapshot cannot be uploaded as an external file")
             if not self._online():
                 raise ScenarioError(0, "Allow Online Access before uploading a reference")
             if len(self.references) >= 128:
@@ -236,7 +246,9 @@ class ReferenceUploads:
             if scene != bpy.context.scene:
                 raise ScenarioError(0, "Select the originating scene before uploading")
             bpy.context.view_layer.update()
-            if origin is None:
+            if external:
+                origin = self.session.capture_destination(scene)
+            elif origin is None:
                 origin = self.session.capture(scene)
             else:
                 self.session.validate_destination(origin)
@@ -489,7 +501,12 @@ class ReferenceUploads:
             self.session.validate_destination(record.intent.origin)
             origin = record.intent.origin
         except OriginUnavailable:
-            origin = self.session.capture(scene)
+            # A chosen file keeps its destination-only binding in the new scene too.
+            origin = (
+                self.session.capture_destination(scene)
+                if destination_only(record.intent.origin)
+                else self.session.capture(scene)
+            )
         command.scene = scene
         return self.session.restart_upload(
             request_id, expected_revision=expected_revision, origin=origin

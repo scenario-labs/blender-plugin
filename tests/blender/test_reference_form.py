@@ -357,9 +357,24 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(replacement.source, "FILE")
         self.assertEqual(replacement.asset_id, "")
 
-    def test_changed_scene_cannot_receive_imported_reference(self):
+    def test_scene_updates_during_file_upload_still_attach_to_its_slot(self):
+        for change in self.fixture.scene_updates():
+            with self.subTest(change=change.__name__):
+                self.lane.references.clear()
+                ref = self.lane.references.add()
+                ref.param_name, ref.source = "image", "FILE"
+                ref.filepath = str(self.fixture.typed_source("image", ".png", "image/png"))
+                binding = self.start()
+                self.fixture.settle(change)
+                self.assertTrue(binding.attached, binding.error)
+                self.assertEqual((ref.source, ref.asset_id), ("ASSET", "reference-asset"))
+                self.assertIn("uploaded snapshot", ref.label)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 3)
+
+    def test_replaced_scene_cannot_receive_imported_reference(self):
         binding = self.start()
-        self.owner.session.invalidate_scene(self.scene)
+        # What Undo and Redo do first; scene edits alone keep a chosen file's upload.
+        self.owner.session.invalidate_all()
         self.fixture.settle()
         self.assertFalse(binding.attached)
         self.assertEqual(self.ref.source, "FILE")

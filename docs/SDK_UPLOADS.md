@@ -473,7 +473,14 @@ Preparation snapshots up to 256 MiB into private storage, using 8 MiB parts
 ASCII letters, digits, dots, underscores and hyphens with underscores; the original
 file is never renamed. Later edits to that file cannot change the staged bytes.
 These are application limits, not a claim that every format/size is accepted by
-every model. Scene revision changes stop further mutation claims. Initialization,
+every model. A snapshot of the scene stops further mutation claims after any scene
+revision change. A chosen file's bytes never depended on the scene, so
+`upload_reference` and the forms' file uploads take a
+[destination-only origin](BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime): they
+continue through scene edits, frame changes, playback and renders, and stop only
+when their scene is removed or replaced (Undo/Redo, file loading) or the
+connection changes. Attachment still requires the same scene, form slot or input
+and connection scope. A restart keeps whichever binding the upload had. Initialization,
 each PUT and completion still require durable claims and use one attempt only.
 Known processing uploads are polled at two-second intervals. Uncertain responses
 stop automatic mutation; no later status read releases a part claim or replays
@@ -620,9 +627,10 @@ existing marker; starting rechecks the reviewed connection and scope.
 A persisted `_scenario_workflow_upload` ID property marks the input before origin
 capture; it remains after uncertain or failed remote work, blocks pricing and
 prevents a second upload. Local validation or rejected queue admission removes it.
-JobSession refuses the next initialization, part or completion admission once a
-scene edit, frame change or undo has invalidated the captured origin, and the
-ticket then stops for good. `ReferenceUpload.sent_nothing` identifies a stopped
+JobSession refuses the next initialization, part or completion admission once the
+captured origin is revoked, and the ticket then stops for good: for a snapshot, by
+a scene edit, frame change, render or undo; for a chosen file, only by undo, redo,
+removing its scene or loading a file. `ReferenceUpload.sent_nothing` identifies a stopped
 ticket that never reached Scenario: staging failed before a saved record was
 observed, an admission was refused while the record was still `prepared` (it
 reaches `initializing` before the first service request), or the record was

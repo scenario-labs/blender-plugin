@@ -386,7 +386,10 @@ def start(context, reviewed):
     try:
         if reviewed.source == "FILE":
             binding.ticket = owner.start(
-                context.scene, bpy.path.abspath(reviewed.filepath), kind=current.kind
+                context.scene,
+                bpy.path.abspath(reviewed.filepath),
+                kind=current.kind,
+                external=True,
             )
         else:
             binding.ticket = capture_upload(context, source=reviewed.source)

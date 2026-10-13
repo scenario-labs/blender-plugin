@@ -602,7 +602,10 @@ Some platform operations are discovered through its tool catalog.
 immediate asset ID or a local capture path. Both upload tools return while the
 shared session stages and transfers the prepared reference. Poll `reference_upload_status`
 until `state` is `imported`, then use `asset_id` in a fresh `estimate_cost` call.
-The generation still requires its own exact-cost approval. Do not repeat an
+The generation still requires its own exact-cost approval. An `upload_reference`
+file keeps uploading while the scene is edited, played or rendered; a
+`capture_reference` snapshot stops if the scene changes before it finishes. Undo,
+redo, removing the scene or loading a file stops either. Do not repeat an
 uncertain upload: inspect saved progress and explicitly refresh its known ID.
 After restart, use `list_reference_uploads`; session handles do not survive.
 Recovery can refresh, cancel unclaimed preparation, or clean a finished private

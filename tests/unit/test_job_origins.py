@@ -10,7 +10,7 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator, QuoteError
-from scenario.core.jobs.origins import OriginRevisions
+from scenario.core.jobs.origins import OriginRevisions, destination_only
 from scenario.core.jobs.store import JobScope, JobState, JobStore
 from scenario.core.jobs.workers import JobWorkers
 
@@ -30,6 +30,60 @@ def test_origin_revisions_isolate_scenes_and_file_sessions():
     assert not origins.current(fresh) and not origins.current(other)
     assert origins.capture("scene", "object").file_id != first.file_id
     assert not OriginRevisions().current(first)
+
+
+def test_destination_origins_outlive_content_changes_but_not_identity_loss():
+    origins = OriginRevisions()
+    destination = origins.capture_destination("scene")
+    content = origins.capture("scene")
+    other = origins.capture_destination("other-scene")
+    assert destination_only(destination) and not destination_only(content)
+    assert origins.capture_destination("scene") == destination
+    assert origins.current(destination) and origins.current(content)
+    # Scene edits and frame changes, then a render thread's conservative reset.
+    origins.invalidate("scene")
+    assert origins.current(destination) and not origins.current(content)
+    origins.reset(keep_destinations=True)
+    assert origins.current(destination) and origins.current(other)
+    assert origins.capture_destination("scene").revision == destination.revision
+    # Forged, foreign or targeted destinations are never current.
+    for forged in (
+        replace(destination, revision="destination-forged"),
+        replace(destination, scene_id="other-scene"),
+        replace(destination, target_id="object"),
+    ):
+        assert not origins.current(forged)
+    assert not OriginRevisions().current(destination)
+    # Removing the scene, then Undo/Redo, file loading or deactivation, revoke them.
+    origins.remove("scene")
+    assert not origins.current(destination) and origins.current(other)
+    replacement = origins.capture_destination("scene")
+    assert replacement != destination and origins.current(replacement)
+    origins.reset()
+    assert not origins.current(replacement) and not origins.current(other)
+
+
+def test_destination_origin_cannot_bind_a_paid_request(tmp_path):
+    origins = OriginRevisions()
+    scope = JobScope("https://fixture.invalid/v1", "fixture-account")
+    store = JobStore(tmp_path / "jobs.sqlite3", scope)
+
+    def respond(request):
+        assert request.url.params.get("dryRun") == "true", "A paid request was sent"
+        return httpx.Response(200, json={"creativeUnitsCost": 1})
+
+    with SDKAdapter(
+        Credentials("key", "secret"),
+        online=lambda: True,
+        account_id=scope.account_id,
+        base_url=scope.service,
+        transport=httpx.MockTransport(respond),
+    ) as adapter:
+        coordinator = JobCoordinator(adapter, store, origin_guard=origins.guard)
+        quote = adapter.estimate_workflow({"id": "workflow", "inputs": []}, {})
+        with pytest.raises(QuoteError, match="Capture the scene with its inputs"):
+            coordinator.prepare(quote, origins.capture_destination("scene"))
+    assert store.records() == ()
 
 
 @pytest.mark.parametrize("change", ["scene", "file", "other-scene"])

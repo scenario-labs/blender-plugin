@@ -33,6 +33,7 @@ from .organization import (
     OrganizationRequest,
     OrganizationSnapshot,
 )
+from .origins import destination_only
 from .result_previews import PreviewCanceled
 from .results import ResultCommands, ResultError, VerifiedResults
 from .store import (
@@ -1327,6 +1328,9 @@ class JobCoordinator:
         with self._lock:
             if not self._active:
                 raise QuoteError("Use a quote issued by the current active connection")
+            if destination_only(origin):
+                # Such an origin survives scene edits, so it cannot vouch for inputs.
+                raise QuoteError("Capture the scene with its inputs before preparing a request")
             intent = JobIntent(
                 request_id=uuid.uuid4().hex,
                 scope=self.scope,

@@ -375,6 +375,7 @@ def start(context, index, *, lane_name="image"):
                 kind=kind,
                 # Staging must copy the exact bytes the panorama preflight checked.
                 expected_sha256=checked[1] if checked is not None else None,
+                external=True,
             )
         else:
             binding.ticket = capture_upload(

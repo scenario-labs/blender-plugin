@@ -374,6 +374,16 @@ Render-thread frame/dependency callbacks invalidate only the thread-safe revisio
 registry conservatively across sessions; they never inspect or mutate bpy data. Callers
 must prepare inputs and capture their origin together on the main thread.
 
+A payload that does not come from the scene, such as a file the user chose to
+upload, binds only to the scene it is for. `capture_destination(scene)` records a
+destination-only origin: dependency, frame and render-thread updates keep it, while
+removing that scene, Undo/Redo, file loading and deactivation revoke it. Delivery
+still requires that scene to be selected, and callers recheck their own destination,
+such as the form slot or workflow input. Such an origin never vouches for scene
+content: the coordinator refuses to prepare a paid request with it, so quotes and
+spending keep the revision binding above. Scene snapshots (viewport, camera and
+render-result stills, clips, selected meshes and Film captures) keep ordinary origins.
+
 A thread-safe, bpy-free revision registry is checked again by the coordinator
 inside the submission claim, with its lock held through the durable SUBMITTING
 write. Invalidation is serialized against that boundary; it cannot slip between
@@ -723,7 +733,8 @@ With all three dependencies supplied, a mismatched upload/job scope still raises
 `ValueError`; the existing source and transfer-policy validation also applies.
 
 Capture the scene/target origin with the chosen source before calling
-`prepare_upload(source, origin=..., kind=..., content_type=...)`. Main-thread
+`prepare_upload(source, origin=..., kind=..., content_type=...)`; a file the user
+chose takes a [destination-only origin](#origin-and-quote-lifetime). Main-thread
 admission checks that origin and completion capacity before queuing staging.
 `initialize_upload`, `transfer_upload_part` and `finalize_upload` load the
 persisted record through public `inspect_upload`, resolve its original target at

@@ -2768,8 +2768,9 @@ record for an unchanged input, the input records the upload request, even if the
 upload later stops; an upload released as having sent nothing records none. A
 changed destination keeps the marker and an inspectable error.
 
-The shared session refuses the next initialization, part or completion request
-after any scene edit, frame change or undo in the origin scene, so a stopped upload
+The shared session refuses a snapshot's next initialization, part or completion
+request after any scene edit, frame change, render or undo in the origin scene, and
+a chosen file's after undo, redo or removal of that scene, so a stopped upload
 never resumes. When an upload whose delivery is still held stopped before anything
 was sent (local staging failed, or the staged record was still prepared) the pump
 removes only its own marker, keeps existing values and draws a read-only note on
@@ -2800,8 +2801,9 @@ reference** warns that an admitted upload continues in saved uploads, then remov
 the marker and empties the input. Drawing stays read-only.
 
 Installed synthetic tests cover these guards, including missing and unreadable
-files, failed staging, an object move and a frame change after staging on an array
-that already holds a value, cancellation of a waiting, undo-restored or
+files, failed staging, a revoked origin after staging on an array that already holds
+a value, a chosen file that still attaches through frame changes, unrelated object
+moves and render-thread updates, cancellation of a waiting, undo-restored or
 retired-connection marker, **Stop waiting** after an upload stopped mid-transfer
 or that **Upload again** abandoned, undo around an upload and a background **Render result** upload, plus shared MCP
 pricing of an uploaded asset ID and selected-mesh provenance at quote time. Native

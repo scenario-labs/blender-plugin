@@ -163,18 +163,14 @@ class WorkflowUploadTests(unittest.TestCase):
             ticket.next_poll = 0
             self.owner.poll()
 
-    def scene_changes(self):
-        """Edits that invalidate the captured origin through JobSession's handlers."""
-        fixture = self.fixture.fixture
+    def stop_upload(self):
+        """Revoke the upload's origin, so JobSession refuses its next command.
 
-        def object_move():
-            fixture.target.location.x += 1.0
-            bpy.context.view_layer.update()
-
-        def frame_change():
-            self.scene.frame_set(self.scene.frame_current + 1)
-
-        return object_move, frame_change
+        Scene edits and frame changes stop a snapshot's upload but not a chosen
+        file's; Undo and Redo stop both. This runs what they do first, without the
+        history handler that would also drop the delivery bindings tests observe.
+        """
+        self.owner.session.invalidate_all()
 
     def populated(self, name="images"):
         item = self.form.inputs[name]
@@ -247,6 +243,18 @@ class WorkflowUploadTests(unittest.TestCase):
         self.assertEqual(self.quotes[-1], {"prompt": "a cup", "image": "uploaded-asset"})
         self.assertFalse(self.paid)
         self.fixture.fixture.uploader.upload.assert_called_once()
+
+    def test_scene_updates_during_file_upload_still_attach_to_its_input(self):
+        item = self.form.inputs["image"]
+        for change in self.fixture.scene_updates():
+            with self.subTest(change=change.__name__):
+                item.text, item.asset_scope, item.asset_value = "", "", ""
+                binding = self.start()
+                self.fixture.settle(change)
+                self.assertTrue(binding.attached, binding.error)
+                self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+                self.assertEqual(item.text, "uploaded-asset")
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 3)
 
     def test_occupied_single_input_is_refused_before_admission(self):
         item = self.form.inputs["image"]
@@ -393,47 +401,45 @@ class WorkflowUploadTests(unittest.TestCase):
         self.assertEqual(len(attempts), 1)
         fixture.uploader.upload.assert_not_called()
 
-    def test_scene_change_before_sending_releases_marker_and_keeps_values(self):
+    def test_stopped_before_sending_releases_marker_and_keeps_values(self):
         fixture = self.fixture.fixture
-        for change in self.scene_changes():
-            with self.subTest(change=change.__name__):
-                item = self.populated()
-                calls, sent = len(fixture.calls), fixture.uploader.upload.call_count
-                binding = self.start("images")
-                staged = binding.ticket.task.result(5)  # Saved locally; nothing sent yet.
-                change()
-                self.pump(binding)
-                ticket = binding.ticket
-                self.assertIn("origin changed", ticket.error)
-                self.assertEqual(ticket.record.state.value, "prepared")
-                self.assertTrue(ticket.sent_nothing)
-                self.assertFalse(binding.attached)
-                self.assertNotIn(self.ui.UPLOAD_MARKER, item)
-                # An earlier attachment's request link stays; this upload is not linked.
-                self.assertNotEqual(item.get(self.ui.UPLOAD_REQUEST), staged.intent.request_id)
-                self.assertEqual(json.loads(item.text), ["existing-asset"])
-                self.assertEqual(self.owner.workflow_forms, {})
-                self.assertIn("nothing was uploaded", self.owner.form_errors[-1])
-                self.assertEqual(len(fixture.calls), calls)
-                self.assertEqual(fixture.uploader.upload.call_count, sent)
-                self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
-                before = self.snapshot()
-                operators, labels = self.drawn("images")
-                self.assertIn("The upload stopped before sending; nothing was uploaded", labels)
-                self.assertIn(
-                    ("scenario.upload_workflow_input", "FILE"),
-                    [(identifier, getattr(op, "source", None)) for identifier, op in operators],
-                )
-                self.assertEqual(before, self.snapshot())
-                # The staged copy stays listed; cancelling it leaves the freed input alone.
-                saved = self.owner.session.inspect_upload(staged.intent.request_id)
-                self.assertEqual(saved.state.value, "prepared")
-                self.owner.recover(saved.intent.request_id, saved.revision, "cancel_prepared")
-                self.assertEqual(json.loads(item.text), ["existing-asset"])
-                # Another upload into the same input appends after the existing value.
-                self.assertTrue(self.upload("images").attached)
-                self.assertEqual(json.loads(item.text), ["existing-asset", "uploaded-asset"])
-                self.assertEqual(fixture.uploader.upload.call_count, sent + 1)
+        item = self.populated()
+        calls, sent = len(fixture.calls), fixture.uploader.upload.call_count
+        binding = self.start("images")
+        staged = binding.ticket.task.result(5)  # Saved locally; nothing sent yet.
+        self.stop_upload()
+        self.pump(binding)
+        ticket = binding.ticket
+        self.assertIn("origin changed", ticket.error)
+        self.assertEqual(ticket.record.state.value, "prepared")
+        self.assertTrue(ticket.sent_nothing)
+        self.assertFalse(binding.attached)
+        self.assertNotIn(self.ui.UPLOAD_MARKER, item)
+        # An earlier attachment's request link stays; this upload is not linked.
+        self.assertNotEqual(item.get(self.ui.UPLOAD_REQUEST), staged.intent.request_id)
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        self.assertEqual(self.owner.workflow_forms, {})
+        self.assertIn("nothing was uploaded", self.owner.form_errors[-1])
+        self.assertEqual(len(fixture.calls), calls)
+        self.assertEqual(fixture.uploader.upload.call_count, sent)
+        self.assertEqual(self.ui.parameters(self.form)["images"], ["existing-asset"])
+        before = self.snapshot()
+        operators, labels = self.drawn("images")
+        self.assertIn("The upload stopped before sending; nothing was uploaded", labels)
+        self.assertIn(
+            ("scenario.upload_workflow_input", "FILE"),
+            [(identifier, getattr(op, "source", None)) for identifier, op in operators],
+        )
+        self.assertEqual(before, self.snapshot())
+        # The staged copy stays listed; cancelling it leaves the freed input alone.
+        saved = self.owner.session.inspect_upload(staged.intent.request_id)
+        self.assertEqual(saved.state.value, "prepared")
+        self.owner.recover(saved.intent.request_id, saved.revision, "cancel_prepared")
+        self.assertEqual(json.loads(item.text), ["existing-asset"])
+        # Another upload into the same input appends after the existing value.
+        self.assertTrue(self.upload("images").attached)
+        self.assertEqual(json.loads(item.text), ["existing-asset", "uploaded-asset"])
+        self.assertEqual(fixture.uploader.upload.call_count, sent + 1)
 
     def test_cancel_preparation_releases_a_waiting_input_and_keeps_values(self):
         fixture = self.fixture.fixture
@@ -528,7 +534,7 @@ class WorkflowUploadTests(unittest.TestCase):
         self.owner.poll()  # Observes staging and admits initialization.
         self.assertEqual(ticket.command, "initialize_upload")
         ticket.task.result(5)  # Scenario now holds an incomplete upload.
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         record = ticket.record
         self.assertEqual(record.state.value, "uploading")
@@ -578,7 +584,7 @@ class WorkflowUploadTests(unittest.TestCase):
         # The edit makes the upload restartable. Selecting another scene before
         # the next admission pauses the transfer without a ticket error, so
         # only the abandoned record can tell this input to stop waiting.
-        self.scene_changes()[0]()
+        self.stop_upload()
         bpy.context.window.scene = fixture.previous
         self.pump(binding)
         record = ticket.record
@@ -630,7 +636,7 @@ class WorkflowUploadTests(unittest.TestCase):
         self.populated()
         binding = self.start("images")
         binding.ticket.task.result(5)  # Saved locally; nothing sent yet.
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         self.assertTrue(binding.ticket.sent_nothing)
         note = "The upload stopped before sending; nothing was uploaded"
@@ -653,7 +659,7 @@ class WorkflowUploadTests(unittest.TestCase):
         item = self.populated()
         binding = self.start("images")
         binding.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         note = "The upload stopped before sending; nothing was uploaded"
         # Notes on other inputs, more than the former 16-note window, keep this one.
@@ -679,7 +685,7 @@ class WorkflowUploadTests(unittest.TestCase):
     def test_stopped_upload_note_stays_with_its_workflow(self):
         binding = self.start("image")  # An empty input keeps its loaded defaults.
         binding.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         note = "The upload stopped before sending; nothing was uploaded"
         self.assertIn(note, self.drawn("image")[1])
@@ -697,7 +703,7 @@ class WorkflowUploadTests(unittest.TestCase):
         item = self.populated()
         binding = self.start("images")
         binding.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         note = "The upload stopped before sending; nothing was uploaded"
         refusal = self.fixture.module.UploadNotStarted(0, "Synthetic local refusal")
@@ -719,7 +725,7 @@ class WorkflowUploadTests(unittest.TestCase):
         item = self.populated()
         first = self.start("images")
         first.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(first)
         note = "The upload stopped before sending; nothing was uploaded"
         self.assertIn(note, self.drawn("images")[1])
@@ -729,7 +735,7 @@ class WorkflowUploadTests(unittest.TestCase):
         self.owner.poll()  # Observes staging and admits initialization.
         self.assertEqual(ticket.command, "initialize_upload")
         ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(SimpleNamespace(ticket=ticket))
         self.assertFalse(ticket.sent_nothing)
         self.uploads.stop_waiting(self.scene, "images", item[self.ui.UPLOAD_MARKER])
@@ -741,7 +747,7 @@ class WorkflowUploadTests(unittest.TestCase):
     def test_library_attach_and_clear_retire_the_inputs_note(self):
         binding = self.start("image")  # Recorded on the empty input's defaults.
         binding.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         note = "The upload stopped before sending; nothing was uploaded"
         item = self.form.inputs["image"]
@@ -769,7 +775,7 @@ class WorkflowUploadTests(unittest.TestCase):
         # Clearing alone also retires a note recorded on the input's current values.
         binding = self.start("image")
         binding.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(binding)
         self.assertIn(note, self.drawn("image")[1])
         cls.invoke(operator, context, None)
@@ -844,7 +850,8 @@ class WorkflowUploadTests(unittest.TestCase):
             self.ui.load_form(self.form, record)
 
         def scene():
-            self.owner.session.invalidate_scene(self.scene)
+            # Undo and Redo cannot prove the scene is the same; edits alone keep a file's.
+            self.owner.session.invalidate_all()
 
         for change in (value, workflow, schema, scene):
             with self.subTest(change=change.__name__):
@@ -883,7 +890,7 @@ class WorkflowUploadTests(unittest.TestCase):
         self.populated()
         stopped = self.start("images")
         stopped.ticket.task.result(5)
-        self.scene_changes()[0]()
+        self.stop_upload()
         self.pump(stopped)
         note = "The upload stopped before sending; nothing was uploaded"
         self.assertIn(note, self.drawn("images")[1])

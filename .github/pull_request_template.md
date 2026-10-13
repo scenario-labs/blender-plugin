@@ -23,7 +23,7 @@ and describe what remains. -->
 
 ## Validation
 
-- [ ] Relevant locked pytest checks and changed-file Ruff checks pass; exact commands and results are recorded below.
+- [ ] Relevant locked pytest checks and `make lint` pass; exact commands and results are recorded below.
 - [ ] Native changes were tested with `make test-blender` against the exact packaged ZIP in an isolated profile; Blender/OS versions and results, or the reason this was not needed, are stated.
 - [ ] Packaging changes pass `make build`; the ZIP and dependency licenses were inspected.
 - [ ] UI changes include before/after screenshots and native input, focus and viewport evidence, with Blender/OS versions.

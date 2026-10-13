@@ -40,6 +40,7 @@ package-lock.json
 CLAUDE.local.md
 .claude/CLAUDE.local.md
 .claude/settings.local.json
+.claude/worktrees/
 .blender-profile/
 
 # Local execution plans and working files

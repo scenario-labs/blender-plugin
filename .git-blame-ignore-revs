@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Mechanical reformatting commits that `git blame` should skip. GitHub reads this
+# file automatically; locally run `git config blame.ignoreRevsFile .git-blame-ignore-revs`.
+# Add each merged mechanical commit's final squash SHA here, never hand-edited commits.
+
+# style: reformat the Python tree with Ruff (mechanical) (#462)
+998e17d31e3ed862eae805e881dd5f97f1614c3f

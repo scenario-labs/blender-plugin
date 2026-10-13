@@ -41,7 +41,7 @@ the native test processes themselves forbid external network access.
 | Command | Purpose |
 | --- | --- |
 | `make test` | Locked offline unit tests; Blender is not needed. |
-| `make lint LINT_PATHS="path/to/changed.py"` | Check changed Python files with pinned Ruff. |
+| `make lint` | Check every Python file with pinned Ruff, as CI does. |
 | `make knowledge` | Validate documentation navigation, local links and evidence metadata. |
 | `make images-check` | Check documentation image references, alternatives and PNG policy. |
 | `make images` | Optimize new documentation screenshots with the shared asset command. |
@@ -182,9 +182,8 @@ type. All tools use the pinned uv development group; no separate hook environmen
 or Node installation is required. Review and re-stage any formatting changes.
 The full commitlint scope/header policy remains in CI.
 
-Run `uv run --locked --no-env-file pre-commit run` to check staged files manually.
-`--all-files` also visits existing prototype lint/format debt tracked in #28;
-it is not the changed-file CI acceptance scope. Recorded fixtures are excluded
+Run `uv run --locked --no-env-file pre-commit run` to check staged files manually,
+or add `--all-files` to visit the whole tree. Recorded fixtures are excluded
 from newline/whitespace rewriting. Hooks are optional and do not replace CI or
 review. See [hook maintenance and secret-check limits](docs/development/contributions.md#local-hook-maintenance).
 

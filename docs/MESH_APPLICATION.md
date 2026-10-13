@@ -10,12 +10,12 @@ receipt = apply_mesh(
     captured_scene,
     captured_source,
     imported_primary_mesh,
-    policy="REMESH",                 # or "UV" / "RETEXTURE"
+    policy="REMESH",  # or "UV" / "RETEXTURE"
     result_to_source=local_mapping,  # explicit finite, orientation-preserving affine 4x4 matrix
     keep_original=True,
 )
 # The caller owns the receipt until one of these explicit decisions:
-receipt.accept()                    # retain the application
+receipt.accept()  # retain the application
 # receipt.rollback()                # restore if both meshes are still unchanged
 ```
 

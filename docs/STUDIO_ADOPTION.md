@@ -182,10 +182,10 @@ Use a reviewed file allowlist, rather than copying the repository wholesale:
   its author and existing co-author trailer. Its Python files carry no SPDX
   headers; adapted files take the canonical headers plus the attribution note
   that existing adaptations use.
-- Normalize retained/imported Python in a separate mechanical change under #28
-  before functional edits. Record its final squash SHA in
-  `.git-blame-ignore-revs` only after merge. Enable full-tree lint when the
-  retained canonical tree is clean; do not normalize discarded prototypes.
+- The tree was normalized under #28 and CI lints all of it. Format newly
+  imported Python in a separate mechanical change before functional edits, and
+  record its final squash SHA in `.git-blame-ignore-revs` only after merge.
+  Do not normalize discarded prototypes.
 
 ## Integration boundaries found in source
 

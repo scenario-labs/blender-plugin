@@ -31,8 +31,9 @@ required-version = "==0.16.7"
 target-version = "py311"
 line-length = 100
 unsafe-fixes = false
-# Never reformat installed packages inside disposable Blender profiles.
-extend-exclude = [".blender-profile"]
+# Never reformat installed packages inside disposable Blender profiles, or other
+# agents' unpushed work in nested worktrees, even when paths are passed explicitly.
+extend-exclude = [".blender-profile", ".claude/worktrees"]
 force-exclude = true
 
 [tool.ruff.lint]

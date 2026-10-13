@@ -4,11 +4,6 @@ name: Python lint
 
 on:
   workflow_call:
-    inputs:
-      base-sha:
-        description: PR base or previous main revision for changed-file checks
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -19,7 +14,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
       - name: Install the pinned uv version
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -28,31 +22,6 @@ jobs:
           enable-cache: true
       - name: Sync the locked development environment
         run: uv sync --locked
-      - name: Check changed Python files
-        # Temporary adoption scope (#28/#64): the existing prototype has lint
-        # debt. Switch to `make lint` over the full tree after normalization.
-        env:
-          BASE_SHA: ${{ inputs.base-sha }}
-        run: |
-          set -euo pipefail
-          # This also validates the config and the required Ruff version when
-          # the change contains no Python changes.
-          uv run --locked ruff check --show-settings > /dev/null
-          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
-            git diff --name-only -z --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.py' '*.pyi' > "$RUNNER_TEMP/python-files"
-          else
-            # Initial pushes and unavailable force-push predecessors cannot
-            # provide a reliable diff. Check all tracked Python files instead.
-            echo "Previous revision unavailable; checking every tracked Python file"
-            git ls-files -z -- '*.py' '*.pyi' > "$RUNNER_TEMP/python-files"
-          fi
-          files=()
-          while IFS= read -r -d '' file; do
-            files+=("$file")
-          done < "$RUNNER_TEMP/python-files"
-          if [ "${#files[@]}" -eq 0 ]; then
-            echo "No changed Python files; Ruff configuration is valid"
-            exit 0
-          fi
-          uv run --locked ruff check -- "${files[@]}"
-          uv run --locked ruff format --check -- "${files[@]}"
+      - name: Check every Python file
+        # The whole tree is Ruff-clean since #28; keep it that way.
+        run: make lint

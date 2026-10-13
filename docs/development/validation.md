@@ -36,8 +36,8 @@ cancelled, skipped, empty or absent. Every workload must appear in the gate's
 dependencies and result inputs. These stdlib checks cover the repository's
 block-style workflow subset and reject unsupported trigger/permission forms;
 they do not replace general YAML/action validation or GitHub's actual scheduling,
-permissions and check-result evidence. The changed-file lint policy remains the
-approved transition under #28/#64.
+permissions and check-result evidence. Python lint runs `make lint` over the
+whole tree.
 
 [Weekly OS checks](../../.github/workflows/blender-os.yml) are separate,
 informational schedule/manual jobs for Blender 5.1.2 on macOS Apple silicon and
@@ -92,12 +92,13 @@ checks belong in their separate opt-in tools, never the default unit suite.
 
 Use the pinned Ruff configuration before further Python development:
 `make format` applies safe fixes and formatting; `make lint` checks both.
-During Studio adoption, scope these commands with `LINT_PATHS` to changed or
-adopted files. CI checks whole changed Python files; full-tree findings remain
-tracked in #28 until the dedicated mechanical normalization. Do not reformat
-obsolete prototypes as unrelated cleanup. Follow `docs/PYTHON_STYLE.md`,
-including Blender registration/annotation cautions. The optional pre-commit hooks
-use this same locked Ruff executable on staged files. Install with `make hooks`
+CI runs `make lint` over the whole tree, so every Python file must stay
+formatted and lint-clean. `LINT_PATHS` scopes either command to a few files
+while iterating. Mechanical reformatting commits are listed in
+`.git-blame-ignore-revs`; see [Python style](../PYTHON_STYLE.md#whole-tree-lint).
+Follow `docs/PYTHON_STYLE.md`, including Blender registration/annotation
+cautions. The optional pre-commit hooks use this same locked Ruff executable on
+staged files. Install with `make hooks`
 or the [portable uv command](../../CONTRIBUTING.md#optional-local-hooks).
 
 `make check-rules` runs the currently implemented offline house rules. Its
@@ -123,7 +124,7 @@ and version ordering.
 | --- | --- | --- |
 | Desktop with supported Blender on macOS, Linux or Windows | Locked unit checks, exact-ZIP build/validation, isolated headless tests, GUI capture | A working desktop session is required for capture; inspect its PNG and record actual OS/Blender versions. Discovery is not compatibility proof. |
 | Linux x64 without a display | Locked unit checks, build and isolated headless tests using an installed or explicitly fetched Blender | The official fetcher verifies archives. No GUI capture or input/rendering acceptance is established. |
-| Sandbox without Blender | Locked unit checks, changed-file Ruff, knowledge and agent-skill checks; manifest-version output | Build, native and GUI checks cannot run. State those omissions in the PR so a reviewer or CI can supply the missing evidence. |
+| Sandbox without Blender | Locked unit checks, `make lint`, knowledge and agent-skill checks; manifest-version output | Build, native and GUI checks cannot run. State those omissions in the PR so a reviewer or CI can supply the missing evidence. |
 
 Build/install/test/capture commands always own fresh disposable profiles. The
 [isolated command wrapper](../../CONTRIBUTING.md#isolated-blender-commands) also

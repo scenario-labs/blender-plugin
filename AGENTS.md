@@ -159,8 +159,8 @@ final squash message so attribution survives the repository's squash workflow.
 
 ## Essential validation and contribution rules
 
-Use the pinned uv environment and changed-file Ruff checks. Optional local hooks
-install explicitly with `make hooks`; see
+Use the pinned uv environment and whole-tree Ruff checks (`make lint`).
+Optional local hooks install explicitly with `make hooks`; see
 [hook scope and maintenance](CONTRIBUTING.md#optional-local-hooks). They use the
 same locked uv tools and do not replace CI or review. Run checks appropriate
 to the change; documentation work needs link, instruction and checker validation,

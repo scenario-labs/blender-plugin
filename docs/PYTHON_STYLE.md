@@ -84,30 +84,27 @@ the supported Blender minimum.
   sources or generated bundles.
   Add their concrete paths to exclusions when SDK packaging establishes them.
 
-## Studio adoption transition
+## Whole-tree lint
 
-This configuration does not imply that the existing prototype passes lint.
-`make lint` checks the full tree and reports its existing findings. During
-adoption, work on the retained/adopted files with, for example:
+[Python lint CI](../.github/workflows/python-lint.yml) runs `make lint` over the
+whole tree on every PR and push to `main`, so every tracked Python file must stay
+formatted and lint-clean. The tree was normalized under
+[#28](https://github.com/scenario-labs/blender-plugin/issues/28): hand fixes
+first, then one mechanical `ruff check --fix` and `ruff format` pass. Ruff never
+visits nested agent worktrees under `.claude/worktrees/`: they are Git-ignored and
+excluded in `pyproject.toml`, so a whole-tree `make format` in the main checkout
+cannot rewrite another agent's unpushed work. While iterating, scope either
+command to a few paths:
 
 ```sh
 make format LINT_PATHS="scenario/core/jobs tests/unit/test_manager.py"
 make lint LINT_PATHS="scenario/core/jobs tests/unit/test_manager.py"
 ```
 
-[Python lint CI](../.github/workflows/python-lint.yml) enforces the same rules on
-all added/modified Python files in a PR or push to `main`, including their
-unchanged lines. The comparison uses the PR base or previous main revision.
-If that revision is unavailable, including an initial push or an unreachable
-force-push predecessor, CI checks every tracked Python file instead of skipping
-lint. This temporary changed-file scope avoids a mechanical rewrite of prototype
-code scheduled for replacement. Keep this transition visible in [#28](https://github.com/scenario-labs/blender-plugin/issues/28)
-and [#64](https://github.com/scenario-labs/blender-plugin/issues/64).
-
-Normalize adopted Studio code in a dedicated mechanical PR before functional
-changes. Preserve provenance and licenses, run the appropriate tests, then
-switch CI to full-tree `make lint`. Record the merged formatting commit in
-`.git-blame-ignore-revs` after its final squash SHA exists. The
+Format imported or adopted code in a dedicated mechanical PR before functional
+changes. Preserve provenance and licenses and run the appropriate tests. Add each
+merged mechanical commit to `.git-blame-ignore-revs` once its final squash SHA
+exists. GitHub's blame view skips the listed commits; locally, run
+`git config blame.ignoreRevsFile .git-blame-ignore-revs` once per clone. The
 [optional pre-commit hooks](../CONTRIBUTING.md#optional-local-hooks) run the same
-locked Ruff executable on staged Python files. They have no separate Ruff pin
-and do not normalize unchanged prototype files.
+locked Ruff executable on staged Python files. They have no separate Ruff pin.

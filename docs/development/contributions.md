@@ -194,7 +194,7 @@ Tests run the actual hook framework in disposable Git repositories, covering
 staging, redaction, commit-message rejection, changed-file formatting and fixture
 preservation. No hooks are installed into a contributor's checkout by CI or
 the unit suite. Hooks are a local convenience; the repository's CI remains the
-review gate, and whole-tree normalization remains #28.
+review gate and lints the whole Python tree.
 
 ## GitHub Actions updates
 

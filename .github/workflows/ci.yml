@@ -17,8 +17,6 @@ concurrency:
 jobs:
   lint:
     uses: ./.github/workflows/python-lint.yml
-    with:
-      base-sha: ${{ github.event.pull_request.base.sha || github.event.before }}
   unit:
     uses: ./.github/workflows/unit-tests.yml
   sdk:

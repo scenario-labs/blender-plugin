@@ -119,25 +119,27 @@ The 2026-10-13 source review of 0.2.0 against canonical `main` at
 follows. Upstream test counts, headless checks and its paid run used Studio's own
 package and remote-MCP client; they are not canonical evidence. Nothing listed
 here is imported. The decisions in the table above still apply where they overlap.
+#64, #65 and #66 closed as delivered in 0.10.0, so their remaining items are tracked
+on #440.
 
 | 0.2.0 capability | Decision | Owner |
 | --- | --- | --- |
-| Agent bridge (`bridge/`): loopback Streamable HTTP, token, typed tools, main-thread queue | Keep the canonical local server, which is already stricter on Origin, tokens, captures and errors. Do not ship a second server. Adapt its `Host` check, idle timeout and own-output file policy. | #65, #448 |
+| Agent bridge (`bridge/`): loopback Streamable HTTP, token, typed tools, main-thread queue | Keep the canonical local server, which is already stricter on Origin, tokens, captures and errors. Do not ship a second server. Adapt its `Host` check, idle timeout and own-output file policy. | #440, #448 |
 | Agent spending: off by default, per-job and per-session CU limits, reserve/settle ledger | Adapt as a scoped, exact-decimal switch and ledger that covers every paid MCP tool | #447 |
-| Bridge scene binding, action log, guarded `undo_last`, form prefill for the user to submit | Adapt binding, log and prefill. Do not port `undo_last` as is: its scene hash misses mesh data, modifiers and keys. | #65 (roadmap#674 G19) |
-| Native sidebar (`sidebar/`) | Already covered by the canonical panels and shared runtime. Do not add a second registration. | #66 |
-| Text editing and key policy: word-grouped undo, shortcuts while typing, unfocused key blocking | Adapt undo and the typing pass-through set; decide the unfocused policy | #66 |
+| Bridge scene binding, action log, guarded `undo_last`, form prefill for the user to submit | Adapt binding, log and prefill. Do not port `undo_last` as is: its scene hash misses mesh data, modifiers and keys. | #440 (roadmap#674 G19) |
+| Native sidebar (`sidebar/`) | Already covered by the canonical panels and shared runtime. Do not add a second registration. | #440 |
+| Text editing and key policy: word-grouped undo, shortcuts while typing, unfocused key blocking | Adapt undo and the typing pass-through set; decide the unfocused policy | #440 |
 | Read retries, poll backoff, control and transfer lanes, resumable downloads | Adapt through SDK per-request retries and the shared transfer policy. Paid and mutating calls stay at zero retries. | #451, #453 |
 | Unclear-submission block for the same request; estimate that returns a job | Adapt per credential scope | #452 |
-| No-spend switch for QA runs | Adapt at the shared spend boundary | #65 |
+| No-spend switch for QA runs | Adapt at the shared spend boundary | #440 |
 | macOS Keychain secret, team/project picker, usage display, paste-key onboarding | Adapt with explicit selection and no inferred project; check the usage contract first | #67, roadmap#674 G08 |
-| Library kind filters, newest-first order, thumbnails, job-card time and charged CU | Adapt through SDK filters and the preview lane | #66 |
+| Library kind filters, newest-first order, thumbnails, job-card time and charged CU | Adapt through SDK filters and the preview lane | #440 |
 | Redacted diagnostics export | Adapt with the allowlisted failure text, not regex redaction | #456 |
-| Camera takes and "Back to my camera" | Adapt; first scope the shot camera per scene | #454, #64 |
-| One render service with Blender's built-in H.264, progress and engine choice | Adapt in place of external ffmpeg for local capture | #64 |
-| Asset slots, revisions and refit; appearance states | Defer until blockout replacement and a product decision; appearance states conflict with ownership checks | roadmap#674 G15, #64 |
-| PBR options (DirectX normals, UV repeat, metalness override) | Adapt as explicit choices, never filename inference | #64 |
-| Film hardening: prepare-only arming, ledger, scoped client, model adapter, recipe identity | Already covered by the shared job store and Film task bindings. Adapt the model-neutral duration rule, the recipe canvas size and the 0.2.0 recipe keys; keep text verbatim. | #64, #455 |
+| Camera takes and "Back to my camera" | Adapt; first scope the shot camera per scene | #454, #440 |
+| One render service with Blender's built-in H.264, progress and engine choice | Adapt in place of external ffmpeg for local capture | #440 |
+| Asset slots, revisions and refit; appearance states | Defer until blockout replacement and a product decision; appearance states conflict with ownership checks | roadmap#674 G15, #440 |
+| PBR options (DirectX normals, UV repeat, metalness override) | Adapt as explicit choices, never filename inference | #440 |
+| Film hardening: prepare-only arming, ledger, scoped client, model adapter, recipe identity | Already covered by the shared job store and Film task bindings. Adapt the model-neutral duration rule, the recipe canvas size and the 0.2.0 recipe keys; keep text verbatim. | #440, #455 |
 | Live findings: F12 renders the sequencer after media insertion; PATINA smoothness semantics | Both also apply to canonical | #449, #450 |
 
 ## Source intake and provenance

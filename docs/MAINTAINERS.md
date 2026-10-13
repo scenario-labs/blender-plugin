@@ -118,17 +118,19 @@ gh api repos/scenario-labs/blender-plugin --jq '{allow_squash_merge,allow_merge_
 | Dependabot alerts and security updates | Enabled; automated fixes are not paused |
 | Private vulnerability reporting | Enabled; use [SECURITY.md](../SECURITY.md) |
 | CodeQL default setup | Configured; default suite, remote threat model, weekly, standard runner. API language values: `actions`, `javascript`, `javascript-typescript`, `python`, `typescript`. |
-| Actions | Enabled; allowed actions `all`, SHA pinning not required administratively |
+| Actions | Enabled; allowed actions `all`; full-SHA pinning required since 2026-10-13 (`sha_pinning_required: true`, read back) |
 | Default workflow token | `read`; cannot approve pull requests |
 | Fork PR workflow approval | `all_external_contributors` |
 | Immutable releases | Enabled on 2026-10-13 after 0.10.0 was published and verified (#36); not enforced by the owner. 0.10.0 predates the setting and is not itself immutable. |
 
-[Dependabot](../.github/dependabot.yml) currently updates GitHub Actions weekly.
+[Dependabot](../.github/dependabot.yml) updates GitHub Actions weekly, seven days
+after each release at the earliest.
 The extension also has pinned Python/SDK dependencies and bundled wheels; the
 old stdlib-only assumption is obsolete. Their coordinated update procedure is
 [SDK_BUNDLE.md](SDK_BUNDLE.md), not automatic version updates from the Actions
-configuration. Source checks enforce full action SHA pins, but that does not
-establish repository-level pin enforcement or an allowed-action policy (#39).
+configuration. Source checks enforce full action SHA pins, and since 2026-10-13
+the repository's Actions settings also refuse an unpinned action. Allowed actions
+stay `all` by the maintainer's decision (#39).
 
 ```sh
 gh api repos/scenario-labs/blender-plugin --jq .security_and_analysis
@@ -343,7 +345,7 @@ to perform it.
 - [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Scheduled runs use the committed monthly plan with a fixed 40 CU cap. Reference-upload acceptance, the first approved monthly run and any provider-side budget remain separate.
 - [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
 - [x] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36. Done on 2026-10-13 after 0.10.0 was published and its downloads verified, and read back: the tag ruleset keeps both patterns and its four rules with the release App as its only bypass actor, and immutable releases are enabled.
-- [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.
+- [x] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39. Decided and applied on 2026-10-13: full-SHA pinning is required and allowed actions stay `all`, read back through the API; a Pages run on `main` passed with the setting on.
 - [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. The native repository has served releases since 0.10.0.
 - [x] Upload the reviewed, merged social-preview card and verify its custom-image flag and URL: #19. Uploaded on 2026-10-13 and read back: the flag is `true`, the URL is on `repository-images.githubusercontent.com` and the image matches the committed card byte for byte.
 - [ ] Recheck the rendered shared-link preview of the repository in an application that unfurls links once its link cache refreshes. A Slack unfurl right after the 2026-10-13 upload still showed the previous card. #19 is closed with the GitHub-side evidence above.

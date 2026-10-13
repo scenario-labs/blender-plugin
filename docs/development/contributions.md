@@ -200,6 +200,7 @@ review gate and lints the whole Python tree.
 
 [Dependabot](../../.github/dependabot.yml) checks GitHub Actions weekly and groups
 version updates into one `actions` PR with the `dependencies` and `area:ci` labels.
+It waits seven days after an action's release before proposing it.
 The `ci(deps)` commit prefix produces Conventional Commit titles; do not add
 `include: scope`, which would append a second dependency scope.
 
@@ -231,7 +232,8 @@ upstream release identity and use workflow validation for those separate checks.
 This configuration covers GitHub Actions only. Python/SDK updates still require
 the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
 them requires coordinating development pins with the exact packaged wheel bundle.
-Repository settings and live Dependabot acceptance remain tracked in #39. Other
+Since 2026-10-13 the repository's Actions settings also require full-SHA pinning,
+so GitHub refuses a workflow run that references an unpinned action. Other
 house rules, approved-dependency enforcement and REUSE coverage remain under #29;
 the checker does not claim they are implemented. Local checks do not prove that
 GitHub's administrative gates are enabled.

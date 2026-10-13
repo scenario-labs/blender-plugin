@@ -72,9 +72,9 @@ A ZIP copy lives in Blender's local repository and does not update itself. Keep
 updating it with **Install from Disk**, followed by a restart, or switch to the
 repository: uninstall the ZIP copy first, install Scenario from the repository,
 then enter your key and secret again. Uninstalling deletes the ZIP copy's storage,
-including its stored jobs and the media that video and sound strips added by
-Scenario play from; past generations remain available under **Project history
-(cloud)** in Generations. Never keep both copies installed. Read
+including its stored jobs and the media that the video, sound and Film review
+strips Scenario added play from; past generations remain available under
+**Project history (cloud)** in Generations. Never keep both copies installed. Read
 [Switch from a ZIP to the repository](docs/USER_GUIDE.md#switch-from-a-zip-to-the-repository)
 before switching, and the [update guide](docs/USER_GUIDE.md#updates) for
 compatibility and manual fallback.

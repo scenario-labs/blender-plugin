@@ -4201,6 +4201,28 @@ class ModelGenerationTests(unittest.TestCase):
         request_id = self.recovered_panorama(width=16, height=9)
         self.assert_world_offer(request_id, (16, 9), False)
 
+    def test_world_size_memory_keeps_only_the_newest_reads(self):
+        # Header sizes stay in memory for the World offer only; the oldest are
+        # dropped past the bound and simply read again when shown.
+        from concurrent.futures import Future
+
+        self.recovered_panorama(width=8, height=4)
+        self.settle_world_sizes()
+        owner = self.runtime.state.model_jobs
+        owner._world_sizes.clear()
+        jobs = submodule("blender.model_jobs")
+        targets = [(f"request-{index}", "asset", "sha") for index in range(5)]
+        task = Future()
+        task.set_result([(*target, (8, 4)) for target in targets])
+        self.enterContext(patch.object(jobs, "_WORLD_SIZE_HISTORY", 3))
+        owner._world_read = (task, targets)
+        owner._finish_world_sizes()
+        self.assertEqual(
+            list(owner._world_sizes),
+            [("request-2", "asset"), ("request-3", "asset"), ("request-4", "asset")],
+        )
+        self.assertEqual(owner._world_sizes[("request-4", "asset")], ("sha", (8, 4)))
+
     def test_unread_world_size_keeps_the_offer_and_application_refuses_the_image(self):
         # Until this session reads the header, a 1:1 JPEG stays offered; the
         # confirmation-time preflight of the actual bytes remains the authority.

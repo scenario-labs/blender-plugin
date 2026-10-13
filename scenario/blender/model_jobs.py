@@ -82,6 +82,8 @@ _log = logging.getLogger("scenario.jobs")
 
 # Session-local first-frame outcomes reported by status; never persisted.
 _FIRST_FRAME_HISTORY = 128
+# World candidates whose header sizes are remembered; an evicted one is read again.
+_WORLD_SIZE_HISTORY = 512
 
 # Seconds between automatic refreshes of a known remote job. A reading becomes
 # stale once its scheduled refresh is overdue by the grace, so a longer
@@ -385,7 +387,8 @@ class ModelJobs:
         # (request_id, asset_id) -> (receipt SHA-256, declared (width, height) or
         # None): sizes of World candidates read from their file headers on the
         # preview lane, for the World offer only. Memory only; application still
-        # checks the actual bytes. `_world_read` is the (task, targets) in flight.
+        # checks the actual bytes; the oldest entries beyond _WORLD_SIZE_HISTORY are
+        # dropped and read again when shown. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
         self._plans = {}
@@ -896,10 +899,11 @@ class ModelJobs:
         except Exception:
             read = {}
         for request_id, asset_id, sha256 in targets:
-            self._world_sizes[(request_id, asset_id)] = (
-                sha256,
-                read.get((request_id, asset_id, sha256)),
-            )
+            key = (request_id, asset_id)
+            self._world_sizes.pop(key, None)
+            while len(self._world_sizes) >= _WORLD_SIZE_HISTORY:
+                del self._world_sizes[next(iter(self._world_sizes))]
+            self._world_sizes[key] = (sha256, read.get((request_id, asset_id, sha256)))
 
     def _not_world(self, record):
         """World candidates whose header, read for the current receipt, cannot be 2:1."""

@@ -32,6 +32,8 @@ A small local MCP server also lets an agent such as Claude Code, Cursor or Claud
 Desktop read your scene, run tools in Blender (including planning a camera move)
 and generate with Scenario; see [Agents (MCP)](#agents-mcp).
 
+For ideas, browse the [explorations made in Blender](#explorations-made-in-blender).
+
 ![Image lane in the Scenario sidebar, showing all creation tabs and an offline example form](images/panel-image.png)
 
 *The Image form is an offline illustration, not a live model response or price quote.*
@@ -786,6 +788,22 @@ can read your scene and request paid work. See
 - **Film can't find ffmpeg or ffprobe**: Film checks Blender's PATH and the usual Homebrew, MacPorts and Linux folders. Elsewhere, or on Windows, add the tool's folder to the PATH Blender starts with.
 - **Where are the logs?** In Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS and Linux), prefixed `scenario`.
 - **Still stuck?** See [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md).
+
+## Explorations made in Blender
+
+Scenario's [explorations](https://www.scenario.com/explorations?q=blender) are films,
+scenes and 3D projects made with Scenario, each with a look at how it was made.
+These were built in Blender, several of them by an AI agent. Some used earlier
+versions of the extension, so their steps can differ from this guide.
+
+| | | |
+| --- | --- | --- |
+| [![Cover of The Last Lantern, a lantern-lit forest film with its grey Blender layout](images/exploration-the-last-lantern.png)](https://www.scenario.com/explorations/the-last-lantern/) [The Last Lantern](https://www.scenario.com/explorations/the-last-lantern/) | [![Cover of Previs to Picture, a photoreal cliff road at dusk painted over a Blender previs](images/exploration-previs-to-picture.png)](https://www.scenario.com/explorations/previs-to-picture/) [Previs to Picture](https://www.scenario.com/explorations/previs-to-picture/) | [![Cover of Grease Pencil to Final Frame, rough Grease Pencil animatics rendered into finished shots](images/exploration-grease-pencil-to-final-frame.png)](https://www.scenario.com/explorations/grease-pencil-to-final-frame/) [Grease Pencil to Final Frame](https://www.scenario.com/explorations/grease-pencil-to-final-frame/) |
+| [![Cover of Pavilion, an architecture film of a lakeside pavilion built in Blender](images/exploration-pavilion.png)](https://www.scenario.com/explorations/pavilion/) [Pavilion](https://www.scenario.com/explorations/pavilion/) | [![Cover of Paper Harbor, a papercraft town film built by an agent in Blender](images/exploration-paper-harbor.png)](https://www.scenario.com/explorations/paper-harbor/) [Paper Harbor](https://www.scenario.com/explorations/paper-harbor/) | [![Cover of Island Builder, a pastel island town assembled from Scenario 3D models](images/exploration-island-builder.png)](https://www.scenario.com/explorations/island-builder/) [Island Builder](https://www.scenario.com/explorations/island-builder/) |
+| [![Cover of Lamplight Deep, a small submarine relighting a drowned city built in Blender](images/exploration-lamplight-deep.png)](https://www.scenario.com/explorations/lamplight-deep/) [Lamplight Deep](https://www.scenario.com/explorations/lamplight-deep/) | [![Cover of Last Order, a rainy late-night ramen alley built in Blender](images/exploration-last-order.png)](https://www.scenario.com/explorations/last-order/) [Last Order](https://www.scenario.com/explorations/last-order/) | [![Cover of Neon Drift, a synthwave racing film driving toward a striped sun](images/exploration-neon-drift.png)](https://www.scenario.com/explorations/neon-drift/) [Neon Drift](https://www.scenario.com/explorations/neon-drift/) |
+| [![Cover of Twenty Minutes, a character built and rendered on a rainy harbour street](images/exploration-twenty-minutes.png)](https://www.scenario.com/explorations/twenty-minutes/) [Twenty Minutes](https://www.scenario.com/explorations/twenty-minutes/) | [![Cover of Hadal, a deep-sea horror film built by an agent in Blender](images/exploration-hadal.png)](https://www.scenario.com/explorations/hadal/) [Hadal](https://www.scenario.com/explorations/hadal/) | [![Cover of Two Rulers, an espresso machine and a camera rebuilt part by part in Blender](images/exploration-two-rulers.png)](https://www.scenario.com/explorations/two-rulers/) [Two Rulers](https://www.scenario.com/explorations/two-rulers/) |
+| [![Cover of The Stones Remember, restored places of ancient Egypt to visit in 3D](images/exploration-the-stones-remember.png)](https://www.scenario.com/explorations/the-stones-remember/) [The Stones Remember](https://www.scenario.com/explorations/the-stones-remember/) | [![Cover of Hold On, a felt stop-motion short laid out with Blender guides](images/exploration-hold-on.png)](https://www.scenario.com/explorations/hold-on/) [Hold On](https://www.scenario.com/explorations/hold-on/) | [![Cover of Impossible Rides, moving vehicles taken from Blender camera studies into film](images/exploration-impossible-rides.png)](https://www.scenario.com/explorations/impossible-rides/) [Impossible Rides](https://www.scenario.com/explorations/impossible-rides/) |
+| [![Cover of The Last Repair Shop, an expedition rover repaired in an interactive 3D scene](images/exploration-last-repair-shop.png)](https://www.scenario.com/explorations/last-repair-shop/) [The Last Repair Shop](https://www.scenario.com/explorations/last-repair-shop/) | [![Cover of Rover Foundry, a space rover equipped across nine systems, with an editable Blender kit](images/exploration-rover-foundry.png)](https://www.scenario.com/explorations/rover-foundry/) [Rover Foundry](https://www.scenario.com/explorations/rover-foundry/) |   |
 
 ## Known limits
 

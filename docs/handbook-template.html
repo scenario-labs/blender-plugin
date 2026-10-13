@@ -127,6 +127,9 @@ nav.toc ul ul{padding-left:1rem}
 .handbook h3{margin-top:2rem;scroll-margin-top:1rem}
 .handbook p,.handbook li{max-width:72ch}
 .handbook img{display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;box-shadow:var(--shadow);margin:1rem 0}
+.handbook table:has(td img){table-layout:fixed}
+.handbook td img{width:100%;margin:0 0 .4rem}
+.handbook thead:not(:has(th:not(:empty))){display:none}
 .handbook pre{margin:1rem 0}
 .skip{position:absolute;left:-10000px}
 .skip:focus{left:1rem;top:1rem;z-index:2;background:var(--surface);padding:.5rem}

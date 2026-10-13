@@ -7,8 +7,8 @@
   "evidence": {
     "path": "scenario/icons/README.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-24",
-    "limits": "Inspected icon names/dimensions, loader fallback and generator default/optional-font paths. Existing PNG bytes and GPL texts are unchanged. This does not prove the historical generator invocation, original design ownership, no tracing, font-specific redistribution rights or Extensions Platform eligibility. Maintainer provenance confirmation and complete asset/REUSE inventory remain issue #24.",
+    "reviewed_at": "2026-10-13",
+    "limits": "2026-10-13: re-checked the icons' design origin for #24. The Scenario web app's image, video, audio, 3D, text, dice, sparkles and translate icons are first-party SVG artwork in its own icon component, filled shapes exported from Scenario's design files with no third-party attribution; its third-party icon packages supply other glyphs only. tools/make_icons.py draws its own stroke shapes in that style and copies no path data. The web app's source is private and was inspected locally; this record does not reproduce it. Earlier (2026-09-24): inspected icon names and dimensions, loader fallback and generator default and optional-font paths; existing PNG bytes and GPL texts are unchanged. This does not prove the historical generator invocation, font-specific redistribution rights or Extensions Platform eligibility; REUSE coverage remains #29.",
     "sources": {
       "scenario/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
       "scenario/blender/icons.py": "4ee20a2651ac10ced604f602f10a641255fd5659ff08371397e05a56815b1b9b",
@@ -32,7 +32,7 @@
       "tools/make_icons.py": "439a7dfde04f7d931e8476c644bb19592818ceacceff09c657692071f1ba3d75"
     },
     "scope": "overview",
-    "base_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c"
+    "base_revision": "a1efd28a43c2e1bd7f07354e81a0c2ae5bb7aebe"
   }
 }
 ---

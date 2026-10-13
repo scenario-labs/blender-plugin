@@ -166,7 +166,7 @@ Use a reviewed file allowlist, rather than copying the repository wholesale:
   when source moves.
 - Fonts require `resources/Poppins-OFL.txt`; Tabler SVG icons require
   `resources/Tabler-LICENSE.txt`. Carry their notices into the ZIP alongside used
-  resources and record their provenance under #24; the repository has no
+  resources and record their provenance in `scenario/icons/README.md`; the repository has no
   separate third-party notices file. Review `resources/icons.json` references
   when pruning unused icons. No new bundled asset arrived in 0.2.0.
 - Audit bundled `resources/models.json` and `resources/schemas.json` before use:

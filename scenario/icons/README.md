@@ -16,13 +16,18 @@ It draws light-grey shapes on a transparent background, using 1.5 px strokes
 on a 16-unit grid and downsampling the larger working canvas. Its description
 says that the glyphs match the Scenario web app's icon style.
 
-That implementation documents how to render the shapes, not where the designs
-originally came from. Maintainer confirmation of whether the web app icons or
-these drawings derive from a third-party set is still pending in
-[#24](https://github.com/scenario-labs/blender-plugin/issues/24). Do not infer
-that they were drawn from scratch or that no third-party notice is required.
-Record any identified upstream set, licence and required notice here before
-claiming its provenance is complete.
+The designs are first-party. On 2026-10-13 the web app's source was checked
+([#24](https://github.com/scenario-labs/blender-plugin/issues/24)):
+- **The web app's own icons.** Its image, video, audio, 3D, text, dice,
+  sparkles and translate icons are Scenario Inc.'s own SVG artwork, filled shapes
+  exported from its design files, with no third-party attribution.
+- **Third-party sets.** The web app's third-party icon packages are used for
+  other glyphs, never for these eight.
+- **This folder.** The generator draws its own stroke versions in that style; it
+  copies no path data from the web app or from any icon set.
+
+Record any upstream set, licence and required notice here if a future icon is
+adopted from one.
 
 ## Font option
 

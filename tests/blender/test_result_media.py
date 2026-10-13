@@ -655,7 +655,9 @@ class ResultMediaTests(unittest.TestCase):
         self.assertEqual(controller.interval(), self.media.PLAYING_INTERVAL)
         path = listener.copy.path
         self.assertEqual(path.name, "media.wav")
-        self.assertEqual(path.parent.parent.resolve(), self.playback_root().resolve())
+        # The copy keeps Python's extended \\?\ namespace on Windows; Blender only
+        # receives the ordinary path, so compare the files themselves.
+        self.assertTrue(os.path.samefile(path.parent.parent, self.playback_root()))
         self.assertEqual(path.read_bytes(), sound)
         if os.name != "nt":
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o400)

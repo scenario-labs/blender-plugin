@@ -9,6 +9,7 @@ import json
 import logging
 import queue
 import socket
+import socketserver
 import threading
 import time
 from urllib.parse import urlsplit
@@ -105,6 +106,16 @@ class _Pending:
             return self.result
 
 
+class _HTTPServer(http.server.ThreadingHTTPServer):
+    """HTTPServer.server_bind resolves the bind address with socket.getfqdn(), a reverse DNS
+    query that can wait for a resolver timeout while start() holds Blender's main thread.
+    Nothing reads server_name, so record the address as given instead."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
+
+
 class McpServer:
     def __init__(self, host, port, token, registry, server_info, timeout=120.0, blender_version=""):
         if not isinstance(token, str) or not token.strip():
@@ -131,7 +142,7 @@ class McpServer:
         last_error = None
         for candidate in range(self.port, self.port + 4):
             try:
-                httpd = http.server.ThreadingHTTPServer((self.host, candidate), _make_handler(self))
+                httpd = _HTTPServer((self.host, candidate), _make_handler(self))
                 httpd.daemon_threads = True
                 self.port = candidate
                 self._httpd = httpd

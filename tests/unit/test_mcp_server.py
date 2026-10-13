@@ -3,6 +3,7 @@
 """Local MCP browser-origin and explicit bearer-token boundaries."""
 
 import ast
+import socket
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -91,6 +92,21 @@ def test_explicit_bearer_token(header, token, expected):
 def test_server_cannot_start_without_an_explicit_token():
     with pytest.raises(ValueError, match="nonempty"):
         server.McpServer("127.0.0.1", 9876, "", None, {})
+
+
+def test_start_skips_the_reverse_dns_lookup_of_the_bind_address(monkeypatch):
+    def lookup(host=""):
+        raise AssertionError(f"start() resolved {host!r}; slow reverse DNS blocks the main thread")
+
+    monkeypatch.setattr(socket, "getfqdn", lookup)
+    owner = server.McpServer("127.0.0.1", 0, "fixture-token", None, {})
+    owner.start()
+    try:
+        assert owner._httpd.server_name == "127.0.0.1"
+        assert owner._httpd.server_port == owner._httpd.server_address[1] > 0
+    finally:
+        owner.stop()
+    assert not owner.running
 
 
 def test_no_insecure_temporary_path_calls():

@@ -3,7 +3,6 @@
 """Installed offline Film export: snapshot, real Blender child, verification and ownership."""
 
 import os
-import shutil
 import sys
 import tempfile
 import threading
@@ -264,7 +263,7 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         if ffprobe:
             staged = self.export.render(spec)
         else:
-            with patch.object(self.export.shutil, "which", return_value=None):
+            with patch.object(self.export.installed_tools, "find", return_value=None):
                 staged = self.export.render(spec)
         published = self.export.publish(staged, destination)
         return staged, published
@@ -284,8 +283,9 @@ class FilmExportPrimitiveTests(unittest.TestCase):
         self.assertEqual((summary.video[0].codec, summary.audio[0].codec), ("h264", "aac"))
         self.assertTrue(staged.path.exists())
 
-    @unittest.skipUnless(shutil.which("ffprobe"), "ffprobe is not installed")
     def test_real_child_export_verified_by_ffprobe(self):
+        if self.export.installed_tools.find("ffprobe") is None:
+            self.skipTest("ffprobe is not installed")
         spec = self.snapshot()
         staged, published = self.export_real(spec, self.output / "Review.mp4", ffprobe=True)
         self.assertEqual(staged.verification, "ffprobe")

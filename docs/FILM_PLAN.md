@@ -434,9 +434,10 @@ border/crop, multiview, compositor and sequencer output, enables the snapshot's
 first view layer and renders that one layer at the approved dimensions.
 
 Stills require no external media tool. Video checks for installed `ffmpeg` and
-`ffprobe` on PATH before export and again before rendering. It encodes the exact
-frame sequence as silent H.264 MP4 and checks dimensions, decoded frame count and
-frame rate with ffprobe. No tool is downloaded or bundled. Missing tools fail
+`ffprobe` with the [shared lookup](STUDIO_ADOPTION.md#external-media-tools)
+before export and again before rendering. It encodes the exact frame sequence as
+silent H.264 MP4 and checks dimensions, decoded frame count and frame rate with
+ffprobe. No tool is downloaded or bundled. Missing tools fail
 before expensive work; encoding failure preserves usable PNGs and logs.
 Cancellation, timeout and process failure reap the child and remove its scratch
 profile. Snapshot, frames, output and diagnostics remain in the caller-owned
@@ -597,8 +598,9 @@ without refetching or reuploading it. Missing, changed, ambiguous or unsupported
 media likewise stops before estimation.
 
 [`media_probe.py`](../scenario/core/jobs/media_probe.py) requires an explicitly
-installed `ffprobe` on PATH, copies at most 512 MiB per source into private storage,
-and verifies the saved size/SHA256 while copying. It probes only that copy with
+installed `ffprobe`, found by the [shared lookup](STUDIO_ADOPTION.md#external-media-tools),
+copies at most 512 MiB per source into private storage, and verifies the saved
+size/SHA256 while copying. It probes only that copy with
 a forced supported container demuxer and the local-file protocol. MOV external
 track references and absolute external paths are disabled. Credential/proxy
 variables are scrubbed using the existing local-process environment. The command
@@ -994,8 +996,9 @@ when audio was requested, with no other tracks. Presented audio and picture
 durations may differ by at most one frame or 50 ms, whichever is larger. The
 file is then decoded:
 
-- When `ffprobe` is on PATH, `-count_frames` must report the exact decoded frame
-  count, `h264`, `yuv420p`, the frame rate and the expected AAC stream.
+- When the [shared lookup](STUDIO_ADOPTION.md#external-media-tools) finds an
+  installed `ffprobe`, `-count_frames` must report the exact decoded frame count,
+  `h264`, `yuv420p`, the frame rate and the expected AAC stream.
 - Otherwise a second offline, factory-startup Blender child decodes the file with
   Blender's own FFmpeg. It checks the movie's dimensions, rate and length and the
   sound's sample rate, channels and length. It renders the first and last frames
@@ -1132,7 +1135,8 @@ nothing renders.
 **Render video** is a separate confirmation. It repeats the review scene, frames,
 rate, duration, size, audio track and media count, wraps the full resolved
 destination and names the verification that will run (installed `ffprobe`, else
-Blender's weaker decode check). Confirming approves that exact destination once.
+Blender's weaker decode check), from the same lookup the export uses. Confirming
+approves that exact destination once.
 The command requires Object Mode, the selected recipe scene, both captured
 origins and an absent destination. It rereads the review scene's frames, rate,
 size, strip and media counts, audible sound strips and blocking reason shown when

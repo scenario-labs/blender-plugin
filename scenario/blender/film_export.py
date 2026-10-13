@@ -11,14 +11,13 @@ no executor, store, service client or persisted state; restart drops them.
 import hashlib
 import logging
 import os
-import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import bpy
 
-from ..core.jobs import film_export_policy, local_export
+from ..core.jobs import film_export_policy, installed_tools, local_export
 from ..core.jobs.local_render import LocalRenderError, RenderCancelled
 from ..core.jobs.store import _json
 from ..core.jobs.workers import WorkerError
@@ -50,7 +49,7 @@ def encoder_available():
 
 def verifier():
     """Name the verification an export will use: installed ffprobe, else Blender decode."""
-    return "ffprobe" if shutil.which("ffprobe") else "blender"
+    return "ffprobe" if installed_tools.find(installed_tools.FFPROBE) else "blender"
 
 
 def default_size_supported(width, height):

@@ -25,7 +25,7 @@ from fractions import Fraction
 from pathlib import Path, PureWindowsPath
 from typing import ClassVar
 
-from . import mp4_inspection
+from . import installed_tools, mp4_inspection
 from .local_render import (
     LocalRenderError,
     RenderCancelled,
@@ -693,12 +693,12 @@ def _report(path, message):
 
 def _verify(spec, output, env, cancel):
     """Decode-check the staged MP4; prefer an installed ffprobe, else Blender itself."""
-    tool = shutil.which("ffprobe")
+    tool = installed_tools.find(installed_tools.FFPROBE)
     if tool:
         probe = spec.directory / "probe.json"
         _child(
             [
-                str(Path(tool).resolve()),
+                str(tool),
                 "-v",
                 "error",
                 "-protocol_whitelist",

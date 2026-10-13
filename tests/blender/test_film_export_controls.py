@@ -3,6 +3,7 @@
 """Installed Film video export controls share session handles, approvals and staging."""
 
 import hashlib
+import os
 import tempfile
 import threading
 import time
@@ -459,7 +460,7 @@ class FilmExportControlTests(unittest.TestCase):
         before = self.state()
         status = self.mcp_prepare(width=128, height=72)
         # Blender's decode check runs everywhere; ffprobe is covered by the primitive tests.
-        with patch.object(self.export.shutil, "which", return_value=None):
+        with patch.object(self.export.installed_tools, "find", return_value=None):
             self.render(status)
             status = self.settle(status["review_id"], timeout=300)
         self.assertEqual(status["phase"], "EXPORTED", status["error"])
@@ -827,3 +828,24 @@ class FilmExportControlTests(unittest.TestCase):
         film.SCENARIO_PT_film.draw(SimpleNamespace(layout=layout), bpy.context)
         labels = [c.kwargs.get("text") for c in layout.label.call_args_list]
         self.assertIn("Assemble saved media under Review; export a video under Export", labels)
+
+
+class FilmExportVerifierTests(unittest.TestCase):
+    """The dialog's verification uses the same lookup as the export child."""
+
+    def test_verifier_finds_ffprobe_in_a_standard_folder_with_a_dock_path(self):
+        module = submodule("blender.film_export")
+        lookup = submodule("core.jobs.installed_tools")
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        tool = folder / "ffprobe"
+        tool.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        tool.chmod(0o755)
+        # Blender opened from the macOS Dock or Finder gets launchd's PATH.
+        self.enterContext(patch.dict(os.environ, {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}))
+        self.enterContext(patch.object(lookup, "_platform", return_value="darwin"))
+        self.enterContext(patch.object(lookup, "DIRECTORIES", {"darwin": (str(folder),)}))
+        self.assertEqual(lookup.find("ffprobe"), tool)
+        self.assertEqual(module.verifier(), "ffprobe")
+        self.assertEqual(module.local_export.installed_tools.find("ffprobe"), tool)
+        with patch.object(lookup, "find", return_value=None):
+            self.assertEqual(module.verifier(), "blender")

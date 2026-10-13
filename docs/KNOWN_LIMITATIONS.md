@@ -91,7 +91,10 @@ establish live generation or full render-lane desktop acceptance.
   review's frames, rate, size and strip count, the scene and media counts and bytes
   and the ledger. It has installed synthetic coverage only. Video export
   verification uses an installed ffprobe when present and otherwise a weaker
-  Blender decode check. Blender builds without H.264/AAC encoders cannot export;
+  Blender decode check. Film finds `ffmpeg` and `ffprobe` on Blender's PATH and,
+  on macOS and Linux, in fixed standard install folders
+  ([lookup](STUDIO_ADOPTION.md#external-media-tools)); no setting selects another
+  tool location. Blender builds without H.264/AAC encoders cannot export;
   they are detected only when the render child fails, with its log retained.
   Complete runtime adoption and live/native acceptance remain open
   ([#64](https://github.com/scenario-labs/blender-plugin/issues/64),

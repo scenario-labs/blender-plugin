@@ -125,7 +125,9 @@ class Child:
         self.extra = extra
         self.render_hook = None
         monkeypatch.setattr(
-            export.shutil, "which", lambda name: "/fixture/ffprobe" if ffprobe else None
+            export.installed_tools,
+            "find",
+            lambda name: Path("/fixture/ffprobe") if ffprobe else None,
         )
         if not ffprobe and report is None:
             self.report = measured(spec)

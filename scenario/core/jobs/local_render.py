@@ -10,7 +10,6 @@ import hashlib
 import json
 import math
 import os
-import shutil
 import struct
 import subprocess
 import tempfile
@@ -20,6 +19,7 @@ from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path, PureWindowsPath
 
+from . import installed_tools
 from .upload_sources import _open
 
 
@@ -169,12 +169,14 @@ class RenderedMedia:
 
 def media_tools():
     """Optional installed tools only: never fetch a binary or alter PATH."""
-    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
-    if not ffmpeg or not ffprobe:
+    names = (installed_tools.FFMPEG, installed_tools.FFPROBE)
+    found = tuple(installed_tools.find(name) for name in names)
+    absent = [name for name, tool in zip(names, found, strict=True) if tool is None]
+    if absent:
         raise LocalRenderError(
-            "MP4 capture requires ffmpeg and ffprobe on PATH; still capture remains available"
+            installed_tools.missing(absent, "for MP4 capture") + " Still capture remains available."
         )
-    return Path(ffmpeg).resolve(), Path(ffprobe).resolve()
+    return found
 
 
 def _environment(profile, temporary):

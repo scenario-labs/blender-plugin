@@ -224,6 +224,21 @@ Use portable discovery and test present/missing tools, timeout/cancellation and
 child-process cleanup on supported platforms under #64/#31. These are adoption
 requirements, not claims that upstream already implements every check.
 
+[`installed_tools.py`](../scenario/core/jobs/installed_tools.py) is the shared,
+bpy-free lookup for `ffmpeg` and `ffprobe`. MP4 capture, Film media inspection,
+export verification and the export dialog's verification name all use it. It
+checks the current PATH first, then fixed install folders: `/opt/homebrew/bin`,
+`/usr/local/bin` and `/opt/local/bin` on macOS, `/usr/local/bin` and `/usr/bin`
+on Linux. Windows uses PATH only. Blender opened from the macOS Dock or Finder
+gets launchd's PATH, `/usr/bin:/bin:/usr/sbin:/sbin`, which lacks Homebrew and
+MacPorts. Lookup accepts only executable regular files and returns their resolved
+absolute path. It never changes the environment, runs a program, or searches the
+working directory or a relative PATH entry. `/snap/bin` is excluded: a strictly
+confined snap's home access excludes the hidden extension storage these tools
+read. No preference or environment variable selects another tool path. A missing
+tool's error names it, lists the places searched and, on macOS, says that apps
+opened from the Dock or Finder do not inherit the shell PATH.
+
 The first-party [Film video export](FILM_PLAN.md#offline-film-video-export-primitive)
 needs no external encoder: an offline Blender child uses Blender's built-in
 FFmpeg. An installed ffprobe adds a full decoded-frame check; without it, a

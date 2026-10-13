@@ -110,8 +110,8 @@ def test_missing_tool_and_precancel_leave_source_and_storage_untouched(fixture, 
 
 
 def test_missing_ffprobe_never_downloads_or_selects_a_fallback(monkeypatch):
-    monkeypatch.setattr(probe.shutil, "which", lambda name: None)
-    with pytest.raises(probe.MediaProbeError, match="Install ffprobe"):
+    monkeypatch.setattr(probe.installed_tools, "find", lambda name: None)
+    with pytest.raises(probe.MediaProbeError, match="Install ffprobe before inspecting"):
         probe.probe_tool()
 
 

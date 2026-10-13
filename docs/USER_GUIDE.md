@@ -734,6 +734,7 @@ confirmation and shared-runtime boundaries.
 - **A 3D model looks untextured**: switch the viewport to Material Preview (the add-on does this on import), and check Details for the imported file name.
 - **The rendered image moved things around**: the prompt already freezes the layout; give the model a cleaner capture (Grey clay capture, a camera view rather than a wide viewport) and fewer style images, and keep the look description about materials and light, not about content.
 - **The sidebar and the dialogs do not look like the composer**: they are drawn by Blender with your Blender theme; the composer is custom drawing. Their layout follows the composer (tabs, chips, header rows) but their colours are the theme's.
+- **Film says ffmpeg or ffprobe is "not found on PATH"** (video capture, composition or review): Film looks for `ffmpeg` and `ffprobe` on Blender's PATH, then in `/opt/homebrew/bin`, `/usr/local/bin` and `/opt/local/bin` on macOS, or in `/usr/local/bin` and `/usr/bin` on Linux. Blender opened from the Dock or Finder does not get your shell's PATH; Film still finds Homebrew and MacPorts installs in those folders. A tool installed elsewhere, or any tool on Windows, needs its folder on the PATH Blender starts with. Video export without `ffprobe` uses Blender's weaker check instead.
 - **Where are the logs**: Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS/Linux), messages are prefixed `scenario`.
 - **None of this helps**: see [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md) for where to ask and what to include.
 
@@ -855,7 +856,8 @@ macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-con
 Under **Capture**, **Render capture** asks you to choose a completed local scene,
 still/video, colors and size for the selected shot. Stills capture its first frame;
 silent clips use its editorial range without padding. Video requires installed
-ffmpeg and ffprobe. You can close the panel while it renders.
+ffmpeg and ffprobe; see [Troubleshooting](#troubleshooting) for where Film finds
+them. You can close the panel while it renders.
 
 Use **Open capture** to review the output, then **Upload capture** to confirm
 sending those exact bytes to your selected Scenario connection. After import,

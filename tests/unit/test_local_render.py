@@ -179,9 +179,9 @@ def test_large_video_uses_capture_bound_and_retains_rejected_output(
 
 
 def test_missing_encoder_fails_before_process_or_admission(monkeypatch, spec):
-    monkeypatch.setattr(render.shutil, "which", lambda _: None)
+    monkeypatch.setattr(render.installed_tools, "find", lambda _: None)
     monkeypatch.setattr(render, "_run", lambda *a, **k: pytest.fail("Render started"))
-    with pytest.raises(render.LocalRenderError, match="ffmpeg and ffprobe"):
+    with pytest.raises(render.LocalRenderError, match="Install ffmpeg and ffprobe for MP4"):
         render.render(spec)
     assert not (spec.directory / "started.json").exists()
 

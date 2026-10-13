@@ -6,13 +6,13 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import tempfile
 import threading
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
 
+from . import installed_tools
 from .local_render import LocalRenderError, RenderCancelled, _environment, _run
 from .transfers import DownloadedResult, TransferError, _root
 from .upload_sources import _open, _stamp
@@ -54,10 +54,12 @@ class MediaInfo:
 
 
 def probe_tool():
-    tool = shutil.which("ffprobe")
-    if not tool:
-        raise MediaProbeError("Install ffprobe on PATH before inspecting Film media")
-    return Path(tool).resolve()
+    tool = installed_tools.find(installed_tools.FFPROBE)
+    if tool is None:
+        raise MediaProbeError(
+            installed_tools.missing([installed_tools.FFPROBE], "before inspecting Film media")
+        )
+    return tool
 
 
 def _fraction(value):

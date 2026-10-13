@@ -445,9 +445,11 @@ class TrainedModelTests(unittest.TestCase):
         labels = [call[2] for node in root.walk() for call in node.named("label")]
         self.assertIn({"text": "Private LoRA"}, labels)
         self.assertIn({"text": "Runs with FLUX.1 Dev"}, labels)
-        self.assertIn(
-            {"text": "Experimental: LoRAs and compositions in testing", "icon": "EXPERIMENTAL"},
-            labels,
+        # The picker names what is experimental in full; only the Trained models box,
+        # whose title already names them, uses the short form.
+        self.assertEqual(
+            [label for label in labels if label.get("icon") == "EXPERIMENTAL"],
+            [{"text": "Experimental: LoRAs and compositions in testing", "icon": "EXPERIMENTAL"}],
         )
         props = [call[1][1] for node in root.walk() for call in node.named("prop")]
         self.assertIn("scenario_picker_strength", props)

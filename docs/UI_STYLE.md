@@ -248,7 +248,9 @@ declares a range. A request never adds a strength the user did not see. A
 composition row reads **Name (composition)** with its LoRAs and their own strengths listed
 read-only below it. The reason a choice cannot run is drawn in the box with
 `ERROR` (or `TIME` while trained models load), and **Add LoRA or composition**
-opens the picker on the Trained chip. The box ends with the experimental line.
+opens the picker on the Trained chip. The box ends with the short experimental line
+**Experimental: in testing**: its title already names trained models, and the
+picker's full line was clipped at the default sidebar width.
 
 The project-default row stores one explicit choice per form for the selected
 credentials and optional Project ID, through the
@@ -457,14 +459,17 @@ model, task, estimate or approval. Use the built-in `EXPERIMENTAL` icon and
 short wording. A capability line reads **Experimental: _capability_ in testing**
 (`capability_status.label`): it says the capability runs and is still being
 tested, never that it is refused. Wording such as *not accepted* read as if
-Scenario refused a model that runs. Drawing reads the status and changes nothing.
+Scenario refused a model that runs. A section whose title already names the
+capability uses the short **Experimental: in testing** (`capability_status.label()`
+without a subject). Drawing reads the status and changes nothing.
 
 - The **Film** sidebar panel shows **Experimental** on the right of its header,
   visible while collapsed and above its nested panels. Studio reuses panel bodies
   only, so it draws the same line on every Film page.
-- The picker's highlighted LoRA or composition box and the **Trained models** box
-  end with **Experimental: LoRAs and compositions in testing**
-  ([trained models](#trained-models-in-the-picker)).
+- The picker's highlighted LoRA or composition box ends with
+  **Experimental: LoRAs and compositions in testing**
+  ([trained models](#trained-models-in-the-picker)); the **Trained models** box,
+  whose title names them, ends with **Experimental: in testing**.
 - For models offering `audio2txt` or `video23d`, the model picker's
   highlighted-model box and the persistent **Model** row show a read-only
   **Experimental: speech-to-text in testing** or

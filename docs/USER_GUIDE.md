@@ -318,9 +318,10 @@ the default by itself. If the default can no longer run, the form says
 clear it; it never falls back to the base model alone. Defaults of other
 credentials or projects are never used.
 
-Trained models are experimental, marked **Experimental: LoRAs and compositions in
-testing** in the picker and the **Trained models** box: they run, but results with
-them haven't been fully verified. Training stays in Scenario's web app.
+Trained models are experimental: the picker shows **Experimental: LoRAs and
+compositions in testing**, and the **Trained models** box shows **Experimental: in
+testing**. They run, but results with them haven't been fully verified. Training
+stays in Scenario's web app.
 
 ### Video
 

@@ -182,9 +182,10 @@ class TrainedSectionTests(unittest.TestCase):
             [props for _enabled, props in root.ops("scenario.pick_model")][-1],
             {"lane": "image", "category": "trained"},
         )
-        self.assertIn(
-            ("Experimental: LoRAs and compositions in testing", "EXPERIMENTAL"), root.labels()
-        )
+        # The box's title names trained models, so its experimental line is the short form,
+        # which fits the default sidebar width; the picker keeps the full line.
+        experimental = [label for label in root.labels() if label[1] == "EXPERIMENTAL"]
+        self.assertEqual(experimental, [("Experimental: in testing", "EXPERIMENTAL")])
         self.lane.estimate_state = "READY"
         self.lane.trained[1].scale = 0.35
         self.assertEqual(self.lane.estimate_state, "PENDING")

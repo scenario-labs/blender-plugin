@@ -52,6 +52,15 @@ def test_every_status_reads_as_experimental_never_as_a_refusal(subject):
         assert refusal not in status.lower(), (subject, refusal)
 
 
+def test_a_section_that_names_its_subject_uses_the_short_line():
+    # The Trained models box's title names what is experimental; the full line was
+    # clipped at the default sidebar width.
+    for status in (label(), label("")):
+        assert status == "Experimental: in testing"
+        for refusal in REFUSALS:
+            assert refusal not in status.lower(), refusal
+
+
 def test_flagged_models_stay_visible_in_the_picker():
     for capability in UNACCEPTED_CAPABILITIES:
         record = ModelRecord.from_api(

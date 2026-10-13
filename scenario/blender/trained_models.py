@@ -29,6 +29,9 @@ SCOPE = "_scenario_trained_scope"
 LANES = ("image", "render_image")
 # Trained models run; only their acceptance is pending, so the line must not read as a refusal.
 EXPERIMENTAL = capability_status.label("LoRAs and compositions")
+# The Trained models box's title already names them, and the full line was clipped at the
+# default sidebar width: the box ends with the short form.
+EXPERIMENTAL_IN_BOX = capability_status.label()
 LOADING = "Loading trained models"
 OTHER_SCOPE = "A trained model was chosen for another connection or project; choose it again"
 KIND_LABELS = {catalog.TRAINED_LORA: "LoRA", catalog.TRAINED_COMPOSITION: "Composition"}

@@ -123,7 +123,7 @@ def draw(layout, lane_state, lane):
         op.lane, op.category = lane, model_filter.TRAINED_CATEGORY
         draw_default(box, lane, view)
     if chosen or view.default is not None:
-        box.label(text=trained_models.EXPERIMENTAL, icon="EXPERIMENTAL")
+        box.label(text=trained_models.EXPERIMENTAL_IN_BOX, icon="EXPERIMENTAL")
 
 
 # -- operators ------------------------------------------------------------------------------

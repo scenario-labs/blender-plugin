@@ -11,13 +11,15 @@ speech-to-text and video-to-motion handling has not been accepted (#190).
 UNACCEPTED_CAPABILITIES = {"audio2txt": "speech-to-text", "video23d": "video-to-motion"}
 
 
-def label(subject):
+def label(subject=""):
     """The status line of a capability that runs but is still in testing.
 
     It must read as experimental, never as a refusal: "not accepted" on its own
-    read as if the service refused the model, although it runs.
+    read as if the service refused the model, although it runs. Without a
+    subject, where a section title already names the capability, the line is
+    the short "Experimental: in testing".
     """
-    return f"Experimental: {subject} in testing"
+    return f"Experimental: {subject} in testing" if subject else "Experimental: in testing"
 
 
 def model_status(capabilities):

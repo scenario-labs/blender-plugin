@@ -9,7 +9,16 @@ import textwrap
 import bpy
 
 from ..core.ui.costs import format_cu, workflow_loop_warning
-from . import generation, history, job_recovery, params_ui, props, result_previews, runtime
+from . import (
+    generation,
+    history,
+    job_recovery,
+    label_wrap,
+    params_ui,
+    props,
+    result_previews,
+    runtime,
+)
 
 KIND_ICON = {
     "image": "IMAGE_DATA",
@@ -570,6 +579,14 @@ def _primary_asset(rec):
     return rec.asset_ids[0] if rec.asset_ids else ""
 
 
+def draw_failure(layout, text, inset=result_previews.TEXT_INSET):
+    """A failure's whole text in red, wrapped to the measured width so no support id is clipped."""
+    column = layout.column(align=True)
+    column.alert = True
+    for index, line in enumerate(label_wrap.label_lines(bpy.context, text, inset)):
+        column.label(text=line, icon="ERROR" if index == 0 else "BLANK1")
+
+
 def draw_result(layout, rec, *, collapsible=True):
     """One generation: a header (type icon, prompt start, cost, collapse arrow), then model, asset id and actions.
     Only the output is shown; the inputs and settings live behind Details. `collapsible=False` (the composer's
@@ -610,10 +627,11 @@ def draw_result(layout, rec, *, collapsible=True):
         op.text, op.what = asset_id, "asset id"
         if len(rec.asset_ids) > 1:
             row.label(text=f"+{len(rec.asset_ids) - 1}")
-    if rec.error:
+    if rec.error and not rec.is_success:
+        draw_failure(box, f"Failed: {rec.error}")
+    elif rec.error:
         row = box.row(align=True)
-        row.alert = not rec.is_success
-        row.label(text=("Failed: " if not rec.is_success else "") + rec.error[:60], icon="ERROR")
+        row.label(text=rec.error[:60], icon="ERROR")
         row.operator(
             "scenario.error_details", text="", icon="INFO"
         ).local_id = rec.local_id  # tooltip = full message; click = full text + copy

@@ -51,7 +51,9 @@ _STATE_TEXT = {
 # A projection error replaces the state wording, except where that wording
 # already says more. The projection notes an unconfirmed outcome on every
 # submitting or uncertain record, so both keep their own wording; terminal
-# failure or cancellation keeps its own tone. Inspect shows the full error.
+# failure or cancellation keeps its own tone. A failed job's error is only the
+# reason Scenario gave for it (`jobs.failures`), so it follows the failure's own
+# words. Inspect shows the full error.
 _OWN_WORDING = frozenset({"submitting", "uncertain", "failed", "canceled"})
 _REMOTE_STATES = frozenset({"remote", "cancel_requested"})
 _NETWORK_STATES = _REMOTE_STATES | {"succeeded", "downloading", "download_failed"}
@@ -148,7 +150,9 @@ def strip_status(
     refine a remote job only; `stale` marks an observation older than the
     scheduled poll allows. `automatic` is true when a ready result imports
     without further review. Without online access, states waiting on the
-    network say so instead of looking current.
+    network say so instead of looking current. `error` is the view's error:
+    a paused delivery's message replaces the wording, and a failed job's
+    reason follows "Generation failed: ".
 
     `in_flight` is true only while this session still holds the submission
     task for the request; the caller reads it from the job owner's live
@@ -167,7 +171,9 @@ def strip_status(
         return StripStatus("Checking status", "active")
     text, tone = _STATE_TEXT[state]
     fraction = None
-    if state == "ready" and automatic:
+    if state == "failed" and message:
+        text = f"{text}: {message}"
+    elif state == "ready" and automatic:
         text, tone = "Importing...", "active"
     elif state == "remote":
         status = known_remote_status(remote_status)

@@ -12,7 +12,16 @@ from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
 from ..core.ui.costs import format_cu
-from . import apply_image, desktop, generation, panorama_lane, params_ui, props, runtime
+from . import (
+    apply_image,
+    desktop,
+    generation,
+    label_wrap,
+    panorama_lane,
+    params_ui,
+    props,
+    runtime,
+)
 
 
 class SCENARIO_OT_test_connection(bpy.types.Operator):
@@ -458,12 +467,13 @@ class SCENARIO_OT_result_details(bpy.types.Operator):
         "Everything about this generation: model, prompt, settings, references, asset ids, files"
     )
     local_id: StringProperty()
+    WIDTH = 620  # interface units requested for the dialog
 
     def _rec(self):
         return next((r for r in runtime.state.jobs_view if r.local_id == self.local_id), None)
 
     def invoke(self, context, event):
-        return context.window_manager.invoke_props_dialog(self, width=620)
+        return context.window_manager.invoke_props_dialog(self, width=self.WIDTH)
 
     def draw(self, context):
         import json
@@ -550,7 +560,12 @@ class SCENARIO_OT_result_details(bpy.types.Operator):
             for path in rec.files:
                 box.label(text=os.path.basename(path))
         if rec.error:
-            layout.label(text=rec.error[:110], icon="ERROR")
+            # The whole message, such as the reason Scenario gave and its support error id.
+            box = layout.box()
+            with label_wrap.popup_layout(SCENARIO_OT_result_details.WIDTH):
+                panels.draw_failure(box, rec.error)
+            op = box.operator("scenario.copy_text", text="Copy error", icon="COPYDOWN")
+            op.text, op.what = rec.error, "error message"
         errors = rec.meta.get("download_errors") or {}
         for asset_id, reason in list(errors.items())[:4]:
             layout.label(text=f"{asset_id}: {str(reason)[:80]}", icon="ERROR")

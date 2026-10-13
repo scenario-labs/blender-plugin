@@ -219,6 +219,9 @@ not registered with the prototype manager. Each poll also projects the latest
 validated remote status and progress fraction, and submissions record a
 display-only scene and lane binding; both stay in memory and MCP `job_status`
 reports the same values ([projection rules](../BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)).
+A retrieval that observes a failure also projects the cleaned
+`metadata.error`/`metadata.hint` reason as the failed view's error, in memory only
+([failure reasons](../BLENDER_JOB_CONTEXT.md#failure-reasons)).
 The GUI pump compares the drawn job rows and online access each tick and
 redraws the 3D viewport and Preferences regions only when they change, so
 progress and the offline line update without hovering. The compact composer's

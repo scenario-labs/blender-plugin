@@ -65,6 +65,7 @@ class ModelGenerationTests(unittest.TestCase):
         # Captured model-generation jobs report custom; only inference is cancellable.
         self.job_type = "custom"
         self.remote_progress = None  # omitted from job reads unless a test sets it
+        self.remote_metadata = {}
         self.result_bytes = b""
         self.result_media_type = "image/png"
         # Optional per-asset results: asset ID -> (media type, bytes, metadata).
@@ -122,6 +123,8 @@ class ModelGenerationTests(unittest.TestCase):
                     }
                     if self.remote_progress is not None:
                         job["progress"] = self.remote_progress
+                    # Documented JobMetadata strings, such as a failure's error and hint.
+                    job["metadata"].update(self.remote_metadata)
                     return httpx.Response(200, json={"job": job})
                 if "/assets/" in request.url.path:
                     asset_id = request.url.path.rsplit("/", 1)[-1]
@@ -1058,6 +1061,75 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(owner.bound_views(other, "image"), ())
         self.assertEqual(owner.bound_views(scene, "image"), views)
         self.assertEqual(len(self.paid), 2)
+
+    def test_failed_job_reason_reaches_generations_details_and_mcp_without_being_saved(self):
+        """Scenario's metadata.error and hint for a failure, cleaned, on every surface."""
+        support = "error_Fx7Kq2Lm9Rt4Vw8Yz3Bc6Dn1"
+        message = (
+            f"An internal error occurred. Please contact support and provide this id: {support}"
+        )
+        signed = "https://cdn.cloud.scenario.com/part.glb?X-Amz-Signature=SIGNED"  # secrets-allow: synthetic fixture
+        self.remote_status, self.remote_progress = "failure", 0.1
+        self.remote_metadata = {"error": message, "hint": f"Retry later; see {signed}"}
+        expected = f"{message}. Retry later; see https://cdn.cloud.scenario.com/part.glb"
+        self.ui_quote()
+        ui = self.generation.submit_generation(bpy.context, "image")
+        mcp = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        operators = submodule("blender.operators")
+        views = [owner.views[ui.local_id], owner.views[mcp["local_id"]]]
+        for view in views:
+            saved = self.store.get(view.local_id)
+            self.assertEqual((saved.state.value, view.status), ("failed", "failed"))
+            self.assertEqual(view.error, expected)
+            status = self.tools.job_status({"job_id": view.local_id})
+            self.assertEqual((status["status"], status["error"]), ("failed", expected))
+            self.assertNotIn("SIGNED", json.dumps(status))
+            # The red error control's tooltip is the whole reason.
+            props = SimpleNamespace(local_id=view.local_id)
+            self.assertEqual(
+                operators.SCENARIO_OT_error_details.description(bpy.context, props), expected
+            )
+            # Generation details wrap the whole reason and copy it for support.
+            details = MagicMock()
+            operators.SCENARIO_OT_result_details.draw(
+                SimpleNamespace(layout=details, local_id=view.local_id, _rec=lambda v=view: v),
+                bpy.context,
+            )
+            self.assertIn("".join(expected.split()), "".join("".join(drawn_texts(details)).split()))
+            box = details.box.return_value
+            box.operator.assert_any_call("scenario.copy_text", text="Copy error", icon="COPYDOWN")
+            self.assertEqual(box.operator.return_value.text, expected)
+        # Generations lists both failures with the error control and the whole reason wrapped.
+        _header, _jobs, generations, listed = draw_job_panels()
+        self.assertEqual({id(row) for row in listed} & {id(v) for v in views}, set(map(id, views)))
+        texts = "".join(drawn_texts(generations))
+        # Wrapping may split a long word, such as the link, across lines.
+        self.assertEqual("".join(texts.split()).count("".join(f"Failed: {expected}".split())), 2)
+        self.assertNotIn("SIGNED", texts)
+        # Each reason starts with the ERROR icon; its continuation lines align after it.
+        first = [
+            call.kwargs
+            for call in generations.mock_calls
+            if str(call.kwargs.get("text", "")).startswith("Failed: ")
+        ]
+        self.assertEqual([kwargs["icon"] for kwargs in first], ["ERROR", "ERROR"])
+        self.assertTrue(any(call.kwargs.get("icon") == "BLANK1" for call in generations.mock_calls))
+        controls = [
+            call
+            for call in generations.mock_calls
+            if call.args[:1] == ("scenario.error_details",) and call.kwargs.get("icon") == "ERROR"
+        ]
+        self.assertEqual(len(controls), 2)
+        self.assertEqual((len(self.paid), len(self.downloads)), (2, 0))
+        # Display only: no saved file holds the message, its support id or the signed link.
+        for path in self.runtime.paths().state_dir.rglob("*"):
+            if path.is_file():
+                data = path.read_bytes()
+                self.assertNotIn(b"internal error", data, path.name)
+                self.assertNotIn(support.encode(), data, path.name)
+                self.assertNotIn(b"SIGNED", data, path.name)
 
     def test_offline_reading_is_stale_and_drawn_without_requests(self):
         self.remote_progress = 0.5

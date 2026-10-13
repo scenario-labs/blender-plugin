@@ -15,7 +15,7 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
-from ..core.jobs import progress, workflow_nodes
+from ..core.jobs import failures, progress, workflow_nodes
 from ..core.jobs.coordinator import (
     CancellationUnsupported,
     DecisionRefused,
@@ -368,6 +368,10 @@ class ModelJobs:
         # the API documents as cancellable. Memory only: a restarted or newly
         # inspected job offers no cancellation until an explicit refresh.
         self._cancellable = {}
+        # request_id -> failures.RemoteFailure: the reason Scenario gave in the
+        # retrieval that observed the failure. Memory only, like progress: a job
+        # that failed before a restart shows no reason.
+        self._failures = {}
         self._first_frame_destinations = {}
         self._first_frames = {}
         self._plans = {}
@@ -809,6 +813,9 @@ class ModelJobs:
                 item.state == LocalApplicationState.APPLYING for item in record.local_applications
             ):
                 view.error = "Local application outcome is unconfirmed; inspect the scene and do not repeat it"
+            elif record.state == JobState.FAILED:
+                # Nothing remains to deliver: a failed job's only error is Scenario's reason.
+                view.error = self._failure_reason(request_id, record)
             elif request_id not in self._paused:
                 view.error = None
             if (
@@ -889,7 +896,36 @@ class ModelJobs:
             meta.pop("remote", None)
         else:
             meta["remote"] = reading
+        self._observe_failure(request_id, snapshot)
         self._observe_steps(request_id, snapshot)
+
+    def _observe_failure(self, request_id, snapshot):
+        """Keep the cleaned reason a retrieval gives for the failure it observed.
+
+        Any other snapshot drops it. A reading that cannot be interpreted is
+        dropped too, logging only its error type: the job still reads failed.
+        """
+        try:
+            failure = failures.observe(snapshot)
+        except Exception as error:
+            # Never log the response; it may carry signed result URLs.
+            _log.warning("Failure reason dropped (%s)", type(error).__name__)
+            failure = None
+        if failure is None:
+            self._failures.pop(request_id, None)
+        else:
+            self._failures[request_id] = failure
+
+    def _failure_reason(self, request_id, record):
+        """Scenario's reason for this unchanged failed record, or None; reads memory only."""
+        failure = self._failures.get(request_id)
+        if (
+            failure is None
+            or record.state != JobState.FAILED
+            or (failure.remote_job_id, failure.revision) != (record.remote_job_id, record.revision)
+        ):
+            return None
+        return failure.reason
 
     def _observe_steps(self, request_id, snapshot):
         """Project a workflow's waiting approval and selection steps from one snapshot.

@@ -285,13 +285,23 @@ def test_a_paused_error_replaces_the_wording_for_review(state):
     )
 
 
-@pytest.mark.parametrize("state", ["submitting", "uncertain", "failed", "canceled"])
+@pytest.mark.parametrize("state", ["submitting", "uncertain", "canceled"])
 @pytest.mark.parametrize("in_flight", [False, True])
 def test_states_with_their_own_wording_keep_it_over_an_error(state, in_flight):
     note = "Submission outcome is not confirmed; do not submit it again"
     assert js.strip_status(state, error=note, in_flight=in_flight) == js.strip_status(
         state, in_flight=in_flight
     )
+
+
+def test_a_failed_job_names_the_reason_scenario_gave_after_its_own_words():
+    # The projection sets a failed job's error only to Scenario's cleaned reason.
+    reason = "An internal error occurred. Please contact support and provide this id: error_A1b2C3"
+    for extra in ({}, {"remote_status": "in-progress", "progress": 0.5, "online": False}):
+        status = js.strip_status("failed", error=f"  {reason}\n", **extra)
+        assert status == js.StripStatus(f"Generation failed: {reason}", "error")
+    assert js.strip_status("failed", error="   ") == js.StripStatus("Generation failed", "error")
+    assert js.strip_chips((), "failed", error=reason) == (INSPECT,)
 
 
 def test_blank_or_non_text_errors_are_ignored():

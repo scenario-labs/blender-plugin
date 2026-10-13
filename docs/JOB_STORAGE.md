@@ -411,8 +411,8 @@ metadata; see [legacy mesh transfers](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byt
 
 Schema 10 batches into one upgrade the persisted fields that the accepted 0.10.0
 designs need: result file source, result projection and per-scope lane defaults
-for trained or private models. Live remote progress, the composer's scene/lane
-binding, workflow step decisions, Film review/export state, asset organization
+for trained or private models. Live remote progress, a failed job's reason, the
+composer's scene/lane binding, workflow step decisions, Film review/export state, asset organization
 reviews and preview caches stay in memory or in disposable caches, so they add
 nothing here. No intent-level lane or trained-model display name is stored:
 restarted display records remain generic model jobs and show the quoted target

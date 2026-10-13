@@ -67,6 +67,12 @@ stay the raw validated values. Providers may keep `progress` at 0 until
 completion, so it is not a time estimate. A restarted job reports progress only after explicit
 `recover_local_job` `refresh` or `resume`; see
 [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
+For a `failed` job, `error` is the reason Scenario gave, read from the same
+retrieval that observed the failure: its `metadata.error`, then its
+`metadata.hint`, cleaned to one line of at most 400 characters with its support
+error id (`error_...`) kept. It is also never persisted, so a job that failed
+before a restart reports `null`. `list_local_jobs` reads only saved records and
+has no error field; see [failure reasons](BLENDER_JOB_CONTEXT.md#failure-reasons).
 
 `delivery_active` is `true` while this Blender session still advances the job by
 itself: submission, polling, download or an Image lane's automatic import. It is

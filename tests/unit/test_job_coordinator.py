@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
-from scenario.core.jobs import progress
+from scenario.core.jobs import failures, progress
 from scenario.core.jobs.coordinator import (
     JobCoordinator,
     QuoteError,
@@ -414,6 +414,42 @@ def test_active_refresh_yields_progress_without_changing_or_persisting_the_recor
     # The reading stays in memory; no database file holds the response or fraction.
     saved = b"".join(path.read_bytes() for path in tmp_path.glob("jobs.sqlite3*"))
     assert b"0.4217" not in saved and b"in-progress" not in saved
+
+
+def test_failed_refresh_commits_the_state_and_reads_the_reason_without_persisting_it(
+    setup, tmp_path
+):
+    message = "An internal error occurred. Please contact support and provide this id: error_Zx81"
+    hint = "Try a mesh under 30,000 faces."
+
+    def respond(request):
+        return httpx.Response(
+            200,
+            json={
+                "job": {
+                    "jobId": "remote",
+                    "jobType": "custom",
+                    "status": "failure",
+                    "progress": 0.1,
+                    "metadata": {"input": {"modelId": "model"}, "error": message, "hint": hint},
+                }
+            },
+        )
+
+    coordinator, store, prepared, requests, _ = setup(respond)
+    remote = submit(coordinator, prepared)
+    snapshot = coordinator.refresh_remote(
+        remote.intent.request_id, expected_revision=remote.revision
+    )
+    saved = store.get(remote.intent.request_id)
+    assert snapshot.record == saved and saved.state == JobState.FAILED
+    assert (requests[-1].method, requests[-1].url.path) == ("GET", "/v1/jobs/remote")
+    assert failures.observe(snapshot) == failures.RemoteFailure(
+        "remote", saved.revision, f"{message}. {hint}"
+    )
+    # Display only: the database keeps neither the message nor its support id.
+    raw = b"".join(path.read_bytes() for path in tmp_path.glob("jobs.sqlite3*"))
+    assert b"internal error" not in raw and b"error_Zx81" not in raw and b"faces" not in raw
 
 
 def test_prompt_restart_observes_known_id_without_resubmission_or_cancellation(setup, tmp_path):

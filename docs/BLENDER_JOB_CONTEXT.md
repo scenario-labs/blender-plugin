@@ -993,6 +993,36 @@ submissions are unbound. Bindings and readings retire with their owner on a
 credential, project or file change. Lanes are not persisted: restarted and
 recovered jobs are unbound, and MCP reports `lane: null` for them.
 
+### Failure reasons
+
+When a retrieval reports `status: failure`, the coordinator commits the saved
+`failed` state from it, and the same `ModelJobs._observe` hook reads the reason
+Scenario gave. SDK 2.2.0 and the [job retrieval reference](https://docs.scenario.com/api/python/resources/jobs/methods/retrieve)
+document two optional strings in `Job.metadata`: `error` ("Eventual error for
+the job") and `hint` ("Actionable hint for the user explaining what went wrong
+and how to resolve it"). [`failures.observe`](../scenario/core/jobs/failures.py)
+joins them, the hint only when it adds something, into one `RemoteFailure`
+bound to the record's remote job ID and saved revision. It treats the text as
+untrusted: control, format and line characters become spaces; links keep
+scheme, host and path without credentials, query or fragment; a query left on a
+link without a scheme, data URIs, bearer and basic credentials, JSON web tokens
+and values after credential names read `[redacted]` or are removed; and the
+result is cut to 400 characters with an ellipsis. A support error id
+(`error_` followed by letters and digits with a capital or digit) is always
+kept, appended when cutting or link cleaning would lose it, because support
+asks for it. Other statuses, other types and unreadable values give no reason;
+a failed reading drops it and logs only its error type.
+
+Each maintenance poll sets a `failed` view's error to that reason while the
+record keeps the reading's remote ID and revision, else to none: nothing else
+remains to deliver for a failed job. Generations, the composer's job strip and
+job card, **Generation details** and MCP `job_status` all read this view error.
+Like progress, the reason stays in memory: the job database stores no message,
+so a job that failed before a restart shows `failed` without a reason, and
+`list_local_jobs` has no error field. A server-side failure cannot be produced
+on demand, so installed tests send these documented fields through the
+synthetic SDK transport.
+
 ## Waiting workflow steps
 
 `ModelJobs._observe` also projects the waiting approval and selection steps of a

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import bpy
 import test_model_generation
-from helpers import online_access, submodule
+from helpers import drawn_texts, online_access, submodule
 
 
 @dataclass(frozen=True)
@@ -825,6 +825,58 @@ class ComposerJobStripTests(unittest.TestCase):
         self.jobs.deliver_results()
         self.assertEqual(self.jobs.store.get(view.local_id).state.value, "ready")
         self.assertEqual(len(self.jobs.downloads), 1)
+        self.assertEqual(len(self.jobs.paid), 1)
+
+    def test_a_failed_job_names_scenarios_reason_in_the_strip_and_its_card(self):
+        message = (
+            "An internal error occurred. Please contact support and provide this id: "
+            "error_Fx7Kq2Lm9Rt4Vw8Yz3Bc6Dn1"
+        )
+        self.jobs.remote_metadata = {"error": message}
+        view = self.submit_image(progress=0.1, status="failure")
+        self.assertEqual(self.jobs.store.get(view.local_id).state.value, "failed")
+        studio, label_wrap = submodule("blender.studio"), submodule("blender.label_wrap")
+
+        class Owner:
+            request_id = view.local_id
+            layout = MagicMock()
+            _width = 352  # what invoke requested for a narrow area
+
+        owner, widths, declare = Owner(), [], label_wrap.popup_layout
+        self.addCleanup(studio._popups.pop, owner, None)
+
+        def declared(width):
+            widths.append(width)
+            return declare(width)
+
+        with self.read_only(), patch.object(label_wrap, "popup_layout", side_effect=declared):
+            shown = self.drawn()
+            # The real card draw, as Inspect opens it.
+            self.job_card.SCENARIO_OT_composer_job_card.draw(
+                owner, SimpleNamespace(region_popup=None)
+            )
+        # Its wrapped lines measure the width requested for the popup, even before it is sized.
+        self.assertEqual(widths, [352])
+        card = owner.layout
+        job = shown.geometry.job
+        self.assertEqual(job.request_id, view.local_id)
+        self.assertEqual(
+            job.status,
+            submodule("core.ui.job_strip").StripStatus(f"Generation failed: {message}", "error"),
+        )
+        self.assertIn(f"Generation failed: {message}", shown.line)
+        self.assertEqual([chip.key for chip in job.chips], ["inspect"])
+        # Inspect opens the card: its Generations result has the error control and the whole reason.
+        # Wrapping may split a long word, such as the support id, across lines.
+        self.assertIn(
+            "".join(f"Failed: {message}".split()), "".join(drawn_texts(card)).replace(" ", "")
+        )
+        self.assertTrue(
+            any(
+                call.args[:1] == ("scenario.error_details",) and call.kwargs.get("icon") == "ERROR"
+                for call in card.mock_calls
+            )
+        )
         self.assertEqual(len(self.jobs.paid), 1)
 
     def test_offline_jobs_say_so_in_the_strip(self):

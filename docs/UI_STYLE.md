@@ -296,7 +296,7 @@ message tells users to upload the reference, review the price and choose
 form; reset the old prompt/settings/references and invalidate the previous quote.
 Existing jobs and admitted uploads keep their own lifetime and origin guards.
 
-Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. The prompt box carries a trash button that deletes its text, greyed out when empty.
+Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. Below the model row, a failed result also draws `Failed: ` and its whole error in red, the first line with the `ERROR` icon and the next ones aligned after it, wrapped by the width Blender's interface font measures (`label_wrap`, with the preview status lines' inset). For a shared job that error is the [reason Scenario gave](BLENDER_JOB_CONTEXT.md#failure-reasons), cleaned and at most 400 characters with its support error id kept. **Generation details** draws the whole error the same way in a box with **Copy error**; the composer's job card declares its requested popup width, so its first draw wraps like Studio's. Drawing reads only the view's error; the maintenance poll sets it. Installed tests on Blender 5.1.2 macOS arm64 draw a failed shared job's reason through the real Generations panel, **Generation details**, the composer strip and the job card with store reads refused; a desktop screenshot of the wrapped reason remains #66 evidence. The prompt box carries a trash button that deletes its text, greyed out when empty.
 
 ## Jobs status and remote progress
 
@@ -656,8 +656,10 @@ shows its own job or no tray.
   that wait on Scenario add `(offline)`;
   a remote reading that polling is not keeping current adds `(last known)`.
   A paused delivery's own message replaces the status in the review tone, and
-  **Inspect** shows it in full. **+N more** counts the form's other jobs that
-  are not applied, canceled or failed.
+  **Inspect** shows it in full. A failed job keeps the error tone and reads
+  `Generation failed: ` followed by the reason Scenario gave, cut with the line;
+  **Inspect** shows the whole reason. **+N more** counts the form's other jobs
+  that are not applied, canceled or failed.
 - Chips come only from the shared
   [saved-job action descriptors](BLENDER_JOB_CONTEXT.md#active-saved-job-controls):
   **Inspect**, which is never dropped, and at most one primary action before it:

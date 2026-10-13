@@ -9,7 +9,7 @@ existing operator with its own confirmation or destination review."""
 import bpy
 from bpy.props import StringProperty
 
-from .. import panels, runtime, studio
+from .. import label_wrap, panels, runtime, studio
 
 CARD_WIDTH = 440  # requested logical width; bounded by the area, window and UI scale
 MISSING = "This job is no longer shown for this connection"
@@ -60,7 +60,9 @@ class SCENARIO_OT_composer_job_card(bpy.types.Operator):
     def draw(self, context):
         # The pump refreshes this temporary region, so status and progress update while it is open.
         studio.track_popup(self, context.region_popup)
-        draw_job(self.layout, self.request_id)
+        # Blender lays a popup out before sizing it; wrapped lines measure the requested width.
+        with label_wrap.popup_layout(getattr(self, "_width", CARD_WIDTH)):
+            draw_job(self.layout, self.request_id)
 
     def execute(self, context):
         return {"FINISHED"}

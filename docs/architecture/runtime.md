@@ -98,7 +98,9 @@ store raw values without callbacks. A seeded form re-arms its own price in its
 own scene, and a seeded model duration still drives the camera path. A refreshed
 base description that changes a form's LoRA strength range, or any other LoRA
 input its trained choice runs through, such as the declared default strength,
-re-arms that form's price the same way. Removing an
+re-arms that form's price the same way. A base's first description in a session,
+as after reopening a file, has no earlier inputs to compare: a price saved with
+the form stays unless its saved strength range differs. Removing an
 obsolete parameter alone does not re-arm a price. A trained-model project default
 applied automatically to a form without an explicit choice
 ([project selection](#optional-project-selection)) follows the same rule: it

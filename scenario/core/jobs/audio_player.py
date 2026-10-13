@@ -189,7 +189,7 @@ class AudioPlayer:
             try:
                 self._process.kill()
             except OSError:
-                pass
+                pass  # It exited between poll() and kill(); nothing is left to stop.
 
     def _failure(self):
         value = _report(self.directory / "output" / "error.json")
@@ -242,7 +242,7 @@ class AudioPlayer:
             try:
                 self._process.kill()
             except OSError:
-                pass
+                pass  # It exited after the timed wait; the final wait below confirms it.
             try:
                 self._process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:

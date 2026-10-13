@@ -329,8 +329,10 @@ establish live generation or full render-lane desktop acceptance.
   keys. With the Japanese input source selected by the test driver rather than
   by a person, the F2 field received raw romaji, as Blender's own fields did,
   and a composition there took three Esc or Return presses to cancel or apply.
-  Composition with an input source a person selects, candidate-window placement
-  and other platforms' input methods remain unverified under #66.
+  On 2026-10-13 the maintainer composed, committed and cancelled with Esc after
+  F2 with an input source they selected, on the candidate ZIP on macOS Blender
+  5.1.2. Candidate-window placement was not recorded, and other platforms' input
+  methods remain unverified under #66.
 - The composer's [job strip](UI_STYLE.md#compact-job-strip) shows only jobs
   submitted from that scene and form in the current Blender session: jobs from
   before a restart, recovered cloud jobs, workflows and Film tasks are not bound
@@ -355,12 +357,15 @@ establish live generation or full render-lane desktop acceptance.
   animation player at UI scale 1.0, and drew a waveform in the sidebar at UI
   scales 1.0 and 2.0. The last pass's ZIP wrapped the waveform status by
   measured width, before later amendments for Studio's popup width and
-  hyphenated words, and kept the duration with its unit. Play audio, the
+  hyphenated words, and kept the duration with its unit. On 2026-10-13 the
+  maintainer listened to a saved audio result through Play and drew its waveform
+  on the candidate ZIP; Play opens the system's default player, and an
+  in-extension player is
+  [#435](https://github.com/scenario-labs/blender-plugin/issues/435). The
   waveform's Cancel, Retry and close on the desktop, clicking Play at UI scale
-  2.0, Studio at UI scale 2.0, other platforms and human listening have no
-  desktop evidence yet, which remains
-  [#189](https://github.com/scenario-labs/blender-plugin/issues/189), #66 and
-  [#68](https://github.com/scenario-labs/blender-plugin/issues/68) work. Local MCP
+  2.0, Studio at UI scale 2.0 and other platforms have no desktop evidence yet,
+  which remains [#189](https://github.com/scenario-labs/blender-plugin/issues/189)
+  and #66 work. Local MCP
   `inspect_result_previews` reads the same envelope as bounded levels, without
   an image, and no MCP tool launches a player. See the
   [supported limits](USER_GUIDE.md#audio).

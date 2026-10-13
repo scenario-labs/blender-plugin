@@ -8,7 +8,7 @@
     "path": "docs/MAINTAINERS.md",
     "coverage": "policy",
     "reviewed_at": "2026-09-25",
-    "limits": "Scoped repository policy and read-only GitHub settings read-back, with actual state distinguished from pending owner/admin decisions. Public source fingerprints cover the linked local contracts; live API evidence is recorded in the PR and must be read back before an administrative action. No settings, token scopes, grants, visibility, release publication or hosted acceptance were changed or inferred.",
+    "limits": "Scoped repository policy and read-only GitHub settings read-back, with actual state distinguished from pending owner/admin decisions. Public source fingerprints cover the linked local contracts; live API evidence is recorded in the PR and must be read back before an administrative action. No settings, token scopes, grants, visibility, release publication or hosted acceptance were changed or inferred. 2026-10-13 note: the social preview paragraph and the #19 admin item now record the uploaded card, read back through GraphQL (usesCustomOpenGraphImage true, image URL on repository-images.githubusercontent.com), the repository page's og:image, and a byte comparison of the served image with docs/images/social-preview.png. A rendered shared-link preview in another application was not checked and stays an open recheck once link caches refresh; #19 is closed.",
     "sources": {
       ".github/CODEOWNERS": "6195d5d3ae33bda4050af6370b0231928507d52952ad5bd31f04f1a0a739bdc8",
       ".github/dependabot.yml": "2d1ef5df890197205268c05d1fe1f54943f0b1d6984a2f7eb064f364c2c438d2",

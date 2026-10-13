@@ -42,7 +42,7 @@ repository ref patterns.
 | --- | --- | --- | --- |
 | main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
 | main - review | `22257776`; branch `refs/heads/main` | Pull request with squash only; one approval, dismiss stale reviews, resolve review threads, extra approval for unattributed changes. | `RepositoryRole` `5` (repository admin), `always` |
-| versioning | `22257778`; tags `refs/tags/v*` and `refs/tags/blender-plugin-v*` | Restrict creation, updates, deletion and non-fast-forward updates. | Repository admin `5` and release App integration `4751046`, both `always` |
+| versioning | `22257778`; tags `refs/tags/v*` and `refs/tags/blender-plugin-v*` | Restrict creation, updates, deletion and non-fast-forward updates. | Release App integration `4751046`, `always`. The repository-admin bypass was removed on 2026-10-13 after 0.10.0 was published (#36). |
 | Default security | `3247630`; inherited organization repository policy | Restrict repository creation, deletion and transfer. | `OrganizationAdmin`, `always` |
 
 Both branch pull-request rules have code-owner approval and last-push approval
@@ -121,7 +121,7 @@ gh api repos/scenario-labs/blender-plugin --jq '{allow_squash_merge,allow_merge_
 | Actions | Enabled; allowed actions `all`, SHA pinning not required administratively |
 | Default workflow token | `read`; cannot approve pull requests |
 | Fork PR workflow approval | `all_external_contributors` |
-| Immutable releases | Disabled, not enforced by the owner; first-release verification remains #36 |
+| Immutable releases | Enabled on 2026-10-13 after 0.10.0 was published and verified (#36); not enforced by the owner. 0.10.0 predates the setting and is not itself immutable. |
 
 [Dependabot](../.github/dependabot.yml) currently updates GitHub Actions weekly.
 The extension also has pinned Python/SDK dependencies and bundled wheels; the
@@ -171,19 +171,20 @@ Pages is configured with build type `workflow`, custom domain `blender.scenario.
 and enforced HTTPS. The handbook at `https://blender.scenario.com/` serves the
 installation, update and support guidance; the repository homepage and
 [extension manifest](../scenario/blender_manifest.toml) Website link point there.
-This handbook publication does not establish native repository availability:
-`/repo/index.json` remains intentionally absent until a verified adopted release
-is published under #36/#37. The Pages API's `status: null` is not a content check;
-verify the live response and page before changing these links again.
+The native repository at `/repo/index.json` has listed the published releases
+since 0.10.0 on 2026-10-13; check the live index after each release. The Pages
+API's `status: null` is not a content check; verify the live response and page
+before changing these links again.
 
 The description is:
 
 > Scenario for Blender: AI images, video, 3D and PBR materials in the viewport, plus a local MCP server for agents. Blender 5.0+ extension, GPL-3.0-or-later.
 
-The repository currently has no custom social preview: `usesCustomOpenGraphImage`
-is `false`, and its image URL uses `opengraph.githubassets.com`. The replacement
-card is pending under #19. After its reviewed source lands, regenerate it with
-`uv run --locked --no-env-file python tools/make_social_preview.py` and upload
+The repository has a custom social preview since 2026-10-13: `usesCustomOpenGraphImage`
+is `true`, its image URL uses `repository-images.githubusercontent.com`, the
+repository page's `og:image` points there, and the served image is byte-identical
+to the committed `docs/images/social-preview.png`. To change the card, regenerate
+it with `uv run --locked --no-env-file python tools/make_social_preview.py` and upload
 `docs/images/social-preview.png` by hand through Settings > General > Social
 preview > Edit > Upload an image. Use the merged artifact, and re-upload after
 any approved card change. Confirm `usesCustomOpenGraphImage` is `true`, the image
@@ -211,8 +212,8 @@ for specific release, automation, licence and security paths; it grants no acces
 and required code-owner approval remains off. Review the direct-collaborator
 policy separately under #21 without publishing personal access records.
 
-Repository admins can bypass the review ruleset, and admins plus the release
-App can bypass versioning. Nothing bypasses main integrity. A collaborator's
+Repository admins can bypass the review ruleset, and only the release App can
+bypass versioning since 2026-10-13. Nothing bypasses main integrity. A collaborator's
 write permission does not permit a direct update to protected `main`.
 Administrative API access depends on the caller's repository/organization role
 and token permissions. A permission error is not evidence that a feature is
@@ -341,17 +342,19 @@ to perform it.
 
 - [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Scheduled runs use the committed monthly plan with a fixed 40 CU cap. Reference-upload acceptance, the first approved monthly run and any provider-side budget remain separate.
 - [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
-- [ ] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36.
+- [x] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36. Done on 2026-10-13 after 0.10.0 was published and its downloads verified, and read back: the tag ruleset keeps both patterns and its four rules with the release App as its only bypass actor, and immutable releases are enabled.
 - [ ] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39.
-- [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. Native update publication remains #37.
-- [ ] Upload the reviewed, merged social-preview card and verify its custom-image flag, URL and rendered shared-link preview: #19.
+- [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. The native repository has served releases since 0.10.0.
+- [x] Upload the reviewed, merged social-preview card and verify its custom-image flag and URL: #19. Uploaded on 2026-10-13 and read back: the flag is `true`, the URL is on `repository-images.githubusercontent.com` and the image matches the committed card byte for byte.
+- [ ] Recheck the rendered shared-link preview of the repository in an application that unfurls links once its link cache refreshes. A Slack unfurl right after the 2026-10-13 upload still showed the previous card. #19 is closed with the GitHub-side evidence above.
 - [ ] Decide the platform team's maintain/admin grant and confirm required code-owner review and direct-write policy: #20 / #21.
 - [ ] Decide project visibility; finish the requested views, Auto-archive and built-in workflow targets through the project UI: #20.
 
 Release-App setup belongs to completed #35: the current workflow references its
 organization-provided client ID/private-key secrets, and the tag ruleset includes
 the App bypass. Do not re-install or replace credentials as a routine release
-step. Secret availability and publication success still require the release
-acceptance in #36; this guide does not reveal secret values or claim a release
-has been published. Wiki-off is verified. Remaining #20 acceptance is the access
-and project decision work above, plus review of this baseline.
+step. The 0.10.0 release on 2026-10-13 exercised these secrets and the publication
+flow; see its [publication record](maintenance/release-acceptance.md#publication).
+This guide does not reveal secret values. Wiki-off is verified. Remaining #20
+acceptance is the access and project decision work above, plus review of this
+baseline.

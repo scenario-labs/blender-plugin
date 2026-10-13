@@ -186,6 +186,11 @@ class WorldApplication:
     _snapshot: object = field(repr=False)
     _restored: bool = field(default=False, repr=False)
 
+    @property
+    def restored(self):
+        """Whether restore() put the previous World back, even if its cleanup then failed."""
+        return self._restored
+
     def restore(self):
         _main_thread()
         if self._restored:

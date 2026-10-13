@@ -15,6 +15,7 @@ before it stay current.
 
 import logging
 import threading
+from contextlib import contextmanager
 
 import bpy
 from bpy.app.handlers import persistent
@@ -88,6 +89,27 @@ def mark_modified(message):
         return False
     _pending = None
     return _push(message)
+
+
+@contextmanager
+def marking(message, read):
+    """Mark the file modified when ``read()`` differs after the block, even if it raised.
+
+    ``read`` returns a comparable reading of the data the block may change. A
+    refusal before any change leaves it equal and the file unmarked; a partial
+    change before a failure still marks it. Data that can no longer be read
+    counts as changed.
+    """
+    before = read()
+    try:
+        yield
+    finally:
+        try:
+            changed = read() != before
+        except Exception:
+            changed = True
+        if changed:
+            mark_modified(message)
 
 
 def flush():

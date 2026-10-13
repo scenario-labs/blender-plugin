@@ -461,13 +461,18 @@ Blender asks to save before quitting only when the open file is marked modified,
 and only an Undo History step marks it. A tool that changes the file records one
 step once its change is complete: `select_objects`, `set_frame`, `camera_path`,
 `execute_python`, `film_recipe` (`load` and `new_production`), `render_form`
-(`configure`, `remove` and `prepare`), `apply_blockout_plan` and the three Film
-`build_*` tools when they report `BUILT` or `UNCERTAIN`. World restoration through
-`apply_result_application` is marked at once. Results, plans, prompts and uploads
-that maintenance delivers later, such as automatically imported Image results,
-are marked when they land. Reading tools, quotes, catalog loads and saved-job
-inspection leave the file unmarked, and the step changes no data, so estimates
-and approvals stay current. No tool saves the file: ask the user to save it. See
+(`configure`, `remove` and `prepare`), `apply_blockout_plan`, the three Film
+`build_*` tools and World restoration through `apply_result_application`. Results,
+plans, prompts and uploads that maintenance delivers later, such as automatically
+imported Image results, are marked when they land.
+
+Only an actual change is marked. A call refused before changing anything, such as
+invalid arguments, a refused recipe or a refused build, leaves the file unmarked,
+and so do an unchanged selection or frame, a reload of the same recipe and a build
+that built nothing. A call that fails after changing part of the scene still marks
+it. Reading tools, quotes, catalog loads, project defaults and saved-job inspection
+leave the file unmarked, and the step changes no data, so estimates and approvals
+stay current. No tool saves the file: ask the user to save it. See
 [marking the file modified](architecture/blender.md#marking-the-file-modified).
 
 ## Security model

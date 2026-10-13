@@ -2022,9 +2022,11 @@ class ModelJobs:
             self.session.validate_destination(ticket.destination, frame=ticket.frame)
         request_id = record.intent.request_id
         if is_world and ticket.restore:
-            if self._world_application(request_id, ticket.destination).restore():
-                # Neither the native nor the agent restoration runs inside an Undo operator.
-                file_state.mark_modified("Scenario World restore")
+            application = self._world_application(request_id, ticket.destination)
+            # Neither the native nor the agent restoration runs inside an Undo
+            # operator. A refusal restores nothing and leaves the file clean.
+            with file_state.marking("Scenario World restore", lambda: application.restored):
+                application.restore()
             worlds = self._worlds[request_id]
             del worlds[ticket.destination.scene_id]
             if not worlds:

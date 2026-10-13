@@ -352,17 +352,7 @@ def _generation_input(args, lane):
 def render_form(args):
     from ..blender import render_commands
 
-    action = args.get("action", "inspect")
-    try:
-        result = render_commands.execute(bpy.context, args)
-    except Exception:
-        if action == "prepare":
-            # A refused upload can keep its new, marked reference slot.
-            file_state.mark_modified("Scenario render form")
-        raise
-    if action != "inspect":
-        file_state.mark_modified("Scenario render form")
-    return result
+    return render_commands.execute(bpy.context, args)
 
 
 DEFAULT_ACTIONS = ("get", "set", "clear")
@@ -905,17 +895,18 @@ def film_recipe(args):
             **inspection,
             "warnings": recipe_warnings(raw),
         }
-    if action == "load":
-        raw = args["recipe"]
-        plan = film_jobs.load_recipe(scene, raw)
-    elif action == "new_production":
-        import uuid
+    # Validation refuses before any change; a reload of the same recipe changes nothing.
+    with file_state.marking("Scenario Film recipe", lambda: _film_fields(scene)):
+        if action == "load":
+            raw = args["recipe"]
+            plan = film_jobs.load_recipe(scene, raw)
+        elif action == "new_production":
+            import uuid
 
-        raw, plan = film_jobs.recipe(scene)
-        scene.scenario_film.production_id = uuid.uuid4().hex
-    else:
-        raise ValueError("Choose inspect, load or new_production")
-    file_state.mark_modified("Scenario Film recipe")
+            raw, plan = film_jobs.recipe(scene)
+            scene.scenario_film.production_id = uuid.uuid4().hex
+        else:
+            raise ValueError("Choose inspect, load or new_production")
     return {
         "production_id": scene.scenario_film.production_id,
         "title": plan["title"],
@@ -925,12 +916,31 @@ def film_recipe(args):
     }
 
 
-def _built(status, message):
-    """Mark the file modified once a Film build changed scene data, or may have."""
-    # The native build operators declare Undo; agents' builds are marked here.
-    if status.get("phase") in {"BUILT", "UNCERTAIN"}:
-        file_state.mark_modified(message)
-    return status
+def _film_fields(scene):
+    """The recipe fields film_recipe can change, for its file-modified mark."""
+    film = scene.scenario_film
+    return (
+        film.recipe_json,
+        film.production_id,
+        film.title,
+        film.shot_index,
+        film.task_index,
+        tuple((row.name, row.title) for row in film.shots),
+        tuple((row.name, row.title, row.kind, row.model_id) for row in film.tasks),
+    )
+
+
+def _built(build, message):
+    """Run one Film build and mark the file modified when it added or left data.
+
+    The native build operators declare Undo; agents' builds are marked here. A
+    refused or rolled-back build, or an uncertain one that built nothing, leaves
+    the file unmarked.
+    """
+    from ..blender import film_scene
+
+    with file_state.marking(message, film_scene._snapshot):
+        return build()
 
 
 def _film_owner(args):
@@ -1033,10 +1043,8 @@ def film_shot_review(args):
 
 
 def build_film_shot(args):
-    return _built(
-        runtime.ensure_film_jobs().session.film_shots.approve(args["review_id"]),
-        "Scenario Film shot",
-    )
+    commands = runtime.ensure_film_jobs().session.film_shots
+    return _built(lambda: commands.approve(args["review_id"]), "Scenario Film shot")
 
 
 def film_timeline_sources(args):
@@ -1065,10 +1073,8 @@ def film_timeline_review(args):
 
 
 def build_film_timeline(args):
-    return _built(
-        runtime.ensure_film_jobs().session.film_timeline.approve(args["review_id"]),
-        "Scenario Film timeline",
-    )
+    commands = runtime.ensure_film_jobs().session.film_timeline
+    return _built(lambda: commands.approve(args["review_id"]), "Scenario Film timeline")
 
 
 def prepare_film_composition(args):
@@ -1152,10 +1158,8 @@ def film_review_status(args):
 
 
 def build_film_review(args):
-    return _built(
-        runtime.ensure_film_jobs().session.film_review.approve(args["review_id"]),
-        "Scenario Film review",
-    )
+    commands = runtime.ensure_film_jobs().session.film_review
+    return _built(lambda: commands.approve(args["review_id"]), "Scenario Film review")
 
 
 def _output_folder():

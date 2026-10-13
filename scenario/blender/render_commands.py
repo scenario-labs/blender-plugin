@@ -13,6 +13,7 @@ from ..core.api.catalog import RENDER_LANES
 from ..core.api.errors import ScenarioError
 from ..core.schema.params import validate
 from . import (
+    file_state,
     first_frame_handoff,
     generation,
     params_ui,
@@ -26,6 +27,8 @@ from . import (
 )
 
 log = logging.getLogger("scenario.render_commands")
+# Local MCP edits of the saved form record this Undo step; refusals record none.
+MARK = "Scenario render form"
 _FIELDS = {
     "look": ("prompt", str),
     "capture_source": ("capture_source", str),
@@ -293,33 +296,39 @@ def configure(scene, lane, changes):
             limit = 1 if style_spec.ptype == "file" else style_spec.max_length
             if limit and occupied + len(styles) > limit:
                 raise ValueError("Not enough space for these styles and the render snapshot")
-    if "model_id" in changes:
-        # Naming a model is an explicit choice, even the one already shown: a project
-        # default no longer replaces it (a model change below records it as well).
-        state.model_key = model_id
-    if state.model_id != model_id:
-        state.model_id = model_id
-    if "duration" in params_ui.sync_params(state, schema, model_id):
-        generation.sync_shot_duration(scene)  # a seeded value skips its RNA callback
-    for name, (prop, _) in _FIELDS.items():
-        if name in changes:
-            setattr(state, prop, changes[name])
-    for name, (prop, value) in edits.items():
-        item = state.params[name]
-        setattr(item, prop, value)
-        if prop != "enabled":
-            item.enabled = True
-    if styles is not None:
-        for index in reversed(old_style_indices):
-            state.references.remove(index)
-        for asset in styles:
-            ref = state.references.add()
-            ref.param_name, ref.source, ref.asset_id = style_spec.name, "ASSET", asset
-    if trained is not None:
-        # Replaces the whole trained choice, as an explicit choice the default no longer replaces.
-        state.model_key = model_id
-        trained_models.replace_choice(state, lane, trained)
-    props.mark_estimate_dirty(state)
+    # Preflight ended: from here every step edits the form, so a failure part-way marks it too.
+    try:
+        if "model_id" in changes:
+            # Naming a model is an explicit choice, even the one already shown: a project
+            # default no longer replaces it (a model change below records it as well).
+            state.model_key = model_id
+        if state.model_id != model_id:
+            state.model_id = model_id
+        if "duration" in params_ui.sync_params(state, schema, model_id):
+            generation.sync_shot_duration(scene)  # a seeded value skips its RNA callback
+        for name, (prop, _) in _FIELDS.items():
+            if name in changes:
+                setattr(state, prop, changes[name])
+        for name, (prop, value) in edits.items():
+            item = state.params[name]
+            setattr(item, prop, value)
+            if prop != "enabled":
+                item.enabled = True
+        if styles is not None:
+            for index in reversed(old_style_indices):
+                state.references.remove(index)
+            for asset in styles:
+                ref = state.references.add()
+                ref.param_name, ref.source, ref.asset_id = style_spec.name, "ASSET", asset
+        if trained is not None:
+            # Replaces the whole trained choice, as an explicit choice the default no longer
+            # replaces.
+            state.model_key = model_id
+            trained_models.replace_choice(state, lane, trained)
+        props.mark_estimate_dirty(state)
+    finally:
+        if changes:  # No settings only seeds the form, which stays unmarked.
+            file_state.mark_modified(MARK)
     return inspect(scene, lane)
 
 
@@ -329,6 +338,7 @@ def remove(scene, lane, key):
         if isinstance(key, str) and _reference_key(scene, lane, ref) == key:
             state.references.remove(index)
             props.mark_estimate_dirty(state)
+            file_state.mark_modified(MARK)
             return inspect(scene, lane)
     raise ValueError("The reference changed; inspect render_form before removing it")
 
@@ -346,7 +356,11 @@ def execute(context, args):
         role = args.get("role")
         if role not in {render_references.SCENE, render_references.FIRST_FRAME}:
             raise ValueError("Choose the scene or first_frame role")
-        render_references.prepare(context, lane, role)
+        references = lane_state(context.scene, lane).references
+        # A refusal adds no slot. A failed upload start removes its slot, unless the
+        # upload was admitted or is uncertain: that marked slot stays and marks the file.
+        with file_state.marking(MARK, lambda: len(references)):
+            render_references.prepare(context, lane, role)
     elif action != "inspect":
         raise ValueError("Choose inspect, configure, prepare or remove")
     return inspect(context.scene, lane)

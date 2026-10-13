@@ -76,9 +76,11 @@ def _changed(message, *, recorded=False):
     """Mark the file modified once an application changed scene data, or may have.
 
     Results arrive from the maintenance pump or a local MCP call, outside any
-    operator that records Undo. Saved models and mesh edits record their own
-    desktop Undo checkpoints when Blender allows it (``recorded``); a second step
-    would make the next Undo appear to do nothing.
+    operator that records Undo. A refusal whose rollback was verified marks
+    nothing; an uncertain outcome, which may leave data behind, is marked.
+    Saved models and mesh edits record their own desktop Undo checkpoints when
+    Blender allows it (``recorded``); a second step would make the next Undo
+    appear to do nothing.
     """
     if not recorded:
         file_state.mark_modified(message)
@@ -1404,7 +1406,8 @@ class JobSession:
                 raise ImageResultUncertain() from None
             raise
         except Exception:
-            _changed("Scenario image import")
+            if set(bpy.data.images) != before:
+                _changed("Scenario image import")
             raise ImageResultUncertain() from None
         _changed("Scenario image import")
         try:
@@ -1754,21 +1757,24 @@ class JobSession:
             if destination is None
             else self._claim_saved_application(verified, destination, "world", (asset_id,))
         )
-        try:
-            application = apply_world(
-                scene, path, expected_receipt=item.receipt, media_type=item.asset.media_type
-            )
-        except (WorldApplicationError, PanoramaError):
+
+        def unchanged():
             try:
-                restored = (
+                return (
                     scene in tuple(bpy.data.scenes)
                     and scene.world == previous
                     and set(bpy.data.worlds) == worlds
                     and set(bpy.data.images) == images
                 )
             except Exception:
-                restored = False
-            if not restored:
+                return False
+
+        try:
+            application = apply_world(
+                scene, path, expected_receipt=item.receipt, media_type=item.asset.media_type
+            )
+        except (WorldApplicationError, PanoramaError):
+            if not unchanged():
                 _changed("Scenario World")
                 raise WorldResultUncertain() from None
             try:
@@ -1777,7 +1783,8 @@ class JobSession:
                 raise WorldResultUncertain() from None
             raise
         except Exception:
-            _changed("Scenario World")
+            if not unchanged():
+                _changed("Scenario World")
             raise WorldResultUncertain() from None
         _changed("Scenario World")
         try:

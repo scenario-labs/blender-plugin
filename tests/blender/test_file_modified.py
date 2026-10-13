@@ -9,8 +9,10 @@ records Undo. Each test starts from a freshly read, unmarked file where it can
 and checks that the change marks it through the shared ``file_state`` helper,
 with the expected Undo History message.
 
-Catalog seeding, quotes and estimate state deliberately leave the file
-unmarked: they would otherwise flag every opened file as modified.
+Catalog seeding, project defaults, quotes and estimate state deliberately leave
+the file unmarked: they would otherwise flag every opened file as modified. A
+call refused before any change leaves it unmarked too, while a failure after a
+partial change still marks it.
 
 Blender 5.0 reports every background file as modified, even right after reading
 it. There the tests check the recorded marks and pushes; from 5.1 they also see
@@ -33,6 +35,7 @@ import test_model_generation as model_tests
 import test_prompt_tools as prompt_tests
 import test_reference_form as reference_tests
 import test_render_lanes as render_tests
+import test_trained_section as section_tests
 import test_workflow_controls as workflow_tests
 import test_workflow_uploads as upload_tests
 from helpers import assert_unmarked, file_marks, reset_scene, submodule
@@ -211,9 +214,44 @@ class SceneToolTests(unittest.TestCase):
         self.assertEqual(marks, ["Scenario camera path"])
         self.assertTrue(bpy.data.is_dirty)
 
-    def test_a_refused_waypoint_still_marks_the_cleared_path(self):
+    def test_refused_arguments_leave_the_file_clean(self):
+        planner = submodule("blender.shot_planner")
+        for args in (
+            {"duration": "bad"},
+            {"focal": "wide"},
+            {"preset": "nowhere"},
+            {"waypoints": [{"position": [1, 2]}]},
+            {"waypoints": [{"position": [1, 2, 3], "rotation_euler": ["up", 0, 0]}]},
+            {"waypoints": [{"position": [1, 2, 3], "hold": "long"}]},
+        ):
+            with self.subTest(args=args), file_marks(self) as marks:
+                with self.assertRaises(ValueError):
+                    self.tools.camera_path(args)
+                self.assertEqual(marks, [])
         with file_marks(self) as marks, self.assertRaises(ValueError):
-            self.tools.camera_path({"waypoints": [{"position": [1, 2]}]})
+            self.tools.set_frame({"frame": "later"})
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+        self.assertIsNone(bpy.context.scene.camera)
+        self.assertEqual(planner.marker_objects(bpy.context.scene), [])
+
+    def test_an_unchanged_selection_or_frame_leaves_the_file_clean(self):
+        with file_marks(self) as marks:
+            self.tools.select_objects({"names": []})  # Nothing was selected.
+            self.tools.set_frame({"frame": bpy.context.scene.frame_current})
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+
+    def test_a_failure_after_the_path_changed_still_marks_it(self):
+        planner = submodule("blender.shot_planner")
+        waypoints = [{"position": [6, 0, 2]}, {"position": [0, 6, 2]}]
+        with (
+            patch.object(planner, "build_path", side_effect=RuntimeError("fixture failure")),
+            file_marks(self) as marks,
+            self.assertRaises(RuntimeError),
+        ):
+            self.tools.camera_path({"waypoints": waypoints})
+        self.assertEqual(len(planner.marker_objects(bpy.context.scene)), 2)
         self.assertEqual(marks, ["Scenario camera path"])
         self.assertTrue(bpy.data.is_dirty)
 
@@ -322,6 +360,18 @@ class ResultTests(fixture(model_tests.ModelGenerationTests)):
         self.assertEqual(bpy.context.scene.world, previous)
         self.assertEqual(marks, ["Scenario World restore"])
 
+    def test_a_refused_world_restoration_leaves_the_file_clean(self):
+        request_id = self.recovered_panorama()
+        self.finish_application(self.prepare_world(request_id))
+        restore = self.prepare_world(request_id, restore=True)
+        changed = bpy.data.worlds.new("Changed after application")
+        bpy.context.scene.world = changed  # Restoration refuses a World changed since.
+        refused = (submodule("blender.world_application").WorldApplicationError, self.request_error)
+        with file_marks(self, clean=False) as marks, self.assertRaises(refused):
+            self.tools.apply_result_application(self.import_args(restore))
+        self.assertEqual(bpy.context.scene.world, changed)
+        self.assertEqual(marks, [])
+
     def test_saved_material_marks_the_file(self):
         request_id = self.recovered_material()
         with file_marks(self) as marks:
@@ -359,8 +409,47 @@ class ResultTests(fixture(model_tests.ModelGenerationTests)):
         self.assertEqual(marks, ["Scenario Film recipe"])
         self.assertTrue(bpy.data.is_dirty)
         with file_marks(self, clean=False) as marks:
+            self.tools.film_recipe({"action": "load", "recipe": recipe})  # The same recipe.
+            self.assertEqual(marks, [])
             self.tools.film_recipe({"action": "new_production"})
         self.assertEqual(marks, ["Scenario Film recipe"])
+
+    def test_refused_film_recipes_leave_the_file_clean(self):
+        with file_marks(self) as marks:
+            with self.assertRaises(ValueError):
+                self.tools.film_recipe({"action": "load", "recipe": {"title": "No shots"}})
+            with self.assertRaises(ValueError):
+                self.tools.film_recipe({"action": "new_production"})  # No recipe yet.
+            with self.assertRaises(ValueError):
+                self.tools.film_recipe({"action": "rename"})
+        self.assertEqual(bpy.context.scene.scenario_film.recipe_json, "")
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+
+    def test_a_recipe_load_that_fails_part_way_marks_the_file(self):
+        film = submodule("blender.film_jobs")
+        recipe = {
+            "title": "Interrupted recipe",
+            "shots": [
+                {
+                    "id": "shot",
+                    "title": "Shot",
+                    "duration": 4,
+                    "scene": submodule("core.scene.film_scene_plan").local_plan("studio", "", 4),
+                }
+            ],
+            "tasks": [{"id": "source", "title": "Reference", "kind": "upload"}],
+        }
+        # The recipe text is stored before a new production gets its identity.
+        with (
+            patch.object(film.uuid, "uuid4", side_effect=RuntimeError("fixture failure")),
+            file_marks(self) as marks,
+            self.assertRaises(RuntimeError),
+        ):
+            self.tools.film_recipe({"action": "load", "recipe": recipe})
+        self.assertTrue(bpy.context.scene.scenario_film.recipe_json)
+        self.assertEqual(marks, ["Scenario Film recipe"])
+        self.assertTrue(bpy.data.is_dirty)
 
     def test_native_film_recipe_operators_record_undo(self):
         film = submodule("blender.film")
@@ -374,6 +463,20 @@ class ResultTests(fixture(model_tests.ModelGenerationTests)):
             )
         self.assertEqual(marks, [])
         self.assertTrue(bpy.data.is_dirty)
+
+
+class ProjectDefaultTests(fixture(section_tests.TrainedSectionTests)):
+    def test_a_form_taking_its_project_default_leaves_the_file_unmarked(self):
+        self.choose_stack()
+        self.defaults.load()
+        self.save_default()
+        self.release(self.lane)
+        with file_marks(self) as marks:
+            self.assertTrue(self.defaults.apply_pending())
+        trained = [slot.model_id for slot in self.lane.trained]
+        self.assertEqual(trained, [section_tests.STUDIO_LORA, section_tests.LORA_A])
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
 
 
 class FirstFrameTests(fixture(frame_tests.FirstFrameHandoffTests)):
@@ -421,6 +524,34 @@ class FilmReviewTests(fixture(review_tests.FilmReviewControlTests)):
         self.assertEqual(marks, [])
         assert_unmarked(self)
 
+    def test_a_rolled_back_build_leaves_the_file_unmarked(self):
+        identifier = self.ready()
+        with (
+            patch.object(self.builder, "_sound", side_effect=ValueError("decode fixture failure")),
+            file_marks(self) as marks,
+        ):
+            status = self.tools.build_film_review({"review_id": identifier})
+        self.assertEqual(status["phase"], "ERROR", status)
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+
+    def test_an_uncertain_build_that_kept_its_scene_marks_the_file(self):
+        identifier = self.ready()
+        original = self.store.transition
+
+        def lose(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise OSError("lost receipt acknowledgement")
+            return result
+
+        with patch.object(self.store, "transition", side_effect=lose), file_marks(self) as marks:
+            status = self.tools.build_film_review({"review_id": identifier})
+        self.assertEqual(status["phase"], "UNCERTAIN", status)
+        self.assertTrue(status["review_scene"])
+        self.assertEqual(marks, ["Scenario Film review"])
+        self.assertTrue(bpy.data.is_dirty)
+
 
 class FilmShotTests(fixture(shot_tests.FilmShotControlTests)):
     def setUp(self):
@@ -435,6 +566,20 @@ class FilmShotTests(fixture(shot_tests.FilmShotControlTests)):
         self.assertEqual(status["phase"], "BUILT", status)
         self.assertEqual(marks, ["Scenario Film shot"])
         self.assertTrue(bpy.data.is_dirty)
+
+    def test_an_uncertain_build_that_built_nothing_leaves_the_file_unmarked(self):
+        identifier = self.mcp_prepare()
+        self.assertEqual(self.settle(identifier)["phase"], "READY")
+        with (
+            patch.object(
+                self.session, "_claim_saved_application", side_effect=OSError("Before write")
+            ),
+            file_marks(self) as marks,
+        ):
+            status = self.tools.build_film_shot({"review_id": identifier})
+        self.assertEqual(status["phase"], "UNCERTAIN", status)
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
 
 
 class FilmTimelineTests(fixture(timeline_tests.FilmTimelineControlTests)):
@@ -500,6 +645,57 @@ class RenderFormTests(fixture(render_tests.RenderLanesTests)):
         self.assertEqual(marks, ["Scenario render form"])
         self.assertTrue(bpy.data.is_dirty)
 
+    def test_refused_or_empty_form_edits_leave_the_file_clean(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        form = submodule("blender.reference_form")
+        with file_marks(self) as marks:
+            self.form("configure", settings={})
+            with self.assertRaises(ValueError):
+                self.form("remove", reference_key="missing")
+            with self.assertRaises(ValueError):
+                self.form("prepare", role="sky")
+            # A failed upload start that marked nothing removes its new slot again.
+            with (
+                patch.object(form, "start", side_effect=RuntimeError("fixture refusal")),
+                self.assertRaises(RuntimeError),
+            ):
+                self.form("prepare", role="scene")
+        self.assertEqual(len(self.image_lane.references), 0)
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+
+    def test_an_upload_start_that_kept_its_marked_slot_marks_the_file(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        form = submodule("blender.reference_form")
+
+        def admitted_then_lost(context, index, lane_name):
+            lane = context.scene.scenario.lane_state(lane_name)
+            lane.references[index][form._MARKER] = "fixture-upload"
+            raise RuntimeError("fixture uncertain admission")
+
+        with (
+            patch.object(form, "start", side_effect=admitted_then_lost),
+            file_marks(self) as marks,
+            self.assertRaises(RuntimeError),
+        ):
+            self.form("prepare", role="scene")
+        self.assertEqual(len(self.image_lane.references), 1)
+        self.assertEqual(marks, ["Scenario render form"])
+        self.assertTrue(bpy.data.is_dirty)
+
+    def test_a_configure_that_fails_part_way_marks_the_file(self):
+        self.image_lane.model_id = "model_google-gemini-3-1-flash"
+        params = submodule("blender.params_ui")
+        with (
+            patch.object(params, "sync_params", side_effect=RuntimeError("fixture failure")),
+            file_marks(self) as marks,
+            self.assertRaises(RuntimeError),
+        ):
+            self.form("configure", settings={"model_id": "model_openai-gpt-image-2"})
+        self.assertEqual(self.image_lane.model_key, "model_openai-gpt-image-2")
+        self.assertEqual(marks, ["Scenario render form"])
+        self.assertTrue(bpy.data.is_dirty)
+
 
 class ReferenceUploadTests(fixture(reference_tests.ReferenceFormTests)):
     def setUp(self):
@@ -522,6 +718,34 @@ class WorkflowTests(fixture(workflow_tests.WorkflowControlTests)):
         self.assertEqual(self.form.title, "Fixture workflow")
         self.assertEqual(marks, ["Scenario workflow form"])
         self.assertTrue(bpy.data.is_dirty)
+
+    def test_a_refused_workflow_schema_leaves_the_file_clean(self):
+        self.form.workflow_id = "fixture-workflow"
+        refusal = ValueError("This workflow has too many inputs for the native form")
+        with patch.object(self.ui, "fields_for", side_effect=refusal), file_marks(self) as marks:
+            view = self.wait(self.owner.start(self.scene, "load"))
+        self.assertTrue(view.error)
+        self.assertEqual(len(self.form.inputs), 0)
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+
+    def test_a_workflow_form_load_that_fails_part_way_marks_the_file(self):
+        self.load()
+        self.assertTrue(self.form.inputs)
+
+        def interrupted(form, record):
+            form.inputs.clear()
+            raise RuntimeError("fixture failure after clearing the inputs")
+
+        self.form.workflow_id = "fixture-workflow"
+        with (
+            patch.object(self.ui, "load_form", side_effect=interrupted),
+            file_marks(self, clean=False) as marks,
+        ):
+            view = self.wait(self.owner.start(self.scene, "load"))
+        self.assertTrue(view.error)
+        self.assertEqual(len(self.form.inputs), 0)
+        self.assertEqual(marks, ["Scenario workflow form"])
 
 
 class WorkflowUploadTests(fixture(upload_tests.WorkflowUploadTests)):

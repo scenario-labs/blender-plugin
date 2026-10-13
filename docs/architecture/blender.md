@@ -52,6 +52,12 @@ context has none. A saved model, mesh edit or first frame whose own desktop
 checkpoints were recorded is not marked again. Never mark from an operator that
 declares Undo, which would record a second identical step, or while drawing.
 
+Mark only an actual change. Validate before the first write, or compare a reading
+of the data a command may change before and after it with `file_state.marking`.
+A refusal before any change then leaves the file unmarked, and a failure after a
+partial change still marks it. An application whose outcome is uncertain is
+marked, because data may remain; one whose rollback was verified is not.
+
 No Python API sets `is_dirty` directly. Blender's `ED_undo_push` tags the file
 modified before it records a step, even when Global Undo is off or no steps are
 kept, so a push is the only route. A sculpt, paint or paint-curve stroke holds
@@ -63,8 +69,8 @@ Blender's undo stack.
 The push tags no data-block and runs no dependency-graph, undo or redo handler,
 so origins, quotes and approvals captured before it stay current; an installed
 test checks a session origin across a mark. Catalog seeding, restored model
-choices, estimate state and upload progress links stay unmarked: marking them
-would flag every opened file as modified (see
+choices, project defaults, estimate state and upload progress links stay
+unmarked: marking them would flag every opened file as modified (see
 [catalog delivery](runtime.md#active-sdk-catalog)). Local MCP has no save tool,
 and nothing saves the file for the user. Blender 5.0 reports every background
 file as modified, even right after reading it; from 5.1 a file read in the

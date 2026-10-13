@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Native workflow forms over the shared session, quotes and durable jobs."""
 
+import functools
 import json
 import textwrap
 from dataclasses import dataclass
@@ -302,9 +303,12 @@ class WorkflowControls:
                             raise ValueError("Inputs changed")
                         if view.ticket is not None and not view.ticket.used:
                             self.jobs.discard_workflow_quote(view.ticket.identifier)
-                        load_form(view.scene.scenario_workflow, result)
-                        # Delivered by maintenance, after the load operator has returned.
-                        file_state.mark_modified("Scenario workflow form")
+                        form = view.scene.scenario_workflow
+                        # Delivered by maintenance, after the load operator has returned. A
+                        # refused schema changes nothing; a failure part-way still marks.
+                        read = functools.partial(signature, form)
+                        with file_state.marking("Scenario workflow form", read):
+                            load_form(form, result)
                         view.cost = view.cost_warning = ""
                     else:
                         result = self.jobs.session.deliver_workflow_catalog(outcomes[0])

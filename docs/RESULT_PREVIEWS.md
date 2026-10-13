@@ -12,9 +12,8 @@ described below, **Play**, which opens
 [automatic previews](#automatic-previews-in-blender), which show stills in Jobs,
 Generations and the Studio pages that reuse them.
 [Local MCP](#local-mcp-inspection) reports the same states, still metadata and
-envelopes. Clips are fetched but not displayed; they remain under
-[#189](https://github.com/scenario-labs/blender-plugin/issues/189) and
-[#66](https://github.com/scenario-labs/blender-plugin/issues/66).
+envelopes. Clips are fetched but not displayed; showing them is
+[#445](https://github.com/scenario-labs/blender-plugin/issues/445).
 
 ## Sources by result type
 
@@ -498,5 +497,6 @@ preparation, in the sidebar at UI scales 1.0 and 2.0; Online Access disabled and
 Studio at UI scale 2.0 were not exercised there. Local MCP inspection has
 installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 with the
 same kind of synthetic fixtures and the real offline audio decoder. Clip display
-and native desktop acceptance, including of the review previews, remain open
-under #189, #65 and #66.
+is [#445](https://github.com/scenario-labs/blender-plugin/issues/445); the open
+desktop preview checks, including of the review previews, are in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).

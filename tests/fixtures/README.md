@@ -48,7 +48,8 @@ read the documented synthetic `audio-silence.mp3`, `audio-silence.ogg` and
 contain no provider output, recording or third-party media; they are
 first-party GPL test code and leave no new committed audio files. They cover
 PCM and compressed, mono and stereo, silent, undecodable, too long, canceled and
-timed-out input. Human listening acceptance remains separate under #68.
+timed-out input. Human listening is a separate check; it passed on the 0.10.0
+candidate.
 
 ## Synthetic video fixture
 

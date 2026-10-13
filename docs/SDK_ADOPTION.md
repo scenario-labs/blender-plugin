@@ -71,7 +71,9 @@ its retry/upload/partial-preview behavior are retired with it; complete-text
 recovery continues to reject incomplete or unusable answers rather than falling
 back to a truncated preview. Signed thumbnail byte, URL and retry tests remain.
 This is a source and offline/native wiring inventory, not live provider, OAuth,
-thumbnail transfer hardening, desktop or full #64/#65/#68 acceptance.
+thumbnail transfer hardening or desktop acceptance. Desktop and live evidence is
+in the [release acceptance record](maintenance/release-acceptance.md), and the
+open checks are in #440.
 
 ## Executable contracts
 
@@ -683,9 +685,9 @@ documents a loop-scoped effect for a rejected approval inside a ForEach
 iteration, so callers must trust the refreshed job status. Rejection cannot stop
 an executing step and must not be presented as general cancellation. A response
 may still be `in-progress` or
-already `success`; the SDK preserves it without forcing `canceled`. Live support
-remains acceptance work under #65; the coordinator tests completion races and
-known-ID restart polling offline.
+already `success`; the SDK preserves it without forcing `canceled`. Live
+cancellation of an `inference` job and rejection inside a loop continue in #440;
+the coordinator tests completion races and known-ID restart polling offline.
 Record a sanitized upstream SDK issue before any fallback for these boundaries;
 these upload/job operations introduce no raw calls or fallback and claim no live
 service failure. Discovery uses the separate exception below.
@@ -748,8 +750,7 @@ discovery, permission/lifetime checks, malformed data and single-attempt errors,
 including the selection fallback on an SDK client configured to retry.
 They also exercise API-key estimate/submission without discovery or tenant IDs,
 and the workflow decisions below. These synthetic checks and the installed-bundle
-test do not claim live service acceptance or complete active durable-generation
-integration under #65.
+test do not claim live service acceptance.
 
 ### Workflow step decisions
 
@@ -1020,10 +1021,11 @@ Before the adopted extension is accepted:
   media, historical ZIPs and account-specific validation exports out of the
   canonical runtime tree.
 
-Shared scoped jobs and local MCP integration remain under
-[#65](https://github.com/scenario-labs/blender-plugin/issues/65); authentication
-under [#67](https://github.com/scenario-labs/blender-plugin/issues/67); integrated
-acceptance under [#68](https://github.com/scenario-labs/blender-plugin/issues/68).
+Browser sign-in remains deferred under
+[#67](https://github.com/scenario-labs/blender-plugin/issues/67). The open
+acceptance checks, including Linux and Windows desktop interaction and
+coexistence with other extensions, are in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 
 ### Prompt Spark command boundary
@@ -1140,11 +1142,13 @@ still as the `image` of the HDRI, upscale and Flux models, so an accepted quote
 does not show that a reference is a 360 panorama; the contract checks that
 locally. Offline [contract tests](../tests/unit/test_panorama_contract.py)
 prepare each preset against the recorded schemas and the shared form
-preparation. Output formats, dimensions, asset counts, `metadata.type` on
-returned assets and the HDR original's host remain unverified until an
-authorized paid run under
-[#98](https://github.com/scenario-labs/blender-plugin/issues/98). No SDK gap was
-found, so no scenario-sdk-python issue is needed.
+preparation. Paid runs since returned Flux 360, HDRi Skybox, skybox upscale
+and Skybox GPT results (see the
+[release evidence](maintenance/release-acceptance.md#panorama-and-world)). HY
+World output, and whether those runs confirmed `metadata.type` on returned
+assets and the HDR original's host, are open in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440). No SDK gap
+was found, so no scenario-sdk-python issue is needed.
 
 ## Verified Film composition quotes
 
@@ -1329,12 +1333,11 @@ review owner, with a guard before each write and a `get_bulk` read-back. After
 `AlreadyMembers`, they send only the assets read back as not yet members, within
 three add requests per review. The local [MCP organization tools](MCP.md#asset-organization)
 and the native [Library organization](UI_STYLE.md#library-organization) controls
-prepare, apply and inspect those reviews. Desktop interaction and live
-acceptance remain under
-[#64](https://github.com/scenario-labs/blender-plugin/issues/64),
-[#65](https://github.com/scenario-labs/blender-plugin/issues/65),
-[#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
-[#68](https://github.com/scenario-labs/blender-plugin/issues/68). Run the
+prepare, apply and inspect those reviews. Free live writes passed through local
+MCP and the native operators (see the
+[release evidence](maintenance/release-acceptance.md#library-organization));
+Apply from the desktop dialog continues in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440). Run the
 offline contracts with:
 
 ```sh

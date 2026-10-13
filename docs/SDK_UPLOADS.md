@@ -327,8 +327,12 @@ their own current-origin policy.
 
 Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
 storage connections, including the installed extension and shared worker queue.
-No live source is uploaded by these tests. Active UI/MCP wiring, authoritative
-account discovery, production storage policy and user-facing recovery remain #65.
+No live source is uploaded by these tests. UI/MCP wiring and user-facing
+recovery are active (see the [runtime map](architecture/runtime.md)).
+Authoritative account discovery remains with
+[#67](https://github.com/scenario-labs/blender-plugin/issues/67), no production
+storage policy is recorded here, and the open upload checks are in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## Explicit finished-upload source cleanup
 

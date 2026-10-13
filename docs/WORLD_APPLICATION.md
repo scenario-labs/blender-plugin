@@ -270,5 +270,5 @@ Undo/Redo invalidates live scene ownership and retires restoration handles,
 as do session retirement/restart and file load. Deleted or retired destinations
 do not offer restoration, and maintenance removes their handles without touching
 stale Blender data. Manually select a retained World in Blender when needed.
-No global undo transaction, live panorama generation, seam/pole acceptance or
-completion of #98 is claimed.
+No global undo transaction or seam/pole acceptance is claimed; the open
+panorama checks are in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).

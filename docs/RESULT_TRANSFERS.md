@@ -199,8 +199,9 @@ a changed role stops before transfer. Old/unclassified manifests keep an unknown
 role without blocking otherwise matching downloads or inferring a new role.
 Receipt verification after restart does not contact Scenario to enrich metadata.
 
-This is a prerequisite for explicit material application under #65/#68. It does
-not assign materials or choose between multiple texture sets/variants. A later
+Explicit material application relies on it. It does not assign materials or
+choose between multiple texture sets/variants; texture-set choice is
+[#446](https://github.com/scenario-labs/blender-plugin/issues/446). A later
 material approval must select unambiguous assets and the intended mesh targets;
 role preservation alone does not authorize a scene mutation.
 

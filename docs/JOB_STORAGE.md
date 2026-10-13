@@ -1,10 +1,10 @@
 # Scoped job intent storage
 
-[`JobStore`](../scenario/core/jobs/store.py) is the local persistence foundation
-for [shared jobs #65](https://github.com/scenario-labs/blender-plugin/issues/65).
-It does not start workers, call Scenario, modify Blender or replace the prototype
-registry yet. The eventual shared coordinator must use this store before paid
-dispatch; UI and local MCP must call that same coordinator.
+[`JobStore`](../scenario/core/jobs/store.py) is the local persistence for shared
+jobs, delivered under [#65](https://github.com/scenario-labs/blender-plugin/issues/65).
+The store itself does not start workers, call Scenario or modify Blender. The
+shared coordinator records every UI and local MCP job in it before paid dispatch,
+and the prototype registry is kept only for read-only local records.
 
 ## Identity and ownership
 
@@ -239,11 +239,11 @@ components, stale and concurrent writers, invalid transitions, failed commit
 rollback, process exit before commit, and corrupt/incompatible databases. An
 installed-ZIP baseline test verifies SQLite and the store inside Blender's Python.
 
-The prototype still uses its existing registry until the shared coordinator is
-wired in. Result command orchestration, UI/MCP integration, live cancellation
-acceptance and safe main-thread application remain under #65. Cancellation
-claims, coordinator recovery and bounded workers provide foundations without
-completing those integrated acceptance criteria.
+The shared coordinator now uses this store for UI and MCP jobs; the prototype
+registry is kept only for read-only local records (see the
+[runtime map](architecture/runtime.md#local-prototype-records)). Live
+cancellation of an `inference` job continues in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 
 Prompt Spark and translation intents use operations `prompt` and `translate`
@@ -424,12 +424,12 @@ add persisted fields if adopted; each is deferred rather than guessed here:
 
 - An intent-level panorama purpose, needed only if live skybox assets lack the
   `metadata.type` that projection depends on
-  ([#98](https://github.com/scenario-labs/blender-plugin/issues/98)).
+  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 - A `first_frame` local-application purpose, if handing a saved image to Render
   Video should become a durable application claim instead of a form binding
-  ([#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
+  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 - Each result's parent asset and file name, for exact binding of multi-file 3D
-  packages ([#65](https://github.com/scenario-labs/blender-plugin/issues/65)).
+  packages ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 
 Live skybox results must also confirm `metadata.type`, `originalMimeType`, an
 `originalFileUrl` host inside the storage policy and a `Content-Length` on the

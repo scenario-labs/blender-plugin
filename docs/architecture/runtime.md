@@ -367,7 +367,7 @@ results or files that passed a 2:1 preflight before a byte-bound upload. See
 [Environment lane delivery](../BLENDER_JOB_CONTEXT.md#environment-lane-delivery).
 Render-lane MCP calls use the native form preparation described below, including
 uploaded inputs, prompt decoration and separate Spark approval. Do not describe this slice as
-complete generation, supported release acceptance, or completion of #65.
+complete generation or supported release acceptance.
 
 ## Local prototype records
 
@@ -399,10 +399,10 @@ records removal of the unused prototype service helpers.
 ## Shared runtime components
 
 The table describes implemented connections in this checkout. It does not certify
-live provider behavior, physical interaction or the release acceptance gates in
-[#68](https://github.com/scenario-labs/blender-plugin/issues/68). See the
+live provider behavior or physical interaction. See the
 [candidate evidence](../maintenance/release-acceptance.md) for tested artifacts
-and environments.
+and environments, and [#440](https://github.com/scenario-labs/blender-plugin/issues/440)
+for the open checks.
 
 | Component | Current connection | Remaining boundary |
 | --- | --- | --- |
@@ -412,12 +412,12 @@ and environments.
 | Worker ownership | [RuntimeState](../../scenario/blender/runtime.py) selects one active session; its [workers](../../scenario/core/jobs/workers.py) outlive panel closure. Retirement stops admission while old owners retain in-flight persistence and cleanup. | Retired owners cannot deliver into a replacement connection or scene; cleanup failures may retain ownership for retry. |
 | Origin and stale-result protection | [JobSession](../../scenario/blender/job_session.py) binds entry points to the selected credentials/project and captured scene/target. Restart recovery uses fresh context and destination approval. | Saved names or IDs cannot restore live scene authority; see the [context contract](../BLENDER_JOB_CONTEXT.md). |
 | Result downloads | [ModelJobs](../../scenario/blender/model_jobs.py) drives saved manifests, bounded transfers and explicit interrupted-download recovery for model lanes. [Transfers](../RESULT_TRANSFERS.md) retain verified receipts and configured storage hosts. | Only admitted Image jobs automatically apply supported images to their original scene; other model results need explicit destination approval. Unsupported formats and uncertain states remain saved for inspection. |
-| Result previews | [Result previews](../RESULT_PREVIEWS.md) give the selected [JobSession](../../scenario/blender/job_session.py) a main-thread scheduler and the [workers](../../scenario/core/jobs/workers.py)' dedicated preview lane. Server stills and clips use SDK asset metadata and the result transfer policy; images and audio get verified private decode copies; an owned offline Blender process decodes audio copies into receipt-keyed RMS envelopes; entries are cached under extension user data. Waiting workflow steps' review assets get stills through the same lane and cache on an explicit **Load previews**, and [review_previews](../../scenario/blender/review_previews.py) decodes them into icons in the GUI pump. The [saved media controller](../../scenario/blender/result_media.py) draws envelopes for the saved-job **Waveform** control and opens private player copies, made on the same lane, for **Play** and **Play in Blender**. The [preview controller](../../scenario/blender/result_previews.py) requests stills for the jobs Jobs and Generations draw, decodes image copies on the main thread in a temporary data block and builds icons from rehashed cache files. Local MCP [`inspect_result_previews`](../MCP.md#saved-result-previews) reads the same scheduler for every result the tiles page through or one named result, requests envelopes, retries or cancels like the native controls and waits off the main thread through the scheduler's `watch`. | Clip display and live thumbnail coverage remain under #189/#66; desktop acceptance of preview tiles, Play and Waveform and listening remain #66/#68/#189, and the review previews' desktop evidence is pending. |
+| Result previews | [Result previews](../RESULT_PREVIEWS.md) give the selected [JobSession](../../scenario/blender/job_session.py) a main-thread scheduler and the [workers](../../scenario/core/jobs/workers.py)' dedicated preview lane. Server stills and clips use SDK asset metadata and the result transfer policy; images and audio get verified private decode copies; an owned offline Blender process decodes audio copies into receipt-keyed RMS envelopes; entries are cached under extension user data. Waiting workflow steps' review assets get stills through the same lane and cache on an explicit **Load previews**, and [review_previews](../../scenario/blender/review_previews.py) decodes them into icons in the GUI pump. The [saved media controller](../../scenario/blender/result_media.py) draws envelopes for the saved-job **Waveform** control and opens private player copies, made on the same lane, for **Play** and **Play in Blender**. The [preview controller](../../scenario/blender/result_previews.py) requests stills for the jobs Jobs and Generations draw, decodes image copies on the main thread in a temporary data block and builds icons from rehashed cache files. Local MCP [`inspect_result_previews`](../MCP.md#saved-result-previews) reads the same scheduler for every result the tiles page through or one named result, requests envelopes, retries or cancels like the native controls and waits off the main thread through the scheduler's `watch`. | Clip display is #445, and live thumbnail coverage is not established. Listening through Play passed on 2026-10-13; the remaining desktop checks of preview tiles, Play and Waveform, and the review previews' desktop evidence continue in #440. |
 | Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, saved model package, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. The native and MCP Render Video first-frame handoff is a form binding: it verifies the saved image but takes no claim and leaves the job state unchanged. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. Desktop interaction with the native first-frame control is not yet recorded. |
 | Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
 | Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Generation and workflow forms attach through guarded bindings; native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Live upload/result journeys remain open. |
-| Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained/custom-model discovery and verified routing remain under #97. |
-| Mesh and World | [Mesh](../MESH_APPLICATION.md) and [World](../WORLD_APPLICATION.md) application have explicit UI/MCP destination flows for supported saved results. The native and MCP [Environment lane](../MCP.md#environment-lane-360-panoramas) generates panoramas through verified [model contracts](../../scenario/core/scene/panorama_contract.py) and leaves results saved for World approval. | Provider-specific mesh contracts under #99 remain incomplete. Under #98, live panorama output, seam/pole review and the remaining desktop evidence for the Environment tab (the rebased composer tab row and a local panorama file upload) remain; local application does not close them. |
+| Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained LoRAs and compositions use routes checked before quoting; a private composition and the desktop recheck of project defaults continue in #440. |
+| Mesh and World | [Mesh](../MESH_APPLICATION.md) and [World](../WORLD_APPLICATION.md) application have explicit UI/MCP destination flows for supported saved results. The native and MCP [Environment lane](../MCP.md#environment-lane-360-panoramas) generates panoramas through verified [model contracts](../../scenario/core/scene/panorama_contract.py) and leaves results saved for World approval. | Provider-specific mesh contracts under #99 remain incomplete. HY World output, seam/pole review and the remaining desktop evidence for the Environment tab (the rebased composer tab row and a local panorama file upload) continue in #440; local application does not close them. |
 
 The job lifecycle records intent before submission, binds an exact estimate to
 scope and origin, and treats transport uncertainty as recoverable uncertainty.
@@ -521,7 +521,7 @@ The old MCP `import_result` now rejects prototype files with recovery guidance.
 History rendering ignores legacy file/action projections, including a duplicate
 session row, while explicit saved-result commands retain their byte verification
 and destination approval. Desktop interaction and live provider acceptance remain
-separate; this does not complete #65 or #68.
+separate.
 
 ## Film input contracts
 
@@ -601,13 +601,17 @@ This completes this local command integration, not live or desktop acceptance.
 
 ## Acceptance boundaries
 
-[#64](https://github.com/scenario-labs/blender-plugin/issues/64) owns consolidated
-adoption, [#65](https://github.com/scenario-labs/blender-plugin/issues/65) shared
-runtime integration, [#66](https://github.com/scenario-labs/blender-plugin/issues/66)
-the views, [#67](https://github.com/scenario-labs/blender-plugin/issues/67)
-future OAuth authentication (deferred for this release) and [#68](https://github.com/scenario-labs/blender-plugin/issues/68)
-integrated release acceptance. Offline serialization tests and source inspection
-do not satisfy their live or native acceptance criteria.
+[#64](https://github.com/scenario-labs/blender-plugin/issues/64),
+[#65](https://github.com/scenario-labs/blender-plugin/issues/65) and
+[#66](https://github.com/scenario-labs/blender-plugin/issues/66) delivered
+consolidated adoption, the shared runtime and the views in 0.10.0, whose
+candidate [#68](https://github.com/scenario-labs/blender-plugin/issues/68)
+tracked; all four closed on 2026-10-13. The open checks, fixes and decisions are
+in [#440](https://github.com/scenario-labs/blender-plugin/issues/440), and
+future OAuth authentication remains deferred under
+[#67](https://github.com/scenario-labs/blender-plugin/issues/67). Offline
+serialization tests and source inspection do not satisfy live or native
+acceptance criteria.
 
 The current release follows the [API-key release plan](../maintenance/release-plan.md).
 OAuth deferral does not relax credential precedence, project scope or paid-job safety.
@@ -732,9 +736,8 @@ reviewed decision through the shared session; rejecting a waiting step is the
 only workflow cancellation. Local MCP `workflow_job_steps` and
 `decide_workflow_step` read the steps again and send one reviewed decision
 through the same entry, as does the native review dialog in Jobs and the Studio
-Workflows page. Cancelling a running step has no documented endpoint; it,
-desktop interaction evidence and live output acceptance remain open under
-#64/#65/#66/#68.
+Workflows page. Cancelling a running step has no documented endpoint; the
+remaining workflow desktop and live checks are in #440.
 
 
 ## Explicit expanded native view
@@ -753,8 +756,8 @@ tagging, read-only drawing and continued jobs. The composer commits on blur and
 passes the same outside click to native controls. Offline desktop evidence covers
 first-click Studio opening, Unicode prompt edits, populated-form scrolling,
 quote-preserving navigation, continued saved-job polling, small-window fit,
-Escape and viewport return. Alternate-DPI/IME acceptance, workflow and Library
-interaction and complete #66 remain pending.
+Escape and viewport return. UI scales 1.25 and 1.5, the IME candidate window
+and the remaining workflow and Library desktop checks continue in #440.
 
 ## Native workflow controls
 
@@ -827,12 +830,11 @@ spent. See [the command contract](../JOB_COORDINATOR.md#asset-organization-comma
 and [session ownership](../BLENDER_JOB_CONTEXT.md#asset-organization-reviews).
 Local MCP tools prepare, apply and inspect these reviews; see
 [asset organization](../MCP.md#asset-organization). The native Library uses the
-same owner through the projection described below. Desktop interaction and live
-acceptance remain under
-[#64](https://github.com/scenario-labs/blender-plugin/issues/64),
-[#65](https://github.com/scenario-labs/blender-plugin/issues/65),
-[#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
-[#68](https://github.com/scenario-labs/blender-plugin/issues/68).
+same owner through the projection described below. Free live writes passed
+through local MCP and the native operators (see the
+[release evidence](../maintenance/release-acceptance.md#library-organization));
+Apply from the desktop dialog continues in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## Native Library projection and attachment
 
@@ -933,5 +935,5 @@ retirement discard in-memory bindings; undoing the upload step itself also
 removes the marker.
 Selected-mesh uploads gain their captured source binding at quote time. Local MCP
 keeps its existing `upload_reference`, `capture_reference` and `estimate_workflow`
-sequence; no MCP protocol change is needed. Physical Studio interaction and live
-upload acceptance remain under #66/#68.
+sequence; no MCP protocol change is needed. The remaining upload checks are in
+#440.

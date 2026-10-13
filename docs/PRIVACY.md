@@ -97,8 +97,8 @@ already started can finish. Shared SDK requests and result/upload transfers chec
 the selected permission snapshot. Model picker thumbnail downloads check it, or a
 main-thread mirror of online access when no catalog is selected, only before
 connecting; they do not recheck it during a transfer or retry. Close Blender or
-disconnect the network when you need a complete cutoff. These gaps remain part of the
-[shared-runtime integration](https://github.com/scenario-labs/blender-plugin/issues/65).
+disconnect the network when you need a complete cutoff. These gaps are tracked in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## What is stored on your machine
 

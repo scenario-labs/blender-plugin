@@ -27,7 +27,7 @@ infer that mapping from object placement, names or current selection. It does no
 prove cloud provenance, safe download/import, or that a late result still matches
 its original inputs. The verified saved-mesh command below adds receipt-bound
 import and shared-session bookkeeping; UI/MCP approval and operation-bound input
-metadata remain integration work under #65 and #99.
+metadata remain integration work under #99.
 
 ## Supported policies
 
@@ -158,7 +158,7 @@ again. Completed jobs can import another saved model under a separate local
 claim after fresh approval. An interrupted original or local `applying` claim
 cannot be replayed.
 Receipt-only retry saves known success without importing another model, and
-session shutdown releases that retry handle. This remains partial #65/#99 work:
+session shutdown releases that retry handle. This remains partial #99 work:
 provider-specific edit contracts, rig/animation transfer and edit-specific recovery
 are not established by a successful new-object import.
 
@@ -554,7 +554,7 @@ Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
 sources, shared originals, packed materials, explicit node-transform mapping,
 selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
 separate local reuse and persistence-only recovery. Provider coordinate contracts
-and remaining provider/retargeting acceptance stay open under #65/#99.
+and remaining provider/retargeting acceptance stay open under #99.
 There are no new service calls or live/provider acceptance claims in this command.
 
 ## Saved mesh edit approval

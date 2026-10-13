@@ -211,9 +211,10 @@ Before that release, add `--allow-bootstrap` to the preparation command. A permi
 bootstrap produces only `publication.json`, without an inventory; build its preview
 with `uv run --locked --no-env-file python tools/build_site.py --pending-repository
 --output dist/handbook-preview` instead of passing an inventory to `make site`.
-Offline orchestration tests cover publication races and retry byte preservation;
-actual HTTPS delivery, positive release attestations and desktop update/state
-preservation must still be recorded in #37 and #68 before closing acceptance.
+Offline orchestration tests cover publication races and retry byte preservation.
+0.10.0 recorded HTTPS delivery and positive release attestations (see its
+[publication record](maintenance/release-acceptance.md#publication)); an HTTPS
+update between two published releases, with state preservation, is in #440.
 
 ### Select retained releases offline
 

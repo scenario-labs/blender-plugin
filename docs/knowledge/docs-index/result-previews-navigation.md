@@ -9,10 +9,10 @@
     "coverage": "navigation",
     "reviewed_at": "2026-10-11",
     "base_revision": "72723f02a97a7226b1c697c31d8124b77ac92c86",
-    "limits": "Checked that the index links the saved-result preview guide. Navigation only; it does not certify the guide's claims or product behavior. Re-checked on 2026-10-10 after the guide gained its Workflow review assets section, and again on 2026-10-12 after restacking on main: the index still links it under the same title; only the fingerprint of docs/RESULT_PREVIEWS.md was refreshed. Re-checked again on 2026-10-10 after the Workflow review assets section described temporary-data decoding and lost-cache recovery, and on 2026-10-12 after the restack: the index still links the guide under the same title; only the guide's fingerprint was refreshed.",
+    "limits": "Checked that the index links the saved-result preview guide. Navigation only; it does not certify the guide's claims or product behavior. Re-checked on 2026-10-10 after the guide gained its Workflow review assets section, and again on 2026-10-12 after restacking on main: the index still links it under the same title; only the fingerprint of docs/RESULT_PREVIEWS.md was refreshed. Re-checked again on 2026-10-10 after the Workflow review assets section described temporary-data decoding and lost-cache recovery, and on 2026-10-12 after the restack: the index still links the guide under the same title; only the guide's fingerprint was refreshed. 2026-10-13 digest note: refreshed after docs/index.md names the recorded licence decision in the licence page's link text. This topic's claims were not re-reviewed. 2026-10-13 review follow-up: docs/RESULT_PREVIEWS.md was already drifted before this change; its fingerprint now matches the file after its open-work owners moved to #440 and #445. This topic's navigation claims were re-read; the document's other content was not re-reviewed.",
     "sources": {
-      "docs/index.md": "26272e94f12b329f5425c09e2fa100246a4952e61bf1a88553fabe52fd4486dd",
-      "docs/RESULT_PREVIEWS.md": "f7b56ef231de2c6df29a7621e9a2abb7b63beea384de6f3e63314644a6846faa"
+      "docs/index.md": "98056a83054e47703c250aade65791edb3ae9a660fea13091ec1f2ceac2ace1a",
+      "docs/RESULT_PREVIEWS.md": "df0dd7c0c270f21d070241ff5260b90d8df80d9aa9f08da9f2b6f544513d6cb7"
     }
   }
 }

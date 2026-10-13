@@ -795,9 +795,11 @@ or another project; `clear` takes the same context and revision. Neither request
 a price or changes a payload. A form without an explicit choice takes the saved
 default, as in the native UI, while Image `estimate_cost` uses only the parameters
 it is given. A default is a local choice kept in the job store, not spending
-authority. Results with trained models have not been accepted yet, and private
-LoRAs and compositions are unverified against the service
-([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
+authority. Paid LoRA and composition jobs ran through local MCP on a pre-merge
+head, and a private LoRA passed the maintainer's check on the 0.10.0 candidate
+(see the [release evidence](maintenance/release-acceptance.md#trained-models));
+a private composition is still unverified
+([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 
 ### Preparing Render Image and Render Video
 
@@ -877,8 +879,13 @@ before the form changes, and is an explicit choice too; see
 Raw render-lane parameter calls now fail with preparation guidance. Use the
 ordinary Image/Video lanes for direct model parameters. Scene capture, file
 upload, Spark approval and render submission remain separate actions. Offline
-native tests cover this shared preparation path; live provider and desktop
-acceptance, multi-object material application and Film remain #65/#68 work.
+native tests cover this shared preparation path. Paid Render Image and Render
+Video jobs ran through local MCP for 0.10.0 (see the
+[release evidence](maintenance/release-acceptance.md#render-image-and-render-video));
+multi-object material application is
+[#446](https://github.com/scenario-labs/blender-plugin/issues/446), and the open
+render and Film checks are in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 
 ### Reusing completed shared results
@@ -954,10 +961,12 @@ New, Rewrite or Translate for the native Environment form's own prompt field,
 like the other native lanes. A native panorama input also accepts a local 2:1
 file that passes a preflight before upload; `upload_reference` has no such check,
 so an uploaded file is refused as a panorama reference here.
-The contracts come from recorded model records and zero-spend dry-run quotes;
-output formats, dimensions, asset layout and the HDR original's host are
-unverified until an authorized paid run under
-[#98](https://github.com/scenario-labs/blender-plugin/issues/98). The Image and
+The contracts come from recorded model records and zero-spend dry-run quotes.
+Paid runs since returned Flux 360, HDRi Skybox, skybox upscale and Skybox GPT
+results (see the
+[release evidence](maintenance/release-acceptance.md#panorama-and-world)); HY
+World output and the HDR original's host are open in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440). The Image and
 Render Image lanes still list these models as before.
 
 ## Saved result previews
@@ -1608,8 +1617,5 @@ tag normalization and service limits are unverified live; a tag the service
 normalizes reads back as `UNCONFIRMED`.
 Studio's [Library organization](UI_STYLE.md#library-organization) controls
 prepare and apply the same reviews, one asset at a time, and disable Organize
-on pages loaded with Public assets. Desktop interaction and live acceptance
-remain under [#64](https://github.com/scenario-labs/blender-plugin/issues/64),
-[#65](https://github.com/scenario-labs/blender-plugin/issues/65),
-[#66](https://github.com/scenario-labs/blender-plugin/issues/66) and
-[#68](https://github.com/scenario-labs/blender-plugin/issues/68).
+on pages loaded with Public assets. Apply from the desktop dialog continues in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).

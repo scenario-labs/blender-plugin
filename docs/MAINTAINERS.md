@@ -206,13 +206,15 @@ gh api graphql -f query='{ repository(owner:"scenario-labs", name:"blender-plugi
 
 ## Access
 
-The inspected repository team grant is `@scenario-labs/platform` with **admin**
-permission. The original target was maintain; deciding and applying that change
-remains #20/#21. Do not describe the target as already applied or reduce access
-without the owner's decision. [CODEOWNERS](../.github/CODEOWNERS) requests reviews
-for specific release, automation, licence and security paths; it grants no access
-and required code-owner approval remains off. Review the direct-collaborator
-policy separately under #21 without publishing personal access records.
+The inspected repository team grants are `@scenario-labs/platform` with
+**maintain** and `@scenario-labs/scenario` with **write** (`push` in the API).
+On 2026-10-13 the maintainer lowered `platform` from admin to maintain, and both
+grants were read back (#20, #21). By the same decision no extra direct write
+grants are added; do not publish personal access records.
+[CODEOWNERS](../.github/CODEOWNERS) requests reviews for specific release,
+automation, licence and security paths; it grants no access. Required
+code-owner approval stays off by the maintainer's decision while there is one
+active maintainer (#21).
 
 Repository admins can bypass the review ruleset, and only the release App can
 bypass versioning since 2026-10-13. Nothing bypasses main integrity. A collaborator's
@@ -296,30 +298,30 @@ recovery. It does not establish version-2 reference uploads, uncertain remote-jo
 recovery, Blender application, physical interaction or media-quality acceptance.
 No provider-side monthly budget was configured. The 40 CU monthly allowance
 above came later and has no scheduled run yet; the first approved monthly run is
-separate acceptance. Keep those remaining #40/#68 scopes separate from the
+separate acceptance. Keep those remaining #40 and #440 scopes separate from the
 completed hosted check.
 
 ## Project and labels
 
-[Blender Plugin project 31](https://github.com/orgs/scenario-labs/projects/31)
-is **private**. Public issues remain visible and are triaged on that private
-board. Visibility is an owner decision under #20; this document does not make
-the project public or disclose its item inventory.
+[Project 31](https://github.com/orgs/scenario-labs/projects/31), titled
+*Plugins*, is a **private** board shared by Scenario's editor plugins (Blender,
+Godot and Photoshop), with one view per plugin. Public issues remain visible and
+are triaged on that board. On 2026-10-13 the maintainer decided that, as a
+shared board, it needs no views of its own for this repository; the views,
+Auto-archive and workflow-target review once planned under #20 are dropped.
+This document does not make the project public or disclose its item inventory.
 
 | Field | Options, including the actual emoji spelling |
 | --- | --- |
-| Status | `📋 Backlog`, `🔖 Next`, `🏗 In progress`, `👀 In review`, `👀 Staging`, `✅ Released`, `🗑️ Dropped` |
-| Priority | `P0 🌋`, `P1 🏔`, `P2 🏕`, `P3 🏝` |
-| Effort | `Tiny 🦔`, `Small 🐇`, `Medium 🐂`, `Large 🦑`, `xLarge 🐋` |
+| Status | `📋 Backlog`, `🔖 Next`, `🏗 In progress`, `👀 In review`, `✅ Released`, `🗑️ Dropped` |
+| Priority, Effort | Single-select fields; the 2026-10-13 read-back listed no options for them |
 
-Current views are `View 1` (table) and `Board` (board). Enabled workflows are
-`Auto-add sub-issues to project`, `Item added to project`, `Item closed` and
-`Pull request merged`. `Auto-close issue` and `Pull request linked to issue` are
-disabled. No Auto-archive workflow appears in the inspected response. Desired
-views are By Priority (table grouped by Priority), By size (table grouped by
-Effort), Roadmap (board by Status) and By Type (table grouped by issue type).
-Those views, Auto-archive configuration and the exact workflow targets still
-require project UI review under #20.
+Read back on 2026-10-13, the views are `All (table)` (table) and `All`,
+`Blender`, `Godot` and `Photoshop` (boards). Enabled workflows are
+`Auto-add sub-issues to project`, `Auto-add to project`,
+`Auto-add to project (blender)`, `Auto-add to project (godot)`,
+`Auto-close issue`, `Code review approved`, `Item added to project (PR)`,
+`Item closed`, `Pull request linked to issue` and `Pull request merged`.
 An enabled flag alone does not prove its trigger/filter/target is correct.
 
 Epics live in [scenario-labs/roadmap](https://github.com/scenario-labs/roadmap);
@@ -349,14 +351,13 @@ to perform it.
 - [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. The native repository has served releases since 0.10.0.
 - [x] Upload the reviewed, merged social-preview card and verify its custom-image flag and URL: #19. Uploaded on 2026-10-13 and read back: the flag is `true`, the URL is on `repository-images.githubusercontent.com` and the image matches the committed card byte for byte.
 - [ ] Recheck the rendered shared-link preview of the repository in an application that unfurls links once its link cache refreshes. A Slack unfurl right after the 2026-10-13 upload still showed the previous card. #19 is closed with the GitHub-side evidence above.
-- [ ] Decide the platform team's maintain/admin grant and confirm required code-owner review and direct-write policy: #20 / #21.
-- [ ] Decide project visibility; finish the requested views, Auto-archive and built-in workflow targets through the project UI: #20.
+- [x] Decide the platform team's maintain/admin grant and confirm required code-owner review and direct-write policy: #20 / #21. Decided on 2026-10-13: `platform` holds maintain and `scenario` write, both read back; required code-owner review stays off; no extra direct write grants.
+- [x] Decide project 31's views, Auto-archive and built-in workflow targets for this repository: #20. Decided on 2026-10-13: project 31 is a board shared by several plugins, so this repository needs no views of its own and that review is dropped. The project stays private (read back).
 
 Release-App setup belongs to completed #35: the current workflow references its
 organization-provided client ID/private-key secrets, and the tag ruleset includes
 the App bypass. Do not re-install or replace credentials as a routine release
 step. The 0.10.0 release on 2026-10-13 exercised these secrets and the publication
 flow; see its [publication record](maintenance/release-acceptance.md#publication).
-This guide does not reveal secret values. Wiki-off is verified. Remaining #20
-acceptance is the access and project decision work above, plus review of this
-baseline.
+This guide does not reveal secret values. Wiki-off is verified. #20 and #21
+closed on 2026-10-13 after the access and project decisions above.

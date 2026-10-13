@@ -328,9 +328,9 @@ fail closed on that record instead of silently treating it as dispatchable.
 `JobWorkers.cancel_remote` uses the bounded application pool and the same task
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
-joins this work before closing the SDK. Cancellation of a running workflow step,
-live service acceptance, and which generation lanes return `inference` jobs
-remain outstanding under #65.
+joins this work before closing the SDK. Scenario documents no endpoint to cancel
+a running workflow step. Live cancellation of an `inference` job and which
+generation lanes return `inference` jobs continue in #440.
 The Image facade now exposes these commands through shared UI/MCP saved-job
 controls. Captured job types and offline tests do not establish live
 cancellation acceptance.
@@ -490,7 +490,9 @@ SDK lifetime and main-thread polling interface. Deactivation stops subsequent
 asset work; a transfer already in flight can save its receipt to the old scope.
 Closing a view must not deactivate these application-owned workers. Active Image
 delivery configures the CDN policy and exposes shared download/recovery controls.
-Recovered-target application and remaining lanes stay under #65.
+The other model lanes use these workers through ModelJobs, and recovered results
+apply only after fresh destination approval (see the
+[runtime map](architecture/runtime.md)).
 
 
 ### Explicit interrupted-download recovery

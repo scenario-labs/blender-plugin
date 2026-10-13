@@ -6,7 +6,8 @@ planning, editorial timing, continuity declarations and reference ordering from
 the selected Studio source. They are pure Python: they do not open files, contact
 Scenario, submit jobs or mutate Blender.
 
-This is the input contract for the remaining Film integration under #64/#65.
+This is the input contract for Film; its open checks and production gaps are in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 Native Film task controls and MCP commands now use these contracts. Film shows a
 visible experimental status in its sidebar header, on every Studio Film page and
 in every Film MCP tool description. This does not establish a Film generation
@@ -1412,5 +1413,5 @@ late/repeated main-thread delivery.
 transforms, continuity and audio contracts plus API-key default scope, exact
 project matching, every foreign-scope dimension, opaque output identifiers,
 reference ordering and invalid input rejection. Installed-package regression
-checks establish package/runtime compatibility only. Live generation, physical
-desktop interaction and human motion/audio review remain #68 acceptance gates.
+checks establish package/runtime compatibility only. No Film model task has run
+live; physical desktop interaction and human playback review continue in #440.

@@ -37,7 +37,8 @@ Two preliminary input runs exited through an automation select-all shortcut;
 the completed run uses Home/Shift-End selection instead.
 
 These synthetic checks do not establish live project permissions, other OS/DPI
-interaction, paid generation, or integrated release acceptance under #68.
+interaction, paid generation or release acceptance; live project permission and
+other platforms continue in #440.
 
 ![Blank Project ID restores the API key default scope](images/project-scope-default.png)
 ![Saved Blender credentials with an explicit project A selection](images/project-scope-project-a.png)
@@ -121,8 +122,8 @@ warnings. Offline, no price was ready and the dialog showed its loading state, s
 the mode switch was a property change while it was open. Blender treats the blur
 click as handled, so it does not also select in the viewport; the next click does.
 This path is unchanged; the [Studio view](#explicit-studio-view) records its
-first-click header evidence. Physical keyboard and pointer input, IME and focus
-across applications remain #66 desktop acceptance.
+first-click header evidence. Focus after switching to another application and
+back, and the IME candidate window, continue in #440.
 
 ## The model chooser
 
@@ -387,7 +388,7 @@ message tells users to upload the reference, review the price and choose
 form; reset the old prompt/settings/references and invalidate the previous quote.
 Existing jobs and admitted uploads keep their own lifetime and origin guards.
 
-Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. Below the model row, a failed result also draws `Failed: ` and its whole error in red, the first line with the `ERROR` icon and the next ones aligned after it, wrapped by the width Blender's interface font measures (`label_wrap`, with the preview status lines' inset). For a shared job that error is the [reason Scenario gave](BLENDER_JOB_CONTEXT.md#failure-reasons) when it is plain text, otherwise a fixed sentence, at most 400 characters with its support error id kept. **Generation details** draws the whole error the same way in a box with **Copy error**; the composer's job card declares its requested popup width, so its first draw wraps like Studio's. Drawing reads only the view's error; the maintenance poll sets it. Installed tests on Blender 5.1.2 macOS arm64 draw a failed shared job's reason through the real Generations panel, **Generation details**, the composer strip and the job card with store reads refused; a desktop screenshot of the wrapped reason remains #66 evidence. The prompt box carries a trash button that deletes its text, greyed out when empty.
+Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. Below the model row, a failed result also draws `Failed: ` and its whole error in red, the first line with the `ERROR` icon and the next ones aligned after it, wrapped by the width Blender's interface font measures (`label_wrap`, with the preview status lines' inset). For a shared job that error is the [reason Scenario gave](BLENDER_JOB_CONTEXT.md#failure-reasons) when it is plain text, otherwise a fixed sentence, at most 400 characters with its support error id kept. **Generation details** draws the whole error the same way in a box with **Copy error**; the composer's job card declares its requested popup width, so its first draw wraps like Studio's. Drawing reads only the view's error; the maintenance poll sets it. Installed tests on Blender 5.1.2 macOS arm64 draw a failed shared job's reason through the real Generations panel, **Generation details**, the composer strip and the job card with store reads refused; a desktop screenshot of the wrapped reason belongs to the live failed-job reason check in #440. The prompt box carries a trash button that deletes its text, greyed out when empty.
 
 ## Jobs status and remote progress
 
@@ -425,7 +426,7 @@ Generations, finished Prompt Spark, Translate and Blockout jobs inspected with
 online access off and listed only in Generations without an offline line, the
 absence of storage reads and writes during draw, and one redraw per projected or
 online access change. No desktop interaction or screenshot of the bar is claimed
-yet; that remains #66 acceptance.
+yet; that check is in #440.
 
 ## Wording
 
@@ -575,8 +576,9 @@ Blender 5.1.2 check found the minus button and Generate past the bare right
 edge after the pill had been moved right and expanded, and after a card parked
 at the sidebar widened when the sidebar closed in a 1018 x 671 pt window, which
 motivated the whole-composer clamp. Installed tests drive both cases through
-the modal. Repeating physical desktop drags and screenshots remains a separate
-acceptance check under #66.
+the modal. A later desktop pass on #398's head kept the card in view at window
+edges and after resizing (see the
+[release evidence](maintenance/release-acceptance.md#composer-and-ime)).
 
 ### Double-click
 
@@ -611,8 +613,10 @@ that start over (Escape included) and the single submission. Job strip tests
 send the same pairs to the strip's background, which resets the placement
 within the time and distance limits only, and to a strip chip, which dispatches
 once. Unit tests cover the pairing rule itself. Physical double-clicks on
-Blender 5.1.2 macOS selected nothing and reset nothing before pairing; a
-physical recheck, the strip included, remains under #66.
+Blender 5.1.2 macOS selected nothing and reset nothing before pairing; real
+double-clicks later reset placement and width on a desktop (see the
+[release evidence](maintenance/release-acceptance.md#composer-and-ime)), and a
+physical double-click on the strip's background continues in #440.
 
 ### Errors and file loads
 
@@ -667,9 +671,9 @@ this change, because it was prepared without opening a Blender window. Blender's
 window manager has therefore not yet been seen dropping the handler after an
 error, calling cancel on a file load or a closed window, or keeping the load
 handler across File > Revert in an interface session. The
-[#66 follow-up](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
+[session-ending checklist](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
 lists those event-simulated checks and the physical rechecks, with their
-expected results.
+expected results; #440 tracks them.
 
 ## Composer text input
 
@@ -728,8 +732,12 @@ between presses, and checks that neither a double-click nor the popover follows.
 Installed Edit form tests send an untyped key with text, F2, a composition's two
 presses and a popover confirmation to a replaced form and to a form whose model
 takes no prompt, and check that neither form's prompt changes.
-Physical composition, dead keys, candidate-window placement and focus after the
-popover have not been checked on a desktop; they remain under #66.
+A physical pass opened the F2 field at UI scales 1.0 and 2.0, typed dead keys
+and brought a whole composition into the prompt, and the maintainer's check on
+the candidate passed composition, commit and Esc after F2 (see the
+[input method limits](KNOWN_LIMITATIONS.md#interface-and-capture)).
+Candidate-window placement continues in #440; focus after the popover was not
+recorded.
 
 ## Compact job strip
 
@@ -829,10 +837,11 @@ draw the tray and the pill's line through the composer's own shape and text
 primitives over a recording GPU that turns blending off after text, and check
 the dim track, the fill's width at the reported fraction and the blending of
 every translucent shape.
-Physical desktop evidence is pending: the dialogs and popup a chip opens from
-inside the composer modal, viewport input afterwards, alternate UI scales,
-the bar's fill after the blending fix and screenshots need an unlocked desktop
-session under #66 and #68.
+The paid desktop pass opened the job card and the Reuse and Apply reviews from
+the strip's chips with Esc and viewport focus returning, and the #424 recheck at
+UI scale 1.0 drew the bar's fill to the reported fraction over a dim track (see
+the [release evidence](maintenance/release-acceptance.md#composer-and-ime)).
+UI scale 2.0 continues in #440.
 
 ## What Blender cannot do (so we do not fake it)
 
@@ -955,11 +964,12 @@ command with Blender's whole environment. A later private check with
 Environment credentials and a ZIP with that launch confirmed that **Play video**
 opened the system player on the private read-only copy, whose SHA-256 matched
 the saved result, and that **Play in Blender** started a player whose
-environment had no `SCENARIO_`, `PYTHON` or proxy names. Play
-audio, the waveform's Cancel, Retry and close on the desktop, clicking **Play
-video** or **Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
-interaction, other platforms and human listening are not yet recorded; they
-remain #189 and #68 acceptance.
+environment had no `SCENARIO_`, `PYTHON` or proxy names. On 2026-10-13 the
+maintainer listened through **Play audio** on the candidate ZIP (see the
+[human checks](maintenance/release-acceptance.md#human-checks)). The waveform's
+Cancel, Retry and close on the desktop, clicking **Play video** or **Play in
+Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport interaction and
+other platforms are not yet recorded; they continue in #440.
 
 ## Saved result previews
 
@@ -1071,8 +1081,8 @@ with their numbers visible, and status, error and grouped loading lines wrapped
 inside the box with captions whole. Stills removed while idle were prepared
 again after a file reload, without **Retry preview (N)**. Online Access
 disabled, focus and viewport interaction while tiles update, the Studio pages
-at UI scale 2.0 and other platforms are not yet recorded; they remain #66 and
-#68 acceptance.
+at UI scale 2.0 and other platforms are not yet recorded; they continue in
+#440.
 
 ## Saved static model confirmation
 
@@ -1262,7 +1272,7 @@ not establish actual HDR/seam quality, other OS desktop support, resolution of
 and the JPEG and `image/aces` offers. Headless native tests cover their invoke,
 draw and cancel handling, and every new dialog line stays within 59 characters,
 the longest line verified in that capture. Desktop interaction with the new
-wording is not yet recorded; that check is an open follow-up under #98.
+wording is not yet recorded; that check is in #440.
 
 ## Saved material approval
 
@@ -1346,9 +1356,11 @@ through the shared descriptors without store reads, the exact dialog lines with
 fixed lines within the 59 characters verified for a 520 px dialog, cancellation,
 refusal reasons, single use of an MCP-prepared approval through the operator,
 the provenance line and memfile Undo/Redo of the binding in the runner's window.
-No desktop interaction, screenshot, focus, DPI or small-window evidence is
-recorded yet, and the undo step recorded from the maintenance-pump timer is not
-yet shown on Blender 5.0, 5.1 or 5.2; those checks remain #66 and #68 acceptance.
+Desktop passes on pre-merge #377 and #379 heads on Blender 5.1.2, at UI scales
+1.0 and 2.0, checked the button, its confirmations, Esc, focus and one undo step
+with redo (see the
+[release evidence](maintenance/release-acceptance.md#render-image-and-render-video)).
+Small-window evidence is not recorded, and Blender 5.0 and 5.2 continue in #440.
 
 ## Saved mesh edit review
 
@@ -2414,9 +2426,12 @@ credential cleanup error during shutdown; that run is not clean-exit evidence.
 These checks supersede the window-attachment and populated-form evidence gaps.
 Alternate-DPI interaction and IME composition remain unverified: Preferences
 opened, but the attempted scale edit did not change the observed UI scale, and
-Unicode paste is not IME composition. Track those native checks under #66 as
-acceptance follow-ups; they do not block review of this scoped change. The complete
-select/capture/estimate/generate/inspect/apply journey and other-platform desktop acceptance remain separate under #66/#68.
+Unicode paste is not IME composition. UI scales 1.25 and 1.5 and the IME
+candidate window continue in #440 as acceptance follow-ups; they do not block
+review of this scoped change. The paid desktop pass of 2026-10-13 later ran a
+capture, quote, generation, inspection and application journey (see the
+[release evidence](maintenance/release-acceptance.md#3d-generation-and-imports));
+other-platform desktop interaction continues in #440.
 
 Blur and Studio opening now share the same focused-prompt ownership guard.
 A conflicting scene, lane or sidebar prompt keeps both texts and focus intact;
@@ -2467,8 +2482,8 @@ confirmation repeats it, and the submitted job's session result row shows
 (`label_wrap`); when it needs more than one line, each sentence starts its own
 line. The confirmation declares its requested popup width, so its first draw
 wraps like Studio's. Installed tests draw the confirmation as that first draw,
-at UI scale 1.0 and 2.0, and Studio's page 960 and 240 units wide; the desktop
-look awaits the physical recheck under #66. A recovered workflow job shows
+at UI scale 1.0 and 2.0, and Studio's page 960 and 240 units wide; a physical
+recheck on 2026-10-13 found the desktop look correct. A recovered workflow job shows
 **from N CU** too, because the saved record keeps no loop count. The warning
 does not disable approval. Drawing is read-only and never starts catalog or job workers.
 Page search/navigation use unsaved WindowManager state; scene form edits require
@@ -2493,8 +2508,8 @@ Installed tests verify synthetic native registration, shared UI/MCP quote use,
 changed-input rejection, view changes, continued work and saved-form reload.
 The desktop regression checks below record prompt editing, exact price refresh,
 cancel/confirm and saved-job visibility with a synthetic service on their named
-candidate. Broader DPI, IME and platform acceptance remains tracked under #66/#68
-separately from review readiness.
+candidate. Open DPI, IME and platform checks are in #440, separately from
+review readiness.
 Live outputs remain outside this implementation.
 
 ### Waiting workflow steps
@@ -2614,8 +2629,8 @@ its RNA properties; Blender passes `OperatorProperties` to the enum callback,
 not the Python operator carrying the prepared approvals. Installed tests exercise
 that registered callback as well as state and command boundaries. The desktop
 checks below record native browsing and reference confirmation for their named
-candidate. Remaining desktop acceptance stays under #66/#68 separately from
-review readiness.
+candidate. Open Library desktop checks are in #440, separately from review
+readiness.
 
 ### Library organization
 
@@ -2714,10 +2729,13 @@ not start in the dialog's native text field, as in Blender's own fields. It foun
 the card out of view after OK on a lower row, Refresh and Load collections drawn
 disabled after their reads until the pointer moved, and the outdated collection
 hint; the placement, enabled states and text above replace that behavior and need
-a new desktop check. Apply on a desktop, Blender 5.0 and 5.2, other platforms and
-live writes remain under
-[#66](https://github.com/scenario-labs/blender-plugin/issues/66). No live
-collection or tag write was made.
+a new desktop check. A later read-only pass checked the card placement and
+read-enabled controls, and a free live run applied and read back collection and
+tag changes through local MCP and the native operators in background Blender
+(see the [release evidence](maintenance/release-acceptance.md#library-organization)).
+The desktop passes made no live collection or tag write. Apply on a desktop,
+Blender 5.0 and 5.2 and other platforms continue in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## Workflow reference selection
 
@@ -2768,7 +2786,7 @@ These desktop checks use synthetic service responses with external sockets
 blocked. They establish native input and popup refresh behavior, not live
 workflow quality, full compact capture-to-apply acceptance, IME composition,
 multiple DPI settings, other OS interaction, sustained GPU/audio behavior or
-human media review. Those remain separate release gates under #68.
+human media review. The open ones are in #440.
 
 ## Workflow input uploads
 
@@ -2831,7 +2849,9 @@ a value, a chosen file that still attaches through frame changes, unrelated obje
 moves and render-thread updates, cancellation of a waiting, undo-restored or
 retired-connection marker, **Stop waiting** after an upload stopped mid-transfer
 or that **Upload again** abandoned, undo around an upload and a background **Render result** upload, plus shared MCP
-pricing of an uploaded asset ID and selected-mesh provenance at quote time. Native
-interaction proof (file browser and confirmation from the Studio popup, viewport
-and camera captures, rendering with F12 before **Render result**, DPI and IME) and
-live upload acceptance remain under #66/#68.
+pricing of an uploaded asset ID and selected-mesh provenance at quote time. The
+paid desktop pass at UI scale 1.0 uploaded a local image file and viewport and
+camera captures into workflow inputs, each after its own confirmation (see the
+[release evidence](maintenance/release-acceptance.md#workflows)). A **Render
+result** upload after F12, audio, video and 3D files and UI scale 2.0 continue
+in #440; IME in these controls is not recorded.

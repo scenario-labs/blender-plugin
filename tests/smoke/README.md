@@ -157,7 +157,7 @@ pixel limits. The `hdri` kind also requires an `image/x-exr` or `image/aces`
 original saved in place of the asset's preview with an OpenEXR container; a
 preview, a Radiance original or PNG/JPEG bytes never qualify. Neither kind
 decodes pixels, measures dynamic range or judges seams; those remain native and
-human review under [#98](https://github.com/scenario-labs/blender-plugin/issues/98).
+human review, tracked in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 The Environment lane's contract models must use these kinds and their contract;
 see [Panorama contract cases](#panorama-contract-cases). The
 [advisory report](#advisory-panorama-report) measures seams, poles and range.
@@ -165,7 +165,8 @@ see [Panorama contract cases](#panorama-contract-cases). The
 A mismatch fails the check while preserving downloaded results for inspection.
 `resume` rechecks them without submitting again. MIME metadata alone does not
 prove the file can be decoded; native import and human motion/audio review are
-separate #68 requirements.
+separate checks (see the
+[release acceptance record](../../docs/maintenance/release-acceptance.md)).
 
 The existing `tools.smoke_image` module and `tests/smoke/smoke_image.py` select
 `image` automatically. The scripts `smoke_material.py`, `smoke_video.py` and

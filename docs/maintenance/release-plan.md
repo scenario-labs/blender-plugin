@@ -11,8 +11,10 @@ onboarding gate, not the mandatory SDK-first, scope, spend or scene-safety rules
 The [candidate evidence record](release-acceptance.md) identifies the tested
 archive, completed checks and remaining release gates.
 
-[#68](https://github.com/scenario-labs/blender-plugin/issues/68) owns the release
-candidate evidence. The candidate must demonstrate:
+[#68](https://github.com/scenario-labs/blender-plugin/issues/68) owned the 0.10.0
+candidate evidence and closed on 2026-10-13; the 0.10.1 candidate and the checks
+still open are in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+The candidate must demonstrate:
 
 - Fresh API-key setup, an explicit credential source, optional project scope,
   understandable permission failures and invalidation after credentials change.
@@ -61,7 +63,7 @@ The existing cancellation, transfer, origin, upload, schema, mesh and World
 primitives are merged. See the [runtime map](../architecture/runtime.md) for what
 is connected today; the plan is not a claim that the active prototype has already
 been replaced. Mechanical normalization and source provenance must remain
-reviewable when adopting retained source under #28/#64.
+reviewable when adopting retained source.
 
 ## Evidence and publication
 

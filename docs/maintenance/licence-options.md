@@ -1,9 +1,11 @@
-# Licence options: proposal awaiting a decision
+# Licence options and decision
 
 Evidence date: 2026-09-24. Prepared for [#26](https://github.com/scenario-labs/blender-plugin/issues/26).
-**Decision: pending maintainer and legal review.** This comparison changes no
-licence and records no IP assignment or permission to relicense. Until a decision
-is approved, the current GPL-3.0-or-later first-party policy remains in force.
+**Decision: GPL-3.0-or-later.** On 2026-10-13 the maintainer decided to keep the
+licence that 0.10.0 shipped under, and #26 is closed. The comparison below
+informed that decision and remains as background. It changes no licence and
+records no IP assignment or permission to relicense. Contributions remain
+inbound=outbound under GPL-3.0-or-later.
 
 ## Constraints and current evidence
 
@@ -59,14 +61,15 @@ a particular label. At this evidence base, the header inventory is 253 files,
 not the original issue's 135; no bulk replacement of adopted notices is safe.
 Already published releases retain their original terms and bytes.
 
-Recommendation for discussion: retain the current policy unless maintainers
-identify a concrete permissive-reuse requirement. If they do, evaluate an
-independently packaged core before proposing a whole-extension migration.
-This recommendation is not the maintainer/legal decision requested by #26.
+The comparison recommended retaining the current policy unless maintainers
+identified a concrete permissive-reuse requirement and, if they did, evaluating
+an independently packaged core before proposing a whole-extension migration.
+The maintainer's 2026-10-13 decision keeps GPL-3.0-or-later, so no licence
+text, header, manifest declaration or contribution term changes.
 
-Before completing that issue, record the chosen option, decision date, approvers
-and verified rights/consents; amend roadmap D14/D15 while retaining the
-consolidation amendment's attribution requirements. Then implement only the
-approved changes, verify exact ZIP licence texts and update contribution terms.
-A non-status-quo decision also needs a separately authorized release. There is
-no release or relicensing authorization in this proposal.
+A later proposal to change the licence would record the chosen option, decision
+date, approvers and verified rights/consents, and amend roadmap D14/D15 while
+retaining the consolidation amendment's attribution requirements. It would then
+implement only the approved changes, verify exact ZIP licence texts, update
+contribution terms and need a separately authorized release. This page grants
+no release or relicensing authorization.

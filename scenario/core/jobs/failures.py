@@ -22,10 +22,12 @@ single spaces, a part is showable only when:
   support id, a Scenario resource id, a word of letters with inner hyphens or
   apostrophes shorter than 32 characters, or any other token shorter than 12
   characters that switches between letters and digits at most twice;
-- a `/` only joins two words shorter than 12 characters;
+- a `/` only joins two tokens shorter than 12 characters that each pass these
+  same rules;
 - no token contains a credential word (`key`, `secret`, `token`, `password`,
   `passwd`, `pwd`, `auth`, `credential`, `signature`, `session`, `cookie`, or
-  `sig` alone), except a few harmless words such as `keyframe` or `author`.
+  `sig` alone), also when digits stand for letters (`tok3n`), except a few
+  harmless words such as `keyframe` or `author`.
 
 A part that is not showable reads NOT_SHOWN, and nothing is taken from it. When
 `metadata.error` and `metadata.hint` contain each other, ignoring case, spacing
@@ -68,6 +70,8 @@ _CREDENTIAL_WORDS = (
     "session",
     "cookie",
 )
+# Digits written for letters, as in `tok3n` or `s3ss10n`.
+_LOOKALIKES = str.maketrans("013457", "oieast")
 # Ordinary words that contain a credential word but are not one.
 _HARMLESS_WORDS = frozenset(
     {
@@ -166,11 +170,13 @@ def _plain_word(word):
 
 
 def _credential(token):
+    """Whether a token holds a credential word, also when digits stand for letters (`tok3n`)."""
     lowered = token.lower()
     if lowered in _HARMLESS_WORDS:
         return False
-    if lowered == "sig" or any(word in lowered for word in _CREDENTIAL_WORDS):
-        return True
+    for form in (lowered, lowered.translate(_LOOKALIKES)):
+        if form == "sig" or any(word in form for word in _CREDENTIAL_WORDS):
+            return True
     return False
 
 
@@ -180,8 +186,11 @@ def _showable_token(core):
     if _credential(core):
         return False
     if "/" in core:
+        # A pair's sides are short tokens that each pass these same rules.
         sides = core.split("/")
-        return len(sides) == 2 and all(0 < len(side) < _SHORT for side in sides)
+        return len(sides) == 2 and all(
+            0 < len(side) < _SHORT and _showable_token(side) for side in sides
+        )
     if _plain_word(core):
         return True
     return len(core) < _SHORT and _switches(core) <= 2

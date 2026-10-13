@@ -242,6 +242,14 @@ ADVERSARIAL = [
     ("Fetch https://host.example/data/user:pAss123@file failed", ["pAss123"]),
     ("Key ab12cde.fg34hij.kl56mno.pq78rst used", ["ab12cde", "pq78rst"]),
     ("Copy //cdn.internal/old/user:S3cr3tPass99@ backup.internal", ["S3cr3tPass99"]),
+    # A / pair whose sides would not pass as tokens on their own.
+    ("Pair aB3kX9mQ2p/Zz8qW1vN4rT used", ["aB3kX9mQ2p", "Zz8qW1vN4rT"]),
+    ("Header x/sig rejected", ["x/sig"]),
+    ("Header ok/s3ss10n rejected", ["s3ss10n"]),
+    ("Header tok3n/abc rejected", ["tok3n"]),
+    # Digit-for-letter look-alikes of credential words, alone.
+    ("Header tok3n rejected", ["tok3n"]),
+    ("Use p4ssw0rd now", ["p4ssw0rd"]),
 ]
 
 
@@ -274,6 +282,7 @@ READABLE = [
     "La génération a échoué : réessayez avec une résolution plus basse.",
     'The prompt "a red fox" was rejected by the content filter.',
     "Rendering at x86_64 speed reached 3.5 fps on the H3 model.",
+    "Set width/height to 1024 and keep the in/out points for GPT/Image 2.",
 ]
 
 
@@ -287,6 +296,14 @@ def test_ordinary_reasons_stay_readable(text):
     ("token", "showable"),
     [
         ("and/or", True),
+        ("width/height", True),
+        ("in/out", True),
+        ("GPT/Image", True),
+        ("aB3kX9mQ2p/Zz8qW1vN4rT", False),
+        ("x/sig", False),
+        ("ok/s3ss10n", False),
+        ("tok3n/abc", False),
+        ("tok3n", False),
         ("input/output", True),
         ("a/b/c", False),
         ("/path", False),

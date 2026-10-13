@@ -160,7 +160,9 @@ The catalog preview worker remains a non-spending SDK helper using
 `generate.with_raw_response.run_model(dry_run="true")`, captured nested inputs,
 selected credentials and the connection's online-access gate. Its exact
 `Estimate` object is an in-memory preview, not a durable approval. Missing or
-invalid cost data is an error; explicit zero remains valid. Native UI and MCP
+invalid cost data is an error; explicit zero remains valid. A dry-run response
+that carries a job raises `EstimateStartedJob` and issues no `Estimate`; see
+[identical unconfirmed requests](JOB_COORDINATOR.md#identical-unconfirmed-requests). Native UI and MCP
 model quotes use fresh metadata through the selected JobSession instead;
 submission consumes that quote through the coordinator with the same raw SDK
 estimate and no automatic retry.

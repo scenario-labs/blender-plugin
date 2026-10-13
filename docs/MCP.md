@@ -38,6 +38,9 @@ job before explicit download and result approval.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
 token and revision from inspection. A reset, file load or credential switch invalidates that
 token. Claimed or uncertain submissions require reconciliation, never blind retry.
+An identical request is refused while such a submission is unconfirmed; only the
+user can mark it reviewed in Blender, so `job_status` omits `mark_reviewed` and
+`recover_local_job` refuses it.
 
 `recover_local_job` uses that token and the observed revision for explicit refresh,
 resume/download, known model-job cancellation, interrupted-download reconciliation

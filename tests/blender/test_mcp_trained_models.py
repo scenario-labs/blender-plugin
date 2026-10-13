@@ -120,8 +120,10 @@ class McpTrainedModelTests(unittest.TestCase):
         self.assertIn(b'"strength": 0.8,', ui.payload_json)
         self.assertEqual(len(self.posts), 2)  # one dry run each
         self.assertEqual(self.submitted, [])
-        # Both approvals are spent once, against the synthetic service only.
+        # Both approvals are spent once, against the synthetic service only. The second
+        # identical request waits until the first is confirmed, never while it is unconfirmed.
         view = self.generation.submit_generation(bpy.context, "image")
+        self.wait_submissions()
         result = self.tools.generate(
             {
                 "lane": "image",

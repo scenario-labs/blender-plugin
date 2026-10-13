@@ -596,8 +596,15 @@ def _mcp_spec(name):
 
 def test_native_recovery_actions_match_the_mcp_action_names():
     schema = ast.literal_eval(_mcp_spec("recover_local_job")[1])
-    control = [action for action in sja.RECOVERY_ACTIONS if action != "cancel_prepared"]
+    control = [
+        action
+        for action in sja.RECOVERY_ACTIONS
+        if action != "cancel_prepared" and action not in sja.NATIVE_ONLY
+    ]
     assert schema["action"]["enum"] == control
+    # Marking an unconfirmed request reviewed stays the user's decision in Blender.
+    assert sja.NATIVE_ONLY == {"mark_reviewed"}
+    assert not sja.NATIVE_ONLY & set(schema["action"]["enum"])
     description, _ = _mcp_spec("job_status")
     mapping = re.search(r"actions name explicit follow-ups[^.]*\.", description).group(0)
     assert "cancel_prepared maps to the cancel_prepared_job tool" in mapping

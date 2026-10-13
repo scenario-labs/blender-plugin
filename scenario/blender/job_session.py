@@ -606,6 +606,14 @@ class JobSession:
         self._resolve(origin)
         return self._coordinator.prepare(estimate, origin)
 
+    def mark_unconfirmed_reviewed(self, request_id, *, expected_revision):
+        """Let identical requests through again this session; local, sends nothing."""
+        _main_thread()
+        self._coordinator.mark_unconfirmed_reviewed(request_id, expected_revision=expected_revision)
+
+    def unconfirmed_reviewed(self, request_id):
+        return self._coordinator.unconfirmed_reviewed(request_id)
+
     def _check_capacity(self):
         if len(self._pending) >= self._completion_limit:
             raise SessionBusy("Drain completed job outcomes before adding more commands")

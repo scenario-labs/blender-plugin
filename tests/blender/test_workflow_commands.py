@@ -253,6 +253,23 @@ class WorkflowCommandTests(unittest.TestCase):
             self.approve(quote)
         self.assertEqual(len(self.paid), 1)
 
+    def test_an_unconfirmed_run_refuses_an_identical_one_until_the_user_reviews_it(self):
+        self.lose_response = True
+        request_id = self.approve(self.quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+        with self.assertRaisesRegex(Exception, request_id[:8]):
+            self.quote()
+        owner = self.runtime.state.model_jobs
+        record = self.store.get(request_id)
+        self.assertEqual(owner.actions(record), ("mark_reviewed",))
+        self.assertIsNone(owner.control(request_id, record.revision, "mark_reviewed"))
+        self.approve(self.quote())
+        self.settle()
+        self.assertEqual(len(self.paid), 2)
+        self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+
     def test_failed_persistence_consumes_approval_without_spending(self):
         quote = self.quote()
         with patch.object(

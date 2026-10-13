@@ -24,10 +24,10 @@ from ..core.api.catalog import (
     trained_kind,
 )
 from ..core.api.errors import ScenarioError
-from ..core.jobs.coordinator import RouteQuoteError
+from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
-from . import params_ui, props, runtime, trained_models
+from . import model_jobs, params_ui, props, runtime, trained_models
 from .job_session import OriginUnavailable
 
 log = logging.getLogger("scenario.generation")
@@ -1183,11 +1183,12 @@ def process_model_jobs():
             # actionable without copying arbitrary exception text into the UI.
             # A refused LoRA or composition carries fixed text naming only
             # input labels and positions.
-            message = (
-                str(error)
-                if isinstance(error, RouteQuoteError)
-                else "Could not confirm this price; estimate again"
-            )
+            if isinstance(error, (RouteQuoteError, DuplicateRequestError)):
+                message = str(error)
+            elif isinstance(error, model_jobs.AutomaticEstimatesStopped):
+                message = error.reason
+            else:
+                message = "Could not confirm this price; estimate again"
             try:
                 lane_state = ticket.scene.scenario.lane_state(ticket.lane)
                 if lane_state.estimate_key != key:

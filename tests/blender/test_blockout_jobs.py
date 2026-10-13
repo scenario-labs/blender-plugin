@@ -349,7 +349,8 @@ class BlockoutJobsTests(unittest.TestCase):
     def quote_in_new_scene(self):
         scene = bpy.data.scenes.new("Another Blockout scene")
         bpy.context.window.scene = scene
-        scene.scenario_blockout.prompt = "A stone tower"
+        # Its own request: an identical one stays refused while another is unconfirmed.
+        scene.scenario_blockout.prompt = f"A stone tower for {scene.name}"
         item = self.jobs().quote(scene, "DESIGN")
         self.advance(item)
         self.assertEqual(item.phase, "READY", item.error)

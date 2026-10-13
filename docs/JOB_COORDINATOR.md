@@ -81,6 +81,35 @@ The store persists result manifests and receipts; connecting download commands,
 main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
+## Identical unconfirmed requests
+
+A request is refused while another one in the same credential scope, with the
+same operation, target and `payload_sha256`, is still `submitting` or
+`uncertain`. Such a request may have been sent without a confirmed job, so a
+second one could be charged twice. `DuplicateRequestError`, a `QuoteError`,
+names the earlier request. The check runs after the free dry run but before a
+quote is returned, again before preparation, and once more inside the
+submission claim under the coordinator lock, so concurrent identical
+submissions send at most one. A confirmed `remote` job never blocks: repeating a
+generation is a deliberate new request. The store's `unconfirmed()` lookup
+filters these rows in SQLite, so quoting never decodes unrelated history.
+
+There is deliberately no command that resolves an uncertain record. The user
+checks Scenario history (and can save a completed job with **Save for
+recovery**), then marks the record reviewed through
+`mark_unconfirmed_reviewed(request_id, expected_revision=...)`. The mark is kept
+in memory by the coordinator only: nothing is sent or saved, and a new
+coordinator, after a restart or context change, refuses again. `ModelJobs`
+offers it as the native `mark_reviewed` action behind a confirmation; MCP
+`job_status` omits it and `recover_local_job` refuses it, so an agent cannot
+let a possible duplicate through.
+
+A dry-run response that carries a job raises `EstimateStartedJob` in the adapter
+and issues no `Estimate`. `ModelJobs.finish_quote` turns it into
+`AutomaticEstimatesStopped`, naming the job, and automatic form pricing stays
+off until Blender restarts. Nothing is resubmitted. Cloud adoption accepts only
+completed jobs, so the user saves that job from history once it finishes.
+
 ## Local capture queue
 
 `render_local(spec, origin=..., source_origin=..., cancel=...)` renders a private

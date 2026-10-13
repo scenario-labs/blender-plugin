@@ -54,6 +54,33 @@ class AdapterStatusError(AdapterError):
         return type(self), (self.status_code, str(self))
 
 
+class EstimateStartedJob(AdapterError):
+    """A dry-run response carried a job, so the service may have started real work.
+
+    No Estimate is issued and nothing is sent again. `job_id` is the job's
+    identifier when it is readable, otherwise None.
+    """
+
+    def __init__(self, job_id=None):
+        named = f"job {job_id}" if job_id else "an unreadable job"
+        super().__init__(f"Scenario returned {named} for a price check; nothing was sent again")
+        self.job_id = job_id
+
+    def __reduce__(self):
+        return type(self), (self.job_id,)
+
+
+def _started_job(result):
+    """Return (True, job ID or None) when an estimate response names a job."""
+    if "job" not in result and "jobId" not in result:
+        return False, None
+    job = result.get("job")
+    candidate = job.get("jobId") if isinstance(job, dict) else result.get("jobId")
+    if isinstance(candidate, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", candidate):
+        return True, candidate
+    return True, None
+
+
 class AdapterUnavailable(AdapterError):
     """The selected credentials or project cannot read a known model (HTTP 403 or 404)."""
 
@@ -1415,6 +1442,9 @@ class SDKAdapter:
             operation, identifier, json.loads(payload_json), dry_run=True
         )
         result = _json(raw, exact=True)
+        started, job_id = _started_job(result)
+        if started:
+            raise EstimateStartedJob(job_id)
         cost = result.get("creativeUnitsCost")
         if isinstance(cost, bool) or not isinstance(cost, (int, Decimal)) or cost < 0:
             raise AdapterError("Scenario returned no valid exact estimate")

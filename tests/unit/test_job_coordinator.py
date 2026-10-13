@@ -16,12 +16,20 @@ import pytest
 from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs import failures, progress
 from scenario.core.jobs.coordinator import (
+    DuplicateRequestError,
     JobCoordinator,
     QuoteError,
     RecoveryError,
     SubmissionUncertain,
 )
-from scenario.core.jobs.store import JobOrigin, JobScope, JobState, JobStore, StoreError
+from scenario.core.jobs.store import (
+    JobOrigin,
+    JobScope,
+    JobState,
+    JobStore,
+    StoreConflict,
+    StoreError,
+)
 
 SCOPE = JobScope("https://service.example.invalid/v1", "account", "project", "team")
 ORIGIN = JobOrigin("file", "scene", "revision", "object")
@@ -106,6 +114,123 @@ def submit(coordinator, prepared, **overrides):
     }
     current.update(overrides)
     return coordinator.submit(prepared, **current)
+
+
+def lost_submission(request):
+    raise httpx.ReadTimeout("private fixture timeout", request=request)
+
+
+def identical(coordinator, adapter, operation):
+    """Quote and prepare the same request again; a prompt quote is origin-bound."""
+    if operation == "model":
+        return coordinator.prepare(adapter.estimate_model(MODEL, {"prompt": "fixture"}), ORIGIN)
+    if operation == "workflow":
+        estimate = adapter.estimate_workflow(
+            {"id": "workflow", "inputs": MODEL["inputs"]}, {"prompt": "fixture"}
+        )
+        return coordinator.prepare(estimate, ORIGIN)
+    quote = coordinator.quote_prompt({"prompt": "fixture", "mode": "contextual"}, origin=ORIGIN)
+    return coordinator.prepare_quote(quote)
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt"])
+def test_an_unconfirmed_request_refuses_an_identical_one_until_reviewed(setup, operation):
+    coordinator, store, prepared, requests, adapter = setup(lost_submission, operation=operation)
+    with pytest.raises(SubmissionUncertain):
+        submit(coordinator, prepared)
+    earlier = store.get(prepared.intent.request_id)
+    assert earlier.state == JobState.UNCERTAIN
+    with pytest.raises(DuplicateRequestError) as refused:
+        identical(coordinator, adapter, operation)
+    assert refused.value.request_id == earlier.intent.request_id
+    assert earlier.intent.request_id[:8] in str(refused.value)
+    assert len(store.records()) == 1
+    sent = len(requests)
+    coordinator.mark_unconfirmed_reviewed(
+        earlier.intent.request_id, expected_revision=earlier.revision
+    )
+    again = identical(coordinator, adapter, operation)
+    assert store.get(again.intent.request_id).state == JobState.PREPARED
+    assert len(requests) == sent + 1  # one more free dry run, nothing paid
+    # The mark lasts for this session only; a new coordinator refuses again.
+    fresh = JobCoordinator(adapter, store)
+    with pytest.raises(DuplicateRequestError):
+        identical(fresh, adapter, operation)
+
+
+def test_a_claim_is_refused_when_an_identical_request_became_unconfirmed(setup):
+    coordinator, store, first, requests, adapter = setup(lost_submission)
+    second = identical(coordinator, adapter, "model")
+    with pytest.raises(SubmissionUncertain):
+        submit(coordinator, first)
+    paid = [request for request in requests if request.url.params.get("dryRun") != "true"]
+    with pytest.raises(DuplicateRequestError):
+        submit(coordinator, second)
+    assert [r for r in requests if r.url.params.get("dryRun") != "true"] == paid
+    assert store.get(second.intent.request_id).state == JobState.PREPARED
+
+
+def test_other_payloads_scopes_and_confirmed_jobs_do_not_block(setup, tmp_path):
+    coordinator, store, prepared, _, adapter = setup(lost_submission)
+    with pytest.raises(SubmissionUncertain):
+        submit(coordinator, prepared)
+    other = adapter.estimate_model(MODEL, {"prompt": "another"})
+    assert coordinator.prepare(other, ORIGIN).intent.payload_sha256 != (
+        prepared.intent.payload_sha256
+    )
+    # Another credential scope keeps its own records, even in the same database.
+    elsewhere = replace(SCOPE, project_id="other-project")
+    other_adapter = SDKAdapter(
+        Credentials("selected", "secret"),
+        online=lambda: True,
+        base_url=elsewhere.service,
+        account_id=elsewhere.account_id,
+        project_id=elsewhere.project_id,
+        team_id=elsewhere.team_id,
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, content=QUOTE)),
+    )
+    try:
+        other_store = JobStore(tmp_path / "jobs.sqlite3", elsewhere)
+        other_coordinator = JobCoordinator(other_adapter, other_store)
+        estimate = other_adapter.estimate_model(MODEL, {"prompt": "fixture"})
+        assert other_coordinator.prepare(estimate, ORIGIN).intent.payload_sha256 == (
+            prepared.intent.payload_sha256
+        )
+    finally:
+        other_adapter.close()
+
+
+def test_a_confirmed_remote_job_does_not_block_an_identical_request(setup):
+    coordinator, store, prepared, _, adapter = setup()
+    submit(coordinator, prepared)
+    assert store.get(prepared.intent.request_id).state == JobState.REMOTE
+    assert identical(coordinator, adapter, "model").intent.payload_sha256 == (
+        prepared.intent.payload_sha256
+    )
+
+
+def test_only_a_current_unconfirmed_record_can_be_marked_reviewed(setup):
+    coordinator, store, prepared, _, adapter = setup()
+    with pytest.raises(StoreConflict):  # prepared, not unconfirmed
+        coordinator.mark_unconfirmed_reviewed(
+            prepared.intent.request_id,
+            expected_revision=store.get(prepared.intent.request_id).revision,
+        )
+    submit(coordinator, prepared)
+    record = store.get(prepared.intent.request_id)
+    with pytest.raises(StoreConflict):  # confirmed remote job
+        coordinator.mark_unconfirmed_reviewed(
+            record.intent.request_id, expected_revision=record.revision
+        )
+
+
+def test_a_stale_revision_cannot_mark_a_record_reviewed(setup):
+    coordinator, store, prepared, _, _ = setup(lost_submission)
+    stale = store.get(prepared.intent.request_id).revision
+    with pytest.raises(SubmissionUncertain):
+        submit(coordinator, prepared)
+    with pytest.raises(StoreConflict):
+        coordinator.mark_unconfirmed_reviewed(prepared.intent.request_id, expected_revision=stale)
 
 
 @pytest.mark.parametrize("operation", ["model", "workflow", "prompt", "translate"])

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import bpy
 
 from ..core.api.errors import ScenarioError
+from ..core.jobs.coordinator import DuplicateRequestError
 from ..core.jobs.store import JobState
 from ..core.scene import blockout
 from . import file_state
@@ -233,11 +234,13 @@ class BlockoutJobs:
                     raise ScenarioError(
                         0, "Inspect the saved Blockout job; do not repeat an uncertain submission"
                     )
-            except Exception:
+            except Exception as error:
                 item.task, item.phase = None, "ERROR"
                 item.error = (
                     self._stopped(item.request_id)
                     if item.request_id
+                    else str(error)
+                    if isinstance(error, DuplicateRequestError)
                     else "Blockout price unavailable or inputs changed; request a new price"
                 )
 

@@ -15,8 +15,10 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
+from ..core.api.sdk_adapter import EstimateStartedJob
 from ..core.jobs import failures, progress, workflow_nodes
 from ..core.jobs.coordinator import (
+    UNCONFIRMED,
     CancellationUnsupported,
     DecisionRefused,
     DecisionUncertain,
@@ -39,7 +41,7 @@ from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_
 from ..core.scene.panorama import world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
-from ..core.ui.saved_job_actions import WorkflowSteps
+from ..core.ui.saved_job_actions import NATIVE_ONLY, WorkflowSteps
 from . import file_state, first_frame_handoff
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
@@ -92,6 +94,26 @@ STEP_POLL_INTERVAL = 15.0
 DECIDE = "decide_workflow_node"
 # What happened to one finished decision command; see ModelJobs.decision_outcome.
 DECISION_OUTCOMES = ("applied", "refused", "uncertain", "not_sent")
+# Set once a price check returns a job; automatic pricing then stays off until
+# Blender restarts, whichever connection or job context asked.
+_ESTIMATES_STOPPED = threading.Event()
+
+
+class AutomaticEstimatesStopped(ScenarioError):
+    """A price check returned a job; nothing was resubmitted and pricing stopped."""
+
+    def __init__(self, error):
+        super().__init__(
+            0,
+            f"{error}. Automatic prices are off until Blender restarts; once that job finishes, "
+            "save it from history.",
+        )
+
+
+def automatic_estimates_stopped():
+    return _ESTIMATES_STOPPED.is_set()
+
+
 # Saved states this session never advances by itself; READY is settled too
 # unless an automatic image import is still pending.
 _SETTLED = frozenset(
@@ -475,6 +497,10 @@ class ModelJobs:
                 raise ScenarioError(0, "The estimate is still running")
             try:
                 ticket.quote = self.session.deliver(completions[0], lambda value, *_: value)
+            except EstimateStartedJob as error:
+                ticket.used = True
+                _ESTIMATES_STOPPED.set()
+                raise AutomaticEstimatesStopped(error) from None
             except Exception:
                 if ticket.operation == "workflow":
                     ticket.used = True
@@ -1340,6 +1366,9 @@ class ModelJobs:
             return ()
         if request_id in self._receipts:
             return ("retry_receipt",)
+        if state in UNCONFIRMED:
+            # An identical request stays refused until the user reviews this one.
+            return () if self.session.unconfirmed_reviewed(request_id) else ("mark_reviewed",)
         if any(item.state == LocalApplicationState.APPLYING for item in record.local_applications):
             return ()
         reusable = state in (JobState.READY, JobState.APPLY_FAILED) or (
@@ -1446,6 +1475,11 @@ class ModelJobs:
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
+        if action == "mark_reviewed":
+            # Local and session-only: nothing is sent, saved or resubmitted.
+            self.session.mark_unconfirmed_reviewed(request_id, expected_revision=expected_revision)
+            view.meta["recovery_actions"] = self.actions(record)
+            return None
         if action == "retry_receipt":
             pending = self._receipts[request_id]
             if isinstance(pending, MaterialResultUncertain):
@@ -2319,7 +2353,8 @@ class ModelJobs:
             "delivery_paused": record.intent.request_id in self._paused,
             "delivery_active": self._delivering(record.intent.request_id, record),
             "delivery_offline": self._offline(record.intent.request_id, record),
-            "actions": self.actions(record),
+            # Only the user marks an unconfirmed request reviewed, in Blender's Jobs list.
+            "actions": tuple(item for item in self.actions(record) if item not in NATIVE_ONLY),
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views
             else None,

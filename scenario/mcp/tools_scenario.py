@@ -1859,7 +1859,14 @@ def job_status(args):
 
 def recover_local_job(args):
     from ..blender.model_jobs import WorkflowCancelUnavailable
+    from ..core.ui.saved_job_actions import NATIVE_ONLY
 
+    if args.get("action") in NATIVE_ONLY:
+        raise ScenarioError(
+            0,
+            "Only the user can mark an unconfirmed request reviewed, in Blender's Jobs list. "
+            "Nothing was changed",
+        )
     try:
         jobs, task = runtime.control_model_job(
             args["context_id"], args["request_id"], args["expected_revision"], args["action"]

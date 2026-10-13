@@ -77,6 +77,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.status_after_cancel = "canceled"
         self.lose_response = False
         self.dry_run_costs = {}
+        self.dry_run_job = None  # a job ID a misbehaving dry run would return
         self.failed_descriptions = 0  # model reads that Scenario answers with HTTP 503
         self.entered, self.release = threading.Event(), threading.Event()
         self.release.set()
@@ -175,6 +176,9 @@ class ModelGenerationTests(unittest.TestCase):
                 self.remote_status = self.status_after_cancel
                 return httpx.Response(200, json={"job": {"jobId": "remote-1"}})
             if request.url.params.get("dryRun") == "true":
+                if self.dry_run_job is not None:
+                    job = {"jobId": self.dry_run_job, "status": "queued"}
+                    return httpx.Response(200, json={"creativeUnitsCost": 1, "job": job})
                 # Model run paths end with the model id; distinct forms can quote distinct costs.
                 cost = self.dry_run_costs.get(
                     request.url.path.rsplit("/", 1)[-1], "0.1234567890123456789"
@@ -1016,7 +1020,8 @@ class ModelGenerationTests(unittest.TestCase):
         scene = bpy.context.scene
         self.ui_quote()
         ui = self.generation.submit_generation(bpy.context, "image")
-        mcp = self.mcp_submit(self.mcp_quote())
+        # A different request: an identical one waits until the UI submission is confirmed.
+        mcp = self.mcp_submit(self.mcp_quote(prompt="a lamp"), prompt="a lamp")
         self.deliver_results()
         owner = self.runtime.state.model_jobs
         views = (owner.views[mcp["local_id"]], owner.views[ui.local_id])
@@ -1080,7 +1085,8 @@ class ModelGenerationTests(unittest.TestCase):
         expected = f"{message}. {failures.NOT_SHOWN}"
         self.ui_quote()
         ui = self.generation.submit_generation(bpy.context, "image")
-        mcp = self.mcp_submit(self.mcp_quote())
+        # A different request: an identical one waits until the UI submission is confirmed.
+        mcp = self.mcp_submit(self.mcp_quote(prompt="a lamp"), prompt="a lamp")
         self.deliver_results()
         owner = self.runtime.state.model_jobs
         operators = submodule("blender.operators")
@@ -1553,14 +1559,16 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
 
     def test_native_cancellation_of_queued_submission_never_dispatches(self):
-        quotes = [self.mcp_quote() for _ in range(3)]
+        # Different requests: an identical one is refused while another is in flight.
+        prompts = [f"a teapot {index}" for index in range(3)]
+        quotes = [self.mcp_quote(prompt=prompt) for prompt in prompts]
         self.release.clear()
         # Occupy both shared workers so the third approved submission stays queued.
-        for quote in quotes[:2]:
+        for quote, prompt in zip(quotes[:2], prompts[:2], strict=True):
             self.entered.clear()
-            self.mcp_submit(quote)
+            self.mcp_submit(quote, prompt=prompt)
             self.assertTrue(self.entered.wait(5))
-        request_id = self.mcp_submit(quotes[2])["local_id"]
+        request_id = self.mcp_submit(quotes[2], prompt=prompts[2])["local_id"]
         self.runtime.sync_catalog_context()
         owner = self.runtime.state.model_jobs
         view = owner.views[request_id]
@@ -1622,6 +1630,101 @@ class ModelGenerationTests(unittest.TestCase):
                 self.recover(result["local_id"], action)
         self.assertEqual(len(self.calls), calls)
         self.assertEqual(len(self.paid), 1)
+
+    def lane_price(self, lane="image"):
+        """Ask the form for a price the way the pump does and deliver the outcome."""
+        self.generation.request_estimate(bpy.context.scene, lane)
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The lane state below records the outcome.
+        self.runtime.sync_catalog_context()
+        return bpy.context.scene.scenario.lane_state(lane)
+
+    def test_an_unconfirmed_request_refuses_an_identical_one_until_the_user_reviews_it(self):
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+        with self.assertRaisesRegex(Exception, request_id[:8]):
+            self.mcp_quote()
+        state = self.lane_price()
+        self.assertEqual(state.estimate_state, "ERROR")
+        self.assertIn(request_id[:8], state.estimate_error)
+        owner = self.runtime.state.model_jobs
+        self.assertEqual(owner.actions(self.store.get(request_id)), ("mark_reviewed",))
+        # Only the user marks it, in Blender; MCP neither lists nor accepts the action.
+        self.assertNotIn("mark_reviewed", self.tools.job_status({"job_id": request_id})["actions"])
+        with self.assertRaisesRegex(Exception, "Only the user"):
+            self.recover(request_id, "mark_reviewed")
+        rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
+        mark = next(item for item in rows if item.action == "mark_reviewed")
+        self.assertEqual((mark.operator, mark.label), ("scenario.recover_job", "Mark reviewed"))
+        result = bpy.ops.scenario.recover_job("EXEC_DEFAULT", **dict(mark.properties))
+        self.assertEqual(result, {"FINISHED"})
+        self.assertEqual(owner.actions(self.store.get(request_id)), ())
+        self.assertEqual(self.mcp_quote()["model_id"], self.model["id"])
+        self.ui_quote()
+        self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+        self.assertEqual(len(self.paid), 1)
+
+    def use_project(self, project_id):
+        self.expected_project = project_id
+        self.prefs.project_id = project_id
+        self.store = self.runtime.ensure_job_store()
+        record = submodule("core.api.catalog").ModelRecord.from_api(self.model)
+        self.generation.set_catalog([record], [record])
+
+    def test_an_unconfirmed_request_blocks_only_its_own_project(self):
+        self.addCleanup(setattr, self.prefs, "project_id", self.prefs.project_id)
+        self.use_project("project-a")
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+        with self.assertRaisesRegex(Exception, request_id[:8]):
+            self.mcp_quote()
+        # Another project is another credential scope with its own saved requests.
+        self.use_project("project-b")
+        self.mcp_submit(self.mcp_quote())
+        self.settle()
+        self.assertEqual(
+            [request.url.params["projectId"] for request in self.paid], ["project-a", "project-b"]
+        )
+
+    def test_a_confirmed_job_does_not_block_an_identical_request(self):
+        first = self.mcp_submit(self.mcp_quote())
+        self.settle()
+        self.assertEqual(self.store.get(first["local_id"]).state.value, "remote")
+        self.mcp_submit(self.mcp_quote())
+        self.settle()
+        self.assertEqual(len(self.paid), 2)
+
+    def test_a_price_check_that_returns_a_job_stops_automatic_prices(self):
+        jobs_module, pump = submodule("blender.model_jobs"), submodule("blender.pump")
+        self.addCleanup(jobs_module._ESTIMATES_STOPPED.clear)
+        self.dry_run_job = "started-1"
+        state = self.lane_price()
+        self.assertEqual(state.estimate_state, "ERROR")
+        self.assertIn("job started-1", state.estimate_error)
+        self.assertIn("Automatic prices are off until Blender restarts", state.estimate_error)
+        self.assertTrue(jobs_module.automatic_estimates_stopped())
+        calls = len(self.calls)
+        # The pump no longer prices an edited form; it says why instead.
+        submodule("blender.props").mark_estimate_dirty(state)
+        state.estimate_dirty_at = submodule("blender.props").clock() - 10
+        pump._process()
+        self.assertEqual(
+            (state.estimate_state, state.estimate_error), ("UNAVAILABLE", pump.ESTIMATES_STOPPED)
+        )
+        self.assertEqual(len(self.calls), calls)
+        # An explicit agent price is refused the same way; nothing is ever submitted.
+        with self.assertRaisesRegex(Exception, "job started-1"):
+            self.mcp_quote()
+        self.assertEqual((self.paid, self.store.records()), ([], ()))
 
     def test_shared_wait_does_not_block_main_thread_result_delivery(self):
         self.result_fixture()
@@ -1755,8 +1858,8 @@ class ModelGenerationTests(unittest.TestCase):
             return self.use_model(self.panorama_model)
         return self.model["id"]
 
-    def mcp_quote(self, lane="image"):
-        parameters = {"prompt": "a teapot"}
+    def mcp_quote(self, lane="image", prompt="a teapot"):
+        parameters = {"prompt": prompt}
         if lane in {"render_image", "render_video"}:
             state = self.configure_ui_lane(lane)
             references = submodule("blender.render_references")
@@ -1809,13 +1912,13 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertNotIn("error", response)
         return response["result"]
 
-    def mcp_submit(self, quote, **changes):
+    def mcp_submit(self, quote, prompt="a teapot", **changes):
         args = dict(
             lane=quote["lane"],
             model_id=quote["model_id"],
             parameters={}
             if quote["lane"] in {"render_image", "render_video"}
-            else {"prompt": "a teapot"},
+            else {"prompt": prompt},
             quote_id=quote["quote_id"],
             approved_cost=quote["cu_cost_exact"],
         )
@@ -2148,12 +2251,14 @@ class ModelGenerationTests(unittest.TestCase):
             if lane == "image":
                 continue
             with self.subTest(lane=lane):
-                quote = self.mcp_quote(lane)
-                result = self.mcp_submit(quote)
+                # One request per lane: an identical one stays refused while unconfirmed.
+                prompt = f"a teapot for {lane}"
+                quote = self.mcp_quote(lane, prompt=prompt)
+                result = self.mcp_submit(quote, prompt=prompt)
                 references.append(result["local_id"])
                 self.settle()
                 with self.assertRaises(self.request_error):
-                    self.mcp_submit(quote)
+                    self.mcp_submit(quote, prompt=prompt)
         self.runtime.state.reset()
         for reference in references:
             self.assertEqual(self.tools.job_status({"job_id": reference})["status"], "uncertain")
@@ -2415,7 +2520,8 @@ class ModelGenerationTests(unittest.TestCase):
         references = []
         for lane in ("video", "3d", "material", "audio", "edit3d"):
             with self.subTest(lane=lane):
-                self.configure_ui_lane(lane)
+                # One request per lane: an identical one stays refused while unconfirmed.
+                self.configure_ui_lane(lane).prompt = f"a teapot for {lane}"
                 self.ui_quote(lane)
                 view = self.generation.submit_generation(bpy.context, lane)
                 references.append(view.local_id)

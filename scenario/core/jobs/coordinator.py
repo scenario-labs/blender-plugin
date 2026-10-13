@@ -54,9 +54,32 @@ from .store import (
 from .uploads import UploadCommands, UploadError
 from .workflow_nodes import definition_links, pending_steps, validate_decision, waiting
 
+# A request in these states may have been sent, but no job was confirmed.
+UNCONFIRMED = frozenset({JobState.SUBMITTING, JobState.UNCERTAIN})
+
 
 class QuoteError(ValueError):
     """The current request no longer matches an active, unexpired quote."""
+
+
+class DuplicateRequestError(QuoteError):
+    """An identical paid request in this scope has no confirmed outcome yet.
+
+    Raised after the free dry run but before a quote is returned, before
+    preparation and again inside the submission claim, so nothing is sent.
+    `request_id` names the earlier request; the user checks it or marks it
+    reviewed, which lasts for this coordinator's session only.
+    """
+
+    def __init__(self, request_id):
+        super().__init__(
+            f"An identical request ({request_id[:8]}) has no confirmed outcome, so sending "
+            "this one could charge twice. Check it in Jobs or mark it reviewed there, then retry"
+        )
+        self.request_id = request_id
+
+    def __reduce__(self):
+        return type(self), (self.request_id,)
 
 
 class RouteQuoteError(QuoteError):
@@ -324,6 +347,8 @@ class JobCoordinator:
             adapter, store, self._result_guard, downloader=result_downloader, root=result_root
         )
         self._quotes = WeakValueDictionary()
+        # Unconfirmed request IDs the user marked reviewed; in memory only, never saved.
+        self._reviewed = set()
         self._deciding = set()
         # Definition links of waiting workflow jobs, by remote job ID; see _step_links.
         self._step_links_cache = {}
@@ -1247,6 +1272,7 @@ class JobCoordinator:
                 raise QuoteError(
                     "The request changed while its models were checked; estimate again"
                 )
+        self._refuse_unconfirmed_twin(estimate)
         with self._request_guard(origin):
             self._validate_composition(composition)
             bindings = self._mesh_bindings(operation, record, estimate.payload)
@@ -1302,6 +1328,39 @@ class JobCoordinator:
             del self._quotes[id(quote)]
             return prepared
 
+    def _refuse_unconfirmed_twin(self, estimate):
+        """Refuse a request identical to one in this scope whose outcome is unknown.
+
+        Identical means the same operation, target and payload digest. Only
+        submitting and uncertain records count: a confirmed remote job may be
+        repeated on purpose. The store is already limited to this scope.
+        """
+        digest = hashlib.sha256(estimate.payload_json).hexdigest()
+        with self._lock:
+            reviewed = frozenset(self._reviewed)
+        for record in self._store.unconfirmed(estimate.operation, estimate.target_id, digest):
+            if record.state in UNCONFIRMED and record.intent.request_id not in reviewed:
+                raise DuplicateRequestError(record.intent.request_id)
+
+    def mark_unconfirmed_reviewed(self, request_id, *, expected_revision):
+        """Let identical requests through again for this session; sends and saves nothing."""
+        with self._lock:
+            if not self._active:
+                raise QuoteError("Use the current active connection")
+            record = self._store.get(request_id)
+            if (
+                record is None
+                or type(expected_revision) is not int
+                or record.revision != expected_revision
+                or record.state not in UNCONFIRMED
+            ):
+                raise StoreConflict("The saved job changed; inspect it again")
+            self._reviewed.add(request_id)
+
+    def unconfirmed_reviewed(self, request_id):
+        with self._lock:
+            return request_id in self._reviewed
+
     def prepare(self, estimate: Estimate, origin: JobOrigin):
         """Accept direct SDK estimates; bound quotes must use prepare_quote."""
         if not self._adapter.owns_estimate(estimate):
@@ -1331,6 +1390,7 @@ class JobCoordinator:
             if destination_only(origin):
                 # Such an origin survives scene edits, so it cannot vouch for inputs.
                 raise QuoteError("Capture the scene with its inputs before preparing a request")
+            self._refuse_unconfirmed_twin(estimate)
             intent = JobIntent(
                 request_id=uuid.uuid4().hex,
                 scope=self.scope,
@@ -1392,6 +1452,7 @@ class JobCoordinator:
                         or current.state != JobState.PREPARED
                     ):
                         raise StoreConflict("Request is no longer prepared; do not resubmit")
+                    self._refuse_unconfirmed_twin(prepared.estimate)
                     self._validate_mesh_bindings(intent.mesh_sources)
                     self._validate_composition(prepared.composition, reserved=True)
                     self._store.transition(

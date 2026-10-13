@@ -692,15 +692,17 @@ class ComposerJobStripTests(unittest.TestCase):
         self.assertEqual(len(self.jobs.paid), 1)
 
     def test_a_queued_unsent_job_cancels_through_its_live_chip(self):
-        quotes = [self.jobs.mcp_quote() for _ in range(3)]
+        # Different requests: an identical one is refused while another is in flight.
+        prompts = [f"a teapot {index}" for index in range(3)]
+        quotes = [self.jobs.mcp_quote(prompt=prompt) for prompt in prompts]
         self.jobs.release.clear()
         try:
             # Occupy both shared workers so the third approved submission stays queued.
-            for quote in quotes[:2]:
+            for quote, prompt in zip(quotes[:2], prompts[:2], strict=True):
                 self.jobs.entered.clear()
-                self.jobs.mcp_submit(quote)
+                self.jobs.mcp_submit(quote, prompt=prompt)
                 self.assertTrue(self.jobs.entered.wait(5))
-            request_id = self.jobs.mcp_submit(quotes[2])["local_id"]
+            request_id = self.jobs.mcp_submit(quotes[2], prompt=prompts[2])["local_id"]
             self.runtime.sync_catalog_context()
             owner = self.runtime.state.model_jobs
             self.assertTrue(owner.busy(request_id))

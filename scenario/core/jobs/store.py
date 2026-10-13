@@ -1067,6 +1067,30 @@ class JobStore:
         with self._connection() as connection:
             return self._records(connection)
 
+    def unconfirmed(self, operation, target_id, payload_sha256):
+        """Submitting or uncertain records with this request identity, in this scope.
+
+        SQLite selects them, so unrelated history is never decoded; a malformed
+        row is skipped here and still fails when it is read on its own.
+        """
+        with self._connection() as connection:
+            identifiers = connection.execute(
+                "SELECT request_id FROM jobs WHERE scope=? AND json_valid(record) "
+                "AND json_extract(record, '$.state') IN (?, ?) "
+                "AND json_extract(record, '$.intent.operation')=? "
+                "AND json_extract(record, '$.intent.target_id')=? "
+                "AND json_extract(record, '$.intent.payload_sha256')=? ORDER BY request_id",
+                (
+                    self._key,
+                    JobState.SUBMITTING.value,
+                    JobState.UNCERTAIN.value,
+                    operation,
+                    target_id,
+                    payload_sha256,
+                ),
+            ).fetchall()
+            return tuple(self._read(connection, row[0]) for row in identifiers)
+
     def _records(self, connection):
         identifiers = connection.execute(
             "SELECT request_id FROM jobs WHERE scope=? ORDER BY request_id", (self._key,)

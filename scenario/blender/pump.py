@@ -6,10 +6,12 @@ import logging
 
 import bpy
 
-from . import generation, handlers, props, runtime
+from . import generation, handlers, model_jobs, props, runtime
 
 log = logging.getLogger("scenario.pump")
 ESTIMATE_DEBOUNCE = 0.7
+# Shown instead of a price once a price check returned a job this session.
+ESTIMATES_STOPPED = "Automatic prices are off until Blender restarts: a price check started a job"
 ACTIVE_INTERVAL = 0.25
 IDLE_INTERVAL = 0.6
 _running = False
@@ -94,7 +96,12 @@ def _process():
                 and lane_state.estimate_dirty_at
                 and now - lane_state.estimate_dirty_at >= ESTIMATE_DEBOUNCE
             ):
-                if runtime.credentials().valid and runtime.online():
+                if model_jobs.automatic_estimates_stopped():
+                    lane_state.estimate_dirty_at = 0.0
+                    lane_state.estimate_state = "UNAVAILABLE"
+                    lane_state.estimate_error = ESTIMATES_STOPPED
+                    changed = True
+                elif runtime.credentials().valid and runtime.online():
                     lane_state.estimate_dirty_at = 0.0
                     generation.request_estimate(scene, lane)
                     changed = True

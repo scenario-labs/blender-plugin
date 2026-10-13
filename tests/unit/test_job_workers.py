@@ -11,7 +11,12 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
-from scenario.core.jobs.coordinator import JobCoordinator, QuoteError, SubmissionUncertain
+from scenario.core.jobs.coordinator import (
+    DuplicateRequestError,
+    JobCoordinator,
+    QuoteError,
+    SubmissionUncertain,
+)
 from scenario.core.jobs.store import (
     JobOrigin,
     JobScope,
@@ -170,7 +175,8 @@ def test_shutdown_waits_for_receipt_and_closes_once(setup, monkeypatch):
 
 def test_worker_failure_is_uncertain_and_does_not_kill_capacity(setup):
     owner, _, store, prepare, entered, release, calls, _ = setup(fail=True)
-    first, second = prepare(), prepare()
+    # Different requests: an identical one is refused while the first is unconfirmed.
+    first, second = prepare("first"), prepare("second")
     one = submit(owner, first)
     assert entered.wait(2)
     two = submit(owner, second)
@@ -181,6 +187,22 @@ def test_worker_failure_is_uncertain_and_does_not_kill_capacity(setup):
         assert "private" not in str(error.value)
         assert store.get(prepared.intent.request_id).state == JobState.UNCERTAIN
     assert len(calls) == 2
+
+
+def test_an_identical_request_queued_behind_an_unconfirmed_one_sends_nothing(setup):
+    owner, _, store, prepare, entered, release, calls, _ = setup(fail=True)
+    first, second = prepare(), prepare()
+    one = submit(owner, first)
+    assert entered.wait(2)
+    two = submit(owner, second)
+    release.set()
+    with pytest.raises(SubmissionUncertain):
+        one.result(2)
+    with pytest.raises(DuplicateRequestError) as refused:
+        two.result(2)
+    assert refused.value.request_id == first.intent.request_id
+    assert store.get(second.intent.request_id).state == JobState.PREPARED
+    assert len(calls) == 1
 
 
 def test_queued_quote_is_revalidated_at_dispatch(setup):
@@ -261,7 +283,7 @@ def test_active_network_concurrency_is_bounded(setup):
     owner, _, _, prepare, entered, release, calls, _ = setup(
         workers=2, pending_limit=4, on_paid=lambda: both_entered.wait(timeout=3)
     )
-    first, second = prepare(), prepare()
+    first, second = prepare("first"), prepare("second")
     one, two = submit(owner, first), submit(owner, second)
     both_entered.wait(timeout=3)
     assert entered.wait(2)

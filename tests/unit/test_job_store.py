@@ -122,6 +122,45 @@ def test_lost_submission_never_returns_to_dispatchable_state(store, tmp_path, in
     assert store.get(intent.request_id) == remote
 
 
+def test_unconfirmed_lookup_decodes_only_matching_records(store, tmp_path, intent, monkeypatch):
+    from scenario.core.jobs import store as module
+
+    submitting = advance(store, store.create(intent), JobState.SUBMITTING)
+    uncertain = replace(intent, request_id="request-two")
+    advance(store, advance(store, store.create(uncertain), JobState.SUBMITTING), JobState.UNCERTAIN)
+    store.create(replace(intent, request_id="still-prepared"))
+    store.create(replace(intent, request_id="other-target", target_id="model-two"))
+    remote = replace(intent, request_id="confirmed")
+    advance(
+        store,
+        advance(store, store.create(remote), JobState.SUBMITTING),
+        JobState.REMOTE,
+        remote_job_id="remote-one",
+    )
+    for index in range(50):
+        store.create(replace(intent, request_id=f"history-{index}", payload_sha256="0" * 64))
+    other_scope = JobStore(tmp_path / "jobs.sqlite3", replace(intent.scope, project_id="other"))
+    advance(
+        other_scope,
+        other_scope.create(replace(intent, scope=other_scope.scope, request_id="elsewhere")),
+        JobState.SUBMITTING,
+    )
+    with sqlite3.connect(tmp_path / "jobs.sqlite3") as connection:
+        connection.execute("INSERT INTO jobs VALUES (?, ?, 0, '{')", (store._key, "damaged"))
+    decoded = []
+    decode = module._decode
+
+    def counted(raw, *args, **kwargs):
+        decoded.append(json.loads(raw)["intent"]["request_id"])
+        return decode(raw, *args, **kwargs)
+
+    monkeypatch.setattr(module, "_decode", counted)
+    found = store.unconfirmed(intent.operation, intent.target_id, intent.payload_sha256)
+    assert [record.intent.request_id for record in found] == ["request-one", "request-two"]
+    assert found[0] == submitting
+    assert decoded == ["request-one", "request-two"]
+
+
 def test_generation_download_and_application_have_separate_states(store, intent):
     record = store.create(intent)
     for state in (

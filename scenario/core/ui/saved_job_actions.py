@@ -49,6 +49,7 @@ LABELS = {
     "restore_world": "Restore previous World",
     "apply_material": "Apply saved material",
     "recover_blockout": "Read saved Blockout plan",
+    "mark_reviewed": "Mark reviewed",
 }
 
 # Actions the native recovery operator dispatches, with their groups, in its
@@ -61,8 +62,12 @@ RECOVERY_GROUPS = {
     "cancel_prepared": "cancel",
     "recover_download": "recover",
     "retry_receipt": "receipt",
+    "mark_reviewed": "recover",
 }
 RECOVERY_ACTIONS = tuple(RECOVERY_GROUPS)
+# Recovery actions only the user takes in Blender. Marking an unconfirmed request
+# reviewed lets an identical one through, so MCP neither lists nor accepts it.
+NATIVE_ONLY = frozenset({"mark_reviewed"})
 # Status rows offered as ModelJobs actions; their decisions use their own commands.
 STATUS_ACTIONS = {
     "review_step": ("Workflow waits for your decision", "INFO"),

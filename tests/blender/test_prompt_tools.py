@@ -307,6 +307,28 @@ class PromptToolsTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(self.lane.prompt, "a teapot")
 
+    def test_an_unconfirmed_prompt_refuses_an_identical_one_after_restart_until_reviewed(self):
+        item = self.quote()
+        self.lose_response = True
+        self.approve(item)
+        self.advance(item)
+        self.lose_response = False
+        request_id = item.request_id
+        state = self.storage.JobState
+        self.assertEqual(self.runtime.state.job_store.get(request_id).state, state.UNCERTAIN)
+        # A restart forgets the field's own action; the shared guard still refuses.
+        self.runtime.state.reset()
+        deferred = self.mcp.estimate_prompt({"lane": "image", "action": "GENERATE"})
+        with self.assertRaisesRegex(Exception, request_id[:8]):
+            deferred.finish(deferred.run())
+        jobs = self.runtime.ensure_model_jobs()
+        record = self.runtime.state.job_store.get(request_id)
+        self.assertEqual(jobs.actions(record), ("mark_reviewed",))
+        jobs.control(request_id, record.revision, "mark_reviewed")
+        deferred = self.mcp.estimate_prompt({"lane": "image", "action": "GENERATE"})
+        self.assertIn("quote_id", deferred.finish(deferred.run()))
+        self.assertEqual(len(self.paid), 1)
+
     def test_native_cancellation_of_queued_prompt_request_never_dispatches(self):
         state = self.storage.JobState
         item = self.quote("TRANSLATE")

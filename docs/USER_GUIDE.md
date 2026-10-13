@@ -550,6 +550,7 @@ job stays here until you apply its results.
 - After a restart, choose **Inspect saved jobs**, then **Refresh status** or **Resume download**.
 - **Cancel prepared job** drops an approved request that hasn't been sent yet; nothing reaches Scenario. A canceled Film task keeps its name, so use a new take name to retry.
 - **Cancel generation** appears only for jobs Scenario can cancel. Other running jobs finish or fail on Scenario and stay recoverable.
+- While a request's outcome is unconfirmed, the same request is refused so you aren't charged twice. Check your Scenario history, then choose **Mark reviewed** on that job; this lasts until you restart Blender.
 
 ### Generations
 
@@ -756,6 +757,7 @@ Prices are in Creative Units (CU) and depend on the model, settings and referenc
 - **from N CU** means the final price may be higher: some references aren't uploaded yet, or a workflow loops or can't be checked for loops.
 - **Price shown after the upload** means a required mesh or capture is still missing.
 - Prompt helpers and Blockout designs are paid separately.
+- If a price check ever starts a job on Scenario, prices stop until you restart Blender and nothing is sent again.
 - With an empty Render Image or Render Video look and automatic Spark on, the look has its own price before the render's. Turn Spark off to use the photoreal default instead.
 
 See the [known limitations](KNOWN_LIMITATIONS.md) for current spending limits.

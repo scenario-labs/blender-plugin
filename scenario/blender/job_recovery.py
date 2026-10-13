@@ -50,6 +50,13 @@ def cancel_prepared_message(request_id):
     return message
 
 
+# Shown before marking an unconfirmed request reviewed for this session.
+REVIEW_MESSAGE = (
+    "Scenario may have started this request. Check your Scenario history first: "
+    "an identical request sent now could be charged twice."
+)
+
+
 class SCENARIO_OT_recover_job(bpy.types.Operator):
     bl_idname = "scenario.recover_job"
     bl_label = "Recover saved job"
@@ -76,6 +83,14 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
             )
         if self.action == "cancel":
             return context.window_manager.invoke_confirm(self, event)
+        if self.action == "mark_reviewed":
+            return context.window_manager.invoke_confirm(
+                self,
+                event,
+                title="Mark unconfirmed request reviewed?",
+                message=REVIEW_MESSAGE,
+                confirm_text="Mark reviewed",
+            )
         return self.execute(context)
 
     def execute(self, context):
@@ -98,6 +113,8 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
         runtime.set_message(
             "Prepared job canceled; nothing was sent to Scenario"
             if self.action == "cancel_prepared"
+            else "Marked reviewed for this session; an identical request can be sent again"
+            if self.action == "mark_reviewed"
             else "Recovery requested; no new generation was submitted"
         )
         return {"FINISHED"}

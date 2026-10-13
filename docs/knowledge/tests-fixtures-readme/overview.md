@@ -7,8 +7,8 @@
   "evidence": {
     "path": "tests/fixtures/README.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-10",
-    "limits": "Offline sanitizer and all selected recorder paths inspected with synthetic transport and local file failure tests. The recorder now uses the shared pinned SDK adapter for nineteen model details and a single list page, with sanitized UTC recording metadata. Committed API/media fixtures are unchanged except the nineteenth model record, Seedance 2.0 Mini, added alone through one live detail read. No full live recording, ownership assertion or media-redistribution approval; those remain under issue9. Exact packaged Blender 5.0.1 macOS arm64 baseline passed, including the new single-page SDK contract; broader hosted platform checks are separate. Interrupted private staging is ignored by Git and excluded from offline cleanup and fixture hygiene; synthetic valid and truncated staged files remain untouched. Inventory row, recorder count and recording note re-checked after adding the Seedance 2.0 Mini record on 2026-10-10 through the recorder's adapter read and write_fixture scrub; offline hygiene tests pass on it. Other committed records, the list page and PROVENANCE.json were not regenerated. Other sources retain their prior evidence.",
+    "reviewed_at": "2026-10-13",
+    "limits": "Offline sanitizer and all selected recorder paths inspected with synthetic transport and local file failure tests. The recorder now uses the shared pinned SDK adapter for nineteen model details and a single list page, with sanitized UTC recording metadata. Committed API/media fixtures are unchanged except the nineteenth model record, Seedance 2.0 Mini, added alone through one live detail read. No full live recording is claimed; it remains a separate follow-up. Exact packaged Blender 5.0.1 macOS arm64 baseline passed, including the new single-page SDK contract; broader hosted platform checks are separate. Interrupted private staging is ignored by Git and excluded from offline cleanup and fixture hygiene; synthetic valid and truncated staged files remain untouched. Inventory row, recorder count and recording note re-checked after adding the Seedance 2.0 Mini record on 2026-10-10 through the recorder's adapter read and write_fixture scrub; offline hygiene tests pass on it. Other committed records, the list page and PROVENANCE.json were not regenerated. Other sources retain their prior evidence. Provenance, rights and licence sections re-reviewed on 2026-10-13: they record the maintainer's confirmation of that date that Scenario Inc. owns the account that generated the committed fixtures, the Terms and Conditions section 4.3 basis for Scenario Inc. holding the rights to the generated assets, and one GPL-3.0-or-later licence statement for every file under tests/fixtures/, matching the root LICENSE. No REUSE.toml exists yet; the per-path REUSE annotation remains under #29. Recorder, sanitizer and inventory-consumer claims were not re-reviewed in this pass, so their changed sources keep their earlier fingerprints.",
     "sources": {
       ".gitignore": "4ed96dcd0ee0b3f50d0250929543ff5622e3bcc79bb48a9ea1533dd89fd0e342",
       "scenario/core/api/sdk_adapter.py": "c6e89405e668a38a0d68237c9cab183cfcb8ef289fc8396595979dbf44c71b80",
@@ -21,10 +21,11 @@
       "tests/unit/test_scenario_sdk_contract.py": "69c3e06092104358ac2b48529feacc794a756bbe697705aeff02d6984e593362",
       "tests/unit/test_sdk_adapter.py": "0adceb2f6b7566ee6203ed4779d3373bb39df3971673f5853e40d5fc56497fd0",
       "tools/record_fixtures.py": "a57442ae9a64efa0892eec2b2fcdc4438e81e5b2c643d6fb25689a34d0f58d0d",
-      "tests/fixtures/models/model_bytedance-seedance-2-0-mini.json": "452ebb7169a55855fd495c94947724bfd09221014fb8f929726216744fec032e"
+      "tests/fixtures/models/model_bytedance-seedance-2-0-mini.json": "452ebb7169a55855fd495c94947724bfd09221014fb8f929726216744fec032e",
+      "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
     },
     "scope": "overview",
-    "base_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b"
+    "base_revision": "be8eba073fde2dfc5ad5b1761aaf0eef2511da5a"
   }
 }
 ---

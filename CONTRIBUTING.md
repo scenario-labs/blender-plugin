@@ -258,7 +258,8 @@ confined to its downstream reporter. It cannot run on PRs or forks. Maintainers
 can dispatch it from Actions after configuring the intended test scope; actual
 live and issue-deduplication acceptance remain #41. See
 [reports and rerun boundaries](docs/MODEL_PAYLOAD_AUDIT.md#weekly-workflow-and-retained-results).
-Fixture recording and provenance are tracked in #9.
+The [fixture inventory](tests/fixtures/README.md) documents fixture recording,
+provenance, rights and licence.
 
 `tools.check_sdk` uses the shared SDK read/estimate adapter and always sends
 estimates with `dryRun=true` in the query. It prints counts and the exact cost,

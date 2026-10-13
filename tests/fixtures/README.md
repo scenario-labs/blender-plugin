@@ -21,12 +21,19 @@ below come from the commits that first added each file, not a recent API refresh
 ## Provenance and rights
 
 The JSON records and Patina maps are captured Scenario API responses and outputs.
-The playblast is a Blender capture. Git history records their addition, but does
-not establish which legal entity owned the generating account or media rights.
-Maintainer confirmation of those rights and the final media licence/provenance
-statement remain tracked in [#9](https://github.com/scenario-labs/blender-plugin/issues/9).
-Do not infer an assignment or change an existing licence from this inventory.
+The playblast is a Blender capture. On 2026-10-13 the maintainer confirmed that
+Scenario Inc. owns the account that generated the committed fixtures: the Patina
+job and the playblast clip were produced on a test workspace owned by Scenario Inc.
+Under section 4.3 of the Scenario Terms and Conditions
+([scenario.com/terms-and-conditions](https://www.scenario.com/terms-and-conditions)),
+the generating account owns the generated assets, so Scenario Inc. holds the
+rights to these files and releases them under the repository licence.
 No `PROVENANCE.json` has been generated for a new recording run.
+
+## Licence
+
+All files under tests/fixtures/ are licensed under GPL-3.0-or-later, the repository
+licence; see the root [LICENSE](../../LICENSE).
 
 ## Generated audio fixtures
 
@@ -234,8 +241,8 @@ records, the list page or `PROVENANCE.json`. Its public schema keeps a
 first-frame rule naming a last-frame input that the schema does not declare.
 The five [panorama contract models](#panorama-contract-models) were also added
 on 2026-10-10, from a recorder run whose other outputs were discarded.
-Real endpoint acceptance and maintainer confirmation of media rights remain
-under #9.
+Real endpoint acceptance remains a separate follow-up; the media rights
+confirmation is recorded under [provenance and rights](#provenance-and-rights).
 
 Live recording requires explicitly selected test credentials and authorization;
 see [contributor configuration](../../CONTRIBUTING.md#environment-variables).

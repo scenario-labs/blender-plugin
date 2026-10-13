@@ -59,8 +59,11 @@ Neither case authorizes producing a score. With the list omitted, final review
 and composition need that score task, `score` unless the caller names another,
 among the recipe's `tasks`. A recipe without it still loads, and previs never
 uses the score; final preparation refuses it with a `FilmSourceError` that names
-the task and the `"audio_tracks": []` alternative. `film_recipe` load and
-inspection return the same text as a warning. `continuity_audit` compares declared
+the task and the `"audio_tracks": []` alternative. A load cannot know which
+score task a later preparation names, so `film_recipe` load and inspection warn
+only when no task is named `score`, the default; the warning states that
+condition and the `score_task_id` and empty-list alternatives. Preparation checks
+the score task it is given. `continuity_audit` compares declared
 adjacent object states and intentional changes. Its `visual_verification` result
 is always false: a matching declaration does not prove visual continuity.
 
@@ -543,8 +546,8 @@ rejected. `audio_tracks: []` explicitly omits a score. An omitted track list
 retains the recipe contract's looping score at volume 0.4, so its task must be
 declared. `required_sources` lists the declared source roles; an undeclared
 source raises `FilmSourceError` naming up to five tasks, plus both remedies for
-an implied score. `recipe_warnings` reports only that score case, without failing
-a load. All final audio needs an `AudioDuration` observation bound to its
+an implied score. `recipe_warnings` reports only an undeclared default `score`
+task, conditionally and without failing a load. All final audio needs an `AudioDuration` observation bound to its
 selected asset and exact scope.
 The caller must obtain that observation from verified saved media; supplying a
 value does not prove its duration or validate its bytes. Exact rational seconds

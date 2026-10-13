@@ -1029,10 +1029,12 @@ panel header and Studio's Film pages; the commands remain available.
 production identity. Loading preserves identity; `new_production` deliberately
 starts another production without submitting anything. Save the blend file.
 Every response has a `warnings` list. It is empty unless the recipe omits
-`audio_tracks` without declaring the `score` task: final review and composition
-then refuse it, so add that task or `"audio_tracks": []` for no score. A recipe
-with this warning still loads, and previs is unaffected. The warning assumes the
-default `score` task; preparation checks any other `score_task_id`.
+`audio_tracks` and no task is named `score`. Final review and composition with
+the default `score_task_id` then refuse it: declare that task, pass a
+`score_task_id` naming another declared audio task when preparing, or add
+`"audio_tracks": []` for no score. A recipe with this warning still loads, and
+previs is unaffected. The warning covers only the default task; preparation
+checks the `score_task_id` it receives and names any undeclared one.
 `estimate_film_task` uses that identity and task name to return resolved inputs
 and an exact shared SDK quote. `approve_film_task` consumes the quote with its
 verbatim CU cost before durable submission. `discard_film_estimate` releases an

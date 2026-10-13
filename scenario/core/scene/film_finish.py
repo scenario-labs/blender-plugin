@@ -107,18 +107,23 @@ def required_sources(recipe, *, mode="final", score_task_id="score"):
     return sources
 
 
-def recipe_warnings(recipe, *, score_task_id="score"):
-    """Name the implicit final score a recipe leaves undeclared, without failing a load.
+def recipe_warnings(recipe):
+    """Warn, without failing a load, that the default looping score task is undeclared.
 
-    Omitting ``audio_tracks`` keeps the recipe contract's looping score, so final
-    review and composition need ``score_task_id`` as a declared task. Other
-    undeclared sources are reported when a review or composition is prepared.
+    Omitting ``audio_tracks`` keeps the recipe contract's looping score. A load
+    cannot know the ``score_task_id`` a later preparation passes, so this checks
+    only the default ``score`` and states that condition; ``required_sources``
+    checks the actual task, and every other source, at preparation.
     """
     plan = validate_film_plan(recipe)
-    score = identifier(score_task_id, "Score task")
-    if "audio_tracks" in plan or score in {task["id"] for task in plan["tasks"]}:
+    if "audio_tracks" in plan or "score" in {task["id"] for task in plan["tasks"]}:
         return []
-    return [_score_reason(score)]
+    return [
+        'The recipe omits audio_tracks and declares no "score" task, so final review '
+        'and composition with the default score task "score" will refuse it. Declare '
+        "that task, pass score_task_id naming another declared audio task when "
+        'preparing, or add "audio_tracks": [] for no score'
+    ]
 
 
 def compose_task(

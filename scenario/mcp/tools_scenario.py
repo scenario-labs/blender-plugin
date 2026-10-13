@@ -2916,7 +2916,7 @@ SPECS = (
         (
             "Inspect or load the current scene's Film recipe, or explicitly start a new production.\n"
             "Args: action is inspect (default), load or new_production; recipe is a raw Film JSON object required for load.\n"
-            "Returns: stable production_id, title, tasks, shots and warnings; inspection adds context_id and saved job/upload identities and states, including declared master jobs. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval. warnings is empty unless audio_tracks is omitted without a declared score task, which final review and composition refuse.\n"
+            "Returns: stable production_id, title, tasks, shots and warnings; inspection adds context_id and saved job/upload identities and states, including declared master jobs. A quoted task includes quote_id, model_id, parameters and cu_cost_exact for its existing approval. warnings is empty unless audio_tracks is omitted and no task is named score; it then says final review and composition with the default score_task_id will refuse the recipe. Preparation checks the score_task_id it receives.\n"
             'Example: {"action": "inspect"}.\n'
             "Film is experimental. Load validates before mutation and preserves identity. Save the blend file to retain it. New production deliberately gives the same task names a fresh identity; it does not submit or recover work.\n"
             "After a scene-switch error, return to the original scene and inspect to recover an unchanged quote or saved upload association. Inspection only completes already-admitted preparation; it never reprices, resumes saved jobs or submits. Stale quotes are omitted.\n"

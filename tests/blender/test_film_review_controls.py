@@ -416,9 +416,13 @@ class FilmReviewControlTests(unittest.TestCase):
         self.assertIn('"audio_tracks": []', status["error"])
         self.assertFalse(self.copies())
         self.assertEqual(self.state(), self.storage.JobState.READY)
-        # Loading and inspecting the recipe already warned with the same reason.
-        self.assertEqual(loaded["warnings"], [status["error"]])
-        self.assertEqual(self.tools.film_recipe({})["warnings"], [status["error"]])
+        # Loading and inspecting already warned about the default score task, with
+        # the score_task_id and empty-list alternatives a later preparation may use.
+        (warning,) = loaded["warnings"]
+        self.assertIn('default score task "score"', warning)
+        self.assertIn("pass score_task_id", warning)
+        self.assertIn('"audio_tracks": []', warning)
+        self.assertEqual(self.tools.film_recipe({})["warnings"], [warning])
         # The documented fix: an explicit empty track list is a final cut without score.
         raw["audio_tracks"] = []
         self.assertEqual(self.tools.film_recipe({"action": "load", "recipe": raw})["warnings"], [])

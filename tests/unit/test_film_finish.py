@@ -108,8 +108,7 @@ def test_omitted_audio_tracks_without_a_score_task_names_the_score_and_both_fixe
     message = str(raised.value)
     assert 'looping score task "score"' in message
     assert '"audio_tracks": []' in message
-    assert "Declare the Film source" not in message
-    assert recipe_warnings(recipe) == [message]
+    assert "source task" not in message
     # Composition planning reports the same reason; previs never plays the score.
     with pytest.raises(FilmSourceError, match="score"):
         compose_task(recipe, records, scope=SCOPE)
@@ -117,14 +116,36 @@ def test_omitted_audio_tracks_without_a_score_task_names_the_score_and_both_fixe
     # An explicit empty list is the documented way to have no score.
     recipe["audio_tracks"] = []
     assert required_sources(recipe) == {"s0-video": "video", "s1-video": "video"}
-    assert recipe_warnings(recipe) == []
     # A declared score keeps the recipe contract's looping score unchanged.
     recipe, _, _ = fixture()
     assert required_sources(recipe)["score"] == "audio"
-    assert recipe_warnings(recipe) == []
     # The review or composition's chosen score task is the one named.
     with pytest.raises(FilmSourceError, match='score task "music"'):
         required_sources(recipe, score_task_id="music")
+
+
+def test_load_warning_covers_only_the_default_score_and_stays_true_for_custom_ones():
+    recipe, _, _ = fixture()
+    recipe["tasks"] = [task for task in recipe["tasks"] if task["id"] != "score"]
+    (warning,) = recipe_warnings(recipe)
+    # Loading cannot know the score_task_id a later preparation passes, so the
+    # warning states its condition and all three ways forward.
+    assert 'declares no "score" task' in warning
+    assert 'default score task "score"' in warning
+    assert "pass score_task_id" in warning
+    assert '"audio_tracks": []' in warning
+    # It holds for a studio whose score task has another name: the default fails,
+    # the named task passes.
+    recipe["tasks"].append({"id": "music", "title": "Music", "kind": "upload"})
+    assert recipe_warnings(recipe) == [warning]
+    with pytest.raises(FilmSourceError, match='score task "score"'):
+        required_sources(recipe)
+    assert required_sources(recipe, score_task_id="music")["music"] == "audio"
+    # No warning once the default task is declared or the track list is explicit.
+    recipe["audio_tracks"] = []
+    assert recipe_warnings(recipe) == []
+    recipe, _, _ = fixture()
+    assert recipe_warnings(recipe) == []
 
 
 def test_undeclared_and_conflicting_sources_name_their_tasks():

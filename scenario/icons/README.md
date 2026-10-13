@@ -47,9 +47,8 @@ system font or prove which generator invocation produced an existing PNG.
 
 The repository's current first-party policy is GPL-3.0-or-later, copyright
 Scenario Inc.; the unchanged [GPL text](../LICENSE) ships in the extension.
-This policy does not replace any third-party terms or resolve the open design
-origin question above. This notice adds no claim of permission to relicense
-upstream artwork.
+This policy does not replace any third-party terms, and this notice adds no
+claim of permission to relicense upstream artwork.
 
 [Blender's Extensions Platform policy](https://docs.blender.org/manual/en/latest/advanced/extensions/licenses.html)
 requires CC0 assets for its listings. This extension is distributed outside that

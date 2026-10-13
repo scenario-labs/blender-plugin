@@ -457,6 +457,33 @@ class TrainedSectionTests(unittest.TestCase):
         self.generation.set_catalog(listed, [again], warmup=True)
         self.assertEqual(self.lane.estimate_state, "READY")
 
+    def test_a_base_described_first_in_this_session_keeps_a_saved_price(self):
+        """A reopened file or the catalog warm-up has no earlier description to compare."""
+        self.load_catalog()
+        self.open_trained()
+        self.pick(LORA_A, 1.5)
+        state, catalog = self.runtime.state, submodule("core.api.catalog")
+
+        def first_read(model_id):
+            """As after reopening the file: the list names the base, its description is unread."""
+            state.records[model_id] = catalog.ModelRecord.from_api(
+                trained_tests.row(self.details[model_id])
+            )
+            self.lane.estimate_state = "READY"  # saved with the file
+            return catalog.ModelRecord.from_api(copy.deepcopy(self.details[model_id]))
+
+        # FLUX.1 Dev is described through set_models, as the warm-up's models event does.
+        self.generation.set_models([first_read(FLUX1)], {}, mark_dirty=False)
+        self.assertEqual(self.lane.estimate_state, "READY")
+        self.assertEqual(self.body()["lorasScale"], [1.5])
+        # Z-Image, a default model of the catalog, is described through set_catalog.
+        self.deliver_default_only(ZIMAGE, 0.6)
+        self.lane.model_id = ZIMAGE
+        zimage = first_read(ZIMAGE)
+        self.generation.set_catalog(list(state.records.values()), [zimage], warmup=True)
+        self.assertEqual(self.lane.estimate_state, "READY")
+        self.assertEqual(self.body()["lorasScale"], [0.6])
+
     def test_job_views_and_render_inspection_record_the_strength_each_pick_sends(self):
         """A LoRA without a strength sends its base's declared default; a composition sends none."""
         flux1 = copy.deepcopy(self.details[FLUX1])

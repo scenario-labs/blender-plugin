@@ -196,14 +196,20 @@ def _store_details(detailed):
     when none of its slots changes: the declared default a LoRA without its own
     strength sends, or whether the choice runs at all, may differ. Slots that do
     change are repriced by trained_models.sync_bounds.
+
+    Only a base this session already described can change: its first description
+    (a reopened file, the catalog warm-up) has nothing to compare, so a price
+    saved with the form stays, as the warm-up's mark_dirty=False intends.
     """
     changed = set()
     for rec in detailed:
-        before = trained_models.base_slot(rec.id)
+        previous = runtime.state.records.get(rec.id)
+        described = previous is not None and bool(previous.parameters)
+        before = trained_models.base_slot(rec.id) if described else None
         runtime.state.records[rec.id] = rec
         runtime.state.model_errors.pop(rec.id, None)
         _schemas.pop(rec.id, None)
-        if trained_models.base_slot(rec.id) != before:
+        if described and trained_models.base_slot(rec.id) != before:
             changed.add(rec.id)
     return changed
 

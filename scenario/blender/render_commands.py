@@ -97,9 +97,10 @@ def _source_result(ref):
     return {"request_id": source["request_id"], "asset_id": source["asset_id"], "saved": saved}
 
 
-def inspect(scene, lane):
+def inspect(scene, lane, *, default_applied=False):
     state = lane_state(scene, lane)
-    _apply_default(scene)
+    if not default_applied:
+        _apply_default(scene)
     schema = generation.schema_for(state.model_id)
     styles = render_lanes.style_input(lane, schema) if schema else None
     values, enabled = params_ui.collect_values(state, schema) if schema else ({}, {})
@@ -356,6 +357,8 @@ def execute(context, args):
     role = args.get("role")
     if action == "prepare" and role not in {render_references.SCENE, render_references.FIRST_FRAME}:
         raise ValueError("Choose the scene or first_frame role")
+    if action == "inspect":
+        _apply_default(context.scene)  # inspect's first step: await the model it leaves
     # Before any change: preparation needs the model's inputs, while inspection and
     # removal still answer, with the form's errors, when the description cannot load.
     generation.await_description(state.model_id, required=action == "prepare")
@@ -367,4 +370,4 @@ def execute(context, args):
         # upload was admitted or is uncertain: that marked slot stays and marks the file.
         with file_state.marking(MARK, lambda: len(references)):
             render_references.prepare(context, lane, role)
-    return inspect(context.scene, lane)
+    return inspect(context.scene, lane, default_applied=action == "inspect")

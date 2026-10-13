@@ -257,6 +257,22 @@ ADVERSARIAL = [
     ("Digest 0123456789abcdef0123456789abcdef01234567 rejected", ["0123456789abcdef"]),
     ("Session aBcDeF123456gHiJkL789012.mNoPqR345678sTuVwX901234.x", ["aBcDeF123456"]),
     ("Upload to /bucket/aBcDeF123456gHiJkL789012/x.png failed", ["aBcDeF123456"]),
+    # Unterminated and escaped quotes in a credential value.
+    ('Rejected token: "secret value never closed', ["secret value", "never closed"]),
+    ("Rejected password: 'hunter2 hunter3", ["hunter2", "hunter3"]),
+    ('Rejected token: "abc\\"def secret" retry', ["def", "secret"]),
+    ("Rejected secret='abc\\'xyz secret' retry", ["xyz", "secret'"]),
+    ('Rejected token: "line one\\\nline two', ["line one"]),
+    # A secret glued to a resource-id prefix, or longer than any resource id.
+    ("Glued job_KWxxsnSdVXDFZRMsoCvLTmKYsEcr3tKey99abc here", ["sEcr3tKey99"]),
+    ("Glued asset_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6 here", ["a1b2c3d4e5f6a1b2"]),
+    ("Glued model_abcdef0123456789abcdef0123456789abcd here", ["abcdef0123456789"]),
+    ("Glued model_a-abcdef0123456789abcdef0123456789 here", ["abcdef0123456789"]),
+    # Segments that are each all letters or all digits.
+    ("Key abcdefghijkl.123456789012.mnopqrstuvwx used", ["abcdefghijkl", "123456789012"]),
+    ("Key ABCDEFGHIJKLMNOP/1234567890123456 used", ["ABCDEFGHIJKLMNOP"]),
+    # Userinfo in a protocol-relative link's authority.
+    ("Mirror //user:pAss123@host.example/x failed", ["pAss123"]),
 ]
 
 
@@ -269,9 +285,16 @@ def test_adversarial_reasons_never_show_a_secret(text, secrets):
         assert text not in cleaned, cleaned
 
 
+def test_a_quote_left_open_at_the_read_limit_still_redacts_its_value():
+    head = "x " * ((failures.MAX_INPUT - 20) // 2)
+    cleaned = failures.clean(head + 'token: "secret value continues past the limit')
+    assert cleaned.endswith(f"token: {failures.REDACTED}") and "secret" not in cleaned
+
+
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
+        ('token: "open value\nnext line kept', "token: [redacted] next line kept"),
         ("password: line one\nnext line kept", "password: [redacted] next line kept"),
         ("token: abc def, retry later", "token: [redacted], retry later"),
         ("token: abc def; retry", "token: [redacted]; retry"),
@@ -292,12 +315,16 @@ def test_a_credential_value_runs_to_the_end_of_its_clause(text, expected):
 # dates, links, e-mail addresses and Scenario resource ids.
 READABLE = [
     "An internal error occurred. Please contact support and provide this id: " + SUPPORT_ID,
-    "The model file is too large for processing. Try reducing the resolution or "
-    "simplifying the geometry of your input, then retry the generation. "
-    "[Error ID: error_Uq14k1SGmKWhPfv4HZ4hyZRN]",
+    (
+        "The model file is too large for processing. Try reducing the resolution or "
+        + "simplifying the geometry of your input, then retry the generation. "
+        + "[Error ID: error_Uq14k1SGmKWhPfv4HZ4hyZRN]"
+    ),
     "Input image is 8192 x 8192 pixels; the maximum is 4096 x 4096.",
-    "Model model_tencent-uv-unwrapping could not read asset asset_4Aufp4GxmMozUQUL36d5C6Jr "
-    "for job job_KWxxsnSdVXDFZRMsoCvLTmKY in proj_FIXTURE00000000000000000.",
+    (
+        "Model model_tencent-uv-unwrapping could not read asset asset_4Aufp4GxmMozUQUL36d5C6Jr "
+        + "for job job_KWxxsnSdVXDFZRMsoCvLTmKY in proj_FIXTURE00000000000000000."
+    ),
     "authorId: apiu_FIXTURE0000000000000000 has no access to workflow_aBcDeF123456gHiJkL789012",
     "Requested max_tokens: 4096 exceeds the limit; tokenizer: v2",
     "Keyframe 24 is missing; keyframes: 1-48 were expected.",
@@ -305,6 +332,15 @@ READABLE = [
     "Contact support@scenario.com with the id.",
     "Model design: v2 (signal level 3), keyword: fox",
     "Token limit reached for this model; try a shorter prompt.",
+    # A harmless @ in a link's path or a schemeless file name keeps the whole link.
+    "Could not load https://cdn.example.com/textures/brick@2x.png for this model.",
+    "See https://example.com/@scenario for updates.",
+    "The texture brick@2x.png is too large.",
+    # Paths and hosts made of short words keep their digits.
+    "Bucket eu-west-3.storage.googleapis.com/bucket2026/archive is full.",
+    "Write to renders/frame0001/beauty.exr failed.",
+    "Upload texture/1024/normal-map-final.png again.",
+    "Model model_hunyuan-world-image-to-skybox is unavailable.",
 ]
 
 

@@ -1011,26 +1011,34 @@ readable.
 - Line breaks end clauses; other control, format and space characters become
   spaces.
 - Links keep scheme, host and path without credentials, query or fragment.
-  Any `something:something@` userinfo, glued to whatever precedes it and with
-  or without a scheme, reads `[redacted]@`. A query string on a link without a
-  scheme is dropped, and data URIs are removed.
+  `something:something@` userinfo reads `[redacted]@`: in a link (`scheme://`
+  or `//`) only in the authority, so an `@` in the path (`brick@2x.png`,
+  `/@handle`) keeps the link, and in any other token whatever precedes it. A
+  query string on a link without a scheme is dropped, and data URIs are
+  removed.
 - Bearer and basic credentials and JSON web tokens read `[redacted]`.
 - A credential name is any `name:` or `name=`, quoted as in JSON or not, whose
   letters and digits contain `key`, `secret`, `token`, `password`, `passwd`,
   `pwd`, `auth`, `credential`, `signature`, `session` or `cookie`, or that has
   `sig` as a word, unless it is an allowlisted harmless name such as
   `max_tokens`, `tokenizer`, `keyframe`, `keyword` or `author`. Its whole value
-  reads `[redacted]`: a quoted value to its closing quote, otherwise everything
-  up to the end of its clause (`, ; & ) ] }`, a quote, a line break, the next
-  `name:` or the end). A value that starts with exactly a support id keeps that
+  reads `[redacted]`: a quoted value to its closing quote, where a backslash
+  escapes a quote and a quote left open runs to the end of its line or of the
+  text, otherwise everything up to the end of its clause (`, ; & ) ] }`, a
+  quote, a line break, the next `name:` or the end). A value that starts with exactly a support id keeps that
   id, and the rest of its clause is redacted, so `api_key=ERROR_...` and other
   look-alikes are redacted.
 - Any remaining run of 24 or more letters, digits and `+/_.-` is redacted when
   one of its `/`- or `.`-separated parts is at least 12 characters long and
-  mixes letters and digits, as base64, hex or JWT-like secrets do, unless that
-  part is exactly a support id or a Scenario resource ID (`model_`, `job_`,
-  `asset_`, `team_`, `proj_`, `col_`, `workflow_`, `upload_`, `apiu_`). A UUID
-  is redacted too.
+  mixes letters and digits, as base64, hex, JWT-like secrets and UUIDs do, or
+  when the whole run, without its known IDs, still has 24 or more letters and
+  digits, mixes them and has words averaging 8 or more characters, as a secret
+  split into all-letter and all-digit segments does; hosts and paths are made
+  of shorter words. Known IDs are a support id and a Scenario resource ID:
+  `model_`, `job_`, `asset_`, `team_`, `proj_`, `col_`, `workflow_`, `upload_`
+  or `apiu_` followed by 20 to 24 letters and digits, as recorded fixtures
+  show, or a public model's hyphenated lowercase slug. Anything longer glued to
+  a prefix is not an ID.
 - The result is cut to 400 characters at a word boundary with an ellipsis, so
   no marker, word or id is split.
 

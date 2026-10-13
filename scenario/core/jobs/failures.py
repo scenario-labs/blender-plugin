@@ -18,26 +18,33 @@ harmless names readable.
 1. Line breaks are kept as clause ends; other control, format and space
    characters become spaces. Only the first MAX_INPUT characters are read.
 2. Links keep their scheme, host and path, without credentials, query or
-   fragment. Any `something:something@` userinfo, glued to whatever precedes
-   it and with or without a scheme, reads `[redacted]@`. A query string left on
-   a link without a scheme is dropped, and data URIs are removed.
+   fragment. `something:something@` userinfo reads `[redacted]@`: in a link
+   (`scheme://` or `//`) only when it is in the authority, so an `@` in the
+   path (`brick@2x.png`, `/@handle`) keeps the link; in any other token
+   whatever precedes it. A query string left on a link without a scheme is
+   dropped, and data URIs are removed.
 3. Bearer and basic credentials and JSON web tokens read `[redacted]`.
 4. A credential name is any `name:` or `name=`, quoted as in JSON or not, whose
    letters and digits contain `key`, `secret`, `token`, `password`, `passwd`,
    `pwd`, `auth`, `credential`, `signature`, `session` or `cookie`, or that has
    `sig` as a word, unless it is an allowlisted harmless name (`max_tokens`,
    `tokenizer`, `keyframe`, `keyword`, `author`...). Its whole value is
-   redacted: a quoted value to its closing quote, otherwise everything up to
-   the end of its clause (`, ; & ) ] }`, a quote, a line break, the next
-   `name:` or the end). A value that starts with exactly a support id keeps
-   that id, and the rest of its clause is redacted.
+   redacted: a quoted value to its closing quote, where a backslash escapes a
+   quote and a quote left open runs to the end of its line or of the text;
+   otherwise everything up to the end of its clause (`, ; & ) ] }`, a quote, a
+   line break, the next `name:` or the end). A value that starts with exactly
+   a support id keeps that id, and the rest of its clause is redacted.
 5. Any remaining run of 24 or more letters, digits and `+/_.-` (with `=`
-   padding) is redacted
-   when one of its `/`- or `.`-separated parts is at least 12 characters long
-   and mixes letters and digits, as base64, hex or JWT-like secrets do, unless
-   that part is exactly a support id or a Scenario resource id (`model_`,
-   `job_`, `asset_`, `team_`, `proj_`, `col_`, `workflow_`, `upload_`,
-   `apiu_`).
+   padding) is redacted when it looks like a secret (`_opaque`): one of its
+   `/`- or `.`-separated parts is at least 12 characters long and mixes letters
+   and digits, as base64, hex, JWT-like secrets and UUIDs do, or the whole run
+   without its known ids still has 24 or more letters and digits, mixes them,
+   and its words average 8 or more characters, as a secret split into
+   all-letter and all-digit segments does. Known ids are a support id and a
+   Scenario resource id: `model_`, `job_`, `asset_`, `team_`, `proj_`, `col_`,
+   `workflow_`, `upload_` or `apiu_` and 20 to 24 letters and digits, or a
+   public model's hyphenated lowercase slug; anything longer glued to a prefix
+   is not one.
 
 A support error id (lowercase `error_` and 6 to 64 letters and digits with a
 capital or digit) is kept because support needs it. When `metadata.error` and
@@ -82,7 +89,9 @@ _JWT = re.compile(r"\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}
 _NAME = re.compile(r"(?<![A-Za-z0-9_.-])([A-Za-z][A-Za-z0-9_.-]{0,63})[\"']?[ \t]*[:=][ \t]*")
 # The next `name:` after a space ends an unquoted value.
 _NEXT_NAME = re.compile(r" (?=[A-Za-z][A-Za-z0-9_.-]{0,63}[\"']?[ \t]*[:=])")
-_QUOTED = re.compile(r"\"[^\"\n]*\"|'[^'\n]*'")
+# A quoted value: a backslash escapes the next character, and a quote left open
+# runs to the end of its line or of the text, so it is never left visible.
+_QUOTED = re.compile(r"\"(?:[^\"\\\n]|\\.?)*(?:\"|(?=\n)|\Z)|'(?:[^'\\\n]|\\.?)*(?:'|(?=\n)|\Z)")
 _CLAUSE_END = re.compile(r"[,;&)\]}\n\"']")
 _CREDENTIAL_WORDS = (
     "key",
@@ -124,9 +133,17 @@ _WORDS = re.compile(r"[A-Z]?[a-z]+|[A-Z]+(?![a-z])|[0-9]+")
 # `=` only as trailing base64 padding, so `name=value` stays two parts.
 _OPAQUE_RUN = re.compile(r"(?<![A-Za-z0-9+/=_.-])[A-Za-z0-9+/_.-]{24,}=*(?![A-Za-z0-9+/=_.-])")
 _PARTS = re.compile(r"[/.]")
-# Scenario resource identifiers, as recorded fixtures and job records show them;
-# model IDs may also contain hyphens.
-_RESOURCE_ID = re.compile(r"(?:model|job|asset|team|proj|col|workflow|upload|apiu)_[A-Za-z0-9-]+")
+_WORD_BREAKS = re.compile(r"[/._+=-]+")
+# Scenario resource identifiers, as recorded fixtures and job records show them:
+# 20 to 24 letters and digits after the prefix, or a public model's lowercase
+# slug of 2 to 9 hyphenated words of at most 16 characters. Anything longer
+# glued to a prefix is not an identifier.
+_RESOURCE_ID = re.compile(
+    r"(?:model|job|asset|team|proj|col|workflow|upload|apiu)_[A-Za-z0-9]{20,24}"
+    r"|model_(?=[a-z0-9-]{3,48}$)[a-z0-9]{1,16}(?:-[a-z0-9]{1,16}){1,8}"
+)
+# A link's start, with or without a scheme, before its authority.
+_AUTHORITY_START = re.compile(r"[(\[<{\"']*(?:[A-Za-z][A-Za-z0-9+.-]{0,31}:)?//")
 _MARKERS = re.compile("|".join(map(re.escape, (REDACTED, LINK_REMOVED, DATA_REMOVED))))
 # Scenario-style identifier: `error_` and letters and digits with at least one
 # capital or digit, so words such as error_code are not mistaken for one.
@@ -179,12 +196,22 @@ def _drop_query(match):
 def _redact_userinfo(text):
     """Replace `something:something@` userinfo in every whitespace-separated token.
 
-    The token's last `@` ends it; everything before, from the token's start
-    except opening brackets and quotes, is the userinfo when it has a colon.
-    E-mail addresses have no colon there and stay readable.
+    In a link (`scheme://` or `//`), only an `@` in the authority, before the
+    first `/` after `//`, ends userinfo, so `/@handle` or `brick@2x.png` in a
+    path keeps the link. In any other token, the last `@` ends it, and
+    everything before it, except opening brackets and quotes, is the userinfo
+    when it has a colon. E-mail addresses have no colon there and stay readable.
     """
 
     def token(word):
+        link = _AUTHORITY_START.match(word)
+        if link is not None:
+            start = link.end()
+            path = word.find("/", start)
+            at = word.rfind("@", start, len(word) if path < 0 else path)
+            if at < 0 or ":" not in word[start:at]:
+                return word
+            return word[:start] + REDACTED + word[at:]
         at = word.rfind("@")
         if at <= 0 or ":" not in word[:at]:
             return word
@@ -265,17 +292,29 @@ def _known_id(part):
     return bool(_SUPPORT_ID.fullmatch(part) or _RESOURCE_ID.fullmatch(part))
 
 
+def _opaque(token):
+    """Whether a 24+ character run looks like a secret rather than words and known ids.
+
+    Either one of its `/`- or `.`-separated parts is 12+ characters and mixes
+    letters and digits, or, without its known-id parts, the run still has 24+
+    letters and digits, mixes them, and its words average 8 or more characters,
+    as segments of a split secret do; hosts and paths are made of shorter words.
+    """
+    if _known_id(token):
+        return False
+    parts = [part for part in _PARTS.split(token) if not _known_id(part)]
+    if any(len(part) >= 12 and _mixed(part) for part in parts):
+        return True
+    words = [word for part in parts for word in _WORD_BREAKS.split(part) if word]
+    length = sum(len(word) for word in words)
+    return length >= 24 and _mixed("".join(words)) and length >= 8 * len(words)
+
+
 def _redact_opaque(text):
-    """Redact long runs with a part that mixes letters and digits, unless it is a known id."""
+    """Redact long runs that look like secrets; see `_opaque`."""
 
     def run(match):
-        token = match.group(0)
-        if _known_id(token):
-            return token
-        for part in _PARTS.split(token):
-            if len(part) >= 12 and _mixed(part) and not _known_id(part):
-                return REDACTED
-        return token
+        return REDACTED if _opaque(match.group(0)) else match.group(0)
 
     return _OPAQUE_RUN.sub(run, text)
 

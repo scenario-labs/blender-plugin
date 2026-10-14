@@ -5,10 +5,10 @@
   "title": "docs/JOB_STORAGE.md evidence",
   "evidence": {
     "path": "docs/JOB_STORAGE.md",
-    "coverage": "source-reviewed",
+    "coverage": "inherited",
     "reviewed_at": "2026-10-14",
     "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against the store, credential binding, schema upgrades, lane-default owners and their runtime callers; no live Scenario call or desktop interaction. File-lock and SQLite durability behavior follow platform documentation; live skybox and audio original metadata are not established.",
+    "limits": "Changed claims were checked against the store, credential binding, schema upgrades and lane-default owners; other sections were spot-checked. No live Scenario call or desktop interaction. File-lock and SQLite durability follow platform documentation; live skybox and audio original metadata are not established.",
     "sources": [
       "docs/JOB_STORAGE.md",
       "scenario/blender/generation.py",

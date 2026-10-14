@@ -5,10 +5,10 @@
   "title": "docs/JOB_COORDINATOR.md evidence",
   "evidence": {
     "path": "docs/JOB_COORDINATOR.md",
-    "coverage": "source-reviewed",
+    "coverage": "inherited",
     "reviewed_at": "2026-10-14",
     "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against the coordinator, workers, result, upload, organization and Film commands and their Blender/MCP callers; no live Scenario call, paid submission or desktop interaction. Live cancellation, workflow decisions, organization writes and provider result contracts are not established.",
+    "limits": "Changed claims were checked against the coordinator, workers, result, upload, organization and Film commands and their callers; the organization and step-link sections were spot-checked. No live Scenario call, paid submission or desktop interaction. Live cancellation, workflow decisions, organization writes and provider result contracts are not established.",
     "sources": [
       "docs/JOB_COORDINATOR.md",
       "pyproject.toml",

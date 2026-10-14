@@ -5,10 +5,10 @@
   "title": "docs/USER_GUIDE.md evidence",
   "evidence": {
     "path": "docs/USER_GUIDE.md",
-    "coverage": "source-reviewed",
+    "coverage": "inherited",
     "reviewed_at": "2026-10-14",
     "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against the implementation; no live Scenario call, desktop interaction or Blender run. Model names come from Scenario's catalog, and Blender's own extension, dialog and player behavior is not verifiable from code. Screenshots may show earlier layouts.",
+    "limits": "Install through Render, Blockout and Environment were checked claim by claim; Jobs, Studio, Film, MCP, Costs, Files and Troubleshooting were spot-checked. No live Scenario call, desktop interaction or Blender run. Model names come from Scenario's catalog, Blender's own dialogs and players are not verifiable from code, and screenshots may show earlier layouts.",
     "sources": [
       ".github/workflows/pages.yml",
       ".github/workflows/release-please.yml",

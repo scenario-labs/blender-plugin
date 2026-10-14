@@ -849,6 +849,18 @@ class JobCoordinator:
                 raise PreviewCanceled("The World size check was canceled")
         return sizes
 
+    def result_files(self, targets, *, cancel):
+        """Preview-lane command: rehash downloaded results of ready jobs for status display.
+
+        Display only: a verified file authorizes nothing, and every application
+        still rehashes the bytes it reads.
+        """
+        checks = self._results.check_files(targets, cancel=cancel)
+        with self._result_guard():
+            if cancel.is_set():
+                raise PreviewCanceled("The result file check was canceled")
+        return checks
+
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.
 

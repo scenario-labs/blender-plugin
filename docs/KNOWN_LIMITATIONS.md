@@ -137,11 +137,6 @@ full render-lane desktop acceptance.
   versions that share a title collide when extracted side by side. A second
   end-to-end run with two versions met all three;
   [#440](https://github.com/scenario-labs/blender-plugin/issues/440) tracks them.
-- Local MCP `job_status` lists `files` only for image results imported
-  automatically in the current session. A ready video, an image not imported
-  automatically, other result kinds and every job after a restart list none;
-  `results` still names each saved asset, its media type and whether it was
-  downloaded, without a local path.
 - Credentials use one explicitly selected pair (saved Blender preferences by
   default, environment only when selected). UI and MCP model jobs use credential-bound
   local storage. Preferences also allow an explicit optional project ID; changing

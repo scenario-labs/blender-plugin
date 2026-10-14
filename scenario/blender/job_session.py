@@ -375,6 +375,18 @@ class JobSession:
             raise OriginUnavailable("This job connection is no longer active")
         return self._workers.world_sizes(targets)
 
+    def result_files(self, targets):
+        """Queue a rehash of saved results for local MCP job_status on the preview lane.
+
+        Targets are (request_id, asset_id, receipt SHA-256) triples. The task
+        resolves to each target with its ``FileCheck`` or None. Like the World
+        size read it is not a session completion and grants no authority.
+        """
+        _main_thread()
+        if not self._active:
+            raise OriginUnavailable("This job connection is no longer active")
+        return self._workers.result_files(targets)
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():

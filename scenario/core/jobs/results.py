@@ -13,7 +13,7 @@ from ..api.sdk_adapter import AdapterError
 from ..config import ext_for_mime
 from ..scene import splats
 from ..scene.panorama import MAX_FILE_BYTES, world_candidate
-from . import playback
+from . import playback, result_files
 from . import result_previews as previews
 from .result_metadata import (
     REWRITTEN_MESH_TYPES,
@@ -129,6 +129,14 @@ def _prompt_text(value):
 def _prompt_asset_id(value):
     value = value.strip()
     return value.startswith("asset_") and not any(char.isspace() for char in value)
+
+
+def _directory_keys(record):
+    """Include all scope components and request identity, not just asset names."""
+    return (
+        hashlib.sha256(_json(asdict(record.intent.scope)).encode()).hexdigest(),
+        hashlib.sha256(record.intent.request_id.encode()).hexdigest(),
+    )
 
 
 def _download_url(record, source):
@@ -406,12 +414,7 @@ class ResultCommands:
         if self._root is None:
             raise ResultError("Result storage has not been configured")
         root = _root(self._root)
-        # Include all scope components and request identity, not just asset names.
-        keys = (
-            hashlib.sha256(_json(asdict(record.intent.scope)).encode()).hexdigest(),
-            hashlib.sha256(record.intent.request_id.encode()).hexdigest(),
-        )
-        for key in keys:
+        for key in _directory_keys(record):
             child = root / key
             if create:
                 child.mkdir(mode=0o700, exist_ok=True)
@@ -1060,6 +1063,70 @@ class ResultCommands:
                 raise previews.PreviewCanceled("The World size check was canceled")
             sizes.append((*target, self._world_size(*target)))
         return tuple(sizes)
+
+    def check_files(self, targets, *, cancel):
+        """Rehash downloaded results of ready jobs for status display; see result_files.
+
+        Preview-lane work. Each target is a (request_id, asset_id, sha256)
+        triple; the answer appends a ``FileCheck``, or None when this scope's
+        store no longer holds that receipt in a ready job or the file changed
+        while it was hashed. It never fetches, applies or writes the job store.
+        """
+        # Imported here: the scheduler imports the workers, which import this module.
+        from .preview_scheduler import BATCH_LIMIT
+
+        try:
+            targets = tuple(
+                (_identity(request_id), _identity(asset_id), sha256)
+                for request_id, asset_id, sha256 in targets
+            )
+        except (TypeError, ValueError):
+            raise ResultError("Choose saved results to check") from None
+        if not 1 <= len(targets) <= BATCH_LIMIT or not all(
+            isinstance(sha256, str) and re.fullmatch(r"[a-f0-9]{64}", sha256)
+            for *_, sha256 in targets
+        ):
+            raise ResultError("Choose saved results to check")
+        if self._root is None or self._downloader is None:
+            raise ResultError("Result storage has not been configured")
+        checks = []
+        for target in targets:
+            if cancel.is_set():
+                raise previews.PreviewCanceled("The result file check was canceled")
+            checks.append((*target, self._check_file(*target)))
+        return tuple(checks)
+
+    def _check_file(self, request_id, asset_id, sha256):
+        with self._guard():
+            record = self._store.get(request_id)
+        if record is None or record.state not in result_files.READY_STATES:
+            return None
+        receipt = next(
+            (
+                item.receipt
+                for item in record.results
+                if item.asset.asset_id == asset_id
+                and item.receipt is not None
+                and item.receipt.sha256 == sha256
+            ),
+            None,
+        )
+        if receipt is None:
+            return None
+        # The location named for display; verification resolves it again safely.
+        path = os.fspath(Path(self._root, *_directory_keys(record), receipt.name))
+        before = result_files.file_stamp(path)
+        if before is None:
+            return result_files.FileCheck(sha256, result_files.MISSING, path, None)
+        try:
+            self._downloader.verify(self._directory(record, create=False), receipt)
+            state = result_files.VERIFIED
+        except Exception:
+            state = result_files.CHANGED
+        if result_files.file_stamp(path) != before:
+            # Changed while it was hashed: the next poll checks it again.
+            return None
+        return result_files.FileCheck(sha256, state, path, before)
 
     def _world_size(self, request_id, asset_id, sha256):
         with self._guard():

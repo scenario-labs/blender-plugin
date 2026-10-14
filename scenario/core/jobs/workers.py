@@ -322,6 +322,10 @@ class JobWorkers:
         """Queue a header read of saved World candidates on the preview lane."""
         return self._enqueue_preview(self._coordinator.world_sizes, tuple(targets))
 
+    def result_files(self, targets):
+        """Queue a rehash of saved results for status display on the preview lane."""
+        return self._enqueue_preview(self._coordinator.result_files, tuple(targets))
+
     def cancel_preview(self, task):
         with self._preview_condition:
             cancel = self._preview_cancels.get(task)

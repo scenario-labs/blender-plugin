@@ -460,7 +460,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, a workflow waits for a decision, is held by disabled Online Access, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, a workflow waits for a decision, is held by disabled Online Access, or the wait expires; a ready job, restarted or not, first waits for the check of its saved result files (file_check_pending). Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
 | `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
@@ -776,8 +776,7 @@ there is no implicit texture assignment, mesh import or sequencer insertion.
 a declared OpenEXR original was saved instead of its preview, or a WAV original
 instead of Scenario's MP3 copy, with unknown size;
 `projection: equirectangular` appears only when Scenario declares a 360 image.
-Neither is an application approval. This inspection does not reverify local files
-or authorize scene application. Recovered display records use generic
+Neither is an application approval, and neither is a listed file. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
@@ -789,6 +788,33 @@ recovery and explicit destination approval. It requires complete selected
 credentials to inspect the saved store. Read-only inspection of any prototype record
 uses its local snapshot without credentials, polling or manager creation. No
 prototype result event automatically applies cached files into the current scene.
+
+### Saved result files
+
+Shared `job_status` and `wait_for_job` list the local file of every downloaded
+result of a ready job (`ready`, `applying`, `apply_failed` or `applied`) in
+`files`, in result order, whatever its media type and whether or not it was
+imported, including after a restart. The files come from the saved store and
+receipts: the first status read of a job asks the preview lane to rehash each
+file against its receipt, and only matching bytes are listed. Each `results`
+entry adds `file`, its path when listed and `null` otherwise, and `file_state`:
+
+- `verified`: the bytes match the receipt; `file` names them.
+- `checking`: not checked yet, or the file changed since its check;
+  `file_check_pending` is then true. Call `job_status` again, or `wait_for_job`,
+  which also waits for the check.
+- `missing`: no file is at the saved location.
+- `changed`: a file is there, but it is partial, replaced by a link or holds
+  other bytes.
+- `unavailable`: the check could not run; the next status read tries again.
+- `not_downloaded` or `not_ready`: nothing was saved yet, or the job is not
+  ready, such as an interrupted download that needs `recover_download`.
+
+A status read compares each listed file with its identity when it was hashed,
+so a file edited, replaced or removed afterwards is checked again before it is
+listed. Checks stay in the selected credentials and project and never return a
+download URL. A listed file grants no application: every import or application
+rehashes the bytes it reads and needs its own approval.
 
 Speech-to-text (`audio2txt`) and video-to-motion (`video23d`) models are
 experimental. `estimate_cost` and `generate` describe this status and accept

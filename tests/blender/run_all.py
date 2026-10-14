@@ -37,6 +37,7 @@ BASELINE = (
     "test_result_media",
     "test_result_preview_tiles",
     "test_mcp_result_previews",
+    "test_mcp_job_files",
     "test_apply_image",
     "test_apply_material",
     "test_apply_3d",

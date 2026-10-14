@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Offline documentation navigation, evidence and source-drift checks.
 
-Evidence lives in discoverable OKF concepts or the legacy version-1 registry.
-This checker never rewrites reviews, fetches URLs, executes examples or calls a model.
+Each canonical document has one OKF evidence record that names its sources and
+the main commit it was last reviewed against. Drift is what Git reports as
+changed since that commit. This checker never rewrites reviews, fetches URLs,
+executes examples or calls a model.
 """
 
 import argparse
 import datetime as dt
-import hashlib
 import json
 import os
 import re
@@ -18,9 +19,11 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 COVERAGE = {"source-reviewed", "inherited", "historical", "navigation", "policy"}
-HASH = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT = re.compile(r"[0-9a-f]{40}\Z")
-TOPIC_ID = re.compile(r"[a-z0-9]+(?:[.-][a-z0-9]+)*\Z")
+RECORD_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+EVIDENCE_KEYS = {"path", "coverage", "reviewed_at", "reviewed_revision", "limits", "sources"}
+MAX_LIMIT_WORDS = 60
+SHOWN_DRIFT = 5
 
 
 def git(root, *args):
@@ -222,56 +225,44 @@ def load_registry(root, known, errors):
     profile = json.loads(
         registry.read_text(), object_pairs_hook=unique_object, parse_constant=invalid_constant
     )
-    if not isinstance(profile, dict) or type(profile.get("version")) is not int:
-        raise ValueError("expected knowledge registry version 1 or 2")
-    version = profile["version"]
-    if version == 1:
-        if "records" in profile or any(p.startswith("docs/knowledge/") for p in known):
-            raise ValueError("legacy registry cannot coexist with discovered topic records")
-        entries = profile.get("documents")
-        if not isinstance(entries, list):
-            raise ValueError("documents must be a list")
-        return profile, [(None, None, entry) for entry in entries], {}
-    if version != 2:
-        raise ValueError("expected knowledge registry version 1 or 2")
+    if not isinstance(profile, dict) or profile.get("version") != 3:
+        raise ValueError("expected knowledge registry version 3")
     if set(profile) != {"version", "index", "records"}:
-        raise ValueError("version 2 config contains only version, index and records")
+        raise ValueError("version 3 config contains only version, index and records")
     config = profile["records"]
     if not isinstance(config, dict) or set(config) != {"root", "format"}:
         raise ValueError("records must contain root and format")
     if config["format"] != "okf-json":
         raise ValueError("records.format must be okf-json")
     record_directory(root, config["root"])
-    names = sorted(p for p in known if p.startswith(config["root"] + "/") and p.endswith(".md"))
+    prefix = config["root"] + "/"
+    names = sorted(p for p in known if p.startswith(prefix) and p.endswith(".md"))
     if not names:
-        raise ValueError("no evidence concepts discovered")
-    entries, bodies, ids, owners = [], {}, set(), set()
+        raise ValueError("no evidence records discovered")
+    entries, bodies = [], {}
     for name in names:
         bodies[name] = ""
         try:
+            if "/" in name[len(prefix) :]:
+                raise ValueError(f"evidence record must sit directly under {config['root']}")
             path = safe_path(root, name)
             if path.resolve() != path or not path.is_file():
-                raise ValueError("evidence concept must be a regular file without symlinks")
+                raise ValueError("evidence record must be a regular file without symlinks")
             metadata, bodies[name] = parse_record(path.read_text())
             if metadata.get("type") != "Evidence":
-                raise ValueError("concept type must be Evidence")
-            topic = metadata.get("id")
-            if not isinstance(topic, str) or not TOPIC_ID.fullmatch(topic):
-                raise ValueError("id must be a stable lowercase dotted or hyphenated topic")
-            if topic in ids:
-                raise ValueError(f"duplicate topic id: {topic}")
-            ids.add(topic)
+                raise ValueError("record type must be Evidence")
+            record_id = metadata.get("id")
+            if not isinstance(record_id, str) or not RECORD_ID.fullmatch(record_id):
+                raise ValueError("id must be a lowercase hyphenated name")
+            if record_id != Path(name).stem:
+                raise ValueError("id must match the record file name")
             entry = metadata.get("evidence")
             if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
                 raise ValueError("evidence must contain a document path string")
-            scope = entry.get("scope")
-            if not isinstance(scope, str) or not scope.strip() or any(c in scope for c in "\r\n"):
-                raise ValueError("scope must be an explicit single-line topic")
-            owner = (entry["path"], " ".join(scope.casefold().split()))
-            if owner in owners:
-                raise ValueError(f"duplicate document/scope ownership: {owner[0]} [{scope}]")
-            owners.add(owner)
-            entries.append((name, topic, entry))
+            unknown = sorted(set(entry) - EVIDENCE_KEYS)
+            if unknown:
+                raise ValueError("unsupported evidence fields: " + ", ".join(unknown))
+            entries.append((name, entry))
         except (OSError, ValueError) as exc:
             errors.append(f"{name}: {exc}")
     return profile, entries, bodies
@@ -279,7 +270,7 @@ def load_registry(root, known, errors):
 
 def review_base(root, revision, base, comparison):
     if not isinstance(revision, str) or not COMMIT.fullmatch(revision):
-        raise ValueError("base_revision must be a full Git commit")
+        raise ValueError("reviewed_revision must be a full Git commit")
     git(root, "cat-file", "-e", revision + "^{commit}")
     if comparison is not None:
         try:
@@ -288,10 +279,43 @@ def review_base(root, revision, base, comparison):
             if exc.returncode != 1:
                 raise
             raise ValueError(
-                f"base_revision must be reachable from comparison base {base!r}; "
+                f"reviewed_revision must be reachable from comparison base {base!r}; "
                 "refresh/select the canonical repository's main ref, then record a durable "
                 "main review base, not an unmerged or pre-squash PR commit"
             ) from exc
+
+
+def changed_since(root, revision):
+    """Committed, staged, unstaged and deleted paths since a reviewed commit."""
+    return set(git(root, "diff", "--name-only", "-z", revision, "--").split("\0")) - {""}
+
+
+def check_sources(root, known, entry, changed):
+    """Return the sources changed since review; raise on structural problems."""
+    sources = entry.get("sources")
+    if (
+        not isinstance(sources, list)
+        or not sources
+        or not all(isinstance(source, str) for source in sources)
+    ):
+        raise ValueError("sources must be a nonempty list of repository paths")
+    if sources != sorted(set(sources)):
+        raise ValueError("sources must be sorted and unique")
+    drifted = []
+    for source in sources:
+        path = safe_path(root, source)
+        if not path.exists() and not path.is_symlink() and source in changed:
+            drifted.append(f"{source} (removed)")
+            continue
+        if (
+            source not in known
+            or not path.is_file()
+            or path.resolve().relative_to(root).as_posix() not in known
+        ):
+            raise ValueError(f"missing or ignored source: {source}")
+        if source in changed:
+            drifted.append(source)
+    return drifted
 
 
 def audit(root, base=None, today=None):
@@ -301,10 +325,9 @@ def audit(root, base=None, today=None):
         "errors": [],
         "warnings": [],
         "documents": [],
+        "drift": [],
         "changed": [],
         "impacted": [],
-        "topics": [],
-        "impacted_topics": [],
     }
     errors, warnings = report["errors"], report["warnings"]
     known = files(root)
@@ -315,8 +338,6 @@ def audit(root, base=None, today=None):
             comparison = git(
                 root, "rev-parse", "--verify", "--end-of-options", base + "^{commit}"
             ).strip()
-        if profile["version"] == 1:
-            review_base(root, profile.get("base_revision"), base, comparison)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         errors.append(f"docs/knowledge.json: {exc}")
         return report
@@ -329,16 +350,13 @@ def audit(root, base=None, today=None):
     expected.update(p for p in known if p.startswith(".claude/rules/") and p.endswith(".md"))
     registered = set()
     sources_by_doc = {}
-    sources_by_topic = {}
-    validated_bases = set()
-    for record, topic, entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
-            errors.append("registry entry must contain a path string")
-            continue
+    changes = {}
+    for record, entry in entries:
         relative = entry["path"]
-        label = f"{relative} [{topic}]" if topic else relative
-        if relative in registered and profile["version"] == 1:
+        label = f"{relative} [{record}]"
+        if relative in registered:
             errors.append(f"duplicate document: {relative}")
+            continue
         registered.add(relative)
         try:
             path = safe_path(root, relative)
@@ -349,49 +367,44 @@ def audit(root, base=None, today=None):
                 or relative in bodies
             ):
                 raise ValueError("document must be a nonignored Markdown file")
-            if topic:
-                report["topics"].append(
-                    {"id": topic, "path": relative, "scope": entry["scope"], "record": record}
-                )
-                revision = entry.get("base_revision")
-                if not isinstance(revision, str) or revision not in validated_bases:
-                    review_base(root, revision, base, comparison)
-                    validated_bases.add(revision)
             if entry.get("coverage") not in COVERAGE:
                 raise ValueError("invalid coverage")
-            if not isinstance(entry.get("limits"), str) or not entry["limits"].strip():
+            limits = entry.get("limits")
+            if not isinstance(limits, str) or not limits.strip():
                 raise ValueError("coverage limits must be explicit")
+            if len(limits.split()) > MAX_LIMIT_WORDS:
+                raise ValueError(
+                    f"limits must be at most {MAX_LIMIT_WORDS} words, not {len(limits.split())}"
+                )
             reviewed = dt.date.fromisoformat(entry.get("reviewed_at", ""))
             if reviewed > today:
                 raise ValueError("reviewed_at is in the future")
-            if (today - reviewed).days > 45:
-                warnings.append(f"{label}: review is older than 45 days")
-            sources = entry.get("sources")
-            if not isinstance(sources, dict) or not sources:
-                raise ValueError("sources must be a nonempty path-to-SHA256 mapping")
-            sources_by_doc.setdefault(relative, set()).update(sources)
-            if topic:
-                sources_by_doc[relative].add(record)
-                sources_by_topic[topic] = set(sources) | {relative, record}
-            for source, digest in sources.items():
-                source_path = safe_path(root, source)
-                if not isinstance(digest, str) or not HASH.fullmatch(digest):
-                    errors.append(f"{label}: invalid SHA256 for {source}")
-                    continue
-                if (
-                    source not in known
-                    or not source_path.is_file()
-                    or source_path.resolve().relative_to(root).as_posix() not in known
-                ):
-                    errors.append(f"{label}: missing or ignored source: {source}")
-                    continue
-                current = hashlib.sha256(source_path.read_bytes()).hexdigest()
-                if current != digest:
-                    warnings.append(f"{label}: source changed: {source}")
+            revision = entry.get("reviewed_revision")
+            if revision not in changes:
+                review_base(root, revision, base, comparison)
+                changes[revision] = changed_since(root, revision)
+            drifted = check_sources(root, known, entry, changes[revision])
+            sources_by_doc[relative] = set(entry["sources"]) | {record}
         except (OSError, ValueError, TypeError, subprocess.CalledProcessError) as exc:
             errors.append(f"{label}: {exc}")
+            continue
+        if drifted:
+            report["drift"].append(
+                {
+                    "path": relative,
+                    "record": record,
+                    "reviewed_revision": revision,
+                    "sources": drifted,
+                }
+            )
+            shown = ", ".join(drifted[:SHOWN_DRIFT])
+            more = len(drifted) - SHOWN_DRIFT
+            warnings.append(
+                f"{label}: {len(drifted)} of {len(entry['sources'])} sources changed since review: "
+                + shown
+                + (f" and {more} more" if more > 0 else "")
+            )
     report["documents"] = sorted(registered)
-    report["topics"].sort(key=lambda topic: topic["id"])
     errors.extend(f"document missing from registry: {p}" for p in sorted(expected - registered))
     graph = navigation(root, known, expected | registered | set(bodies), errors, bodies)
     index = profile.get("index")
@@ -413,9 +426,6 @@ def audit(root, base=None, today=None):
         report["impacted"] = sorted(
             p for p, sources in sources_by_doc.items() if sources & changed or p in changed
         )
-        report["impacted_topics"] = sorted(
-            topic for topic, sources in sources_by_topic.items() if sources & changed
-        )
     return report
 
 
@@ -424,7 +434,7 @@ def main():
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument(
         "--base",
-        help="require registry-base ancestry and compare branch/worktree impact against this ref",
+        help="require reviewed revisions on this ref and report branch/worktree impact against it",
     )
     parser.add_argument("--json", action="store_true", help="emit a machine-readable report")
     args = parser.parse_args()
@@ -440,7 +450,8 @@ def main():
             for message in report[key]:
                 print(f"{key[:-1].upper()}: {message}")
         print(
-            f"Knowledge: {len(report['documents'])} documents, {len(report['errors'])} errors, {len(report['warnings'])} warnings"
+            f"Knowledge: {len(report['documents'])} documents, {len(report['errors'])} errors, "
+            f"{len(report['drift'])} with source drift"
         )
         if args.base:
             print("Impacted documents: " + ", ".join(report["impacted"]))

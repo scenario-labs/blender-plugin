@@ -37,6 +37,13 @@ inspect the refreshed release PR before publication. Follow the
 [upstream override format](https://github.com/googleapis/release-please#how-can-i-fix-release-notes).
 This does not rewrite Git history or authorize editing published release assets.
 
+## Documentation refresh
+
+Once a version's scope is settled, run one
+[knowledge release refresh](maintenance/knowledge.md#release-refresh) and merge
+its PR before the release PR. Feature PRs leave evidence records alone, so this
+is the only place where drifted documents are reviewed.
+
 ## Extension id
 
 The extension id is `scenario` and it is final. Blender scopes extension modules

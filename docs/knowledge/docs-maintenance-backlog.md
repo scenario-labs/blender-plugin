@@ -1,0 +1,62 @@
+---
+{
+  "type": "Evidence",
+  "id": "docs-maintenance-backlog",
+  "title": "docs/maintenance/backlog.md evidence",
+  "evidence": {
+    "path": "docs/maintenance/backlog.md",
+    "coverage": "source-reviewed",
+    "reviewed_at": "2026-09-24",
+    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
+    "limits": "Merged on 2026-10-14 from 18 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "sources": [
+      ".github/workflows/links-scheduled.yml",
+      ".github/workflows/links.yml",
+      "AGENTS.md",
+      "CONTRIBUTING.md",
+      "docs/RELEASING.md",
+      "docs/development/contributions.md",
+      "docs/index.md",
+      "scenario/blender/apply_audio.py",
+      "scenario/blender/capture.py",
+      "scenario/blender/composer/draw.py",
+      "scenario/blender/composer/modal.py",
+      "scenario/blender/generation.py",
+      "scenario/blender/history.py",
+      "scenario/blender/mesh_export.py",
+      "scenario/blender/model_picker.py",
+      "scenario/blender/panels.py",
+      "scenario/blender/params_ui.py",
+      "scenario/blender/prompt_jobs.py",
+      "scenario/blender/prompt_tools.py",
+      "scenario/blender/props.py",
+      "scenario/blender/registry.py",
+      "scenario/blender/render_commands.py",
+      "scenario/blender/render_lanes.py",
+      "scenario/blender/result_media.py",
+      "scenario/blender/runtime.py",
+      "scenario/blender/shot_planner.py",
+      "scenario/core/api/catalog.py",
+      "scenario/core/api/model_filter.py",
+      "scenario/core/api/sdk_adapter.py",
+      "scenario/core/audio_waveform.py",
+      "scenario/core/config.py",
+      "scenario/core/jobs/audio_decode.py",
+      "scenario/core/jobs/preview_scheduler.py",
+      "scenario/core/jobs/results.py",
+      "scenario/mcp/tools_scenario.py",
+      "scenario/prefs.py",
+      "tests/blender/test_mcp_result_previews.py",
+      "tests/blender/test_prompt_tools.py",
+      "tests/blender/test_result_media.py",
+      "tests/unit/test_prompt_results.py",
+      "tools/audit_payloads.py",
+      "tools/blender_env.py",
+      "tools/gui_screenshot.py",
+      "tools/test_blender.py"
+    ]
+  }
+}
+---
+
+Evidence for [the canonical document](../maintenance/backlog.md).

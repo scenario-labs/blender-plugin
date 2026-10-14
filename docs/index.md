@@ -51,8 +51,9 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Licence decision and the alternatives compared](maintenance/licence-options.md)
 - [Issue disposition and limitations audit](maintenance/backlog.md)
 - [Evidence discovery configuration](knowledge.json)
-- [Topic evidence concepts](knowledge/)
+- [Evidence records, one per document](knowledge/)
 
-The topic records describe source inspection and fingerprints, not human approval or
-live service acceptance. It includes inherited guides with explicit coverage
-limits; their presence here does not certify every historical claim.
+The evidence records name each document's sources and the main commit it was last
+reviewed against, not human approval or live service acceptance. Inherited guides
+keep explicit coverage limits; their presence here does not certify every
+historical claim.

@@ -131,6 +131,13 @@ History lives in git. Do not create file snapshots in `versions/` or retain
 retired code in `archive/`. Recover history from commits/tags; update durable
 engineering explanations in the appropriate docs instead of agent session logs.
 
+Keep documentation changes in feature PRs small: correct only the prose your
+change makes wrong, in the existing style. Test runs, platforms and review notes
+belong in the PR body, not in docs. Do not edit `docs/knowledge/` records except
+to add one for a new document or to fix a checker error. Source drift warnings
+are expected; one [release refresh](docs/maintenance/knowledge.md#release-refresh)
+per version reviews them.
+
 This repository is public. Do not add session/resume IDs, personal paths, account
 records, workspace identifiers, spend anecdotes or private research exports.
 Preserve GPL text and first-party SPDX notices; preserve the original licenses

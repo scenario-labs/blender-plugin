@@ -136,8 +136,9 @@ Record the parent PR, exact parent commit used for validation and merge order in
 each description. Describe and validate that PR's own changes against its parent;
 keep inherited work out of its summary and squash message. Preserve existing
 review discussions, contributor trailers and artifact-specific validation limits.
-Knowledge evidence still uses a durable main ancestor as
-[`base_revision`](../maintenance/knowledge.md#topic-concepts-and-okf).
+A knowledge record's
+[`reviewed_revision`](../maintenance/knowledge.md#evidence-records) is always a
+durable main commit, never a parent branch.
 
 Before retargeting an existing chain, fetch its current heads and inspect their
 ancestry. Changing the base alone cannot repair diverged history. Rebase from the

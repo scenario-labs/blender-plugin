@@ -534,9 +534,10 @@ class SCENARIO_OT_apply_saved_world(bpy.types.Operator):
         else:
             self.layout.label(text=f"Selected: {self.media_label}")
             self.layout.label(text="Use this 2:1 image as an equirectangular environment.")
-            self.layout.label(text="Pack the panorama and keep the original World unchanged.")
+            self.layout.label(text="Adds a new World with the panorama; keeps the current one.")
             self.layout.label(text="PNG/JPEG are LDR; EXR may not be HDR or seamless.")
-            self.layout.label(text="Restore remains available in this session while unchanged.")
+            self.layout.label(text="Restore brings it back while neither World is changed.")
+            self.layout.label(text="Rendered viewport shading shows the new World.")
 
     def cancel(self, context):
         jobs = getattr(self, "_jobs", None)

@@ -607,7 +607,8 @@ MCP [`inspect_result_previews`](MCP.md#saved-result-previews) tool.
 
 **Reuse saved results** on a completed job applies its saved files again, for
 example as another import, a material or a World, without generating or spending.
-Each reuse asks you to confirm its destination, and Undo doesn't cover it. If
+Each reuse asks you to confirm its destination. Undo reverts the scene change but
+not the job's own controls: after undoing a World, its **Restore** button is gone. If
 Blender can't tell whether a reuse finished, check the scene: the job blocks further
 reuse until you choose **Save import receipt**. A job allows up to 128 reuse
 attempts.

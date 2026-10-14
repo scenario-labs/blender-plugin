@@ -25,3 +25,6 @@ jobs:
       - name: Check every Python file
         # The whole tree is Ruff-clean since #28; keep it that way.
         run: make lint
+      - name: Check licence metadata for every file
+        # REUSE.toml covers files that cannot carry an SPDX header.
+        run: make lint-licence

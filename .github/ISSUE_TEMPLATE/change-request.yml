@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
 name: Change request
 description: A missing capability, unclear guidance, or a workflow that costs more than it should
 labels: ["enhancement"]

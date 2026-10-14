@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Scenario Inc.
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Single source of truth for commit headers and PR titles.
 // Types come from @commitlint/config-conventional; the scope list below is the
 // one the contributor guide mirrors. Node is never part of the checkout: CI

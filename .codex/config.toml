@@ -1,4 +1,6 @@
 #:schema https://developers.openai.com/codex/config-schema.json
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Shared repository defaults. Codex loads this file only for trusted projects.
 # AGENTS.md holds shared conventions; .claude/CLAUDE.md links to it.
 # Model selection and machine-specific settings remain in user configuration.

@@ -19,6 +19,7 @@ dev = [
     "pre-commit-hooks==6.0.0",
     "conventional-pre-commit==4.4.0",
     "pillow==12.3.0",
+    "reuse[charset-normalizer]==6.2.0",
 ]
 
 [tool.uv]

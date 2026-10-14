@@ -81,11 +81,13 @@ over the whole tree, checks both. Follow [Python style](../PYTHON_STYLE.md#whole
 for path scoping, mechanical reformatting and Blender registration/annotation
 cautions.
 
-`make check-rules` runs the currently implemented offline house rules. Its
-`actions-pinned` rule checks remote workflow and composite-action references;
-the unit suite exercises failures and checks the repository, so no extra CI
-job is needed. See [the contribution guide](contributions.md#github-actions-updates)
-for supported declaration syntax, explicit file selection and remaining scope.
+`make check-rules` runs the offline house rules, including `actions-pinned` for
+remote workflow and composite-action references; the unit suite exercises
+failures and checks the repository, so no extra CI job is needed. See
+[the contribution guide](contributions.md#house-rules) for each rule and
+[action updates](contributions.md#github-actions-updates) for supported
+declaration syntax and explicit file selection. `make lint-licence` runs
+`reuse lint` from the locked development group; Python lint CI runs it too.
 
 `make test-blender` owns fresh disposable profiles for its entire build/install/test
 sequence, including probes. It strips inherited credentials and Blender/Python path

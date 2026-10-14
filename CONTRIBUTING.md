@@ -118,6 +118,9 @@ from [scenario/__init__.py](scenario/__init__.py), after a shebang when present.
 In a file you materially change or create, you may add your own
 `SPDX-FileCopyrightText: <year> <name>` line alongside the existing holder lines;
 never remove an existing notice. The [GPL text](LICENSE) remains unchanged.
+[REUSE.toml](REUSE.toml) records the licence of files that cannot carry a header,
+and `LICENSES/` holds each licence text it uses; `make lint-licence` validates
+the whole tree.
 
 The copyright holder in every Scenario notice is `Scenario Inc.`, the legal name
 in [Scenario's Terms and Conditions](https://www.scenario.com/terms-and-conditions):

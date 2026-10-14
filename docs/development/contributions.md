@@ -211,12 +211,13 @@ the release version in a trailing comment, for example
 changes together, including upstream release notes, workflow permissions and CI
 results. Dependabot update PRs follow the ordinary review and merge process.
 
-[The offline house-rule checker](../../tools/check_rules.py) currently implements
-`actions-pinned` for workflow YAML and local composite-action manifests. Run
-`make check-rules`, or use `uv run --locked --no-env-file python tools/check_rules.py`
-with explicit file paths and optional `--rule actions-pinned`. `--list` reports
-only implemented rules. The unit suite checks the repository and exercises
-failure cases, so ordinary unit CI also enforces the convention.
+[The offline house-rule checker](../../tools/check_rules.py) implements
+`actions-pinned` for workflow YAML and local composite-action manifests; see
+[house rules](#house-rules) for its other rules. Run `make check-rules`, or use
+`uv run --locked --no-env-file python tools/check_rules.py` with explicit file
+paths and optional `--rule actions-pinned`. `--list` reports every rule. The
+unit suite checks the repository and exercises failure cases, so ordinary unit
+CI also enforces the convention.
 The default scan includes tracked files and new files that Git does not ignore,
 so a proposed workflow is checked before it is staged.
 
@@ -234,10 +235,30 @@ This configuration covers GitHub Actions only. Python/SDK updates still require
 the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
 them requires coordinating development pins with the exact packaged wheel bundle.
 The repository's Actions settings also require full-SHA pinning, so GitHub
-refuses a workflow run that references an unpinned action. Other
-house rules, approved-dependency enforcement and REUSE coverage remain under #29;
-the checker does not claim they are implemented. Local checks do not prove that
-GitHub's administrative gates are enabled.
+refuses a workflow run that references an unpinned action. Local checks do not
+prove that GitHub's administrative gates are enabled.
+
+## House rules
+
+The same checker enforces the remaining house rules. Each violation prints
+`path:line: rule: message` and the command exits 1.
+
+| Rule | Checks |
+| --- | --- |
+| `spdx` | First-party source and configuration files carry the copyright and GPL-3.0-or-later lines within their first 10 lines. Shared skills pinned in `skills-lock.json` and the Blender manifest, which `REUSE.toml` covers, are skipped. |
+| `em-dash` | No em dash in any text file except the licence texts. |
+| `bpy-boundary` | `scenario/core` and the MCP modules other than `sandbox.py`, `tools_blender.py` and `tools_scenario.py` import no Blender-only module, numpy included. |
+| `approved-dependencies` | `scenario/` imports only the standard library, Blender's modules, the package and the distributions pinned in `scenario/sdk-wheel-lock.json`. [Wheel-bundle tests](../../tests/unit/test_wheel_bundle.py) keep the manifest wheels, that lock, its notices and the SDK closure in `uv.lock` identical. |
+| `sdk-adapter` | Only `sdk_adapter.py` and `sdk_extensions.py` import `scenario_sdk` or `httpx`. Signed storage and other distinct protocols keep their own clients; review still verifies each documented SDK exception. |
+| `public-content` | No line matches [the denylist](../../tools/public_content_denylist.txt). Reports name the pattern's line number, never the matched text; keep its patterns generic. |
+| `version-literal` | The manifest version appears only in the release-please files, `CHANGELOG.md`, dependency locks and `docs/maintenance/` records. |
+| `no-snapshot-dirs` | No tracked path under `versions/` or an `archive/` directory. |
+
+These are convention checks, not proof: an import scan cannot establish that an
+SDK gap is real, and a denylist cannot recognize every private value.
+[REUSE.toml](../../REUSE.toml) records the licence of files that cannot carry a
+header, including third-party notices. `make lint-licence` runs the locked
+`reuse lint`, which Python lint CI also runs.
 
 ## Scorecard triage
 

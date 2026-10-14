@@ -15,6 +15,7 @@ import sqlite3
 import stat
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
@@ -27,7 +28,7 @@ from .transfers import DownloadedResult, TransferError, _root, validate_result_n
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 11
+_VERSION = 12
 _APPLICATION_ID = 0x53434A42
 _FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
 # A bounded identifier, not the current catalog: "3d" is a lane, and a renamed or
@@ -53,6 +54,33 @@ def _regular_database(path):
 
 class StoreConflict(StoreError):
     """A request already exists, or another caller changed its revision."""
+
+
+# A submission claim time: UTC with exactly three fractional digits, as written.
+_CLAIM_TIME = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z")
+
+
+def claim_time(seconds):
+    """The wall-clock claim time saved with a submission (UTC, milliseconds)."""
+    moment = datetime.fromtimestamp(seconds, UTC)
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def parse_time(value):
+    """A timezone-aware ISO 8601 time such as Scenario's `createdAt`, or None."""
+    if not isinstance(value, str) or not value or len(value) > 64:
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment if moment.tzinfo is not None else None
+
+
+def _claim_time(value):
+    if not isinstance(value, str) or not _CLAIM_TIME.fullmatch(value) or parse_time(value) is None:
+        raise ValueError("Use the UTC claim time saved with a submission")
+    return value
 
 
 def _identity(value):
@@ -625,6 +653,9 @@ class StoredJob:
     results: tuple[StoredResult, ...] = ()
     application_origin: JobOrigin | None = None
     local_applications: tuple[LocalApplication, ...] = ()
+    # Wall-clock UTC time of the submitting claim (schema 12). None before the
+    # claim, for cloud records and for rows saved by earlier schemas.
+    claimed_at: str | None = None
 
 
 def _validate_local_applications(record):
@@ -677,8 +708,13 @@ def _decode(raw, scope, *, version=_VERSION):
             expected.add("application_origin")
         if version >= 5:
             expected.add("local_applications")
+        if version >= 12:
+            expected.add("claimed_at")
         if not isinstance(value, dict) or set(value) != expected:
             raise ValueError
+        claimed = value.pop("claimed_at", None)
+        if claimed is not None:
+            _claim_time(claimed)
         intent = value.pop("intent")
         intent_type = (
             CloudJobIntent
@@ -779,6 +815,7 @@ def _decode(raw, scope, *, version=_VERSION):
             results=results,
             application_origin=application,
             local_applications=tuple(applications),
+            claimed_at=claimed,
             **value,
         )
         _validate_local_applications(record)
@@ -814,6 +851,8 @@ def _decode(raw, scope, *, version=_VERSION):
             JobState.APPLIED,
         }
         if intent_type is CloudJobIntent and not has_results:
+            raise ValueError
+        if claimed is not None and (intent_type is CloudJobIntent or state == JobState.PREPARED):
             raise ValueError
         needs_results = has_results and state != JobState.SUCCEEDED
         needs_receipts = state in {
@@ -878,7 +917,7 @@ class JobStore:
                     _create_trained_defaults(connection)
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5, 6, 7, 8, 9, 10} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5, 6, 7, 8, 9, 10, 11} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -903,7 +942,7 @@ class JobStore:
         Every row is decoded and rewritten in the current shape; one invalid row
         rolls back the whole upgrade and keeps the old version. A concurrent opener
         waits on the same immediate transaction and then sees the current version.
-        Missing roles, originals and projections are never guessed.
+        Missing roles, originals, projections and claim times are never guessed.
         """
         film_tasks = set()
         for key, request_id, revision, raw in connection.execute(
@@ -1312,8 +1351,13 @@ class JobStore:
         state: JobState,
         remote_job_id=None,
         application_origin=None,
+        claimed_at=None,
     ):
         _identity(request_id)
+        if claimed_at is not None and (
+            state != JobState.SUBMITTING or _claim_time(claimed_at) is None
+        ):
+            raise ValueError("Save a claim time only with the submitting claim")
         if type(expected_revision) is not int or expected_revision < 0:
             raise ValueError("A nonnegative expected revision is required")
         if not isinstance(state, JobState):
@@ -1349,6 +1393,61 @@ class JobStore:
                 application_origin=(application_origin or previous.intent.origin)
                 if state == JobState.APPLYING
                 else previous.application_origin,
+                claimed_at=claimed_at if state == JobState.SUBMITTING else previous.claimed_at,
+            )
+            connection.execute(
+                "UPDATE jobs SET revision=?, record=? WHERE scope=? AND request_id=? AND revision=?",
+                (
+                    updated.revision,
+                    _json(asdict(updated)),
+                    self._key,
+                    request_id,
+                    expected_revision,
+                ),
+            )
+        return updated
+
+    def remote_job_ids(self):
+        """Every remote job ID saved in this scope; SQLite selects them, nothing is decoded."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                "SELECT json_extract(record, '$.remote_job_id') FROM jobs WHERE scope=? "
+                "AND json_valid(record) AND json_extract(record, '$.remote_job_id') IS NOT NULL",
+                (self._key,),
+            ).fetchall()
+        return frozenset(row[0] for row in rows if isinstance(row[0], str))
+
+    def link_remote(self, request_id, *, expected_revision, remote_job_id):
+        """Bind a user-selected, coordinator-verified job to an unconfirmed request.
+
+        One write transaction checks that no record in this scope already holds
+        that remote job, so two requests can never claim the same job and an
+        adopted cloud record is never duplicated.
+        """
+        _identity(request_id)
+        _identity(remote_job_id)
+        if type(expected_revision) is not int or expected_revision < 0:
+            raise ValueError("A nonnegative expected revision is required")
+        with self._connection(write=True) as connection:
+            previous = self._read(connection, request_id)
+            if (
+                previous is None
+                or previous.revision != expected_revision
+                or previous.state not in {JobState.SUBMITTING, JobState.UNCERTAIN}
+            ):
+                raise StoreConflict("The unconfirmed job changed; inspect it again")
+            holder = connection.execute(
+                "SELECT request_id FROM jobs WHERE scope=? AND json_valid(record) "
+                "AND json_extract(record, '$.remote_job_id')=? LIMIT 1",
+                (self._key, remote_job_id),
+            ).fetchone()
+            if holder is not None:
+                raise StoreConflict("This cloud job is already saved here; choose another one")
+            updated = replace(
+                previous,
+                state=JobState.REMOTE,
+                revision=previous.revision + 1,
+                remote_job_id=remote_job_id,
             )
             connection.execute(
                 "UPDATE jobs SET revision=?, record=? WHERE scope=? AND request_id=? AND revision=?",

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Schema 11: WAV originals, and the 10 -> 11 upgrade older readers refuse."""
 
+import json
 import sqlite3
 from contextlib import closing
 
@@ -9,7 +10,6 @@ import pytest
 
 from scenario.core.jobs import store as storage
 from scenario.core.jobs.store import (
-    JobScope,
     JobStore,
     ResultAsset,
     StoreError,
@@ -50,7 +50,8 @@ def schema10(tmp_path):
     """A schema 10 store: rows in the shape schema 10 code wrote, with a lane default.
 
     Schema 11 changes no field, only which values a result may hold, so the
-    upgraded schema 9 fixture plus a saved default is exactly a schema 10 file.
+    upgraded schema 9 fixture without schema 12's claim time, plus a saved
+    default, is exactly a schema 10 file.
     """
     path = materialize(tmp_path / "jobs.sqlite3")
     scope = next(scope for scope in _scopes(path).values() if scope.project_id)
@@ -61,6 +62,16 @@ def schema10(tmp_path):
         expected_revision=0,
     )
     with closing(sqlite3.connect(path)) as connection:
+        # Schema 12 added the claim time; a schema 10 row never had that key.
+        for request_id, scope_key, raw in connection.execute(
+            "SELECT request_id, scope, record FROM jobs"
+        ).fetchall():
+            value = json.loads(raw)
+            del value["claimed_at"]
+            connection.execute(
+                "UPDATE jobs SET record=? WHERE request_id=? AND scope=?",
+                (json.dumps(value), request_id, scope_key),
+            )
         connection.execute("PRAGMA user_version=10")
         connection.commit()
     return path
@@ -72,8 +83,12 @@ def test_schema_ten_store_upgrades_without_changing_any_row(schema10):
     defaults = _rows(schema10, "trained_defaults", "scope, lane, revision, record")
     assert defaults
     stores = {key: JobStore(schema10, scope) for key, scope in _scopes(schema10).items()}
-    assert _pragma(schema10, "user_version") == storage._VERSION == 11
-    assert _rows(schema10, "jobs", "scope, request_id, revision, record") == jobs
+    assert _pragma(schema10, "user_version") == storage._VERSION
+    # Only schema 12's unknown submission claim time is added to each row.
+    upgraded = _rows(schema10, "jobs", "scope, request_id, revision, record")
+    assert [row[:3] for row in upgraded] == [row[:3] for row in jobs]
+    for (*_, raw), (*_, migrated) in zip(jobs, upgraded, strict=True):
+        assert json.loads(migrated) == json.loads(raw) | {"claimed_at": None}
     assert _rows(schema10, "film_uploads", "scope, production_id, task_id, record") == uploads
     assert _rows(schema10, "trained_defaults", "scope, lane, revision, record") == defaults
     selected = next(store for store in stores.values() if store.scope.project_id)
@@ -113,14 +128,8 @@ def test_schema_eleven_is_refused_by_a_schema_ten_reader_and_newer_by_this_one(
             JobStore(schema10, scope)
     assert schema10.read_bytes() == upgraded
     with sqlite3.connect(schema10) as connection:
-        connection.execute("PRAGMA user_version=12")
+        connection.execute(f"PRAGMA user_version={storage._VERSION + 1}")
     newer = schema10.read_bytes()
     with pytest.raises(StoreError, match="Unsupported"):
         JobStore(schema10, scope)
     assert schema10.read_bytes() == newer
-
-
-def test_fresh_store_starts_at_schema_eleven(tmp_path):
-    scope = JobScope("https://service.example.invalid/v1", "local-key-one")
-    JobStore(tmp_path / "jobs.sqlite3", scope)
-    assert _pragma(tmp_path / "jobs.sqlite3", "user_version") == 11

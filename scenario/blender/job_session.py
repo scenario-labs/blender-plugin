@@ -650,6 +650,16 @@ class JobSession:
     def refresh_remote(self, request_id, *, expected_revision):
         return self._record_command("refresh_remote", request_id, expected_revision)
 
+    def unconfirmed_candidates(self, request_id, *, expected_revision):
+        """Queue a read-only cloud listing for an unconfirmed request; saves nothing."""
+        return self._record_command("unconfirmed_candidates", request_id, expected_revision)
+
+    def link_unconfirmed(self, request_id, *, expected_revision, remote_job_id):
+        """Queue a confirmed, verified link of one cloud job; never submits."""
+        return self._record_command(
+            "link_unconfirmed", request_id, expected_revision, remote_job_id=remote_job_id
+        )
+
     def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
         """Queue an explicit cloud-result read; this never approves scene application."""
         _main_thread()

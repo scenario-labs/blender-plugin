@@ -212,7 +212,7 @@ def test_damaged_storage_fails_visibly_and_is_preserved(owner, root, damage):
         if damage == "record":
             connection.execute("UPDATE trained_defaults SET record='{}'")
         else:
-            connection.execute("PRAGMA user_version = 12")
+            connection.execute("PRAGMA user_version = 99")
     damaged = database(root).read_bytes()
     message = "trained-model default" if damage == "record" else "Unsupported job database"
     for call in (

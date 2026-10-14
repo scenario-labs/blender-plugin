@@ -400,6 +400,21 @@ class JobWorkers:
             self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
         )
 
+    def unconfirmed_candidates(self, request_id, *, expected_revision):
+        return self._enqueue(
+            self._coordinator.unconfirmed_candidates,
+            request_id,
+            expected_revision=expected_revision,
+        )
+
+    def link_unconfirmed(self, request_id, *, expected_revision, remote_job_id):
+        return self._enqueue(
+            self._coordinator.link_unconfirmed,
+            request_id,
+            expected_revision=expected_revision,
+            remote_job_id=remote_job_id,
+        )
+
     def adopt_cloud_job(self, identifier, *, expected_model_id, origin):
         return self._enqueue(
             self._coordinator.adopt_cloud_job,

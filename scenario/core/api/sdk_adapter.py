@@ -38,7 +38,8 @@ MODEL_BULK_LIMIT = 200
 # server's Retry-After of up to 60 seconds. Only job, asset, model and workflow
 # retrieve, list and get-bulk reads use them; see SDKAdapter._reads. An
 # automatic job status poll, which ModelJobs retries later itself, opts out
-# with job(retry=False) so it holds a job worker for one attempt at most.
+# with job(retry=False), and workflow(retry=False) for the step-link definition
+# it may read, so it holds a job worker for single attempts only.
 READ_RETRIES = 2
 _RETRIED_RESOURCES = frozenset({"jobs", "assets", "models", "workflows"})
 
@@ -847,8 +848,11 @@ class SDKAdapter:
             records.update(_bulk_records(page.get("models"), batch, "model"))
         return records
 
-    def workflow(self, identifier):
-        return self._retrieve("workflows", identifier, "workflow")
+    def workflow(self, identifier, *, retry=True):
+        """Read one workflow; retry=False makes one attempt, for a poll retried later."""
+        if type(retry) is not bool:
+            raise ValueError("Choose whether to retry the workflow read")
+        return self._retrieve("workflows", identifier, "workflow", retry=retry)
 
     def asset(self, identifier, *, original_assets=False):
         """Read one asset; pass original_assets=True before downloading its bytes.

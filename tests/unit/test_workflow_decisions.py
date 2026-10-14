@@ -677,6 +677,26 @@ def test_an_unreadable_definition_blocks_choosing_and_is_read_again(setup, defin
     assert len(setup.reads) == 2 * (1 + READ_RETRIES if failed else 1) and len(calls) == 2
 
 
+@pytest.mark.parametrize("failure", ["timeout", 503])
+@pytest.mark.parametrize("automatic", [True, False])
+def test_an_automatic_poll_reads_the_definition_once(setup, failure, automatic):
+    # The automatic poll's owner retries it later, so neither its job read nor
+    # the step-link definition read behind it holds a worker for SDK retries.
+    def fail(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private fixture detail", request=request)
+        return httpx.Response(failure, json={"message": "private fixture detail"})
+
+    waiting = into_loop()
+    coordinator, _, calls, record = setup([waiting], definition=fail)
+    snapshot = coordinator.refresh_remote(
+        "request", expected_revision=record.revision, automatic=automatic
+    )
+    assert snapshot.links is None
+    assert len(calls) == 1
+    assert len(setup.reads) == (1 if automatic else 1 + READ_RETRIES)
+
+
 def test_an_unreadable_definition_logs_only_its_error_type_once_until_read(setup, caplog):
     # Not found, a server error the SDK's read retry recovers from with the readable
     # definition, then another workflow's definition.

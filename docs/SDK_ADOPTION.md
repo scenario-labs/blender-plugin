@@ -864,11 +864,13 @@ and `workflows`.
 
 The automatic status poll is the exception: `ModelJobs`' periodic
 `refresh_remote` passes `automatic=True` to the coordinator, which reads the job
-with `SDKAdapter.job(..., retry=False)`, one attempt. Its owner already retries a
+with `SDKAdapter.job(..., retry=False)`, one attempt, and, for a workflow waiting
+at a step, its step-link definition with `SDKAdapter.workflow(..., retry=False)`. Its owner already retries a
 failed poll later with its own [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures),
 which holds no worker, so stacking SDK retries under it would only keep one of
 the two job workers busy (see #453). A poll therefore holds a job worker for at
-most one request, the adapter's 45-second timeout. Every other job retrieve
+most one request per read, the adapter's 45-second timeout each: 45 seconds, or
+90 seconds when a waiting workflow's definition is read too. Every other job retrieve
 keeps the retries: an explicit Refresh status or Resume download, the reads
 around a cancellation or a workflow decision, and cloud job adoption, which have
 no outer backoff. Such a read, like any allow-listed read, holds its worker for

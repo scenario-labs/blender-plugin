@@ -77,7 +77,8 @@ Restoring a dynamic enum's index to the same stable model id does not count as a
 new selection. All events retain the credential-context identity check.
 
 Catalog-driven form synchronization does not tag a scene for a dependency
-update. Blender tags the scene on every RNA assignment to a property with an
+update, except when an Edit 3D or Environment form's saved model left the
+catalog: selecting the first model then goes through RNA. Blender tags the scene on every RNA assignment to a property with an
 update callback, even with an unchanged value, and that update makes the scene's
 [captured origins](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime) stale.
 Seeding a new or replaced parameter with its schema default, correcting an enum

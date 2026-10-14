@@ -479,12 +479,12 @@ private byte snapshot, isolated staging scene and image packing. It requires
 exactly one mesh with optional Empty parents for `REMESH`, `UV` and `RETEXTURE`.
 The explicit `PARTS` policy accepts 2 to 128 static surface meshes in that one GLB;
 other object types fail for these static policies. RIG requires one compatible
-mesh and armature with optional Empty parents. Display helpers are not counted
-as result meshes and are removed with the other imported objects: a mesh an
-imported armature uses as a bone custom shape (the importer is told not to create
-these), and, when the returned rig skins or carries at least one mesh, any mesh it
-neither skins nor carries, such as a bone-display mesh. A rig that drives no mesh,
-such as a clips-only result, keeps its meshes and fails the skin checks. A skinned
+mesh and armature with optional Empty parents. A mesh an imported armature uses
+as a bone custom shape is a display helper: it is not counted as a result mesh
+and is removed with the other imported objects (the importer is told not to
+create these). Every other mesh counts, so an unskinned mesh beside the skin,
+which may be an accessory, makes RIG refuse the result instead of discarding it.
+A clips-only result, whose rig drives no mesh, fails the skin checks. A skinned
 bone-display mesh cannot be told from a character and fails the topology check.
 The caller chooses the policy and Keep original.
 Multiple result assets are never combined or ranked automatically.

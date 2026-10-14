@@ -60,32 +60,19 @@ def _release_import(imported, objects, staging):
                 values.remove(value)
 
 
-def _rig_driven(obj, rigs):
-    """Whether an imported rig skins the mesh or carries it as a child."""
-    return any(
-        modifier.type == "ARMATURE" and modifier.object in rigs for modifier in obj.modifiers
-    ) or (obj.parent in rigs and obj.parent_type in {"ARMATURE", "BONE"})
-
-
 def _helpers(objects):
-    """Imported meshes that only display a returned rig; never result meshes.
+    """Imported meshes that only display a returned rig: pose bones' custom shapes.
 
-    A pose bone's custom shape is one. When a returned rig drives at least one
-    mesh, a mesh it neither skins nor carries, such as a bone-display mesh, is
-    another. A result whose rig drives no mesh keeps its meshes and fails the
-    skin checks instead of being guessed.
+    Any other mesh, such as an unskinned accessory beside the skin, stays a
+    result mesh, so the policy's mesh checks refuse it instead of discarding it.
     """
-    rigs = {obj for obj in objects if obj.type == "ARMATURE"}
     helpers = set()
-    for rig in rigs:
+    for rig in (obj for obj in objects if obj.type == "ARMATURE"):
         for bone in rig.pose.bones:
             if bone.custom_shape is not None:
                 helpers.add(bone.custom_shape)
                 # A retained rig keeps no pointer to a helper removed with the import.
                 bone.custom_shape = None
-    meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
-    if any(_rig_driven(obj, rigs) for obj in meshes):
-        helpers.update(obj for obj in meshes if not _rig_driven(obj, rigs))
     return tuple(obj for obj in objects if obj in helpers)
 
 

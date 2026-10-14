@@ -849,23 +849,25 @@ class RigResultTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.collections), collections)
         self.assertEqual(bpy.context.window.scene, self.scene)
 
-    def test_undriven_display_mesh_beside_a_skin_is_a_helper(self):
-        # A returned bone-display mesh that the rig neither skins nor carries.
+    def test_unskinned_mesh_beside_a_skin_is_refused_not_discarded(self):
+        # It may be an accessory the user wants: never drop it silently.
         importer = self.model._import
 
-        def with_display_mesh(path):
+        def with_unskinned_mesh(path):
             importer(path)
-            data = bpy.data.meshes.new("Bone display")
+            data = bpy.data.meshes.new("Accessory")
             data.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
-            bpy.context.scene.collection.objects.link(bpy.data.objects.new("Bone display", data))
+            bpy.context.scene.collection.objects.link(bpy.data.objects.new("Accessory", data))
 
-        objects, meshes = set(bpy.data.objects), set(bpy.data.meshes)
-        with patch.object(self.model, "_import", side_effect=with_display_mesh):
-            result = self.apply(policy="RIG")
-        self.assertEqual(self.source.modifiers[0].object, result.rig)
-        new = set(bpy.data.objects) - objects
-        self.assertEqual({obj for obj in new if obj.type == "MESH"}, {result.original})
-        self.assertEqual(set(bpy.data.meshes) - meshes, {self.source.data})
+        before = self.model._snapshot()
+        with (
+            patch.object(self.model, "_import", side_effect=with_unskinned_mesh),
+            self.assertRaises(self.module.MeshResultApplicationError),
+        ):
+            self.apply(policy="RIG")
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertFalse(self.source.modifiers)
+        self.mesh.validate_target(self.target)
 
     def test_rig_that_drives_no_mesh_fails_without_choosing_a_helper(self):
         # A clips-only result: its mesh is not skinned, so nothing is guessed.

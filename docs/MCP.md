@@ -1126,8 +1126,10 @@ including verification, durable claims and no generation or automatic retry.
 ## Saved mesh edit defaults
 
 Without `mesh_policy`, `prepare_result_application` for `mesh_edit` and
-`mesh_source` starts from the job's Edit 3D task: the task this session submitted
-it with when that task lists the model, otherwise the model's only task.
+`mesh_source` starts from the job's Edit 3D task: the task chosen in the native
+Edit 3D form when this session submitted the job, if that task lists the model,
+otherwise the model's only task. MCP `generate` takes no task, so its jobs use
+the model's only task.
 `mesh_policy_source` is `edit3d_task` (with `edit3d_task` naming it), `default`
 when the job gives no applicable task and REMESH is only the fallback, or
 `requested` for an explicit `mesh_policy`, which always wins. Show `default` to

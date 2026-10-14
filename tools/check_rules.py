@@ -376,6 +376,8 @@ def approved_modules(root):
         # Each locked distribution's import name is its normalized project name.
         approved |= {wheel["package"].replace("-", "_") for wheel in lock["wheels"]}
     except (OSError, ValueError, KeyError, TypeError):
+        # Without a readable lock no SDK dependency is approved, so every SDK
+        # import fails this rule; test_wheel_bundle.py rejects a malformed lock.
         pass
     return approved
 

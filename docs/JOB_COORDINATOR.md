@@ -229,7 +229,8 @@ claim another process's worker is dead or silently change its state.
 `refresh_remote(request_id, expected_revision=...)` only accepts the current
 `remote` or `cancel_requested` record with a known remote ID. It uses `SDKAdapter.job`, which calls the
 public SDK `jobs.retrieve` with the selected project and online-access guard and
-its bounded [read retries](SDK_ADOPTION.md#read-retries).
+its bounded [read retries](SDK_ADOPTION.md#read-retries); an `automatic=True`
+poll makes one attempt, since its owner retries it later.
 A matching ID and recognized terminal state are committed before returning an
 immutable `RemoteSnapshot`. Unknown states, mismatched IDs, read failures and
 failed persistence preserve local state. A stale polling result cannot overwrite

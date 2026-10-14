@@ -286,6 +286,26 @@ def test_poll_failure_preserves_recoverable_remote_identity(setup, failure):
     assert len(calls) == (1 if failure == 404 else 1 + READ_RETRIES)
 
 
+@pytest.mark.parametrize("failure", ["timeout", 429, 503])
+@pytest.mark.parametrize("automatic", [True, False])
+def test_an_automatic_poll_reads_once_and_an_explicit_refresh_retries(setup, failure, automatic):
+    # The automatic poll's owner retries it later without holding a job worker, so
+    # it makes one request; an explicit refresh keeps the adapter's read retries.
+    def handler(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("secret URL", request=request)
+        return httpx.Response(failure, json={"private": True}, headers={"Retry-After": "0"})
+
+    coordinator, store, calls = setup(handler)
+    current = remote_record(store)
+    with pytest.raises(AdapterError):
+        coordinator.refresh_remote(
+            INTENT.request_id, expected_revision=current.revision, automatic=automatic
+        )
+    assert store.get(INTENT.request_id) == current
+    assert len(calls) == (1 if automatic else 1 + READ_RETRIES)
+
+
 def test_scope_switch_hides_records_and_inactive_context_does_not_poll(setup, tmp_path):
     coordinator, store, calls = setup()
     record = remote_record(store)

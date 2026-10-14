@@ -647,8 +647,11 @@ class JobSession:
         self._pending.append((task, prepared.intent.origin))
         return task
 
-    def refresh_remote(self, request_id, *, expected_revision):
-        return self._record_command("refresh_remote", request_id, expected_revision)
+    def refresh_remote(self, request_id, *, expected_revision, automatic=False):
+        """Queue one known-job read; `automatic` polls make a single attempt."""
+        return self._record_command(
+            "refresh_remote", request_id, expected_revision, automatic=automatic
+        )
 
     def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
         """Queue an explicit cloud-result read; this never approves scene application."""

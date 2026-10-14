@@ -1034,7 +1034,10 @@ class ModelGenerationTests(unittest.TestCase):
         return sum(1 for r in self.calls if r.method == "GET" and "/jobs/" in r.url.path)
 
     def read_attempts(self):
-        """Requests one failed job read makes: the first and the SDK's own retries."""
+        """Requests one failed explicit job read makes: the first and the SDK's retries.
+
+        An automatic status poll makes one request; ModelJobs retries it later.
+        """
         return 1 + submodule("core.api.sdk_adapter").READ_RETRIES
 
     def review_buttons(self, box):
@@ -1053,11 +1056,12 @@ class ModelGenerationTests(unittest.TestCase):
         owner = self.runtime.state.model_jobs
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.REMOTE)
         for failures in (1, 2, 3):
-            # Each refresh fails after the SDK's own retries: a 503 every time.
-            self.failed_job_reads = self.read_attempts()
-            before = time.monotonic()
+            # Each automatic refresh is one request, answered with a 503.
+            self.failed_job_reads = 1
+            reads, before = self.job_reads(), time.monotonic()
             self.poll_now(request_id)
             self.assertEqual(self.failed_job_reads, 0)
+            self.assertEqual(self.job_reads() - reads, 1)
             status = self.tools.job_status({"job_id": request_id})
             self.assertEqual(status["status"], "remote", status)
             self.assertFalse(status["delivery_paused"])
@@ -1102,8 +1106,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["error"], jobs.REFRESH_STOPPED)
         self.assertEqual(status["status_notes"], [])
         self.assertIn("resume", status["actions"])
+        # One request per automatic refresh: the SDK retries none of them.
         reads = self.job_reads() - before
-        self.assertEqual(reads, backoff.FAILURE_CEILING * self.read_attempts())
+        self.assertEqual(reads, backoff.FAILURE_CEILING)
         # Paused: automatic polling sends nothing more.
         self.poll_now(request_id)
         self.assertEqual(self.job_reads() - before, reads)
@@ -1159,6 +1164,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.deliver_results()
         request_id = result["local_id"]
         owner = self.hold_polling(request_id)
+        # The cancel's own read keeps the SDK's retries; all of them fail.
         self.failed_job_reads = self.read_attempts()
         status = self.recover(request_id, "cancel")
         self.assertEqual(status["status"], "remote", status)

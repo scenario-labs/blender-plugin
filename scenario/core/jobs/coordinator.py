@@ -1545,8 +1545,13 @@ class JobCoordinator:
                 request_id, expected_revision=expected_revision, state=JobState.CANCELED
             )
 
-    def refresh_remote(self, request_id, *, expected_revision):
-        """Poll a known ID and persist its terminal status; never submit/rebind."""
+    def refresh_remote(self, request_id, *, expected_revision, automatic=False):
+        """Poll a known ID and persist its terminal status; never submit/rebind.
+
+        An `automatic` poll reads the job once, without the adapter's read
+        retries: its owner schedules the next poll after a failure, so it never
+        holds a job worker for more than one request. Explicit refreshes keep them.
+        """
         with self._lock:
             if not self._active:
                 raise RecoveryError("This job context is inactive")
@@ -1558,7 +1563,7 @@ class JobCoordinator:
                 or current.remote_job_id is None
             ):
                 raise StoreConflict("Only the current known remote job can be refreshed")
-        response = self._adapter.job(current.remote_job_id)
+        response = self._adapter.job(current.remote_job_id, retry=not automatic)
         return self._observe_remote(current, response)
 
     def adopt_cloud_job(self, identifier, *, expected_model_id, origin):

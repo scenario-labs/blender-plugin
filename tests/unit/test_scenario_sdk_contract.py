@@ -1385,8 +1385,9 @@ ADAPTER_MODEL = {
     "type": "custom",
     "inputs": [{"name": "prompt", "type": "string"}],
 }
-# Every adapter call that writes, spends, prices or decides. Each must make one
-# attempt only. Paid submissions first take a successful price check.
+# Every adapter call that writes, spends, prices or decides, and the automatic job
+# status poll. Each must make one attempt only. Paid submissions first take a
+# successful price check.
 SINGLE_ATTEMPTS = {
     "model-estimate": lambda c: c.estimate_model(ADAPTER_MODEL, {"prompt": "fixture"}),
     "model-run": lambda c: c.submit_estimate(
@@ -1402,6 +1403,8 @@ SINGLE_ATTEMPTS = {
     "translate-run": lambda c: c.submit_estimate(
         c.estimate_translate({"prompt": "fixture"}), before_send=lambda: None
     ),
+    # The automatic status poll: ModelJobs schedules its retry without a worker.
+    "automatic-job-poll": lambda c: c.job("fixture-job", retry=False),
     "cancel": lambda c: c.cancel_inference("fixture-job"),
     "approval": lambda c: c.workflow_decision(
         "fixture-workflow", "fixture-job", "fixture-node", "user-approval", "approve"

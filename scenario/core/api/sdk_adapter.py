@@ -36,7 +36,9 @@ MODEL_BULK_LIMIT = 200
 # SDK retries of an allow-listed read after a timeout, lost connection, 408, 409,
 # 429 or 5xx (the SDK's own default count), with its jittered backoff or the
 # server's Retry-After of up to 60 seconds. Only job, asset, model and workflow
-# retrieve, list and get-bulk reads use them; see SDKAdapter._reads.
+# retrieve, list and get-bulk reads use them; see SDKAdapter._reads. An
+# automatic job status poll, which ModelJobs retries later itself, opts out
+# with job(retry=False) so it holds a job worker for one attempt at most.
 READ_RETRIES = 2
 _RETRIED_RESOURCES = frozenset({"jobs", "assets", "models", "workflows"})
 
@@ -803,8 +805,8 @@ class SDKAdapter:
         """Return one team's discovery response, ignoring the selected project."""
         return self._discovery(self._extensions.projects, "projects", _identifier(team_id))
 
-    def _retrieve(self, resource, identifier, wrapper, *, unavailable=False, **options):
-        client = self._reads if resource in _RETRIED_RESOURCES else self._sdk
+    def _retrieve(self, resource, identifier, wrapper, *, unavailable=False, retry=True, **options):
+        client = self._reads if retry and resource in _RETRIED_RESOURCES else self._sdk
         method = getattr(client, resource).with_raw_response.retrieve
         if unavailable:
             method = _unavailable_on_denial(method)
@@ -1091,8 +1093,11 @@ class SDKAdapter:
                 raise WriteUncertain(_UNCONFIRMED)
         return result
 
-    def job(self, identifier):
-        return self._retrieve("jobs", identifier, "job")
+    def job(self, identifier, *, retry=True):
+        """Read one known job; retry=False makes one attempt, for a poll retried later."""
+        if type(retry) is not bool:
+            raise ValueError("Choose whether to retry the job read")
+        return self._retrieve("jobs", identifier, "job", retry=retry)
 
     def cancel_inference(self, identifier):
         """Request cancellation once; the coordinator verifies inference eligibility.

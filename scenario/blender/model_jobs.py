@@ -910,9 +910,11 @@ class ModelJobs:
             elif record.state == JobState.READY and request_id in self._automatic_application:
                 command = "verify_results"
             if command:
+                # The automatic poll reads once; _refresh_failed schedules the retry.
+                options = {"automatic": True} if command == "refresh_remote" else {}
                 try:
                     task = getattr(self.session, command)(
-                        request_id, expected_revision=record.revision
+                        request_id, expected_revision=record.revision, **options
                     )
                     self._commands[request_id] = (command, task)
                 except Exception:

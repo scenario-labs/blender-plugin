@@ -992,8 +992,9 @@ the generation.
 ## Status refresh failures
 
 `ModelJobs` refreshes a polled `remote` or `cancel_requested` job every
-`POLL_INTERVAL` (2 seconds) with `refresh_remote`. When that read fails after
-the adapter's own [read retries](SDK_ADOPTION.md#read-retries) with a timeout,
+`POLL_INTERVAL` (2 seconds) with `refresh_remote(automatic=True)`, one request
+without the adapter's [read retries](SDK_ADOPTION.md#read-retries), so a poll
+holds a job worker for one request at most. When that read fails with a timeout,
 a lost connection, HTTP 408, 429 or a 5xx
 ([`refresh_backoff.transient`](../scenario/core/jobs/refresh_backoff.py)), the
 job is not paused: the next automatic refresh waits 4, 8, 16, 32, then 60

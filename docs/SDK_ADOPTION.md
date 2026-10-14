@@ -109,7 +109,7 @@ using the locked environment.
 | Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent. A refused add exposes its decoded JSON body, or the raw text, as `APIStatusError.body` |
 | Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a synthetic partial response passes through unchanged |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
-| [Read retries](#read-retries) | `with_options(max_retries=2)` retries GET reads and a `get_bulk` POST after a timeout, lost connection, 408, 429 or 5xx, waits for `Retry-After` and leaves the zero-retry client unchanged; through `SDKAdapter`, every allow-listed read retries and every write, paid call, price check and decision makes one attempt |
+| [Read retries](#read-retries) | `with_options(max_retries=2)` retries GET reads and a `get_bulk` POST after a timeout, lost connection, 408, 429 or 5xx, waits for `Retry-After` and leaves the zero-retry client unchanged; through `SDKAdapter`, every allow-listed read retries, and every write, paid call, price check, decision and the automatic job poll (`job(retry=False)`) makes one attempt |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
 | Authentication | Explicit Basic credentials take precedence over ambient Basic credentials; explicit Bearer precedence has the known failure below |
 
@@ -861,6 +861,20 @@ The allow-list is `jobs.retrieve/list`, `assets.retrieve/list/get_bulk`,
 `SDKAdapter.job`, `jobs`, `job_page`, `asset`, `asset_page`, `bulk_assets`,
 `asset_records`, `model`, `model_page`, `models`, `models_bulk`, `workflow`
 and `workflows`.
+
+The automatic status poll is the exception: `ModelJobs`' periodic
+`refresh_remote` passes `automatic=True` to the coordinator, which reads the job
+with `SDKAdapter.job(..., retry=False)`, one attempt. Its owner already retries a
+failed poll later with its own [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures),
+which holds no worker, so stacking SDK retries under it would only keep one of
+the two job workers busy (see #453). A poll therefore holds a job worker for at
+most one request, the adapter's 45-second timeout. Every other job retrieve
+keeps the retries: an explicit Refresh status or Resume download, the reads
+around a cancellation or a workflow decision, and cloud job adoption, which have
+no outer backoff. Such a read, like any allow-listed read, holds its worker for
+at most three requests and two waits: 3 x 45 seconds plus 2 x 60 seconds of
+`Retry-After`, 255 seconds. Prompt Spark, Translate and Blockout status reads
+do not use this backoff and keep the retries.
 
 Both `get_bulk` methods are POSTs only because they carry the requested IDs in
 the body. The API documents them as reads, they change nothing, and the SDK

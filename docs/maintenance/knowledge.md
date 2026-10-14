@@ -87,11 +87,14 @@ asks for a review; it is not proof that the document is wrong.
 
 Once a version's scope is settled, one agent or maintainer refreshes the drifted
 documents on a branch from current main and opens a single PR. Only one refresh
-runs at a time, so it does not conflict with itself.
+runs at a time, so it does not conflict with itself. Agents run it with
+`/knowledge-refresh` (Codex: `$blender-knowledge-refresh`).
 
 1. Run the checker with `--base origin/main --json` and take its `drift` list.
 2. For each drifted document, read `git diff <reviewed_revision>..origin/main --`
-   on its drifted sources. Correct the prose that the changes made wrong.
+   on its drifted sources. Correct the prose that the changes made wrong by
+   replacing or deleting it. Add no dates, test runs or review remarks. A
+   refreshed document should not grow unless new behavior needs the lines.
 3. Update that record: prune or add sources, set `reviewed_revision` to the main
    commit you reviewed and `reviewed_at` to today's UTC date, and rewrite
    `limits` as current boundaries. Narrow `coverage` only after reviewing the

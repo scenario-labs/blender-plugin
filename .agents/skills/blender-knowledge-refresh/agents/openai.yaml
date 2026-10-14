@@ -1,0 +1,6 @@
+interface:
+  short_description: "Refresh drifted documentation for the next release"
+  default_prompt: "$blender-knowledge-refresh"
+
+policy:
+  allow_implicit_invocation: false

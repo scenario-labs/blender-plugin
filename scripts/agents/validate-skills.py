@@ -32,6 +32,11 @@ COMMAND_CONTRACTS: dict[str, dict] = {
         "explicit-only": True,
         "codex-interface": True,
     },
+    "blender-knowledge-refresh": {
+        "claude-command": "knowledge-refresh",
+        "explicit-only": True,
+        "codex-interface": True,
+    },
 }
 
 

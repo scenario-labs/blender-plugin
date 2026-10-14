@@ -7,6 +7,9 @@ They point to the same maintained guides and do not override root policy.
 
 - `/download-artifacts <prnumber>`: collect the PR head's CI artifacts under
   ignored `workdir/`, preserve screenshot history and create a local review index.
+- `/knowledge-refresh`: run the per-version
+  [release refresh](../maintenance/knowledge.md#release-refresh) of drifted
+  documents in one PR.
 - `/pr-summary`, `/pr-squash-message` and `/pr-handle-comments`: refresh the PR
   description, prepare the squash message and answer review threads. They are
   shared Scenario skills, vendored and pinned in `skills-lock.json`: update them
@@ -30,6 +33,7 @@ needed.
 | Codex skill | Claude command | Purpose |
 | --- | --- | --- |
 | `$blender-download-artifacts <prnumber>` | `/download-artifacts <prnumber>` | Collect current PR artifacts; explicit invocation only |
+| `$blender-knowledge-refresh` | `/knowledge-refresh` | Refresh drifted documents once per version; explicit invocation only |
 | `$pr-summary` | `/pr-summary` | Refresh the current PR description (shared) |
 | `$pr-squash-message` | `/pr-squash-message` | Prepare the current PR squash message (shared) |
 | `$pr-handle-comments` | `/pr-handle-comments` | Fix and answer review comments (shared) |

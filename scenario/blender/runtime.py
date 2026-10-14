@@ -497,6 +497,16 @@ def control_model_job(context_id, request_id, expected_revision, action):
     return jobs, task
 
 
+def link_cloud_job(context_id, request_id, expected_revision, remote_job_id):
+    """Native-only: queue the user's confirmed link of one listed cloud job."""
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    task = jobs.link(request_id, expected_revision, remote_job_id)
+    show_job_views((jobs.views[request_id],))
+    return jobs, task
+
+
 def read_workflow_steps(context_id, request_id):
     """Shared native/MCP entry that reads a saved workflow job's waiting steps again.
 

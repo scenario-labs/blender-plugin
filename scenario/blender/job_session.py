@@ -36,6 +36,7 @@ from ..core.jobs.organization import (
 )
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.preview_scheduler import ResultPreviewScheduler
+from ..core.jobs.reconcile import CandidateLookup
 from ..core.jobs.results import (
     ModelTextResult,
     PreparedModelImport,
@@ -1183,7 +1184,14 @@ class JobSession:
                 if isinstance(result, PreparedModelImport):
                     record = result.verified.record
                 elif isinstance(
-                    result, (RemoteSnapshot, VerifiedResults, PromptResults, ModelTextResult)
+                    result,
+                    (
+                        RemoteSnapshot,
+                        VerifiedResults,
+                        PromptResults,
+                        ModelTextResult,
+                        CandidateLookup,
+                    ),
                 ):
                     record = result.record
                 else:

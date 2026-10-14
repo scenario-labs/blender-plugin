@@ -5861,10 +5861,13 @@ class ModelGenerationTests(unittest.TestCase):
         bpy.ops.wm.open_mainfile(filepath=str(path))
         # The loaded file has a same-named, unchanged mesh; nothing rebinds to it.
         reloaded = bpy.data.objects[name]
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        # That first use retired the deactivated session; its approval has no new owner.
         current = dict(approval, context_id=self.runtime.state.job_context_id)
-        for retired in (approval, current):
-            with self.assertRaises(self.request_error):
-                self.tools.apply_result_application(self.import_args(retired))
+        self.assertNotEqual(current["context_id"], approval["context_id"])
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(current))
         self.assertEqual(self.store.get(request_id), original)
         self.assertEqual([tuple(vertex.co) for vertex in reloaded.data.vertices], geometry)
         bpy.context.view_layer.objects.active = reloaded

@@ -389,8 +389,13 @@ class PromptToolsTests(unittest.TestCase):
         self.approve(item)
         item.task.result(5)
         self.fail_read = True
+        before = len(self.calls)
         self.advance(item)
         self.assertEqual(item.phase, "ERROR")
+        # The periodic status poll makes one attempt, without the SDK's read retries,
+        # so it never holds a shared job worker for them.
+        reads = [r for r in self.calls[before:] if "/jobs/" in r.url.path]
+        self.assertEqual([r.method for r in reads], ["GET"])
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(self.lane.prompt, "a teapot")
 

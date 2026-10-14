@@ -862,21 +862,24 @@ The allow-list is `jobs.retrieve/list`, `assets.retrieve/list/get_bulk`,
 `asset_records`, `model`, `model_page`, `models`, `models_bulk`, `workflow`
 and `workflows`.
 
-The automatic status poll is the exception: `ModelJobs`' periodic
-`refresh_remote` passes `automatic=True` to the coordinator, which reads the job
-with `SDKAdapter.job(..., retry=False)`, one attempt, and, for a workflow waiting
-at a step, its step-link definition with `SDKAdapter.workflow(..., retry=False)`. Its owner already retries a
-failed poll later with its own [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures),
-which holds no worker, so stacking SDK retries under it would only keep one of
-the two job workers busy (see #453). A poll therefore holds a job worker for at
-most one request per read, the adapter's 45-second timeout each: 45 seconds, or
-90 seconds when a waiting workflow's definition is read too. Every other job retrieve
-keeps the retries: an explicit Refresh status or Resume download, the reads
-around a cancellation or a workflow decision, and cloud job adoption, which have
-no outer backoff. Such a read, like any allow-listed read, holds its worker for
-at most three requests and two waits: 3 x 45 seconds plus 2 x 60 seconds of
-`Retry-After`, 255 seconds. Prompt Spark, Translate and Blockout status reads
-do not use this backoff and keep the retries.
+The periodic status polls are the exception. The automatic `refresh_remote` of
+`ModelJobs`, Prompt Spark/Translate and Blockout passes `automatic=True` to the
+coordinator, which reads the job once with `SDKAdapter.job(..., retry=False)`
+and, for a workflow waiting at a step, its step-link definition once with
+`SDKAdapter.workflow(..., retry=False)`. `ModelJobs` retries a failed poll later
+with its own [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures), which
+holds no worker; Prompt Spark/Translate and Blockout keep their existing
+failure handling, as before this change. Stacking SDK retries under a poll would
+only keep one of the two job workers busy (see #453). A poll therefore holds a
+job worker for one request per read, at most the adapter's 45-second timeout
+each: 45 seconds, or 90 seconds when a waiting workflow's definition is read
+too.
+
+Every other job retrieve keeps the retries, since it has no outer backoff: an
+explicit Refresh status or Resume download, the reads around a cancellation or
+a workflow decision, and cloud job adoption. Such a read, like any allow-listed
+read, holds its worker for at most three requests and two waits: 3 x 45 seconds
+plus 2 x 60 seconds of `Retry-After`, 255 seconds.
 
 Both `get_bulk` methods are POSTs only because they carry the requested IDs in
 the body. The API documents them as reads, they change nothing, and the SDK

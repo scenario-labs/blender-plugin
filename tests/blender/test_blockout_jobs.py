@@ -51,6 +51,7 @@ class BlockoutJobsTests(unittest.TestCase):
         self.model = json.loads((FIXTURES / "models/model_scenario-llm.json").read_text())["model"]
         self.calls, self.paid, self.sessions = [], [], []
         self.lose_response, self.fail_read = False, False
+        self.fail_job_read = False  # answer job status reads with HTTP 503
         self.hold_quotes, self.held_quotes = None, threading.Semaphore(0)
         self.result_text = json.dumps(
             [
@@ -73,6 +74,9 @@ class BlockoutJobsTests(unittest.TestCase):
             self.calls.append(request)
             self.assertNotIn("projectId", request.url.params)
             if request.method == "GET":
+                if "/jobs/" in request.url.path and self.fail_job_read:
+                    self.job_reads.append(request)
+                    return httpx.Response(503, json={"reason": "private outage detail"})
                 if "/jobs/" in request.url.path:
                     return httpx.Response(
                         200,
@@ -560,6 +564,18 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertEqual(deferred.finish(deferred.run())["text"], self.result_text)
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(self.scene.scenario_blockout.plan_json, "")
+
+    def test_failed_status_poll_makes_one_attempt_and_spends_once(self):
+        item = self.quote()
+        self.job_reads = []
+        self.fail_job_read = True
+        self.approve(item)
+        self.advance(item)
+        self.assertEqual(item.phase, "ERROR")
+        # The periodic status poll makes one attempt, without the SDK's read retries,
+        # so it never holds a shared job worker for them.
+        self.assertEqual(len(self.job_reads), 1)
+        self.assertEqual(len(self.paid), 1)
 
     def test_drawing_ready_approval_does_not_submit_or_change_inputs(self):
         from unittest.mock import MagicMock

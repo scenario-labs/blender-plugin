@@ -1019,7 +1019,10 @@ def server_sources(record, target):
     if (
         not isinstance(record, dict)
         or record.get("id") != target.asset_id
-        or target.media_type not in {record.get("mimeType"), original_media_type(record)}
+        or (
+            target.media_type != record.get("mimeType")
+            and target.media_type != original_media_type(record)
+        )
     ):
         raise PreviewError("Scenario returned different metadata for this saved result")
     sources = {}

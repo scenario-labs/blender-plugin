@@ -871,6 +871,8 @@ def test_transfer_stopped_by_revoked_online_access_reports_offline(env, monkeypa
         ({"id": "asset-other"}, State.PENDING),
         ({"thumbnail": "https://cdn.cloud.scenario.com/x"}, State.FAILED),
         ({"thumbnail": {"assetId": "bad/id", "url": f"{CDN}/x"}}, State.FAILED),
+        # An unhashable type fails only this asset, never the whole batch.
+        ({"mimeType": ["video/mp4"]}, State.FAILED),
     ],
 )
 def test_changed_or_malformed_metadata_fails(env, change, first):

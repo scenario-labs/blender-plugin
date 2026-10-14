@@ -861,6 +861,10 @@ class JobCoordinator:
                 raise PreviewCanceled("The result file check was canceled")
         return checks
 
+    def verified_files(self, request_id):
+        """Files this connection already verified for a job, from memory; reads no file."""
+        return self._results.verified_files(request_id)
+
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.
 

@@ -387,6 +387,14 @@ class JobSession:
             raise OriginUnavailable("This job connection is no longer active")
         return self._workers.result_files(targets)
 
+    def verified_files(self, request_id):
+        """(asset_id, FileCheck) pairs this connection verified while downloading or
+        importing the job's results. Memory only: nothing is read or queued."""
+        _main_thread()
+        if not self._active:
+            return ()
+        return self._coordinator.verified_files(request_id)
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():

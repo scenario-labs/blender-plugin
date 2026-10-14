@@ -25,16 +25,18 @@ from scenario.core.jobs.result_files import (
     ResultFiles,
 )
 from scenario.core.jobs.result_previews import PreviewCanceled
-from scenario.core.jobs.results import ResultError
+from scenario.core.jobs.results import ResultError, _asset
 from scenario.core.jobs.store import JobIntent, JobScope, JobState, JobStore, ResultAsset
 from scenario.core.jobs.transfers import DownloadedResult
 from scenario.core.jobs.workers import JobWorkers
 from tests.unit.test_playback import assert_offline
 from tests.unit.test_result_previews import (
+    CDN,
     MP4,
     ORIGIN,
     SCOPE,
     FakeDownloader,
+    asset_record,
     png,
     preview_env,
     ready_job,
@@ -413,3 +415,104 @@ def test_rows_never_carry_urls_or_remote_metadata(env):
     assert result_files.READY_STATES == frozenset(
         {JobState.READY, JobState.APPLYING, JobState.APPLY_FAILED, JobState.APPLIED}
     )
+
+
+def succeeded(env, request_id, assets):
+    """A finished job whose manifest is saved and whose files are not downloaded yet."""
+    store = env.store
+    current = store.create(
+        JobIntent(request_id, SCOPE, ORIGIN, "model", "model", "a" * 64, "b" * 64, "1.0")
+    )
+    for state in (JobState.SUBMITTING, JobState.REMOTE, JobState.SUCCEEDED):
+        current = store.transition(
+            request_id,
+            expected_revision=current.revision,
+            state=state,
+            remote_job_id=f"remote-{request_id}" if state == JobState.REMOTE else None,
+        )
+    manifest = []
+    for index, (asset_id, media_type, data) in enumerate(assets):
+        record = {**asset_record(asset_id, media_type), "properties": {"size": len(data)}}
+        env.assets[asset_id] = record
+        env.downloader.files[f"{CDN}/{asset_id}?Signature=result-secret"] = data
+        manifest.append(_asset(record, asset_id, f"{index:03d}-{asset_id}.bin"))
+    return store.set_results(request_id, tuple(manifest), expected_revision=current.revision)
+
+
+def seeded_rows(files, coordinator, record):
+    """A status read: watch, seed what this session verified, then project."""
+    files.watch(record.intent.request_id)
+    files.seed(record, coordinator.verified_files(record.intent.request_id))
+    return files.project(record)
+
+
+def test_files_this_session_downloaded_are_listed_on_the_first_read(env):
+    saved = succeeded(env, "fresh", [("clip", "video/mp4", MP4), ("sound", "audio/wav", WAV)])
+    record = env.coordinator.download_results("fresh", expected_revision=saved.revision)
+    assert record.state == JobState.READY
+    files = ResultFiles()
+    rows = seeded_rows(files, env.coordinator, record)
+    directory = directory_of(env, record)
+    # The download already hashed these bytes: no worker check is needed.
+    assert states(rows) == [("clip", VERIFIED), ("sound", VERIFIED)]
+    assert listed(rows) == [str(directory / item.asset.name) for item in record.results]
+    assert not files.pending(record) and files.unchecked(record) == ()
+    # The verification memory holds no URL, only receipts and local identities.
+    assert "Signature" not in repr(env.coordinator.verified_files("fresh"))
+
+
+def test_files_an_automatic_import_verified_are_listed_on_the_first_read(env):
+    record = ready_job(env, "imported", [("still", "image/png", png(8, 8))])
+    env.coordinator.verify_results("imported", expected_revision=record.revision)
+    rows = seeded_rows(ResultFiles(), env.coordinator, record)
+    assert states(rows) == [("still", VERIFIED)]
+    assert listed(rows) == [str(directory_of(env, record) / record.results[0].asset.name)]
+
+
+def test_a_restarted_session_does_not_reuse_another_session_verification(env):
+    saved = succeeded(env, "fresh", [("clip", "video/mp4", MP4)])
+    record = env.coordinator.download_results("fresh", expected_revision=saved.revision)
+    store = JobStore(env.tmp_path / "jobs.sqlite3", SCOPE)
+    with SDKAdapter(
+        Credentials("key", "secret"),
+        online=lambda: True,
+        base_url=SCOPE.service,
+        account_id=SCOPE.account_id,
+        project_id=SCOPE.project_id,
+        transport=httpx.MockTransport(lambda request: pytest.fail("No request expected")),
+    ) as adapter:
+        coordinator = JobCoordinator(
+            adapter, store, result_root=env.results, result_downloader=FakeDownloader()
+        )
+        assert coordinator.verified_files("fresh") == ()
+        files = ResultFiles()
+        assert states(seeded_rows(files, coordinator, record)) == [("clip", CHECKING)]
+        assert listed(settle(files, coordinator, record)) == [
+            str(directory_of(env, record) / record.results[0].asset.name)
+        ]
+
+
+def test_a_file_changed_after_this_session_verified_it_is_checked_again(env):
+    saved = succeeded(env, "fresh", [("clip", "video/mp4", MP4)])
+    record = env.coordinator.download_results("fresh", expected_revision=saved.revision)
+    path = directory_of(env, record) / record.results[0].asset.name
+    files = ResultFiles()
+    assert listed(seeded_rows(files, env.coordinator, record)) == [str(path)]
+    replace(path, MP4[::-1])
+    # The same verification is never applied again to the changed file.
+    assert states(seeded_rows(files, env.coordinator, record)) == [("clip", CHECKING)]
+    assert files.unchecked(record) == (("fresh", "clip", record.results[0].receipt.sha256),)
+    assert states(settle(files, env.coordinator, record)) == [("clip", CHANGED)]
+    assert states(seeded_rows(files, env.coordinator, record)) == [("clip", CHANGED)]
+
+
+def test_a_verification_of_another_receipt_is_not_used(env):
+    record = ready_job(env, "request", [("clip", "video/mp4", MP4)])
+    path = str(directory_of(env, record) / record.results[0].asset.name)
+    other = result_files.FileCheck(
+        hashlib.sha256(b"older").hexdigest(), VERIFIED, path, result_files.file_stamp(path)
+    )
+    files = ResultFiles()
+    files.watch("request")
+    files.seed(record, (("clip", other), ("unknown", other)))
+    assert states(files.project(record)) == [("clip", CHECKING)]

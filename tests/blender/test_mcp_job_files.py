@@ -21,8 +21,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import bpy
-from helpers import submodule, temp_credentials
-from test_result_preview_tiles import MP4, png
+from helpers import online_access, submodule, temp_credentials
+from test_result_preview_tiles import CDN, MP4, png
 
 WAV = b"RIFF" + b"\x00" * 40
 GLB = b"glTF" + b"\x02\x00\x00\x00" + b"\x00" * 24
@@ -66,7 +66,11 @@ class McpJobFilesTests(unittest.TestCase):
 
         def respond(request):
             self.requests.append(request)
-            raise AssertionError("Checking saved files never contacts Scenario")
+            # Only an explicit resume in this session reads result metadata.
+            prefix = "/v1/assets/"
+            if request.method != "GET" or not request.url.path.startswith(prefix):
+                raise AssertionError("Checking saved files never contacts Scenario")
+            return httpx.Response(200, json={"asset": self.assets[request.url.path[len(prefix) :]]})
 
         def adapter(credentials, **options):
             return api.SDKAdapter(credentials, transport=httpx.MockTransport(respond), **options)
@@ -84,6 +88,23 @@ class McpJobFilesTests(unittest.TestCase):
             )
         )
         self.enterContext(patch.object(self.runtime, "JobSession", side_effect=session))
+        owner = self
+        self.assets, self.files, self.downloads = {}, {}, []
+
+        class OfflineDownloader(self.transfers.ResultDownloader):
+            """The real host policy and verification, with bytes served from memory."""
+
+            def download(self, url, *, root, name, max_bytes=None, **kwargs):
+                self._policy.destination(url)
+                owner.downloads.append(name)
+                data = owner.files[url]
+                with (Path(root) / name).open("xb") as target:
+                    target.write(data)
+                return owner.transfers.DownloadedResult(
+                    name, len(data), hashlib.sha256(data).hexdigest()
+                )
+
+        self.enterContext(patch.object(self.runtime, "ResultDownloader", OfflineDownloader))
         self.addCleanup(self.cleanup)
         self.registry = submodule("blender.mcp_service").build_registry()
 
@@ -91,6 +112,44 @@ class McpJobFilesTests(unittest.TestCase):
         self.runtime.state.reset()
         for session in self.sessions:
             session.shutdown()
+
+    def succeeded(self, request_id="delivered"):
+        """A finished job with its saved manifest; its files are not downloaded yet."""
+        m = self.storemod
+        results = submodule("core.jobs.results")
+        store = self.runtime.ensure_job_store()
+        current = store.create(
+            m.JobIntent(
+                request_id,
+                store.scope,
+                m.JobOrigin("file", "scene", "revision"),
+                "model",
+                "model",
+                "a" * 64,
+                "b" * 64,
+                "0.10000000000000001",
+            )
+        )
+        for state in (m.JobState.SUBMITTING, m.JobState.REMOTE, m.JobState.SUCCEEDED):
+            current = store.transition(
+                request_id,
+                expected_revision=current.revision,
+                state=state,
+                remote_job_id=f"remote-{request_id}" if state == m.JobState.REMOTE else None,
+            )
+        manifest = []
+        for asset_id, name, media_type, data in RESULTS:
+            url = f"{CDN}/{asset_id}?signature=fixture"
+            self.assets[asset_id] = {
+                "id": asset_id,
+                "status": "success",
+                "mimeType": media_type,
+                "url": url,
+                "properties": {"size": len(data)},
+            }
+            self.files[url] = data
+            manifest.append(results._asset(self.assets[asset_id], asset_id, name))
+        return store.set_results(request_id, tuple(manifest), expected_revision=current.revision)
 
     def saved(self, request_id="request"):
         """A READY job whose receipts match private local bytes, never imported."""
@@ -209,6 +268,40 @@ class McpJobFilesTests(unittest.TestCase):
         self.assertEqual(self.served("job_status", {"job_id": "remote-request"}), status)
         self.assertNotIn("http", json.dumps(status))
         self.assertEqual(self.requests, [])
+
+    def test_results_this_session_downloads_list_their_files_on_the_first_read(self):
+        record = self.succeeded()
+        self.runtime.inspect_model_jobs()
+        args = {
+            "context_id": self.runtime.state.job_context_id,
+            "request_id": "delivered",
+            "expected_revision": record.revision,
+            "action": "resume",
+        }
+        with online_access(True):
+            resumed = self.wait(self.mcp.recover_local_job(args))
+        self.assertEqual(resumed["status"], "ready")
+        self.assertEqual(len(self.downloads), len(RESULTS))
+        # The download hashed these bytes: the first read lists them, no check queued.
+        directory = self.runtime.state.job_session._coordinator._results._directory(
+            self.runtime.state.job_store.get("delivered"), create=False
+        )
+        for status in (resumed, self.served("job_status", {"job_id": "delivered"})):
+            self.assertFalse(status["file_check_pending"], status)
+            self.assert_listed(status, directory)
+        self.assertIsNone(self.runtime.state.model_jobs._files._task)
+        self.assertNotIn("signature", json.dumps(status))
+        # A restart forgets this session's verification: the files are checked again.
+        self.restart()
+        status = self.served("job_status", {"job_id": "delivered"})
+        self.assertTrue(status["file_check_pending"])
+        self.assertEqual(status["files"], [])
+        self.assert_listed(self.status_until_checked("delivered"), directory)
+        self.assertEqual(len(self.downloads), len(RESULTS))
+        self.assertEqual(
+            {(request.method, request.url.path) for request in self.requests},
+            {("GET", f"/v1/assets/{asset_id}") for asset_id, *_ in RESULTS},
+        )
 
     def test_a_restarted_session_lists_the_files_from_the_saved_store(self):
         directory = self.saved()

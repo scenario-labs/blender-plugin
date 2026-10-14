@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import tempfile
+import threading
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
@@ -214,6 +215,35 @@ class ResultCommands:
         self._adapter, self._store, self._guard = adapter, store, guard
         self._downloader = downloader
         self._root = _root(root) if root is not None else None
+        # (request_id, asset_id) -> result_files.FileCheck: the identity of each
+        # file this session verified against its receipt. Memory only, so a
+        # restarted session checks its files again; see verified_files.
+        self._verified_files = {}
+        self._verified_lock = threading.Lock()
+
+    def _file_path(self, record, receipt):
+        """Where a receipt's file is saved, for display; verification resolves it safely."""
+        return os.fspath(Path(self._root, *_directory_keys(record), receipt.name))
+
+    def _verify_saved(self, record, directory, asset_id, receipt):
+        """Verify one receipt and remember the file's identity as this session hashed it."""
+        path = self._file_path(record, receipt)
+        before = result_files.file_stamp(path)
+        verified = self._downloader.verify(directory, receipt)
+        if before is not None and result_files.file_stamp(path) == before:
+            check = result_files.FileCheck(receipt.sha256, result_files.VERIFIED, path, before)
+            with self._verified_lock:
+                self._verified_files[(record.intent.request_id, asset_id)] = check
+        return verified
+
+    def verified_files(self, request_id):
+        """(asset_id, FileCheck) pairs this session verified for a job; reads no file."""
+        with self._verified_lock:
+            return tuple(
+                (asset_id, check)
+                for (owner, asset_id), check in self._verified_files.items()
+                if owner == request_id
+            )
 
     def _current(self, request_id, revision, states):
         with self._guard():
@@ -446,7 +476,7 @@ class ResultCommands:
                 with self._guard():
                     pass
                 if item.receipt is not None:
-                    self._downloader.verify(directory, item.receipt)
+                    self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
                     continue
                 response = self._request(
                     self._adapter.asset, item.asset.asset_id, original_assets=True
@@ -484,7 +514,7 @@ class ResultCommands:
                     expected_sha256=item.asset.expected_sha256,
                     **options,
                 )
-                self._downloader.verify(directory, receipt)
+                self._verify_saved(current, directory, item.asset.asset_id, receipt)
                 current = self._store.record_download(
                     request_id,
                     item.asset.asset_id,
@@ -518,7 +548,7 @@ class ResultCommands:
                     with self._guard():
                         pass
                     if item.receipt is not None:
-                        self._downloader.verify(directory, item.receipt)
+                        self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
                     elif (directory / item.asset.name).exists() or (
                         directory / item.asset.name
                     ).is_symlink():
@@ -653,7 +683,9 @@ class ResultCommands:
                     pass
                 if cancel is not None and cancel.is_set():
                     raise splats.SplatCancelled("Splat preparation cancelled")
-                paths.append(self._downloader.verify(directory, item.receipt))
+                paths.append(
+                    self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
+                )
             # Stale verification cannot authorize a subsequent application.
             if self._store.get(request_id) != current:
                 raise StoreConflict("Result job changed during verification")
@@ -1113,8 +1145,7 @@ class ResultCommands:
         )
         if receipt is None:
             return None
-        # The location named for display; verification resolves it again safely.
-        path = os.fspath(Path(self._root, *_directory_keys(record), receipt.name))
+        path = self._file_path(record, receipt)
         before = result_files.file_stamp(path)
         if before is None:
             return result_files.FileCheck(sha256, result_files.MISSING, path, None)

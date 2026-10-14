@@ -921,6 +921,7 @@ class ModelJobs:
             if record is None:
                 self._files.forget(request_id)
             else:
+                self._files.seed(record, self.session.verified_files(request_id))
                 targets.extend(self._files.unchecked(record))
         self._files.start(self.session.result_files, targets)
 
@@ -2419,6 +2420,8 @@ class ModelJobs:
         self._files.watch(record.intent.request_id)
         # An explicit read checks again what a failed check left unavailable.
         self._files.retry_unavailable(record)
+        # Files this session just downloaded or imported are listed at once.
+        self._files.seed(record, self.session.verified_files(record.intent.request_id))
         rows = self._files.project(record)
         if self.session.active:
             self._check_files()

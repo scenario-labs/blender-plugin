@@ -85,6 +85,9 @@ class ResultFiles:
         self._checks = {}
         self._watched = set()
         self._task = None
+        # Verifications this session made while delivering, each applied once:
+        # after its file changes, a worker checks it again instead.
+        self._seeded = set()
 
     @property
     def watched(self):
@@ -134,6 +137,32 @@ class ResultFiles:
             item.receipt is not None and not self._settled(request_id, item)
             for item in record.results
         )
+
+    def seed(self, record, verified):
+        """Settle results this session already verified, from (asset_id, FileCheck) pairs.
+
+        Only a verified check of the current receipt with no settled check of
+        its own is used, and each one only once, so a later change of the file
+        is checked by a worker rather than covered by the same verification.
+        """
+        request_id = record.intent.request_id
+        receipts = {
+            item.asset.asset_id: item.receipt.sha256
+            for item in record.results
+            if item.receipt is not None
+        }
+        for asset_id, check in verified:
+            token = (request_id, asset_id, check.sha256, check.stamp)
+            key = (request_id, asset_id)
+            if (
+                check.state != VERIFIED
+                or receipts.get(asset_id) != check.sha256
+                or token in self._seeded
+                or (key in self._checks and self._checks[key].sha256 == check.sha256)
+            ):
+                continue
+            self._seeded.add(token)
+            self._checks[key] = check
 
     def retry_unavailable(self, record):
         """Let an explicit status read check again what a failed batch left unavailable."""

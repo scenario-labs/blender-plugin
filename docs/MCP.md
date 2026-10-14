@@ -795,8 +795,10 @@ Shared `job_status` and `wait_for_job` list the local file of every downloaded
 result of a ready job (`ready`, `applying`, `apply_failed` or `applied`) in
 `files`, in result order, whatever its media type and whether or not it was
 imported, including after a restart. The files come from the saved store and
-receipts: the first status read of a job asks the preview lane to rehash each
-file against its receipt, and only matching bytes are listed. Each `results`
+receipts, and only bytes that match their receipt are listed. A file this Blender
+session downloaded or imported is listed at once with the identity it had when
+the session hashed it. Any other file, such as after a restart, is rehashed on
+the preview lane after the first status read of its job. Each `results`
 entry adds `file`, its path when listed and `null` otherwise, and `file_state`:
 
 - `verified`: the bytes match the receipt; `file` names them.

@@ -5280,6 +5280,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["mesh_edit"]["target"], source.name)
         self.assertEqual(bpy.data.objects[status["mesh_edit"]["original"]].data, old_mesh)
         self.assertFalse(bpy.data.objects[status["mesh_edit"]["original"]].select_get())
+        self.assertIsNone(status["mesh_edit"]["fitted_from"])
+        self.assertEqual(status["mesh_edit"]["result_to_source"], approval["result_to_source"])
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
@@ -5336,6 +5338,9 @@ class ModelGenerationTests(unittest.TestCase):
                 )
                 self.assertEqual(approval["edit3d_task"], task)
                 self.assertIs(approval["primary"], True)
+                # Coordinates follow the derived policy unless chosen.
+                placement = "FIT" if policy in {"UV", "RETEXTURE", "RIG"} else "WORLD"
+                self.assertEqual(approval["mesh_placement"], placement)
                 explicit = self.prepare_mesh_edit(request_id, mesh_policy="UV")
                 self.assertEqual(
                     (explicit["mesh_policy"], explicit["mesh_policy_source"]), ("UV", "requested")
@@ -5344,6 +5349,7 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(
                     (op.policy, ticket.policy, ticket.policy_source), (policy, policy, source)
                 )
+                self.assertEqual((op.placement, ticket.placement), (placement, placement))
                 if task == "ANIMATE":
                     note = "This mesh has no rig, so the Animate result starts on Attach rig."
                 elif label:
@@ -5410,6 +5416,23 @@ class ModelGenerationTests(unittest.TestCase):
         op, ticket = self.mesh_dialog(request_id, "mesh-b")
         self.assertEqual((op.result_role, ticket.asset_id), ("alternate", "mesh-b"))
 
+    def test_surface_mesh_policies_default_to_a_verified_fit_and_report_mismatch(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        old_mesh = source.data
+        with self.assertRaises(self.request_error):
+            self.prepare_mesh_edit(request_id, mesh_placement="FIT")
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="UV")
+        self.assertEqual(approval["mesh_placement"], "FIT")
+        self.assertIsNone(approval["result_to_source"])
+        self.assertEqual(approval["fit_bases"], ["WORLD", "LOCAL"])
+        strict = self.prepare_mesh_edit(request_id, mesh_policy="UV", mesh_placement="WORLD")
+        self.assertEqual((strict["mesh_placement"], strict["fit_bases"]), ("WORLD", None))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertIn("UV result does not match the source mesh after fitting", status["error"])
+        self.assertEqual(source.data, old_mesh)
+
     def test_mesh_edit_world_placement_preserves_imported_positions_with_transformed_source(self):
         request_id = self.recovered_mesh_edit()
         source = bpy.context.view_layer.objects.active
@@ -5432,6 +5455,47 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
             self.tools.apply_result_application(self.import_args(approval))
         self.assertEqual(self.store.get(request_id), old)
+
+    def test_mesh_dialog_fits_surface_policies_and_restores_scene_coordinates(self):
+        request_id = self.recovered_mesh_edit()
+        recovery = submodule("blender.job_recovery")
+        jobs = self.runtime.state.model_jobs
+        dialog = Mock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(
+            scene=bpy.context.scene,
+            view_layer=bpy.context.view_layer,
+            window_manager=SimpleNamespace(invoke_props_dialog=dialog),
+        )
+        op = SimpleNamespace(
+            context_id=self.runtime.state.job_context_id,
+            request_id=request_id,
+            expected_revision=self.store.get(request_id).revision,
+            asset_id="result-image",
+            policy="UV",
+            placement="WORLD",
+            keep_original=True,
+            original_source=False,
+            # Only the policy is chosen: the coordinates follow it.
+            properties=SimpleNamespace(is_property_set=lambda name: name == "policy"),
+            report=Mock(),
+        )
+        operator = recovery.SCENARIO_OT_apply_saved_mesh
+        self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
+        self.assertEqual(op.placement, "FIT")
+        self.assertEqual(jobs._application_approvals[op.application_id].placement, "FIT")
+        op._sync_options = lambda op=op: operator._sync_options(op)
+        for policy, placement in (("REMESH", "WORLD"), ("RIG", "FIT"), ("PARTS", "WORLD")):
+            op.policy = policy
+            recovery._mesh_policy_changed(op, context)
+            self.assertEqual(op.placement, placement)
+            operator.check(op, context)
+            self.assertFalse(op.review_error)
+            self.assertEqual(jobs._application_approvals[op.application_id].placement, placement)
+        # ANIMATE uses no coordinates: leaving a fit restores scene coordinates.
+        op.policy, op.placement = "ANIMATE", "FIT"
+        recovery._mesh_policy_changed(op, context)
+        self.assertEqual(op.placement, "WORLD")
+        operator.cancel(op, context)
 
     def test_mesh_dialog_reviews_local_coordinates_for_mirrored_or_zero_scale_sources(self):
         request_id = self.recovered_mesh_edit()

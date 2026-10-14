@@ -48,6 +48,8 @@ def export_glb(context, objects, path=None):
             filepath=path,
             export_format="GLB",
             use_selection=True,
+            # Other scenes' selections would add objects and scenes to the upload.
+            use_active_scene=True,
             export_apply=True,
             export_yup=True,
             export_animations=False,

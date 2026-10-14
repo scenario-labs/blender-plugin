@@ -56,7 +56,7 @@ from .job_session import (
 from .material_application import MaterialApplicationError, capture_target, selected_maps
 from .material_application import validate_target as validate_material_target
 from .media_application import MEDIA_TYPES
-from .mesh_application import MeshApplicationError
+from .mesh_application import FIT_POLICIES, FitRequest, MeshApplicationError
 from .mesh_application import capture_target as capture_mesh_target
 from .mesh_application import validate_target as validate_mesh_target
 from .mesh_result_application import MeshEditApplication, MeshResultApplicationError
@@ -361,7 +361,7 @@ class MeshApplicationApproval:
     target: object = field(repr=False)
     policy: str
     placement: str
-    mapping: tuple
+    mapping: object  # rows, or an approved FitRequest
     keep_original: bool
     original_source: bool = False
     kind: str = "mesh_edit"
@@ -793,10 +793,12 @@ class ModelJobs:
                 self._pause(
                     request_id, "Model application needs receipt recovery; do not apply again"
                 )
-            except (MeshApplicationError, MeshResultApplicationError):
+            except (MeshApplicationError, MeshResultApplicationError) as error:
+                reason = getattr(error, "reason", None)
                 self._pause(
                     request_id,
-                    "Mesh application stopped; inspect the saved GLB, source and edit policy",
+                    "Mesh application stopped; inspect the saved GLB, source and edit policy"
+                    + (f". {reason}" if reason else ""),
                 )
             except ModelPreflightError as error:
                 # Rejected before the claim: the saved job and the scene are unchanged.
@@ -1847,13 +1849,28 @@ class ModelJobs:
 
     @staticmethod
     def _mesh_options(target, policy, placement, keep_original):
-        if placement not in {"WORLD", "LOCAL"}:
-            raise ScenarioError(0, "Choose scene or object-local result coordinates")
+        if placement not in {"WORLD", "LOCAL", "FIT"}:
+            raise ScenarioError(0, "Choose scene, object-local or fitted result coordinates")
+        if placement == "FIT" and policy not in FIT_POLICIES:
+            raise ScenarioError(0, "Fitted coordinates apply to UV, retexture and rig only")
         validate_mesh_target(target)
+        world = target.obj.matrix_world
+        if placement == "FIT":
+            # Both bases are verified at application; a mirrored or singular
+            # source transform offers only object-local coordinates.
+            bases = [("LOCAL", tuple(tuple(row) for row in Matrix.Identity(4)))]
+            if world.determinant() > 0:
+                bases.insert(0, ("WORLD", tuple(tuple(row) for row in world.inverted())))
+            return validate_mesh_request(
+                target,
+                policy=policy,
+                result_to_source=FitRequest(tuple(bases)),
+                keep_original=keep_original,
+            )
         try:
             # Clips are pose data and never use result coordinates.
             mapping = (
-                target.obj.matrix_world.inverted()
+                world.inverted()
                 if placement == "WORLD" and policy != "ANIMATE"
                 else Matrix.Identity(4)
             )
@@ -1873,7 +1890,7 @@ class ModelJobs:
         asset_id,
         *,
         policy=None,
-        placement="WORLD",
+        placement=None,
         keep_original=True,
         original_source=False,
         review_placement=False,
@@ -1910,10 +1927,6 @@ class ModelJobs:
             scene, obj = target.scene, target.obj
         else:
             target = capture_mesh_target(scene, obj)
-        # Native review chooses its displayed default from the resolved target,
-        # which can differ from the selected object. Explicit MCP options stay strict.
-        if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
-            placement = "LOCAL"
         view = self.views.get(request_id)
         start = default_policy(
             record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
@@ -1929,6 +1942,14 @@ class ModelJobs:
         elif policy is None:
             policy = start.policy
             source = "edit3d_task" if start.derived else "default"
+        # An explicit placement wins; surface-preserving edits start on a verified
+        # fit, the others on scene positions.
+        if placement is None:
+            placement = "FIT" if policy in FIT_POLICIES else "WORLD"
+        # Native review chooses its displayed default from the resolved target,
+        # which can differ from the selected object. Explicit MCP options stay strict.
+        if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
+            placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
         unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
         ticket = MeshApplicationApproval(
@@ -2377,6 +2398,8 @@ class ModelJobs:
             "parts": tuple(part.name for part in application.parts if part in objects),
             "rig": application.rig.name if application.rig in objects else None,
             "clips": tuple(clip.name for clip in application.clips if clip in actions),
+            "result_to_source": [list(row) for row in application.mapping],
+            "fitted_from": application.fitted_from,
         }
 
     def _model_import_status(self, request_id):

@@ -637,6 +637,18 @@ def _draw_animate(layout, review_error):
         layout.label(text=review_error, icon="ERROR")
 
 
+_FIT_POLICIES = {"UV", "RETEXTURE", "RIG"}
+
+
+def _mesh_policy_changed(self, _context):
+    # A property update, never draw(): surface-preserving edits default to a
+    # verified fit; the others cannot fit. check() then revises the approval.
+    if self.policy in _FIT_POLICIES:
+        self.placement = "FIT"
+    elif self.placement == "FIT":
+        self.placement = "LOCAL" if self.local_placement_required else "WORLD"
+
+
 class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     bl_idname = "scenario.apply_saved_mesh"
     bl_label = "Apply saved mesh edit"
@@ -660,11 +672,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         name="Edit",
         items=(
             ("REMESH", "Replace geometry", "Adopt result geometry, UVs and mesh materials"),
-            ("UV", "Replace active UVs", "Require exactly matching indexed topology and positions"),
+            ("UV", "Replace active UVs", "Keep geometry; the result must be the same surface"),
             (
                 "RETEXTURE",
                 "Replace textures",
-                "Preserve geometry; adopt result UVs and materials with exactly matching topology and positions",
+                "Preserve geometry; adopt result UVs and materials from the same surface",
             ),
             (
                 "PARTS",
@@ -684,6 +696,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         ),
         default="REMESH",
         options={"SKIP_SAVE"},
+        update=_mesh_policy_changed,
     )
     placement: EnumProperty(
         name="Result coordinates",
@@ -693,6 +706,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 "LOCAL",
                 "Object local coordinates",
                 "Use imported positions in the source object's local axes",
+            ),
+            (
+                "FIT",
+                "Fit and verify",
+                "Scale and move the result uniformly only if it then matches the source surface",
             ),
         ),
         default="WORLD",
@@ -714,7 +732,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 source,
                 self.asset_id,
                 policy=self.policy if explicit else None,
-                placement=self.placement,
+                # Unset, coordinates follow the policy: a verified fit for UV,
+                # retexture and rig, else scene (or required local) coordinates.
+                placement=self.placement if self.properties.is_property_set("placement") else None,
                 keep_original=self.keep_original,
                 original_source=self.original_source,
                 review_placement=True,
@@ -794,7 +814,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 layout.label(
                     text="Replace this mesh's skin; the old rig stays, and Keep original uses it."
                 )
-            layout.label(text="Matching geometry required. No morphs or mesh animation.")
+            layout.label(text="The skin must match this surface. No morphs or mesh animation.")
             layout.label(
                 text="Keep rig clips. Move the source and new rig group together afterward."
             )
@@ -803,16 +823,18 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="Treat every mesh in this GLB as a part, not an alternate variant.")
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
-            layout.label(text="Indexed topology and positions must match exactly.")
+            layout.label(text="The result must match this surface; triangles and seams are fine.")
         else:
-            layout.label(text="Replace active UVs only; topology and positions must match exactly.")
+            layout.label(text="Replace active UVs only; the result must match this surface.")
         layout.label(text="Keep the source object's name, transforms, parenting and collections.")
         layout.label(
             text="One static GLB, 2 to 128 parts. No automatic fitting or scale adjustment."
             if self.policy == "PARTS"
-            else "One GLB mesh and rig. No automatic fitting or scale adjustment."
-            if self.policy == "RIG"
             else "One static GLB mesh only. No automatic fitting or scale adjustment."
+            if self.policy == "REMESH"
+            else "Fit and verify scales uniformly, never rotates, and stops on any mismatch."
+            if self.placement == "FIT"
+            else "All result meshes form one surface. No fitting or scale adjustment."
         )
         layout.label(text="Keep original makes an unselected copy. Undo follows Blender settings.")
         layout.label(

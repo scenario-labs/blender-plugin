@@ -82,22 +82,29 @@ DPI, the post-import status lines, and viewport navigation after a
 GLB, followed by **(primary result)** or **(alternate result)**. A GLB that is not
 the job's primary result is drawn as **Apply alternate mesh edit: GLB (N)** or
 **Apply alternate to captured source: GLB (N)**, mirroring its import label. The
-dialog shows the replacement policy, scene/local coordinate placement
+dialog shows the replacement policy, scene/local/fitted coordinate placement
 and Keep original choice before confirmation. Invoke starts the policy from the
 prepared approval, and a line under it reads **Default edit follows this job's
 Retexture task.** (with the job's task), **This mesh has no rig, so the Animate
 result starts on Attach rig.** (an Animate job and an unskinned mesh), **This
 mesh already has a rig, so the edit starts on Attach rig.** (a skinned source) or
-**Default edit is not from this job's task; check it.** Explain geometry/UV/material
-replacement, exact-topology UV/retexture restrictions, no automatic fitting, preserved
+**Default edit is not from this job's task; check it.** Invoke also starts the
+coordinates from the approval: **Fit and verify** for UV, textures and rig, else
+scene coordinates. Explain geometry/UV/material replacement, the same-surface
+UV/retexture/rig requirement, whether the chosen coordinates fit (uniform scale
+and offset, never rotation, stopping on any mismatch), preserved
 object context and the dependence of undo on Blender settings. Defaults keep an
 original copy. Explain that history changes affect the scene only, not saved jobs
 or spending. After confirmation, the temporary message acknowledges approval
 rather than describing verification that may already have finished.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
-approval instead of selecting a new target. Physical desktop evidence of the
-default-edit line and the alternate labels is pending. A stale target or scene requires
+approval instead of selecting a new target. Choosing **Replace active UVs**,
+**Replace textures** or **Attach rig** selects **Fit and verify** in a property
+update; choosing another policy returns to scene (or, when required, object-local)
+coordinates. The new placement stays visible and editable before confirmation.
+Physical desktop evidence of the default-edit line, the alternate labels and the
+fitted coordinates is pending. A stale target or scene requires
 cancellation and fresh review. `draw()` only reads the prepared labels and
 operator properties. Completed-result reviews retain the reuse notice.
 
@@ -176,7 +183,7 @@ alignment. See
 
 The mesh review's **Replace textures** choice preserves geometry and adopts all
 result UV layers and mesh material assignments. Its two explanation lines name
-that replacement and require exactly matching indexed topology and positions.
+that replacement and require the same surface, allowing triangles and seams.
 Keep original and coordinate placement remain explicit, and drawing stays read-only.
 Both current-destination and captured-source review use this policy.
 

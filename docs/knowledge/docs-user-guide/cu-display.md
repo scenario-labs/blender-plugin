@@ -17,7 +17,7 @@
       "scenario/blender/operators.py": "81d7e4feae3c5464d7f70f38aec449f459d2ba5181df3d006d415ab24c2f270c",
       "tests/unit/test_cu_display.py": "45e569a98b3d9973049b5d48088ecb209e342ee8aff61a5ee2ea13b7d0018333",
       "tests/blender/test_prompt_tools.py": "939e959296a1eecefb5a87d3aa7f1ea0d7187e77427700f49ecf3fd4f796099b",
-      "scenario/blender/pump.py": "2e46694014cea3312b45c13473297b9bbddaea7f722a23cf13f169589e0709fd",
+      "scenario/blender/pump.py": "268d3bd778fea057c9952aa652961ec32f23403412b54c791440f34decef71f1",
       "scenario/blender/model_jobs.py": "320357d976cbc763c3ca2594af722e9351b50f8c9da9654dcb8f79c8a397cc99",
       "scenario/core/api/sdk_adapter.py": "1acf3827b2fb56a6583fdbbf75b3d5f7c160763f006ff1e639a9d77c59393c26",
       "scenario/blender/generation.py": "a225f2c9c2d78c92b48892d6d2ca0c4495ee404e1f788df96c801cc175cec438"

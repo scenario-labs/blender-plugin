@@ -12,7 +12,7 @@
     "limits": "Reviewed the in-memory per-scene, per-lane repeat after Generate: the last price stays on the sidebar and composer button, no quote is requested while the submission is still being sent, a fresh free quote follows its confirmation, Generate and the composer's Enter stay disabled until the 2 s delay passed, an edit drops the repeat for normal pricing, a lost submission re-prices into the duplicate refusal, submit_generation itself refuses during the hold, a credential or project change and a removed scene drop repeats, stopped automatic pricing ends a repeat with the form idle, and an offline or invalid-credentials moment keeps it waiting. Installed Blender 5.1.2 macOS arm64 tests drive the pump, labels and enablement; no screenshot, physical click timing or live service run is established.",
     "sources": {
       "scenario/blender/generation.py": "a225f2c9c2d78c92b48892d6d2ca0c4495ee404e1f788df96c801cc175cec438",
-      "scenario/blender/pump.py": "abdf2b27a1578df0f3e9cabaca21f6742a7691921bd1c395c435e7ab3f31b828",
+      "scenario/blender/pump.py": "268d3bd778fea057c9952aa652961ec32f23403412b54c791440f34decef71f1",
       "scenario/blender/panels.py": "dae2c8208afb394dc1c4673facbc5de653972ef7fe0f5b3a5c4848c2c1092f15",
       "scenario/blender/runtime.py": "4b953ccef0d00d1dded484440e88a54c3e1f28b6f7063e2554a01cc261ab0f98",
       "scenario/blender/props.py": "184cbc93187f403e3241e80156d72ff9ef84f33056bb9f8a8d52b7ededaa7d66",

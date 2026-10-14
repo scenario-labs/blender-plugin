@@ -1779,6 +1779,8 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Choose one cloud job first"):
             bpy.ops.scenario.link_cloud_job("EXEC_DEFAULT", **properties)
         self.assertEqual(self.store.get(request_id), record)
+        # The chosen job has already finished on Scenario.
+        self.result_fixture()
         self.assertEqual(
             bpy.ops.scenario.link_cloud_job("EXEC_DEFAULT", **properties, job_id="cloud-close"),
             {"FINISHED"},
@@ -1790,9 +1792,12 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertIsNone(view.meta["cloud_lookup"])
         # The linked job is polled and downloaded like any other saved job, but even
         # in the Image session that sent it, its results wait for explicit review.
-        self.result_fixture()
         before = set(bpy.data.images)
-        self.deliver_results()
+        for _ in range(10):
+            if self.store.get(request_id).state == self.storemod.JobState.READY:
+                break
+            owner._next_poll[request_id] = 0  # do not wait out the polling interval
+            self.deliver_results()
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
         self.assertEqual(set(bpy.data.images), before)
         self.assertEqual(len(self.paid), 1)

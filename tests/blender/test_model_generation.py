@@ -6160,6 +6160,113 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(status["delivery_paused"])
         self.assertIn("Mesh application stopped", status["error"])
 
+    def test_mesh_edit_scene_switch_rejects_a_native_review(self):
+        self.assert_mesh_edit_scene_switch_requires_fresh_review("review")
+
+    def test_mesh_edit_scene_switch_rejects_an_mcp_approval_at_admission(self):
+        self.assert_mesh_edit_scene_switch_requires_fresh_review("admission")
+
+    def test_mesh_edit_scene_switch_during_verification_is_not_claimed(self):
+        self.assert_mesh_edit_scene_switch_requires_fresh_review("verification")
+
+    def assert_mesh_edit_scene_switch_requires_fresh_review(self, phase):
+        request_id = self.recovered_mesh_edit()
+        scene, source = bpy.context.scene, bpy.context.view_layer.objects.active
+        mesh, original = source.data, self.store.get(request_id)
+        jobs = self.runtime.state.model_jobs
+        directory = jobs.session._coordinator._results._directory(original, create=False)
+        files = sorted(directory.iterdir())
+        other_scene = bpy.data.scenes.new("Unapproved mesh edit scene")
+        try:
+            if phase == "review":
+                # The dialog's own review, then its OK after the window shows another scene.
+                operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+                context = SimpleNamespace(
+                    scene=scene,
+                    view_layer=bpy.context.view_layer,
+                    window_manager=SimpleNamespace(
+                        invoke_props_dialog=Mock(return_value={"RUNNING_MODAL"})
+                    ),
+                )
+                op = SimpleNamespace(
+                    context_id=self.runtime.state.job_context_id,
+                    request_id=request_id,
+                    expected_revision=original.revision,
+                    asset_id="result-image",
+                    policy="REMESH",
+                    placement="WORLD",
+                    keep_original=True,
+                    original_source=False,
+                    report=Mock(),
+                )
+                op._sync_options = lambda: operator._sync_options(op)
+                op.cancel = lambda context: operator.cancel(op, context)
+                self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
+                approval = {"context_id": op.context_id, "application_id": op.application_id}
+            else:
+                approval = self.prepare_mesh_edit(request_id)
+            objects = set(bpy.data.objects)
+            requests = len(self.calls), len(self.paid), len(self.downloads)
+            if phase == "verification":
+                deferred = self.tools.apply_result_application(self.import_args(approval))
+                verified = deferred.run()
+            bpy.context.window.scene = other_scene
+            if phase == "review":
+                self.assertEqual(operator.execute(op, context), {"CANCELLED"})
+                op.report.assert_called_once()
+            elif phase == "admission":
+                with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+                    self.tools.apply_result_application(self.import_args(approval))
+            else:
+                status = deferred.finish(verified)
+                self.assertEqual(status["status"], "ready", status)
+                self.assertTrue(status["delivery_paused"])
+                self.assertTrue(status["error"])
+                self.assertFalse(status["local_applications"])
+            self.assertFalse(jobs._application_approvals)
+            self.assertFalse(jobs._commands)
+            self.assertEqual(self.store.get(request_id), original)
+            self.assertEqual(source.data, mesh)
+            self.assertEqual(set(bpy.data.objects), objects)
+            self.assertFalse(tuple(other_scene.objects))
+            self.assertEqual(sorted(directory.iterdir()), files)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
+            bpy.context.window.scene = scene
+            with self.assertRaises(self.request_error):
+                self.tools.apply_result_application(self.import_args(approval))
+            status = self.finish_application(self.prepare_mesh_edit(request_id))
+            self.assertEqual(status["status"], "applied", status)
+            self.assertNotEqual(source.data, mesh)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
+        finally:
+            bpy.context.window.scene = scene
+            bpy.data.scenes.remove(other_scene)
+
+    def test_file_load_retires_mesh_edit_review_and_keeps_job_for_a_fresh_one(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        name, geometry = source.name, [tuple(vertex.co) for vertex in source.data.vertices]
+        approval = self.prepare_mesh_edit(request_id)
+        original = self.store.get(request_id)
+        requests = len(self.calls), len(self.paid), len(self.downloads)
+        path = self.runtime.paths().state_dir / "mesh-edit-review.blend"
+        bpy.ops.wm.save_as_mainfile(filepath=str(path))
+        bpy.ops.wm.open_mainfile(filepath=str(path))
+        # The loaded file has a same-named, unchanged mesh; nothing rebinds to it.
+        reloaded = bpy.data.objects[name]
+        current = dict(approval, context_id=self.runtime.state.job_context_id)
+        for retired in (approval, current):
+            with self.assertRaises(self.request_error):
+                self.tools.apply_result_application(self.import_args(retired))
+        self.assertEqual(self.store.get(request_id), original)
+        self.assertEqual([tuple(vertex.co) for vertex in reloaded.data.vertices], geometry)
+        bpy.context.view_layer.objects.active = reloaded
+        status = self.finish_application(self.prepare_mesh_edit(request_id))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["mesh_edit"]["target"], name)
+        self.assertEqual(len(reloaded.data.vertices), 3)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
+
     def captured_mesh_upload(self, *, live=False):
         session = self.runtime.ensure_job_session()
         origin = session.capture(bpy.context.scene, bpy.context.object)

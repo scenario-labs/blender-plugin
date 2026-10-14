@@ -240,7 +240,7 @@ A Blender download is an install or an update; the request does not say which.
 Index requests are repository additions and manual update checks, not active
 installations, because the extension sets up the repository without startup
 checks. Manual installs from release assets are not counted, and the release
-download counters include CI downloads. [CI](../.github/workflows/site-proxy.yml)
+download counters include CI downloads. [CI](../.github/workflows/site.yml)
 type-checks the middleware and runs [its tests](../tools/site_proxy/middleware.test.ts);
 locally, run `node --test tools/site_proxy/middleware.test.ts` with Node 24.
 

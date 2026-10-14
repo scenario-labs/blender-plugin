@@ -248,3 +248,5 @@ The [MCP protocol module](scenario/mcp/protocol.py) supports protocol revisions
 
 The Scenario logo comes from the [official skills repository](https://github.com/scenario-labs/skills/blob/main/resources/scenario-logo.png);
 its [original source licence](docs/images/scenario-logo.LICENSE) is retained.
+The wordmark in the website header comes from mcp.scenario.com; its
+[source note](docs/images/scenario-wordmark.LICENSE) records its terms.

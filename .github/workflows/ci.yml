@@ -28,7 +28,7 @@ jobs:
   agents:
     uses: ./.github/workflows/agent-skills.yml
   site:
-    uses: ./.github/workflows/site-proxy.yml
+    uses: ./.github/workflows/site.yml
 
   ci-ok:
     name: ci-ok

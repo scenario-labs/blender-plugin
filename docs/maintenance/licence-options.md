@@ -26,7 +26,8 @@ inbound=outbound GPL-3.0-or-later, with no copyright assignment, CLA or DCO.
 This is not a single-licence ownership inventory. The
 [SDK bundle](../SDK_BUNDLE.md#notices-and-upgrades) preserves MIT, BSD, Apache,
 MPL and other dependency notices; the [logo notice](../images/scenario-logo.LICENSE)
-retains its source's MIT licence. The
+retains its source's MIT licence, and the [wordmark note](../images/scenario-wordmark.LICENSE)
+keeps Scenario's wordmark outside the GPL. The
 [roadmap consolidation amendment](https://github.com/scenario-labs/roadmap/issues/672)
 also requires adopted Studio source and font/icon/asset attribution to survive.
 Commit authors, SPDX lines and company affiliation do not establish an IP

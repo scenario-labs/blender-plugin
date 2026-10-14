@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-name: Site proxy
+name: Site
 
 on:
   workflow_call:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  site-proxy:
+  site-scripts:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -23,11 +23,18 @@ jobs:
       # installed ad hoc, as commitlint is, and Node runs the tests directly.
       - name: Install TypeScript (CI only, the repo has no package.json)
         run: npm install --prefix "$RUNNER_TEMP/tsc" --no-save --no-package-lock --no-audit --no-fund typescript@5 @types/node@24
-      - name: Type-check the middleware
+      - name: Type-check the proxy middleware
         run: >-
           "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" --noEmit --strict --target es2022
           --module nodenext --moduleResolution nodenext --allowImportingTsExtensions
           --typeRoots "$RUNNER_TEMP/tsc/node_modules/@types" --types node
           tools/site_proxy/middleware.ts tools/site_proxy/middleware.test.ts
-      - name: Test the middleware
-        run: node --test tools/site_proxy/middleware.test.ts
+      - name: Type-check the handbook search
+        run: >-
+          "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" --noEmit --strict --target es2022
+          --lib es2022,dom,dom.iterable --module nodenext --moduleResolution nodenext
+          --allowJs --checkJs --allowImportingTsExtensions
+          --typeRoots "$RUNNER_TEMP/tsc/node_modules/@types" --types node
+          docs/handbook-search.js tests/site/handbook-search.test.ts
+      - name: Test the middleware and the handbook search
+        run: node --test tools/site_proxy/middleware.test.ts tests/site/handbook-search.test.ts

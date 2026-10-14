@@ -142,10 +142,57 @@ def test_output_image_symlink_cannot_write_outside_output_directory(inputs):
     assert list(outside.iterdir()) == []
 
 
+def with_inlined_slots(inputs, style="body{color:#252322}", search="window.found = 1;"):
+    inputs["template"].write_text(
+        TEMPLATE.replace("</head>", "<style>{{style}}</style></head>").replace(
+            "</body>", "<script>{{search}}</script></body>"
+        )
+    )
+    (inputs["template"].parent / "site.css").write_text(style)
+    (inputs["template"].parent / "handbook-search.js").write_text(search)
+
+
+def test_style_and_search_slots_inline_the_files_beside_the_template(inputs):
+    with_inlined_slots(inputs)
+
+    for inline_images in (False, True):
+        text = build_handbook(**inputs, inline_images=inline_images).read_text()
+        assert "<style>body{color:#252322}</style>" in text
+        assert "<script>window.found = 1;</script>" in text
+        assert "{{" not in text
+
+
+@pytest.mark.parametrize(
+    "style,search",
+    [
+        ("body{}</style><script>alert(1)</script>", "window.found = 1;"),
+        ("body{}", "document.write('</SCRIPT>')"),
+    ],
+)
+def test_inlined_files_cannot_close_their_element(inputs, style, search):
+    with_inlined_slots(inputs, style, search)
+
+    with pytest.raises(HandbookError, match="must not close"):
+        build_handbook(**inputs)
+    assert not inputs["output"].exists()
+
+
+@pytest.mark.parametrize("name", ["site.css", "handbook-search.js"])
+def test_inlined_slot_requires_its_file(inputs, name):
+    with_inlined_slots(inputs)
+    (inputs["template"].parent / name).unlink()
+
+    with pytest.raises(HandbookError, match=f"needs {name}"):
+        build_handbook(**inputs)
+    assert not inputs["output"].exists()
+
+
 @pytest.mark.parametrize(
     "before,after",
     [
         ("{{content}}", "{{unknown}}"),
+        ("</head>", "<style>{{style}}{{style}}</style></head>"),
+        ("</body>", "<script>{{search}}</script><script>{{search}}</script></body>"),
         ("{{toc}}", "{{toc}}{{toc}}"),
         ("{{version}}", ""),
         ('<meta charset="utf-8">', ""),

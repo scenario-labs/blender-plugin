@@ -21,6 +21,9 @@ import markdown
 
 ROOT = Path(__file__).resolve().parents[1]
 SLOT = re.compile(r"{{\s*([^{}]+?)\s*}}")
+# Optional slots filled with a file beside the template, kept inline so the
+# standalone handbook stays one file: slot -> (file name, enclosing element).
+INLINED = {"style": ("site.css", "style"), "search": ("handbook-search.js", "script")}
 IMAGE_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -222,6 +225,17 @@ def _stale_assets(
     return stale
 
 
+def _inline(directory: Path, name: str, element: str) -> str:
+    """Read a template companion that must stay inside its own element."""
+    try:
+        text = (directory / name).read_text(encoding="utf-8")
+    except OSError as error:
+        raise HandbookError(f"Template needs {name} beside it") from error
+    if f"</{element}" in text.casefold():
+        raise HandbookError(f"{name} must not close its <{element}> element")
+    return text
+
+
 def build_handbook(
     source: Path,
     template: Path,
@@ -241,8 +255,11 @@ def build_handbook(
     slots = SLOT.findall(layout)
     if slots.count("content") != 1 or slots.count("toc") != 1 or "version" not in slots:
         raise HandbookError("Template needs one content slot, one toc slot and a version slot")
-    if set(slots) - {"content", "toc", "version"}:
+    if set(slots) - {"content", "toc", "version", *INLINED}:
         raise HandbookError("Template contains unknown slots")
+    if any(slots.count(name) > 1 for name in INLINED):
+        raise HandbookError("Template can inline each file only once")
+    inlined = {name: _inline(template.parent, *INLINED[name]) for name in INLINED if name in slots}
     version = tomllib.loads(manifest.read_text(encoding="utf-8")).get("version")
     if not isinstance(version, str) or not re.fullmatch(
         r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?", version
@@ -254,7 +271,7 @@ def build_handbook(
         output_format="html",
     )
     content = renderer.convert(source.read_text(encoding="utf-8"))
-    values = {"content": content, "toc": renderer.toc, "version": html.escape(version)}
+    values = {"content": content, "toc": renderer.toc, "version": html.escape(version), **inlined}
     page = SLOT.sub(lambda match: values[match[1].strip()], layout)
     parsed = _Page(source, root, inline_images)
     parsed.feed(page)

@@ -18,6 +18,7 @@ from blender_env import ROOT, find_blender
 from build import Session, arguments
 from build_docs_html import build_handbook
 from repository import generate, read_inventory
+from site_pages import pending_page
 
 
 def require_new_output(output):
@@ -35,21 +36,7 @@ def build_pending_site(output, *, source, template, manifest, root=ROOT):
         if any(path.name.casefold() == "repo" for path in staged.iterdir()):
             raise ValueError("Handbook assets conflict with the reserved repo directory")
         (staged / "repo").mkdir()
-        (staged / "repo/index.html").write_text(
-            '<!doctype html><html lang="en"><meta charset="utf-8">'
-            '<meta name="viewport" content="width=device-width, initial-scale=1">'
-            "<title>Scenario for Blender: native downloads</title>"
-            "<body><main><h1>Native downloads are coming</h1>"
-            "<p>The official extension repository will become available after the first "
-            "verified release. No native update index is published yet.</p>"
-            '<p><a href="https://github.com/scenario-labs/blender-plugin/releases">'
-            "Browse historical ZIP releases</a>.</p>"
-            "<p>These are earlier experimental builds. Their features, controls and Blender "
-            "requirements may differ from the current handbook. Follow the requirements "
-            "and installation instructions attached to the release you choose.</p>"
-            '<p><a href="../">Read the handbook</a></p></main></body></html>',
-            encoding="utf-8",
-        )
+        (staged / "repo/index.html").write_text(pending_page(), encoding="utf-8")
         require_new_output(output)
         staged.rename(output)
     return output

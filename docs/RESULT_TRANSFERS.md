@@ -103,15 +103,27 @@ therefore stay free for status polls, remote cancellation and submissions while 
 large result downloads, and preview work keeps its separate lane. A full transfer
 queue refuses the command before it starts, as for the job queue.
 
-Each result download gets a cancel event. `JobSession.cancel_download(task)`
-sets it for one download; session retirement, which a credential, project or
-file change causes, sets it for all of them and cancels queued ones. The
+Each result download gets a cancel event. **Stop download** (`stop_download` in
+the Jobs panel and MCP) calls `JobSession.cancel_download(task)` for one
+download; session retirement, which a credential, project or file change
+causes, sets it for all of them and cancels queued ones. The
 transfer stops at its next chunk or permission check, removes its private
 staging and publishes nothing. The job is saved as `download_failed` with no
 receipt for that asset, so an explicit download starts it again; receipts of
-assets that finished earlier are kept. A read blocked on a silent server waits
-for the 30-second socket timeout before it sees the event. Upload parts take no
-cancel event: interrupting a signed PUT would make the part uncertain.
+assets that finished earlier are kept. Upload parts take no cancel event:
+interrupting a signed PUT would make the part uncertain.
+
+The lane's event is a `TransferCancel`. Setting it also shuts down the running
+transfer's connection from the cancelling thread, so a read blocked on a server
+that sends nothing returns at once instead of after the 30-second socket
+timeout. The downloader keeps its own duplicate of the socket descriptor for
+this and closes that duplicate only after unregistering, so the shutdown can
+never reach a descriptor the transfer already closed and the system reused.
+Shutdown leaves the reader's descriptor valid; the transfer closes it as usual
+and reports cancellation, never a retryable failure, whether the read ended in
+EOF, a reset or a TLS error. DNS resolution and the TLS handshake are not
+interrupted; they stay bounded by the socket timeout. A plain `threading.Event`
+is still accepted and checked between chunks only.
 
 A download makes at most three attempts, waiting 1 second before the second and
 3 seconds before the third. Before every

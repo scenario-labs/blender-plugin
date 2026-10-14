@@ -7,9 +7,11 @@ import http.client
 import math
 import os
 import re
+import socket
 import ssl
 import stat
 import tempfile
+import threading
 import time
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -250,6 +252,82 @@ class PartialDownload:
             _cleanup(staging.cleanup)
 
 
+class TransferCancel(threading.Event):
+    """A cancel event that also wakes a transfer blocked reading from a silent server.
+
+    ``set`` runs the hooks a running transfer registered, which shut its
+    connection down; the transfer then reports cancellation, never a retryable
+    failure. A plain ``threading.Event`` still works and is checked between
+    chunks, but a blocked read then waits for the socket timeout.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._hooks_lock = threading.Lock()
+        self._hooks = []
+
+    def set(self):
+        super().set()
+        with self._hooks_lock:
+            hooks = tuple(self._hooks)
+        for hook in hooks:
+            _cleanup(hook)
+
+    def _watch(self, hook):
+        with self._hooks_lock:
+            self._hooks.append(hook)
+        if self.is_set():
+            _cleanup(hook)
+
+    def _unwatch(self, hook):
+        with self._hooks_lock:
+            if hook in self._hooks:
+                self._hooks.remove(hook)
+
+
+class _Interrupter:
+    """Shuts a transfer's connection down from the cancelling thread.
+
+    It holds its own duplicate of the socket descriptor, so a shutdown never
+    reaches a descriptor that the transfer already closed and the system reused.
+    Shutdown, unlike close, leaves the reader's own descriptor valid: its blocked
+    read returns and the transfer closes its connection as usual. Only real
+    sockets are duplicated; anything else keeps the socket-timeout behavior.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._socket = None
+        self._fired = False
+
+    def arm(self, sock):
+        if not isinstance(sock, socket.socket):
+            return
+        try:
+            duplicate = socket.socket(
+                sock.family, sock.type, sock.proto, fileno=socket.dup(sock.fileno())
+            )
+        except (OSError, ValueError, TypeError):
+            return
+        with self._lock:
+            self._socket = duplicate
+            fired = self._fired
+        if fired:
+            self.fire()
+
+    def fire(self):
+        with self._lock:
+            self._fired = True
+            if self._socket is not None:
+                _cleanup(lambda: self._socket.shutdown(socket.SHUT_RDWR))
+
+    def disarm(self):
+        with self._lock:
+            duplicate, self._socket = self._socket, None
+        if duplicate is not None:
+            _cleanup(duplicate.close)
+
+
 def _cleanup(close):
     try:
         close()
@@ -344,6 +422,10 @@ class ResultDownloader:
 
         connection = None
         keep = retain = False
+        interrupter = _Interrupter()
+        watch = callable(getattr(cancel, "_watch", None))
+        if watch:
+            cancel._watch(interrupter.fire)
         try:
             root = _root(root)
             destination = root / validate_result_name(name)
@@ -392,6 +474,7 @@ class ResultDownloader:
                 connection.set_debuglevel(0)
                 connection.connect()
                 transfer_socket = connection.sock
+                interrupter.arm(transfer_socket)
                 check_permission_and_deadline()
                 connection.request("GET", target, headers=headers)
                 check_permission_and_deadline()
@@ -409,6 +492,7 @@ class ResultDownloader:
                     visited.add(next_target)
                     target = next_target
                 finally:
+                    interrupter.disarm()
                     _cleanup(response.close)
                     _cleanup(connection.close)
                     connection = None
@@ -505,14 +589,22 @@ class ResultDownloader:
                 receipt = DownloadedResult(name, size, digest)
                 os.link(temporary, destination)
                 return receipt
-        except TransferError as error:
-            retain = keep and error.retryable
-            raise
-        except Exception:
+        except Exception as error:
+            cancelled = cancel is not None and cancel.is_set()
+            if isinstance(error, TransferError) and not (cancelled and error.retryable):
+                retain = keep and error.retryable
+                raise
+            if cancelled:
+                # A cancelled read may end in EOF, a reset or a TLS error: all
+                # of them are this cancellation, never a retryable failure.
+                raise TransferError("Storage transfer interrupted") from None
             # Sockets, TLS, HTTP framing and local writes: another attempt may succeed.
             retain = keep
             raise RetryableTransferError("Storage transfer failed") from None
         finally:
+            interrupter.disarm()
+            if watch:
+                cancel._unwatch(interrupter.fire)
             if connection is not None:
                 _cleanup(connection.close)
             # Success, control exceptions and every other failure remove the

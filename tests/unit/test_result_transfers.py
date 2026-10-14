@@ -1046,3 +1046,70 @@ def test_shortened_staging_file_restarts_instead_of_resuming(tmp_path, storage):
     )
     assert "Range" not in sent_headers(second)
     assert receipt.sha256 == hashlib.sha256(LARGE).hexdigest()
+
+
+class Silent(Response):
+    """Headers arrive, then the server goes silent: each read blocks on the socket."""
+
+    def __init__(self, sock, **kwargs):
+        super().__init__(LARGE, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG})
+        self.sock = sock
+
+    def read1(self, size=-1):
+        return self.sock.recv(min(size, 1024))
+
+
+def test_cancel_interrupts_a_read_blocked_on_a_silent_server(tmp_path, storage):
+    import socket
+    import time
+
+    client_end, server_end = socket.socketpair()
+    try:
+        client_end.settimeout(20)
+        server_end.sendall(LARGE[:2048])
+        storage[0].sock = client_end
+        storage[0].getresponse.return_value = Silent(client_end)
+        cancel = transfers.TransferCancel()
+        threading.Timer(0.3, cancel.set).start()
+        partial = transfers.PartialDownload()
+        started = time.monotonic()
+        with pytest.raises(transfers.TransferError, match="interrupted") as caught:
+            downloader().download(
+                URL,
+                root=tmp_path,
+                name="x",
+                expected_size=len(LARGE),
+                cancel=cancel,
+                partial=partial,
+            )
+        # Well before the 20-second socket timeout, and never a retryable failure.
+        assert time.monotonic() - started < 5
+        assert not caught.value.retryable
+        assert partial.size == 0 and not list(tmp_path.iterdir())
+        # The reader's own descriptor stays valid; only the connection was shut down.
+        assert client_end.fileno() != -1
+        assert not cancel._hooks
+    finally:
+        client_end.close()
+        server_end.close()
+
+
+def test_transfer_cancel_runs_hooks_once_set_and_for_late_watchers():
+    cancel = transfers.TransferCancel()
+    calls = []
+    cancel._watch(lambda: calls.append("early"))
+    cancel.set()
+    cancel._watch(lambda: calls.append("late"))
+    assert calls == ["early", "late"] and cancel.is_set()
+    failing = transfers.TransferCancel()
+    failing._watch(lambda: 1 / 0)
+    failing.set()  # A failing hook never masks the cancellation itself.
+    assert failing.is_set()
+
+
+def test_plain_cancel_events_and_mock_sockets_are_never_duplicated(tmp_path, storage, monkeypatch):
+    duplicated = []
+    monkeypatch.setattr(transfers.socket, "dup", lambda fd: duplicated.append(fd) or fd)
+    storage[0].sock.fileno.return_value = 1
+    downloader().download(URL, root=tmp_path, name="x", cancel=transfers.TransferCancel())
+    assert duplicated == []

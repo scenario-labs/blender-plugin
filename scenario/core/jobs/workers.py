@@ -13,6 +13,7 @@ from pathlib import Path
 
 from ..scene.splats import SplatOptions
 from .coordinator import JobCoordinator, QuoteError, _payload
+from .transfers import TransferCancel
 
 # A cancelled export terminates its child within about 0.1 s and kills it 3 s later.
 EXPORT_STOP_TIMEOUT = 5.0
@@ -371,7 +372,8 @@ class JobWorkers:
                 raise WorkerError("Transfer queue is full; wait before adding more transfers")
             task = JobTask()
             if cancellable:
-                cancel = threading.Event()
+                # Setting it also wakes a read blocked on a silent storage server.
+                cancel = TransferCancel()
                 kwargs = {**kwargs, "cancel": cancel}
                 self._transfer_cancels[task] = cancel
             self._transfers.append((task, command, args, kwargs))

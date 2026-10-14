@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Installed transfer lane: polls and cancels progress beside a large loopback download."""
 
-import http.client
-import http.server
+import hashlib
+import json
 import tempfile
 import threading
 import time
@@ -13,40 +13,11 @@ from unittest.mock import patch
 
 import bpy
 import httpx
-from helpers import addon_name, submodule
+import test_model_generation as model_tests
+from helpers import LoopbackStorage, addon_name, submodule
 
 # Large enough to outlast the checks below by a wide margin at the throttled rate.
 SIZE = 96 * 1024 * 1024
-CHUNK = 64 * 1024
-
-
-class StorageHandler(http.server.BaseHTTPRequestHandler):
-    """A loopback stand-in for signed storage that streams a synthetic body slowly."""
-
-    def do_GET(self):
-        server = self.server
-        server.requests.append(self.path)
-        self.send_response(200)
-        self.send_header("Content-Length", str(SIZE))
-        self.send_header("ETag", '"loopback-fixture"')
-        self.send_header("Connection", "close")
-        self.end_headers()
-        sent, chunk = 0, b"\0" * CHUNK
-        try:
-            while sent < SIZE and not server.stop.is_set():
-                self.wfile.write(chunk)
-                sent += CHUNK
-                server.sent = sent
-                if sent >= 1024 * 1024:
-                    server.streaming.set()
-                # About 3 MiB/s: the whole body would take about 30 seconds.
-                time.sleep(0.02)
-        except OSError:
-            # The client closed the connection: the download was canceled.
-            server.closed.set()
-
-    def log_message(self, *args):
-        pass
 
 
 class TransferLaneTests(unittest.TestCase):
@@ -64,17 +35,6 @@ class TransferLaneTests(unittest.TestCase):
         base = (Path(directory) / Path(self.temp.name).name).resolve()
         self.root = base / "results"
         self.root.mkdir()
-        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), StorageHandler)
-        self.server.daemon_threads = True
-        self.server.requests, self.server.sent = [], 0
-        self.server.stop, self.server.streaming = threading.Event(), threading.Event()
-        self.server.closed = threading.Event()
-        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        thread.start()
-        self.addCleanup(thread.join, 5)
-        self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.shutdown)
-        self.addCleanup(self.server.stop.set)
         self.previous = bpy.context.scene
         self.scene = bpy.data.scenes.new("Transfer lane fixture")
         bpy.context.window.scene = self.scene
@@ -107,7 +67,6 @@ class TransferLaneTests(unittest.TestCase):
         self.other = self.record(origin, "other", "remote-other", final="remote")
 
     def tearDown(self):
-        self.server.stop.set()
         self.session.shutdown()
         if self.previous in tuple(bpy.data.scenes):
             bpy.context.window.scene = self.previous
@@ -177,26 +136,27 @@ class TransferLaneTests(unittest.TestCase):
             },
         )
 
-    def loopback(self):
-        """Send the downloader's storage connection to the loopback server instead."""
-        port = self.server.server_address[1]
-        threads = []
+    def loopback(self, **options):
+        """Serve the downloader's storage connection from a loopback server instead."""
+        server = LoopbackStorage(SIZE, **options)
+        self.addCleanup(server.close)
+        return server, patch.object(self.transfers.http.client, "HTTPSConnection", server.connect)
 
-        def connect(host, *, timeout, context):
-            self.assertEqual(host, "storage.example.invalid")
-            threads.append(threading.current_thread().name)
-            return http.client.HTTPConnection("127.0.0.1", port, timeout=timeout)
-
-        return patch.object(self.transfers.http.client, "HTTPSConnection", connect), threads
+    def assert_stopped_without_receipt(self):
+        failed = self.store.get("download")
+        self.assertEqual(failed.state, self.storage.JobState.DOWNLOAD_FAILED)
+        self.assertIsNone(failed.results[0].receipt)
+        self.assertEqual([path for path in self.root.rglob("*") if path.is_file()], [])
+        self.assertEqual(list(self.root.rglob(".scenario-download-*")), [])
 
     def test_poll_and_cancel_progress_while_a_large_download_runs_then_it_cancels(self):
         state = self.storage.JobState
-        redirect, threads = self.loopback()
+        server, redirect = self.loopback()
         with redirect:
             task = self.session.download_results(
                 "download", expected_revision=self.download.revision
             )
-            self.assertTrue(self.server.streaming.wait(15), "The download did not start")
+            self.assertTrue(server.streaming.wait(15), "The download did not start")
             self.assertEqual(self.store.get("download").state, state.DOWNLOADING)
             # A status poll of another job completes while the download streams.
             polled = self.session.refresh_remote("other", expected_revision=self.other.revision)
@@ -208,7 +168,6 @@ class TransferLaneTests(unittest.TestCase):
             canceled = self.session.cancel_remote("other", expected_revision=current.revision)
             self.assertEqual(canceled.result(10).record.state, state.CANCELED)
             self.assertFalse(task.done(), "The download finished before the checks")
-            self.assertLess(self.server.sent, SIZE)
             # Canceling the download stops it promptly, unpublished and unreceipted.
             started = time.monotonic()
             self.session.cancel_download(task)
@@ -216,34 +175,159 @@ class TransferLaneTests(unittest.TestCase):
                 task.result(10)
             self.assertLess(time.monotonic() - started, 5)
         self.session.drain()
-        failed = self.store.get("download")
-        self.assertEqual(failed.state, state.DOWNLOAD_FAILED)
-        self.assertIsNone(failed.results[0].receipt)
-        self.assertEqual([path for path in self.root.rglob("*") if path.is_file()], [])
-        self.assertEqual(list(self.root.rglob(".scenario-download-*")), [])
-        self.assertTrue(self.server.closed.wait(5), "The canceled transfer kept its connection")
-        self.assertEqual(len(self.server.requests), 1)
-        self.assertEqual(len(threads), 1)
-        self.assertTrue(threads[0].startswith("ScenarioTransfer"), threads)
+        self.assert_stopped_without_receipt()
+        self.assertTrue(server.closed.wait(5), "The canceled transfer kept its connection")
+        self.assertEqual(len(server.requests), 1)
+        self.assertEqual(len(server.threads), 1)
+        self.assertTrue(server.threads[0].startswith("ScenarioTransfer"), server.threads)
         sdk_threads = {name for method, path, name in self.calls if "remote-other" in path}
         self.assertTrue(sdk_threads and all(name.startswith("ScenarioJob") for name in sdk_threads))
 
-    def test_retiring_the_session_stops_an_in_flight_download(self):
-        state = self.storage.JobState
-        redirect, _ = self.loopback()
+    def test_cancel_interrupts_a_download_blocked_on_a_silent_server(self):
+        # Headers and 2 MiB arrive, then nothing: the read blocks on the socket,
+        # whose 30-second timeout would otherwise bound the cancellation.
+        server, redirect = self.loopback(silent_after=2 * 1024 * 1024)
         with redirect:
             task = self.session.download_results(
                 "download", expected_revision=self.download.revision
             )
-            self.assertTrue(self.server.streaming.wait(15), "The download did not start")
+            self.assertTrue(server.streaming.wait(15), "The download did not start")
+            time.sleep(0.5)  # Let the transfer drain the sent bytes and block.
+            self.assertFalse(task.done())
+            started = time.monotonic()
+            self.session.cancel_download(task)
+            with self.assertRaisesRegex(self.results.ResultError, "canceled"):
+                task.result(10)
+            self.assertLess(time.monotonic() - started, 5)
+        self.session.drain()
+        self.assert_stopped_without_receipt()
+        # Canceled, never retried: one storage request.
+        self.assertEqual(len(server.requests), 1)
+
+    def test_retiring_the_session_stops_an_in_flight_download(self):
+        server, redirect = self.loopback()
+        with redirect:
+            task = self.session.download_results(
+                "download", expected_revision=self.download.revision
+            )
+            self.assertTrue(server.streaming.wait(15), "The download did not start")
             started = time.monotonic()
             # A credential change or file load retires the session the same way.
             self.session.deactivate()
             with self.assertRaises(self.results.ResultError):
                 task.result(10)
             self.assertLess(time.monotonic() - started, 5)
-        failed = self.store.get("download")
-        self.assertEqual(failed.state, state.DOWNLOAD_FAILED)
-        self.assertIsNone(failed.results[0].receipt)
-        self.assertEqual([path for path in self.root.rglob("*") if path.is_file()], [])
-        self.assertEqual(list(self.root.rglob(".scenario-download-*")), [])
+        self.assert_stopped_without_receipt()
+
+
+class StopDownloadTests(unittest.TestCase):
+    """The Stop download action through ModelJobs.control, natively and over MCP."""
+
+    generation = model_tests.ModelGenerationTests
+    cleanup_jobs = generation.cleanup_jobs
+    result_fixture = generation.result_fixture
+    settle = generation.settle
+    deliver_results = generation.deliver_results
+    mcp_quote = generation.mcp_quote
+    mcp_submit = generation.mcp_submit
+    mcp_call = generation.mcp_call
+    recovery_args = generation.recovery_args
+    recover = generation.recover
+
+    def setUp(self):
+        model_tests.ModelGenerationTests.setUp(self)
+        self.result_fixture()
+        self.loopback = LoopbackStorage(16 * 1024 * 1024)
+        self.addCleanup(self.loopback.close)
+        # The asset size now describes the loopback body: zero bytes, slowly.
+        self.result_bytes = bytes(self.loopback.size)
+        transfers = submodule("core.jobs.transfers")
+        self.enterContext(
+            patch.object(transfers.http.client, "HTTPSConnection", self.loopback.connect)
+        )
+        self.model_jobs = submodule("blender.model_jobs")
+
+    def downloading(self):
+        """Submit a job and poll until this session's own download is streaming."""
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        deadline = time.monotonic() + 15
+        while True:
+            self.runtime.sync_catalog_context()
+            status = self.tools.job_status({"job_id": request_id})
+            if self.loopback.streaming.is_set() and "stop_download" in status["actions"]:
+                return request_id, status
+            self.assertLess(time.monotonic(), deadline, status)
+            time.sleep(0.05)
+
+    def test_stop_download_natively_and_over_mcp_then_resume_restarts_it(self):
+        state = self.storemod.JobState
+        owner = self.runtime.state.model_jobs
+        for route in ("native", "mcp"):
+            with self.subTest(route=route):
+                request_id, status = self.downloading()
+                owner = self.runtime.state.model_jobs
+                self.assertEqual(status["status"], "downloading")
+                self.assertEqual(list(status["actions"]), ["stop_download"])
+                command, task = owner._commands[request_id]
+                self.assertEqual(command, "download_results")
+                args = self.recovery_args(request_id, "stop_download")
+                if route == "native":
+                    # The Jobs row and saved-job card draw this descriptor's button.
+                    recovery = submodule("blender.job_recovery")
+                    # One more poll projects the view the Jobs panel draws.
+                    self.runtime.sync_catalog_context()
+                    view = owner.views[request_id]
+                    (item,) = [
+                        i for i in recovery.result_actions(view) if i.action == "stop_download"
+                    ]
+                    self.assertEqual(
+                        (item.label, item.group, item.operator),
+                        ("Stop download", "cancel", "scenario.recover_job"),
+                    )
+                    self.assertEqual(dict(item.properties), args)
+                    self.assertEqual(
+                        bpy.ops.scenario.recover_job(**dict(item.properties)), {"FINISHED"}
+                    )
+                    self.assertEqual(
+                        self.runtime.state.last_message,
+                        "Stopping the download; Resume download starts it again",
+                    )
+                else:
+                    result = self.mcp_call("recover_local_job", args)
+                    self.assertFalse(result.get("isError"), result)
+                    stopped = json.loads(result["content"][0]["text"])
+                    self.assertNotIn("stop_download", stopped["actions"])
+                with self.assertRaises(self.results_error):
+                    task.result(5)
+                self.runtime.sync_catalog_context()
+                status = self.tools.job_status({"job_id": request_id})
+                self.assertEqual(status["status"], "download_failed")
+                self.assertEqual(status["error"], self.model_jobs.DOWNLOAD_STOPPED)
+                self.assertIn("resume", status["actions"])
+                self.assertNotIn("stop_download", status["actions"])
+                self.assertFalse(status["results"][0]["downloaded"])
+                record = self.store.get(request_id)
+                self.assertEqual(record.state, state.DOWNLOAD_FAILED)
+                self.assertIsNone(record.results[0].receipt)
+                # Stopping is never offered again for the stopped job.
+                with self.assertRaises(self.request_error):
+                    owner.control(request_id, record.revision, "stop_download")
+        self.assertEqual(set(self.loopback.hosts), {"cdn.cloud.scenario.com"})
+        self.assertTrue(all(name.startswith("ScenarioTransfer") for name in self.loopback.threads))
+        # Resume downloads the stopped job again from zero and completes it.
+        self.loopback.fast.set()
+        requests = len(self.loopback.requests)
+        self.recover(request_id, "resume")
+        self.deliver_results()
+        record = self.store.get(request_id)
+        self.assertEqual(record.state, state.READY)
+        self.assertEqual(
+            record.results[0].receipt.sha256, hashlib.sha256(self.result_bytes).hexdigest()
+        )
+        self.assertEqual(len(self.loopback.requests), requests + 1)
+        # Two generations were sent and none was repeated.
+        self.assertEqual(len(self.paid), 2)
+
+    @property
+    def results_error(self):
+        return submodule("core.jobs.results").ResultError

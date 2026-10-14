@@ -130,6 +130,7 @@ def test_recovery_controls_dispatch_the_recovery_operator_with_their_action():
     for action, group in (
         ("cancel_prepared", "cancel"),
         ("recover_download", "recover"),
+        ("stop_download", "cancel"),
         ("retry_receipt", "receipt"),
     ):
         state = "prepared" if action == "cancel_prepared" else "downloading"
@@ -138,6 +139,7 @@ def test_recovery_controls_dispatch_the_recovery_operator_with_their_action():
         ]
     assert sja.LABELS["cancel_prepared"] == "Cancel prepared job"
     assert sja.LABELS["cancel"] == "Cancel generation"
+    assert sja.LABELS["stop_download"] == "Stop download"
 
 
 def test_waiting_workflow_step_is_a_status_row_before_the_recovery_controls():

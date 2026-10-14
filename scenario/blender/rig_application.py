@@ -66,13 +66,21 @@ def _skin_checks(primary, rig):
     return modifier
 
 
+def _targets(target):
+    return target if isinstance(target, tuple) else (target,)
+
+
 def validate_skin(target, skins, objects, mapping):
     """Require compatible skins forming the source surface; never retarget.
 
     Several skinned meshes are matched as one surface. `mapping` is a strict
-    scene-to-source-local matrix or an approved `FitRequest`.
+    scene-to-source-local matrix or an approved `FitRequest`. A tuple of targets
+    is matched as one surface in scene coordinates (`mesh.match_sources`), and
+    the returned weights then cover every target's vertices in order.
     """
-    mesh.validate_target(target)
+    targets = _targets(target)
+    for item in targets:
+        mesh.validate_target(item)
     rigs = [obj for obj in objects if obj.type == "ARMATURE"]
     if (
         len(rigs) != 1
@@ -103,7 +111,12 @@ def validate_skin(target, skins, objects, mapping):
             tuple((index[group], weight) for group, weight in vertex) for vertex in local_weights
         )
     names, weights = tuple(names), tuple(weights)
-    surface = mesh.match_surface(target.obj, tuple(skins), mapping, "RIG")
+    if len(targets) == 1:
+        surface = mesh.match_surface(targets[0].obj, tuple(skins), mapping, "RIG")
+    else:
+        surface = mesh.match_sources(
+            tuple(item.obj for item in targets), tuple(skins), mapping, "RIG"
+        )
     if surface.match is not None:
         # Split copies of one source vertex must agree; each source vertex takes them.
         weights = mesh._transfer(
@@ -112,7 +125,7 @@ def validate_skin(target, skins, objects, mapping):
             surface.match,
             surface.source.loop_vertices,
             surface.result.loop_vertices,
-            len(target.mesh.vertices),
+            sum(len(item.mesh.vertices) for item in targets),
             weights,
         )
     if not names or len(rig.data.bones) > 1024 or any(name not in rig.data.bones for name in names):
@@ -172,27 +185,18 @@ def _unwind(source, modifier, previous, rigged):
 
 
 @dataclass
-class RigApplication:
-    """Internal synchronous rollback handle; finalized by the saved-result command."""
+class SkinnedSource:
+    """One source's published skin: its mesh receipt and new Armature modifier."""
 
     receipt: mesh.MeshApplication
-    modifier: object
-    signature: tuple
-    modifier_state: tuple
-    objects: tuple
-    rig: object
+    modifier: object = None
+    signature: tuple = ()
+    modifier_state: tuple = ()
     # The replaced Armature skin of a rigged source, restored by rollback.
     previous: tuple | None = None
-    surface: object = None
 
-    @property
-    def original(self):
-        return self.receipt.original
-
-    def accept(self):
-        self.receipt.accept()
-
-    def rollback(self):
+    def check(self):
+        """Raise if the published skin changed; the mesh receipt checks the rest."""
         source = self.receipt.source
         if (
             source.data is not self.receipt._applied
@@ -203,68 +207,128 @@ class RigApplication:
             raise mesh.MeshApplicationError(
                 "Applied skin changed; inspect the source before recovery"
             )
-        _unwind(source, self.modifier, self.previous, self.receipt._skin)
+
+    def unwind(self):
+        """Remove the new skin, then let the mesh receipt check and restore the source."""
+        _unwind(self.receipt.source, self.modifier, self.previous, self.receipt._skin)
         self.receipt.rollback()
+
+
+@dataclass
+class RigApplication:
+    """Internal synchronous rollback handle; finalized by the saved-result command.
+
+    `skins` has one entry per source, in target order; all share one rig group.
+    """
+
+    skins: tuple
+    objects: tuple
+    rig: object
+    surface: object = None
+
+    @property
+    def original(self):
+        return self.skins[0].receipt.original if len(self.skins) == 1 else None
+
+    @property
+    def originals(self):
+        return tuple(skin.receipt.original for skin in self.skins)
+
+    def accept(self):
+        for skin in self.skins:
+            skin.receipt.accept()
+
+    def rollback(self):
+        for skin in self.skins:
+            skin.check()
+        for skin in reversed(self.skins):
+            skin.unwind()
+
+
+def _bind(target, bound, rig, names, weights, imported_modifier):
+    """Bind one published source to `rig`, recording each step on `bound` for unwinding."""
+    # Blender owns vertex-group names on the mesh; the staged copy already
+    # carries the matching names and deform weights when assigned to source.
+    if _weights(target.obj) != (names, weights):
+        raise mesh.MeshApplicationError("Blender did not retain the staged skin weights")
+    if target.skin is not None:
+        # Keep original copied the old skin before publication. The source now
+        # deforms only with the returned rig; the old rig object is untouched.
+        old = target.obj.modifiers[0]
+        settings = mesh.modifier_settings(old)
+        target.obj.modifiers.remove(old)
+        bound.previous = settings
+    modifier = bound.modifier = target.obj.modifiers.new("Scenario Rig", "ARMATURE")
+    modifier.object = rig
+    modifier.use_vertex_groups = True
+    modifier.use_bone_envelopes = False
+    modifier.use_deform_preserve_volume = imported_modifier.use_deform_preserve_volume
 
 
 def apply_skin(target, skins, objects, mapping, *, keep_original):
     """Retain imported rig hierarchy; keep source geometry, materials and object context.
 
-    The skinned result meshes are matched, then removed with the import.
+    The skinned result meshes are matched, then removed with the import. With a
+    tuple of targets, one returned rig skins them all: every source is staged
+    before any is published, and each gets its own weights and modifier.
     """
+    targets = _targets(target)
     rig, imported_modifier, names, weights, surface = validate_skin(target, skins, objects, mapping)
-    staged = _stage_weights(target, names, weights)
-    rigged = target.skin is not None
-    receipt = mesh._replace_mesh(
-        target.scene, target.obj, staged, keep_original=keep_original, skin=rigged
+    parts = tuple(
+        weights[start : start + len(item.mesh.vertices)]
+        for (start, _, _), item in zip(surface.source_offsets, targets, strict=True)
     )
-    modifier = previous = None
+    staged = []
     try:
-        # Blender owns vertex-group names on the mesh; the staged copy already
-        # carries the matching names and deform weights when assigned to source.
-        if _weights(target.obj) != (names, weights):
-            raise mesh.MeshApplicationError("Blender did not retain the staged skin weights")
-        if rigged:
-            # Keep original copied the old skin before publication. The source now
-            # deforms only with the returned rig; the old rig object is untouched.
-            old = target.obj.modifiers[0]
-            settings = mesh.modifier_settings(old)
-            target.obj.modifiers.remove(old)
-            previous = settings
-        modifier = target.obj.modifiers.new("Scenario Rig", "ARMATURE")
-        modifier.object = rig
-        modifier.use_vertex_groups = True
-        modifier.use_bone_envelopes = False
-        modifier.use_deform_preserve_volume = imported_modifier.use_deform_preserve_volume
+        for item, part in zip(targets, parts, strict=True):
+            staged.append(_stage_weights(item, names, part))
+    except BaseException:
+        for data in staged:
+            bpy.data.meshes.remove(data)
+        raise
+    bound = []
+    try:
+        for item, data in zip(targets, staged, strict=True):
+            receipt = mesh._replace_mesh(
+                item.scene, item.obj, data, keep_original=keep_original, skin=item.skin is not None
+            )
+            bound.append(SkinnedSource(receipt))
+        for item, skin, part in zip(targets, bound, parts, strict=True):
+            _bind(item, skin, rig, names, part, imported_modifier)
+        first = targets[0]
         retained = tuple(obj for obj in objects if obj.type != "MESH")
-        root = bpy.data.objects.new(f"{target.name} Rig", None)
-        root.parent = target.obj.parent
+        root = bpy.data.objects.new(f"{first.name} Rig", None)
+        # One source's rig group follows its parent. Several sources share one
+        # group placed in scene coordinates, in the first source's collections.
+        single = len(targets) == 1
+        root.parent = first.obj.parent if single else None
         root.matrix_parent_inverse = Matrix.Identity(4)
-        for collection in target.obj.users_collection:
+        for collection in first.obj.users_collection:
             collection.objects.link(root)
         # The verified mapping, including any approved fit, places the rig group.
-        root.matrix_world = target.obj.matrix_world @ surface.mapping
+        root.matrix_world = (first.obj.matrix_world if single else Matrix.Identity(4)) @ (
+            surface.mapping
+        )
         for obj in retained:
             if obj.parent is None:
                 obj.parent = root
                 obj.matrix_parent_inverse = Matrix.Identity(4)
             for collection in tuple(obj.users_collection):
                 collection.objects.unlink(obj)
-            for collection in target.obj.users_collection:
+            for collection in first.obj.users_collection:
                 collection.objects.link(obj)
             obj.select_set(False)
         bpy.context.view_layer.update()
-        return RigApplication(
-            receipt,
-            modifier,
-            _weights(target.obj),
-            mesh._holder_signature(modifier),
-            (root, *retained),
-            rig,
-            previous,
-            surface,
-        )
+        for skin in bound:
+            skin.signature = _weights(skin.receipt.source)
+            skin.modifier_state = mesh._holder_signature(skin.modifier)
+        return RigApplication(tuple(bound), (root, *retained), rig, surface)
     except BaseException:
-        _unwind(target.obj, modifier, previous, rigged)
-        receipt.rollback()
+        # A failed publication removed its own staged copy; later ones were never used.
+        for data in staged[len(bound) + 1 :]:
+            if not data.users:
+                bpy.data.meshes.remove(data)
+        # Each unwinding leaves the structure its mesh receipt's rollback validates.
+        for skin in reversed(bound):
+            skin.unwind()
         raise

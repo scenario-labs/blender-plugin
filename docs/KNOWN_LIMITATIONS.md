@@ -271,8 +271,10 @@ full render-lane desktop acceptance.
   ([#485](https://github.com/scenario-labs/blender-plugin/issues/485)).
 - Opening an Edit 3D or Environment form whose saved model is no longer in the
   catalog selects the first model, which makes a ready price in that scene stale.
-- Multi-object mesh export combines the selection. Safe in-place multi-object
-  editing needs separate acceptance under #99.
+- Several selected meshes upload as one combined file. Its result applies back
+  to all of them only as **Replace active UVs**, **Replace textures** or
+  **Attach rig**; replacing geometry, parts or animation needs one mesh per
+  upload (#99).
 - Attach rig can replace the skin of a mesh already skinned to an armature, but
   only one vertex-group Armature modifier is supported; armature-deform or bone
   parenting, other modifiers and shape keys are rejected. Apply animation copies

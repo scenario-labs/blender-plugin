@@ -24,6 +24,9 @@ TASK_POLICIES = {
     "PARTS": "PARTS",
 }
 FALLBACK_POLICY = "REMESH"
+# Several captured objects edited together keep their geometry, so an unknown
+# job starts them on the least destructive of their edits instead.
+SEVERAL_SOURCES_FALLBACK = "UV"
 
 
 @dataclass(frozen=True)

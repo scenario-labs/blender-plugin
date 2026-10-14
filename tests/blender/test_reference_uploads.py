@@ -1091,11 +1091,17 @@ class ReferenceUploadTests(unittest.TestCase):
             result = self.tools.capture_reference({"source": "MESH"})
             ticket = self.owner.references[result["reference_id"]]
             record = ticket.task.result(5)
-        batches = [call.args[1] for call in capture.call_args_list if call.args[1] != (None,)]
+        # Export captures the whole selection before and after; retention then
+        # rechecks each retained object on its own.
+        batches = [call.args[1] for call in capture.call_args_list if len(call.args[1]) > 1]
         self.assertEqual(len(batches), 2)
         self.assertEqual(batches[0], batches[1])
         self.assertEqual(set(batches[0]), set(meshes))
         self.assertIsNone(record.intent.origin.target_id)
+        retained = self.fixture.session._mesh_sources[
+            (record.intent.origin, record.intent.mesh_source)
+        ]
+        self.assertEqual([target.obj for target in retained], list(batches[0]))
         self.assertEqual(len(record.intent.mesh_source.objects), 2)
         self.assertEqual(
             {

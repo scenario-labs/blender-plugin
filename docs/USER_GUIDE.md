@@ -663,6 +663,13 @@ before and after the edit, but don't refund it. If the outcome is uncertain, ins
 it rather than applying again. See
 [mesh application](MESH_APPLICATION.md#supported-policies) for requirements.
 
+**Apply to captured source (N)** applies the result to the mesh you uploaded, even
+if you have selected something else since. If you uploaded several meshes
+together, it reads **Apply to 3 captured sources (N)**, for example, and applies
+UVs, textures or a rig to all of them at once, or to none if any doesn't match or
+has changed. One returned rig then drives all of them. Geometry, parts and animation
+need one mesh per upload. **Keep original** keeps a copy of each mesh.
+
 ## Expanded Studio view
 
 **Studio**, next to **Scenario** in the viewport header, opens larger pages:

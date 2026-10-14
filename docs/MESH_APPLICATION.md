@@ -76,6 +76,15 @@ matrix before the mapping, and records the verified `Surface` on the receipt:
 its mapping, any fit base, and per-corner and per-face indices with the result
 mesh each came from, for reuse by other policies.
 
+`apply_surfaces` matches results against [several captured
+objects](#several-captured-objects) at once. `match_sources` places each source
+mesh by its world matrix and joins them into one surface in scene coordinates,
+so the mapping takes result scene coordinates to the scene: the identity, or a
+fit of it. The tolerance then uses those joined scene positions, so it grows
+with the objects' spread and their distance from the scene origin. Each source
+takes its own corners, faces and vertices of the verified match; positions are
+never copied back.
+
 A failure names its counted reason, for example **UV result does not match the
 source mesh: the result splits UV coordinates at 53 source face corners**. The
 saved command reports it with the stopped application. Matching runs
@@ -94,8 +103,10 @@ command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policie
 cover segmented parts and compatible skins; RIG also accepts a source
 [already skinned to an armature](#replace-an-existing-skin), and
 [ANIMATE](#apply-returned-animation) copies returned clips onto that source's rig.
-Multi-object replacement is unsupported. Supplying one explicit result object
-does not classify other returned helper objects, maps or alternate meshes.
+Several source objects are edited together only through the saved command's
+[captured-source path](#several-captured-objects), for UV, RETEXTURE and RIG.
+Supplying one explicit result object does not classify other returned helper
+objects, maps or alternate meshes.
 
 ## Transaction and ownership
 
@@ -600,7 +611,9 @@ warning does not undo a completed packed result.
 scene/object origin resolution, the snapshot preflight and a durable claim before
 mutation. Original ready/confirmed-failed jobs use their recovered claim; completed
 jobs use a separate `mesh_edit` local claim whose destination identifies the
-source object and that names every member read, unit key first.
+source object and that names every member read, unit key first. Several captured
+sources claim their scene instead; the job's saved mesh-source binding lists those
+objects in order.
 `retry_model_receipt` records only known success, never another replacement.
 See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 The command makes no service request. Retargeting across different skeletons
@@ -682,15 +695,16 @@ provider retexture/rig contracts, semantic parts classification or end-to-end Ed
 **Apply to captured source (N)** (with the format for a primary that is not a GLB),
 or **Apply alternate to captured source: OBJ (N)** for an alternate, and MCP
 `prepare_result_application` with
-`purpose: mesh_source` use the original object exported for the generation's
+`purpose: mesh_source` use the original objects exported for the generation's
 single captured 3D input. Current selection is ignored. The confirmation still
-names the target, selected result, edit policy, coordinates and Keep original
-choice before any mutation. More than one input binding or source object is
-ambiguous and cannot select an original target automatically.
+names the targets, selected result, edit policy, coordinates and Keep original
+choice before any mutation. More than one input binding is ambiguous and cannot
+select an original target automatically.
 
-Single-mesh export, static or [skinned](#replace-an-existing-skin), retains a live
-`MeshTarget` before exporting, rechecks
-it afterwards and keys it by the exact upload origin and export metadata. Shared
+Export, static or [skinned](#replace-an-existing-skin), retains a live
+`MeshTarget` for each exported object before exporting, rechecks
+them afterwards and keys them by the exact upload origin and export metadata.
+Several objects are retained together only when every one can be captured. Shared
 quotes persist that upload binding in the generation intent. Review resolves only
 this retained guard, never an object name or a reconstructed match from disk.
 Retention compares the stored export digest with a fresh export fingerprint of
@@ -714,6 +728,44 @@ Each session retains at most 128 distinct eligible snapshots without evicting ol
 ones. Further captures remain upload references but have no original-source guard.
 This is explicit local application; it makes no service request, cannot establish
 provider alignment, and adds no persistent restoration command.
+
+### Several captured objects
+
+An Edit 3D upload of several selected meshes (up to 64) is one GLB with one node
+per object. When every object was retained, **Apply to N captured sources (M)**
+(with the format for a primary that is not a GLB, such as **Apply to N captured
+sources: FBX (M)**, or **Apply alternate to N captured sources: OBJ (M)** for an
+alternate) and MCP
+`purpose: mesh_source` apply its result to all of them at once, one to one, or to
+none. **Apply mesh edit** still reviews only the active mesh.
+
+- Only `UV`, `RETEXTURE` and `RIG`, which keep each object's geometry, are
+  accepted. `REMESH`, `PARTS` and `ANIMATE` are refused before import: one
+  returned mesh, part set or clip set cannot be split back onto several objects.
+  A job whose Edit 3D task gives no policy starts on `UV` instead of `REMESH`; a
+  Remesh or Parts task, or an Animate job on rigged objects, is refused with that
+  reason.
+- Every result mesh together must be the [same surface](#surface-matching) as
+  all the objects together, placed in the scene. Results may come back as one
+  merged mesh or one mesh per object, in any order, in any format a mesh edit
+  accepts (GLB, glTF, FBX or OBJ). **Scene coordinates** use the
+  identity mapping; **Fit and verify** fits only that scene base. **Object local
+  coordinates** have no meaning for several objects and are refused.
+- `RIG` gives every object its own weights and an Armature modifier to the same
+  returned rig. That rig group is placed in scene coordinates, without a parent,
+  in the first object's collections. Rigged objects have their skins replaced as
+  [for one object](#replace-an-existing-skin).
+- Every object is revalidated immediately before mutation: one deleted, renamed,
+  moved or edited object refuses the whole application. All objects are staged
+  before any is published; a failed publication or binding restores the objects
+  already changed. Keep original makes one unselected copy per object. One pair of
+  native undo checkpoints covers the whole application, and receipt-only recovery
+  never applies it again.
+
+The approval's `target` is null and `targets` lists every object; after
+application, `mesh_edit.targets` and `mesh_edit.originals` list them in capture
+order. Undo/redo, file loading, session retirement and restart discard this
+authority as for one object.
 
 
 ## Retexture without geometry replacement
@@ -742,8 +794,9 @@ downloaded bytes for a separately reviewed local retry.
 
 The primitive's guarded rollback and the saved command's receipt-only recovery
 remain unchanged. Keep original is the user-visible retained copy; native undo
-follows the saved-command history contract below. Rig/animation sources, several
-targets and paid acceptance remain outside this policy. Explicit remesh remains a separate reviewed choice
+follows the saved-command history contract below. Rig/animation sources and paid
+acceptance remain outside this policy; [several captured
+objects](#several-captured-objects) are retextured together. Explicit remesh remains a separate reviewed choice
 when geometry replacement is intended.
 
 
@@ -752,7 +805,8 @@ when geometry replacement is intended.
 The shared saved-mesh command records Blender history immediately before import
 and after successful replacement, staging cleanup and rollback-handle finalization.
 This covers REMESH, UV, RETEXTURE, PARTS, RIG and ANIMATE from both native review and
-local MCP. The pre-state includes the latest user edits; neither checkpoint contains temporary
+local MCP, and [several captured objects](#several-captured-objects) under one pair
+of checkpoints. The pre-state includes the latest user edits; neither checkpoint contains temporary
 import scenes or private rollback holders. Undo restores the source data and
 removes any Keep original copy; Redo restores the applied data and that copy.
 After a RIG edit of a skinned source, Undo also restores its previous skin; after
@@ -821,7 +875,8 @@ alignment and semantic part classification remain separate work.
 ## Attach a returned rig
 
 The explicit `RIG` policy attaches a saved result's skin to one captured source,
-unrigged or [already skinned](#replace-an-existing-skin). It requires one armature,
+unrigged or [already skinned](#replace-an-existing-skin), or to
+[several captured objects](#several-captured-objects) at once. It requires one armature,
 optional Empty parents and skinned meshes that together are the
 [same surface](#surface-matching) at rest under the selected or fitted mapping,
 and normalized bone weights for every vertex. Bone group names must match the rig and the rig

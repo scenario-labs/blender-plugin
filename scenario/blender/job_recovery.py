@@ -730,6 +730,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     # Where the starting policy came from, and whether the GLB is an alternate.
     policy_note: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     result_role: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    source_rigged: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
         name="Edit",
         items=(
@@ -793,6 +794,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             self.policy, self.placement = approval.policy, approval.placement
             self.policy_note = _policy_note(approval)
             self.result_role = {True: "primary", False: "alternate"}.get(approval.primary, "")
+            self.source_rigged = approval.target.skin is not None
             self.local_placement_required = approval.target.obj.matrix_world.determinant() <= 0
             self.scene_name, self.target_name = approval.scene_name, approval.target_name
             self.is_reuse = approval.record.state.value == "applied"
@@ -826,7 +828,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         try:
             self._sync_options()
         except Exception:
-            self.review_error = "Target or options changed; cancel and review again"
+            self.review_error = (
+                "This mesh has a rig: choose Attach rig to replace its skin"
+                if self.source_rigged and self.policy != "RIG"
+                else "Target or options changed; cancel and review again"
+            )
         return True
 
     def draw(self, context):
@@ -850,6 +856,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
         elif self.policy == "RIG":
             layout.label(text="Attach bone weights and rig; preserve geometry, UVs and materials.")
+            if self.source_rigged:
+                layout.label(
+                    text="Replace this mesh's skin; the old rig stays, and Keep original uses it."
+                )
             layout.label(text="Matching geometry required. No morphs or mesh animation.")
             layout.label(
                 text="Keep rig clips. Move the source and new rig group together afterward."
@@ -900,6 +910,8 @@ def _policy_note(approval):
     """Say whether the review's starting edit follows the job's Edit 3D task."""
     if approval.policy_source == "edit3d_task":
         return f"Default edit follows this job's {task_label(approval.edit3d_task)} task."
+    if approval.policy_source == "rigged_source":
+        return "This mesh already has a rig, so the edit starts on Attach rig."
     if approval.policy_source == "default":
         return "Default edit is not from this job's task; check it."
     return ""

@@ -70,6 +70,7 @@ def export_with_source(context, objects, path, session):
     before, identities = _capture_sources(scene, objects, session)
     # A live application guard is stricter than upload provenance: unsupported
     # rigs/modifiers remain uploadable, but never become an in-place edit target.
+    # A single Armature skin is retained; the exporter sends its unposed mesh.
     target = None
     if len(objects) == 1:
         try:

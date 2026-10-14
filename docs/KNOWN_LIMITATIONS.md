@@ -263,6 +263,10 @@ full render-lane desktop acceptance.
   catalog selects the first model, which makes a ready price in that scene stale.
 - Multi-object mesh export combines the selection. Safe in-place multi-object
   editing needs separate acceptance under #99.
+- Attach rig can replace the skin of a mesh already skinned to an armature, but
+  only one vertex-group Armature modifier is supported; armature-deform or bone
+  parenting, other modifiers and shape keys are rejected. Applying returned
+  animation clips to the existing rig is not available yet (#99).
 - Automatic Image-lane import and saved image and material application
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.

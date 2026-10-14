@@ -86,13 +86,14 @@ or **Apply alternate to captured source: GLB (N)**, mirroring its import label.
 The dialog shows the replacement policy, scene/local coordinate placement and
 Keep original choice before confirmation. Invoke starts the policy from the
 prepared approval, and a line under it reads **Default edit follows this job's
-Retexture task.** (with the job's task) or **Default edit is not from this job's
-task; check it.** Explain geometry/UV/material replacement, exact-topology
-UV/retexture restrictions, no automatic fitting, preserved object context and
-the dependence of undo on Blender settings. Defaults keep an original copy.
-Explain that history changes affect the scene only, not saved jobs or spending.
-After confirmation, the temporary message acknowledges approval rather than
-describing verification that may already have finished.
+Retexture task.** (with the job's task), **This mesh already has a rig, so the
+edit starts on Attach rig.** (a skinned source) or **Default edit is not from
+this job's task; check it.** Explain geometry/UV/material replacement,
+exact-topology UV/retexture restrictions, no automatic fitting, preserved object
+context and the dependence of undo on Blender settings. Defaults keep an
+original copy. Explain that history changes affect the scene only, not saved
+jobs or spending. After confirmation, the temporary message acknowledges
+approval rather than describing verification that may already have finished.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
 approval instead of selecting a new target. Physical desktop evidence of the
@@ -276,8 +277,12 @@ rig compatibility or in-place retargeting.
 The saved-mesh review offers **Attach rig**. It names the captured source and
 explains matching geometry, retained source UVs/materials, bone weights and clips,
 Keep original and native undo. It also explains that the source and new rig group
-must move together afterward. Drawing stays read-only; the shared UI/MCP command
-implements the [skin attachment contract](../MESH_APPLICATION.md#attach-a-returned-rig).
+must move together afterward. For a source already skinned to an armature, the
+review starts on Attach rig unless an edit was chosen, says the old rig stays
+and that Keep original's copy uses it, and names Attach rig as the only choice
+when another edit is selected. Drawing stays read-only; the shared UI/MCP
+command implements the
+[skin attachment contract](../MESH_APPLICATION.md#attach-a-returned-rig).
 
 Desktop input selected Attach rig, cancelled without mutation and confirmed
 against the captured triangle while another mesh stayed selected. The source

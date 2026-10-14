@@ -378,6 +378,31 @@ def animated_glb(*, clips=2, morph=True, node_transform=False):
     )
 
 
+def skin_to_new_rig(scene, source, *, parent=True):
+    """Skin every source vertex to a new one-bone rig, as Blender's Armature skin does."""
+    rig = bpy.data.objects.new("Old rig", bpy.data.armatures.new("Old armature"))
+    scene.collection.objects.link(rig)
+    view_layer = bpy.context.view_layer
+    active = view_layer.objects.active
+    view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    try:
+        bone = rig.data.edit_bones.new("Old bone")
+        bone.head, bone.tail = (0, 0, 0), (0, 0, 1)
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    view_layer.objects.active = active
+    group = source.vertex_groups.new(name="Old bone")
+    group.add(list(range(len(source.data.vertices))), 1.0, "REPLACE")
+    modifier = source.modifiers.new("Old skin", "ARMATURE")
+    modifier.object = rig
+    modifier.use_deform_preserve_volume = True
+    if parent:
+        source.parent = rig
+    view_layer.update()
+    return rig
+
+
 def textured_model_exports(directory, *, fps=24):
     """Export one textured, animated cube with Blender's own exporters.
 

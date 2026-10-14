@@ -1208,8 +1208,11 @@ otherwise the model's only task. MCP `generate` takes no task, so its jobs use
 the model's only task.
 `mesh_policy_source` is `edit3d_task` (with `edit3d_task` naming it), `default`
 when the job gives no applicable task and REMESH is only the fallback, or
-`requested` for an explicit `mesh_policy`, which always wins. Show `default` to
-the user as an unconfirmed choice. `primary: false` means the selected GLB is an
+`requested` for an explicit `mesh_policy`, which always wins. A source already
+skinned to an armature starts on RIG instead, whatever the task, with
+`rigged_source` (or `edit3d_task` when the task is Rigging); an explicit static
+`mesh_policy` on it is rejected. Show `default` to the user as an unconfirmed
+choice. `primary: false` means the selected GLB is an
 alternate result of the job, as in `job_status` `import_units`. See
 [the approval contract](MESH_APPLICATION.md#saved-mesh-edit-approval).
 
@@ -1248,15 +1251,20 @@ Do not reconstruct authority from those names. See the
 
 Use `mesh_policy: RIG` with `purpose: mesh_source` for the unchanged original
 exported source, or `mesh_edit` for a newly reviewed destination. Show the named
-source, coordinate mapping and Keep original choice. The source must be unrigged;
-one returned mesh and armature must have exactly matching indexed geometry and
-normalized bone weights. This preserves source geometry, UVs and materials while
-adding the returned skin/rig clips. Morphs, mesh animation and incompatible
-modifiers/constraints are rejected. Move the source and its new rig group together
-afterward. `mesh_edit.rig` names the current session's attached armature; it is not
-a durable lookup authority after undo/load. The shared native history and
-receipt-only recovery rules apply. See [the RIG contract](MESH_APPLICATION.md#attach-a-returned-rig)
-for bounds and provider/retargeting limitations.
+source, coordinate mapping and Keep original choice. One returned mesh and
+armature must have exactly matching indexed geometry and normalized bone
+weights. A source already skinned to an armature accepts only RIG: its skin is
+replaced, its old rig is unchanged and Keep original's copy still follows that
+rig. Other policies on such a source are rejected; see
+[replacing an existing skin](MESH_APPLICATION.md#replace-an-existing-skin). This
+preserves source geometry, UVs and materials while adding the returned skin/rig
+clips. Morphs, mesh animation and incompatible modifiers/constraints are
+rejected. Move the source and its new rig group together afterward.
+`mesh_edit.rig` names the current session's attached armature; it is not a
+durable lookup authority after undo/load. The shared native history and
+receipt-only recovery rules apply. See
+[the RIG contract](MESH_APPLICATION.md#attach-a-returned-rig) for bounds and
+provider/retargeting limitations.
 
 
 ## Blockout plan commands

@@ -80,7 +80,7 @@ CANCEL_UNSUPPORTED = (
 )
 # Shared by the native World operator and MCP prepare_result_application.
 NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
-# A submission Scenario never confirmed: native review notes; MCP has its own wording.
+# Native review notes for a submission Scenario never confirmed; MCP keeps the error.
 UNCONFIRMED_REVIEW = (
     "Scenario may have started this request. Check your Scenario history; "
     "if it isn't there, choose Mark reviewed, then you can send it again."
@@ -859,10 +859,12 @@ class ModelJobs:
             view.meta["import_units"] = self._unit_rows(record)
             view.meta["import_notices"] = self._import_notices(request_id)
             self._project_remote(request_id, record, view, online=online)
-            view.meta["error_title"] = None
+            view.meta["error_title"] = view.meta["review_note"] = None
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
+                # The error is shared with MCP job_status; only Blender can mark it reviewed.
                 view.meta["error_title"] = "Submission not confirmed"
-                view.error = self._unconfirmed_error(request_id)
+                view.meta["review_note"] = self._unconfirmed_note(request_id)
+                view.error = "Submission outcome is not confirmed; do not submit it again"
             elif any(
                 item.state == LocalApplicationState.APPLYING for item in record.local_applications
             ):
@@ -1458,7 +1460,7 @@ class ModelJobs:
             if importable(unit)
         )
 
-    def _unconfirmed_error(self, request_id):
+    def _unconfirmed_note(self, request_id):
         """The review note of a submission whose outcome Scenario never confirmed."""
         if self.session.unconfirmed_reviewed(request_id):
             return UNCONFIRMED_REVIEWED
@@ -1590,7 +1592,7 @@ class ModelJobs:
             # Local and session-only: nothing is sent, saved or resubmitted.
             self.session.mark_unconfirmed_reviewed(request_id, expected_revision=expected_revision)
             view.meta["recovery_actions"] = self.actions(record)
-            view.error = self._unconfirmed_error(request_id)
+            view.meta["review_note"] = self._unconfirmed_note(request_id)
             return None
         if action == "retry_receipt":
             pending = self._receipts[request_id]

@@ -1641,10 +1641,12 @@ class ModelGenerationTests(unittest.TestCase):
         owner.poll()
         self.assertNotIn(request_id, owner.submissions)
         self.assertIn(request_id, owner._paused)
+        view = owner.views[request_id]
+        self.assertEqual(view.error, "Submission outcome is not confirmed; do not submit it again")
+        self.assertEqual(view.meta["error_title"], "Submission not confirmed")
         self.assertEqual(
-            owner.views[request_id].error, submodule("blender.model_jobs").UNCONFIRMED_REVIEW
+            view.meta["review_note"], submodule("blender.model_jobs").UNCONFIRMED_REVIEW
         )
-        self.assertEqual(owner.views[request_id].meta["error_title"], "Submission not confirmed")
         self.assertEqual(len(self.paid), 1)
 
     def test_uncertain_submission_has_no_recovery_dispatch_action(self):
@@ -1684,13 +1686,15 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(owner.actions(self.store.get(request_id)), ("mark_reviewed",))
         model_jobs = submodule("blender.model_jobs")
         view = owner.views[request_id]
-        # The review note names the next step; the dialog is titled for this state.
+        # The native note names the next step; the dialog is titled for this state.
         self.assertEqual(
-            (view.meta["error_title"], view.error),
+            (view.meta["error_title"], view.meta["review_note"]),
             ("Submission not confirmed", model_jobs.UNCONFIRMED_REVIEW),
         )
-        # Only the user marks it, in Blender; MCP neither lists nor accepts the action.
-        self.assertNotIn("mark_reviewed", self.tools.job_status({"job_id": request_id})["actions"])
+        # Only the user marks it, in Blender; MCP neither lists, accepts nor suggests it.
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertNotIn("mark_reviewed", status["actions"])
+        self.assertNotIn("Mark reviewed", status["error"])
         with self.assertRaisesRegex(Exception, "Only the user"):
             self.recover(request_id, "mark_reviewed")
         rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
@@ -1699,7 +1703,8 @@ class ModelGenerationTests(unittest.TestCase):
         result = bpy.ops.scenario.recover_job("EXEC_DEFAULT", **dict(mark.properties))
         self.assertEqual(result, {"FINISHED"})
         self.assertEqual(owner.actions(self.store.get(request_id)), ())
-        self.assertEqual(view.error, model_jobs.UNCONFIRMED_REVIEWED)
+        self.assertEqual(view.meta["review_note"], model_jobs.UNCONFIRMED_REVIEWED)
+        self.assertNotIn("Mark reviewed", self.tools.job_status({"job_id": request_id})["error"])
         self.assertEqual(self.mcp_quote()["model_id"], self.model["id"])
         self.ui_quote()
         self.assertEqual(self.store.get(request_id).state.value, "uncertain")

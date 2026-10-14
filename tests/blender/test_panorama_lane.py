@@ -727,8 +727,9 @@ class EnvironmentJobTests(unittest.TestCase):
         fixture.settle()
         self.assertEqual(fixture.store.get(view.local_id).state.value, "uncertain")
         shown = self.runtime.state.model_jobs.views[view.local_id]
+        self.assertIn("not confirmed", shown.error)
         self.assertEqual(shown.meta["error_title"], "Submission not confirmed")
-        self.assertIn("Mark reviewed", shown.error)
+        self.assertIn("Mark reviewed", shown.meta["review_note"])
         with self.assertRaisesRegex(fixture.request_error, "fresh price"):
             self.generation.submit_generation(bpy.context, "panorama")
         self.assertEqual(len(fixture.paid), 1)

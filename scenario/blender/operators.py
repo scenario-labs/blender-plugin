@@ -438,19 +438,21 @@ class SCENARIO_OT_error_details(bpy.types.Operator):
     bl_description = "Show the full error message"
     local_id: StringProperty()
 
+    @staticmethod
+    def _message(rec):
+        # A native review note, when the state has one, replaces the shared error.
+        return (rec.meta.get("review_note") or rec.error) if rec else None
+
     @classmethod
     def description(cls, context, properties):
         rec = next((r for r in runtime.state.jobs_view if r.local_id == properties.local_id), None)
-        return (
-            rec.error if rec and rec.error else "Show the full error message"
-        )  # hover shows the whole message
+        return cls._message(rec) or "Show the full error message"  # hover shows the whole message
 
     def _rec(self):
         return next((r for r in runtime.state.jobs_view if r.local_id == self.local_id), None)
 
     def _text(self):
-        rec = self._rec()
-        return (rec.error if rec and rec.error else "") or "No error message was returned"
+        return self._message(self._rec()) or "No error message was returned"
 
     def invoke(self, context, event):
         # A state that did not fail names itself, such as an unconfirmed submission.

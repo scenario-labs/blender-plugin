@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Read(.env)",
+      "Read(.env*.local)",
+      "Bash(cat *.env)",
+      "Bash(cat *.env*.local*)",
+      "Bash(head *.env)",
+      "Bash(head *.env*.local*)",
+      "Bash(tail *.env)",
+      "Bash(tail *.env*.local*)",
+      "Bash(less *.env)",
+      "Bash(less *.env*.local*)",
+      "Bash(more *.env)",
+      "Bash(more *.env*.local*)",
+      "Bash(grep *.env)",
+      "Bash(grep *.env*.local*)",
+      "Bash(rg *.env)",
+      "Bash(rg *.env*.local*)",
+      "Bash(sed *.env)",
+      "Bash(sed *.env*.local*)",
+      "Bash(awk *.env)",
+      "Bash(awk *.env*.local*)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * +main)",
+      "Bash(git push * +main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push *refs/heads/main)",
+      "Bash(git push *refs/heads/main *)",
+      "Bash(git push *--mirror*)"
+    ],
+    "ask": [
+      "Bash(make *smoke*)",
+      "Bash(*tools.smoke_* submit*)",
+      "Bash(*tools.smoke_* budget-run*)",
+      "Bash(*tools.smoke_* upload*)",
+      "Bash(*tools/smoke_* submit*)",
+      "Bash(*tools/smoke_* budget-run*)",
+      "Bash(*tools/smoke_* upload*)",
+      "Bash(*tests/smoke/* submit*)",
+      "mcp__scenario-blender__generate",
+      "mcp__scenario-blender__run_workflow",
+      "mcp__scenario-blender__approve_prompt",
+      "mcp__scenario-blender__approve_blockout",
+      "mcp__scenario-blender__approve_film_task",
+      "mcp__scenario-blender__generate_film_composition"
+    ]
+  }
+}

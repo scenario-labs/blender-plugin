@@ -279,6 +279,10 @@ claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp \
   --header "Authorization: Bearer <token>"
 ```
 
+In a repository checkout, the committed `.mcp.json` registers the same server
+and reads the token from `SCENARIO_BLENDER_TOKEN`. Export it before starting
+Claude Code and approve the project server when asked.
+
 ### Cursor
 
 Add the copied entry to your client MCP configuration:

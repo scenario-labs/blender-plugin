@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "scenario-blender": {
+      "type": "http",
+      "url": "http://127.0.0.1:9876/mcp",
+      "headers": {
+        "Authorization": "Bearer ${SCENARIO_BLENDER_TOKEN}"
+      }
+    }
+  }
+}

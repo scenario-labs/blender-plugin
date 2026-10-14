@@ -215,7 +215,9 @@ and the extension ZIP includes the same GPL text. Bundled dependencies, adopted
 sources and assets retain their original licences and notices; see the
 [SDK bundle](docs/SDK_BUNDLE.md) and [source adoption](docs/STUDIO_ADOPTION.md).
 The [bundled icon notice](scenario/icons/README.md) records the generator, the
-font option and the icons' first-party design origin.
+font option and the icons' first-party design origin. Scenario Inc. made the
+exploration gallery covers (`docs/images/exploration-*.png`) and also publishes
+them at [www.scenario.com/explorations](https://www.scenario.com/explorations/).
 
 [Blender's licence guidance](https://www.blender.org/about/license/) requires a
 GPL-compatible licence for published add-ons using its Python API. The

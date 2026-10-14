@@ -13,10 +13,15 @@ progress. This command opens one PR; it never merges it or the release PR.
 
 ## Prepare
 
-1. Find the next version from the open release-please PR title
-   (`gh pr list --search "chore: release" --state open`). If none is open, ask.
-2. Check for another open refresh PR (`gh pr list --search "refresh documentation"`).
-   If one exists, stop and report it.
+Match PRs by head branch, never by text search: release notes and PR bodies
+mention refresh commits too.
+
+1. Find the next version from the title of the open PR whose head branch starts
+   with `release-please--`
+   (`gh pr list --state open --json number,title,headRefName`). If none is
+   open, ask.
+2. In the same list, look for a head branch starting with
+   `docs/knowledge-refresh-`. If one exists, stop and report it.
 3. `git fetch origin main`, then create `docs/knowledge-refresh-<version>` from
    `origin/main` in a separate worktree. Record `origin/main`'s full SHA: it is
    the `reviewed_revision` for every record you refresh.

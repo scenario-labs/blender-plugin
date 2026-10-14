@@ -54,9 +54,10 @@ vertex-parented children, object material overrides and custom mesh properties a
 rejected. Generic attributes are limited to boolean, scalar float/integer, integer
 2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
 command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policies
-cover segmented parts and compatible skins; animation transfer and multi-object
-replacement are unsupported. Supplying one explicit result object does not classify
-other returned helper objects, maps or alternate meshes.
+cover segmented parts and compatible skins; RIG alone also accepts a source
+[already skinned to an armature](#replace-an-existing-skin). Animation transfer and
+multi-object replacement are unsupported. Supplying one explicit result object
+does not classify other returned helper objects, maps or alternate meshes.
 
 ## Transaction and ownership
 
@@ -465,9 +466,12 @@ live evidence.
 `mesh_application.capture_target(scene, source)` freezes the live source object,
 mesh, names, bounded geometry/attribute fingerprint, transforms, parenting,
 collection membership and active material index. It accepts one local scene in
-Object Mode and retains the primitive's unsupported-data checks. It does not infer
-selection. Capture evaluates the current view layer so pending parent transforms
-cannot hide behind a stale world matrix. `validate_target` rejects intervening
+Object Mode and retains the primitive's unsupported-data checks, except that a
+source [skinned to an armature](#replace-an-existing-skin) is captured with its
+skin. Only RIG accepts that target; the other policies reject it before import
+because they would drop the skin. It does not infer selection. Capture
+evaluates the current view layer so pending parent transforms cannot hide behind
+a stale world matrix. `validate_target` rejects intervening
 edits, replacement, deletion or membership in another scene. Capture the mesh
 snapshot first, then the `JobSession` origin, before asynchronous work; a target captured afterward cannot establish the old
 input's identity. Restart/file load requires a fresh explicit destination review.
@@ -549,8 +553,12 @@ Parts start on `REMESH`, `RETEXTURE`, `UV`, `RIG` and `PARTS`; MCP reports
 `mesh_policy_source: edit3d_task` and the task. Animate, models in no list and a
 model in two lists, such as Rodin Bang after a restart, start on `REMESH`
 (`mesh_policy_source: default`), and the dialog says the edit is not from the
-job's task. The submitted task is not saved with the job. An explicit choice in
-the dialog or MCP `mesh_policy` always wins (`requested`).
+job's task. The submitted task is not saved with the job. A source
+[already skinned to an armature](#replace-an-existing-skin) starts on `RIG`, the
+only policy it accepts, whatever the task; MCP reports `edit3d_task` when the
+task is Rigging, otherwise `rigged_source`, and the dialog says the mesh already
+has a rig. An explicit choice in the dialog or MCP `mesh_policy` always wins
+(`requested`), but a static one on a skinned source is then rejected.
 
 **Scene coordinates** (`WORLD`) maps imported positions through the captured
 source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
@@ -591,7 +599,8 @@ names the target, selected result, edit policy, coordinates and Keep original
 choice before any mutation. More than one input binding or source object is
 ambiguous and cannot select an original target automatically.
 
-Single static-mesh export retains a live `MeshTarget` before exporting, rechecks
+Single-mesh export, static or [skinned](#replace-an-existing-skin), retains a live
+`MeshTarget` before exporting, rechecks
 it afterwards and keys it by the exact upload origin and export metadata. Shared
 quotes persist that upload binding in the generation intent. Review resolves only
 this retained guard, never an object name or a reconstructed match from disk.
@@ -610,7 +619,7 @@ destination, including after restart. A successful remesh changes the original
 snapshot, so another original-source application requires a new capture; it is
 not silently authorized by the completed job's reuse controls.
 
-Modifiers, constraints, rig/animation data and other unsupported source policies
+Other modifiers, constraints, animation data and other unsupported source policies
 remain uploadable where export supports them, without in-place source ownership.
 Each session retains at most 128 distinct eligible snapshots without evicting older
 ones. Further captures remain upload references but have no original-source guard.
@@ -656,6 +665,7 @@ This covers REMESH, UV, RETEXTURE, PARTS and RIG from both native review and loc
 pre-state includes the latest user edits; neither checkpoint contains temporary
 import scenes or private rollback holders. Undo restores the source data and
 removes any Keep original copy; Redo restores the applied data and that copy.
+After a RIG edit of a skinned source, Undo also restores its previous skin.
 
 Automatic checkpoints require a desktop window, Global Undo enabled and at least
 two undo steps. The extension does not change preferences. Blender's history size
@@ -719,8 +729,9 @@ alignment and semantic part classification remain separate work.
 
 ## Attach a returned rig
 
-The explicit `RIG` policy attaches a saved GLB's skin to one captured, unrigged
-source. It requires one mesh, one armature and optional Empty parents, exact
+The explicit `RIG` policy attaches a saved GLB's skin to one captured source,
+unrigged or [already skinned](#replace-an-existing-skin). It requires one mesh,
+one armature and optional Empty parents, exact
 indexed topology and rest positions under the selected mapping, and normalized
 bone weights for every vertex. Bone group names must match the rig and the rig
 may contain at most 1,024 bones; at most 2,000,000 weight entries are inspected.
@@ -741,8 +752,8 @@ unchanged and clip conversion follows the destination FPS described above.
 Morph targets, animation on the returned mesh or its independent animated
 parents, extra mesh modifiers, envelope/partial-modifier weights, rig/pose
 constraints, drivers and armature-data animation are rejected before source
-mutation. Existing source rig/animation data remains outside the capture policy.
-Source materials are deliberately retained; RIG does not adopt returned textures.
+mutation. Source materials are deliberately retained; RIG does not adopt
+returned textures.
 Invalid results remain downloaded for inspection or a separate new-group import.
 
 [`rig_application.py`](../scenario/blender/rig_application.py) stages weights on a
@@ -756,3 +767,43 @@ UI **Attach rig** and MCP `mesh_policy: RIG` use the same captured target and
 optional original-export target guards. Session status exposes `mesh_edit.rig`;
 history invalidation retires that status before dereferencing stale Blender data.
 Provider coordinate, vertex-order and returned-skin contracts remain under #99.
+
+### Replace an existing skin
+
+A source already skinned to an armature can be re-rigged in place. Capture
+accepts exactly one Armature modifier that deforms through vertex groups, with no
+envelopes, vertex-group mask or multi-modifier, bound to a local armature in the
+same scene that is not in Edit Mode. The source may be Object-parented to any
+armature. Armature-deform (`ARMATURE`) and bone parenting, other modifiers, shape
+keys, constraints, mesh/object animation, linked or overridden data and the other
+primitive checks still fail closed. Vertex groups without that modifier are
+rejected.
+
+The captured target adds the modifier's settings, vertex group names and lock
+flags, a digest of every vertex's weights, and the armature's identity, names,
+bone names, parents, rest matrices, lengths and deform flags and its world
+matrix. Weight entries and bones share the 2,000,000-component work cap. Any
+change makes the target stale before import. Posing or animating the bones does
+not: the glTF export excludes Armature modifiers when it applies modifiers, so
+the provider receives the unposed source mesh data without the old skin, and
+returned geometry is compared with that mesh data, never the evaluated pose.
+
+Application replaces the skin only. The source keeps its identity, name,
+transforms, parenting, collections, materials, UVs and geometry. Its old
+vertex groups and Armature modifier are removed; the returned weights and one
+**Scenario Rig** modifier bound to the retained returned armature take their
+place, under the same new rig group described above. When the source is a child
+of its old rig, it stays one, and so does the new rig group; the old rig then
+moves both without deforming the source. The old armature object and its data
+are never modified or removed.
+
+Keep original retains a copy that keeps the old mesh, vertex groups, Armature
+modifier and parent, so it still deforms with the old rig. Without it, rollback
+recreates the old modifier with every writable setting it had and restores the
+old mesh with its groups and weights; Blender assigns the recreated modifier a
+new internal identifier. Static policies applied to a skinned target are
+rejected with an instruction to choose RIG, before any import or claim. Without a
+requested policy, both the native review and MCP start a skinned source on RIG
+(see [the approval defaults](#saved-mesh-edit-approval)); an explicit static
+policy is rejected. The resulting skin can be replaced again.
+Applying returned clips to the existing rig is separate work.

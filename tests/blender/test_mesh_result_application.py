@@ -1009,3 +1009,308 @@ class RigResultTests(unittest.TestCase):
                     self.apply(policy="RIG")
                 self.assertEqual(self.model._snapshot(), before)
                 self.mesh.validate_target(self.target)
+
+
+def _skin(obj, mesh):
+    """Exact source skin: modifier settings, group names and per-vertex weights."""
+    return (
+        tuple(mesh.modifier_settings(modifier) for modifier in obj.modifiers),
+        tuple((group.name, group.lock_weight) for group in obj.vertex_groups),
+        tuple(tuple((g.group, g.weight) for g in vertex.groups) for vertex in obj.data.vertices),
+    )
+
+
+def _rig_state(rig):
+    return (
+        rig.name,
+        rig.data,
+        tuple(tuple(row) for row in rig.matrix_world),
+        tuple((bone.name, tuple(map(tuple, bone.matrix_local))) for bone in rig.data.bones),
+        tuple(tuple(map(tuple, bone.matrix_basis)) for bone in rig.pose.bones),
+        rig.parent,
+        tuple(rig.modifiers),
+        tuple(rig.constraints),
+    )
+
+
+class RiggedSourceTests(unittest.TestCase):
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+    ready_session = MeshResultTests.ready_session
+    verify = MeshResultTests.verify
+    deliver = MeshResultTests.deliver
+
+    def setUp(self):
+        from helpers import skin_to_new_rig
+
+        RigResultTests.setUp(self)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("mesh", self.path.name, "model/gltf-binary", len(self.body)),
+            self.item.receipt,
+        )
+        self.rig_module = submodule("blender.rig_application")
+        self.old_rig = skin_to_new_rig(self.scene, self.source)
+        self.old_rig.location = (1, 2, 3)
+        self.old_rig.rotation_euler = (0, 0, 0.5)
+        self.source.location = (0.5, 0, 0)
+        material = bpy.data.materials.new("Rigged source material")
+        self.source.data.materials.append(material)
+        bpy.context.view_layer.update()
+        self.old_mesh = self.source.data
+        self.old_skin = _skin(self.source, self.mesh)
+        self.old_rig_state = _rig_state(self.old_rig)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+
+    def evaluated(self, obj):
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        return [vertex.co.copy() for vertex in obj.evaluated_get(depsgraph).data.vertices]
+
+    def assert_old_skin(self):
+        self.assertIs(self.source.data, self.old_mesh)
+        self.assertEqual(_skin(self.source, self.mesh), self.old_skin)
+        self.assertEqual(_rig_state(self.old_rig), self.old_rig_state)
+        self.mesh.validate_target(self.target)
+
+    def test_capture_records_the_source_skin_for_rig(self):
+        skin = self.target.skin
+        self.assertIsNotNone(skin)
+        self.assertIs(skin.rig, self.old_rig)
+        self.assertEqual(skin.groups, (("Old bone", False),))
+        self.assertEqual(self.target.context[1], self.old_rig)
+
+    def test_rig_replaces_skin_preserving_context_and_old_rig(self):
+        world, local = self.source.matrix_world.copy(), self.source.matrix_local.copy()
+        collections = tuple(self.source.users_collection)
+        materials = tuple(self.source.data.materials)
+        name = self.source.name
+        result = self.apply(policy="RIG")
+        self.assertIs(result.source, self.source)
+        self.assertEqual(self.source.name, name)
+        self.assertEqual(self.source.matrix_world, world)
+        self.assertEqual(self.source.matrix_local, local)
+        self.assertEqual((self.source.parent, self.source.parent_type), (self.old_rig, "OBJECT"))
+        self.assertEqual(tuple(self.source.users_collection), collections)
+        self.assertEqual(tuple(self.source.data.materials), materials)
+        self.assertEqual(len(self.source.modifiers), 1)
+        modifier = self.source.modifiers[0]
+        self.assertEqual((modifier.name, modifier.object), ("Scenario Rig", result.rig))
+        self.assertNotIn("Old bone", self.source.vertex_groups)
+        self.assertTrue(
+            all(group.name in result.rig.data.bones for group in self.source.vertex_groups)
+        )
+        self.assertEqual(result.rig.parent.parent, self.old_rig)
+        self.assertEqual(_rig_state(self.old_rig), self.old_rig_state)
+        # The returned rig deforms the source, as for an unrigged source.
+        self.scene.frame_set(0)
+        start = self.evaluated(self.source)[0]
+        self.scene.frame_set(self.scene.render.fps)
+        self.assertAlmostEqual((self.evaluated(self.source)[0] - start).length, 2, places=4)
+        # Keep original still deforms with the old rig; the source no longer does.
+        original = result.original
+        self.assertIs(original.data, self.old_mesh)
+        self.assertEqual(_skin(original, self.mesh), self.old_skin)
+        self.assertEqual((original.parent, original.matrix_local), (self.old_rig, local))
+        source_before, original_before = self.evaluated(self.source), self.evaluated(original)
+        self.old_rig.pose.bones["Old bone"].location = (0, 0, 1)
+        bpy.context.view_layer.update()
+        self.assertEqual(self.evaluated(self.source), source_before)
+        self.assertNotEqual(self.evaluated(original), original_before)
+
+    def test_skin_can_be_replaced_again(self):
+        old_name = self.old_mesh.name
+        first = self.apply(policy="RIG", keep_original=False)
+        self.assertIsNone(first.original)
+        self.assertNotIn("Scenario rollback", bpy.data.objects)
+        self.assertNotIn(old_name, bpy.data.meshes)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        self.assertIs(self.target.skin.rig, first.rig)
+        second = self.apply(policy="RIG")
+        self.assertEqual(
+            (self.source.modifiers[0].name, self.source.modifiers[0].object),
+            ("Scenario Rig", second.rig),
+        )
+        self.assertEqual(second.original.modifiers[0].object, first.rig)
+
+    def test_failures_after_replacement_restore_the_old_skin_exactly(self):
+        failures = {
+            "cleanup": (self.module, "_release_import"),
+            "receipt": (self.rig_module, "RigApplication"),
+        }
+        for keep_original in (False, True):
+            for kind, (owner, name) in failures.items():
+                with self.subTest(keep_original=keep_original, failure=kind):
+                    before = self.model._snapshot()
+                    with (
+                        patch.object(owner, name, side_effect=RuntimeError("synthetic")),
+                        self.assertRaises(self.module.MeshResultApplicationError),
+                    ):
+                        self.apply(policy="RIG", keep_original=keep_original)
+                    self.assertEqual(self.model._snapshot(), before)
+                    self.assert_old_skin()
+                    self.assertTrue(self.path.exists())
+
+    def test_uncertain_rollback_retains_possible_applied_skin(self):
+        with (
+            patch.object(self.module, "_release_import", side_effect=RuntimeError("cleanup")),
+            patch.object(
+                self.rig_module.RigApplication, "rollback", side_effect=RuntimeError("rollback")
+            ),
+            self.assertRaises(RuntimeError) as raised,
+        ):
+            self.apply(policy="RIG")
+        self.assertNotIsInstance(raised.exception, self.module.MeshResultApplicationError)
+        self.assertEqual(self.source.modifiers[0].name, "Scenario Rig")
+        self.assertEqual(_rig_state(self.old_rig), self.old_rig_state)
+
+    def test_changed_skin_or_rig_makes_the_target_stale_before_import(self):
+        def edit_rest():
+            view_layer = bpy.context.view_layer
+            view_layer.objects.active = self.old_rig
+            bpy.ops.object.mode_set(mode="EDIT")
+            try:
+                self.old_rig.data.edit_bones["Old bone"].tail.z += 1
+            finally:
+                bpy.ops.object.mode_set(mode="OBJECT")
+            view_layer.objects.active = self.source
+
+        changes = {
+            "weights": lambda: self.source.vertex_groups[0].add([0], 0.5, "REPLACE"),
+            "group": lambda: setattr(self.source.vertex_groups[0], "name", "Renamed"),
+            "modifier": lambda: setattr(
+                self.source.modifiers[0], "use_deform_preserve_volume", False
+            ),
+            "rest": edit_rest,
+            "rig transform": lambda: setattr(self.old_rig, "location", (4, 5, 6)),
+            "rig name": lambda: setattr(self.old_rig, "name", "Renamed rig"),
+        }
+        for kind, change in changes.items():
+            with self.subTest(kind=kind):
+                try:
+                    change()
+                    bpy.context.view_layer.update()
+                    with self.assertRaises(self.mesh.MeshApplicationError):
+                        self.mesh.validate_target(self.target)
+                    before = self.model._snapshot()
+                    with (
+                        patch.object(self.model, "_import") as importer,
+                        self.assertRaises(self.mesh.MeshApplicationError),
+                    ):
+                        self.apply(policy="RIG")
+                    importer.assert_not_called()
+                    self.assertEqual(self.model._snapshot(), before)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_posing_the_old_rig_keeps_the_target_valid(self):
+        self.old_rig.pose.bones["Old bone"].rotation_quaternion = (0.9, 0.1, 0, 0)
+        bpy.context.view_layer.update()
+        self.mesh.validate_target(self.target)
+        self.apply(policy="RIG")
+        self.assertEqual(self.source.modifiers[0].name, "Scenario Rig")
+
+    def test_static_policies_reject_rigged_source_before_import(self):
+        for policy in ("REMESH", "UV", "RETEXTURE", "PARTS"):
+            with self.subTest(policy=policy):
+                before = self.model._snapshot()
+                with (
+                    patch.object(self.model, "_import") as importer,
+                    self.assertRaisesRegex(self.module.MeshResultApplicationError, "RIG"),
+                ):
+                    self.apply(policy=policy)
+                importer.assert_not_called()
+                self.assertEqual(self.model._snapshot(), before)
+                self.assert_old_skin()
+        # The synchronous primitive keeps its static-only structure check.
+        with self.assertRaises(self.mesh.MeshApplicationError):
+            self.mesh.apply_mesh(
+                self.scene,
+                self.source,
+                self.source,
+                policy="REMESH",
+                result_to_source=Matrix.Identity(4),
+            )
+
+    def test_unsupported_source_skins_fail_capture(self):
+        modifier = None
+        changes = {
+            "second modifier": lambda: self.source.modifiers.new("Extra", "SUBSURF"),
+            "envelopes": lambda: setattr(modifier, "use_bone_envelopes", True),
+            "mask": lambda: setattr(modifier, "vertex_group", "Old bone"),
+            "multi": lambda: setattr(modifier, "use_multi_modifier", True),
+            "unbound": lambda: setattr(modifier, "object", None),
+            "deform parent": lambda: setattr(self.source, "parent_type", "ARMATURE"),
+            "groups only": lambda: self.source.modifiers.remove(modifier),
+            "shape keys": lambda: self.source.shape_key_add(name="Basis"),
+            "constraint": lambda: self.source.constraints.new("COPY_LOCATION"),
+        }
+        for kind, change in changes.items():
+            with self.subTest(kind=kind):
+                modifier = self.source.modifiers[0]
+                try:
+                    change()
+                    with self.assertRaises(self.mesh.MeshApplicationError):
+                        self.mesh.capture_target(self.scene, self.source)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_session_receipt_retry_never_replaces_the_skin_again(self):
+        record = self.ready_session()
+        original = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise OSError("fixture receipt error")
+            return original(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail_receipt):
+            with self.assertRaises(self.session_module.ModelResultUncertain) as caught:
+                self.deliver(self.verify(record), policy="RIG")
+        rig = self.source.modifiers[0].object
+        before = set(bpy.data.armatures), self.source.data
+        with patch.object(
+            self.session_module, "apply_saved_mesh", side_effect=AssertionError("replayed")
+        ):
+            result = self.session.retry_model_receipt(caught.exception)
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual((set(bpy.data.armatures), self.source.data), before)
+        self.assertIs(self.source.modifiers[0].object, rig)
+        self.assertEqual(_rig_state(self.old_rig), self.old_rig_state)
+
+    def test_session_static_policy_on_rigged_source_is_rejected_before_claim(self):
+        record = self.ready_session()
+        completion = self.verify(record)
+        with self.assertRaises(self.module.MeshResultApplicationError):
+            self.deliver(completion, policy="REMESH")
+        self.assertEqual(self.store.get("edit"), record)
+        self.assert_old_skin()
+
+    def test_export_sends_the_unposed_mesh_and_retains_the_rigged_target(self):
+        self.ready_session()
+        provenance = submodule("blender.mesh_provenance")
+        self.old_rig.pose.bones["Old bone"].location = (0, 0.5, 0)
+        bpy.context.view_layer.update()
+        path = self.root / "source.glb"
+        origin, source = provenance.export_with_source(
+            bpy.context, (self.source,), path, self.session
+        )
+        target = self.session._mesh_sources[(origin, source)]
+        self.assertIs(target.obj, self.source)
+        self.assertIsNotNone(target.skin)
+        data = path.read_bytes()
+        length = struct.unpack_from("<I", data, 12)[0]
+        document = json.loads(data[20 : 20 + length])
+        binary = data[28 + length :]
+        primitive = document["meshes"][0]["primitives"][0]
+        self.assertNotIn("JOINTS_0", primitive["attributes"])
+        accessor = document["accessors"][primitive["attributes"]["POSITION"]]
+        view = document["bufferViews"][accessor["bufferView"]]
+        offset = view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
+        values = struct.unpack_from("<" + "f" * 3 * accessor["count"], binary, offset)
+        # glTF is Y-up: Blender (x, y, z) exports as (x, z, -y).
+        exported = [tuple(values[index : index + 3]) for index in range(0, len(values), 3)]
+        expected = [(v.co.x, v.co.z, -v.co.y) for v in self.source.data.vertices]
+        for got, want in zip(exported, expected, strict=True):
+            for a, b in zip(got, want, strict=True):
+                self.assertAlmostEqual(a, b, places=6)

@@ -38,6 +38,11 @@ def validate_request(target, *, policy, result_to_source, keep_original):
         raise MeshResultApplicationError(
             "Choose REMESH, UV, RETEXTURE, PARTS or RIG and an explicit Keep original value"
         )
+    if target.skin is not None and policy != "RIG":
+        # Static policies would silently drop the source's skin and rig binding.
+        raise MeshResultApplicationError(
+            "This source is skinned to an armature; choose RIG to replace its skin"
+        )
     if policy == "PARTS" and (not target.mesh.vertices or not target.mesh.polygons):
         raise MeshResultApplicationError(
             "Choose a source with surface geometry, not a parts anchor"

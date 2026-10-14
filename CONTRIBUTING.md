@@ -847,10 +847,10 @@ retain the original and print the reason. An unchanged truecolour screenshot
 still fails readiness; reshoot it or review a justified exception in
 [the shared image policy](tools/docs_images.py), rather than changing a test alone.
 
-The original `scenario-logo.png` is deliberately excluded: its unchanged upstream
-bytes and separate licence record are preserved. The image checks permit that
-one provenance exception; the CLI and unit suite share checks for missing images,
-unused screenshots, truecolour screenshots and short Markdown alt text. Evidence
+The original `scenario-logo.png` is deliberately excluded: its unchanged bytes
+are preserved. The image checks permit that one exception; the CLI and unit
+suite share checks for missing images, unused screenshots, truecolour
+screenshots and short Markdown alt text. Evidence
 frontmatter cannot keep an unused image alive. The social card, when present,
 has an explicit unused-image exception because GitHub repository settings host it.
 Optimization also preserves this generated card; use its dedicated generator

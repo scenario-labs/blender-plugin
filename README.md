@@ -245,6 +245,3 @@ The [SPZ reader](scenario/core/scene/spz.py) reads
 [Niantic's SPZ Gaussian splat format](https://github.com/nianticlabs/spz).
 The [MCP protocol module](scenario/mcp/protocol.py) supports protocol revisions
 2025-06-18, 2025-03-26 and 2024-11-05.
-
-The Scenario logo comes from the [official skills repository](https://github.com/scenario-labs/skills/blob/main/resources/scenario-logo.png);
-its [original source licence](docs/images/scenario-logo.LICENSE) is retained.

@@ -34,6 +34,7 @@ BASELINE = (
     "test_icons",
     "test_model_picker",
     "test_generation",
+    "test_edit3d_lane",
     "test_result_media",
     "test_result_preview_tiles",
     "test_mcp_result_previews",

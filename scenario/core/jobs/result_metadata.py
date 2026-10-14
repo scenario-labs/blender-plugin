@@ -30,9 +30,15 @@ REWRITTEN_MESH_TYPES = frozenset({"model/obj", "model/mtl"})
 
 # SDK 2.2.0 AssetRetrieveResponse.original_mime_type documents that an HDRi skybox
 # exposes a JPEG preview as `url` and its `.exr` or `.hdr` file as `originalFileUrl`.
-# Only these OpenEXR labels replace an image preview; Radiance, mesh, splat, audio
-# and video originals keep the asset's own file until a decoder accepts them.
-ORIGINAL_MEDIA_TYPES = frozenset({"image/x-exr", "image/aces"})
+# Only these OpenEXR labels replace an image preview.
+EXR_ORIGINAL_TYPES = frozenset({"image/x-exr", "image/aces"})
+# Scenario re-encodes non-MP3 audio to a 128 kb/s MP3 asset file and keeps the
+# model's file as the original (SDK 2.2.0 `original_file_url` lists audio). A WAV
+# original replaces that lossy, padded MP3; the extension already decodes WAV.
+# Radiance, mesh, splat, video and other audio originals keep the asset's own file
+# until a decoder accepts them.
+WAV_ORIGINAL_TYPES = frozenset({"audio/wav", "audio/x-wav"})
+ORIGINAL_MEDIA_TYPES = EXR_ORIGINAL_TYPES | WAV_ORIGINAL_TYPES
 
 # SDK 2.2.0 AssetMetadata.type values that describe a 2:1 360 environment.
 # "skybox-3d" is a separate 3D world output, not an equirectangular image.
@@ -80,12 +86,18 @@ def panorama_projection(record):
 
 
 def original_media_type(record):
-    """Return the declared OpenEXR original that replaces an image preview, if any.
+    """Return the declared original that replaces the asset's own file, if any.
 
-    The caller must still require `originalFileUrl`; a declared original without a
-    destination fails closed rather than silently saving the preview instead.
+    An OpenEXR original replaces an image preview and a WAV original replaces an
+    audio file. The caller must still require `originalFileUrl`; a declared original
+    without a destination fails closed rather than silently saving the asset file.
     """
     original = record.get("originalMimeType")
-    if not _image(record) or not isinstance(original, str):
+    mime = record.get("mimeType")
+    if not isinstance(original, str) or not isinstance(mime, str):
         return None
-    return original if original in ORIGINAL_MEDIA_TYPES else None
+    if mime.startswith("image/"):
+        return original if original in EXR_ORIGINAL_TYPES else None
+    if mime.startswith("audio/"):
+        return original if original in WAV_ORIGINAL_TYPES else None
+    return None

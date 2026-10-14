@@ -219,11 +219,24 @@ match. Because no size is known, the storage response must declare a valid
 `Content-Length` within that cap and the body must match it. A response without
 one ends in `download_failed` with nothing published and no receipt, and the same
 resume command can retry it. The receipt digest then binds the saved bytes.
-Radiance (`.hdr`), mesh, splat, audio and video originals keep the asset's own
-file and size.
+Radiance (`.hdr`), mesh, splat, video and non-WAV audio originals keep the
+asset's own file and size.
 
-A declared EXR original without a usable `originalFileUrl` fails before any
-manifest is saved, so a retry can still choose the original; the JPEG preview is
+Audio uses the same path. Scenario re-encodes every non-MP3 audio output to a
+128 kb/s MP3 asset file (`url`, `mimeType: audio/mpeg`) and keeps the model's
+file as the original. The MP3 is lossy and longer than the requested audio
+because of encoder padding. When an audio asset declares `audio/wav` or
+`audio/x-wav` as its original, the manifest records `source: original`, that
+media type and a `.wav` local name
+([schema 11](JOB_STORAGE.md#schema-11-wav-originals)). The download uses the same
+128 MiB cap, about 11 minutes of 48 kHz 16-bit stereo, and the same
+`Content-Length` rule. Sound-strip insertion and waveform previews check the WAV
+container before use, as for any saved audio. Scenario API 2.138.0 also made
+`POST /assets/{id}/download` return the original audio by default; the extension
+does not call that endpoint.
+
+A declared EXR or WAV original without a usable `originalFileUrl` fails before any
+manifest is saved, so a retry can still choose the original; the preview or MP3 is
 never saved in its place. Refreshing an unfinished download reuses the saved
 manifest's choice. A saved original whose declaration or destination later
 disappears, changes to another format or loses its projection stops before

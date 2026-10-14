@@ -104,6 +104,35 @@ def test_other_originals_keep_the_asset_file(original):
     assert original_media_type({"mimeType": "image/jpeg", "originalMimeType": original}) is None
 
 
+@pytest.mark.parametrize("original", ["audio/wav", "audio/x-wav"])
+def test_wav_originals_replace_only_audio_files(original):
+    # Scenario re-encodes a model's WAV to an MP3 asset file and keeps the WAV as original.
+    record = {"mimeType": "audio/mpeg", "originalMimeType": original}
+    assert original_media_type(record) == original
+    for mime in ("image/jpeg", "video/mp4", "model/gltf-binary", None):
+        assert original_media_type({**record, "mimeType": mime}) is None
+
+
+@pytest.mark.parametrize(
+    "original", ["audio/mpeg", "audio/ogg", "audio/flac", "image/x-exr", ["audio/wav"]]
+)
+def test_other_audio_originals_keep_the_asset_file(original):
+    assert original_media_type({"mimeType": "audio/mpeg", "originalMimeType": original}) is None
+
+
+def test_panorama_hdr_types_never_include_audio_originals():
+    from scenario.core.jobs.result_metadata import (
+        EXR_ORIGINAL_TYPES,
+        ORIGINAL_MEDIA_TYPES,
+        WAV_ORIGINAL_TYPES,
+    )
+    from scenario.core.scene.panorama_contract import HDR_MEDIA_TYPES
+
+    assert HDR_MEDIA_TYPES == EXR_ORIGINAL_TYPES | {"image/exr"}
+    assert not WAV_ORIGINAL_TYPES & HDR_MEDIA_TYPES
+    assert ORIGINAL_MEDIA_TYPES == EXR_ORIGINAL_TYPES | WAV_ORIGINAL_TYPES
+
+
 PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"
 JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01"
 WEBP = b"RIFF\x24\x00\x00\x00WEBPVP8 "

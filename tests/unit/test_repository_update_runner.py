@@ -583,7 +583,7 @@ def _predecessor_package(path, version):
         for source in sorted((ROOT / "scenario/core").rglob("*.py")):
             text = source.read_text()
             if source.name == "store.py" and source.parent.name == "jobs":
-                text = text.replace("\n_VERSION = 10\n", f"\n_VERSION = {version}\n")
+                text = text.replace("\n_VERSION = 11\n", f"\n_VERSION = {version}\n")
                 assert f"_VERSION = {version}" in text
             package.writestr(source.relative_to(ROOT / "scenario").as_posix(), text)
     return path
@@ -597,13 +597,13 @@ def test_predecessor_store_probe_refuses_newer_store_without_writing(tmp_path, m
     database = tmp_path / "shared-jobs/jobs.sqlite3"
     JobStore(database, JobScope("https://service.example.invalid/v1", "local-key-fixture"))
     before = database.read_bytes()
-    older = _predecessor_package(tmp_path / "older.zip", 9)
+    older = _predecessor_package(tmp_path / "older.zip", 10)
     result = probe.reopen(older, database)
-    assert result["predecessor_schema"] == 9 and probe.REFUSAL in result["refused"]
+    assert result["predecessor_schema"] == 10 and probe.REFUSAL in result["refused"]
     assert database.read_bytes() == before
     assert sorted(path.name for path in database.parent.iterdir()) == ["jobs.sqlite3"]
     assert not any(name.startswith(probe.PACKAGE) for name in sys.modules)
-    same = _predecessor_package(tmp_path / "same.zip", 10)
+    same = _predecessor_package(tmp_path / "same.zip", 11)
     with pytest.raises(RuntimeError, match="opened the upgraded"):
         probe.reopen(same, database)
     empty = tmp_path / "empty.zip"
@@ -722,7 +722,7 @@ def test_package_probe_seeds_and_detects_lost_schema_ten_state(package_probe, tm
     (state / "shared-jobs").mkdir(parents=True)
     jobs.JobStore(state / "shared-jobs/jobs.sqlite3", scope)
     before = (state / "shared-jobs/jobs.sqlite3").read_bytes()
-    assert package_probe.store_schema(SimpleNamespace(state_dir=state)) == 10
+    assert package_probe.store_schema(SimpleNamespace(state_dir=state)) == 11
     assert (state / "shared-jobs/jobs.sqlite3").read_bytes() == before
     leaked = jobs.TrainedModelDefault("image", "custom", "update-private-model")
     other.set_trained_default(leaked, expected_revision=0)

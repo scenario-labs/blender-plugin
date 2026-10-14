@@ -1096,13 +1096,15 @@ policy, provider acceptance or the dependency pin.
 The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.2.0
 `originalFileUrl` and `originalMimeType` fields. The typed
 `AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes a
-JPEG preview as `url` and its `.exr` or `.hdr` file as the original; the extension
-selects only the OpenEXR labels. Its `original_file_url`
+JPEG preview as `url` and its `.exr` or `.hdr` file as the original; for images
+the extension selects only the OpenEXR labels. Its `original_file_url`
 docstring still describes only video, audio and 3D originals, which is a
-documentation gap rather than a missing operation. `metadata.type` includes the
+documentation gap rather than a missing operation. For audio, the extension also
+selects a WAV original behind the MP3 that Scenario re-encodes
+([schema 11](JOB_STORAGE.md#schema-11-wav-originals)). `metadata.type` includes the
 skybox labels used for the projection. Offline contracts check the raw and typed
-fields through the public wrapper. The result command downloads EXR-family
-originals through the existing credential-free storage policy; no new endpoint,
+fields through the public wrapper. The result command downloads EXR-family and
+WAV originals through the existing credential-free storage policy; no new endpoint,
 SDK method, extension or raw fallback is added. `assets.download.request` was not
 used: it requests a converted download with a status poll, and none of its
 `target_format` values is EXR. See

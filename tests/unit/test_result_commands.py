@@ -877,6 +877,17 @@ def hdri(assets, identifier="asset-one", *, original="image/aces"):
     )
 
 
+def wav_original(assets, identifier="asset-one", *, original="audio/wav"):
+    """A re-encoded audio result: Scenario's MP3 as `url`, the model's WAV as original."""
+    assets[identifier].update(
+        mimeType="audio/mpeg",
+        kind="audio",
+        metadata={"type": "audio", "prompt": "private fixture prompt"},
+        originalMimeType=original,
+        originalFileUrl=f"https://storage.example.invalid/{identifier}-original?signed=private",
+    )
+
+
 @pytest.mark.parametrize("original", ["image/aces", "image/x-exr"])
 def test_declared_exr_original_is_saved_instead_of_its_preview(setup, tmp_path, original):
     from scenario.core.jobs.results import MAX_ORIGINAL_BYTES
@@ -915,6 +926,29 @@ def test_declared_exr_original_is_saved_instead_of_its_preview(setup, tmp_path, 
     assert b"signed=" not in saved and b"private fixture" not in saved
 
 
+@pytest.mark.parametrize("original", ["audio/wav", "audio/x-wav"])
+def test_declared_wav_original_is_saved_instead_of_its_mp3(setup, tmp_path, original):
+    from scenario.core.jobs.results import MAX_ORIGINAL_BYTES
+
+    coordinator, store, current, _, assets, _, _, _ = setup
+    wav_original(assets, original=original)
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    result = coordinator.download_results("request", expected_revision=current.revision)
+    assert result.state == JobState.READY
+    first, second = (item.asset for item in result.results)
+    assert (first.media_type, first.source, first.expected_size) == (original, "original", None)
+    assert (first.projection, first.texture_role) == (None, None)
+    assert first.name.endswith(".wav")
+    assert (second.media_type, second.source) == ("image/png", "asset")
+    assert downloader.calls[0][0] == assets["asset-one"]["originalFileUrl"]
+    assert downloader.calls[0][2:] == (None, MAX_ORIGINAL_BYTES)
+    assert downloader.calls[1][0] == assets["asset-two"]["url"]
+    assert JobStore(tmp_path / "jobs.sqlite3", store.scope).get("request") == result
+    saved = (tmp_path / "jobs.sqlite3").read_bytes()
+    assert b"signed=" not in saved and b"private fixture" not in saved
+
+
 @pytest.mark.parametrize(
     "mime,original",
     [
@@ -922,6 +956,10 @@ def test_declared_exr_original_is_saved_instead_of_its_preview(setup, tmp_path, 
         ("model/spz", "model/ply"),
         ("video/mp4", "video/quicktime"),
         ("model/gltf-binary", "image/x-exr"),
+        ("audio/mpeg", "audio/flac"),
+        ("audio/mpeg", "audio/ogg"),
+        ("video/mp4", "audio/wav"),
+        ("image/jpeg", "audio/wav"),
     ],
 )
 def test_other_originals_keep_the_asset_file_and_its_size(setup, mime, original):
@@ -940,10 +978,11 @@ def test_other_originals_keep_the_asset_file_and_its_size(setup, mime, original)
     assert downloader.calls[0][3] is None
 
 
+@pytest.mark.parametrize("declare", [hdri, wav_original])
 @pytest.mark.parametrize("url", ["missing", None, "", 7])
-def test_declared_original_without_destination_never_saves_its_preview(setup, url):
+def test_declared_original_without_destination_never_saves_its_preview(setup, url, declare):
     coordinator, store, current, _, assets, downloader, _, _ = setup
-    hdri(assets)
+    declare(assets)
     if url == "missing":
         del assets["asset-one"]["originalFileUrl"]
     else:
@@ -975,6 +1014,45 @@ def test_saved_original_fails_closed_when_scenario_changes_it(setup, change):
     assert failed.state == JobState.DOWNLOAD_FAILED
     assert failed.results == manifest.results
     assert downloader.calls == []
+
+
+@pytest.mark.parametrize("change", ["withdrawn", "no-url", "flac", "exr"])
+def test_saved_wav_original_fails_closed_when_scenario_changes_it(setup, change):
+    coordinator, store, current, _, assets, _, _, _ = setup
+    wav_original(assets)
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    if change == "withdrawn":
+        del assets["asset-one"]["originalMimeType"]
+    elif change == "no-url":
+        del assets["asset-one"]["originalFileUrl"]
+    elif change == "flac":
+        assets["asset-one"]["originalMimeType"] = "audio/flac"
+    else:
+        assets["asset-one"]["originalMimeType"] = "image/x-exr"
+    with pytest.raises(ResultError):
+        coordinator.download_results("request", expected_revision=manifest.revision)
+    failed = store.get("request")
+    assert failed.state == JobState.DOWNLOAD_FAILED
+    assert failed.results == manifest.results
+    assert downloader.calls == []
+
+
+def test_schema_ten_manifest_keeps_downloading_its_saved_mp3(setup):
+    coordinator, store, current, _, assets, _, _, _ = setup
+    assets["asset-one"]["mimeType"] = "audio/mpeg"
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert manifest.results[0].asset.source == "asset"
+    # Scenario now declares the WAV original behind an MP3 already chosen and saved.
+    wav_original(assets)
+    downloader = OriginalDownloader()
+    coordinator._results._downloader = downloader
+    result = coordinator.download_results("request", expected_revision=manifest.revision)
+    assert result.state == JobState.READY
+    asset = result.results[0].asset
+    assert (asset.media_type, asset.source) == ("audio/mpeg", "asset")
+    assert downloader.calls[0][0] == assets["asset-one"]["url"]
 
 
 def test_schema_nine_manifest_keeps_downloading_its_saved_preview(setup, tmp_path):

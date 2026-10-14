@@ -437,8 +437,9 @@ job through public SDK `jobs.retrieve`, then reads every asset through
 matching successful job with a nonempty unique `metadata.assetIds` list (up to
 128) is supported. Each retrieved asset must match its ID and declare success,
 a valid MIME type and an integral nonnegative `properties.size`. An image asset
-that declares an OpenEXR original with a download destination is instead saved
-as that original, with its MIME type and an unknown size; see
+that declares an OpenEXR original, or an audio asset that declares a WAV original,
+with a download destination is instead saved as that original, with its MIME type
+and an unknown size; see
 [declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection). Unsupported
 non-asset outputs and malformed/changed metadata fail explicitly. No result list
 is inferred from a similar job or current selection.

@@ -98,6 +98,31 @@ class MediaApplicationTests(unittest.TestCase):
         self.assertEqual(editor.active_strip, first)
         self.assertTrue(first.select)
 
+    def test_saved_wav_original_inserts_a_strip_as_long_as_the_wav(self):
+        # Scenario keeps a model's WAV as the original behind its MP3 re-encode; the
+        # saved original has no expected size and must keep its exact 2.5 s length.
+        stream = io.BytesIO()
+        with wave.open(stream, "wb") as output:
+            output.setnchannels(2)
+            output.setsampwidth(2)
+            output.setframerate(48000)
+            output.writeframes(b"\0\0\0\0" * 120000)
+        data = stream.getvalue()
+        path = self.root / "000-sound.wav"
+        path.write_bytes(data)
+        asset = self.storage.ResultAsset("asset", path.name, "audio/wav", source="original")
+        receipt = self.transfers.DownloadedResult(
+            path.name, len(data), hashlib.sha256(data).hexdigest()
+        )
+        self.scene.render.fps, self.scene.render.fps_base = 24, 1.0
+        result = self.media.apply_media(
+            self.scene, self.storage.StoredResult(asset, receipt), path, frame=1
+        )
+        self.assertIsNone(asset.expected_size)
+        self.assertEqual(result.strip.type, "SOUND")
+        self.assertEqual(result.strip.frame_duration, 60)
+        self.assertEqual(result.path.read_bytes(), data)
+
     def test_compressed_audio_and_webm_decode_into_real_strips(self):
         for name, mime, kind in (
             ("audio-silence.mp3", "audio/mpeg", "SOUND"),

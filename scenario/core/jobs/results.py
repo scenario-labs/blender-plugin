@@ -24,7 +24,8 @@ from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, 
 from .transfers import ResultDownloader, TransferError, _root
 from .upload_sources import _open, _stamp
 
-# Originals carry no size metadata, so the World file limit bounds each transfer.
+# Originals carry no size metadata, so the World file limit bounds each transfer,
+# EXR or WAV (128 MiB is about 11 minutes of 48 kHz 16-bit stereo audio).
 MAX_ORIGINAL_BYTES = MAX_FILE_BYTES
 
 
@@ -442,8 +443,8 @@ class ResultCommands:
                 response = self._request(
                     self._adapter.asset, item.asset.asset_id, original_assets=True
                 )
-                # The saved manifest chose the file; schema 9 manifests keep the asset
-                # file even if Scenario now declares an original.
+                # The saved manifest chose the file; a manifest saved before the
+                # extension accepted an original keeps the asset file.
                 fresh = _asset(
                     response, item.asset.asset_id, item.asset.name, source=item.asset.source
                 )

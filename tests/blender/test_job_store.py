@@ -141,7 +141,7 @@ class JobStoreTests(unittest.TestCase):
             )
             self.assertEqual(reopened.get("result-request"), record)
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 10)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 11)
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
             verified = transfers.verify_download(root, record.results[0].receipt)
@@ -229,7 +229,7 @@ class JobStoreTests(unittest.TestCase):
                     item["asset"].update(source="asset", projection=None)
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 10)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 11)
             selected = next(store for store in stores.values() if store.scope.project_id)
             default = module.TrainedModelDefault(
                 "image", "stack", "model_base", (module.TrainedModelPick("model_lora", 0.75),)

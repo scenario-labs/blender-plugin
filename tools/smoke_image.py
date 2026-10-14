@@ -19,7 +19,7 @@ from scenario.core.api.catalog import ModelRecord
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator
 from scenario.core.jobs.credential_storage import open_credential_store
-from scenario.core.jobs.result_metadata import ORIGINAL_MEDIA_TYPES
+from scenario.core.jobs.result_metadata import EXR_ORIGINAL_TYPES
 from scenario.core.jobs.results import ResultError
 from scenario.core.jobs.store import JobOrigin, JobState, StoreError
 from scenario.core.jobs.transfers import ResultDownloader, StoragePolicy
@@ -413,7 +413,7 @@ def verify_result_kind(record, result_kind, *, material_payload=None, paths=()):
                 (asset, info)
                 for asset, info in checked
                 if asset.source == "original"
-                and asset.media_type in ORIGINAL_MEDIA_TYPES
+                and asset.media_type in EXR_ORIGINAL_TYPES
                 and info.hdr_capable
             ]
         matches = all(mime.startswith("image/") for mime in media_types) and bool(checked)

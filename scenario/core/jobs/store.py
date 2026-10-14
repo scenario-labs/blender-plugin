@@ -27,7 +27,7 @@ from .transfers import DownloadedResult, TransferError, _root, validate_result_n
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 10
+_VERSION = 11
 _APPLICATION_ID = 0x53434A42
 _FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
 # A bounded identifier, not the current catalog: "3d" is a lane, and a renamed or
@@ -491,7 +491,8 @@ class ResultAsset:
     """Immutable URL-free metadata from the scoped remote job/asset response.
 
     `source` names the delivered file: the asset's own file, or its server-declared
-    original (an EXR environment behind a JPEG preview). `projection` is semantic
+    original (an EXR environment behind a JPEG preview, or a model's WAV behind
+    Scenario's MP3 copy). `projection` is semantic
     metadata from the server, never a decoder guarantee or a filename inference.
     """
 
@@ -523,7 +524,7 @@ class ResultAsset:
         if not isinstance(self.source, str) or self.source not in {"asset", "original"}:
             raise ValueError("Choose the asset file or its declared original")
         if self.source == "original" and self.media_type not in ORIGINAL_MEDIA_TYPES:
-            raise ValueError("Only a declared HDR original may replace an image preview")
+            raise ValueError("Only a declared EXR or WAV original may replace the asset file")
         if self.projection is not None and (
             not isinstance(self.projection, str)
             or self.projection not in PROJECTIONS
@@ -877,7 +878,7 @@ class JobStore:
                     _create_trained_defaults(connection)
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5, 6, 7, 8, 9} and application == _APPLICATION_ID:
+                elif version in {2, 3, 4, 5, 6, 7, 8, 9, 10} and application == _APPLICATION_ID:
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -954,7 +955,22 @@ class JobStore:
                     or identity in film_tasks
                 ):
                     raise StoreError("Stored Film upload identity is inconsistent")
-        _create_trained_defaults(connection)
+        if version < 10:
+            _create_trained_defaults(connection)
+        else:
+            # Schema 10 lane defaults keep their format; recheck them before upgrading.
+            for key, lane, revision, raw in connection.execute(
+                "SELECT scope, lane, revision, record FROM trained_defaults"
+            ).fetchall():
+                try:
+                    scope = JobScope(**json.loads(raw)["scope"])
+                except (ValueError, TypeError, KeyError):
+                    raise StoreError(
+                        "Stored lane default is invalid; preserve its database for recovery"
+                    ) from None
+                if key != hashlib.sha256(_json(asdict(scope)).encode()).hexdigest():
+                    raise StoreError("Stored lane default identity is inconsistent")
+                _decode_trained_default(raw, scope, lane, revision)
         connection.execute(f"PRAGMA user_version = {_VERSION}")
 
     @contextmanager

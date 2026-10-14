@@ -12,7 +12,7 @@ Scenario or touches Blender, so the native form and local MCP share it.
 
 from dataclasses import dataclass
 
-from ..jobs.result_metadata import ORIGINAL_MEDIA_TYPES
+from ..jobs.result_metadata import EXR_ORIGINAL_TYPES
 from .panorama import MAX_PIXELS
 
 GENERATE = "GENERATE"
@@ -33,7 +33,7 @@ MODE_DESCRIPTIONS = {
     UPSCALE: "Upscale a saved 360 panorama within the World pixel limit",
 }
 # Saved OpenEXR files are HDR environments, never LDR panorama inputs.
-HDR_MEDIA_TYPES = ORIGINAL_MEDIA_TYPES | {"image/exr"}
+HDR_MEDIA_TYPES = EXR_ORIGINAL_TYPES | {"image/exr"}
 
 STILL = "still"
 PANORAMA = "panorama"

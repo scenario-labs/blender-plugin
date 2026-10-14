@@ -79,7 +79,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **10**. SQLite transactions
+The database has an application ID and schema version **11**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -95,7 +95,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 9 upgrade in one
+its database disappears. Previous shared schemas 2 through 10 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -107,9 +107,10 @@ its existing claims, including unfinished applications. Schemas before 6
 receive empty mesh input bindings; schema 6 preserves its captured mesh sources.
 Schema 7 cloud results remain cloud records without synthetic spend or Film
 bindings. Schemas before 10 receive the asset's own file and no projection (see
-[schema 10](#schema-10-declared-originals-and-lane-defaults)). Older extension builds
-reject schema 10; stop older Blender processes before upgrading and do not expect an
-older build to open the upgraded store.
+[schema 10](#schema-10-declared-originals-and-lane-defaults)). Schema 10 rows keep
+their exact bytes ([schema 11](#schema-11-wav-originals)). Older extension builds
+reject a newer schema; stop older Blender processes before upgrading and do not
+expect an older build to open the upgraded store.
 
 ## Explicit cloud result records
 
@@ -204,7 +205,8 @@ After observing remote success, `set_results` binds a nonempty tuple of at most
 128 `ResultAsset` entries once. Each entry has an opaque asset ID, portable
 basename, normalized media type, optional expected size/SHA256, optional
 allowlisted `texture_role`, the delivered file's `source` and an optional
-server-declared `projection` ([schema 10](#schema-10-declared-originals-and-lane-defaults)).
+server-declared `projection` ([schema 10](#schema-10-declared-originals-and-lane-defaults),
+[schema 11](#schema-11-wav-originals)).
 The role is independent of MIME: it describes image
 semantics, never a file decoder. Unknown roles remain `None`; arbitrary metadata,
 prompts and URLs are not retained. Current schema records require the role key
@@ -443,15 +445,16 @@ its own version and upgrade rather than a new reading of schema 10 rows.
 Every `ResultAsset` now records `source` and `projection`; current records require
 both keys, even when they hold the defaults. `source: asset` is the asset's own
 file (`url`). `source: original` is a server-declared original (`originalFileUrl`)
-saved instead of an image preview. Only the OpenEXR labels `image/x-exr` and
-`image/aces` qualify, and the saved media type is the original's. Originals carry
+saved instead of an image preview. In schema 10 only the OpenEXR labels
+`image/x-exr` and `image/aces` qualify; [schema 11](#schema-11-wav-originals) adds
+WAV originals of audio files. The saved media type is the original's. Originals carry
 no size metadata, so `expected_size` stays unknown; the download instead requires
 the storage response's `Content-Length`, and the receipt digest records the
-bytes. Radiance HDR, mesh, splat, audio and video originals keep the asset's
+bytes. Radiance HDR, mesh, splat, video and other audio originals keep the asset's
 own file. `projection: equirectangular` is set only when Scenario's
 `metadata.type` declares a 360 image (`skybox-base-360`, `upscale-skybox` or
 `skybox-hdri`); `skybox-3d` and every other value stay `None`. The store rejects
-other labels, a non-EXR original and a projection on a non-image file. Neither
+other labels, an original of any other type and a projection on a non-image file. Neither
 field authorizes World application, implies a measured dynamic range or replaces
 Blender's decoder checks. The [result command](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
 chooses the file and refreshes its destination.
@@ -552,9 +555,9 @@ identity and the shared Film task namespace, and preserved byte for byte. The em
 `trained_defaults` table is created last. Nothing is inferred from filenames,
 media types or remote calls. One invalid row, a conflicting association or a failed
 commit rolls back the whole upgrade and leaves the schema 9 file unchanged. A
-concurrent opener waits on the same write lock and then sees schema 10, so the
-upgrade runs once. A schema 9 reader refuses schema 10 as an unsupported format
-without changing it.
+concurrent opener waits on the same write lock and then sees the current schema,
+so the upgrade runs once. A schema 9 reader refuses the upgraded store as an
+unsupported format without changing it.
 
 The unit and installed-ZIP tests upgrade a store rebuilt from
 [the SQL dump of one written by the schema 9 code](../tests/fixtures/README.md#schema-9-job-store),
@@ -565,3 +568,29 @@ credential scope. The
 exercises the same upgrade through Blender's native extension update, then opens
 the upgraded store with the predecessor package's own storage code, which must
 refuse it without changing any byte.
+
+## Schema 11: WAV originals
+
+Scenario re-encodes every non-MP3 audio output to a 128 kb/s MP3 asset file and
+keeps the model's file as the asset's original. Saving that MP3 lost quality and
+added encoder padding: a 2.5 s WAV cut came back about 44 ms longer. Schema 11
+lets an audio result record `source: original` with media type `audio/wav` or
+`audio/x-wav`, so the extension saves the WAV instead
+([#472](https://github.com/scenario-labs/blender-plugin/issues/472)). See
+[declared originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
+for how the file is chosen and downloaded.
+
+No field changes; only the values a result may hold widen. A schema 10 reader would
+reject such a row as damaged data, so the version changes and a 0.10.x build
+refuses the whole store as an unsupported format instead. Results saved before the
+upgrade keep the MP3 they recorded.
+
+Opening a schema 10 store upgrades it in the same immediate transaction as earlier
+schemas. Every job row is decoded and rewritten; schema 10 rows already have the
+current shape, so their bytes do not change. Film upload associations and lane
+defaults are rechecked, including their scope keys, and preserved byte for byte.
+One invalid row or a failed commit leaves the schema 10 file unchanged. The unit
+tests build a schema 10 store from the upgraded schema 9 fixture plus a saved lane
+default, and check the upgrade, its rollback and refusal by a schema 10 reader. The
+[package update check](development/validation.md#scenario-package-state-across-updates)
+opens the upgraded store with the predecessor package's own storage code.

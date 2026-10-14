@@ -691,7 +691,8 @@ unchanged original scene. Other lanes stop at `ready` after saving downloads;
 there is no implicit texture assignment, mesh import or sequencer insertion.
 `job_status.results` reports asset identity, media type, expected size, `source`,
 `projection` and whether a download receipt was recorded. `source: original` means
-a declared OpenEXR original was saved instead of its preview, with unknown size;
+a declared OpenEXR original was saved instead of its preview, or a WAV original
+instead of Scenario's MP3 copy, with unknown size;
 `projection: equirectangular` appears only when Scenario declares a 360 image.
 Neither is an application approval. This inspection does not reverify local files
 or authorize scene application. Recovered display records use generic

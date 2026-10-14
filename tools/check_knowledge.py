@@ -290,8 +290,12 @@ def changed_since(root, revision):
     return set(git(root, "diff", "--name-only", "-z", revision, "--").split("\0")) - {""}
 
 
-def check_sources(root, known, entry, changed):
-    """Return the sources changed since review; raise on structural problems."""
+def check_sources(root, known, entry, changed, documents):
+    """Return changed and removed sources since review; raise on structural problems.
+
+    Canonical documents never drift: only the release refresh edits them after
+    review, so counting them would keep every refreshed record drifted.
+    """
     sources = entry.get("sources")
     if (
         not isinstance(sources, list)
@@ -301,11 +305,12 @@ def check_sources(root, known, entry, changed):
         raise ValueError("sources must be a nonempty list of repository paths")
     if sources != sorted(set(sources)):
         raise ValueError("sources must be sorted and unique")
-    drifted = []
+    drifted, removed = [], []
     for source in sources:
         path = safe_path(root, source)
         if not path.exists() and not path.is_symlink() and source in changed:
-            drifted.append(f"{source} (removed)")
+            drifted.append(source)
+            removed.append(source)
             continue
         if (
             source not in known
@@ -313,9 +318,9 @@ def check_sources(root, known, entry, changed):
             or path.resolve().relative_to(root).as_posix() not in known
         ):
             raise ValueError(f"missing or ignored source: {source}")
-        if source in changed:
+        if source in changed and source not in documents:
             drifted.append(source)
-    return drifted
+    return drifted, removed
 
 
 def audit(root, base=None, today=None):
@@ -348,6 +353,7 @@ def audit(root, base=None, today=None):
     }
     expected.update({"README.md", "AGENTS.md", "CONTRIBUTING.md"})
     expected.update(p for p in known if p.startswith(".claude/rules/") and p.endswith(".md"))
+    documents = expected | {entry["path"] for _, entry in entries} | set(bodies)
     registered = set()
     sources_by_doc = {}
     changes = {}
@@ -383,7 +389,7 @@ def audit(root, base=None, today=None):
             if revision not in changes:
                 review_base(root, revision, base, comparison)
                 changes[revision] = changed_since(root, revision)
-            drifted = check_sources(root, known, entry, changes[revision])
+            drifted, removed = check_sources(root, known, entry, changes[revision], documents)
             sources_by_doc[relative] = set(entry["sources"]) | {record}
         except (OSError, ValueError, TypeError, subprocess.CalledProcessError) as exc:
             errors.append(f"{label}: {exc}")
@@ -395,9 +401,13 @@ def audit(root, base=None, today=None):
                     "record": record,
                     "reviewed_revision": revision,
                     "sources": drifted,
+                    "removed": removed,
                 }
             )
-            shown = ", ".join(drifted[:SHOWN_DRIFT])
+            shown = ", ".join(
+                f"{source} (removed)" if source in removed else source
+                for source in drifted[:SHOWN_DRIFT]
+            )
             more = len(drifted) - SHOWN_DRIFT
             warnings.append(
                 f"{label}: {len(drifted)} of {len(entry['sources'])} sources changed since review: "

@@ -80,8 +80,11 @@ also lists the files the branch changes since its merge base and the documents
 whose sources those files are.
 
 Drift is a warning, one per document: the sources Git reports as changed since
-`reviewed_revision`, including committed, staged, unstaged and removed files. It
-asks for a review; it is not proof that the document is wrong.
+`reviewed_revision`, including committed, staged, unstaged and removed files.
+Canonical documents and records listed as sources never count, since the release
+refresh edits them after its reviewed commit. The JSON report lists changed
+paths in `sources` and deleted ones also in `removed`. Drift asks for a review;
+it is not proof that the document is wrong.
 
 ## Release refresh
 

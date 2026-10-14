@@ -28,8 +28,8 @@ progress. This command opens one PR; it never merges it or the release PR.
 Documents are independent. You may split them among helpers, one document each;
 give each helper this section and collect its edits.
 
-1. Read `git diff <reviewed_revision>..<main SHA> -- <drifted sources>` and the
-   document. Removed sources appear with ` (removed)`.
+1. Read `git diff <reviewed_revision>..<main SHA> -- <sources>` with the drift
+   entry's `sources`, and the document. Paths also in `removed` were deleted.
 2. Correct only what the changes made wrong, following "Keep it short" below.
    The user guide stays short, plain-language help with no internal terms or
    test results.

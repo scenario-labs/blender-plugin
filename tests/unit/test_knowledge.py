@@ -166,7 +166,28 @@ def test_drift_includes_committed_staged_and_removed_sources(repo):
     report = audit(repo)
     assert report["errors"] == []
     guide = next(item for item in report["drift"] if item["path"] == "docs/guide.md")
-    assert guide["sources"] == ["a.py", "b.py", "c.py (removed)"]
+    # Plain paths, so the refresh can pass them straight to git diff.
+    assert guide["sources"] == ["a.py", "b.py", "c.py"]
+    assert guide["removed"] == ["c.py"]
+    warning = next(w for w in report["warnings"] if w.startswith("docs/guide.md"))
+    assert warning.endswith("a.py, b.py, c.py (removed)")
+
+
+def test_refreshed_documents_do_not_drift_on_their_own_edits(repo):
+    root, _ = repo
+    edit(repo, sources=["README.md", "docs/guide.md", "docs/knowledge/readme.md", "source.py"])
+    revision = commit(root, "docs: review documents as sources")
+    edit(repo, reviewed_revision=revision)
+    # A refresh edits documents and records after the reviewed commit.
+    write(root, "docs/guide.md", "# Guide\n\n## API `value`\n[Source](../source.py)\nRefreshed.\n")
+    write(root, "README.md", "# Refreshed entry\n")
+    edit(repo, name="docs/knowledge/readme.md", limits="Refreshed.")
+    report = audit(repo)
+    assert report["errors"] == []
+    assert not any(item["path"] == "docs/guide.md" for item in report["drift"])
+    write(root, "source.py", "value = 2\n")
+    guide = next(item for item in audit(repo)["drift"] if item["path"] == "docs/guide.md")
+    assert guide["sources"] == ["source.py"]
 
 
 def test_long_drift_lists_are_shortened_in_text_but_complete_in_json(repo):

@@ -15,7 +15,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import READ_RETRIES, AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import (
     CancellationUncertain,
     CancellationUnsupported,
@@ -204,7 +204,7 @@ def test_no_remote_id_cannot_be_canceled(setup, state):
 
 @pytest.mark.parametrize("phase", ["preflight", "action", "observation"])
 @pytest.mark.parametrize("failure", ["timeout", 429, 503, "malformed"])
-def test_failure_never_retries_and_keeps_known_id_recoverable(setup, phase, failure):
+def test_failure_never_resends_the_action_and_keeps_known_id_recoverable(setup, phase, failure):
     def fail(request):
         if failure == "timeout":
             raise httpx.ReadTimeout("private signed-url secret", request=request)
@@ -212,10 +212,13 @@ def test_failure_never_retries_and_keeps_known_id_recoverable(setup, phase, fail
             return httpx.Response(200, json={"wrong": "private secret"})
         return httpx.Response(failure, json={"secret": "private"}, headers={"Retry-After": "0"})
 
+    # Job reads are allow-listed: the SDK retries a transient read failure, never
+    # the cancel action, which makes exactly one attempt.
+    reads = [fail] * (1 if failure == "malformed" else 1 + READ_RETRIES)
     replies = {
-        "preflight": [fail],
+        "preflight": reads,
         "action": [response(), fail],
-        "observation": [response(), response(), fail],
+        "observation": [response(), response(), *reads],
     }[phase]
     coordinator, store, calls, record, _ = setup(replies)
     with pytest.raises(AdapterError if phase == "preflight" else CancellationUncertain) as error:

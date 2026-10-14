@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 
-from scenario.core.api.sdk_adapter import SDKAdapter
+from scenario.core.api.sdk_adapter import READ_RETRIES, SDKAdapter
 from tools import audit_payloads as audit
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/models"
@@ -145,7 +145,9 @@ def test_failed_sdk_read_is_once_sanitized_and_sets_threshold_exit(tmp_path, sdk
         )
         == 1
     )
-    assert len(requests) == 1 and requests[0].url.path == "/v1/models/model_missing"
+    # A model read is allow-listed: the SDK retries a 5xx, never a 404.
+    assert len(requests) == (1 if status == 404 else 1 + READ_RETRIES)
+    assert {request.url.path for request in requests} == {"/v1/models/model_missing"}
     assert all(client._closed for client in clients)
     text = capsys.readouterr().out
     assert "## Fetch failures" in text
@@ -635,7 +637,8 @@ def test_default_cache_is_unique_cleaned_and_ignores_predictable_precreation(
             )
             == 0
         )
-    assert len(requests) == 2 and all(client._closed for client in clients)
+    attempts = 1 if status == 200 else 1 + READ_RETRIES
+    assert len(requests) == 2 * attempts and all(client._closed for client in clients)
     assert len(set(created)) == 2 and all(not path.exists() for path in created)
     assert old.is_symlink() and list(other.iterdir()) == []
     assert set(tmp_path.iterdir()) == {old, other}
@@ -685,7 +688,8 @@ def test_default_cache_cleanup_failure_preserves_report_and_safe_exit(
     assert audit.run(args, client_factory=client_factory) == 2
     captured = capsys.readouterr()
     assert len(cleaned) == 1 and not Path(cleaned[0]).exists()
-    assert len(requests) == (0 if outcome == "config" else 1)
+    attempts = {"config": 0, "fetch": 1 + READ_RETRIES}.get(outcome, 1)
+    assert len(requests) == attempts
     expected = "Could not remove the temporary model cache\n"
     if outcome == "config":
         assert not report.exists() and captured.out == ""

@@ -2,13 +2,16 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Scoped SDK reads, exact estimates and unpaid organization writes.
 
-No bpy imports, ambient credentials, redirects or automatic retries. Paid
+No bpy imports, ambient credentials or redirects. Only the allow-listed
+idempotent reads below retry, with the SDK's own per-request retries; paid
+dispatch, price checks, decisions, uploads and writes make one attempt. Paid
 dispatch requires an issued estimate and a durable claim callback. Organization
 writes are sent once and classified as rejected or uncertain, never replayed.
 SDK imports are lazy so package registration does not start client work.
 """
 
 import copy
+import email.utils
 import json
 import math
 import re
@@ -30,6 +33,12 @@ API_URL = "https://api.cloud.scenario.com/v1"
 # establishes one, and bound each call so a refresh cannot fan out reads.
 MODEL_BULK_CHUNK = 50
 MODEL_BULK_LIMIT = 200
+# SDK retries of an allow-listed read after a timeout, lost connection, 408, 409,
+# 429 or 5xx (the SDK's own default count), with its jittered backoff or the
+# server's Retry-After of up to 60 seconds. Only job, asset, model and workflow
+# retrieve, list and get-bulk reads use them; see SDKAdapter._reads.
+READ_RETRIES = 2
+_RETRIED_RESOURCES = frozenset({"jobs", "assets", "models", "workflows"})
 
 
 class AdapterError(RuntimeError):
@@ -44,14 +53,49 @@ class AdapterStatusError(AdapterError):
     A model description read's HTTP 403 or 404 raises AdapterUnavailable instead.
     """
 
-    def __init__(self, status_code, message):
+    def __init__(self, status_code, message, retry_after=None):
         super().__init__(message)
         self.status_code = status_code
+        # Seconds the reply's Retry-After asked for, or None; never shown to the user.
+        self.retry_after = retry_after
 
     def __reduce__(self):
         # args holds only the message, so copy and pickle must pass the status too.
         # The text can depend on the request's project, so keep it rather than rebuild it.
-        return type(self), (self.status_code, str(self))
+        return type(self), (self.status_code, str(self), self.retry_after)
+
+
+class AdapterUnreachable(AdapterError):
+    """No HTTP reply arrived: a timeout, a refused or a dropped connection.
+
+    For a write or a paid call the request may still have been applied.
+    """
+
+    def __init__(self):
+        super().__init__("Could not reach Scenario")
+
+    def __reduce__(self):
+        return type(self), ()
+
+
+def _retry_after(headers):
+    """Seconds a status reply's Retry-After (or retry-after-ms) header asks for, or None.
+
+    Accepts delta seconds or an HTTP date, as the SDK does; anything else,
+    negative or non-finite is None.
+    """
+    try:
+        value = float(headers.get("retry-after-ms")) / 1000
+    except (TypeError, ValueError):
+        raw = headers.get("retry-after")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            parsed = email.utils.parsedate_tz(raw) if isinstance(raw, str) else None
+            if parsed is None:
+                return None
+            value = max(0.0, email.utils.mktime_tz(parsed) - time.time())
+    return value if math.isfinite(value) and value >= 0 else None
 
 
 class EstimateStartedJob(AdapterError):
@@ -627,6 +671,14 @@ class SDKAdapter:
         self._scope = object()
         self._closed = False
         self._sdk = _client(credentials, base_url, timeout, transport)
+        # The same SDK client, credentials and HTTP pool with the SDK's documented
+        # per-request retries. Only idempotent job, asset, model and workflow
+        # retrieve, list and get-bulk reads use it. get-bulk is a POST that only
+        # carries the requested IDs; the API documents it as a read and the SDK
+        # sends no idempotency header, so a replay reads the same records again.
+        # Submissions, price checks, cancellation, decisions, uploads, collection
+        # and tag writes stay on self._sdk with max_retries=0.
+        self._reads = self._sdk.with_options(max_retries=READ_RETRIES)
         self._extensions = SDKResourceExtensions(self._sdk)
 
     @property
@@ -678,9 +730,11 @@ class SDKAdapter:
             project_id = kwargs.get("project_id")
             project = project_id is not None and project_id is not omit
             status = error.status_code
-            raise AdapterStatusError(status, _status_text(status, project=project)) from None
+            raise AdapterStatusError(
+                status, _status_text(status, project=project), _retry_after(error.response.headers)
+            ) from None
         except APIConnectionError:
-            raise AdapterError("Could not reach Scenario") from None
+            raise AdapterUnreachable() from None
 
     def _write(self, method, *args, adding=False, **kwargs):
         """Send one unpaid account mutation through a public SDK raw wrapper.
@@ -750,7 +804,8 @@ class SDKAdapter:
         return self._discovery(self._extensions.projects, "projects", _identifier(team_id))
 
     def _retrieve(self, resource, identifier, wrapper, *, unavailable=False, **options):
-        method = getattr(self._sdk, resource).with_raw_response.retrieve
+        client = self._reads if resource in _RETRIED_RESOURCES else self._sdk
+        method = getattr(client, resource).with_raw_response.retrieve
         if unavailable:
             method = _unavailable_on_denial(method)
         value = _json(self._request(method, _identifier(identifier), **options))
@@ -783,7 +838,7 @@ class SDKAdapter:
         for start in range(0, len(requested), chunk):
             batch = requested[start : start + chunk]
             page = _json(
-                self._request(self._sdk.models.with_raw_response.get_bulk, model_ids=batch)
+                self._request(self._reads.models.with_raw_response.get_bulk, model_ids=batch)
             )
             # Batches are disjoint and each record must belong to its own batch,
             # so merging them keeps request order and cannot hide a conflict.
@@ -814,7 +869,8 @@ class SDKAdapter:
 
         SDK 2.2.0 ``assets.with_raw_response.get_bulk`` documents a 200-ID limit;
         callers chunk by 100. Assets the server omits are absent from the
-        result, never inferred. This is a read without retries or side effects.
+        result, never inferred. This read has no side effects; it retries like
+        the other allow-listed reads.
         """
         identifiers = tuple(identifiers)
         if not 1 <= len(identifiers) <= 100 or len(set(identifiers)) != len(identifiers):
@@ -822,7 +878,9 @@ class SDKAdapter:
         for identifier in identifiers:
             _identifier(identifier)
         page = _json(
-            self._request(self._sdk.assets.with_raw_response.get_bulk, asset_ids=list(identifiers))
+            self._request(
+                self._reads.assets.with_raw_response.get_bulk, asset_ids=list(identifiers)
+            )
         )
         rows = page.get("assets")
         if not isinstance(rows, list) or len(rows) > len(identifiers):
@@ -850,7 +908,7 @@ class SDKAdapter:
             options["pagination_token"] = pagination_token
         if collection_id is not None:
             options["collection_id"] = _identifier(collection_id)
-        page = _json(self._request(self._sdk.assets.with_raw_response.list, **options))
+        page = _json(self._request(self._reads.assets.with_raw_response.list, **options))
         rows = list(_unique_rows(page.get("assets"), page_size, "asset").values())
         token = page.get("nextPaginationToken")
         if token not in (None, "") and (not isinstance(token, str) or token == pagination_token):
@@ -930,7 +988,7 @@ class SDKAdapter:
         """
         identifiers = _asset_ids(asset_ids, MAX_ASSET_RECORDS, unique=False)
         page = _json(
-            self._request(self._sdk.assets.with_raw_response.get_bulk, asset_ids=identifiers)
+            self._request(self._reads.assets.with_raw_response.get_bulk, asset_ids=identifiers)
         )
         records = _bulk_records(page.get("assets"), identifiers, "asset")
         for record in records.values():
@@ -1192,7 +1250,7 @@ class SDKAdapter:
             if not isinstance(pagination_token, str) or not pagination_token:
                 raise ValueError("A nonempty job cursor is required")
             options["pagination_token"] = pagination_token
-        page = _json(self._request(self._sdk.jobs.with_raw_response.list, **options))
+        page = _json(self._request(self._reads.jobs.with_raw_response.list, **options))
         rows = page.get("jobs")
         if not isinstance(rows, list):
             raise AdapterError("Scenario returned an invalid job page")
@@ -1257,7 +1315,7 @@ class SDKAdapter:
             options["status"] = status
         records, tokens = {}, set()
         for _ in range(max_pages):
-            page = _json(self._request(self._sdk.jobs.with_raw_response.list, **options))
+            page = _json(self._request(self._reads.jobs.with_raw_response.list, **options))
             rows = page.get("jobs")
             if not isinstance(rows, list):
                 raise AdapterError("Scenario returned an invalid job page")
@@ -1287,7 +1345,7 @@ class SDKAdapter:
         options = {"privacy": privacy, "page_size": 100}
         if resource == "models" and privacy == "private":
             options["status"] = "trained"
-        method = getattr(self._sdk, resource).with_raw_response.list
+        method = getattr(self._reads, resource).with_raw_response.list
         for _ in range(max_pages):
             page = _json(self._request(method, **options))
             rows = page.get(resource)
@@ -1321,7 +1379,7 @@ class SDKAdapter:
             options["pagination_token"] = pagination_token
         if privacy == "private":
             options["status"] = "trained"
-        page = _json(self._request(self._sdk.models.with_raw_response.list, **options))
+        page = _json(self._request(self._reads.models.with_raw_response.list, **options))
         rows = page.get("models")
         if not isinstance(rows, list):
             raise AdapterError("Scenario returned an invalid catalog page")

@@ -12,7 +12,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import READ_RETRIES, AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import (
     DecisionRefused,
     DecisionSnapshot,
@@ -672,11 +672,14 @@ def test_an_unreadable_definition_blocks_choosing_and_is_read_again(setup, defin
     )
     assert item.blocked == "unverified" and item.actions == ("reject",)
     coordinator.refresh_remote("request", expected_revision=record.revision)
-    assert len(setup.reads) == 2 and len(calls) == 2
+    # A definition read is a workflow retrieve: the SDK retries a 5xx first.
+    failed = isinstance(definition, httpx.Response)
+    assert len(setup.reads) == 2 * (1 + READ_RETRIES if failed else 1) and len(calls) == 2
 
 
 def test_an_unreadable_definition_logs_only_its_error_type_once_until_read(setup, caplog):
-    # Not found, a server error, a readable definition, then another workflow's definition.
+    # Not found, a server error the SDK's read retry recovers from with the readable
+    # definition, then another workflow's definition.
     answers = iter(
         [None, httpx.Response(500, json={"message": "private fixture detail"}), INTO_LOOP]
         + [{**INTO_LOOP, "id": "another"}] * 2

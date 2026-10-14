@@ -8,7 +8,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import READ_RETRIES, AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import JobCoordinator, RecoveryAction, RecoveryError
 from scenario.core.jobs.store import (
     JobIntent,
@@ -281,7 +281,9 @@ def test_poll_failure_preserves_recoverable_remote_identity(setup, failure):
     current = remote_record(store)
     with pytest.raises(AdapterError):
         coordinator.refresh_remote(INTENT.request_id, expected_revision=current.revision)
-    assert store.get(INTENT.request_id) == current and len(calls) == 1
+    # The SDK retries a transient job read, never a 404; the record is unchanged.
+    assert store.get(INTENT.request_id) == current
+    assert len(calls) == (1 if failure == 404 else 1 + READ_RETRIES)
 
 
 def test_scope_switch_hides_records_and_inactive_context_does_not_poll(setup, tmp_path):

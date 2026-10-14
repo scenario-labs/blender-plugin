@@ -5,8 +5,9 @@
 A job's Edit 3D task is the one it was submitted with when that task lists the
 job's model, otherwise the model's only task. A model that serves two tasks
 (Rodin Bang retextures and splits into parts) has no task of its own. The task
-picks the default saved mesh-edit policy; ANIMATE, an unknown model and an
-ambiguous one keep REMESH, which the review reports as not derived from the job.
+picks the default saved mesh-edit policy; an unknown model and an ambiguous one
+keep REMESH, which the review reports as not derived from the job. ANIMATE also
+depends on the captured source, which the caller checks: see `animate_policy`.
 The default only starts a review: an explicit choice always replaces it.
 """
 
@@ -53,8 +54,20 @@ def job_task(model_id, submitted_task=None):
     return tasks[0] if len(tasks) == 1 else None
 
 
+def animate_policy(skinned):
+    """An Animate job's starting policy for a source skinned to an armature or not.
+
+    An Animate result is a re-rigged character with its clips: a skinned source
+    keeps its rig and takes the clips, any other mesh adopts the returned rig.
+    """
+    return "ANIMATE" if skinned else "RIG"
+
+
 def default_policy(model_id, submitted_task=None):
-    """The policy a saved mesh-edit review starts from for this job."""
+    """The policy a saved mesh-edit review starts from, before any source check.
+
+    ANIMATE keeps the fallback here; the caller applies `animate_policy`.
+    """
     task = job_task(model_id, submitted_task)
     policy = TASK_POLICIES.get(task)
     if policy is None:

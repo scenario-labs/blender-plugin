@@ -102,7 +102,7 @@ export. They ignore active selection and feed the existing explicit mesh review
 and durable application path. Ordinary destination review stays available after
 restart; saved IDs alone cannot recreate original-source ownership. See
 [the mesh contract](../MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
-A source skinned to one Armature modifier keeps that authority for RIG only.
+A source skinned to one Armature modifier keeps that authority for RIG and ANIMATE only.
 Multi-source ambiguity, other modified sources and provider coordinate
 contracts still limit #99 acceptance.
 

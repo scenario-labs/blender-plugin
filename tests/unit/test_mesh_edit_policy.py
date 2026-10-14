@@ -25,11 +25,18 @@ def test_a_model_with_one_task_starts_from_that_tasks_policy(model_id, expected)
     assert start == policy.DefaultPolicy(expected, expected, derived=True)
 
 
-def test_every_applicable_task_names_a_policy_and_animate_names_none():
+def test_every_applicable_task_names_a_policy_and_animate_depends_on_the_source():
     tasks = {task for task, _label, _description, _models in catalog.EDIT3D_TASKS}
     assert set(policy.TASK_POLICIES) == tasks - {"ANIMATE", "ALL"}
+    # The task is known; the caller chooses from the captured source's skin.
     start = policy.default_policy("model_meshy-animation")
     assert start == policy.DefaultPolicy("REMESH", "ANIMATE", derived=False)
+    assert policy.default_policy("model_cartwheel-text-to-motion").task == "ANIMATE"
+
+
+def test_an_animate_job_keeps_a_skinned_rig_and_rigs_any_other_mesh():
+    assert policy.animate_policy(True) == "ANIMATE"
+    assert policy.animate_policy(False) == "RIG"
 
 
 def test_an_ambiguous_or_unknown_model_keeps_the_fallback_without_a_task():

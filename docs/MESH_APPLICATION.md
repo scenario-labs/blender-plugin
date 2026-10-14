@@ -35,6 +35,7 @@ adds receipt-bound import, shared-session bookkeeping and UI/MCP review.
 | `REMESH` | Copy result mesh and bake the explicit local mapping | Adopt result UV layers | Adopt result mesh material slots and polygon assignments |
 | `RETEXTURE` | Copy source geometry and non-UV attributes; require exact indexed topology and mapped positions | Replace all layers with result names, coordinates and active/render/clone roles | Adopt nonempty result slots and valid face assignments; preserve existing shader datablocks |
 | `UV` | Copy source mesh; require exactly matching indexed vertices, edges, polygons and loops, with exact positions after mapping | Copy coordinates from exactly one result UV layer to the source's active layer; preserve its name and other layers; create a layer if absent | Preserve source slots and polygon assignments |
+| `ANIMATE` (saved command only) | Unchanged, with its skin; [returned clips](#apply-returned-animation) are copied onto the rig that skins it | Unchanged | Unchanged |
 
 A remesh deliberately replaces all source mesh attributes with the result's data.
 UV matching is exact, with no epsilon or nearest-point guess; different indexing,
@@ -54,9 +55,10 @@ vertex-parented children, object material overrides and custom mesh properties a
 rejected. Generic attributes are limited to boolean, scalar float/integer, integer
 2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
 command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policies
-cover segmented parts and compatible skins; RIG alone also accepts a source
-[already skinned to an armature](#replace-an-existing-skin). Animation transfer and
-multi-object replacement are unsupported. Supplying one explicit result object
+cover segmented parts and compatible skins; RIG also accepts a source
+[already skinned to an armature](#replace-an-existing-skin), and
+[ANIMATE](#apply-returned-animation) copies returned clips onto that source's rig.
+Multi-object replacement is unsupported. Supplying one explicit result object
 does not classify other returned helper objects, maps or alternate meshes.
 
 ## Transaction and ownership
@@ -126,8 +128,8 @@ results import through the [saved package path](#saved-model-package-import), an
 SPZ, `.splat` and Gaussian splat PLY results through
 [saved Gaussian splat import](#saved-gaussian-splat-import). Multiple scenes,
 external files and pointer-based animation remain unsupported. Unsupported downloads remain available. REMESH, UV, RETEXTURE and
-PARTS keep the default static-only preflight; RIG uses the bounded skin policy
-below. In-place edits and Film shots still accept only `model/gltf-binary`.
+PARTS keep the default static-only preflight; RIG and ANIMATE use the bounded
+skin policy below. In-place edits and Film shots still accept only `model/gltf-binary`.
 
 [`model_application.apply_model`](../scenario/blender/model_application.py),
 which Film shots use, rehashes the exact local receipt, writes a private snapshot
@@ -201,7 +203,8 @@ disposable staging scene before publication. The destination's current animated
 pose does not change that anchor. Import leaves the
 current frame/subframe, frame range and frame rate unchanged. It does not shift
 clips to the current frame, extend the timeline or retarget animation to an
-existing rig. Moving the new parent group moves the imported character together.
+existing rig ([ANIMATE](#apply-returned-animation) does that for a matching skeleton).
+Moving the new parent group moves the imported character together.
 
 Armature construction requires the staging scene to own the active window and
 view layer while Blender's importer runs. The importer restores both afterward,
@@ -468,8 +471,8 @@ mesh, names, bounded geometry/attribute fingerprint, transforms, parenting,
 collection membership and active material index. It accepts one local scene in
 Object Mode and retains the primitive's unsupported-data checks, except that a
 source [skinned to an armature](#replace-an-existing-skin) is captured with its
-skin. Only RIG accepts that target; the other policies reject it before import
-because they would drop the skin. It does not infer selection. Capture
+skin. Only RIG and ANIMATE accept that target; the other policies reject it
+before import because they would drop the skin. It does not infer selection. Capture
 evaluates the current view layer so pending parent transforms cannot hide behind
 a stale world matrix. `validate_target` rejects intervening
 edits, replacement, deletion or membership in another scene. Capture the mesh
@@ -490,7 +493,8 @@ create these). Every other mesh counts, so an unskinned mesh beside the skin,
 which may be an accessory, makes RIG refuse the result instead of discarding it.
 A clips-only result, whose rig drives no mesh, fails the skin checks. A skinned
 bone-display mesh cannot be told from a character and fails the topology check.
-The caller chooses the policy and Keep original.
+ANIMATE requires one armature with clips; returned meshes, helpers and Empties
+are allowed but never kept. The caller chooses the policy and Keep original.
 Multiple result assets are never combined or ranked automatically.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
@@ -501,7 +505,8 @@ mapping does not prove a provider preserved the input's coordinates or topology.
 UV still requires exact indexed topology/positions after mapping and one UV layer.
 
 The source is revalidated immediately before replacement. Temporary imported
-objects are removed; RIG retains its armature/parent hierarchy. Replacement
+objects are removed; RIG retains its armature/parent hierarchy and ANIMATE only
+its copied clips. Replacement
 material/image dependencies remain packed. Keep original
 retains a separate unselected copy, preserving the previous selection and active
 object. Without it, the primitive may release the unchanged, unused original mesh.
@@ -531,7 +536,7 @@ separate `mesh_edit` local claim whose destination identifies the source object.
 `retry_model_receipt` records only known success, never another replacement.
 See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
 The command makes no service request. Provider coordinate contracts and
-retargeting stay open under #99.
+retargeting across different skeletons stay open under #99.
 
 ## Saved mesh edit approval
 
@@ -542,23 +547,28 @@ GLB is the job's primary or an alternate result, as
 [classified](#saved-3d-package-classification); an alternate GLB's control reads
 **Apply alternate mesh edit: GLB (N)**, and MCP returns `primary`. `REMESH` replaces
 geometry, UVs and mesh materials; `UV` replaces only active UVs and requires
-exact indexed topology and positions; `RETEXTURE`, `PARTS` and `RIG` are
-described below. **Keep original** defaults to enabled.
+exact indexed topology and positions; `RETEXTURE`, `PARTS`, `RIG` and `ANIMATE`
+are described below. **Keep original** defaults to enabled.
 
 The default edit follows the job's Edit 3D task
 ([`mesh_edit_policy`](../scenario/core/scene/mesh_edit_policy.py)): the task this
 session submitted the job with when that task lists its model, otherwise the
 model's only task in the Edit 3D lists. Remesh, Retexture, UV Unwrap, Rigging and
 Parts start on `REMESH`, `RETEXTURE`, `UV`, `RIG` and `PARTS`; MCP reports
-`mesh_policy_source: edit3d_task` and the task. Animate, models in no list and a
-model in two lists, such as Rodin Bang after a restart, start on `REMESH`
+`mesh_policy_source: edit3d_task` and the task. Animate returns a re-rigged
+character with clips, so it depends on the captured source: a source
+[already skinned to an armature](#replace-an-existing-skin) starts on
+[`ANIMATE`](#apply-returned-animation) and keeps its rig, any other mesh starts on
+`RIG` and adopts the returned rig and clips, both reported as `edit3d_task`; the
+dialog says an unskinned mesh starts on Attach rig. Models in no list and a model
+in two lists, such as Rodin Bang after a restart, start on `REMESH`
 (`mesh_policy_source: default`), and the dialog says the edit is not from the
-job's task. The submitted task is not saved with the job. A source
-[already skinned to an armature](#replace-an-existing-skin) starts on `RIG`, the
-only policy it accepts, whatever the task; MCP reports `edit3d_task` when the
-task is Rigging, otherwise `rigged_source`, and the dialog says the mesh already
-has a rig. An explicit choice in the dialog or MCP `mesh_policy` always wins
-(`requested`), but a static one on a skinned source is then rejected.
+job's task. The submitted task is not saved with the job. For other tasks a
+skinned source starts on `RIG`, which with `ANIMATE` is the only policy it
+accepts; MCP reports `edit3d_task` when the task is Rigging, otherwise
+`rigged_source`, and the dialog says the mesh already has a rig. An explicit
+choice in the dialog or MCP `mesh_policy` always wins (`requested`), but a static
+one on a skinned source, or ANIMATE on an unskinned one, is then rejected.
 
 **Scene coordinates** (`WORLD`) maps imported positions through the captured
 source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
@@ -661,11 +671,12 @@ when geometry replacement is intended.
 
 The shared saved-mesh command records Blender history immediately before import
 and after successful replacement, staging cleanup and rollback-handle finalization.
-This covers REMESH, UV, RETEXTURE, PARTS and RIG from both native review and local MCP. The
-pre-state includes the latest user edits; neither checkpoint contains temporary
+This covers REMESH, UV, RETEXTURE, PARTS, RIG and ANIMATE from both native review and
+local MCP. The pre-state includes the latest user edits; neither checkpoint contains temporary
 import scenes or private rollback holders. Undo restores the source data and
 removes any Keep original copy; Redo restores the applied data and that copy.
-After a RIG edit of a skinned source, Undo also restores its previous skin.
+After a RIG edit of a skinned source, Undo also restores its previous skin; after
+ANIMATE it restores the rig's previous animation and removes the copied clips.
 
 Automatic checkpoints require a desktop window, Global Undo enabled and at least
 two undo steps. The extension does not change preferences. Blender's history size
@@ -802,8 +813,76 @@ modifier and parent, so it still deforms with the old rig. Without it, rollback
 recreates the old modifier with every writable setting it had and restores the
 old mesh with its groups and weights; Blender assigns the recreated modifier a
 new internal identifier. Static policies applied to a skinned target are
-rejected with an instruction to choose RIG, before any import or claim. Without a
-requested policy, both the native review and MCP start a skinned source on RIG
-(see [the approval defaults](#saved-mesh-edit-approval)); an explicit static
-policy is rejected. The resulting skin can be replaced again.
-Applying returned clips to the existing rig is separate work.
+rejected with an instruction to choose RIG or ANIMATE, before any import or
+claim. Without a requested policy, both the native review and MCP start a skinned
+source on RIG, or on ANIMATE for an Animate job (see
+[the approval defaults](#saved-mesh-edit-approval)); an explicit static policy is
+rejected. The resulting skin can be replaced again. [ANIMATE](#apply-returned-animation)
+applies returned clips to the existing rig instead.
+
+## Apply returned animation
+
+The explicit `ANIMATE` policy applies the clips of an Edit 3D **Animate** result
+to the rig of a source [skinned to an armature](#replace-an-existing-skin). Animate
+providers return a complete re-rigged character: one armature with its clips,
+usually with a skinned mesh. ANIMATE keeps the user's mesh, skin, armature and
+object context, copies only the clips onto the armature that the source's
+Armature modifier uses, and adds none of the returned objects. Every mesh that
+armature deforms follows the clips. An unskinned source is rejected before import
+with an instruction to choose RIG, which attaches the returned rig and keeps its
+clips.
+
+[`animation_application.py`](../scenario/blender/animation_application.py)
+validates the staged import before any change. The result must contain exactly
+one armature with at least one clip, plus optional meshes and Empties. Clips are
+the armature's active action and its NLA strips' actions, in that order. Each clip
+may key only pose-bone location, rotation and scale in the armature's own action
+slot, without F-Curve modifiers. Other animated objects, shape-key or
+armature-data animation and other channels are rejected rather than dropped.
+Every bone a clip animates must exist in the destination rig by name, with the
+same parent name, connection and rotation/scale inheritance; rotated bones must
+use the same rotation mode.
+
+Rotation keys pose a bone relative to its rest orientation, so each animated
+bone's rest orientation relative to its parent (or to armature space for a root
+bone) must be within 15 degrees of the destination's. One provider re-rigging its
+own rigged character moved some joint rest orientations by up to about 11
+degrees, while a skeleton built in another pose or orientation differs by tens of
+degrees. Keys are copied unchanged, without per-bone correction: both rigs bind
+the same character in the same rest pose, so a small rest difference only tilts
+the rotation axis slightly.
+
+Location keys are armature-space distances. When any location key leaves its
+bone's rest head, every location key and handle is scaled by the ratio of the
+destination's summed parent-relative bone head offsets to the result's, over
+bones whose names and parent names match. A returned rig with 0.01 object scale
+and centimetre bones therefore lands in a metre rig's units; the result's object
+transforms are not used. A ratio that cannot be derived is rejected. Rest-head
+location keys, as sampled exports write for every bone, stay unchanged. The
+coordinate mapping and Keep original choice are not used: ANIMATE changes no mesh
+data.
+
+Application copies each clip as a new action named after the destination rig
+and the clip, keeps only its armature slot, renamed after the rig, and rescales
+it. The first clip becomes the rig's active action. The previous active action,
+if any, moves to a muted NLA track with its slot, and each copied clip gets its
+own muted NLA track, as Blender's importer does, so changing the active action
+loses none of them. Existing NLA tracks and blend, influence and extrapolation
+settings stay as they were. Clip timing already follows the destination's
+effective frame rate through the [shared staging scene](#rigged-and-animated-model-import);
+frame range, current frame and frame rate stay unchanged.
+
+The captured target guards the rig's identity, bones, rest and transform, so a
+changed rig is stale before import; posing or animating it is not. Animation
+assigned to the rig after review is kept the same way. The rig must not be in NLA
+tweak mode. A failure after assignment restores the rig's previous action, slot
+and tracks exactly before the shared command removes the new clips and verifies
+the datablock sets. An unexpected difference remains uncertain and never
+authorizes another application. Native undo and receipt-only recovery follow the
+[saved mesh history](#native-undo-for-saved-mesh-edits). Session status reports
+the rig in `mesh_edit.rig` and the new clip names in `mesh_edit.clips`.
+
+Bones are matched by name only. Clips from a different skeleton, such as another
+provider's or a rig whose rest pose differs, are rejected; retargeting them stays
+open under #99. UI **Apply animation** and MCP `mesh_policy: ANIMATE` use the same
+captured target guards.

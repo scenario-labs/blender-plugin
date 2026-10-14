@@ -625,6 +625,18 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _draw_animate(layout, review_error):
+    # Clips are pose data on the mesh's own rig: coordinates and Keep original
+    # do not apply, so the review does not offer them.
+    layout.label(text="Add the returned clips to this mesh's rig; keep its mesh and skin.")
+    layout.label(text="Bone names, parents and rest pose must match; clips scale to the rig.")
+    layout.label(text="The first clip plays; it, the others and the previous action stay in NLA.")
+    layout.label(text="The returned character is not added. Timeline settings stay unchanged.")
+    layout.label(text="Undo follows Blender settings; saved jobs and spending stay recorded.")
+    if review_error:
+        layout.label(text=review_error, icon="ERROR")
+
+
 class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     bl_idname = "scenario.apply_saved_mesh"
     bl_label = "Apply saved mesh edit"
@@ -663,6 +675,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 "RIG",
                 "Attach rig",
                 "Preserve source mesh data; attach weights and a compatible returned rig",
+            ),
+            (
+                "ANIMATE",
+                "Apply animation",
+                "Keep this mesh, its skin and rig; add the returned clips to its armature",
             ),
         ),
         default="REMESH",
@@ -741,11 +758,12 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         try:
             self._sync_options()
         except Exception:
-            self.review_error = (
-                "This mesh has a rig: choose Attach rig to replace its skin"
-                if self.source_rigged and self.policy != "RIG"
-                else "Target or options changed; cancel and review again"
-            )
+            if self.source_rigged and self.policy not in {"RIG", "ANIMATE"}:
+                self.review_error = "This mesh has a rig: choose Attach rig or Apply animation"
+            elif not self.source_rigged and self.policy == "ANIMATE":
+                self.review_error = "Apply animation needs a mesh skinned to an armature"
+            else:
+                self.review_error = "Target or options changed; cancel and review again"
         return True
 
     def draw(self, context):
@@ -761,6 +779,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.prop(self, "policy")
         if self.policy_note:
             layout.label(text=self.policy_note)
+        if self.policy == "ANIMATE":
+            _draw_animate(layout, self.review_error)
+            return
         layout.prop(self, "placement")
         if self.local_placement_required:
             layout.label(text="Mirrored or zero-scale source: use object local coordinates.")
@@ -822,6 +843,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
 def _policy_note(approval):
     """Say whether the review's starting edit follows the job's Edit 3D task."""
     if approval.policy_source == "edit3d_task":
+        if approval.edit3d_task == "ANIMATE" and approval.policy == "RIG":
+            return "This mesh has no rig, so the Animate result starts on Attach rig."
         return f"Default edit follows this job's {task_label(approval.edit3d_task)} task."
     if approval.policy_source == "rigged_source":
         return "This mesh already has a rig, so the edit starts on Attach rig."

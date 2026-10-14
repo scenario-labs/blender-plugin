@@ -38,7 +38,7 @@ from ..core.jobs.store import (
 )
 from ..core.jobs.workers import WorkerError
 from ..core.scene import panorama_contract
-from ..core.scene.mesh_edit_policy import default_policy
+from ..core.scene.mesh_edit_policy import animate_policy, default_policy
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
@@ -366,7 +366,7 @@ class MeshApplicationApproval:
     original_source: bool = False
     kind: str = "mesh_edit"
     # Where the policy came from: "requested", the job's Edit 3D task
-    # ("edit3d_task"), a skinned source that accepts only RIG ("rigged_source")
+    # ("edit3d_task"), a skinned source starting on RIG ("rigged_source")
     # or the REMESH fallback ("default"); see mesh_edit_policy.
     policy_source: str = "requested"
     edit3d_task: str | None = None
@@ -1879,8 +1879,10 @@ class ModelJobs:
 
         Without an explicit policy the review starts from the job's Edit 3D
         task: the task this session submitted it with, else its model's only
-        task. Other jobs start from REMESH, reported as not derived. A source
-        skinned to an armature starts from RIG, the only policy it accepts.
+        task. Other jobs start from REMESH, reported as not derived. An Animate
+        job starts from ANIMATE for a source skinned to an armature and from RIG
+        otherwise. Another skinned source starts from RIG, which with ANIMATE is
+        the only policy it accepts.
         """
         record = self.store.get(request_id)
         if (
@@ -1914,8 +1916,11 @@ class ModelJobs:
             record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
         )
         source = "requested"
-        if policy is None and target.skin is not None:
-            # A source skinned to an armature accepts only RIG, whatever the job's task.
+        if policy is None and start.task == "ANIMATE":
+            policy = animate_policy(target.skin is not None)
+            source = "edit3d_task"
+        elif policy is None and target.skin is not None:
+            # A source skinned to an armature accepts only RIG or ANIMATE.
             policy = "RIG"
             source = "edit3d_task" if start.derived and start.policy == "RIG" else "rigged_source"
         elif policy is None:
@@ -2360,7 +2365,7 @@ class ModelJobs:
             # History can replace RNA wrappers, even when object names survive.
             # Retire this transient status; never rebind it by name after redo.
             return None
-        objects = tuple(bpy.data.objects)
+        objects, actions = tuple(bpy.data.objects), tuple(bpy.data.actions)
         return {
             "target": application.source.name if application.source in objects else None,
             "original": application.original.name if application.original in objects else None,
@@ -2368,6 +2373,7 @@ class ModelJobs:
             "undo_available": application.undo_available,
             "parts": tuple(part.name for part in application.parts if part in objects),
             "rig": application.rig.name if application.rig in objects else None,
+            "clips": tuple(clip.name for clip in application.clips if clip in actions),
         }
 
     def _model_import_status(self, request_id):

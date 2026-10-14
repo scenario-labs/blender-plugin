@@ -16,7 +16,7 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, EstimateStartedJob
-from ..core.jobs import failures, progress, workflow_nodes
+from ..core.jobs import failures, progress, refresh_backoff, workflow_nodes
 from ..core.jobs.coordinator import (
     UNCONFIRMED,
     CancellationUnsupported,
@@ -88,6 +88,15 @@ UNCONFIRMED_REVIEW = (
 UNCONFIRMED_REVIEWED = (
     "Marked reviewed for this session: an identical request can be sent again. "
     "Check your Scenario history first, or you may be charged twice."
+)
+# Status notes: one information line each, never a review error. See _status_notes.
+REFRESH_RETRYING = "Status not refreshed; retrying"
+CANCEL_NOT_SENT = "Cancel not sent; the job keeps running"
+CANCEL_UNCONFIRMED = "Cancel not confirmed yet; checking the job's status"
+# Delivery pauses with this once refresh_backoff.FAILURE_CEILING refreshes in a row failed.
+REFRESH_STOPPED = (
+    "Status not refreshed after repeated tries; the job may still be running. "
+    "Choose Resume download to check again"
 )
 
 _log = logging.getLogger("scenario.jobs")
@@ -382,6 +391,11 @@ class ModelJobs:
         self._online_seen = online()
         self._commands = {}
         self._next_poll = {}
+        # request_id -> consecutive transient refresh failures of a polled job,
+        # and request_id -> (saved revision, note) after a cancel request that
+        # failed. Memory only; see _refresh_failed and _status_notes.
+        self._refresh_failures = {}
+        self._cancel_notes = {}
         # In-memory workflow step projections and the last decision's error
         # text with the review IDs then waiting; never persisted.
         self._steps = {}
@@ -747,6 +761,7 @@ class ModelJobs:
                     self._paused.discard(request_id)
                 elif command in ("refresh_remote", "cancel_remote"):
                     observed = completion.result
+                    self._refresh_failures.pop(request_id, None)
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except first_frame_handoff.FirstFrameHandoffError as error:
                 self._remember_first_frame(request_id, first_frame, error=error.reason)
@@ -808,11 +823,15 @@ class ModelJobs:
                 # The coordinator refused before any claim or action; the job keeps running.
                 self._cancellable.pop(request_id, None)
                 self._pause(request_id, CANCEL_UNSUPPORTED)
-            except Exception:
+            except Exception as error:
                 if command == "verify_first_frame":
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
+                elif command in ("refresh_remote", "cancel_remote") and self._refresh_failed(
+                    request_id, command, error
+                ):
+                    pass
                 else:
                     self._pause(
                         request_id,
@@ -858,6 +877,7 @@ class ModelJobs:
             )
             view.meta["import_units"] = self._unit_rows(record)
             view.meta["import_notices"] = self._import_notices(request_id)
+            view.meta["status_notes"] = self._status_notes(request_id, record, online=online)
             self._project_remote(request_id, record, view, online=online)
             view.meta["error_title"] = view.meta["review_note"] = None
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
@@ -977,6 +997,71 @@ class ModelJobs:
     def _pause(self, request_id, message):
         self._paused.add(request_id)
         self.views[request_id].error = message
+
+    def _refresh_failed(self, request_id, command, error):
+        """Poll again after a failed automatic refresh or any failed cancel request.
+
+        Returns False to pause delivery for review as before: on an explicit
+        one-time refresh (the job is already paused), a record that is no
+        longer polled, or a refresh error that a later read would repeat. A
+        transient refresh failure (`refresh_backoff.transient`) delays the next
+        poll with the bounded backoff and shows REFRESH_RETRYING; the
+        FAILURE_CEILING-th in a row pauses with REFRESH_STOPPED. A failed cancel
+        request never stops polling: its note says whether the cancellation was
+        claimed, and the next refresh, which never sends a cancel, decides.
+        CancellationUnsupported keeps its own pause above. Nothing is sent
+        again and no saved state changes here.
+        """
+        if request_id in self._paused:
+            return False
+        try:
+            record = self.store.get(request_id)
+        except Exception:
+            return False
+        if record is None or record.state not in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
+            return False
+        transient = refresh_backoff.transient(error)
+        if command == "cancel_remote":
+            claimed = record.state == JobState.CANCEL_REQUESTED
+            note = CANCEL_UNCONFIRMED if claimed else CANCEL_NOT_SENT
+            self._cancel_notes[request_id] = (record.revision, note)
+            if not transient:
+                self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
+                return True
+        elif not transient:
+            return False
+        failures = self._refresh_failures.get(request_id, 0) + 1
+        if refresh_backoff.exhausted(failures):
+            self._refresh_failures.pop(request_id, None)
+            self._pause(request_id, REFRESH_STOPPED)
+            return True
+        self._refresh_failures[request_id] = failures
+        self._next_poll[request_id] = time.monotonic() + refresh_backoff.delay(
+            failures, error, interval=POLL_INTERVAL
+        )
+        return True
+
+    def _status_notes(self, request_id, record, *, online):
+        """Information lines for a job whose status or cancellation is not confirmed.
+
+        A cancel note lasts while the saved revision it was written for is
+        unchanged. REFRESH_RETRYING shows while transient failures delay an
+        automatic refresh that Online Access allows. Reads memory and the given
+        record only.
+        """
+        notes = []
+        cancel = self._cancel_notes.get(request_id)
+        if cancel is not None:
+            if cancel[0] == record.revision:
+                notes.append(cancel[1])
+            else:
+                del self._cancel_notes[request_id]
+        if request_id in self._refresh_failures:
+            if record.state not in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
+                del self._refresh_failures[request_id]
+            elif online and request_id not in self._paused:
+                notes.append(REFRESH_RETRYING)
+        return tuple(notes)
 
     def _observe_cancellation(self, request_id, snapshot):
         """Remember whether the latest owned retrieval confirmed a cancellable job.
@@ -1357,8 +1442,9 @@ class ModelJobs:
         """Keep a reading only for its unchanged known job, and mark it stale.
 
         Stale means automatic polling is not keeping the reading current:
-        delivery is paused, Online Access is off or the scheduled refresh is
-        overdue by the grace. It is display state; nothing is persisted.
+        delivery is paused, Online Access is off, the last refresh failed and
+        is being retried, or the scheduled refresh is overdue by the grace. It
+        is display state; nothing is persisted.
         """
         reading = view.meta.get("remote")
         if reading is None:
@@ -1371,7 +1457,12 @@ class ModelJobs:
             del view.meta["remote"]
             return
         due = max(self._next_poll.get(request_id, 0.0), reading.observed_monotonic)
-        stale = not online or request_id in self._paused or time.monotonic() > due + STALE_GRACE
+        stale = (
+            not online
+            or request_id in self._paused
+            or request_id in self._refresh_failures
+            or time.monotonic() > due + STALE_GRACE
+        )
         if stale != reading.stale:
             view.meta["remote"] = replace(reading, stale=stale)
 
@@ -1630,6 +1721,10 @@ class ModelJobs:
         self._commands[request_id] = (command, task)
         view.meta["recovery_actions"] = ()
         self._automatic_application.discard(request_id)
+        # An explicit read starts a new count; a new cancel request replaces its note.
+        self._refresh_failures.pop(request_id, None)
+        if action == "cancel":
+            self._cancel_notes.pop(request_id, None)
         view.error = None
         if action in ("resume", "cancel"):
             self._paused.discard(request_id)
@@ -2470,6 +2565,8 @@ class ModelJobs:
             "delivery_paused": record.intent.request_id in self._paused,
             "delivery_active": self._delivering(record.intent.request_id, record),
             "delivery_offline": self._offline(record.intent.request_id, record),
+            # Information lines the Jobs row draws; they never pause delivery.
+            "status_notes": list(view.meta.get("status_notes", ())) if view is not None else [],
             # Only the user marks an unconfirmed request reviewed, in Blender's Jobs list.
             "actions": tuple(item for item in self.actions(record) if item not in NATIVE_ONLY),
             "error": self.views[record.intent.request_id].error

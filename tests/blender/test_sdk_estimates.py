@@ -65,7 +65,12 @@ class SDKEstimateTests(unittest.TestCase):
                     self.assertTrue(self.read_hold.wait(5))
                 if self.read_failures:
                     self.read_failures -= 1
-                    return httpx.Response(503, json={"reason": "private outage detail"})
+                    # retry-after-ms keeps the SDK's own read retries quick here.
+                    return httpx.Response(
+                        503,
+                        json={"reason": "private outage detail"},
+                        headers={"retry-after-ms": "1"},
+                    )
                 return httpx.Response(200, json={"model": self.model})
             expected = {"dryRun": "true"}
             if self.expected_project is not None:
@@ -200,7 +205,9 @@ class SDKEstimateTests(unittest.TestCase):
 
     def test_a_failed_description_read_is_reported_and_read_again_on_the_next_call(self):
         self.forget_description()
-        self.read_failures = 1
+        # The read fails after the SDK's own read retries.
+        attempts = 1 + submodule("core.api.sdk_adapter").READ_RETRIES
+        self.read_failures = attempts
         arguments = {"model_id": self.model["id"]}
         result = self.mcp_call("model_schema", arguments)
         self.assertTrue(result.get("isError"), result)
@@ -212,7 +219,7 @@ class SDKEstimateTests(unittest.TestCase):
         result = self.mcp_call("model_schema", arguments)
         self.assertFalse(result.get("isError"), result)
         self.assertEqual(json.loads(result["content"][0]["text"])["model_id"], self.model["id"])
-        self.assertEqual([call.method for call in self.calls], ["GET", "GET"])
+        self.assertEqual([call.method for call in self.calls], ["GET"] * (attempts + 1))
 
     def test_tools_that_need_a_description_wait_for_it(self):
         tools = submodule("mcp.tools_scenario")

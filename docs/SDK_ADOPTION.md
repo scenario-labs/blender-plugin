@@ -109,6 +109,7 @@ using the locked environment.
 | Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent. A refused add exposes its decoded JSON body, or the raw text, as `APIStatusError.body` |
 | Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a synthetic partial response passes through unchanged |
 | Uncertain submissions | `max_retries=0` makes one attempt for model/workflow transport errors and retryable HTTP statuses, even with `Retry-After` |
+| [Read retries](#read-retries) | `with_options(max_retries=2)` retries GET reads and a `get_bulk` POST after a timeout, lost connection, 408, 429 or 5xx, waits for `Retry-After` and leaves the zero-retry client unchanged; through `SDKAdapter`, every allow-listed read retries and every write, paid call, price check and decision makes one attempt |
 | Redirect handling | An explicit HTTP client with `follow_redirects=False` prevents a second request; also use `trust_env=False` to avoid ambient proxy configuration |
 | Authentication | Explicit Basic credentials take precedence over ambient Basic credentials; explicit Bearer precedence has the known failure below |
 
@@ -152,7 +153,8 @@ The active **Test connection** operator also uses `SDKCatalog` and the adapter's
 `page_size=1`, without following a cursor or replacing the model cache. A worker
 performs the read; the main-thread event handler accepts only the current
 credential context and pending request. Concurrent clicks share that pending
-check, and failures use sanitized SDK errors with no automatic retry. Success
+check, and failures use sanitized SDK errors after the SDK's bounded
+[read retries](#read-retries). Success
 proves only model access, including a valid empty list. It does not establish
 account/project identity or resolve SDK issue #29.
 
@@ -249,8 +251,9 @@ quotes only, through the shared adapter: `models.with_raw_response.list`
 (private trained and public lists), `models.with_raw_response.retrieve`,
 `models.with_raw_response.get_bulk`, `assets.with_raw_response.list` (one image
 of the scope for an image-to-image quote) and `generate.with_raw_response.run_model`
-with `dry_run="true"`. Its probes use the adapter's request guard and configured
-zero-retry client but issue no `Estimate`, so nothing they quote can be
+with `dry_run="true"`. Its probes use the adapter's request guard; its reads get
+the bounded [read retries](#read-retries) and its quotes use the zero-retry
+client. They issue no `Estimate`, so nothing they quote can be
 submitted, and it never sends `ipDetection`, which is charged even in a dry run.
 It quotes each accepted base-model route a second time through
 `SDKAdapter.estimate_model`, the production quote path, and never submits that
@@ -840,9 +843,40 @@ coordinator. Applying, importing or reusing a saved result in the scene uses
 verified local receipts and a fresh local approval, with no Scenario call; see
 the [Blender job context](BLENDER_JOB_CONTEXT.md#active-saved-job-controls).
 Generated operations use public SDK methods
-with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
+through their `with_raw_response` wrappers, which preserve wire JSON. Only the
+allow-listed reads below retry; every other operation uses `max_retries=0`.
 The named discovery and selection exceptions also use the same zero-retry SDK
 client; the selection request also disables retries on its own options.
+
+### Read retries
+
+Idempotent job, asset, model and workflow reads use the SDK's documented
+per-request option, `client.with_options(max_retries=READ_RETRIES)`, with
+`READ_RETRIES = 2`, the SDK default. That copy shares the adapter's client,
+selected credentials, headers and HTTP pool. The SDK retries a timeout, a lost
+connection, 408, 409, 429 and 5xx with its jittered backoff of up to 8 seconds,
+or waits for a `Retry-After` of up to 60 seconds; other statuses fail at once.
+The allow-list is `jobs.retrieve/list`, `assets.retrieve/list/get_bulk`,
+`models.retrieve/list/get_bulk` and `workflows.retrieve/list`, used by
+`SDKAdapter.job`, `jobs`, `job_page`, `asset`, `asset_page`, `bulk_assets`,
+`asset_records`, `model`, `model_page`, `models`, `models_bulk`, `workflow`
+and `workflows`.
+
+Both `get_bulk` methods are POSTs only because they carry the requested IDs in
+the body. The API documents them as reads, they change nothing, and the SDK
+sends no idempotency header, so a resent request reads the same records again.
+They retry like the other reads.
+
+Generation, workflow runs, price checks (a dry run can start a job),
+`trigger_action` cancellation and upload completion, upload creation, collection
+and tag writes and workflow step decisions keep `max_retries=0`. Collection,
+asset search, upload and team/project discovery reads also keep one attempt for
+now. A status error carries the reply's `Retry-After` as
+`AdapterStatusError.retry_after`, and a request that got no reply raises
+`AdapterUnreachable`, so the [shared job poller](BLENDER_JOB_CONTEXT.md#status-refresh-failures)
+can tell a transient refresh failure from a refusal. The
+[contract tests](../tests/unit/test_scenario_sdk_contract.py) drive each
+allow-listed read and each single-attempt operation through the adapter.
 
 | Adapter operation | SDK 2.2.0 method and contract |
 | --- | --- |
@@ -857,7 +891,7 @@ client; the selection request also disables retries on its own options.
 | Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` (`AlreadyMembers` for the exact already-member add refusal) or `WriteUncertain` after dispatch |
 | Collection pages and organization read-back | `collections.list/retrieve` and `assets.get_bulk`: one bounded collection page with cursor-loop failure, matching collection identity, and requested-only asset records whose `tags` and `collectionIds` must be lists of strings |
 | Model/workflow/asset/job records | `models.retrieve`, `workflows.retrieve`, `assets.retrieve`, `jobs.retrieve`: unwrap the named record and retain unknown fields |
-| Known asset records in bulk | `assets.get_bulk` through its public raw-response wrapper: 1 to 100 distinct validated identities, selected project, one attempt; omitted assets stay absent, while unrequested or conflicting rows fail. `network_allowed()` reads the same online predicate without a request |
+| Known asset records in bulk | `assets.get_bulk` through its public raw-response wrapper: 1 to 100 distinct validated identities, selected project, bounded [read retries](#read-retries); omitted assets stay absent, while unrequested or conflicting rows fail. `network_allowed()` reads the same online predicate without a request |
 | Custom-model estimate | `generate.run_model(dry_run="true")`: adopted form value validation plus retained conditional/one-of rules; inputs in JSON and dry-run/project in query |
 | Prompt translation quote/submission | `generate.with_raw_response.translate`: POST `/generate/translate`, exact `dry_run="true"` response; optional selected `project_id` in the query; prompt in JSON; no raw API fallback |
 | Prompt Spark quote/submission commands | `generate.with_raw_response.prompt`: POST `/generate/prompt`, `dry_run="true"` and optional selected `project_id` in the query; explicit mode, prompt, modelId, images and numResults in JSON; no raw API fallback |

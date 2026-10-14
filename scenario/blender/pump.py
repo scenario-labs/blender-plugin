@@ -129,7 +129,8 @@ def _job_row(row, jobs):
     # saved-job controls blink. A completed refresh that changes the reading or
     # saved state redraws after its drain has restored them. Waiting workflow
     # steps change without either, so their review IDs, a decision in flight
-    # and the last decision error are compared too.
+    # and the last decision error are compared too, as are the status notes
+    # of a refresh being retried or a cancel request that failed.
     reading = row.meta.get("remote")
     steps = None
     if jobs is not None and row.kind == "workflow" and jobs.views.get(row.local_id) is row:
@@ -148,6 +149,7 @@ def _job_row(row, jobs):
         len(row.files),
         row.meta.get("saved_revision"),
         None if reading is None else (reading.status, reading.percent, reading.stale),
+        tuple(row.meta.get("status_notes", ())),
         steps,
     )
 

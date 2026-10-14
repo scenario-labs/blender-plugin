@@ -877,7 +877,9 @@ revision. Queued commands retain their original scope.
 - `resume` polls and downloads the existing job, including after restart or a
   failed download, without authorizing automatic import.
 - `cancel` uses the coordinator's once-claimed model cancellation command and
-  continues observing the known ID. The acknowledgement alone is not cancellation.
+  continues observing the known ID, also when the request fails (see
+  [status refresh failures](#status-refresh-failures)). The acknowledgement
+  alone is not cancellation.
   It is offered only for a `remote` model record whose latest refresh or cancel
   snapshot in this owner repeated its known ID with `jobType=inference`, the only
   type the API documents as cancellable. `ModelJobs` keeps that observation in
@@ -987,6 +989,33 @@ observed, never `bpy`. A returned result with `delivery_active` set is therefore
 an expired wait. Stopping the MCP server interrupts its wait without canceling
 the generation.
 
+## Status refresh failures
+
+`ModelJobs` refreshes a polled `remote` or `cancel_requested` job every
+`POLL_INTERVAL` (2 seconds) with `refresh_remote`. When that read fails after
+the adapter's own [read retries](SDK_ADOPTION.md#read-retries) with a timeout,
+a lost connection, HTTP 408, 429 or a 5xx
+([`refresh_backoff.transient`](../scenario/core/jobs/refresh_backoff.py)), the
+job is not paused: the next automatic refresh waits 4, 8, 16, 32, then 60
+seconds, or a longer `Retry-After` of up to 300 seconds, and the view's
+`meta["status_notes"]` holds `Status not refreshed; retrying`. A successful
+refresh resets the count. The eighth transient failure in a row
+(`FAILURE_CEILING`), or any other refresh error, pauses delivery for review as
+before; the ceiling's error asks the user to resume. An explicit one-time
+refresh of a paused job stays paused whatever its outcome.
+
+A failed `cancel` request never stops polling. A failed read before the claim
+sends nothing and notes `Cancel not sent; the job keeps running`; a transient
+read failure also counts toward the ceiling. After the claim, an unknown action
+or observation outcome (`CancellationUncertain`) notes `Cancel not confirmed
+yet; checking the job's status`, and the next refresh, which never sends the
+cancel again, decides. A cancel note lasts while the saved revision it was
+written for is unchanged. `CancellationUnsupported` keeps its pause above.
+Counts and notes live in memory only. Nothing about submission, the
+cancellation claim or an uncertain outcome is decided differently. Jobs rows draw
+each note as an information line, and MCP `job_status` reports them as
+`status_notes`.
+
 ## Remote progress and scene lane binding
 
 Automatic and explicit `refresh_remote`/`cancel_remote` completions, and workflow
@@ -1016,7 +1045,8 @@ views and MCP `job_status` both read. Each maintenance poll drops it when the
 record leaves `remote`/`cancel_requested` or its remote ID or revision changes,
 and marks it stale when automatic polling is not keeping it current: Online
 Access is off, delivery is paused (including after an explicit one-time
-refresh) or the scheduled refresh is overdue by `STALE_GRACE`. Staleness follows
+refresh), a failed refresh is being retried or the scheduled refresh is overdue
+by `STALE_GRACE`. Staleness follows
 each job's scheduled poll time, so a longer scheduled interval is not stale
 merely for being longer. Polling cadence, online gating and saved revisions are
 unchanged: an active refresh writes nothing and nothing about progress is

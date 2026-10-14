@@ -414,7 +414,10 @@ access disabled, a `submitted` or `canceling` row
 adds `Status paused while online access is disabled` and a `finished on
 Scenario` row adds `Download paused while online access is disabled`, whether or
 not a reading exists yet. Otherwise, when the reading is not being kept current,
-add one information line: `Status is not updating`. Drawing reads only the
+add one information line: `Status is not updating`. A refresh being retried
+after a failure, or a cancel request that failed, draws its own information line
+instead (`Status not refreshed; retrying`, `Cancel not sent; the job keeps
+running` or `Cancel not confirmed yet; checking the job's status`). Drawing reads only the
 projected view; it performs no I/O, store read, session creation or property
 write. The pump redraws when the drawn rows or online access change, so the bar
 moves without hovering, but it does not redraw for the brief in-flight refresh

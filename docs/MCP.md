@@ -60,8 +60,14 @@ session, or `null` for workflow, Film, restarted and recovered jobs; it never
 selects a destination. While a known remote job is active, `remote_status` is its
 latest validated Scenario status, `progress` its reported fraction from 0 to 1
 (`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
-`remote_stale` whether automatic polling has stopped keeping it current. They are
-`null` otherwise and are never persisted. Only `in-progress` and `finalizing`
+`remote_stale` whether automatic polling has stopped keeping it current, also
+while a failed refresh is being retried. They are
+`null` otherwise and are never persisted. `status_notes` lists the information
+lines the Jobs row shows, never errors: `Status not refreshed; retrying` while a
+refresh that timed out, lost its connection or got HTTP 408, 429 or 5xx waits to
+be retried, `Cancel not sent; the job keeps running` and `Cancel not confirmed
+yet; checking the job's status`. Polling continues meanwhile and never sends a
+cancel again; see [status refresh failures](BLENDER_JOB_CONTEXT.md#status-refresh-failures). Only `in-progress` and `finalizing`
 fractions measure generation; the native Jobs views show a percentage only for
 those statuses from 1%, and name the status in the words of the composer's job
 strip: queued, starting, generating or finalizing. `remote_status` and `progress`

@@ -375,7 +375,14 @@ def test_media_and_model_controls_number_every_saved_asset():
         asset("import_model", model, "Import GLB model (4)", "mesh"),
         asset("import_model", model, "Import alternate: GLB (6)", "variant"),
         asset("apply_mesh", mesh, "Apply mesh edit (4)", "mesh", original_source=False),
-        asset("apply_mesh", mesh, "Apply mesh edit (6)", "variant", original_source=False),
+        # In place, an alternate GLB is named as its import is.
+        asset(
+            "apply_mesh",
+            mesh,
+            "Apply alternate mesh edit: GLB (6)",
+            "variant",
+            original_source=False,
+        ),
         asset(
             "apply_mesh_source",
             mesh,
@@ -386,11 +393,17 @@ def test_media_and_model_controls_number_every_saved_asset():
         asset(
             "apply_mesh_source",
             mesh,
-            "Apply to captured source (6)",
+            "Apply alternate to captured source: GLB (6)",
             "variant",
             original_source=True,
         ),
         AWAITING,
+    ]
+    # Without a classified unit, a GLB keeps the plain wording.
+    unclassified = view(("apply_mesh",), "apply_failed", assets, import_units=())
+    assert [item.label for item in sja.describe(unclassified, CONTEXT, TYPES)][:2] == [
+        "Apply mesh edit (4)",
+        "Apply mesh edit (6)",
     ]
 
 

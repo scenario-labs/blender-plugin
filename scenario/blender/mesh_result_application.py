@@ -60,6 +60,35 @@ def _release_import(imported, objects, staging):
                 values.remove(value)
 
 
+def _rig_driven(obj, rigs):
+    """Whether an imported rig skins the mesh or carries it as a child."""
+    return any(
+        modifier.type == "ARMATURE" and modifier.object in rigs for modifier in obj.modifiers
+    ) or (obj.parent in rigs and obj.parent_type in {"ARMATURE", "BONE"})
+
+
+def _helpers(objects):
+    """Imported meshes that only display a returned rig; never result meshes.
+
+    A pose bone's custom shape is one. When a returned rig drives at least one
+    mesh, a mesh it neither skins nor carries, such as a bone-display mesh, is
+    another. A result whose rig drives no mesh keeps its meshes and fails the
+    skin checks instead of being guessed.
+    """
+    rigs = {obj for obj in objects if obj.type == "ARMATURE"}
+    helpers = set()
+    for rig in rigs:
+        for bone in rig.pose.bones:
+            if bone.custom_shape is not None:
+                helpers.add(bone.custom_shape)
+                # A retained rig keeps no pointer to a helper removed with the import.
+                bone.custom_shape = None
+    meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
+    if any(_rig_driven(obj, rigs) for obj in meshes):
+        helpers.update(obj for obj in meshes if not _rig_driven(obj, rigs))
+    return tuple(obj for obj in objects if obj in helpers)
+
+
 def _stage_parts(target, meshes, mapping):
     """Copy static part geometry into source-local coordinates before replacement."""
     if not 2 <= len(meshes) <= 128:
@@ -126,7 +155,9 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             staging,
             objects,
         ):
-            meshes = [obj for obj in objects if obj.type == "MESH"]
+            # Display helpers are not results; they go with the other imported data.
+            helpers = _helpers(objects)
+            meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
             if policy != "RIG" and any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
                 raise MeshResultApplicationError("Choose static meshes with optional Empty parents")
             parts = ()
@@ -148,8 +179,9 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             }
             mesh_application.validate_target(target)
             if policy == "RIG":
+                skin = tuple(obj for obj in objects if obj not in helpers)
                 receipt = rig_application.apply_skin(
-                    target, primary, objects, mapping, keep_original=keep_original
+                    target, primary, skin, mapping, keep_original=keep_original
                 )
                 rig = receipt.rig
                 objects = tuple(obj for obj in objects if obj not in receipt.objects)

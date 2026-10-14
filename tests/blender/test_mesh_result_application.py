@@ -801,6 +801,91 @@ class RigResultTests(unittest.TestCase):
         )
         self.assertAlmostEqual(end.x - start.x, 2, places=4)
 
+    def test_importer_creates_no_bone_shape_helpers(self):
+        before = self.model._snapshot()
+        with self.model.staged_model(self.item, self.path, before, static_only=False) as (
+            staging,
+            objects,
+        ):
+            rigs = [obj for obj in objects if obj.type == "ARMATURE"]
+            self.assertEqual(len(rigs), 1)
+            self.assertEqual(len(rigs[0].pose.bones), 2)
+            self.assertTrue(all(bone.custom_shape is None for bone in rigs[0].pose.bones))
+            self.assertEqual([obj.type for obj in objects].count("MESH"), 1)
+            self.assertEqual(set(bpy.data.collections), before["collections"])
+            self.assertIn(staging, tuple(bpy.data.scenes))
+
+    def test_bone_shape_helper_is_not_a_result_and_is_removed(self):
+        # Blender's importer draws bones with a shared helper mesh unless told not to.
+        importer = bpy.ops.import_scene.gltf
+        shapes = []
+
+        def with_bone_shapes(path):
+            self.assertEqual(
+                importer(
+                    filepath=str(path),
+                    import_pack_images=True,
+                    import_select_created_objects=False,
+                    import_scene_extras=False,
+                    import_scene_as_collection=False,
+                    bone_heuristic="BLENDER",
+                    disable_bone_shape=False,
+                ),
+                {"FINISHED"},
+            )
+            rig = next(obj for obj in bpy.context.scene.objects if obj.type == "ARMATURE")
+            shapes.extend({bone.custom_shape for bone in rig.pose.bones} - {None})
+
+        objects, meshes = set(bpy.data.objects), set(bpy.data.meshes)
+        collections = set(bpy.data.collections)
+        with patch.object(self.model, "_import", side_effect=with_bone_shapes):
+            result = self.apply(policy="RIG")
+        self.assertEqual(len(shapes), 1)
+        self.assertEqual(self.source.modifiers[0].object, result.rig)
+        self.assertTrue(all(bone.custom_shape is None for bone in result.rig.pose.bones))
+        new = set(bpy.data.objects) - objects
+        self.assertEqual({obj for obj in new if obj.type == "MESH"}, {result.original})
+        self.assertEqual(set(bpy.data.meshes) - meshes, {self.source.data})
+        self.assertEqual(set(bpy.data.collections), collections)
+        self.assertEqual(bpy.context.window.scene, self.scene)
+
+    def test_undriven_display_mesh_beside_a_skin_is_a_helper(self):
+        # A returned bone-display mesh that the rig neither skins nor carries.
+        importer = self.model._import
+
+        def with_display_mesh(path):
+            importer(path)
+            data = bpy.data.meshes.new("Bone display")
+            data.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+            bpy.context.scene.collection.objects.link(bpy.data.objects.new("Bone display", data))
+
+        objects, meshes = set(bpy.data.objects), set(bpy.data.meshes)
+        with patch.object(self.model, "_import", side_effect=with_display_mesh):
+            result = self.apply(policy="RIG")
+        self.assertEqual(self.source.modifiers[0].object, result.rig)
+        new = set(bpy.data.objects) - objects
+        self.assertEqual({obj for obj in new if obj.type == "MESH"}, {result.original})
+        self.assertEqual(set(bpy.data.meshes) - meshes, {self.source.data})
+
+    def test_rig_that_drives_no_mesh_fails_without_choosing_a_helper(self):
+        # A clips-only result: its mesh is not skinned, so nothing is guessed.
+        importer = self.model._import
+
+        def without_skin(path):
+            importer(path)
+            body = next(obj for obj in bpy.context.scene.objects if obj.type == "MESH")
+            body.modifiers.clear()
+
+        before = self.model._snapshot()
+        with (
+            patch.object(self.model, "_import", side_effect=without_skin),
+            self.assertRaises(self.module.MeshResultApplicationError),
+        ):
+            self.apply(policy="RIG")
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertFalse(self.source.modifiers)
+        self.mesh.validate_target(self.target)
+
     def test_transformed_parent_and_selection_are_preserved(self):
         parent = bpy.data.objects.new("Original parent", None)
         self.scene.collection.objects.link(parent)

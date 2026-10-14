@@ -7,6 +7,7 @@ from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProper
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.playback import PLAYBACK_TYPES
+from ..core.scene.mesh_edit_policy import task_label
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.ui import saved_job_actions
 from . import render_lanes, result_media, review_previews, runtime
@@ -639,6 +640,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     local_placement_required: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    # Where the starting policy came from, and whether the GLB is an alternate.
+    policy_note: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    result_role: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
         name="Edit",
         items=(
@@ -682,6 +686,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         try:
             context.view_layer.update()
             source = context.view_layer.objects.active
+            # Without an explicit policy the review starts from the job's Edit 3D task.
+            explicit = self.properties.is_property_set("policy")
             jobs, approval = runtime.prepare_mesh_application(
                 self.context_id,
                 self.request_id,
@@ -689,7 +695,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 context.scene,
                 source,
                 self.asset_id,
-                policy=self.policy,
+                policy=self.policy if explicit else None,
                 placement=self.placement,
                 keep_original=self.keep_original,
                 original_source=self.original_source,
@@ -697,7 +703,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             )
             self._jobs = jobs
             self.application_id = approval.identifier
-            self.placement = approval.placement
+            self.policy, self.placement = approval.policy, approval.placement
+            self.policy_note = _policy_note(approval)
+            self.result_role = {True: "primary", False: "alternate"}.get(approval.primary, "")
             self.local_placement_required = approval.target.obj.matrix_world.determinant() <= 0
             self.scene_name, self.target_name = approval.scene_name, approval.target_name
             self.is_reuse = approval.record.state.value == "applied"
@@ -738,12 +746,15 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout = self.layout
         layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
         layout.label(text=f"Mesh: {self.target_name}", icon="MESH_DATA")
-        layout.label(text=f"Saved result: {self.asset_id}")
+        role = f" ({self.result_role} result)" if self.result_role else ""
+        layout.label(text=f"Saved result: {self.asset_id}{role}")
         if self.original_source:
             layout.label(text="Use the unchanged source captured for this generation.", icon="INFO")
         if self.is_reuse:
             layout.label(text="Use saved results again; no new generation.", icon="INFO")
         layout.prop(self, "policy")
+        if self.policy_note:
+            layout.label(text=self.policy_note)
         layout.prop(self, "placement")
         if self.local_placement_required:
             layout.label(text="Mirrored or zero-scale source: use object local coordinates.")
@@ -796,6 +807,15 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             return {"CANCELLED"}
         runtime.set_message("Mesh edit approved; inspect the saved job for its result")
         return {"FINISHED"}
+
+
+def _policy_note(approval):
+    """Say whether the review's starting edit follows the job's Edit 3D task."""
+    if approval.policy_source == "edit3d_task":
+        return f"Default edit follows this job's {task_label(approval.edit3d_task)} task."
+    if approval.policy_source == "default":
+        return "Default edit is not from this job's task; check it."
+    return ""
 
 
 def _refusal(context_id, error):

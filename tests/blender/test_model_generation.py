@@ -5266,7 +5266,10 @@ class ModelGenerationTests(unittest.TestCase):
         before = len(self.calls), len(self.paid), len(self.downloads)
         approval = self.prepare_mesh_edit(request_id)
         self.assertEqual(approval["target"], source.name)
+        # The fixture model is in no Edit 3D task, so REMESH is not the job's.
         self.assertEqual(approval["mesh_policy"], "REMESH")
+        self.assertEqual(approval["mesh_policy_source"], "default")
+        self.assertIsNone(approval["edit3d_task"])
         self.assertEqual(approval["mesh_placement"], "WORLD")
         self.assertTrue(approval["keep_original"])
         self.assertEqual(source.data, old_mesh)
@@ -5280,6 +5283,130 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def mesh_dialog(self, request_id, asset_id="result-image", *, original_source=False, **chosen):
+        """Invoke the native mesh review as a saved-job button does, plus any chosen options."""
+        dialog = Mock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(
+            scene=bpy.context.scene,
+            view_layer=bpy.context.view_layer,
+            window_manager=SimpleNamespace(invoke_props_dialog=dialog),
+        )
+        op = SimpleNamespace(
+            context_id=self.runtime.state.job_context_id,
+            request_id=request_id,
+            expected_revision=self.store.get(request_id).revision,
+            asset_id=asset_id,
+            policy=chosen.get("policy", "REMESH"),
+            placement="WORLD",
+            keep_original=True,
+            original_source=original_source,
+            properties=SimpleNamespace(is_property_set=lambda name: name in chosen),
+            report=Mock(),
+        )
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
+        op.report.assert_not_called()
+        self.addCleanup(operator.cancel, op, context)
+        return op, self.runtime.state.model_jobs._application_approvals[op.application_id]
+
+    def test_saved_mesh_review_starts_from_the_jobs_edit3d_task(self):
+        # Restarted jobs keep no submitted task: the model's only task decides.
+        cases = (
+            ("model_tripo-retopology", "REMESH", "edit3d_task", "REMESH", "Remesh"),
+            ("model_meshy-7-retexture", "RETEXTURE", "edit3d_task", "RETEXTURE", "Retexture"),
+            ("model_meshy-uv-unwrap", "UV", "edit3d_task", "UV", "UV Unwrap"),
+            ("model_meshy-rigging", "RIG", "edit3d_task", "RIG", "Rigging"),
+            ("model_tripo-segmentation-v2", "PARTS", "edit3d_task", "PARTS", "Parts"),
+            # No in-place Animate policy, and a model in two tasks names neither.
+            ("model_meshy-animation", "REMESH", "default", "ANIMATE", None),
+            ("model_rodin-hyper3d-bang", "REMESH", "default", None, None),
+        )
+        for model_id, policy, source, task, label in cases:
+            with self.subTest(model=model_id):
+                self.model = dict(self.model, id=model_id)
+                self.use_model(self.model)
+                request_id = self.recovered_mesh_edit()
+                saved = self.store.get(request_id)
+                before = len(self.calls), len(self.paid), len(self.downloads)
+                approval = self.prepare_mesh_edit(request_id)
+                self.assertEqual(
+                    (approval["mesh_policy"], approval["mesh_policy_source"]), (policy, source)
+                )
+                self.assertEqual(approval["edit3d_task"], task)
+                self.assertIs(approval["primary"], True)
+                explicit = self.prepare_mesh_edit(request_id, mesh_policy="UV")
+                self.assertEqual(
+                    (explicit["mesh_policy"], explicit["mesh_policy_source"]), ("UV", "requested")
+                )
+                op, ticket = self.mesh_dialog(request_id)
+                self.assertEqual(
+                    (op.policy, ticket.policy, ticket.policy_source), (policy, policy, source)
+                )
+                self.assertEqual(
+                    op.policy_note,
+                    f"Default edit follows this job's {label} task."
+                    if label
+                    else "Default edit is not from this job's task; check it.",
+                )
+                self.assertEqual(op.result_role, "primary")
+                op, ticket = self.mesh_dialog(request_id, policy="RETEXTURE")
+                self.assertEqual((op.policy, ticket.policy_source), ("RETEXTURE", "requested"))
+                self.assertEqual(op.policy_note, "")
+                self.assertEqual(self.store.get(request_id), saved)
+                self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_captured_source_review_starts_from_the_submitted_edit3d_task(self):
+        # Rodin Bang retextures and splits into parts; only the submitted task decides.
+        from helpers import parts_glb
+
+        self.model["id"] = "model_rodin-hyper3d-bang"
+        bpy.context.scene.scenario.edit3d_task = "PARTS"
+        request_id, source = self.captured_source_result(parts_glb())
+        bpy.ops.mesh.primitive_cube_add(location=(9, 0, 0))
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertEqual(approval["target"], source.name)
+        self.assertEqual(
+            (approval["mesh_policy"], approval["mesh_policy_source"], approval["edit3d_task"]),
+            ("PARTS", "edit3d_task", "PARTS"),
+        )
+        op, ticket = self.mesh_dialog(request_id, original_source=True)
+        self.assertIs(ticket.target.obj, source)
+        self.assertEqual((op.policy, ticket.policy), ("PARTS", "PARTS"))
+        self.assertEqual(op.policy_note, "Default edit follows this job's Parts task.")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["mesh_edit"]["policy"], "PARTS")
+        # The submitted task is not saved: after a restart the model is ambiguous.
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        approval = self.prepare_mesh_edit(request_id)
+        self.assertEqual(
+            (approval["mesh_policy"], approval["mesh_policy_source"], approval["edit3d_task"]),
+            ("REMESH", "default", None),
+        )
+
+    def test_mesh_review_names_an_alternate_glb_like_its_import(self):
+        glb = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        request_id = self.recovered_package(
+            {"mesh-a": ("model/gltf-binary", glb, {}), "mesh-b": ("model/gltf-binary", glb, {})}
+        )
+        bpy.ops.mesh.primitive_cube_add()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            [(unit["key"], unit["primary"]) for unit in status["import_units"]],
+            [("mesh-a", True), ("mesh-b", False)],
+        )
+        view = self.runtime.state.model_jobs.views[request_id]
+        labels = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
+        self.assertIn("Apply mesh edit (1)", labels)
+        self.assertIn("Apply alternate mesh edit: GLB (2)", labels)
+        self.assertNotIn("Apply mesh edit (2)", labels)
+        primary = self.prepare_mesh_edit(request_id, asset_id="mesh-a")
+        alternate = self.prepare_mesh_edit(request_id, asset_id="mesh-b")
+        self.assertEqual((primary["primary"], alternate["primary"]), (True, False))
+        op, ticket = self.mesh_dialog(request_id, "mesh-b")
+        self.assertEqual((op.result_role, ticket.asset_id), ("alternate", "mesh-b"))
 
     def test_mesh_edit_world_placement_preserves_imported_positions_with_transformed_source(self):
         request_id = self.recovered_mesh_edit()
@@ -5333,6 +5460,7 @@ class ModelGenerationTests(unittest.TestCase):
                     placement="WORLD",
                     keep_original=True,
                     original_source=False,
+                    properties=SimpleNamespace(is_property_set=lambda name: False),
                     report=Mock(),
                 )
                 self.assertEqual(operator.invoke(op, context, None), {"RUNNING_MODAL"})
@@ -6025,6 +6153,7 @@ class ModelGenerationTests(unittest.TestCase):
             placement="WORLD",
             keep_original=True,
             original_source=True,
+            properties=SimpleNamespace(is_property_set=lambda name: False),
             report=Mock(),
         )
         operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh

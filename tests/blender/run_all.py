@@ -104,6 +104,17 @@ BASELINE = (
     "test_library_organization",
     "test_workflow_references",
     "test_workflow_uploads",
+    # Unconfirmed submissions: cloud candidates, the native link and its review (#494).
+    "test_model_generation.ModelGenerationTests"
+    ".test_an_unconfirmed_request_refuses_an_identical_one_until_the_user_reviews_it",
+    "test_model_generation.ModelGenerationTests"
+    ".test_an_uncertain_submission_lists_candidates_and_links_only_the_users_choice",
+    "test_model_generation.ModelGenerationTests"
+    ".test_a_link_the_fresh_retrieval_refuses_saves_nothing_and_says_why",
+    "test_model_generation.ModelGenerationTests"
+    ".test_a_restarted_uncertain_job_looks_up_once_and_offline_sends_nothing",
+    "test_model_generation.ModelGenerationTests"
+    ".test_uncertain_submission_has_no_recovery_dispatch_action",
 )
 
 

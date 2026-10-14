@@ -679,6 +679,8 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
     old = Record({"request_id": "old"}, [{"asset": {"asset_id": "a"}, "receipt": None}])
     snapshot = package_probe.job_snapshot(old)
     assert snapshot["intent"] == {"request_id": "old", "film_task": None}
+    # Schema 12 upgrades earlier rows with an unknown submission claim time.
+    assert snapshot["claimed_at"] is None
     assert snapshot["results"][0]["asset"] == {
         "asset_id": "a",
         "source": "asset",

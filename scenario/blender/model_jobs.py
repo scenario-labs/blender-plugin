@@ -27,7 +27,7 @@ from ..core.jobs.coordinator import (
 )
 from ..core.jobs.preview_scheduler import BATCH_LIMIT
 from ..core.jobs.records import JobRecord
-from ..core.jobs.result_files import CHECKING, VERIFIED, ResultFiles
+from ..core.jobs.result_files import CHECKING, UNAVAILABLE, VERIFIED, ResultFiles
 from ..core.jobs.results import ResultError
 from ..core.jobs.store import (
     JobOrigin,
@@ -425,6 +425,9 @@ class ModelJobs:
         # the preview lane against their saved receipts. Memory only; it follows
         # the saved store, so a restarted job is checked like a current one.
         self._files = ResultFiles()
+        # request_id -> number of `wait` calls on MCP HTTP workers waiting for it.
+        self._file_waits = {}
+        self._file_waits_lock = threading.Lock()
         self._plans = {}
         self._model_imports = {}
         self.cloud_reads = {}
@@ -922,7 +925,10 @@ class ModelJobs:
                 self._files.forget(request_id)
             else:
                 self._files.seed(record, self.session.verified_files(request_id))
-                targets.extend(self._files.unchecked(record))
+                # A waited job also notices a file changed since its check.
+                targets.extend(
+                    self._files.unchecked(record, revalidate=request_id in self._file_waits)
+                )
         self._files.start(self.session.result_files, targets)
 
     def _unread_world_sizes(self, record):
@@ -2291,18 +2297,26 @@ class ModelJobs:
         """Wait on an HTTP worker using only saved state; the main thread advances jobs."""
         deadline = time.monotonic() + timeout
         sleeper = threading.Event()
-        while self.session.active:
-            if stopped():
-                raise ScenarioError(0, "The job wait stopped; generation was not cancelled")
-            record = self.store.get(request_id)
-            if record is None:
-                raise ScenarioError(0, "Saved job is unavailable")
-            if not self._delivering(request_id, record) and not self._files.pending(record):
-                return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            sleeper.wait(min(0.1, remaining))
+        with self._file_waits_lock:
+            self._file_waits[request_id] = self._file_waits.get(request_id, 0) + 1
+        try:
+            while self.session.active:
+                if stopped():
+                    raise ScenarioError(0, "The job wait stopped; generation was not cancelled")
+                record = self.store.get(request_id)
+                if record is None:
+                    raise ScenarioError(0, "Saved job is unavailable")
+                if not self._delivering(request_id, record) and not self._files.pending(record):
+                    return
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                sleeper.wait(min(0.1, remaining))
+        finally:
+            with self._file_waits_lock:
+                self._file_waits[request_id] -= 1
+                if not self._file_waits[request_id]:
+                    del self._file_waits[request_id]
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
     def _advancing(self, request_id, record):
@@ -2418,8 +2432,6 @@ class ModelJobs:
     def _file_rows(self, record):
         """This status read's file rows; it asks a worker to check what is unchecked."""
         self._files.watch(record.intent.request_id)
-        # An explicit read checks again what a failed check left unavailable.
-        self._files.retry_unavailable(record)
         # Files this session just downloaded or imported are listed at once.
         self._files.seed(record, self.session.verified_files(record.intent.request_id))
         rows = self._files.project(record)
@@ -2473,7 +2485,8 @@ class ModelJobs:
             # Downloaded results whose local bytes a worker matched to their saved
             # receipts, whatever their kind, import or restart; see result_files.
             "files": [row.file for row in files if row.state == VERIFIED],
-            "file_check_pending": any(row.state == CHECKING for row in files),
+            # A check still to come: checking, or unavailable until a retry runs.
+            "file_check_pending": any(row.state in (CHECKING, UNAVAILABLE) for row in files),
             "results": [
                 {
                     "asset_id": item.asset.asset_id,

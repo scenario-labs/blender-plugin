@@ -316,24 +316,102 @@ def test_a_file_changing_while_it_is_checked_is_checked_again(env, monkeypatch):
     assert files.unchecked(record) == (("request", "clip", record.results[0].receipt.sha256),)
 
 
-def test_a_failed_check_reports_unavailable_until_status_asks_again(env):
+class Clock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_check_that_could_not_run_stays_pending_and_is_retried_with_a_growing_delay(env):
     record = ready_job(env, "request", [("clip", "video/mp4", MP4)])
-    files = ResultFiles()
+    clock = Clock()
+    files = ResultFiles(clock=clock)
     files.watch("request")
 
     def failing(targets):
         return Done(lambda: (_ for _ in ()).throw(ResultError("inactive")))
 
-    files.start(failing, files.unchecked(record))
+    for delay in (5.0, 10.0, 20.0):
+        files.start(failing, files.unchecked(record))
+        files.finish()
+        assert states(files.project(record)) == [("clip", UNAVAILABLE)]
+        # Still a check to come, so a wait keeps waiting for it.
+        assert files.pending(record)
+        clock.now += delay - 0.5
+        assert files.unchecked(record) == ()
+        clock.now += 0.5
+        assert files.unchecked(record) == (("request", "clip", record.results[0].receipt.sha256),)
+    rows = settle(files, env.coordinator, record)
+    assert listed(rows) == [str(directory_of(env, record) / record.results[0].asset.name)]
+    assert not files.pending(record)
+
+
+def test_an_unreadable_file_is_unavailable_not_changed(env):
+    record = ready_job(env, "request", [("clip", "video/mp4", MP4)])
+    path = directory_of(env, record) / record.results[0].asset.name
+    clock = Clock()
+    files = ResultFiles(clock=clock)
+    path.chmod(0o000)
+    try:
+        if os.access(path, os.R_OK):
+            pytest.skip("This account reads files without read permission")
+        rows = settle(files, env.coordinator, record)
+    finally:
+        path.chmod(0o600)
+    assert states(rows) == [("clip", UNAVAILABLE)] and listed(rows) == []
+    assert files.pending(record)
+    clock.now += 5.0
+    assert listed(settle(files, env.coordinator, record)) == [str(path)]
+
+
+def test_a_file_changed_after_its_check_keeps_a_wait_waiting(env):
+    record = ready_job(env, "request", [("clip", "video/mp4", MP4)])
+    path = directory_of(env, record) / record.results[0].asset.name
+    files = ResultFiles()
+    settle(files, env.coordinator, record)
+    assert not files.pending(record)
+    replace(path, MP4)
+    # Same bytes, new identity: a wait does not return before it is checked again.
+    assert files.pending(record)
+    target = ("request", "clip", record.results[0].receipt.sha256)
+    assert files.unchecked(record) == ()
+    assert files.unchecked(record, revalidate=True) == (target,)
+    files.start(checker(env.coordinator), files.unchecked(record, revalidate=True))
     files.finish()
-    assert states(files.project(record)) == [("clip", UNAVAILABLE)]
-    # The pump does not retry it on its own; an explicit status read does.
-    assert files.unchecked(record) == () and not files.pending(record)
-    files.retry_unavailable(record)
-    assert states(files.project(record)) == [("clip", CHECKING)]
-    assert listed(settle(files, env.coordinator, record)) == [
-        str(directory_of(env, record) / record.results[0].asset.name)
+    assert not files.pending(record)
+    assert listed(files.project(record)) == [str(path)]
+
+
+def test_an_uninspectable_path_has_a_full_size_identity(monkeypatch, tmp_path):
+    def denied(path):
+        raise PermissionError(path)
+
+    monkeypatch.setattr(result_files.os, "lstat", denied)
+    stamp = result_files.file_stamp(tmp_path / "file")
+    assert stamp == result_files.UNREADABLE and len(stamp) == 6
+
+
+def test_session_memory_is_bounded(env, monkeypatch):
+    monkeypatch.setattr(result_files, "VERIFIED_LIMIT", 2)
+    record = ready_job(
+        env,
+        "request",
+        [("first", "video/mp4", MP4), ("second", "audio/wav", WAV), ("third", "text/plain", TEXT)],
+    )
+    env.coordinator.verify_results("request", expected_revision=record.revision)
+    # The oldest verification is forgotten; its file is checked by a worker when asked.
+    assert [asset_id for asset_id, _ in env.coordinator.verified_files("request")] == [
+        "second",
+        "third",
     ]
+    files = ResultFiles()
+    files.watch("request")
+    files.seed(record, env.coordinator.verified_files("request"))
+    files.forget("request")
+    assert files.watched == frozenset()
+    assert (files._checks, files._seeded, files._retries) == ({}, {}, {})
 
 
 def test_one_bounded_check_runs_at_a_time(env):

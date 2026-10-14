@@ -5,6 +5,7 @@
 import hashlib
 import os
 import re
+import stat
 import tempfile
 import threading
 from dataclasses import asdict, dataclass, field, replace
@@ -132,6 +133,28 @@ def _prompt_asset_id(value):
     return value.startswith("asset_") and not any(char.isspace() for char in value)
 
 
+def _unverified_state(path, receipt):
+    """Why a saved file failed verification: unavailable when it could not be read.
+
+    The verifier reports a read failure like a mismatch. A regular file of the
+    receipt's size that cannot be read is unavailable and checked again later;
+    anything else, including bytes that match through an unsafe path, is changed.
+    """
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size != receipt.size:
+            return result_files.CHANGED
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
+        digest = hashlib.sha256()
+        with os.fdopen(os.open(path, flags), "rb") as source:
+            while chunk := source.read(1 << 20):
+                digest.update(chunk)
+    except OSError:
+        return result_files.UNAVAILABLE
+    return result_files.CHANGED
+
+
 def _directory_keys(record):
     """Include all scope components and request identity, not just asset names."""
     return (
@@ -232,8 +255,14 @@ class ResultCommands:
         verified = self._downloader.verify(directory, receipt)
         if before is not None and result_files.file_stamp(path) == before:
             check = result_files.FileCheck(receipt.sha256, result_files.VERIFIED, path, before)
+            key = (record.intent.request_id, asset_id)
             with self._verified_lock:
-                self._verified_files[(record.intent.request_id, asset_id)] = check
+                # Newest last; beyond the limit the oldest is forgotten and its
+                # file is simply checked again by a worker when asked.
+                self._verified_files.pop(key, None)
+                self._verified_files[key] = check
+                while len(self._verified_files) > result_files.VERIFIED_LIMIT:
+                    del self._verified_files[next(iter(self._verified_files))]
         return verified
 
     def verified_files(self, request_id):
@@ -1153,7 +1182,7 @@ class ResultCommands:
             self._downloader.verify(self._directory(record, create=False), receipt)
             state = result_files.VERIFIED
         except Exception:
-            state = result_files.CHANGED
+            state = _unverified_state(path, receipt)
         if result_files.file_stamp(path) != before:
             # Changed while it was hashed: the next poll checks it again.
             return None

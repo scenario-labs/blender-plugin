@@ -13,6 +13,7 @@ application authority: every application still rehashes the bytes it reads.
 """
 
 import os
+import time
 from dataclasses import dataclass, field
 
 from .store import JobState
@@ -30,19 +31,27 @@ UNAVAILABLE = "unavailable"
 NOT_DOWNLOADED = "not_downloaded"
 NOT_READY = "not_ready"
 
+# The identity of a path that exists but cannot be inspected; the same shape as
+# a readable identity, so it compares like one and stays stable until it changes.
+UNREADABLE = ("unreadable",) * 6
+# Seconds before a check that could not run is tried again, doubling up to the cap.
+RETRY_DELAY = 5.0
+RETRY_CAP = 300.0
+# Verifications a coordinator remembers for the status reads of this session.
+VERIFIED_LIMIT = 4096
+
 
 def file_stamp(path):
     """Identity of the file at ``path`` without following links, or None when absent.
 
-    Any other failure is a stable marker, so an unreadable entry stays settled
-    until it changes instead of being rehashed on every read.
+    A path that exists but cannot be inspected has the ``UNREADABLE`` identity.
     """
     try:
         value = os.lstat(path)
     except (FileNotFoundError, NotADirectoryError):
         return None
     except OSError:
-        return ("unreadable",)
+        return UNREADABLE
     return (
         value.st_dev,
         value.st_ino,
@@ -55,7 +64,7 @@ def file_stamp(path):
 
 @dataclass(frozen=True)
 class FileCheck:
-    """One settled check of a receipt: verified, missing, changed or unavailable."""
+    """One check of a receipt: verified, missing, changed or unavailable."""
 
     sha256: str
     state: str
@@ -75,19 +84,25 @@ class FileRow:
 class ResultFiles:
     """Session memory of result file checks, owned by the main thread.
 
-    ``pending`` alone may be read from another thread: it only looks up this
-    memory. Jobs are checked once a status read asks for them (``watch``).
-    One batch of at most ``BATCH_LIMIT`` targets is in flight at a time, so
-    the checks never hold the preview lane longer than a preview batch.
+    ``pending`` alone may be read from another thread: it reads this memory
+    and the identities of the files it lists, and changes nothing. Jobs are
+    checked once a status read asks for them (``watch``). One batch of at most
+    ``BATCH_LIMIT`` targets is in flight at a time, so the checks never hold
+    the preview lane longer than a preview batch. A check that could not run
+    (``unavailable``) is still to come: it is queued again after a delay that
+    doubles up to ``RETRY_CAP``.
     """
 
-    def __init__(self):
+    def __init__(self, *, clock=time.monotonic):
+        self._clock = clock
         self._checks = {}
         self._watched = set()
         self._task = None
-        # Verifications this session made while delivering, each applied once:
-        # after its file changes, a worker checks it again instead.
-        self._seeded = set()
+        # key -> the verification this session last applied with ``seed``. A
+        # verification is applied once: after its file changes, a worker checks it.
+        self._seeded = {}
+        # key -> (failures, clock time before which an unavailable check waits).
+        self._retries = {}
 
     @property
     def watched(self):
@@ -103,40 +118,67 @@ class ResultFiles:
 
     def forget(self, request_id):
         self._watched.discard(request_id)
-        for key in [key for key in self._checks if key[0] == request_id]:
-            del self._checks[key]
+        for memory in (self._checks, self._seeded, self._retries):
+            for key in [key for key in memory if key[0] == request_id]:
+                del memory[key]
 
     def _in_flight(self):
         task = self._task
         return task[1] if task is not None else frozenset()
 
-    def _settled(self, request_id, item):
-        check = self._checks.get((request_id, item.asset.asset_id))
-        return check is not None and check.sha256 == item.receipt.sha256
+    def _current(self, key, item):
+        """The check of this receipt, or None; a stale identity counts as none."""
+        check = self._checks.get(key)
+        if check is None or check.sha256 != item.receipt.sha256:
+            return None
+        if check.state != UNAVAILABLE and file_stamp(check.path) != check.stamp:
+            return None
+        return check
 
-    def unchecked(self, record):
-        """Targets of a watched ready job that have no settled check and none in flight."""
+    def unchecked(self, record, *, revalidate=False):
+        """Targets of a watched ready job to check now: none settled, none in flight.
+
+        An unavailable check is due again once its delay passed. With
+        ``revalidate``, a file whose identity changed since its check is due
+        too; otherwise only a status read (``project``) notices that change.
+        """
         request_id = record.intent.request_id
         if request_id not in self._watched or record.state not in READY_STATES:
             return ()
-        in_flight = self._in_flight()
-        return tuple(
-            target
-            for item in record.results
-            if item.receipt is not None
-            for target in ((request_id, item.asset.asset_id, item.receipt.sha256),)
-            if not self._settled(request_id, item) and target not in in_flight
-        )
+        in_flight, now, due = self._in_flight(), self._clock(), []
+        for item in record.results:
+            if item.receipt is None:
+                continue
+            key = (request_id, item.asset.asset_id)
+            target = (*key, item.receipt.sha256)
+            if target in in_flight:
+                continue
+            check = self._checks.get(key)
+            if check is not None and check.sha256 == item.receipt.sha256:
+                if check.state == UNAVAILABLE:
+                    if now < self._retries.get(key, (0, 0.0))[1]:
+                        continue
+                elif not revalidate or self._current(key, item) is not None:
+                    continue
+            due.append(target)
+        return tuple(due)
 
     def pending(self, record):
-        """Whether a status read of this watched ready job would still say checking."""
+        """Whether a status read of this watched ready job would report a check to come.
+
+        That is a result still checking or unavailable, including a listed
+        file whose identity changed since its check.
+        """
         request_id = record.intent.request_id
         if request_id not in self._watched or record.state not in READY_STATES:
             return False
-        return any(
-            item.receipt is not None and not self._settled(request_id, item)
-            for item in record.results
-        )
+        for item in record.results:
+            if item.receipt is None:
+                continue
+            check = self._current((request_id, item.asset.asset_id), item)
+            if check is None or check.state == UNAVAILABLE:
+                return True
+        return False
 
     def seed(self, record, verified):
         """Settle results this session already verified, from (asset_id, FileCheck) pairs.
@@ -152,26 +194,22 @@ class ResultFiles:
             if item.receipt is not None
         }
         for asset_id, check in verified:
-            token = (request_id, asset_id, check.sha256, check.stamp)
             key = (request_id, asset_id)
+            existing = self._checks.get(key)
             if (
                 check.state != VERIFIED
                 or receipts.get(asset_id) != check.sha256
-                or token in self._seeded
-                or (key in self._checks and self._checks[key].sha256 == check.sha256)
+                or self._seeded.get(key) == check
+                or (
+                    existing is not None
+                    and existing.sha256 == check.sha256
+                    and existing.state != UNAVAILABLE
+                )
             ):
                 continue
-            self._seeded.add(token)
+            self._seeded[key] = check
             self._checks[key] = check
-
-    def retry_unavailable(self, record):
-        """Let an explicit status read check again what a failed batch left unavailable."""
-        request_id = record.intent.request_id
-        for item in record.results:
-            key = (request_id, item.asset.asset_id)
-            check = self._checks.get(key)
-            if check is not None and check.state == UNAVAILABLE:
-                del self._checks[key]
+            self._retries.pop(key, None)
 
     def project(self, record):
         """Rows in result order; a file whose identity changed since its check is unchecked."""
@@ -187,14 +225,9 @@ class ResultFiles:
                 rows.append(FileRow(asset_id, None, NOT_READY))
                 continue
             key = (request_id, asset_id)
-            check = self._checks.get(key)
-            if check is not None and (
-                check.sha256 != item.receipt.sha256
-                or (check.state != UNAVAILABLE and file_stamp(check.path) != check.stamp)
-            ):
-                del self._checks[key]
-                check = None
+            check = self._current(key, item)
             if check is None:
+                self._checks.pop(key, None)
                 rows.append(FileRow(asset_id, None, CHECKING))
             else:
                 rows.append(
@@ -228,5 +261,13 @@ class ResultFiles:
         except Exception:
             checks = {target: FileCheck(target[2], UNAVAILABLE) for target in targets}
         for (request_id, asset_id, sha256), check in checks.items():
-            if (request_id, asset_id, sha256) in targets and check is not None:
-                self._checks[(request_id, asset_id)] = check
+            if (request_id, asset_id, sha256) not in targets or check is None:
+                continue
+            key = (request_id, asset_id)
+            self._checks[key] = check
+            if check.state == UNAVAILABLE:
+                failures = min(self._retries.get(key, (0, 0.0))[0] + 1, 32)
+                delay = min(RETRY_CAP, RETRY_DELAY * 2 ** (failures - 1))
+                self._retries[key] = (failures, self._clock() + delay)
+            else:
+                self._retries.pop(key, None)

@@ -808,7 +808,9 @@ entry adds `file`, its path when listed and `null` otherwise, and `file_state`:
 - `missing`: no file is at the saved location.
 - `changed`: a file is there, but it is partial, replaced by a link or holds
   other bytes.
-- `unavailable`: the check could not run; the next status read tries again.
+- `unavailable`: the check could not run, such as a read error. Blender tries
+  again by itself after 5 seconds, doubling the delay up to 5 minutes, and
+  `file_check_pending` stays true.
 - `not_downloaded` or `not_ready`: nothing was saved yet, or the job is not
   ready, such as an interrupted download that needs `recover_download`.
 

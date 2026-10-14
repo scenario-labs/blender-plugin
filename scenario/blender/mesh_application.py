@@ -38,20 +38,54 @@ def _present(collection, value):
     return any(item is value for item in collection)
 
 
-def _validate_object(scene, obj):
+def _linked(obj):
+    return obj.library or obj.override_library or obj.data.library or obj.data.override_library
+
+
+def _skin_rig(scene, obj):
+    """Return the one vertex-weight Armature skin a rigged source may carry."""
+    if len(obj.modifiers) != 1 or obj.modifiers[0].type != "ARMATURE":
+        raise MeshApplicationError("Modifiers other than one Armature skin require another policy")
+    modifier = obj.modifiers[0]
+    if (
+        not modifier.use_vertex_groups
+        or modifier.use_bone_envelopes
+        or modifier.use_multi_modifier
+        or modifier.vertex_group
+        or not obj.vertex_groups
+    ):
+        raise MeshApplicationError("Use a vertex-group Armature skin without envelopes or a mask")
+    rig = modifier.object
+    if rig is None or rig.type != "ARMATURE" or not _present(scene.objects, rig) or _linked(rig):
+        raise MeshApplicationError("Bind the Armature skin to a local armature in this scene")
+    if rig.mode == "EDIT":
+        raise MeshApplicationError("Leave Edit Mode on the source rig")
+    return modifier, rig
+
+
+def _validate_object(scene, obj, *, skin=False):
+    """Check supported structure; skin admits only one vertex-weight Armature skin."""
     if not _present(bpy.data.scenes, scene) or not _present(scene.objects, obj):
         raise MeshApplicationError("Use a live object in the explicit originating scene")
     if obj.type != "MESH" or obj.mode != "OBJECT":
         raise MeshApplicationError("Only meshes in Object Mode are supported")
-    if obj.library or obj.override_library or obj.data.library or obj.data.override_library:
+    if _linked(obj):
         raise MeshApplicationError("Linked and overridden objects or meshes are unsupported")
-    if obj.modifiers or obj.constraints or obj.vertex_groups:
+    if obj.constraints or (not skin and (obj.modifiers or obj.vertex_groups)):
         raise MeshApplicationError(
             "Modifiers, constraints and vertex groups require another policy"
         )
     if obj.animation_data or obj.data.animation_data or obj.data.shape_keys:
         raise MeshApplicationError("Animation and shape keys require another policy")
-    if obj.parent and (obj.parent.type == "ARMATURE" or obj.parent_type != "OBJECT"):
+    if skin:
+        _skin_rig(scene, obj)
+    if obj.parent and obj.parent_type == "ARMATURE":
+        raise MeshApplicationError(
+            "Armature-deform parenting is unsupported; use Object parenting and a modifier"
+        )
+    # Object parenting to an armature only transforms. A skinned source keeps it,
+    # also to the rig its skin replaced, which then no longer deforms it.
+    if obj.parent and ((obj.parent.type == "ARMATURE" and not skin) or obj.parent_type != "OBJECT"):
         raise MeshApplicationError("Bone and vertex parenting require another policy")
     if any(child.parent_type != "OBJECT" for child in obj.children):
         raise MeshApplicationError("Vertex-parented children require another policy")
@@ -133,6 +167,85 @@ def _matrix(value):
     return matrix
 
 
+# Panel expansion and the active modifier are interface state, not skin binding.
+_INTERFACE_STATE = frozenset({"show_expanded", "is_active"})
+
+
+def modifier_settings(modifier, *, interface=True):
+    """Writable modifier settings; object pointers stay live references for restoration."""
+    settings = []
+    for prop in modifier.bl_rna.properties:
+        if prop.is_readonly or prop.type == "COLLECTION":
+            continue
+        if not interface and prop.identifier in _INTERFACE_STATE:
+            continue
+        value = getattr(modifier, prop.identifier)
+        if isinstance(value, set):
+            value = frozenset(value)
+        elif prop.type != "POINTER":
+            value = _plain(value)
+        settings.append((prop.identifier, value))
+    return (modifier.type, tuple(settings))
+
+
+@dataclass(frozen=True)
+class SourceSkin:
+    """A rigged source's captured Armature skin; any change makes the target stale.
+
+    The pose is excluded: glTF export sends the unposed mesh, and edits compare
+    returned geometry with the source mesh data, never its evaluated pose.
+    """
+
+    rig: object = field(repr=False)
+    armature: object = field(repr=False)
+    rig_name: str
+    armature_name: str
+    modifier: tuple = field(repr=False)
+    groups: tuple
+    weights: bytes = field(repr=False)
+    bones: bytes = field(repr=False)
+    rig_world: tuple = field(repr=False)
+
+
+def _digest(values):
+    digest = hashlib.sha256()
+    for value in values:
+        digest.update(repr(_plain(value)).encode("utf-8"))
+        digest.update(b"\0")
+    return digest.digest()
+
+
+def _capture_skin(scene, obj):
+    modifier, rig = _skin_rig(scene, obj)
+    bones = rig.data.bones
+    entries = sum(len(vertex.groups) for vertex in obj.data.vertices)
+    if entries + len(bones) > MAX_COMPONENTS:
+        raise MeshApplicationError("Skin weights exceed the synchronous component limit")
+    return SourceSkin(
+        rig,
+        rig.data,
+        rig.name,
+        rig.data.name,
+        modifier_settings(modifier, interface=False),
+        tuple((group.name, group.lock_weight) for group in obj.vertex_groups),
+        _digest(
+            tuple((group.group, group.weight) for group in vertex.groups)
+            for vertex in obj.data.vertices
+        ),
+        _digest(
+            (
+                bone.name,
+                bone.parent.name if bone.parent else None,
+                bone.matrix_local,
+                bone.length,
+                bone.use_deform,
+            )
+            for bone in bones
+        ),
+        tuple(tuple(row) for row in rig.matrix_world),
+    )
+
+
 @dataclass(frozen=True)
 class MeshTarget:
     scene: object = field(repr=False)
@@ -142,13 +255,17 @@ class MeshTarget:
     mesh_name: str
     geometry: bytes = field(repr=False)
     context: tuple = field(repr=False)
+    # Set only for a source skinned to an armature: RIG alone may replace it.
+    skin: SourceSkin | None = field(default=None, repr=False)
 
 
 def capture_target(scene, obj):
     """Freeze an explicit source before asynchronous work; never infer selection."""
     _main_thread()
     try:
-        _validate_object(scene, obj)
+        # A modifier or vertex group can only be a captured Armature skin.
+        skin = bool(obj.modifiers or obj.vertex_groups)
+        _validate_object(scene, obj, skin=skin)
         if (
             scene != bpy.context.scene
             or not scene.is_editable
@@ -176,7 +293,14 @@ def capture_target(scene, obj):
             obj.active_material_index,
         )
         return MeshTarget(
-            scene, obj, obj.data, obj.name, obj.data.name, _fingerprint(obj.data), context
+            scene,
+            obj,
+            obj.data,
+            obj.name,
+            obj.data.name,
+            _fingerprint(obj.data),
+            context,
+            _capture_skin(scene, obj) if skin else None,
         )
     except (ReferenceError, AttributeError):
         raise MeshApplicationError("The source mesh was removed or replaced") from None
@@ -294,6 +418,11 @@ def _holder_signature(holder):
     return tuple(settings)
 
 
+def _holder_state(holder):
+    # Vertex group names belong to the held mesh; new ones are user changes.
+    return _holder_signature(holder), tuple(group.name for group in holder.vertex_groups)
+
+
 def _publish(source, staged):
     source.data = staged
 
@@ -320,6 +449,7 @@ class MeshApplication:
     _before_hash: bytes = field(repr=False)
     _applied_hash: bytes = field(repr=False)
     _closed: bool = field(default=False, repr=False)
+    _skin: bool = field(default=False, repr=False)
 
     def _release_holder(self):
         if self.original is not None or not _present(bpy.data.objects, self._holder):
@@ -332,13 +462,12 @@ class MeshApplication:
             and not holder.keys()
             and not holder.modifiers
             and not holder.constraints
-            and not holder.vertex_groups
             and not holder.animation_data
             and not holder.children
             and not holder.rigid_body
             and not holder.rigid_body_constraint
             and all(slot.link == "DATA" for slot in holder.material_slots)
-            and _holder_signature(holder) == self._holder_state
+            and _holder_state(holder) == self._holder_state
         ):
             bpy.data.objects.remove(holder)
             return True
@@ -381,7 +510,7 @@ class MeshApplication:
             raise MeshApplicationError("This application receipt is already finalized")
         try:
             try:
-                _validate_object(self._scene, self.source)
+                _validate_object(self._scene, self.source, skin=self._skin)
             except MeshApplicationError as exc:
                 raise MeshApplicationError(
                     f"Target structure changed; rollback requires explicit review: {exc}"
@@ -436,8 +565,11 @@ def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original
     return _replace_mesh(scene, source, staged, keep_original=keep_original)
 
 
-def _replace_mesh(scene, source, staged, *, keep_original):
-    """Publish an already validated private mesh; caller owns non-mesh changes."""
+def _replace_mesh(scene, source, staged, *, keep_original, skin=False):
+    """Publish an already validated private mesh; caller owns non-mesh changes.
+
+    skin=True means rollback finds the source with its restored Armature skin.
+    """
     before = source.data
     before_active = source.active_material_index
     before_hash = _fingerprint(before)
@@ -453,7 +585,7 @@ def _replace_mesh(scene, source, staged, *, keep_original):
             holder.name = f"{source.name} Original"
             for collection in source.users_collection:
                 collection.objects.link(holder)
-        holder_state = _holder_signature(holder) if not keep_original else ()
+        holder_state = _holder_state(holder) if not keep_original else ()
         _publish(source, staged)
         return MeshApplication(
             source,
@@ -468,6 +600,7 @@ def _replace_mesh(scene, source, staged, *, keep_original):
             before.name,
             before_hash,
             applied_hash,
+            _skin=skin,
         )
     except BaseException:
         if staged is not None and source.data is staged:

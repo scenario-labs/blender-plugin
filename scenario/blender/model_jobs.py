@@ -366,7 +366,8 @@ class MeshApplicationApproval:
     original_source: bool = False
     kind: str = "mesh_edit"
     # Where the policy came from: "requested", the job's Edit 3D task
-    # ("edit3d_task") or the REMESH fallback ("default"); see mesh_edit_policy.
+    # ("edit3d_task"), a skinned source that accepts only RIG ("rigged_source")
+    # or the REMESH fallback ("default"); see mesh_edit_policy.
     policy_source: str = "requested"
     edit3d_task: str | None = None
     # Whether the GLB is the job's primary result or an alternate; None when unclassified.
@@ -1878,7 +1879,8 @@ class ModelJobs:
 
         Without an explicit policy the review starts from the job's Edit 3D
         task: the task this session submitted it with, else its model's only
-        task. Other jobs start from REMESH, reported as not derived.
+        task. Other jobs start from REMESH, reported as not derived. A source
+        skinned to an armature starts from RIG, the only policy it accepts.
         """
         record = self.store.get(request_id)
         if (
@@ -1912,7 +1914,11 @@ class ModelJobs:
             record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
         )
         source = "requested"
-        if policy is None:
+        if policy is None and target.skin is not None:
+            # A source skinned to an armature accepts only RIG, whatever the job's task.
+            policy = "RIG"
+            source = "edit3d_task" if start.derived and start.policy == "RIG" else "rigged_source"
+        elif policy is None:
             policy = start.policy
             source = "edit3d_task" if start.derived else "default"
         mapping = self._mesh_options(target, policy, placement, keep_original)

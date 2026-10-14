@@ -6102,8 +6102,10 @@ class ModelGenerationTests(unittest.TestCase):
             saved.intent.mesh_sources,
         )
 
-    def captured_source_result(self, body=None, *, source_geometry=None, scale=(1, 1, 1)):
-        from helpers import FIXTURES
+    def captured_source_result(
+        self, body=None, *, source_geometry=None, scale=(1, 1, 1), rigged=False
+    ):
+        from helpers import FIXTURES, skin_to_new_rig
 
         self.configure_ui_lane("edit3d")
         source = bpy.context.object
@@ -6113,6 +6115,8 @@ class ModelGenerationTests(unittest.TestCase):
             data.update()
             source.data = data
         source.scale = scale
+        if rigged:
+            skin_to_new_rig(bpy.context.scene, source)
         bpy.context.view_layer.update()
         self.captured_mesh_upload(live=True)
         self.result_bytes = (
@@ -6185,9 +6189,11 @@ class ModelGenerationTests(unittest.TestCase):
     def test_captured_positive_source_dialog_ignores_mirrored_selected_transform(self):
         self.captured_source_dialog((1, 2, 1), (-1, 1, 1), "WORLD")
 
-    def captured_rig_result(self):
+    def captured_rig_result(self, *, rigged=False):
         return self.captured_source_result(
-            animated_glb(morph=False), source_geometry=[(0, 0, 0), (1, 0, 0), (0, 0, 1)]
+            animated_glb(morph=False),
+            source_geometry=[(0, 0, 0), (1, 0, 0), (0, 0, 1)],
+            rigged=rigged,
         )
 
     def test_captured_rig_uses_original_source_and_native_history_without_new_spending(self):
@@ -6267,6 +6273,96 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applied", status)
         self.assertEqual(source.modifiers[0].object, rig)
         self.assertEqual((len(self.calls), len(self.paid), set(bpy.data.armatures)), before)
+
+    def test_captured_rigged_source_replaces_skin_with_native_history(self):
+        request_id, source = self.captured_rig_result(rigged=True)
+        source_name, old_rig = source.name, source.modifiers[0].object
+        old_skin = ("Old skin", old_rig.name, ("Old bone",))
+
+        def skin(obj):
+            modifier = obj.modifiers[0]
+            return modifier.name, modifier.object.name, tuple(g.name for g in obj.vertex_groups)
+
+        self.assertTrue(self.runtime.ensure_job_session()._mesh_sources)
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="RIG")
+        self.assertEqual((approval["target"], approval["mesh_policy"]), (source_name, "RIG"))
+        module = submodule("blender.mesh_result_application")
+        prefs = bpy.context.preferences.edit
+        settings = prefs.use_global_undo, prefs.undo_steps
+        prefs.use_global_undo, prefs.undo_steps = True, 32
+        try:
+            with patch.object(module, "_undo_enabled", return_value=True):
+                status = self.finish_application(approval)
+            self.assertEqual(status["status"], "applied", status)
+            rig_name, original_name = status["mesh_edit"]["rig"], status["mesh_edit"]["original"]
+            self.assertEqual(len(source.modifiers), 1)
+            self.assertEqual(skin(source)[:2], ("Scenario Rig", rig_name))
+            self.assertNotIn("Old bone", source.vertex_groups)
+            self.assertEqual(skin(bpy.data.objects[original_name]), old_skin)
+            self.assertEqual(source.parent, old_rig)
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            source = bpy.data.objects[source_name]
+            self.assertEqual((len(source.modifiers), skin(source)), (1, old_skin))
+            self.assertNotIn(rig_name, bpy.data.objects)
+            self.assertNotIn(original_name, bpy.data.objects)
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            source = bpy.data.objects[source_name]
+            self.assertEqual(skin(source)[:2], ("Scenario Rig", rig_name))
+            self.assertEqual(skin(bpy.data.objects[original_name]), old_skin)
+            self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+        finally:
+            prefs.use_global_undo, prefs.undo_steps = settings
+
+    def test_rigged_source_review_starts_on_rig_and_static_policies_fail_closed(self):
+        request_id, source = self.captured_rig_result(rigged=True)
+        old_rig, before = source.modifiers[0].object, self.store.get(request_id)
+        errors = (submodule("blender.mesh_result_application").MeshResultApplicationError,)
+        for purpose, policy in (("mesh_source", "REMESH"), ("mesh_edit", "UV")):
+            with self.subTest(purpose=purpose, policy=policy), self.assertRaises(errors):
+                self.prepare_mesh_edit(request_id, purpose=purpose, mesh_policy=policy)
+        # Without a requested policy, a skinned source starts on RIG, its only policy.
+        for purpose in ("mesh_source", "mesh_edit"):
+            approval = self.prepare_mesh_edit(request_id, purpose=purpose)
+            self.assertEqual(
+                (approval["mesh_policy"], approval["mesh_policy_source"]), ("RIG", "rigged_source")
+            )
+        explicit = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="RIG")
+        self.assertEqual(explicit["mesh_policy_source"], "requested")
+        op, ticket = self.mesh_dialog(request_id, original_source=True)
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        self.assertEqual((op.policy, op.source_rigged), ("RIG", True))
+        self.assertEqual((ticket.policy, ticket.policy_source), ("RIG", "rigged_source"))
+        self.assertEqual(
+            op.policy_note, "This mesh already has a rig, so the edit starts on Attach rig."
+        )
+        op._sync_options = lambda: operator._sync_options(op)
+        op.policy = "REMESH"
+        self.assertTrue(operator.check(op, None))
+        self.assertEqual(
+            op.review_error, "This mesh has a rig: choose Attach rig to replace its skin"
+        )
+        op.policy = "RIG"
+        operator.check(op, None)
+        self.assertEqual(op.review_error, "")
+        op.layout = Mock()
+        operator.draw(op, None)
+        texts = [call.kwargs.get("text") for call in op.layout.label.call_args_list]
+        self.assertIn(
+            "Replace this mesh's skin; the old rig stays, and Keep original uses it.", texts
+        )
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertIs(source.modifiers[0].object, old_rig)
+
+    def test_rigged_source_review_keeps_the_rigging_task_as_its_policy_source(self):
+        self.model["id"] = "model_meshy-rigging"
+        request_id, _ = self.captured_rig_result(rigged=True)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertEqual(
+            (approval["mesh_policy"], approval["mesh_policy_source"], approval["edit3d_task"]),
+            ("RIG", "edit3d_task", "RIG"),
+        )
 
     def test_captured_parts_apply_preserves_other_selection_and_records_no_new_spending(self):
         from helpers import parts_glb

@@ -1,6 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Synchronous skin attachment to a captured static source; staged-import ownership."""
+"""Synchronous skin attachment to a captured source; staged-import ownership.
+
+A rigged source's single Armature skin is replaced, never retargeted: its old rig
+object is left unchanged, and Keep original retains a copy still bound to it.
+"""
 
 from dataclasses import dataclass
 
@@ -88,6 +92,8 @@ def _stage_weights(target, names, weights):
     staged = target.mesh.copy()
     owner = bpy.data.objects.new("Scenario skin staging", staged)
     try:
+        # A rigged source's copy carries its old groups; returned weights replace them.
+        owner.vertex_groups.clear()
         for name in names:
             owner.vertex_groups.new(name=name)
         for index, vertex in enumerate(weights):
@@ -103,6 +109,27 @@ def _stage_weights(target, names, weights):
             bpy.data.objects.remove(owner)
 
 
+def _restore_skin(source, previous):
+    """Recreate a replaced Armature skin with every writable setting it had."""
+    kind, settings = previous
+    modifier = source.modifiers.new(dict(settings)["name"], kind)
+    for identifier, value in settings:
+        setattr(modifier, identifier, set(value) if isinstance(value, frozenset) else value)
+    if tuple(source.modifiers) != (modifier,) or mesh.modifier_settings(modifier) != previous:
+        raise mesh.MeshApplicationError("Could not restore the source Armature skin")
+
+
+def _unwind(source, modifier, previous, rigged):
+    """Leave the structure the receipt's rollback validates; it restores the mesh."""
+    if modifier is not None:
+        source.modifiers.remove(modifier)
+    if previous is not None:
+        _restore_skin(source, previous)
+    elif not rigged:
+        # Applied weights leave with the applied mesh; an unrigged source has none.
+        source.vertex_groups.clear()
+
+
 @dataclass
 class RigApplication:
     """Internal synchronous rollback handle; finalized by the saved-result command."""
@@ -113,6 +140,8 @@ class RigApplication:
     modifier_state: tuple
     objects: tuple
     rig: object
+    # The replaced Armature skin of a rigged source, restored by rollback.
+    previous: tuple | None = None
 
     @property
     def original(self):
@@ -132,8 +161,7 @@ class RigApplication:
             raise mesh.MeshApplicationError(
                 "Applied skin changed; inspect the source before recovery"
             )
-        source.modifiers.remove(self.modifier)
-        source.vertex_groups.clear()
+        _unwind(source, self.modifier, self.previous, self.receipt._skin)
         self.receipt.rollback()
 
 
@@ -141,13 +169,23 @@ def apply_skin(target, primary, objects, mapping, *, keep_original):
     """Retain imported rig hierarchy; keep source geometry, materials and object context."""
     rig, imported_modifier, names, weights = validate_skin(target, primary, objects, mapping)
     staged = _stage_weights(target, names, weights)
-    receipt = mesh._replace_mesh(target.scene, target.obj, staged, keep_original=keep_original)
-    modifier = None
+    rigged = target.skin is not None
+    receipt = mesh._replace_mesh(
+        target.scene, target.obj, staged, keep_original=keep_original, skin=rigged
+    )
+    modifier = previous = None
     try:
         # Blender owns vertex-group names on the mesh; the staged copy already
         # carries the matching names and deform weights when assigned to source.
         if _weights(target.obj) != (names, weights):
             raise mesh.MeshApplicationError("Blender did not retain the staged skin weights")
+        if rigged:
+            # Keep original copied the old skin before publication. The source now
+            # deforms only with the returned rig; the old rig object is untouched.
+            old = target.obj.modifiers[0]
+            settings = mesh.modifier_settings(old)
+            target.obj.modifiers.remove(old)
+            previous = settings
         modifier = target.obj.modifiers.new("Scenario Rig", "ARMATURE")
         modifier.object = rig
         modifier.use_vertex_groups = True
@@ -177,10 +215,9 @@ def apply_skin(target, primary, objects, mapping, *, keep_original):
             mesh._holder_signature(modifier),
             (root, *retained),
             rig,
+            previous,
         )
     except BaseException:
-        if modifier is not None:
-            target.obj.modifiers.remove(modifier)
-        target.obj.vertex_groups.clear()
+        _unwind(target.obj, modifier, previous, rigged)
         receipt.rollback()
         raise

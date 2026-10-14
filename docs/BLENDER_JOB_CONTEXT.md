@@ -910,7 +910,8 @@ revision. Queued commands retain their original scope.
   undone, and **Link this job** calls `ModelJobs.link`, which accepts only a
   listed candidate and queues `JobSession.link_unconfirmed`. A refused link keeps
   the record and shows the reason as the lookup note; a saved one resumes
-  automatic polling at once. MCP lists and accepts neither this action nor a
+  automatic polling at once. Its results are never imported automatically, even
+  in the Image session that sent the request: they wait for explicit review. MCP lists and accepts neither this action nor a
   link, so only the user decides which job a lost request created.
 - `read_prompt_text` is offered for a finished `prompt` or `translate` job. It reads
   the text through `JobSession.read_prompt_results` into memory only, and each text

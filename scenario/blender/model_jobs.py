@@ -1831,6 +1831,8 @@ class ModelJobs:
             request_id, expected_revision=expected_revision, remote_job_id=remote_job_id
         )
         self._commands[request_id] = (LINK, task)
+        # A chosen job may not be this request's: its results always wait for review.
+        self._automatic_application.discard(request_id)
         self._lookups[request_id].error = ""
         view.meta["recovery_actions"] = ()
         return task

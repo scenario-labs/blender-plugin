@@ -1788,10 +1788,13 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((linked.state.value, linked.remote_job_id), ("remote", "cloud-close"))
         self.assertNotIn(request_id, owner._paused)
         self.assertIsNone(view.meta["cloud_lookup"])
-        # The linked job is polled and delivered like any other saved job.
+        # The linked job is polled and downloaded like any other saved job, but even
+        # in the Image session that sent it, its results wait for explicit review.
         self.result_fixture()
+        before = set(bpy.data.images)
         self.deliver_results()
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(set(bpy.data.images), before)
         self.assertEqual(len(self.paid), 1)
         retrievals = [r for r in self.calls if r.url.path.endswith("/jobs/cloud-close")]
         self.assertGreaterEqual(len(retrievals), 2)

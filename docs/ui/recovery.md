@@ -238,7 +238,8 @@ created relative to sending (or its UTC time when the send time is unknown), its
 status and cost on one line and its prompt on the next. No job is selected at
 first; **Link this job** without a choice links nothing. A link Scenario's fresh
 retrieval refuses keeps the job unconfirmed and shows why. A saved link turns
-the row into an ordinary running job, polled and downloaded as usual. **Mark
+the row into an ordinary running job, polled and downloaded as usual; its
+results wait for review, even on the Image lane that sent the request. **Mark
 reviewed** stays available. The compact job strip still offers only **Inspect**
 for these jobs.
 

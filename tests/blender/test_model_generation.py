@@ -5932,6 +5932,7 @@ class ModelGenerationTests(unittest.TestCase):
                     placement="WORLD",
                     keep_original=True,
                     original_source=False,
+                    properties=SimpleNamespace(is_property_set=lambda name: name == "policy"),
                     report=Mock(),
                 )
                 op._sync_options = lambda: operator._sync_options(op)

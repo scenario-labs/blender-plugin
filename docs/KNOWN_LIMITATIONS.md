@@ -100,8 +100,9 @@ full render-lane desktop acceptance.
   recipe and a production ledger into a new ZIP; it shares that thread, refuses
   linked data (including the Essentials brushes a scene links once a sculpt or
   paint mode was used in it), movie clips, packed sound strip audio, image
-  sequences and other unportable data, keeps model IDs in the recipe and cannot
-  clear Blender's unused bytes of earlier settings, so review a bundle before
+  sequences and other unportable data, keeps model IDs in the recipe and output-only path
+  settings such as strip proxy folders, and cannot clear Blender's unused bytes
+  of earlier settings, so review a bundle before
   publishing it widely. It notices an edit of its unshown scenes only through the
   review's frames, rate, size and strip count, the scene and media counts and bytes
   and the ledger. It has installed synthetic coverage and the bundle of that
@@ -153,7 +154,8 @@ full render-lane desktop acceptance.
   completed, recover it from cloud history with **Save for recovery** (local MCP:
   `recover_cloud_job`) instead of generating again. Uncertain workflow and
   prompt-helper submissions currently have no in-Blender recovery. Do not repeat
-  them; check their outcome in the Scenario web app.
+  them; check their outcome in the Scenario web app. How the web app shows such
+  jobs has not been checked.
 - Remote cancellation is offered only for jobs Scenario reports as `inference`,
   the only type its job action reference documents as cancellable. Captured
   model generations report `custom`, so Blender does not cancel them; they
@@ -251,6 +253,11 @@ full render-lane desktop acceptance.
   desktop evidence (#440). A panorama input takes a
   saved 360 result or a checked local 2:1 file; local MCP accepts only the saved
   result.
+- A saved material result shows **Tiling** whenever the file has a material with
+  its derived name, and Tiling then scales that material's Mapping node, even if
+  it is an unrelated material. Saved application builds no Mapping node.
+- Opening an Edit 3D or Environment form whose saved model is no longer in the
+  catalog selects the first model, which makes a ready price in that scene stale.
 - Multi-object mesh export combines the selection. Safe in-place multi-object
   editing needs separate acceptance under #99.
 - Automatic Image-lane import and saved image and material application
@@ -296,7 +303,9 @@ full render-lane desktop acceptance.
   Library selection or a typed asset ID. A snapshot upload that is still sending
   stops for good after a scene edit, frame change, render or undo, and a chosen
   file's after undo or redo; it does not resume, so the content is uploaded again
-  (see the [user guide](USER_GUIDE.md#run-a-workflow)).
+  (see the [user guide](USER_GUIDE.md#run-a-workflow)). That a chosen file keeps
+  uploading through a real render or timeline playback was only simulated in
+  tests.
   Workflow and generation-form uploads share 128 upload handles; finished
   uploads keep theirs until the credentials or project change, a blend file
   loads (Open, Revert or File > New) or the extension restarts. A paid desktop

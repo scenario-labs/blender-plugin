@@ -674,7 +674,7 @@ behavior interchangeable. Remote names below were checked against the
 | Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
 | Asset library metadata | `list_assets`, `search_assets` | SDK `assets.list` and `search.asset_search`; no hosted tool-name equivalence asserted here |
 | Collections | `list_collections(page_size, pagination_token)` | `collections_list` |
-| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back. Both skip assets already in the collection; the hosted `collection_add_assets` also batches beyond 49, while a local review takes at most 49, the API's per-request cap |
+| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back. Both skip assets already in the collection; the hosted `collection_add_assets` also batches beyond 49 (observed behavior, not documented publicly), while a local review takes at most 49, the API's per-request cap |
 | Organization outcome or discard | `asset_organization_status(context_id, review_id, action)` | Local session review; `collection_get` and `asset_get` read service state |
 | Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
 | Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
@@ -757,7 +757,7 @@ local ID, never blindly repeated.
 render lanes, `render_form` (`configure` and `prepare`) and the render-lane
 `estimate_prompt` need the model's description. When this session has not
 loaded it yet, the call starts or joins its background read and waits up to 30
-seconds for it on the MCP request thread. Blender's main thread stays free, then
+seconds (a chosen limit, not a measured read time) for it on the MCP request thread. Blender's main thread stays free, then
 delivers the read and answers the call. These tools read the description before
 they quote, submit or change anything. If the read is still in flight after the
 wait, the call returns `The model description is still loading; call again in a
@@ -1243,7 +1243,8 @@ describes the row yet, or its model has no generation lane; it never stands for
 an image. The cloud job list returns result asset IDs without their media types.
 
 Each row's `cu_cost` is the job's `billing.cuCost` plus its `cuCostDetails`
-add-ons, such as quality-gate fees. Workflow runs appear as `kind=workflow`
+add-ons, such as quality-gate fees. Whether an approved quote includes those
+add-ons has not been verified. Workflow runs appear as `kind=workflow`
 rows whose own charge is normally 0; their `cu_cost` adds the charges of the
 step jobs named by the run's flow or by each step's `workflowJobId`. Steps
 missing from the page are read on the history worker, at most 24 per page,

@@ -535,7 +535,8 @@ preflight's format and size, and the report lists for each file:
 Luminance uses Rec.709 weights on the values Blender decodes. For OpenEXR these
 are floats after Blender's color space conversion, which turns an ACES2065-1
 file into its scene-linear Rec.709 space; `decoded.colorspace` records Blender's
-choice. PNG and JPEG values keep their stored sRGB encoding, so their seam and
+choice, which can be wrong: Blender labels an OpenEXR without declared
+chromaticities sRGB while keeping its float values. PNG and JPEG values keep their stored sRGB encoding, so their seam and
 pole values describe luma and no dynamic range is reported. Across a seamless
 wrap the edge differs like adjacent columns do, so `edge_to_neighbor` stays
 around 1 or below and `edge_to_quarter_turn` well below 1; a visible seam raises

@@ -988,7 +988,8 @@ the generation.
 
 Automatic and explicit `refresh_remote`/`cancel_remote` completions, and workflow
 decisions, carry the coordinator's `RemoteSnapshot` from SDK `jobs.retrieve`.
-`ModelJobs._observe` is their single display consumer; the inference cancellation
+`ModelJobs._observe` is their single display consumer, so Prompt, Translate and
+Blockout jobs show no remote progress; the inference cancellation
 offer above reads the same refresh and cancel completions on the delivery path,
 without draining them again.
 [`progress.observe`](../scenario/core/jobs/progress.py)
@@ -1082,7 +1083,8 @@ remains to deliver for a failed job. Generations, the composer's job strip and
 job card, **Generation details** and MCP `job_status` all read this view error.
 Like progress, the reason stays in memory: the job database stores no message,
 so a job that failed before a restart shows `failed` without a reason, and
-`list_local_jobs` has no error field. A server-side failure cannot be produced
+`list_local_jobs` has no error field. Prompt and Blockout jobs and cloud history
+rows show no reason. A server-side failure cannot be produced
 on demand, so installed tests send these documented fields through the
 synthetic SDK transport.
 

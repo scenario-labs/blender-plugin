@@ -196,9 +196,10 @@ properties naming jobs, assets or productions and the extension's saved settings
 (composer lanes with their reference uploads and local reference paths, Film and
 workflow forms) are removed from the bundled data, and the export refuses a
 bundle that still holds a known private identifier, extension storage or a source
-media folder. Model IDs, scene and object names, other custom properties and
-unused bytes Blender keeps from earlier settings can remain; review a bundle
-before sharing it.
+media folder. Model IDs, scene and object names, other custom properties,
+output-only path settings the export does not rewrite (such as strip proxy
+folders, which can name your user folder) and unused bytes Blender keeps from
+earlier settings can remain; review a bundle before sharing it.
 Scene properties, imported media and prompts can be saved in your `.blend` file.
 A form's chosen LoRAs and compositions are saved there too: their model IDs,
 names, strengths and a hashed connection scope that stops another credential pair

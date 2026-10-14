@@ -252,7 +252,8 @@ make smoke SMOKE_ARGS="resume --run-dir workdir/suite"
 Unattempted cases remain unsubmitted and require review; resume cannot spend.
 Preserve the complete suite directory, individual databases and scope keys.
 A directory copied or edited outside the command is not another authorization.
-Independent suites still do not share an account-wide or monthly budget ledger.
+Outside the hosted workflow's [monthly budget](#monthly-budget), independent
+suites do not share an account-wide or monthly budget ledger.
 
 `budget-run --plan PLAN --run-dir NEW_DIRECTORY --max-cu CAP` is for separately
 budget-authorized automation. It requires `SCENARIO_SMOKE=1` and a positive,
@@ -575,8 +576,8 @@ so later inputs or environment variables cannot change them after review:
   takes a reviewed commit.
 - A manual dispatch chooses `plan`: `monthly` (the default) or `private`, the
   `SMOKE_PLAN_JSON` environment secret. Its `max_cu` defaults to `40`; a zero,
-  empty or malformed cap fails before execution. Only a `private` dispatch
-  receives the private plan secret.
+  empty or malformed cap, or one above the monthly budget, fails before
+  execution. Only a `private` dispatch receives the private plan secret.
 
 Approving means authorizing the displayed plan, the configured test scope and the
 displayed total cap, including the exact input files/hashes of a version-2 plan.
@@ -585,6 +586,24 @@ exceeds the cap, it exits 3 and submits nothing. Hosted input paths are relative
 to the checked-out repository; use reviewed fixtures and preserve their licenses.
 Decline if these inputs or authorization are unclear.
 The job never prints the plan, account/project, asset/job IDs or raw exceptions.
+
+### Monthly budget
+
+All hosted runs share a budget of 5000 CU per calendar month (UTC),
+`MONTHLY_BUDGET_CU` in `tools/smoke_ci.py`. Admission, and the paid job again
+after approval, list this workflow's runs and add the requested total cap to the
+total caps of the month's other runs whose paid job started. A cap comes from
+that job's approved name; a started job whose cap cannot be read counts as the
+whole budget. Jobs skipped, rejected at approval or cancelled before starting
+count as zero. A run exceeding the remainder fails before any Scenario request.
+
+Reserved caps bound spending from above: a run that quotes or spends less still
+reserves its whole cap for the month. Workflow concurrency runs one smoke at a
+time, and the post-approval recheck makes the later of two overlapping runs count
+the other. An unreadable run history fails closed. Local runs are outside this
+ledger. As a server-side backstop, a Scenario Enterprise administrator can set a
+per-key usage limit (`maxConsumption`) on the test key in the Scenario portal;
+the workflow neither configures nor reads one.
 
 ### Monthly plan
 
@@ -614,8 +633,8 @@ When a price change pushes the exact total above 40 CU, the monthly run exits 3
 and submits nothing. Re-quote the plan with the
 [reference input commands](#prepare-reference-inputs), which never submit, then
 trim a case or raise `MONTHLY_MAX_CU` in a reviewed change. The cap applies per
-run. Manual dispatches are separate authorizations and share no monthly ledger,
-and the workflow configures no provider-side project budget. GitHub disables a
+run. Manual dispatches are separate authorizations; scheduled and manual runs
+share the [monthly budget](#monthly-budget). GitHub disables a
 public repository's schedules after 60 days without activity; re-enable the
 workflow from the Actions tab.
 

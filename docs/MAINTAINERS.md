@@ -322,8 +322,11 @@ which stays unset. A manual dispatch defaults to the monthly plan and a 40 CU ca
 selecting the private plan, or a higher cap, is its own budget decision. API
 readback on 2026-10-10 again shows the required reviewer and exactly the `main`
 policy, so the monthly plan needs no further repository setting.
-Configure any provider-side project/monthly budget separately; the workflow's cap
-is per run, and manual runs do not share a monthly ledger. The approval job shows
+On 2026-10-14 the maintainer capped all hosted smoke runs at 5000 CU per
+calendar month, `MONTHLY_BUDGET_CU` in `tools/smoke_ci.py`. The workflow sums
+the approved caps of the month's started runs; see the
+[monthly budget](../tests/smoke/README.md#monthly-budget). It does not configure
+a provider-side limit. The approval job shows
 the plan and cap frozen by admission. Review them and the configured scope before
 approving. Version-2 plans also authorize exact input files and
 hashes from the checked-out repository; the protected job stages them privately

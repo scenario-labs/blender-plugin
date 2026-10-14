@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Paid execution requires the protected environment and an explicit total cap.
 # The monthly schedule runs tests/smoke/monthly-plan.json with the fixed total
-# cap in tools/smoke_ci.py; it still waits for a required reviewer.
+# cap in tools/smoke_ci.py; it still waits for a required reviewer. Every run's
+# cap must also fit the monthly budget left after this month's earlier runs.
 name: smoke
 
 on:
@@ -50,7 +51,7 @@ jobs:
         with:
           version-file: pyproject.toml
           enable-cache: false
-      - name: Verify the protected smoke environment exists
+      - name: Verify the protected smoke environment and the monthly budget
         id: gate
         env:
           GH_TOKEN: ${{ github.token }}
@@ -76,10 +77,11 @@ jobs:
         with:
           version-file: pyproject.toml
           enable-cache: false
-      - name: Recheck protection after approval
+      - name: Recheck protection and the monthly budget after approval
         env:
           GH_TOKEN: ${{ github.token }}
-        run: uv run --locked --no-env-file python -m tools.smoke_ci gate
+          MAX_TOTAL_CU: ${{ needs.gate.outputs.max_cu }}
+        run: uv run --locked --no-env-file python -m tools.smoke_ci gate --recheck-cu "$MAX_TOTAL_CU"
       - name: Verify encrypted recovery before any service request
         env:
           SMOKE_PLAN: ${{ needs.gate.outputs.plan }}

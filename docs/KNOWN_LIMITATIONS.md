@@ -255,7 +255,8 @@ full render-lane desktop acceptance.
   result.
 - A saved material result shows **Tiling** whenever the file has a material with
   its derived name, and Tiling then scales that material's Mapping node, even if
-  it is an unrelated material. Saved application builds no Mapping node.
+  it is an unrelated material. Saved application builds no Mapping node
+  ([#485](https://github.com/scenario-labs/blender-plugin/issues/485)).
 - Opening an Edit 3D or Environment form whose saved model is no longer in the
   catalog selects the first model, which makes a ready price in that scene stale.
 - Multi-object mesh export combines the selection. Safe in-place multi-object

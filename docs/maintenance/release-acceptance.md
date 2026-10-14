@@ -122,8 +122,8 @@ and 2.0.
 The human checks raised these items for the next release. It was planned as
 0.10.1; #466 and #477 then merged as new features, so release-please proposed
 0.11.0 and the maintainer kept that version on 2026-10-14. Each item below has
-a merged fix (#464, #465, #466 or #471); #440 tracks the desktop checks that
-remain.
+a merged fix (#464, #465, #466 or #471). Their desktop checks passed on the
+0.11.0 candidate except #465's with a real non-2:1 result, which #494 tracks.
 
 - **Play audio** opened the system's default player
   ([#435](https://github.com/scenario-labs/blender-plugin/issues/435)).

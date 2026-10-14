@@ -17,9 +17,10 @@ local hostnames cannot be configured. IDN names must use their explicit ASCII
 representation. This is a host policy, not a defense against compromised trusted
 DNS or hosts.
 
-The downloader sends only a GET, identity encoding and connection-close header.
-It has no Scenario credentials, cookie jar, netrc, proxy configuration, automatic
-retry or URL logging. At most two HTTP 301/302/303/307/308 redirects may be
+The downloader sends only a GET, identity encoding and connection-close header,
+plus `Range` and `If-Range` when it [resumes](#transfer-lane-retries-and-resume).
+It has no Scenario credentials, cookie jar, netrc, proxy configuration or URL
+logging. Each call is one attempt; only result commands retry, with a fresh URL. At most two HTTP 301/302/303/307/308 redirects may be
 followed. Each Location must be an absolute HTTPS URL that passes the original
 storage policy and keeps the original hostname; relative URLs, cross-host hops
 (including another configured host), loops and malformed destinations are
@@ -29,7 +30,7 @@ responses/connections are closed before continuing. Final size/digest checks
 and atomic publication are unchanged. This accommodates same-host CDN delivery
 redirects without retrying generation or deriving new trusted hosts. TLS verifies the hostname and bundled certificate
 authorities; ambient certificate/key-log environment variables are ignored.
-Status 200 is required. Content and transfer encodings are rejected; compressed
+Status 200 is required, or 206 for a resumed request. Content and transfer encodings are rejected; compressed
 or chunked responses require a separately reviewed transport contract.
 Exceptions exposed to callers and successful receipts omit the URL and response
 body. Caller instrumentation must also avoid logging the input URL or locals.
@@ -38,8 +39,8 @@ The caller must provide an online-access predicate reflecting Blender's actual
 permission. Permission is checked before connecting, sending and reading, and
 before publishing. Revocation cannot undo a socket operation already in progress.
 Byte limits cover streams both with and without Content-Length. A socket timeout
-bounds inactivity; an overall elapsed budget is checked between operations and
-reads. OS DNS resolution and blocking header/TLS operations are not interruptible
+bounds inactivity; an overall elapsed budget, which scales with the expected or
+declared size, is checked between operations and reads. OS DNS resolution and blocking header/TLS operations are not interruptible
 by that elapsed-budget check; worker shutdown must account for this limitation.
 
 ## Output and recovery
@@ -93,6 +94,53 @@ directories and explicitly retry a download using a freshly retrieved URL.
 Never infer a finished job from a partial file or resubmit generation to repair
 missing downloads. A crash between publication and receipt persistence requires
 explicit file verification and reconciliation by the caller.
+
+## Transfer lane, retries and resume
+
+`JobWorkers` runs storage transfers, meaning result downloads and upload parts, on
+their own lane: two `ScenarioTransfer` threads with a queue of 16. The job workers
+therefore stay free for status polls, remote cancellation and submissions while a
+large result downloads, and preview work keeps its separate lane. A full transfer
+queue refuses the command before it starts, as for the job queue.
+
+Each result download gets a cancel event. `JobSession.cancel_download(task)`
+sets it for one download; session retirement, which a credential, project or
+file change causes, sets it for all of them and cancels queued ones. The
+transfer stops at its next chunk or permission check, removes its private
+staging and publishes nothing. The job is saved as `download_failed` with no
+receipt for that asset, so an explicit download starts it again; receipts of
+assets that finished earlier are kept. A read blocked on a silent server waits
+for the 30-second socket timeout before it sees the event. Upload parts take no
+cancel event: interrupting a signed PUT would make the part uncertain.
+
+A download makes at most three attempts, waiting 1 second before the second and
+3 seconds before the third. Before every
+attempt it reads the asset again through `SDKAdapter.asset(original_assets=True)`
+(SDK `assets.with_raw_response.retrieve`) for a fresh signed URL, and the
+response must still match the saved manifest. Only transport failures retry: a
+connection or TLS error, a non-success status such as an expired signature, a
+body that ended short or a missed deadline. A changed host, size, encoding or
+digest, revoked Online Access and cancellation stop at once. The exact-host
+policy, redirect rules and SHA-256 receipt apply to every attempt. After the
+last failure the job is `download_failed` and Resume works as before.
+
+Each attempt's elapsed budget is the larger of 300 seconds and the expected size
+at 256 KiB/s, at most 30 minutes; 256 MiB, the default byte cap, gets 1024
+seconds. Without an expected size, the budget follows the response's declared
+`Content-Length` once its headers arrive.
+
+The next attempt resumes the staged bytes only when the earlier reply carried a
+strong ETag (a quoted value, not `W/`) and a complete byte count. It then sends
+`Range: bytes=<staged size>-` with `If-Range: <that ETag>`. A 206 reply must
+carry the same ETag and a `Content-Range` that starts at the staged size and
+declares the same total; otherwise the attempt fails and the next one starts
+from zero. A 200 reply, which a server sends when the ETag no longer matches or
+it ignores ranges, replaces the staged bytes from zero. A missing or weak ETag,
+or a staged file whose size changed, also starts from zero. The digest covers
+the staged and the resumed bytes and is checked against the whole published
+file, as for a single attempt. Staged bytes live only in a private
+`.scenario-download-*` directory and only during the command; nothing partial is
+published, receipted or kept after it ends.
 
 ## Active Image delivery
 
@@ -386,7 +434,8 @@ transfer.
 `download` also accepts an optional `cancel` event, checked with online
 permission before each connection and chunk. Preview transfers pass their lane
 task's event, so retirement stops a clip download at its next chunk without
-publishing it. Result downloads do not pass one and are unchanged.
+publishing it. Result downloads pass their transfer-lane task's event; see
+[the transfer lane](#transfer-lane-retries-and-resume).
 
 ## Legacy OBJ and MTL byte counts
 

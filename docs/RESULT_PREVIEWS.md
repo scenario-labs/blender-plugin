@@ -505,8 +505,9 @@ fetches the others again; the pump then decodes them again.
 
 `JobWorkers` owns one dedicated `ScenarioPreview` thread with its own bounded
 queue of eight tasks and per-task cancellation. Preview polling, copies and
-downloads therefore never occupy the job workers used by remote refresh, result
-downloads and submissions, and never use the single local media slot.
+downloads therefore never occupy the job workers used by remote refresh and
+submissions or the transfer lane used by result downloads, and never use the
+single local media slot.
 Deactivation cancels queued previews and signals the running one. A storage
 transfer stops at its next permission check once signaled, before publishing
 anything; an audio decode terminates its child within about 0.1 seconds, or kills

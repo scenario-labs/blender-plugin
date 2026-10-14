@@ -39,7 +39,18 @@ class Downloads(ResultDownloader):
         self.urls = []
         self.data = data
 
-    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
+    def download(
+        self,
+        url,
+        *,
+        root,
+        name,
+        expected_size,
+        expected_sha256,
+        max_bytes=None,
+        cancel=None,
+        partial=None,
+    ):
         self._policy.destination(url)
         if self.fail:
             raise RuntimeError("private-signed-url?secret=redact")

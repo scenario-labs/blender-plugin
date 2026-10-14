@@ -549,6 +549,7 @@ job stays here until you apply its results.
 
 - A progress bar appears when Scenario reports progress; some models don't.
 - With Online Access off, checking and downloading pause; the job continues on Scenario.
+- A download that fails is tried again automatically, up to three times in all. If it still fails, use **Resume download**; a large download never holds up checking other jobs.
 - After a restart, choose **Inspect saved jobs**, then **Refresh status** or **Resume download**.
 - **Cancel prepared job** drops an approved request that hasn't been sent yet; nothing reaches Scenario. A canceled Film task keeps its name, so use a new take name to retry.
 - **Cancel generation** appears only for jobs Scenario can cancel. Other running jobs finish or fail on Scenario and stay recoverable.

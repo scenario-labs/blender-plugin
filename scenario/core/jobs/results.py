@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import tempfile
+import threading
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from .result_metadata import (
     texture_role,
 )
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
-from .transfers import ResultDownloader, TransferError, _root
+from .transfers import PartialDownload, ResultDownloader, TransferError, _root
 from .upload_sources import _open, _stamp
 
 # Originals carry no size metadata, so the World file limit bounds each transfer,
@@ -30,8 +31,18 @@ from .upload_sources import _open, _stamp
 MAX_ORIGINAL_BYTES = MAX_FILE_BYTES
 
 
+# A failed storage transfer is tried again after these waits, each time with a
+# fresh signed URL from the SDK; three attempts in all before download_failed.
+DOWNLOAD_RETRY_DELAYS = (1.0, 3.0)
+DOWNLOAD_ATTEMPTS = len(DOWNLOAD_RETRY_DELAYS) + 1
+
+
 class ResultError(RuntimeError):
     """Sanitized result failure; review saved progress, never regenerate implicitly."""
+
+
+class _Canceled(Exception):
+    """The download's cancel event was set; it ends without a receipt."""
 
 
 @dataclass(frozen=True)
@@ -418,11 +429,14 @@ class ResultCommands:
             root = _root(child)
         return root
 
-    def download(self, request_id, *, expected_revision):
+    def download(self, request_id, *, expected_revision, cancel=None):
+        """Download every unfinished result; a set ``cancel`` stops without a receipt."""
+        if cancel is not None and not callable(getattr(cancel, "is_set", None)):
+            raise ResultError("Use a cancellation event")
         with self._store.result_transfer_lock(request_id):
-            return self._download(request_id, expected_revision=expected_revision)
+            return self._download(request_id, expected_revision=expected_revision, cancel=cancel)
 
-    def _download(self, request_id, *, expected_revision):
+    def _download(self, request_id, *, expected_revision, cancel):
         current = self._current(
             request_id, expected_revision, {JobState.SUCCEEDED, JobState.DOWNLOAD_FAILED}
         )
@@ -445,49 +459,18 @@ class ResultCommands:
                 if item.receipt is not None:
                     self._downloader.verify(directory, item.receipt)
                     continue
-                response = self._request(
-                    self._adapter.asset, item.asset.asset_id, original_assets=True
-                )
-                # The saved manifest chose the file; a manifest saved before the
-                # extension accepted an original keeps the asset file.
-                fresh = _asset(
-                    response, item.asset.asset_id, item.asset.name, source=item.asset.source
-                )
-                rewritten_mesh = item.asset.media_type in REWRITTEN_MESH_TYPES
-                original = item.asset.source == "original"
-                if rewritten_mesh:
-                    # Legacy ingestion rewrote file references without updating
-                    # properties.size; identity/type/digest checks remain exact.
-                    fresh = replace(fresh, expected_size=item.asset.expected_size)
-                if item.asset.texture_role is None:
-                    # Legacy/unclassified results keep unknown semantics. A later
-                    # response may not grant a new material role to saved bytes.
-                    fresh = replace(fresh, texture_role=None)
-                if item.asset.projection is None:
-                    # Likewise, a later response cannot relabel saved bytes as 360.
-                    fresh = replace(fresh, projection=None)
-                if fresh != item.asset:
-                    raise ResultError("Result metadata changed after the manifest was saved")
-                options = {}
-                if rewritten_mesh:
-                    options["allow_size_mismatch"] = True
-                if original:
-                    options["max_bytes"] = MAX_ORIGINAL_BYTES
-                receipt = self._downloader.download(
-                    _download_url(response, item.asset.source),
-                    root=directory,
-                    name=item.asset.name,
-                    expected_size=item.asset.expected_size,
-                    expected_sha256=item.asset.expected_sha256,
-                    **options,
-                )
+                receipt = self._transfer(item, directory, cancel)
                 self._downloader.verify(directory, receipt)
                 current = self._store.record_download(
                     request_id,
                     item.asset.asset_id,
                     receipt,
                     expected_revision=current.revision,
-                    **({"allow_mesh_size_correction": True} if rewritten_mesh else {}),
+                    **(
+                        {"allow_mesh_size_correction": True}
+                        if item.asset.media_type in REWRITTEN_MESH_TYPES
+                        else {}
+                    ),
                 )
             return self._store.transition(
                 request_id, expected_revision=current.revision, state=JobState.READY
@@ -495,13 +478,80 @@ class ResultCommands:
         except StoreError:
             # Preserve an uncertain disk write. Never claim failure was saved.
             raise
-        except Exception:
+        except Exception as error:
             self._store.transition(
                 request_id, expected_revision=current.revision, state=JobState.DOWNLOAD_FAILED
             )
+            if isinstance(error, _Canceled) or (cancel is not None and cancel.is_set()):
+                raise ResultError(
+                    "Result download was canceled; no partial file was saved and Resume "
+                    "starts it again"
+                ) from None
             raise ResultError(
                 "Result download did not complete; review saved files before retrying"
             ) from None
+
+    def _fresh_asset(self, item):
+        """Read the asset again for a new signed URL; its saved description must hold."""
+        response = self._request(self._adapter.asset, item.asset.asset_id, original_assets=True)
+        # The saved manifest chose the file; a manifest saved before the
+        # extension accepted an original keeps the asset file.
+        fresh = _asset(response, item.asset.asset_id, item.asset.name, source=item.asset.source)
+        if item.asset.media_type in REWRITTEN_MESH_TYPES:
+            # Legacy ingestion rewrote file references without updating
+            # properties.size; identity/type/digest checks remain exact.
+            fresh = replace(fresh, expected_size=item.asset.expected_size)
+        if item.asset.texture_role is None:
+            # Legacy/unclassified results keep unknown semantics. A later
+            # response may not grant a new material role to saved bytes.
+            fresh = replace(fresh, texture_role=None)
+        if item.asset.projection is None:
+            # Likewise, a later response cannot relabel saved bytes as 360.
+            fresh = replace(fresh, projection=None)
+        if fresh != item.asset:
+            raise ResultError("Result metadata changed after the manifest was saved")
+        return _download_url(response, item.asset.source)
+
+    def _transfer(self, item, directory, cancel):
+        """At most DOWNLOAD_ATTEMPTS storage attempts, each with a fresh signed URL.
+
+        Only a retryable transport failure is tried again. A strong ETag lets
+        the next attempt resume the staged bytes; nothing partial outlives this.
+        """
+        waiter = cancel if cancel is not None else threading.Event()
+        options = {}
+        if item.asset.media_type in REWRITTEN_MESH_TYPES:
+            options["allow_size_mismatch"] = True
+        if item.asset.source == "original":
+            options["max_bytes"] = MAX_ORIGINAL_BYTES
+        partial = PartialDownload()
+        attempt = 0
+        try:
+            while True:
+                if attempt and waiter.wait(DOWNLOAD_RETRY_DELAYS[attempt - 1]):
+                    raise _Canceled()
+                with self._guard():
+                    pass
+                url = self._fresh_asset(item)
+                try:
+                    return self._downloader.download(
+                        url,
+                        root=directory,
+                        name=item.asset.name,
+                        expected_size=item.asset.expected_size,
+                        expected_sha256=item.asset.expected_sha256,
+                        cancel=cancel,
+                        partial=partial,
+                        **options,
+                    )
+                except TransferError as error:
+                    if cancel is not None and cancel.is_set():
+                        raise _Canceled() from None
+                    attempt += 1
+                    if not error.retryable or attempt == DOWNLOAD_ATTEMPTS:
+                        raise
+        finally:
+            partial.discard()
 
     def recover_download(self, request_id, *, expected_revision):
         """Inspect an interrupted transfer offline, never retry it or apply a result."""

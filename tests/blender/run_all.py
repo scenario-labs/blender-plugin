@@ -76,6 +76,7 @@ BASELINE = (
     "test_organization_session",
     "test_asset_organization",
     "test_session_results",
+    "test_transfer_lane",
     "test_result_previews",
     "test_waveform_worker",
     "test_audio_player",

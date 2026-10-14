@@ -142,7 +142,7 @@ its adapter carries the same scope. The local account pseudonym isolates records
 without claiming a server identity or adding it to API requests. API-key requests
 do not require explicit tenant selection or a generated SDK discovery method.
 Opening the store does not activate shared job workers or paid submission.
-[Runtime integration status](architecture/runtime.md#active-sdk-catalog) records
+[Runtime integration status](architecture/sdk-runtime.md#active-sdk-catalog) records
 the remaining shared-job and paid-flow boundaries. The original raw `Catalog` class and its unscoped disk cache writer are removed.
 Pure model records, lane filters and schema hints remain in `api/catalog.py`; all
 service model reads use the scoped SDK catalog.
@@ -580,7 +580,7 @@ Job types are filtered locally after each page; the SDK's `type` filter is not u
 In a live read, that filter returned no rows when combined with `hide_results=False`.
 These reads do not activate durable recovery, project-selection UI, downloads,
 submission or result application. See the
-[runtime history boundary](architecture/runtime.md#active-sdk-history).
+[runtime history boundary](architecture/sdk-runtime.md#active-sdk-history).
 
 ## Completed cloud job adoption
 
@@ -1336,7 +1336,7 @@ call these methods through the coordinator, its workers and the JobSession
 review owner, with a guard before each write and a `get_bulk` read-back. After
 `AlreadyMembers`, they send only the assets read back as not yet members, within
 three add requests per review. The local [MCP organization tools](MCP.md#asset-organization)
-and the native [Library organization](UI_STYLE.md#library-organization) controls
+and the native [Library organization](ui/studio-and-library.md#library-organization) controls
 prepare, apply and inspect those reviews. Free live writes passed through local
 MCP and the native operators (see the
 [release evidence](maintenance/release-acceptance.md#library-organization));

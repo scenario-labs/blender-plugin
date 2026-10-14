@@ -64,17 +64,17 @@ full render-lane desktop acceptance.
   timeline assembly requires explicit selection of completed shot scenes and
   confirmation; it creates editable scene strips without generation or rendering.
   Synthetic timeline selection, cancellation, Undo/Redo and Sequencer inspection
-  pass on macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
+  pass on macOS Blender 5.1.2; see [the evidence and limits](ui/film.md#film-timeline-controls).
   Local capture now shares explicit native/MCP approval, cancellation and separate
   byte-checked upload. Capture reviews/files are session-local. Desktop still
   capture, cancellation of approval dialogs, synthetic upload and cleanup pass on
-  macOS Blender 5.1.2; see [the evidence and limits](UI_STYLE.md#film-capture-controls).
+  macOS Blender 5.1.2; see [the evidence and limits](ui/film.md#film-capture-controls).
   Desktop video cancellation, live uploads, other OS/DPI and sustained media
   acceptance remain pending. Composition preparation, exact pricing and separate
   generation approval now share native/MCP controls and preserve saved masters
   after restart. Synthetic composition approval, mode navigation, invalidation and
   saved-job inspection pass on macOS Blender 5.1.2; see
-  [the evidence and limits](UI_STYLE.md#film-composition-controls). Live provider
+  [the evidence and limits](ui/film.md#film-composition-controls). Live provider
   acceptance and other OS/DPI behavior remain pending. Native/MCP review assembly
   now prepares private saved-media copies and separately approves a new review
   scene with application claims. Beyond installed synthetic tests, one
@@ -201,7 +201,7 @@ full render-lane desktop acceptance.
   again*. Concurrent decisions, omitted project IDs, rejection inside a loop,
   the review assets of other node types and UI scale 2.0 are unverified
   ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)). See
-  [waiting workflow steps](UI_STYLE.md#waiting-workflow-steps).
+  [waiting workflow steps](ui/studio-and-library.md#waiting-workflow-steps).
 - Installing 0.10.0 from the official extension repository was verified on macOS
   with Blender 5.0.1, 5.1.2 and 5.2.1. 0.10.0 is the first release the repository
   offers, so an update from one published release to the next, keeping
@@ -506,7 +506,7 @@ full render-lane desktop acceptance.
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme
   rather than the custom composer drawing.
-- Studio > Library [organization](UI_STYLE.md#library-organization) changes one
+- Studio > Library [organization](ui/studio-and-library.md#library-organization) changes one
   asset per review (local MCP accepts up to 49) and loads at most 200 collections.
   Applied changes are immediate account metadata that Blender Undo does not
   reverse. Collection rename and deletion, model collections and tag listing are

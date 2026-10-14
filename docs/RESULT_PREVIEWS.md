@@ -448,7 +448,7 @@ when its parent still exists.
 
 A workflow job waiting at an approval or selection step lists assets for a
 person to review: an approval's upstream result assets, or an asset selection's
-candidates, at most 50 per step ([waiting workflow steps](UI_STYLE.md#waiting-workflow-steps)).
+candidates, at most 50 per step ([waiting workflow steps](ui/studio-and-library.md#waiting-workflow-steps)).
 They are not downloaded results, so they have no receipt. **Load previews** asks
 `ModelJobs.review_assets` for the current step's distinct asset IDs, bound like a
 decision to the context, saved revision and the step's `review_id`, then calls

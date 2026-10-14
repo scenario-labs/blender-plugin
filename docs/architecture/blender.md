@@ -81,7 +81,7 @@ so origins, quotes and approvals captured before it stay current; an installed
 test checks a session origin across a mark. Catalog seeding, restored model
 choices, project defaults, estimate state and upload progress links stay
 unmarked: marking them would flag every opened file as modified (see
-[catalog delivery](runtime.md#active-sdk-catalog)). Local MCP has no save tool,
+[catalog delivery](sdk-runtime.md#active-sdk-catalog)). Local MCP has no save tool,
 and nothing saves the file for the user. Blender 5.0 reports every background
 file as modified, even right after reading it; from 5.1 a file read in the
 background starts unmarked, as on the desktop.

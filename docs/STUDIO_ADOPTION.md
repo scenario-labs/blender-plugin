@@ -461,4 +461,4 @@ covers prompt handoff/editing, populated-form scrolling, quote-preserving
 navigation, continued saved-job polling, small-window fit and viewport return.
 The new workflow and Library controls still need native interaction proof;
 alternate-DPI and IME acceptance remain pending. The
-[UI guide](UI_STYLE.md#explicit-studio-view) records those boundaries.
+[UI guide](ui/studio-and-library.md#explicit-studio-view) records those boundaries.

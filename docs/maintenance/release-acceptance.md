@@ -11,6 +11,9 @@ and publication authorizes nothing further. OAuth remains deferred under #67. Th
 [0.10.0 evidence by lane](#0100-evidence-by-lane) is the current summary; later
 sections keep their own candidate identities and dates.
 
+From 0.10.1 on, track a version's acceptance status in its release tracking
+issue, not in this file. Edit this file only to correct the records it holds.
+
 ## 0.10.0 evidence by lane
 
 Reviewed on 2026-10-12 against `main` at
@@ -454,7 +457,7 @@ their lanes:
   answered orbit, wheel zoom and keys, and no field took keyboard focus. One
   defect: in the 3D View sidebar at its default width, at both scales, a paged
   row's arrows were about 1.65 times as tall as its tiles, where the
-  [UI contract](../UI_STYLE.md#saved-result-previews) makes them as tall as the
+  [UI contract](../ui/saved-media.md#saved-result-previews) makes them as tall as the
   icons, and its tiles were about 30% smaller than those of an unpaged row in
   the same panel. In Studio and in a widened sidebar the arrows matched the
   tiles. #423 (`3720c9e3`) then merged to fit a paged row.
@@ -1036,7 +1039,7 @@ This identical ZIP passes 1,086 installed tests (two Windows-only skips) on
 each of macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1. All 136 packaged Python
 sources match the candidate. The full locked unit suite passes 3,852 tests with
 the known SDK authentication expected failure.
-The [UI guide](../UI_STYLE.md#explicit-studio-view) records native first-click
+The [UI guide](../ui/studio-and-library.md#explicit-studio-view) records native first-click
 opening with preserved Unicode text, Film navigation, Escape and viewport return
 on isolated offline macOS arm64 Blender 5.1.2. No service requests or paid actions
 were used; the normal profile and installed package remained unchanged.

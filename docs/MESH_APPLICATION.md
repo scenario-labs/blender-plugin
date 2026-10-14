@@ -224,7 +224,7 @@ This imports a complete new character. The separate [RIG policy](#attach-a-retur
 can attach a compatible returned skin to a captured static mesh; retargeting an
 existing rig remains outside this import command. This new-group command records
 the same [native Undo steps](#native-undo-for-saved-model-imports) as a static
-import. See [interaction evidence](UI_STYLE.md#animated-model-import-interaction)
+import. See [interaction evidence](ui/saved-3d.md#animated-model-import-interaction)
 for the exact packaged desktop check and its limits.
 
 ## Saved 3D package classification
@@ -697,7 +697,7 @@ Installed native tests exercise actual undo/redo for all three policies, retaine
 copies, materials, stale approvals and unchanged durable records/request counts.
 They force checkpoint eligibility in the background runner while retaining the
 real native history operators. Separate desktop proof is recorded in
-[UI interaction evidence](UI_STYLE.md#saved-mesh-undo-interaction).
+[UI interaction evidence](ui/saved-3d.md#saved-mesh-undo-interaction).
 
 ## Apply static parts
 
@@ -735,7 +735,7 @@ The exact packaged ZIP passed 699 installed native tests on each of macOS arm64
 Blender 5.0.1, 5.1.2 and 5.2.1. Synthetic cases cover transformed/parented sources,
 existing children, shared originals, mapping, count/component limits, empty-anchor
 rejection, publication/cleanup failures, uncertain rollback, captured-source
-UI/MCP application and native history. See [desktop evidence](UI_STYLE.md#parts-application-interaction).
+UI/MCP application and native history. See [desktop evidence](ui/saved-3d.md#parts-application-interaction).
 Provider alignment, semantic part classification, rigs/animation and integrated
 release acceptance remain separate work.
 

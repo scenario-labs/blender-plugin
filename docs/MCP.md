@@ -1707,7 +1707,7 @@ and tag changes through these tools and the native operators, so a removal's
 DELETE body reached the service through the production edge. Name uniqueness,
 tag normalization and service limits are unverified live; a tag the service
 normalizes reads back as `UNCONFIRMED`.
-Studio's [Library organization](UI_STYLE.md#library-organization) controls
+Studio's [Library organization](ui/studio-and-library.md#library-organization) controls
 prepare and apply the same reviews, one asset at a time, and disable Organize
 on pages loaded with Public assets. Apply from the desktop dialog continues in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).

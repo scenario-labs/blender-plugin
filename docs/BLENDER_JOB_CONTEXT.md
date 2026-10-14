@@ -324,7 +324,7 @@ revision and unchanged fields before consuming the handle and replacing only
 persist model text in the registry. Saving the blend preserves the chosen plan.
 Build remains the separate explicit local geometry operation. The native use-plan
 operator declares Undo; desktop interaction acceptance is recorded separately in
-[the UI guide](UI_STYLE.md#saved-blockout-plan-recovery).
+[the UI guide](ui/recovery.md#saved-blockout-plan-recovery).
 
 ## Origin and quote lifetime
 
@@ -342,7 +342,7 @@ frame changes invalidate unconditionally in their own pre-change hook, regardles
 of whether the unevaluated depsgraph lists updates. Catalog loads fill and
 restore generation forms without RNA update callbacks, and so does a trained-model
 project default applied automatically to a form without an explicit choice, so
-neither causes such an update; see [catalog delivery](architecture/runtime.md#active-sdk-catalog).
+neither causes such an update; see [catalog delivery](architecture/sdk-runtime.md#active-sdk-catalog).
 Explicit selections and edits that assign a property with an RNA update
 callback, such as the model or a LoRA strength, still invalidate. A default's
 **Use** always reprices its form but invalidates only when it assigns a
@@ -735,7 +735,7 @@ the right connection; nothing is resent automatically. The local
 [MCP organization tools](MCP.md#asset-organization) use this owner and accept a
 review only with the `job_context_id` issued alongside it, so a replaced session
 rejects an old context. The native Library's
-[Organize dialog and review card](UI_STYLE.md#library-organization) use the same
+[Organize dialog and review card](ui/studio-and-library.md#library-organization) use the same
 owner; `review(review_id)` returns the raw review state, including read-back
 records, so the view can update its loaded rows without another request.
 
@@ -1165,7 +1165,7 @@ assets or an asset selection's candidates, with the same binding but without
 refusing a command in flight, since previews never decide; **Load previews**
 passes them to the [review previews](#saved-result-preview-ownership). The
 dialog, its wording, the previews and the Workflows page section are described
-in [UI style](UI_STYLE.md#waiting-workflow-steps).
+in [UI style](ui/studio-and-library.md#waiting-workflow-steps).
 
 ## Explicit recovered Image application
 

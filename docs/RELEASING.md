@@ -43,6 +43,8 @@ Once a version's scope is settled, run one
 [knowledge release refresh](maintenance/knowledge.md#release-refresh) and merge
 its PR before the release PR. Feature PRs leave evidence records alone, so this
 is the only place where drifted documents are reviewed.
+Track each version's acceptance checks in its release tracking issue rather
+than in a document, so parallel PRs do not edit the same status lines.
 
 ## Extension id
 

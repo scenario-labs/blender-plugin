@@ -344,7 +344,7 @@ shot, recipe scene and number of saved heroes. It creates a new scene and keeps
 the working scene selected. The native operator participates in Blender Undo;
 saved job receipts do not rewind, and replaying a consumed review cannot rebuild.
 Synthetic desktop Undo/Redo interaction passes on macOS Blender 5.1.2; see
-[the evidence and limits](UI_STYLE.md#film-shot-controls). A shot with no heroes
+[the evidence and limits](ui/film.md#film-shot-controls). A shot with no heroes
 follows the same explicit approval without inventing a generation job.
 
 **Discard review** retires unapproved work. **Save build receipt** retries only a
@@ -408,7 +408,7 @@ calls the same prepare/approve methods. Cancelling the dialog creates no review
 or timeline. The native build participates in Undo, while its consumed approval
 cannot replay; MCP does not create an operator Undo entry. Synthetic desktop
 selection, cancellation, Undo/Redo and Sequencer inspection pass on macOS Blender
-5.1.2; see [the evidence and limits](UI_STYLE.md#film-timeline-controls).
+5.1.2; see [the evidence and limits](ui/film.md#film-timeline-controls).
 
 ## Local capture foundation
 
@@ -725,7 +725,7 @@ source/recipe/scene invalidation, cancellation, uncertainty, lost acknowledgemen
 read-only drawing, saved-master discovery after reopening the owner and the named
 error for a final recipe without `audio_tracks` or a score task. Synthetic
 desktop mouse/keyboard, focus, confirmation and viewport checks pass on macOS
-arm64 Blender 5.1.2; see [the exact ZIP evidence](UI_STYLE.md#film-composition-controls).
+arm64 Blender 5.1.2; see [the exact ZIP evidence](ui/film.md#film-composition-controls).
 Live provider/media acceptance and other OS/DPI behavior remain pending; local
 review assembly and video export use the [review](#native-and-mcp-review-controls)
 and [export](#native-and-mcp-video-export-controls) controls.

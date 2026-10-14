@@ -1851,8 +1851,11 @@ class ModelJobs:
             raise ScenarioError(0, "Choose scene or object-local result coordinates")
         validate_mesh_target(target)
         try:
+            # Clips are pose data and never use result coordinates.
             mapping = (
-                target.obj.matrix_world.inverted() if placement == "WORLD" else Matrix.Identity(4)
+                target.obj.matrix_world.inverted()
+                if placement == "WORLD" and policy != "ANIMATE"
+                else Matrix.Identity(4)
             )
         except ValueError:
             raise ScenarioError(0, "The target transform cannot map scene coordinates") from None

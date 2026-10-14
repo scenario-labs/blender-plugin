@@ -6470,6 +6470,16 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.get(request_id), before)
         self.assertIsNone(source.modifiers[0].object.animation_data)
 
+    def test_animate_ignores_coordinates_for_a_mirrored_source(self):
+        # Clips are pose data: a mirrored source needs no result-to-source mapping.
+        request_id, source = self.captured_clip_result()
+        source.scale.x = -1
+        bpy.context.view_layer.objects.active = source
+        bpy.context.view_layer.update()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_edit", mesh_policy="ANIMATE")
+        self.assertEqual(approval["mesh_policy"], "ANIMATE")
+        self.assertEqual(approval["target"], source.name)
+
     def test_animate_on_unskinned_source_is_rejected_by_mcp_and_native_review(self):
         request_id, source = self.captured_source_result()
         before = self.store.get(request_id)

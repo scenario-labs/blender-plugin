@@ -2,23 +2,24 @@
 {
   "type": "Evidence",
   "id": "docs-index.licence-options-navigation",
-  "title": "Licence proposal navigation",
-  "description": "Navigation to the maintained proposal awaiting a decision.",
+  "title": "Licence decision navigation",
+  "description": "Navigation to the recorded licence decision and the alternatives compared.",
   "evidence": {
     "path": "docs/index.md",
     "scope": "licence-options-navigation",
     "coverage": "navigation",
-    "reviewed_at": "2026-09-25",
-    "base_revision": "5c605a11ddadd254eab845d068f91349a3c89721",
-    "limits": "Maintenance-index navigation and relocation of the unchanged licence proposal inspected. The licence comparison is a pending decision proposal, not approved policy or a relicensing authorization. This navigation review does not renew its dated legal, rights or source evidence.",
+    "reviewed_at": "2026-10-14",
+    "base_revision": "29a1b0d2d384d800f34c8f2d6384fe6b72f659c7",
+    "limits": "Checked on 2026-10-14 that the documentation index links docs/maintenance/licence-options.md as Licence decision and the alternatives compared, and that the page opens with the maintainer's 2026-10-13 decision to keep GPL-3.0-or-later, with the comparison kept as background. Navigation only; this review does not renew the page's dated legal, rights or source evidence.",
     "sources": {
-      "docs/maintenance/licence-options.md": "6e3cef47b808130a5abd00489443e584aaa0f6f155793f72aefece3f534a1074"
+      "docs/index.md": "98056a83054e47703c250aade65791edb3ae9a660fea13091ec1f2ceac2ace1a",
+      "docs/maintenance/licence-options.md": "c247e57876b6c891ac80fb89d2c483de00392d12ac86b5dae3b8409b3cf3df67"
     }
   }
 }
 ---
 
-# Licence proposal navigation
+# Licence decision navigation
 
 Evidence for [the documentation index](../../index.md) and its
-[licence proposal link](../../maintenance/licence-options.md).
+[licence decision link](../../maintenance/licence-options.md).

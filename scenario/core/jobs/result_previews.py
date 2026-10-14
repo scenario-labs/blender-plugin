@@ -36,6 +36,7 @@ from ..audio_waveform import BINS, MAX_SECONDS, AudioEnvelope, WaveformCanceled,
 from . import audio_decode
 from .local_render import RenderCancelled
 from .media_probe import FORMATS, MediaProbeError, _snapshot
+from .result_metadata import original_media_type
 from .store import JobScope, StoredResult, _identity, _json
 from .transfers import DownloadedResult, TransferError, _root, _windows_storage_path
 
@@ -1010,11 +1011,15 @@ def _server_source(record, name):
 
 
 def server_sources(record, target):
-    """Signed preview URLs from one SDK asset record; URLs stay in memory only."""
+    """Signed preview URLs from one SDK asset record; URLs stay in memory only.
+
+    A saved declared original, such as a WAV behind Scenario's MP3 copy, keeps its
+    own media type, so the record also matches through that declared original.
+    """
     if (
         not isinstance(record, dict)
         or record.get("id") != target.asset_id
-        or record.get("mimeType") != target.media_type
+        or target.media_type not in {record.get("mimeType"), original_media_type(record)}
     ):
         raise PreviewError("Scenario returned different metadata for this saved result")
     sources = {}

@@ -881,6 +881,22 @@ def test_changed_or_malformed_metadata_fails(env, change, first):
     assert final.state == State.FAILED and env.downloader.calls == []
 
 
+@pytest.mark.parametrize(
+    "original,state",
+    [("audio/wav", State.READY), (None, State.FAILED), ("audio/flac", State.FAILED)],
+)
+def test_saved_wav_original_matches_its_mp3_asset_record(env, original, state):
+    # A WAV original is saved as audio/wav; its asset record describes Scenario's MP3 copy.
+    ready_job(env, "request", [("asset-sound", "audio/wav", wav())])
+    url = f"{CDN}/asset-sound.png?Signature=x"
+    record = asset_record("asset-sound", "audio/mpeg", thumbnail=url)
+    if original is not None:
+        record["originalMimeType"] = original
+    env.assets["asset-sound"] = record
+    env.downloader.files[url] = png(4, 3)
+    assert outcome(run(env, work(env, "request", [STILL], final=True))).state == state
+
+
 def test_receipt_and_scope_binding_reject_changed_targets(env):
     ready_job(env, "request", [("asset-image", "image/png", png(4, 4))])
     target = env.coordinator.result_preview_targets("request")[0]

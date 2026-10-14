@@ -12,7 +12,7 @@ The [candidate evidence record](release-acceptance.md) identifies the tested
 archive, completed checks and remaining release gates.
 
 [#68](https://github.com/scenario-labs/blender-plugin/issues/68) owned the 0.10.0
-candidate evidence and closed on 2026-10-13; the 0.10.1 candidate and the checks
+candidate evidence and closed on 2026-10-13; the 0.11.0 candidate and the checks
 still open are in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 The candidate must demonstrate:
 

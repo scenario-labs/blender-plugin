@@ -114,9 +114,13 @@ rechecks the same day found #431's input labels and loop-warning wrap correct,
 and #432's pager arrows within 0 to 1 px of the visible image at UI scales 1.0
 and 2.0.
 
-### 0.10.1 follow-ups
+### 0.11.0 follow-ups
 
-The human checks raised these items for 0.10.1:
+The human checks raised these items for the next release. It was planned as
+0.10.1; #466 and #477 then merged as new features, so release-please proposed
+0.11.0 and the maintainer kept that version on 2026-10-14. Each item below has
+a merged fix (#464, #465, #466 or #471); #440 tracks the desktop checks that
+remain.
 
 - **Play audio** opens the system's default player
   ([#435](https://github.com/scenario-labs/blender-plugin/issues/435)).
@@ -258,7 +262,7 @@ their lanes:
 - **Status:** passed. The maintainer listened through **Play audio** and
   checked **Waveform** on the candidate ZIP on 2026-10-13 (see the
   [human checks](#human-checks)). Play audio opens the system's default player,
-  which #435 tracks for 0.10.1.
+  which #435 tracks for 0.11.0; #466 merged playback inside Blender.
 
 ### 3D generation and imports
 
@@ -633,7 +637,7 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 | Weekly macOS and Windows rerun | Platforms | #399 and #400 | Passed on 2026-10-13 after #396, #442 and #443 ([run 38408708155](https://github.com/scenario-labs/blender-plugin/actions/runs/38408708155)); both issues closed |
 | First scheduled monthly paid smoke run | CI | #40 | Not run yet |
 | Final candidate installed suite, hosted CI, update and restart | All | #440 | Passed on #70 head `2b1bbcb8`; see the [release candidate identity](#release-candidate-identity). Repeat if the release commit's `scenario/` tree differs |
-| Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #440 | Passed on 2026-10-13; see [publication](#publication). #36 closed after it; the 0.10.1 equivalent is in #440 |
+| Release ZIP, checksums, attestations, extension index and HTTPS install | Release | #440 | Passed on 2026-10-13; see [publication](#publication). #36 closed after it; the 0.11.0 equivalent is in #440 |
 | Remove the repository-admin tag-protection bypass and enable immutable releases | Release | Maintainer | Done on 2026-10-13 and read back; see [publication](#publication). The 0.10.0 release itself predates the setting and is not immutable |
 
 ### Service behavior observed live
@@ -1202,7 +1206,7 @@ array constraints for both schema spellings. These remain synthetic checks.
 GitHub state reviewed on 2026-10-12 and rechecked on 2026-10-13, after 0.10.0
 was published and again after the issue closures that followed it, is separate
 from candidate acceptance. [#440](https://github.com/scenario-labs/blender-plugin/issues/440)
-tracks the 0.10.1 acceptance and the work that closed issues left open:
+tracks the 0.11.0 acceptance and the work that closed issues left open:
 
 | Scope | State and release implication |
 | --- | --- |
@@ -1214,10 +1218,10 @@ tracks the 0.10.1 acceptance and the work that closed issues left open:
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
 | #37 | Closed for the native update repository foundation. The 0.10.0 HTTPS install from the hosted repository is recorded under [publication](#publication); an HTTPS update between two published releases awaits the next release (#440). |
-| #36 | Closed on 2026-10-13. The 0.10.0 release workflow, checksums and attestations passed, and the maintainer removed the repository-admin tag bypass and enabled immutable releases (see [publication](#publication)). 0.10.0 predates that setting; reading `immutable: true` back on 0.10.1 is in #440. |
+| #36 | Closed on 2026-10-13. The 0.10.0 release workflow, checksums and attestations passed, and the maintainer removed the repository-admin tag bypass and enabled immutable releases (see [publication](#publication)). 0.10.0 predates that setting; reading `immutable: true` back on 0.11.0 is in #440. |
 | #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. For #39, the repository's Actions settings have required full-SHA action pinning since 2026-10-13, read back with allowed actions `all`; #463 proposes a Dependabot cooldown and the matching records. |
 | #45 | Closed on 2026-10-09 after the required-check update. |
-| #38 | Closed on 2026-10-13. The publish-changelog run for 0.10.0 succeeded (run 38392753556), and the [0.10.0 changelog entry](https://www.scenario.com/changelog/plugins-blender-v0-10-0) is public after a maintainer published the ingested draft. The check that a second dispatch on the same tag creates no duplicate moved to 0.10.1 in #440. |
+| #38 | Closed on 2026-10-13. The publish-changelog run for 0.10.0 succeeded (run 38392753556), and the [0.10.0 changelog entry](https://www.scenario.com/changelog/plugins-blender-v0-10-0) is public after a maintainer published the ingested draft. The check that a second dispatch on the same tag creates no duplicate moved to 0.11.0 in #440. |
 | #399, #400 | Closed on 2026-10-13. The 2026-10-12 weekly macOS and Windows runs failed on a stale test expectation that #396 corrected. After #442 gave the full native suite a 900-second timeout and #443 skipped a reverse DNS lookup when local MCP starts, the manual [run 38408708155](https://github.com/scenario-labs/blender-plugin/actions/runs/38408708155) on `main` passed on both platforms. |
 | #189 | Closed on 2026-10-13 as delivered in 0.10.0. Saved shared video and audio results have Play, Play in Blender and Waveform controls on private verified copies and receipt-keyed envelopes from an offline Blender decoder, with installed-ZIP native tests. Partial private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system player and in Blender's animation player at UI scale 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0, the last on a ZIP whose waveform status wrapped by measured width before later amendments to that wrapping; they are not candidate acceptance. Local MCP `inspect_result_previews` reads the same preview states and envelopes, with installed-ZIP native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 only. On 2026-10-13 the maintainer listened to a saved audio result through **Play audio** and drew its **Waveform** on the candidate ZIP on macOS Blender 5.1.2 (see [human checks](#human-checks)); Play audio opens the system's default player, and an in-extension player is #435. The waveform's Cancel, Retry and close on the desktop, clicking Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms are not yet recorded; they continue in #440. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md). The 0.10.0 build later ran 591 s of Sequencer playback without errors (see [Audio](#audio)); closure alone supplies no new runtime evidence. |

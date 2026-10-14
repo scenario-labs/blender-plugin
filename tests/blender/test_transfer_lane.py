@@ -184,8 +184,9 @@ class TransferLaneTests(unittest.TestCase):
         self.assertTrue(sdk_threads and all(name.startswith("ScenarioJob") for name in sdk_threads))
 
     def test_cancel_interrupts_a_download_blocked_on_a_silent_server(self):
-        # Headers and 2 MiB arrive, then nothing: the read blocks on the socket,
-        # whose 30-second timeout would otherwise bound the cancellation.
+        # Headers and 2 MiB arrive, then nothing. Body reads wait at most half a
+        # second at a time, so cancellation does not wait for the 30-second
+        # socket timeout on any operating system.
         server, redirect = self.loopback(silent_after=2 * 1024 * 1024)
         with redirect:
             task = self.session.download_results(
@@ -261,7 +262,6 @@ class StopDownloadTests(unittest.TestCase):
 
     def test_stop_download_natively_and_over_mcp_then_resume_restarts_it(self):
         state = self.storemod.JobState
-        owner = self.runtime.state.model_jobs
         for route in ("native", "mcp"):
             with self.subTest(route=route):
                 request_id, status = self.downloading()

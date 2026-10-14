@@ -40,8 +40,11 @@ permission. Permission is checked before connecting, sending and reading, and
 before publishing. Revocation cannot undo a socket operation already in progress.
 Byte limits cover streams both with and without Content-Length. A socket timeout
 bounds inactivity; an overall elapsed budget, which scales with the expected or
-declared size, is checked between operations and reads. OS DNS resolution and blocking header/TLS operations are not interruptible
-by that elapsed-budget check; worker shutdown must account for this limitation.
+declared size, is checked between operations and reads. Body reads wait at most
+half a second at a time, so permission and cancellation are rechecked even while
+a server sends nothing. OS DNS resolution, the TLS handshake and waiting for
+response headers are not interruptible that way; worker shutdown must account
+for this limitation.
 
 ## Output and recovery
 
@@ -113,17 +116,19 @@ receipt for that asset, so an explicit download starts it again; receipts of
 assets that finished earlier are kept. Upload parts take no cancel event:
 interrupting a signed PUT would make the part uncertain.
 
-The lane's event is a `TransferCancel`. Setting it also shuts down the running
-transfer's connection from the cancelling thread, so a read blocked on a server
-that sends nothing returns at once instead of after the 30-second socket
-timeout. The downloader keeps its own duplicate of the socket descriptor for
-this and closes that duplicate only after unregistering, so the shutdown can
-never reach a descriptor the transfer already closed and the system reused.
-Shutdown leaves the reader's descriptor valid; the transfer closes it as usual
-and reports cancellation, never a retryable failure, whether the read ended in
-EOF, a reset or a TLS error. DNS resolution and the TLS handshake are not
-interrupted; they stay bounded by the socket timeout. A plain `threading.Event`
-is still accepted and checked between chunks only.
+The downloader reads the body with a 0.5-second socket timeout
+(`POLL_INTERVAL`). After each timeout it checks the cancel event, Online Access
+and the deadline, then reads again, so a download waiting on a server that sends
+nothing stops within about half a second instead of after the 30-second socket
+timeout. A separate inactivity clock keeps that limit: 30 seconds without a
+byte end the attempt as a retryable stall. The standard `socket.SocketIO`
+refuses every read after one timeout, so the response reads its body through a
+small stream that calls `recv_into` directly; a timed-out read consumes nothing,
+on plain and TLS sockets alike. Nothing touches the socket from another thread,
+so this behaves the same on every operating system and cannot reach a reused
+descriptor. A cancellation is final and never retryable, whether it is seen
+after a timeout or between chunks. DNS resolution, the TLS handshake and waiting
+for response headers still use the full socket timeout.
 
 A download makes at most three attempts, waiting 1 second before the second and
 3 seconds before the third. Before every

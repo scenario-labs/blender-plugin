@@ -273,7 +273,8 @@ def test_read_failure_cleans_up_and_redacts_ordinary_errors(failure, tmp_path, s
         else transfers.TransferError
     )
     with pytest.raises(expected) as caught:
-        downloader().download(URL, root=tmp_path, name="x")
+        # A read timeout is waited out up to the inactivity limit, kept short here.
+        downloader(timeout=0.5).download(URL, root=tmp_path, name="x")
     assert "private-fixture" not in str(caught.value)
     assert not list(tmp_path.iterdir())
     storage[0].close.assert_called_once()
@@ -1049,67 +1050,115 @@ def test_shortened_staging_file_restarts_instead_of_resuming(tmp_path, storage):
 
 
 class Silent(Response):
-    """Headers arrive, then the server goes silent: each read blocks on the socket."""
+    """Headers arrive, then each read waits on a real socket that may stay silent."""
 
-    def __init__(self, sock, **kwargs):
+    def __init__(self, sock):
         super().__init__(LARGE, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG})
-        self.sock = sock
+        self.sock, self.received = sock, 0
 
     def read1(self, size=-1):
-        return self.sock.recv(min(size, 1024))
+        # Like http.client, stop at the declared length instead of waiting for more.
+        if self.received >= len(LARGE):
+            return b""
+        chunk = self.sock.recv(min(size, 1024, len(LARGE) - self.received))
+        self.received += len(chunk)
+        return chunk
 
 
-def test_cancel_interrupts_a_read_blocked_on_a_silent_server(tmp_path, storage):
+@pytest.fixture
+def socket_pair(storage):
     import socket
+
+    client_end, server_end = socket.socketpair()
+    storage[0].sock = client_end
+    storage[0].getresponse.return_value = Silent(client_end)
+    yield client_end, server_end
+    client_end.close()
+    server_end.close()
+
+
+def test_cancel_stops_a_read_waiting_on_a_silent_server_within_the_poll(tmp_path, socket_pair):
     import time
+
+    client_end, server_end = socket_pair
+    server_end.sendall(LARGE[:2048])
+    cancel = threading.Event()
+    threading.Timer(0.3, cancel.set).start()
+    partial = transfers.PartialDownload()
+    started = time.monotonic()
+    with pytest.raises(transfers.TransferError, match="interrupted") as caught:
+        downloader().download(
+            URL, root=tmp_path, name="x", expected_size=len(LARGE), cancel=cancel, partial=partial
+        )
+    # The 30-second inactivity limit never applies, and cancellation is final.
+    assert time.monotonic() - started < 0.3 + transfers.POLL_INTERVAL + 1
+    assert not caught.value.retryable
+    assert partial.size == 0 and not list(tmp_path.iterdir())
+    assert client_end.gettimeout() <= transfers.POLL_INTERVAL
+
+
+def test_a_pause_shorter_than_the_inactivity_limit_is_waited_out(tmp_path, socket_pair):
+    _, server_end = socket_pair
+    server_end.sendall(LARGE[:4096])
+    # Three poll intervals of silence, then the rest of the body.
+    threading.Timer(3 * transfers.POLL_INTERVAL, server_end.sendall, (LARGE[4096:],)).start()
+    receipt = downloader(timeout=5).download(
+        URL,
+        root=tmp_path,
+        name="x",
+        expected_size=len(LARGE),
+        expected_sha256=hashlib.sha256(LARGE).hexdigest(),
+    )
+    assert receipt.size == len(LARGE)
+
+
+def test_silence_past_the_inactivity_limit_is_a_retryable_stall(tmp_path, socket_pair):
+    _, server_end = socket_pair
+    server_end.sendall(LARGE[:4096])
+    partial = transfers.PartialDownload()
+    with pytest.raises(transfers.TransferError, match="stalled") as caught:
+        downloader(timeout=1).download(
+            URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+        )
+    assert caught.value.retryable
+    # With a strong ETag the next attempt resumes the bytes already received.
+    assert partial.size == 4096 and partial.resumable
+    partial.discard()
+
+
+def test_real_http_body_reads_can_time_out_and_continue(tmp_path, storage, monkeypatch):
+    """Through http.client: a timed-out body read is retried, never refused."""
+    import http.client
+    import socket
 
     client_end, server_end = socket.socketpair()
     try:
-        client_end.settimeout(20)
-        server_end.sendall(LARGE[:2048])
-        storage[0].sock = client_end
-        storage[0].getresponse.return_value = Silent(client_end)
-        cancel = transfers.TransferCancel()
-        threading.Timer(0.3, cancel.set).start()
-        partial = transfers.PartialDownload()
-        started = time.monotonic()
-        with pytest.raises(transfers.TransferError, match="interrupted") as caught:
-            downloader().download(
-                URL,
-                root=tmp_path,
-                name="x",
-                expected_size=len(LARGE),
-                cancel=cancel,
-                partial=partial,
-            )
-        # Well before the 20-second socket timeout, and never a retryable failure.
-        assert time.monotonic() - started < 5
-        assert not caught.value.retryable
-        assert partial.size == 0 and not list(tmp_path.iterdir())
-        # The reader's own descriptor stays valid; only the connection was shut down.
-        assert client_end.fileno() != -1
-        assert not cancel._hooks
+        head = (
+            f"HTTP/1.1 200 OK\r\nContent-Length: {len(LARGE)}\r\nETag: {ETAG}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode()
+        server_end.sendall(head + LARGE[:3000])
+        threading.Timer(2 * transfers.POLL_INTERVAL, server_end.sendall, (LARGE[3000:],)).start()
+
+        class Connection(http.client.HTTPConnection):
+            def connect(self):
+                self.sock = client_end
+
+        connection = Connection("storage.example.invalid")
+        storage[1].return_value = connection
+        storage[1].side_effect = None
+        monkeypatch.setattr(connection, "request", lambda *args, **kwargs: None)
+        monkeypatch.setattr(connection, "_HTTPConnection__state", "Request-sent", raising=False)
+        receipt = downloader(timeout=5).download(
+            URL,
+            root=tmp_path,
+            name="x",
+            expected_size=len(LARGE),
+            expected_sha256=hashlib.sha256(LARGE).hexdigest(),
+        )
+        assert receipt.size == len(LARGE)
+        assert isinstance(connection.response_class, type)
+        assert issubclass(connection.response_class, http.client.HTTPResponse)
     finally:
         client_end.close()
         server_end.close()
-
-
-def test_transfer_cancel_runs_hooks_once_set_and_for_late_watchers():
-    cancel = transfers.TransferCancel()
-    calls = []
-    cancel._watch(lambda: calls.append("early"))
-    cancel.set()
-    cancel._watch(lambda: calls.append("late"))
-    assert calls == ["early", "late"] and cancel.is_set()
-    failing = transfers.TransferCancel()
-    failing._watch(lambda: 1 / 0)
-    failing.set()  # A failing hook never masks the cancellation itself.
-    assert failing.is_set()
-
-
-def test_plain_cancel_events_and_mock_sockets_are_never_duplicated(tmp_path, storage, monkeypatch):
-    duplicated = []
-    monkeypatch.setattr(transfers.socket, "dup", lambda fd: duplicated.append(fd) or fd)
-    storage[0].sock.fileno.return_value = 1
-    downloader().download(URL, root=tmp_path, name="x", cancel=transfers.TransferCancel())
-    assert duplicated == []

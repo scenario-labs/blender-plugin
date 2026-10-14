@@ -4,14 +4,13 @@
 
 import hashlib
 import http.client
+import io
 import math
 import os
 import re
-import socket
 import ssl
 import stat
 import tempfile
-import threading
 import time
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -252,80 +251,47 @@ class PartialDownload:
             _cleanup(staging.cleanup)
 
 
-class TransferCancel(threading.Event):
-    """A cancel event that also wakes a transfer blocked reading from a silent server.
+# Body reads wait at most this long, so cancellation and Online Access are seen
+# within about half a second even while a server sends nothing. The policy's
+# socket timeout still bounds inactivity, through a separate clock.
+POLL_INTERVAL = 0.5
 
-    ``set`` runs the hooks a running transfer registered, which shut its
-    connection down; the transfer then reports cancellation, never a retryable
-    failure. A plain ``threading.Event`` still works and is checked between
-    chunks, but a blocked read then waits for the socket timeout.
+
+class _PollingReader(io.RawIOBase):
+    """The response body's raw stream: a socket read that may time out and be retried.
+
+    The standard ``socket.SocketIO`` refuses every read after one timeout. A
+    timed-out ``recv_into`` consumes nothing, on plain and TLS sockets alike,
+    so the body can be read again after the downloader checks cancellation.
     """
 
-    def __init__(self):
+    def __init__(self, sock):
         super().__init__()
-        self._hooks_lock = threading.Lock()
-        self._hooks = []
+        # A counted reference, as the standard response holds, so the socket
+        # stays open until this stream closes.
+        self._stream = sock.makefile("rb", buffering=0)
+        self._sock = sock
 
-    def set(self):
-        super().set()
-        with self._hooks_lock:
-            hooks = tuple(self._hooks)
-        for hook in hooks:
-            _cleanup(hook)
+    def readable(self):
+        return True
 
-    def _watch(self, hook):
-        with self._hooks_lock:
-            self._hooks.append(hook)
-        if self.is_set():
-            _cleanup(hook)
+    def readinto(self, buffer):
+        return self._sock.recv_into(buffer)
 
-    def _unwatch(self, hook):
-        with self._hooks_lock:
-            if hook in self._hooks:
-                self._hooks.remove(hook)
+    def close(self):
+        if not self.closed:
+            _cleanup(self._stream.close)
+        super().close()
 
 
-class _Interrupter:
-    """Shuts a transfer's connection down from the cancelling thread.
+class _PollingResponse(http.client.HTTPResponse):
+    """An HTTP response whose body read can time out without ending the transfer."""
 
-    It holds its own duplicate of the socket descriptor, so a shutdown never
-    reaches a descriptor that the transfer already closed and the system reused.
-    Shutdown, unlike close, leaves the reader's own descriptor valid: its blocked
-    read returns and the transfer closes its connection as usual. Only real
-    sockets are duplicated; anything else keeps the socket-timeout behavior.
-    """
-
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._socket = None
-        self._fired = False
-
-    def arm(self, sock):
-        if not isinstance(sock, socket.socket):
-            return
-        try:
-            duplicate = socket.socket(
-                sock.family, sock.type, sock.proto, fileno=socket.dup(sock.fileno())
-            )
-        except (OSError, ValueError, TypeError):
-            return
-        with self._lock:
-            self._socket = duplicate
-            fired = self._fired
-        if fired:
-            self.fire()
-
-    def fire(self):
-        with self._lock:
-            self._fired = True
-            if self._socket is not None:
-                _cleanup(lambda: self._socket.shutdown(socket.SHUT_RDWR))
-
-    def disarm(self):
-        with self._lock:
-            duplicate, self._socket = self._socket, None
-        if duplicate is not None:
-            _cleanup(duplicate.close)
+    def __init__(self, sock, *args, **kwargs):
+        super().__init__(sock, *args, **kwargs)
+        # Nothing has been read from the standard stream yet; replace it.
+        self.fp.close()
+        self.fp = io.BufferedReader(_PollingReader(sock))
 
 
 def _cleanup(close):
@@ -384,8 +350,8 @@ class ResultDownloader:
         from partial files or replay generation to recover a download.
 
         An optional ``cancel`` event is checked with online permission before
-        each connection and chunk; once set, the transfer stops unpublished.
-        Each call is one attempt whose elapsed budget is ``policy.deadline`` of
+        each connection and chunk, and every ``POLL_INTERVAL`` while a body read
+        waits; once set, the transfer stops unpublished. Each call is one attempt whose elapsed budget is ``policy.deadline`` of
         the expected (or declared) size. An optional caller-owned
         ``PartialDownload`` keeps staged bytes after a retryable failure so the
         caller's next attempt can resume them; see its docstring.
@@ -422,10 +388,6 @@ class ResultDownloader:
 
         connection = None
         keep = retain = False
-        interrupter = _Interrupter()
-        watch = callable(getattr(cancel, "_watch", None))
-        if watch:
-            cancel._watch(interrupter.fire)
         try:
             root = _root(root)
             destination = root / validate_result_name(name)
@@ -449,14 +411,14 @@ class ResultDownloader:
             context.load_verify_locations(cafile=certifi.where())
             transfer_socket = None
 
-            def check_permission_and_deadline():
+            def check_permission_and_deadline(wait=None):
                 if not permitted():
                     raise TransferError("Storage transfer interrupted")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise RetryableTransferError("Storage transfer interrupted")
                 if transfer_socket is not None and transfer_socket.fileno() != -1:
-                    transfer_socket.settimeout(min(self._policy.timeout, remaining))
+                    transfer_socket.settimeout(min(wait or self._policy.timeout, remaining))
                 return remaining
 
             headers = {"Accept-Encoding": "identity", "Connection": "close"}
@@ -472,9 +434,10 @@ class ResultDownloader:
                     host, timeout=min(self._policy.timeout, remaining), context=context
                 )
                 connection.set_debuglevel(0)
+                # Its body reads can time out briefly without ending the transfer.
+                connection.response_class = _PollingResponse
                 connection.connect()
                 transfer_socket = connection.sock
-                interrupter.arm(transfer_socket)
                 check_permission_and_deadline()
                 connection.request("GET", target, headers=headers)
                 check_permission_and_deadline()
@@ -492,7 +455,6 @@ class ResultDownloader:
                     visited.add(next_target)
                     target = next_target
                 finally:
-                    interrupter.disarm()
                     _cleanup(response.close)
                     _cleanup(connection.close)
                     connection = None
@@ -558,11 +520,20 @@ class ResultDownloader:
                 with output:
                     # Keep resumable bytes only after a retryable transport failure.
                     keep = True
+                    idle_since = time.monotonic()
                     while True:
-                        check_permission_and_deadline()
+                        check_permission_and_deadline(POLL_INTERVAL)
                         # One underlying read prevents a trickling body from
                         # hiding inside a read-until-full call.
-                        chunk = response.read1(min(65536, limit - staged.size + 1))
+                        try:
+                            chunk = response.read1(min(65536, limit - staged.size + 1))
+                        except TimeoutError:
+                            # Nothing arrived for a moment: check cancellation and
+                            # permission again, up to the policy's inactivity limit.
+                            if time.monotonic() - idle_since >= self._policy.timeout:
+                                raise RetryableTransferError("Storage transfer stalled") from None
+                            continue
+                        idle_since = time.monotonic()
                         if not chunk:
                             break
                         if staged.size + len(chunk) > limit:
@@ -602,9 +573,6 @@ class ResultDownloader:
             retain = keep
             raise RetryableTransferError("Storage transfer failed") from None
         finally:
-            interrupter.disarm()
-            if watch:
-                cancel._unwatch(interrupter.fire)
             if connection is not None:
                 _cleanup(connection.close)
             # Success, control exceptions and every other failure remove the

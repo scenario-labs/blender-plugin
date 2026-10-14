@@ -809,17 +809,3 @@ def test_transfer_control_exception_retires_the_owner(setup, monkeypatch):
         owner.refresh_remote("request", expected_revision=1)
     owner.shutdown()
     assert owner.stopped
-
-
-def test_downloads_get_a_cancel_that_can_interrupt_a_blocked_read(setup, monkeypatch):
-    from scenario.core.jobs.transfers import TransferCancel
-
-    owner, coordinator, _, _, _, _, _, _ = setup()
-    seen = []
-    monkeypatch.setattr(
-        coordinator,
-        "download_results",
-        lambda request_id, *, expected_revision, cancel: seen.append(cancel) or request_id,
-    )
-    assert owner.download_results("request", expected_revision=1).result(2) == "request"
-    assert isinstance(seen[0], TransferCancel)

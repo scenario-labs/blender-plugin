@@ -6,13 +6,14 @@
   "evidence": {
     "path": "docs/MAINTAINERS.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-09-25",
-    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
-    "limits": "Merged on 2026-10-14 from 6 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Workflow, Dependabot, smoke tooling and manifest claims checked against the sources. Rulesets, merge and security settings, access, Pages, project 31, environment secrets and Scorecard results are recorded readbacks; no live GitHub setting was read.",
     "sources": [
       ".github/CODEOWNERS",
       ".github/dependabot.yml",
       ".github/workflows/ci.yml",
+      ".github/workflows/commitlint.yml",
       ".github/workflows/pages.yml",
       ".github/workflows/pr-name.yml",
       ".github/workflows/release-please.yml",

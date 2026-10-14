@@ -39,19 +39,26 @@ limits of its current controls. It does not replace Scenario's service policies.
   HTTP Basic `Authorization` header over TLS. They identify the extension with
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;
   they do not forward the Scenario API key/secret header.
-- Studio > Library reads collection names and counts only when you choose
+- Studio > Library reads one page of asset metadata, sending any search text,
+  only when you choose **Refresh**, **Previous**, **Next** or a collection's
+  **Browse**, and collection names and counts only when you choose
   **Load collections**. Confirming **Organize** reads the chosen asset's tags and
   memberships and the target collection or matching names; after you review the
   change and choose **Apply**, it sends that asset ID with the tags or collection
   name you entered. The change uses no
   credits and Blender Undo does not reverse it.
+- Workflows send only on explicit actions: **Private** or **Public** lists
+  workflows and **Load workflow inputs** reads one, **Request workflow price**
+  sends the form's inputs for an exact estimate, and the workflow's **Generate**
+  submits them and can spend credits. Reviewing a waiting step sends your decision.
 - An agent connected to the local MCP server can request scene information,
   captures, uploads and paid generations on your behalf. It can also change
   the collection membership and tags of your Scenario assets or create a
   collection, sending the chosen asset IDs, tags and collection names. Its own
-  service may receive what that agent reads from Blender. That includes the
-  names, IDs and types of the selected project's trained models, and its
-  per-project trained-model defaults, which the agent can also save or clear.
+  service may receive what that agent reads from Blender. That includes your
+  asset library's metadata, the names, IDs and types of the selected project's
+  trained models, and its per-project trained-model defaults, which the agent
+  can also save or clear.
 - Set up official repository and Check for updates use Blender's native extension
   manager to contact the public repository. Blender sends its usual compatibility
   parameters and network metadata; these actions do not send Scenario credentials,
@@ -74,10 +81,9 @@ Blender stores the repository configuration and cache through its native manager
 The **Create a key in the portal**, **Update guide** and **Release ZIPs** links
 and the folder and file buttons (**Output folder**, the Film **Open capture**
 and **Open capture files**, and the Film export and case-study **Open folder**)
-start your web browser, file manager or default application the way **Play**
-starts the system player, described below: the extension starts `open` on
-macOS, `xdg-open` on Linux, or on Windows Blender's isolated Python interpreter
-calling `os.startfile`, and strips `SCENARIO_`, `PYTHON` and proxy variables
+start your web browser, file manager or default application: the extension
+starts `open` on macOS, `xdg-open` on Linux, or on Windows Blender's isolated
+Python interpreter calling `os.startfile`, and strips `SCENARIO_`, `PYTHON` and proxy variables
 from the environment it passes. They never use Blender's `wm.path_open` or
 `wm.url_open`, which pass Blender's whole environment, including
 `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when Credentials > Environment
@@ -147,24 +153,17 @@ the private copy; its disposable profile, temporary files and log stay in that
 copy's work directory and are removed with it.
 **Play** and **Play in Blender** copy one verified saved video or audio result
 into a private, read-only file under `cache/media-playback` and open that copy,
-never the saved file, in the system player or a separate Blender animation
-player. The extension strips `SCENARIO_`, `PYTHON` and proxy variables from the
-environment Blender passes to either player, so neither receives your Scenario
-credentials, including `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when
-Credentials > Environment supplies them. macOS still adds proxy settings from
-your login session to every application it launches. Up to four copies
-or 1 GiB are kept for reuse; the rest, and every copy when the connection
-changes, a file loads or the extension is disabled, are removed unless a running
-animation player, system player launcher or audio playback still uses one. A copy left behind, for example one a player still
-read when the extension was disabled or a Windows player held open, is removed
-once a day old by the next Play. The system
-player is your operating system's default application. The extension starts it
-itself, never through Blender's `wm.path_open`, which would pass Blender's whole
-environment on: `open` on macOS, `xdg-open` on Linux, and on Windows Blender's
-isolated Python interpreter calling `os.startfile`. A player that is already
-running receives only the copy's path. What it records, such as recent files,
-is outside the extension's control. The **Play** and **Play in Blender** buttons
-of retained prototype results start their players the same way.
+never the saved file, in the system player, your operating system's default
+application started like the links above, or in a separate Blender animation
+player. Neither player receives `SCENARIO_`, `PYTHON` or proxy variables, and
+so no Scenario credentials; one already running receives only the copy's path,
+and what it records, such as recent files, is outside the extension's control. Up to four copies or 1 GiB are kept for reuse; the rest,
+and every copy when the connection changes, a file loads or the extension is
+disabled, are removed unless a running animation player, system player launcher
+or audio playback still uses one. A copy left behind, for example one a player
+still read when the extension was disabled or a Windows player held open, is
+removed once a day old by the next Play. The **Play** and **Play in Blender**
+buttons of retained prototype results start their players the same way.
 **Play audio** plays the same kind of private copy through Blender's audio
 engine in a separate offline Blender process, not in your session. That process
 starts from the same filtered environment, without `SCENARIO_`, `BLENDER_`,
@@ -221,9 +220,7 @@ clipboard history or screenshots are safe to publish without inspection.
 
 The clipboard is written by Copy buttons (asset IDs, errors and MCP setup) and by
 copy/cut in the composer; it is read when you paste into the composer. Clipboard
-managers may retain copied tokens or text. Play opens media locally in Blender's
-player or your system player, and Play audio plays it locally through Blender's
-audio engine.
+managers may retain copied tokens or text.
 
 ## The local MCP server
 

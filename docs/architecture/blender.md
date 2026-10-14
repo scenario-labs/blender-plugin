@@ -7,8 +7,9 @@ and native tests. Pure protocol and core modules must remain free of `bpy`.
 
 ## Threads, context and storage
 
-Keep `bpy` access on Blender's main thread. The current
-[pump](../../scenario/blender/pump.py) drains prototype events in the GUI;
+Keep `bpy` access on Blender's main thread. The GUI timer in the
+[pump](../../scenario/blender/pump.py) runs shared runtime maintenance, local MCP
+requests and catalog worker events; the
 [MCP service](../../scenario/blender/mcp_service.py) supplies headless queue
 processing. A GUI timer is not proof that background mode delivers work.
 Never mutate properties in `draw()` or keep a worker dependent on a live panel.
@@ -77,10 +78,9 @@ reading a file drops a waiting mark. In background mode the first push creates
 Blender's undo stack.
 
 The push tags no data-block and runs no dependency-graph, undo or redo handler,
-so origins, quotes and approvals captured before it stay current; an installed
-test checks a session origin across a mark. Catalog seeding, restored model
-choices, project defaults, estimate state and upload progress links stay
-unmarked: marking them would flag every opened file as modified (see
+so origins, quotes and approvals captured before it stay current. Catalog
+seeding, restored model choices, project defaults, estimate state and upload
+progress links stay unmarked: marking them would flag every opened file as modified (see
 [catalog delivery](sdk-runtime.md#active-sdk-catalog)). Local MCP has no save tool,
 and nothing saves the file for the user. Blender 5.0 reports every background
 file as modified, even right after reading it; from 5.1 a file read in the
@@ -99,26 +99,24 @@ objects. Every failure raises `PreviewDecodeError` with a message that names
 neither the path nor Blender's own error.
 
 Decode display-only images this way, never by loading them into `bpy.data` and
-removing them again. On Blender 5.0.1, 5.1.2 and 5.2.1, removing a main-data
-image makes the next dependency-graph evaluation report updates for the scene,
-its objects and its collections. The JobSession dependency handler then
+removing them again. Removing a main-data image makes the next dependency-graph
+evaluation report updates for the scene, its objects and its collections. The JobSession dependency handler then
 invalidates every origin captured in that scene (see
 [origin lifetime](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime)): quotes
 bound to them can no longer be prepared or spent, and completed results wait
 for review instead of automatic application. The temporary block reports no
 ID updates. Writing the PNG runs the handler with an empty update list, which
-JobSession ignores. Installed native tests check this property next to a
-main-data control that does invalidate the origin.
+JobSession ignores.
 
 A Python reference into the temporary block that outlives it reads freed
 memory: it can crash Blender or reach data that later reuses the memory. The
 helper therefore keeps the image, the scene and its render settings in helper
 frames that end inside the block, drops its own references before the block
 closes and raises only after the block is freed. Neither the error's context
-nor the locals of the helper frames on its traceback refer into the block,
-which the native tests check for every refusal. The helper does not inspect the
-file first: `limit` sees the dimensions only after Blender has loaded the whole
-image, so callers check the format and declared dimensions before decoding.
+nor the locals of the helper frames on its traceback refer into the block.
+The helper does not inspect the file first: `limit` sees the dimensions only
+after Blender has loaded the whole image, so callers check the format and
+declared dimensions before decoding.
 [Workflow review previews](../RESULT_PREVIEWS.md#workflow-review-assets) decode
 their icons with it after verifying the cached file, its format and its declared
 dimensions, and the
@@ -130,20 +128,20 @@ requests on the shared scheduler; no MCP tool calls it directly.
 
 ## Scene application
 
-[Mesh application](../MESH_APPLICATION.md) supports explicit reversible remesh
-and UV policies with guarded rollback. It is a synchronous primitive, not the
-complete edit-3D generation flow. Preserve materials, object context and the
-documented ownership checks; do not relax rollback checks merely to make an
-edited target pass.
+[Mesh application](../MESH_APPLICATION.md) applies one saved GLB to one captured
+mesh under explicit remesh, UV, retexture, parts or rig policies with guarded
+rollback; [`mesh_result_application.py`](../../scenario/blender/mesh_result_application.py)
+connects the synchronous `mesh_application.py` primitive to verified saved results.
+Preserve materials, object context and the documented ownership checks; do not
+relax rollback checks merely to make an edited target pass.
 
 [World application](../WORLD_APPLICATION.md) preflights supported image formats,
 loads and packs the image, and installs a new World on an explicit scene.
 Its restoration checks protect later user changes. The explicit JobSession World
 command wraps one verified saved asset with original-context checks and a durable
 application claim. Recovered unapplied results, and completed results through a
-separate reuse claim, now have shared native/MCP World approval and guarded
+separate reuse claim, have shared native/MCP World approval and guarded
 session-local restoration for saved PNG, JPEG and OpenEXR panoramas.
-Panorama-specific generation and global undo integration remain.
 
 Existing [image](../../scenario/blender/apply_image.py),
 [3D import](../../scenario/blender/apply_3d.py),
@@ -189,8 +187,7 @@ supported containers, bounded synchronous work and rollback.
 worker-decoded splat snapshot on the main thread as a new mesh, Geometry Nodes
 point group and unlit material, never reusing data by name, and publishes it like
 a model group; see [saved Gaussian splat import](../MESH_APPLICATION.md#saved-gaussian-splat-import).
-Existing `mesh_application.py` remains the separate explicit in-place mesh/UV
-primitive; importing a new GLB does not establish those edit workflows.
+In-place mesh edits are the separate [scene application](#scene-application) path.
 
 ## Saved materials
 
@@ -209,8 +206,9 @@ shot construction and editable scene-strip timeline assembly. It validates the
 whole recipe before mutation, uses receipt-checked GLB import for explicit heroes,
 restores the working scene and removes newly created data on failure. See the
 [Film primitive contract](../FILM_PLAN.md#native-shot-and-timeline-primitives) for
-choreography, source identity and remaining shared-command approval requirements.
-It does not bypass those requirements by exposing an unclaimed UI/MCP importer.
+choreography and source identity. UI and MCP reach it only through the
+[shared shot application command](../FILM_PLAN.md#shared-shot-application-command),
+which claims every source job before building.
 
 ## Local render snapshots
 
@@ -220,7 +218,7 @@ the working file. Only this snapshot step touches the parent's bpy state.
 The [local render primitive](../FILM_PLAN.md#local-capture-foundation) owns its
 offline child process and disposable profile; its standalone worker changes
 render settings only in that child. Still capture does not require ffmpeg.
-The [Film capture owner](../FILM_PLAN.md#shared-capture-and-upload-approval) now
+The [Film capture owner](../FILM_PLAN.md#shared-capture-and-upload-approval)
 binds native/MCP approval to the recipe and selected shot, queues work through
 the existing session and accepts completion only in the unchanged original
 context. Separate upload approval hashes the staged bytes against the rendered
@@ -233,17 +231,17 @@ no bpy mutation runs on a worker or during drawing.
 local final/previs sequence assembly from explicitly scoped, measured receipts.
 It rehashes independent copies before movie/audio decoding, preserves the working
 scene and removes only new data on a fully rolled-back failure. Copies persist
-for successful sequences and remain available after uncertain cleanup. Native
-trims, audio loop/duck segments and optional muted masters are covered by installed
-fixtures. It requires matching movie/cut frame rates. The [review contract](../FILM_PLAN.md#native-saved-media-review-primitive)
-describes byte/strip limits. Its shared session command now supplies worker
+for successful sequences and remain available after uncertain cleanup. It
+supports native trims, audio loop/duck segments and optional muted masters, and
+requires matching movie/cut frame rates. The [review contract](../FILM_PLAN.md#native-saved-media-review-primitive)
+describes byte/strip limits. Its shared session command supplies worker
 preparation and generated-source claims before native decoding. Private copy
 identities are rechecked around decoding without GUI-thread copying or hashing.
 Session-owned [native/MCP review controls](../FILM_PLAN.md#native-and-mcp-review-controls)
 separate preparation from the build approval. Drawing reads cached status, the
 maintenance pump advances work, and the build runs on the main thread only in
 Object Mode in a Blender window. The [portable case-study bundle](#film-case-study-bundle)
-packs a built review; live/desktop acceptance remains pending.
+packs a built review.
 
 ## Film video export
 
@@ -263,7 +261,7 @@ verification levels, cancellation and crash leftovers. Session-owned
 [native/MCP export controls](../FILM_PLAN.md#native-and-mcp-video-export-controls)
 inspect review scenes and snapshot on the main thread, separate the destination
 choice from the render approval and read cached status while drawing; the
-maintenance pump delivers outcomes. Desktop interaction remains pending.
+maintenance pump delivers outcomes.
 
 ## Film case-study bundle
 
@@ -290,4 +288,4 @@ separators, because its listing joins a strip's folder and file name with the
 native separator. Media copies, checks, private scans
 and the archive run in bpy-free core code on the session-owned export thread. See
 the [bundle contract](../FILM_PLAN.md#portable-case-study-bundle). Drawing reads
-cached status; desktop interaction remains pending.
+cached status.

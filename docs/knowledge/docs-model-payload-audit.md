@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/MODEL_PAYLOAD_AUDIT.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-26",
-    "reviewed_revision": "5c605a11ddadd254eab845d068f91349a3c89721",
-    "limits": "Merged on 2026-10-14 from 4 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the audit tool, API contract workflow, failure reporters and SDK adapter. No live audit, workflow dispatch or Scenario call; hosted scheduling and issue reporting were not re-run.",
     "sources": [
       ".github/workflows/api-contract.yml",
       "docs/MODEL_PAYLOAD_AUDIT.md",

@@ -6,13 +6,10 @@ developer credentials and explicit live commands.
 Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
 the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
 `make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
-focused tests. Development dependencies belong in `[dependency-groups].dev`;
-commit the updated lockfile when changing them. Do not maintain a parallel
-requirements-dev.txt or install ad hoc tools into the managed environment.
-For an explicit interpreter check, use `uv run --locked --python <version>`.
-Blender native tests still use Blender's bundled Python and an isolated profile.
-Preserve exit codes when capturing logs, and distinguish passed checks from
-checks that were not run.
+focused tests. Dependency and interpreter changes follow
+[Python style](../PYTHON_STYLE.md#dependency-changes). Blender native tests still
+use Blender's bundled Python and an isolated profile. Preserve exit codes when
+capturing logs, and distinguish passed checks from checks that were not run.
 
 [CI](../../.github/workflows/ci.yml) runs Python lint, unit tests, SDK contracts,
 the Linux/Windows Blender baseline, knowledge checks and agent-skill validation
@@ -41,22 +38,11 @@ whole tree.
 
 [Weekly OS checks](../../.github/workflows/blender-os.yml) are separate,
 informational schedule/manual jobs for Blender 5.1.2 on macOS Apple silicon and
-Windows x64. They fetch pinned official archives, run the full installed native
-suite in new profiles and retain logs, exact ZIPs and JSON reports for 14 days.
-The full suite runs as one Blender process with a 900-second `--timeout`: on
-2026-10-13 the hosted macOS runner needed more than the 300-second default while
-Windows finished in about three minutes.
-A separate Ubuntu reporter validates both OS identities and completed conclusions
-from the current run's latest job results before writing. It covers setup, test,
-timeout and artifact failures, retains earlier successful jobs on partial reruns,
-and excludes deliberate whole-workflow cancellation. Failure reporting uses
-exact-title, paginated issue lookup; a second failure comments on the same open OS
-issue. Reporting does not turn a failed job green.
-See [matrix maintenance and first-run acceptance](../../CONTRIBUTING.md#bumping-the-blender-matrix).
-Local shell/API-fake tests establish failure propagation and deduplication logic;
-hosted execution and real issue delivery require separate evidence. The recorded
-default-branch macOS/Windows run is linked from the contributor guide and #42;
-it does not establish desktop interaction or integrated release acceptance.
+Windows x64. They fetch pinned official archives and run the full installed native
+suite in new profiles, as one Blender process with a 900-second `--timeout`
+because hosted macOS can exceed the 300-second default. A separate reporter opens
+or updates one issue per failed OS; reporting does not turn a failed job green.
+See [matrix maintenance and failure reporting](../../CONTRIBUTING.md#bumping-the-blender-matrix).
 
 [Unit-test CI](../../.github/workflows/unit-tests.yml) runs the complete unit suite
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
@@ -90,16 +76,10 @@ fail collection. This catches accidental service connections in the pytest
 process, not DNS lookups, subprocesses or arbitrary network code. Paid/live
 checks belong in their separate opt-in tools, never the default unit suite.
 
-Use the pinned Ruff configuration before further Python development:
-`make format` applies safe fixes and formatting; `make lint` checks both.
-CI runs `make lint` over the whole tree, so every Python file must stay
-formatted and lint-clean. `LINT_PATHS` scopes either command to a few files
-while iterating. Mechanical reformatting commits are listed in
-`.git-blame-ignore-revs`; see [Python style](../PYTHON_STYLE.md#whole-tree-lint).
-Follow `docs/PYTHON_STYLE.md`, including Blender registration/annotation
-cautions. The optional pre-commit hooks use this same locked Ruff executable on
-staged files. Install with `make hooks`
-or the [portable uv command](../../CONTRIBUTING.md#optional-local-hooks).
+`make format` applies safe Ruff fixes and formatting; `make lint`, which CI runs
+over the whole tree, checks both. Follow [Python style](../PYTHON_STYLE.md#whole-tree-lint)
+for path scoping, mechanical reformatting and Blender registration/annotation
+cautions.
 
 `make check-rules` runs the currently implemented offline house rules. Its
 `actions-pinned` rule checks remote workflow and composite-action references;
@@ -110,15 +90,11 @@ for supported declaration syntax, explicit file selection and remaining scope.
 `make test-blender` owns fresh disposable profiles for its entire build/install/test
 sequence, including probes. It strips inherited credentials and Blender/Python path
 overrides, verifies installed ZIP contents and reports actual runtime versions.
-See [the native test loop](../../CONTRIBUTING.md#native-blender-test-loop). Use `BLENDER`
-or `--blender` to select a supported binary; discovery does not prove compatibility.
-`uv run --locked --no-env-file python tools/blender_env.py` prints the selected
-executable without launching it. Pass `--blender PATH` to override `BLENDER`;
-an invalid explicit selection exits with status 1 and a diagnostic rather than
-falling back to another installation. `--manifest-version` (also `--version`)
-prints the extension version without requiring Blender. See the
-[discovery reference](../../CONTRIBUTING.md#native-blender-test-loop) for locations
-and version ordering.
+See [the native test loop](../../CONTRIBUTING.md#native-blender-test-loop) for
+binary discovery, `tools/blender_env.py` and version ordering. Use `BLENDER` or
+`--blender` to select a supported binary; an invalid explicit selection exits with
+status 1 rather than falling back to another installation, and discovery does not
+prove compatibility.
 
 | Environment | Available checks | Limits |
 | --- | --- | --- |
@@ -146,24 +122,16 @@ staging dependencies or building an archive. The isolated runner records this
 as `validate-source.log`, so malformed manifest metadata fails at a distinct
 step on every Linux/Windows Blender CI version. A validation failure stops
 packaging and installation and preserves its exit status and diagnostic logs.
-The finished ZIP is still validated separately. When `tools/test_blender.py`
-receives `--zip`, it validates that exact supplied artifact without checking
-the source directory with this new preflight. The archive's extension id must
-still match the checkout. `--no-build` uses the same validation path after selecting
-only the exact `dist/ID-VERSION.zip` named by the checkout manifest; the copied
-archive must have that id/version. Neither mode skips ZIP, licence, SDK bundle or
-installed-byte checks. `--fresh` is a compatibility flag for the runner's existing
-fresh-owned-profile behavior, not permission to clear an inherited profile.
+The finished ZIP is still validated separately. `--zip` and `--no-build` skip
+this source preflight, not the archive identity, ZIP, licence, SDK bundle or
+installed-byte checks; see [the native test loop](../../CONTRIBUTING.md#native-blender-test-loop).
 
-The native runner streams phase output as Blender produces it, while retaining
-complete per-phase files. `--log PATH` also records phase-labelled UTF-8 output
-in a new file outside the normal Blender profile. Existing destinations are
-refused; the file closes on failure or interruption as well as success. A
-forwarding error fails an otherwise successful command without discarding the
-phase log; healthy destinations continue after another destination fails. If
-Blender itself fails, its exit status takes precedence. Failure to open or write
-the requested log before a phase prevents that phase from starting; a log-close
-failure also fails the command because the requested evidence is incomplete.
+Output streaming and `--log` follow the same native test loop. A forwarding error
+fails an otherwise successful command without discarding the phase log; healthy
+destinations continue after another destination fails. If Blender itself fails,
+its exit status takes precedence. Failure to open or write the requested log
+before a phase prevents that phase from starting; a log-close failure also fails
+the command because the requested evidence is incomplete.
 `--timeout` bounds each Blender child process, not the runner's total wall-clock
 time: terminal and filesystem I/O can block. The runner waits for its forwarding
 thread before closing the log, so it does not leave a writer using closed storage.
@@ -261,10 +229,10 @@ reuse checks above.
 Both native reports also record the job database schema read before and after
 the update (`store_schema`), and the runner requires the versions declared by the
 two archives' `core/jobs/store.py`; a candidate with an older schema fails before
-installation. When the predecessor already has schema 10, the probe seeds a ready
-job whose saved result is a declared EXR original with an equirectangular
+installation. When the predecessor already has schema 10 or later, the probe
+seeds a ready job whose saved result is a declared EXR original with an equirectangular
 projection, a saved `image` lane default and a cleared `render_image` default
-(`schema_10_state: before-update`). When only the candidate has schema 10, the
+(`schema_10_state: before-update`). When only the candidate has it, the
 first post-update store access upgrades the predecessor's database; after the
 unchanged-state comparison the probe writes the same schema 10 state into the
 upgraded store, and the offline restart must preserve it
@@ -323,9 +291,8 @@ exactly when `expected-state.json` contains that Environment state. Older
 predecessors report false: they show only that an older saved tab survives the
 appended item.
 
-When the predecessor saves trained-model choices on generation forms
-([#97](https://github.com/scenario-labs/blender-plugin/issues/97)), the probe seeds
-two LoRAs with strengths and ranges on the Image form, including a Unicode name,
+When the predecessor saves trained-model choices on generation forms, the probe
+seeds two LoRAs with strengths and ranges on the Image form, including a Unicode name,
 each tagged with the selected connection's scope. After the update and the offline
 reopen it compares their IDs, names, kinds, strengths, ranges and scope tags. The
 candidate's trained-model scope check must accept them for the selected store and
@@ -376,7 +343,7 @@ Build the previous ZIP with that commit's own `tools/build.py`. This exercises t
 actual schema upgrade through Blender's updater; like the candidate-derived mode,
 it is synthetic version evidence, not published release-pair acceptance.
 
-Each Linux and Windows baseline job now runs both the small fixture and this
+Each Linux and Windows baseline job runs both the small fixture and this
 actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly one
 ZIP from that job's successful native run and preserves update/restart reports,
 logs, indices and both test archives on failure as well as success. A failed

@@ -21,15 +21,14 @@ use POST for tool calls; the server does not provide an SSE stream.
 The extension is experimental. The [runtime map](architecture/runtime.md)
 separates implemented helpers from active UI/MCP integration. A tool description
 is guidance for the connected agent, not a server-enforced spending approval.
-Every `generate` model lane now requires a session-owned quote and the exact
-approved cost. Native generation forms now use the same shared quotes and
-submission boundary; pending files, captures and Prompt Spark preparation must
-finish before a usable final quote.
+Every model lane, through `generate` or a native form, requires a session-owned
+quote and the exact approved cost; pending files, captures and Prompt Spark
+preparation must finish before a usable final quote.
 
 `list_local_jobs` inspects the separate credential-scoped durable store and returns
 saved costs, revisions and suggested recovery actions without contacting Scenario.
-It includes all new MCP and native form model submissions,
-but does not import prototype records or refresh remote jobs.
+It includes MCP and native form model submissions, not prototype records, and
+never refreshes remote jobs.
 Rows identify `source: generation` or `cloud`. A record created through the
 [cloud adoption foundation](JOB_COORDINATOR.md#adopting-a-completed-cloud-job)
 has `cu_cost_exact: null`, because no local quote exists. `job_status` preserves
@@ -358,13 +357,6 @@ in that banner. Stop with Ctrl+C. Scene captures need the GUI; other scene tools
 use the headless main-thread request loop. Development builds and tests use the
 [isolated native runner](../CONTRIBUTING.md#native-blender-test-loop).
 
-Cost estimates use the shared SDK job session. Model preparation and credential
-checks run on Blender's main thread; fresh metadata and the dry-run request run
-on the session workers. The MCP request thread waits without blocking Blender.
-`estimate_cost` returns `quote_id` and `cu_cost_exact`, the server cost as a
-decimal string, alongside the numeric `cu_cost` and `details`. An estimate does
-not authorize spending; `generate` requires the exact approved cost and quote.
-
 ## Tools
 
 The table is generated from the same definitions served by `tools/list`. That
@@ -582,7 +574,7 @@ stdio bridge and `curl` send the host of the URL they were given; use the copied
 
 Each connection has a 60-second idle timeout: a socket read or write that makes no
 progress for 60 seconds closes the connection, so an idle keep-alive connection or
-a stalled request no longer holds a server thread. A request waiting for Blender's
+a stalled request cannot hold a server thread. A request waiting for Blender's
 main thread, or in `wait_for_job`, reads nothing from its socket meanwhile, so a
 tool that takes longer still answers within the tool's own limits (120 seconds,
 170 for `wait_for_job`). The timeout bounds each read, not a whole request: a client
@@ -624,25 +616,21 @@ read and send files with your permissions.
 
 ### Default start and upload decisions
 
-The maintainers recorded two decisions in
-[#448](https://github.com/scenario-labs/blender-plugin/issues/448):
-
-- **Upload policy:** an allowlist, rather than a native confirmation that names each
-  file. The extension already uploads its own captures directly, so
-  `upload_reference` mostly serves files the user chose; Scenario Blender Studio
-  0.2.0 likewise accepts only its own capture, export and playblast folders.
-- **Server default:** local MCP keeps starting automatically in GUI sessions when
-  **Allow Online Access** is on, protected by its token and the Origin, Host,
-  idle-timeout and loopback-bind checks above. **Stop MCP server** in **Scenario >
-  Agents (MCP)** closes it for the rest of the session. The extension's network
-  permission text and [PRIVACY.md](PRIVACY.md#the-local-mcp-server) disclose the
-  loopback listener. The headless `scenario_blender` command stays an explicit start.
+Agent uploads use the allowlist above rather than a native confirmation that
+names each file: the extension uploads its own captures directly, so
+`upload_reference` mostly serves files the user chose. Local MCP starts
+automatically in GUI sessions when **Allow Online Access** is on, protected by its
+token and the Origin, Host, idle-timeout and loopback-bind checks above. **Stop MCP
+server** in **Scenario > Agents (MCP)** closes it for the rest of the session. The
+extension's network permission text and [PRIVACY.md](PRIVACY.md#the-local-mcp-server)
+disclose the loopback listener. The headless `scenario_blender` command stays an
+explicit start.
 
 ## Local server and mcp.scenario.com
 
 Local names retain their verb-first form. The platform uses names such as
 `models_list` and `job_get`; similar names do not make their parameters or scene
-behavior interchangeable. Remote names below were checked against the
+behavior interchangeable. Remote names follow the
 [hosted tool reference](https://mcp.scenario.com/docs/tools).
 
 | Concept | scenario-blender | Hosted platform |
@@ -651,7 +639,7 @@ behavior interchangeable. Remote names below were checked against the
 | Model parameters | `model_schema(model_id)` | `model_schema_get` |
 | Trained LoRAs, compositions and project defaults | `list_models(lane, source=trained)`, base LoRA inputs in `estimate_cost`/`generate` or `render_form` `trained`, `model_defaults(action, lane)` | `models_list` lists models; no hosted equivalent of the local per-project defaults is asserted here |
 | Price without generating | `estimate_cost(model_id, parameters)` | `model_run` with `dry_run=true` |
-| Generate | `generate(lane, model_id, parameters)`, automatic scene application | `model_run` |
+| Generate | `generate(lane, quote_id, approved_cost, model_id, parameters)`; only Image results import automatically | `model_run` |
 | Job status | `job_status(job_id or id)` | `job_get` |
 | Durable local recovery | `list_local_jobs`, `cancel_prepared_job` | Local only; no remote polling or cancellation |
 | Saved job actions | `recover_local_job(context_id, request_id, expected_revision, action)` | Scoped job refresh/cancellation, asset retrieval, or local receipt recovery; never a new generation |
@@ -674,7 +662,7 @@ behavior interchangeable. Remote names below were checked against the
 | Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
 | Asset library metadata | `list_assets`, `search_assets` | SDK `assets.list` and `search.asset_search`; no hosted tool-name equivalence asserted here |
 | Collections | `list_collections(page_size, pagination_token)` | `collections_list` |
-| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back. Both skip assets already in the collection; the hosted `collection_add_assets` also batches beyond 49 (observed behavior, not documented publicly), while a local review takes at most 49, the API's per-request cap |
+| Organize library assets | `prepare_asset_organization(operation, asset_ids, collection_id or collection_name, add_tags, remove_tags)`, then `apply_asset_organization(context_id, review_id)` after explicit approval | `collection_add_assets`, `collection_remove_assets`, `collection_create`, `asset_add_tags`, `asset_remove_tags`; the local review reads current state first and verifies by reading back. Both skip assets already in the collection; the hosted `collection_add_assets` also batches beyond 49 (undocumented), while a local review takes at most 49, the API's per-request cap |
 | Organization outcome or discard | `asset_organization_status(context_id, review_id, action)` | Local session review; `collection_get` and `asset_get` read service state |
 | Workflow price and execution | `estimate_workflow`, `run_workflow` | `workflow_run` |
 | Discard workflow approval | `discard_workflow_estimate` | Local only; no remote cancellation |
@@ -685,9 +673,9 @@ Connect both when needed: use the local setup above for Blender and the
 [hosted server setup](https://mcp.scenario.com/docs) for Scenario-wide work.
 Some platform operations are discovered through its tool catalog.
 
-`capture_reference` now returns `context_id` and `reference_id`, rather than an
-immediate asset ID or a local capture path. Both upload tools return while the
-shared session stages and transfers the prepared reference. Poll `reference_upload_status`
+`capture_reference` returns `context_id` and `reference_id`, not an asset ID or a
+local capture path. Both upload tools return while the shared session stages and
+transfers the prepared reference. Poll `reference_upload_status`
 until `state` is `imported`, then use `asset_id` in a fresh `estimate_cost` call.
 The generation still requires its own exact-cost approval. An `upload_reference`
 file keeps uploading while the scene is edited, played or rendered; a
@@ -695,8 +683,9 @@ file keeps uploading while the scene is edited, played or rendered; a
 redo, removing the scene or loading a file stops either. Do not repeat an
 uncertain upload: inspect saved progress and explicitly refresh its known ID.
 After restart, use `list_reference_uploads`; session handles do not survive.
-Recovery can refresh, cancel unclaimed preparation, or clean a finished private
-source copy, without replaying upload mutations or deleting the original file.
+Recovery can refresh, cancel unclaimed preparation, restart an unfinished upload
+as a new request, or clean a finished private source copy; it never resends a
+part to the same upload or deletes the original file.
 See [upload limits and destination policy](SDK_UPLOADS.md#active-reference-uploads).
 
 `wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 170).
@@ -745,9 +734,12 @@ Maintainers: run `make mcp-docs` after changing tool definitions and
 
 ## Model quote and submission contract
 
-For every model lane, `estimate_cost` returns `quote_id` and `cu_cost_exact`.
-After explicit user approval, pass those values as `quote_id` and `approved_cost`
-to `generate` with the same lane, model and parameters. The estimate's lane
+For every model lane, `estimate_cost` returns `quote_id`, `cu_cost_exact` (the
+server cost as a decimal string), the numeric `cu_cost` and `details`. Model
+preparation and credential checks run on Blender's main thread, and the dry run
+on the shared session workers while the MCP request thread waits without
+blocking Blender. After explicit user approval, pass those values as `quote_id`
+and `approved_cost` to `generate` with the same lane, model and parameters. The estimate's lane
 is `image` when omitted. A changed lane, scene, credential context, input or
 consumed quote requires a fresh estimate. An estimate alone does not authorize
 spending. Failed or timed-out submissions must be inspected by their returned
@@ -789,8 +781,8 @@ or authorize scene application. Recovered display records use generic
 `kind: model`; original lane metadata is not persisted. PNG/EXR results can use
 the explicit image import approval above, without inferring a material or World
 assignment from their media type. Supported video/audio uses the explicit
-asset and scene/frame approval above. Saved GLB, glTF, FBX, OBJ and mesh PLY
-units use the corresponding scene/cursor approval; in-place editing is separate.
+asset and scene/frame approval above. Saved model `import_units` use the
+scene/cursor approval above; in-place mesh editing is separate.
 `import_result` rejects
 direct cached-file import, including prototype records, with guidance for scoped
 recovery and explicit destination approval. It requires complete selected
@@ -864,8 +856,8 @@ default is sent, as in the form. `[]` removes the choice.
 
 The same choice through the native form and through MCP builds the same target
 and payload, so its saved intent has the same `payload_sha256`. For equal bytes,
-a form now sends each decimal field as the shortest decimal its 32-bit storage
-holds (`0.8`, no longer `0.800000011920929`). `estimate_cost` and `generate` start
+a form sends each decimal field as the shortest decimal its 32-bit storage holds
+(`0.8`, not `0.800000011920929`). `estimate_cost` and `generate` start
 each number parameter that is not given at its declared default, in the field's
 own type (`0.0` in a decimal field), as a form does. `null` still leaves an
 optional parameter to the service, like a field switched off in the form. The
@@ -886,11 +878,8 @@ or another project; `clear` takes the same context and revision. Neither request
 a price or changes a payload. A form without an explicit choice takes the saved
 default, as in the native UI, while Image `estimate_cost` uses only the parameters
 it is given. A default is a local choice kept in the job store, not spending
-authority. Paid LoRA and composition jobs ran through local MCP on a pre-merge
-head, and a private LoRA passed the maintainer's check on the 0.10.0 candidate
-(see the [release evidence](maintenance/release-acceptance.md#trained-models));
-a private composition is still unverified
-([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+authority. Live use of a private composition is tracked in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ### Preparing Render Image and Render Video
 
@@ -965,15 +954,12 @@ or unavailable, it changes nothing and returns that reason. Naming `model_id` in
 `configure` with `trained` replaces the choice, checked like a picker choice
 before the form changes, and is an explicit choice too; see
 [trained models](#trained-models-loras-and-compositions) for the rules and
-`model_defaults` ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)).
+`model_defaults`.
 
-Raw render-lane parameter calls now fail with preparation guidance. Use the
+Raw render-lane parameter calls fail with preparation guidance. Use the
 ordinary Image/Video lanes for direct model parameters. Scene capture, file
-upload, Spark approval and render submission remain separate actions. Offline
-native tests cover this shared preparation path. Paid Render Image and Render
-Video jobs ran through local MCP for 0.10.0 (see the
-[release evidence](maintenance/release-acceptance.md#render-image-and-render-video));
-multi-object material application is
+upload, Spark approval and render submission remain separate actions.
+Multi-object material application is
 [#446](https://github.com/scenario-labs/blender-plugin/issues/446), and the open
 render and Film checks are in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
@@ -1051,14 +1037,10 @@ Pass the prompt in `parameters`. `estimate_prompt` with `lane: panorama` prices
 New, Rewrite or Translate for the native Environment form's own prompt field,
 like the other native lanes. A native panorama input also accepts a local 2:1
 file that passes a preflight before upload; `upload_reference` has no such check,
-so an uploaded file is refused as a panorama reference here.
-The contracts come from recorded model records and zero-spend dry-run quotes.
-Paid runs since returned Flux 360, HDRi Skybox, skybox upscale and Skybox GPT
-results (see the
-[release evidence](maintenance/release-acceptance.md#panorama-and-world)); HY
-World output and the HDR original's host are open in
+so an uploaded file is refused as a panorama reference here. HY World output and
+the HDR original's host are open in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440). The Image and
-Render Image lanes still list these models as before.
+Render Image lanes also list these models.
 
 ## Saved result previews
 
@@ -1144,8 +1126,8 @@ including verification, durable claims and no generation or automatic retry.
 ## Saved mesh undo status
 
 `mesh_edit.undo_available` reports whether a desktop Blender history checkpoint
-was recorded for a completed saved mesh edit. This applies to REMESH, UV and
-RETEXTURE and PARTS through `mesh_edit` and `mesh_source` review. Respect Blender's Global
+was recorded for a completed saved mesh edit. This applies to every
+`mesh_policy` through `mesh_edit` and `mesh_source` review. Respect Blender's Global
 Undo and history limits; a false value does not mean application failed or may
 be repeated. Headless application does not create desktop history; it still
 marks the file modified.
@@ -1243,8 +1225,8 @@ describes the row yet, or its model has no generation lane; it never stands for
 an image. The cloud job list returns result asset IDs without their media types.
 
 Each row's `cu_cost` is the job's `billing.cuCost` plus its `cuCostDetails`
-add-ons, such as quality-gate fees. Whether an approved quote includes those
-add-ons has not been verified. Workflow runs appear as `kind=workflow`
+add-ons, such as quality-gate fees, which an approved quote may exclude.
+Workflow runs appear as `kind=workflow`
 rows whose own charge is normally 0; their `cu_cost` adds the charges of the
 step jobs named by the run's flow or by each step's `workflowJobId`. Steps
 missing from the page are read on the history worker, at most 24 per page,
@@ -1383,8 +1365,7 @@ model path. Cancel/discard release preparation or approval, preserving saved job
 and media. On an error, lost response or restart, inspect the recipe's declared
 master job and use ordinary saved-job recovery; never repeat uncertain generation.
 These tools share [native composition review](FILM_PLAN.md#native-and-mcp-composition-controls).
-Synthetic native interaction passes on macOS Blender 5.1.2; live provider and
-other OS/DPI acceptance remain pending. Review assembly uses the commands below.
+Review assembly uses the commands below.
 
 ### Film review commands
 
@@ -1420,8 +1401,7 @@ These three local commands have no platform equivalent, make no service call and
 share the [native review controls](FILM_PLAN.md#native-and-mcp-review-controls).
 A build records one Undo History step afterwards, like the native operator, which
 marks the file modified. Handles expire with the session.
-Installed synthetic tests cover them; desktop interaction and live media remain
-pending. Built review scenes export through the commands below.
+Built review scenes export through the commands below.
 
 ### Film export commands
 
@@ -1460,9 +1440,7 @@ refused without consuming it and stays for native confirmation.
 
 These four local commands have no platform equivalent, make no service call and
 spend nothing. They share the [native export controls](FILM_PLAN.md#native-and-mcp-video-export-controls)
-and their handles; handles and private files end with the session. Installed
-synthetic tests cover them, including one real child export; desktop interaction
-and human playback review remain pending.
+and their handles; handles and private files end with the session.
 
 ### Film case-study commands
 
@@ -1497,9 +1475,7 @@ video exports share one export thread.
 These four local commands have no platform equivalent, make no service call and
 spend nothing. They share the
 [native case-study controls](FILM_PLAN.md#portable-case-study-bundle) and their
-handles, under the same agent folder policy as video export. Installed synthetic
-tests cover them, including a real bundle reopened in a fresh Blender; desktop
-interaction and real provider media remain pending.
+handles, under the same agent folder policy as video export.
 
 
 ## Workflow execution
@@ -1558,9 +1534,7 @@ A running workflow step cannot be canceled: `recover_local_job` `cancel` on a
 running workflow job returns that explanation and sends nothing. Rejecting a waiting
 approval or selection step is the only way to stop a workflow. The native
 review dialog in Jobs and Studio sends decisions through the same entry as
-`decide_workflow_step`. Workflow authoring, the expanded Studio form and live
-provider/output acceptance remain incomplete. Do not infer live compatibility
-from the synthetic installed command tests.
+`decide_workflow_step`.
 
 ### Workflow step decisions
 
@@ -1600,10 +1574,10 @@ decide only if the step is shown waiting again and the user chooses again.
 Rejecting stops the workflow, and completed steps stay charged. The API reference
 says a rejected ForEach iteration cascades to the surrounding loop instead, so
 the refreshed state is authoritative. Approving or selecting lets the remaining
-steps run and spend credits; the charge after a decision is not live-verified
-against the approved price. A selection that feeds a ForEach loop, a nested
-workflow or an unlisted node type stays blocked, with only `reject`, until live
-evidence shows that charge stays within the approved price. So does a selection
+steps run and spend credits; nothing checks that charge against the approved
+price. A selection that feeds a ForEach loop, a nested workflow or an unlisted
+node type stays blocked, with only `reject`, because the approved price may not
+cover what it runs. So does a selection
 in a workflow with such a node when its step links cannot be read (`unverified`).
 When `links_complete` is `false`, an approval's dependencies and review assets
 may be incomplete; say so before the user approves.
@@ -1628,7 +1602,8 @@ never exposed as a complete text asset. These calls do not download, upload,
 generate, apply results or change collection/tag organization. Returned asset IDs
 can be used in supported model/workflow parameters before a fresh exact quote.
 Scene/session changes reject stale delivery; an explicit retry repeats only a
-read. Native Library presentation and integrated attachment remain pending.
+read. Studio's [Library page](ui/studio-and-library.md#native-library-controls)
+browses the same metadata and attaches selections to inputs.
 
 ## Asset organization
 
@@ -1699,14 +1674,8 @@ kept. Public library assets are not blocked locally; the service decides.
 These tools use the shared [session reviews](BLENDER_JOB_CONTEXT.md#asset-organization-reviews)
 and the SDK methods listed in [asset organization writes](SDK_ADOPTION.md#asset-organization-writes),
 with no raw API fallback. Collection rename and deletion, model collections and
-tag listing are not provided locally. The already-member refusal of an add (a
-400 that writes nothing) is the behavior the service was observed to have, not
-yet checked live from this repository. On 2026-10-10 a free live run from a
-pre-merge build applied and read back one asset's collection add and removal
-and tag changes through these tools and the native operators, so a removal's
-DELETE body reached the service through the production edge. Name uniqueness,
-tag normalization and service limits are unverified live; a tag the service
-normalizes reads back as `UNCONFIRMED`.
+tag listing are not provided locally. A tag the service normalizes reads back as
+`UNCONFIRMED`.
 Studio's [Library organization](ui/studio-and-library.md#library-organization) controls
 prepare and apply the same reviews, one asset at a time, and disable Organize
 on pages loaded with Public assets. Apply from the desktop dialog continues in

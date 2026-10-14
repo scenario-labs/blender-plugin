@@ -46,12 +46,11 @@ the vendor executable code and extension ZIP were unchanged.
 
 ![One Film submission is saved while the scene remains unchanged](../images/film-task-saved.png)
 
-These are offline interaction checks, not live pricing or provider acceptance.
-The screenshots and desktop evidence above predate the current stale-price and
-saved-row review fixes. Those changes have separate installed native regression
-coverage; fresh physical input and screenshot proof remain pending.
-They do not establish other OS desktop behavior, Film scene construction/capture,
-finishing/export, resolution of #263 or integrated release acceptance.
+These are offline interaction checks, not live pricing, provider acceptance,
+other OS desktop behavior or integrated release acceptance. The screenshots do
+not show the stale-price and saved-row handling above; a later desktop pass of
+recipe loading and the saved upload picker is in the
+[release evidence](../maintenance/release-acceptance.md#film).
 
 ### Film shot controls
 
@@ -253,18 +252,10 @@ the pending price. Saved jobs remain available after either action. Error detail
 wrap the complete cached error and support copying. Drawing only reads cached
 status; the existing runtime maintenance owns progress.
 
-Installed synthetic tests exercise native operator execution/dialog construction,
-MCP parity and read-only drawing. The corrected navigation implementation passes
-916 installed tests on each of Blender 5.0.1, 5.1.2 and 5.2.1 on macOS arm64.
-
-Final/Previs is temporary WindowManager UI state, shared across the current
-Blender session and excluded from saved scene data. Native edits to a scene-owned
-custom property tag its owning scene, which invalidated retained quotes even
-though the recipe was unchanged. Direct Python assignment in the earlier
-regression did not reproduce that native update. The corrected installed
-regression also tags the property's owner, preserving the same quote without
-service requests after navigation. Frame changes still invalidate the captured
-scene revision; that guard is unchanged.
+Final/Previs is temporary per-scene WindowManager state for the current Blender
+session, excluded from saved scene data, so switching modes does not tag the
+scene or invalidate its retained quote. Frame changes still invalidate the
+captured scene revision.
 
 An isolated macOS arm64 Blender 5.1.2 desktop check installed exact ZIP SHA-256
 `6f932e81a802f8569378c38ad3d4b820da779a1f86090272585c9b1db8e1335f`.
@@ -321,14 +312,10 @@ wraps the complete error and offers copying. Drawing reads cached status only; t
 maintenance pump owns progress. Studio's Film page adds a sixth **Review** tab,
 drawn as two rows of three at narrow widths.
 
-Installed synthetic tests cover operator execution, dialog construction including
-the enabled master option for a saved master, dismissed dialogs, a storage error
-in the preparation dialog, readable full-queue admission, the warning line on
-preparing and ready reviews with selection and Undo/Redo-handler invalidation, a
-real `window.scene` round trip, a previs build beside a ready final review, MCP
-parity, read-only panel and Studio drawing, mode navigation, Edit Mode gating and
-the build operator's options. Physical desktop interaction, screenshots and other
-OS/DPI behavior for these controls have not been captured; that evidence is pending.
+[Installed tests](../../tests/blender/test_film_review_controls.py) drive these
+controls. The [release evidence](../maintenance/release-acceptance.md#film)
+records a desktop pass of preparation, discard, invalidation and the build;
+screenshots and other OS/DPI behavior are pending.
 
 ### Film export controls
 
@@ -364,12 +351,11 @@ video...** again and **Discard private files**. Errors add **Error details**,
 which wraps the complete error and offers copying. Drawing reads cached status
 only; runtime maintenance owns progress and redraws the sidebar when it changes.
 
-Installed synthetic tests cover the file browser invoke and side panel, dismissal,
-numbered suggestions, explicit audio and size choices, the Render dialog and its
-inert dismissal, the failed-save copy dialogs, the panel's ready, running and
-exported states, read-only panel and Studio drawing and Edit Mode gating. Physical
-desktop interaction, screenshots and other OS/DPI behavior for these controls have
-not been captured; that evidence is pending.
+[Installed tests](../../tests/blender/test_film_export_controls.py) drive these
+controls. The [release evidence](../maintenance/release-acceptance.md#film)
+records a desktop pass of the file browser and Render confirmation; a desktop
+rerun of rendering, cancel, **Open folder** and **Copy SHA-256**, screenshots
+and other OS/DPI behavior are pending.
 
 ### Film case-study controls
 
@@ -406,9 +392,6 @@ with **Open folder** and **Copy SHA-256**, **Export case study...** again and
 singular and plural forms. Drawing reads cached status only; runtime maintenance
 owns progress.
 
-Installed synthetic tests cover the file browser invoke and side panel, numbered
-suggestions, the Save dialog text and its inert dismissal, the failed-save copy
-dialogs, progress, the panel's ready, running and saved states, read-only panel
-and Studio drawing and Edit Mode gating. Physical desktop interaction, screenshots
-and other OS/DPI behavior for these controls have not been captured; that
-evidence is pending.
+[Installed tests](../../tests/blender/test_film_case_study.py) drive these
+controls. A desktop save, screenshots and other OS/DPI behavior are pending; see
+the [release evidence](../maintenance/release-acceptance.md#film).

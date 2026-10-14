@@ -2,12 +2,9 @@
 
 The shared [SDK adapter](../scenario/core/api/sdk_adapter.py) exposes the
 multipart upload metadata lifecycle through the packaged **scenario-sdk 2.2.0**.
-These commands do not read files, transfer bytes, persist signed URLs, start a
-background worker or connect the prototype UI/MCP by themselves. The active
-[reference integration](#active-reference-uploads) uses them for local MCP uploads.
-They are a foundation for
-[#64](https://github.com/scenario-labs/blender-plugin/issues/64) and
-[#65](https://github.com/scenario-labs/blender-plugin/issues/65).
+These commands do not read files, transfer bytes, persist signed URLs or start a
+background worker by themselves. Native forms and local MCP use them through the
+shared workers for [reference uploads](#active-reference-uploads).
 
 | Command | Public SDK method | Behavior |
 | --- | --- | --- |
@@ -80,25 +77,18 @@ uncertain; do not attach a guessed upload or automatically recreate it.
 
 ## Remaining integration and verification
 
-Signed PUT transport, private source staging, durable claims and explicit shared
-worker commands are available as described below. The active local MCP path now
-selects a host/size policy and exposes explicit saved-upload recovery. Typed form
-attachment and explicit native recovery use the controls below; automatic orphan
-retention remains separate work. The create-plan transfer, Transfer Acceleration
-part host, `complete` action and import were exercised against the live service
-with SDK 2.2.0 through the smoke input tool's shared commands. That check does
-not establish GUI interaction, every media kind or multipart files above one part.
-Finished uploads have explicit verified source cleanup as described below.
-Storage requests must check destination/online policy and never forward
-Scenario Authorization. No upload-abort method was established in this SDK.
+Signed PUT transport, private source staging, durable claims, shared worker
+commands, a host/size policy, saved-upload recovery and verified source cleanup
+are described below; automatic orphan retention is not implemented. Storage
+requests check destination/online policy and never forward Scenario
+Authorization. No upload-abort method was established in this SDK.
 
 Offline contracts exercise the actual SDK through MockTransport, including
 scoping, field aliases, one-attempt failures, response identity, future processing
 states, invalid inputs and ambient credential isolation. Installed-ZIP tests use
 the bundled SDK with synthetic responses shaped like the live contract above:
 only creation returns the part plan. These checks do not establish live upload
-acceptance, OAuth transport or successful file import. Live checks require their
-own authorized project and applicable budget.
+acceptance, OAuth transport or successful file import.
 
 
 ## Signed part byte transfer
@@ -186,8 +176,8 @@ storage directory under Blender's extension user path and must prevent its
 replacement while in use. Each SQLite connection rechecks the database with
 `lstat`, including after a competing creation. This rejects a symlink observed
 at that boundary; it is not an atomic defense against an attacker who controls
-the directory and can swap the path after the check. This database is separate from the job database;
-there is no migration or active prototype integration in this component.
+the directory and can swap the path after the check. This database is separate
+from the job database.
 
 
 ## Shared worker commands
@@ -327,11 +317,9 @@ their own current-origin policy.
 
 Offline tests exercise the actual SDK with synthetic HTTP responses and mocked
 storage connections, including the installed extension and shared worker queue.
-No live source is uploaded by these tests. UI/MCP wiring and user-facing
-recovery are active (see the [runtime map](architecture/runtime.md)).
-Authoritative account discovery remains with
-[#67](https://github.com/scenario-labs/blender-plugin/issues/67), no production
-storage policy is recorded here, and the open upload checks are in
+No live source is uploaded by these tests. Authoritative account discovery
+remains with [#67](https://github.com/scenario-labs/blender-plugin/issues/67),
+and the open upload checks are in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## Explicit finished-upload source cleanup
@@ -409,13 +397,13 @@ and local MCP recovery controls use these commands as described below.
 [`ReferenceUploads`](../scenario/blender/reference_uploads.py) is a main-thread
 facade over the selected `JobSession`, scoped upload store and existing workers.
 `upload_reference` starts one explicitly authorized local-file upload, with an
-explicit `kind` of `image` (the default), `audio`, `video` or `3d`;
-`capture_reference` prepares a viewport/camera still or clip, or a selected-mesh
-GLB first. Both return a
-session-owned handle immediately. Poll `reference_upload_status` until the saved
-state is `imported`, then pass its `asset_id` to the intended model or workflow
-file input in a fresh estimate. Uploading
-does not submit generation or approve its cost. Generation forms use the same
+explicit `kind` of `image` (the default), `audio`, `video` or `3d`, for the
+[files an agent may upload](MCP.md#agent-file-uploads) only; `capture_reference`
+prepares a viewport/camera still or clip, or a selected-mesh GLB first. Both
+return a session-owned handle immediately. Poll `reference_upload_status` until
+the saved state is `imported`, then pass its `asset_id` to the intended model or
+workflow file input in a fresh estimate. Uploading does not submit generation or
+approve its cost. Generation forms use the same
 owner through **Upload reference** for image, audio, video and 3D files; loaded
 workflow forms use it through [workflow input attachment](#workflow-input-attachment). Image
 inputs also support explicit still captures; video inputs support explicit clips.
@@ -442,8 +430,7 @@ first-frame input, or first in its reference-image array when the model has no
 such input or says its first frame can't be combined with the scene clip. A Render Video first frame
 [handed from a saved image result](BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame)
 needs no upload: it reuses that result's existing asset ID under the same scope,
-asset and kind markers, with no upload marker or local file path. Automatic Spark and non-image result application remain
-separate integration; preparation does not establish their acceptance.
+asset and kind markers, with no upload marker or local file path.
 
 The upload kind and final file extension must match the local format policy.
 An omitted kind remains `image`; a video path does not silently change the kind.
@@ -563,10 +550,11 @@ The main-thread maintenance pump converts the unchanged slot to a Scenario asset
 only after an imported observation and a fresh origin check. It marks the label
 as an uploaded snapshot and invalidates the form's prior estimate. Generation
 then quotes/submits the immutable asset ID, not the later contents of the original
-file. An active marked upload that has not attached blocks request construction,
-preventing duplicate prototype upload while it is pending or uncertain. A disabled
-render first frame is excluded from the request and does not block it. Explicit clips and mesh snapshots use these same guards; unmarked
-implicit generation-time preparation is not used by native model forms.
+file. An active marked upload that has not attached blocks request construction
+while it is pending or uncertain, and a local file or capture not yet uploaded
+blocks the final price: generation never uploads implicitly. A disabled render
+first frame is excluded from the request and does not block it. Explicit clips
+and mesh snapshots use these same guards.
 MCP `render_form(action=prepare)` uses these same role-tagged slots and guarded
 uploads. Configure and inspect are local form actions; quote and submission do
 not initiate an upload. Explicit reference removal requires its current slot key
@@ -670,14 +658,14 @@ upload into that input. Undo/redo, blend reopening and connection retirement
 discard in-memory bindings without resending bytes. The upload operator records
 its own undo step, so among history changes only undoing that step removes the
 marker. Selected-mesh uploads keep their captured source, so workflow quotes bind
-them as described below. Local MCP already exposes the equivalent sequence for
+them as described below. Local MCP exposes the equivalent sequence for
 file, viewport, camera, clip and selected-mesh sources: `upload_reference` or
 `capture_reference`, then the imported asset ID in `estimate_workflow` parameters.
 The native **Render result** snapshot has no `capture_reference` source.
 
 ## Captured mesh export provenance
 
-UI and MCP mesh snapshot uploads now persist local export provenance in the
+UI and MCP mesh snapshot uploads persist local export provenance in the
 scoped upload intent. Before exporting, the main thread captures each selected
 mesh's session identity, datablock identity, name, base geometry/attribute and
 material-slot fingerprint, world matrix, parent and collection membership. It
@@ -734,7 +722,7 @@ preserves identities, revisions, receipts and uncertain claims. Any malformed
 legacy row rolls the whole upgrade back. Older uploads and ordinary file/capture
 uploads remain valid with no mesh provenance; no source is inferred from names.
 
-The shared model/workflow quote path now binds imported captured sources to
+The shared model/workflow quote path binds imported captured sources to
 their typed 3D input parameters and persists them before spending; see
 [generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 Quotes look up only selected asset IDs within the credential scope, using a
@@ -757,9 +745,8 @@ creation can take time for a large existing store. A missing index during lookup
 fails instead of silently falling back to a history scan. Preparation and
 submission still recheck the selected upload's exact identity and revision.
 
-Operation-specific result application remains separate integration.
-Session target IDs are not authority to find an object by name after restart;
-reopened files still require explicit destination review.
+[Applying a result to the captured source](MESH_APPLICATION.md#applying-to-the-captured-mesh-source)
+uses a retained live guard, never a target found by name after restart.
 
 
 ## Captured media byte approval

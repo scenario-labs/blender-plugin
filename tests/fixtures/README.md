@@ -16,7 +16,7 @@ below come from the commits that first added each file, not a recent API refresh
 | `patina-copper-512/dryrun_response.json` | Estimate from `POST /models/model_patina-material/inferences?dryRun=true` | 2026-08-28 |
 | `patina-copper-512/job.json` | Patina job response from `GET /jobs/{jobId}` | 2026-08-28 |
 | `patina-copper-512/*.png` | Six maps from that job; `manifest.json` maps asset IDs, types, files and sizes | 2026-08-28 |
-| `smoke/playblast_72f.mp4` | Blender viewport playblast used by the opt-in video smoke script | 2026-08-28 |
+| `smoke/playblast_72f.mp4` | Blender viewport playblast; no current test or smoke command reads it | 2026-08-28 |
 
 ## Provenance and rights
 
@@ -52,8 +52,7 @@ no test sound is audible. Those signals
 contain no provider output, recording or third-party media; they are
 first-party GPL test code and leave no new committed audio files. They cover
 PCM and compressed, mono and stereo, silent, undecodable, too long, canceled and
-timed-out input. Human listening is a separate check; through the system player it passed on
-the 0.10.0 candidate, and listening through Play audio continues in #440.
+timed-out input. Human listening is a separate check, tracked in #440.
 
 ## Synthetic video fixture
 
@@ -349,7 +348,8 @@ texture role, a captured mesh binding, local application claims including an
 unfinished one, a Film task, a Film upload association and an adopted cloud
 record. All identities, hashes and receipts are synthetic; there are no result
 files, credentials, prompts or signed URLs. The
-[schema 10 upgrade tests](../unit/test_job_store_schema10.py) and the
+[schema 10](../unit/test_job_store_schema10.py) and
+[schema 11](../unit/test_job_store_schema11.py) upgrade tests and the
 installed-ZIP store test rebuild a fresh database for each case. Reproduce the
 dump with that commit's own storage code and compare it with the committed file:
 

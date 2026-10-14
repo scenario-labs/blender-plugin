@@ -6,21 +6,22 @@
   "evidence": {
     "path": "docs/maintenance/licence-options.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-24",
-    "reviewed_revision": "e013a26d7208f472b0d5d6fee1534763e2632f22",
-    "limits": "Merged on 2026-10-14 from a topic record without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against licence files, SPDX headers, the manifest, contribution terms, bundle notices and release channels. External Blender and GNU policies were not re-read, and it is not legal advice or an ownership audit.",
     "sources": [
       ".github/pull_request_template.md",
+      ".github/workflows/pages.yml",
       "AGENTS.md",
       "CONTRIBUTING.md",
       "LICENSE",
       "README.md",
       "TRADEMARKS.md",
       "docs/SDK_BUNDLE.md",
-      "docs/architecture/runtime.md",
       "docs/images/scenario-logo.LICENSE",
       "scenario/LICENSE",
       "scenario/blender_manifest.toml",
+      "scenario/icons/README.md",
       "scenario/sdk-wheel-lock.json"
     ]
   }

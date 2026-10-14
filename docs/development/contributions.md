@@ -233,8 +233,8 @@ upstream release identity and use workflow validation for those separate checks.
 This configuration covers GitHub Actions only. Python/SDK updates still require
 the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
 them requires coordinating development pins with the exact packaged wheel bundle.
-Since 2026-10-13 the repository's Actions settings also require full-SHA pinning,
-so GitHub refuses a workflow run that references an unpinned action. Other
+The repository's Actions settings also require full-SHA pinning, so GitHub
+refuses a workflow run that references an unpinned action. Other
 house rules, approved-dependency enforcement and REUSE coverage remain under #29;
 the checker does not claim they are implemented. Local checks do not prove that
 GitHub's administrative gates are enabled.
@@ -292,8 +292,7 @@ five seconds before retries. [The shared configuration](../../lychee.toml)
 limits `www.gnu.org` to one concurrent request with at least 10 seconds between
 requests because the default pacing still encountered HTTP 429 responses.
 GNU.org also receives an explicit `Scenario-Blender-LinkCheck` User-Agent with
-the repository URL: controlled requests returned 429 for the generic Lychee
-identity and 200 for this identified checker in single-request probes.
+the repository URL, because it answers the generic Lychee identity with 429.
 CI and local scans use the same settings and report per-host statistics. These
 limits apply within each scan, not across independent runners; persistent 429s
 can still reflect server or shared-IP limits. Rate-limit responses remain failures,
@@ -327,8 +326,9 @@ lychee --no-progress --max-redirects 0 --exclude-loopback \
 Pages requiring authentication or blocking automated clients belong in
 [.lycheeignore](../../.lycheeignore) with a precise pattern and reason. In addition
 to Scenario service endpoints, Blender's browser challenge and reserved examples,
-the current exceptions cover the repository's exact login forms and issue links
-in two internal repositories. These exclusions do not verify those destinations.
+the current exceptions cover the repository's exact login forms and internal
+organization pages that require access. These exclusions do not verify those
+destinations.
 Do not silence a new redirect by excluding an entire public host.
 
 The scheduled caller creates or comments on the exact open issue

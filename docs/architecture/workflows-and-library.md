@@ -16,22 +16,16 @@ The original parameters, normalized payload/defaults and exact decimal price are
 separate fields. Both commands also return `loop_steps`, `quote_may_understate`
 and `cost_warning`; `job_status` repeats them for saved workflow jobs, with
 unknown coverage after a restart because the record keeps no loop count. The
-adapter counts loop nodes (`for-each`, or any node carrying a ForEach field) in
-the same retrieved definition the quote validated. It reports 0 only when every
-node has a known non-loop type (the SDK 2.2.0 `WorkflowFlow.type` values other
-than `for-each` and `workflow`, plus the observed `user-selection`), or when the
-flow is empty and the record says `hasFlow: false`. Coverage is unknown, which
-also warns, for a missing or malformed flow; an empty flow, unless the record
-says `hasFlow: false`; a nested workflow step or any node carrying a
-`workflowId`; or a node whose type is missing, not a string or unknown. The SDK
-documents `hasFlow` as present even when `flow` is not, so an empty list alone
-does not prove the server's flow is empty. A unit test fails
-when an SDK upgrade changes that type list. The server's dry run prices one loop
-pass, so a run that iterates more often can cost more. The warning never blocks
+[adapter](../../scenario/core/api/sdk_adapter.py) counts loop nodes in the same
+retrieved definition the quote validated and reports 0 only when every node has
+a known non-loop type. A missing or unconfirmed empty flow, a nested workflow or
+an unknown node type makes coverage unknown, which also warns. A unit test fails
+when an SDK upgrade changes the known type list. The server's dry run prices one
+loop pass, so a run that iterates more often can cost more. The warning never blocks
 approval of the exact quoted string. Approval consumes the handle before
 persistence and requires unchanged input, scene and connection. Results stay
 saved for explicit application; there is no workflow-specific worker pool, store
-or automatic import. Native workflow controls below now share those commands.
+or automatic import. Native workflow controls below share those commands.
 The same polling projects waiting approval and selection steps, and
 [`ModelJobs.decide`](../BLENDER_JOB_CONTEXT.md#waiting-workflow-steps) sends one
 reviewed decision through the shared session; rejecting a waiting step is the
@@ -53,13 +47,10 @@ Closing the popup owns no worker teardown or job cancellation.
 
 Composer synchronization retains its source scene. Opening Studio flushes a
 focused prompt only into that unchanged scene/lane/form; navigation itself does
-not change scene data. Installed checks cover quote identity under native owner
-tagging, read-only drawing and continued jobs. The composer commits on blur and
-passes the same outside click to native controls. Offline desktop evidence covers
-first-click Studio opening, Unicode prompt edits, populated-form scrolling,
-quote-preserving navigation, continued saved-job polling, small-window fit,
-Escape and viewport return. UI scales 1.25 and 1.5, the IME candidate window
-and the remaining workflow and Library desktop checks continue in #440.
+not change scene data or invalidate a quote. The composer commits on blur and
+passes the same outside click to native controls. UI scales 1.25 and 1.5, the
+IME candidate window and the remaining workflow and Library desktop checks are
+in #440.
 
 ## Native workflow controls
 
@@ -132,10 +123,9 @@ spent. See [the command contract](../JOB_COORDINATOR.md#asset-organization-comma
 and [session ownership](../BLENDER_JOB_CONTEXT.md#asset-organization-reviews).
 Local MCP tools prepare, apply and inspect these reviews; see
 [asset organization](../MCP.md#asset-organization). The native Library uses the
-same owner through the projection described below. Free live writes passed
-through local MCP and the native operators (see the
-[release evidence](../maintenance/release-acceptance.md#library-organization));
-Apply from the desktop dialog continues in
+same owner through the projection described below. Live evidence is in the
+[release record](../maintenance/release-acceptance.md#library-organization);
+Apply from the desktop dialog is in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## Native Library projection and attachment
@@ -197,8 +187,8 @@ an input omits it while preserving its binding. The form signature includes that
 binding, so attachment/clearing invalidates a prior approval even without a native
 RNA edit event. Explicit clearing verifies the original form and retains the
 existing unchecked-input/default semantics. Library choices skip an input with a
-pending upload marker. Interactive nodes, general cancellation and physical/live
-acceptance remain separate.
+pending upload marker. General cancellation and physical/live acceptance remain
+separate.
 
 ## Workflow input uploads
 

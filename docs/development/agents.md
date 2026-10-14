@@ -55,6 +55,3 @@ Run the regression suite with
 `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --test`.
 
 Handbook work follows [documentation builds](../../CONTRIBUTING.md#documentation-builds).
-Edit guide prose only in Markdown. Both website and single-file handbook modes
-retain the accepted Google Fonts stylesheet; embedded images do not make
-typography completely offline.

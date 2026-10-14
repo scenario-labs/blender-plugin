@@ -6,14 +6,10 @@
   "evidence": {
     "path": "docs/architecture/scene-inputs.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-24",
-    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
-    "limits": "Split from docs/architecture/runtime.md on 2026-10-14 without a new review. It keeps that record's date, revision and coverage; its sources come from the earlier per-topic records about this guide's subjects.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the Film, render, upload and mesh application owners it summarizes; detailed contracts are in the linked guides. No live Scenario call, provider output, desktop interaction or native run.",
     "sources": [
-      "docs/images/film-task-approval.png",
-      "docs/images/film-task-saved.png",
-      "docs/images/render-spark-price.png",
-      "docs/images/render-spark-result.png",
       "scenario/blender/capture.py",
       "scenario/blender/film.py",
       "scenario/blender/film_application.py",

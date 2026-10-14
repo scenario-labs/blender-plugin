@@ -5,12 +5,13 @@
   "title": "docs/ui/environment.md evidence",
   "evidence": {
     "path": "docs/ui/environment.md",
-    "coverage": "inherited",
-    "reviewed_at": "2026-09-23",
-    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
-    "limits": "Split from docs/UI_STYLE.md on 2026-10-14 without a new review. It keeps that record's date, revision and coverage; its sources come from the earlier per-topic records about this guide's subjects.",
+    "coverage": "source-reviewed",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the Environment lane, panorama input, saved-job label, composer and World approval code. Recorded installed-test and desktop evidence was not rerun; no live Scenario call, panorama quality measurement or desktop interaction.",
     "sources": [
       "docs/UI_STYLE.md",
+      "docs/WORLD_APPLICATION.md",
       "docs/images/saved-world-approval.png",
       "docs/images/saved-world-restore.png",
       "docs/images/world-scene-restore-approval.png",

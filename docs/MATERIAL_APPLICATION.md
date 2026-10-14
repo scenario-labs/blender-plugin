@@ -82,10 +82,9 @@ saves that known result without rebuilding or assigning again. Shutdown clears
 pending receipt handles. An interrupted `applying` claim without a known successful
 handle needs explicit inspection; it cannot be assumed safe to repeat.
 
-This slice has no global undo entry or persistent restoration handle. Old material
-datablocks are not edited, but unused data is subject to Blender's normal purge
-and save rules. Preserve a desired old material yourself. Completed jobs can
-apply saved maps again through a fresh destination approval and separate durable
-local claim. Multi-object/shared-mesh policies and texture-set selection remain
-separate work. Synthetic native tests do not establish live provider or
-full Materials/release acceptance.
+Material application has no global undo entry or persistent restoration handle.
+Old material datablocks are not edited, but unused data is subject to Blender's
+normal purge and save rules. Preserve a desired old material yourself. Completed
+jobs can apply saved maps again through a fresh destination approval and separate
+durable local claim. Multi-object/shared-mesh policies and texture-set selection
+remain separate work.

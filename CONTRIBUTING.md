@@ -55,15 +55,11 @@ ZIP, not a previously installed copy. Never use a normal Blender profile for
 development builds. UI changes need native input, focus and viewport checks as
 well as before/after images; follow [UI style](docs/UI_STYLE.md) and the
 [capture procedure](#repeatable-gui-screenshots). A screenshot alone is not
-interaction proof. Local hooks are separate tooling under
-[#30](https://github.com/scenario-labs/blender-plugin/issues/30); use their
-documented install command only when that configuration is present.
+interaction proof.
 
 Pull requests run offline checks. A fork workflow can wait for a maintainer's
 approval to run. Paid/live tools are opt-in and never required PR checks; the
 [live-command section](#live-commands) states their authorization boundary.
-Follow the current PR check results rather than assuming that a planned
-aggregate check or repository protection setting already exists.
 
 ## Commits, branches and pull requests
 
@@ -209,8 +205,8 @@ the default unit-test collection and are not added to PR workflows.
 | `SCENARIO_TEST_PROJECT_ID` | `tools/dev_config.py`: `live_settings` | Optional; unset/blank omits project selection. When supplied, sent as `projectId` in live-tool request queries | Developer or project-specific fixture |
 | `SCENARIO_API_KEY`, `SCENARIO_API_SECRET` | `scenario/core/config.py`: `resolve_credentials` | Used only when **Credentials > Environment** is explicitly selected in Scenario Preferences. Both values must come from that source; saved Blender credentials are the default. Not used by live-tool credential selection | Developer launching Blender |
 | `SCENARIO_API_BASE` | `tools/audit_payloads.py`: `run` | Audit-only REST base URL; default `https://api.cloud.scenario.com/v1` | Developer |
-| `SCENARIO_SMOKE` | `tools/smoke_image.py`, `tools/smoke_suite.py`, `tools/smoke_inputs.py` | `=1` opts into explicitly authorized smoke spending or reference uploads; keep this out of dotenv files | Developer, on the command line after authorization |
-| `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/gui_screenshot.py`; `tools/capture_gui.py`; `tools/capture_gui_scene.py` | `=1` gates panel Generate and MCP generation during screenshots; it is not a general network or spending sandbox | Screenshot tool |
+| `SCENARIO_SMOKE` | `tools/smoke_image.py`, `tools/smoke_suite.py`, `tools/smoke_inputs.py` | `=1` opts into explicitly authorized smoke spending or reference uploads; keep this out of dotenv files | Developer, on the command line after authorization; the protected smoke workflow |
+| `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; Film and model-job approvals in `scenario/blender/`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/capture_gui_scene.py` | `=1` blocks panel, Film, workflow and MCP generation during screenshots and desktop review; it is not a general network or spending sandbox | `tools/capture_gui.py`, `tools/gui_screenshot.py`, `tools/desktop_review.py` |
 | `SCENARIO_PROBE_MODEL` | `tools/gui_screenshot.py` | Selects a model for 3D-tab screenshots | Test tools |
 | `SCENARIO_SHOT_SOURCE` | `tests/blender/test_shot_planner.py` | `=1` loads the shot planner from source rather than the installed extension; unsuitable as evidence of ZIP acceptance | Test tools |
 | `SCHEMA_CACHE` | `tools/audit_payloads.py` | Optional private persistent schema-cache root; otherwise each run uses a new temporary cache. Live subdirectories are partitioned by credentials, project and API base URL | Developer |
@@ -233,7 +229,7 @@ Never put development credentials in the extension ZIP or a normal Blender profi
 From the repository root, after `uv sync --locked`:
 
 ```sh
-# Exercise the new SDK adapter's catalog read (no record export).
+# Exercise the shared SDK adapter's catalog read (no record export).
 uv run --locked --env-file .env.local python -m tools.check_sdk
 # Explicit SDK estimate for a custom model; parameters.json is a local input object.
 uv run --locked --env-file .env.local python -m tools.check_sdk --model MODEL_ID --parameters parameters.json
@@ -285,7 +281,7 @@ Blender UI interaction, media decoding or scene application.
 
 Use `tools.smoke_model quote --result-kind image|material|video|model|audio|panorama|hdri`
 with the same arguments for other result kinds. The expected kind is part of the
-saved approval. Existing Material, Video and image-to-3D scripts now accept the
+saved approval. The Material, Video and image-to-3D scripts accept the
 same quote/submit/resume commands through this shared engine; local references
 must first be uploaded explicitly through the native/MCP shared upload path or
 the [reviewed reference-plan command](tests/smoke/README.md#prepare-reference-inputs).
@@ -402,9 +398,8 @@ Use `make test-blender` to create the managed profile and exact candidate ZIP.
 unit suite on Linux and the same native baseline on Linux x64 and Windows x64
 with Blender **5.0.1, 5.1.2 and 5.2.1**. It reuses the release pipeline's checksum-verifying setup action and
 publishes logs/reports/ZIPs, including on failure. The `blender-baseline-ok` check
-requires every leg to pass. Required-check rules remain a maintainer follow-up.
-To change a pinned version, verify each platform archive checksum in the official
-[Blender download directory](https://download.blender.org/release/), update the
+requires every leg to pass. To change a pinned version, verify each platform
+archive checksum in the official [Blender download directory](https://download.blender.org/release/), update the
 matrix version and hash together, and inspect the actual runtime report from CI.
 
 ### Bumping the Blender matrix
@@ -447,25 +442,10 @@ that setup or artifact failures are native test failures.
 Do not loosen tests to make a platform pass. Triage real incompatibilities into
 focused bugs, and close a workflow-error tracking issue after its fix is verified.
 GitHub may disable scheduled workflows after 60 days without repository activity;
-re-enable from the Actions tab when needed.
-
-Hosted acceptance evidence is tracked in [#42](https://github.com/scenario-labs/blender-plugin/issues/42).
-The [default-branch dispatch](https://github.com/scenario-labs/blender-plugin/actions/runs/36137526586)
-on `5d1f5a2` passed the full 341-test suite on both operating systems with Blender
-5.1.2 and Python 3.13, no failures or network violations, and unchanged normal
-profiles. Windows skipped two platform-specific tests. Downloaded artifacts were
-checked for the exact ZIP and installed-bundle evidence. These are separate
-builds of one source revision, not a combined release candidate or native
-desktop, GPU/audio or live-service acceptance. Recheck both jobs and issue
-delivery when changing the workflow; offline reporter tests alone cannot prove
-hosted delivery.
-
-Controlled branch-only failures in [run 36139299591](https://github.com/scenario-labs/blender-plugin/actions/runs/36139299591)
-and [run 36139443654](https://github.com/scenario-labs/blender-plugin/actions/runs/36139443654)
-exercised both OS reporters. Each OS kept one tracking issue; the second run
-commented on the existing issue. Both reporting jobs succeeded while the failed
-OS jobs and workflows remained failed. The temporary probes were removed;
-they did not change `main` or establish a product regression.
+re-enable from the Actions tab when needed. Recheck both jobs and issue delivery
+when changing the workflow; offline reporter tests alone cannot prove hosted
+delivery, and the two OS legs are separate builds, not a combined release
+candidate or desktop, GPU/audio or live-service acceptance.
 
 
 ### Portable build, install and download tools
@@ -521,9 +501,8 @@ Blender executable. Older builds from the previous tool may leave randomly named
 version directories; remove those manually when no longer in use.
 Other platforms require a separately installed Blender selected with `BLENDER`.
 No download happens implicitly during build, install or tests.
-The reusable setup action and pull-request native matrix cover Linux and Windows.
-The separate weekly workflow adds macOS; its actual hosted acceptance is tracked
-in #42 as described above.
+The reusable setup action and pull-request native matrix cover Linux and Windows;
+the separate weekly workflow adds macOS.
 
 Screenshot probes prepare the blockout form without submitting a design.
 Design/refine operators also respect offline access, missing credentials and
@@ -752,17 +731,14 @@ Review the rendered page at wide and narrow widths after presentation changes.
 Generated HTML and `site/` are ignored; do not commit them or copy old guides into
 snapshot directories. The [publication workflow](docs/RELEASING.md#publish-the-guide-and-repository)
 composes hosting and release attachment; native update controls live in Scenario
-preferences. Production acceptance remains under #37. The current guide refresh in #13 is merged; screenshot optimization and orphan
-cleanup remain under #14.
+preferences. Production acceptance remains under #37.
 
 ### Complete site snapshots
 
-Before the first adopted release, `uv run --locked --no-env-file python tools/build_site.py
---pending-repository --output dist/handbook-preview` builds the handbook and a
-repository-pending page, with no installable index or ZIPs. The publication workflow
-uses this mode only for the fixed pre-adoption checkout and a nonempty historical
-release snapshot without adopted tags. It is automatically retired by the first
-release version change.
+`tools/build_site.py --pending-repository` builds only the handbook and a
+repository-pending page, with no installable index or ZIPs. The publication
+workflow allows it only for the pre-adoption `0.9.9` checkout, so released
+versions always publish the repository.
 
 `make site` combines the same website renderer with the validated native repository
 generator. First [select the retained release inventory](docs/RELEASING.md#select-retained-releases-offline)

@@ -1,6 +1,6 @@
 # Licence options and decision
 
-Evidence date: 2026-09-24. Prepared for [#26](https://github.com/scenario-labs/blender-plugin/issues/26).
+Prepared for [#26](https://github.com/scenario-labs/blender-plugin/issues/26).
 **Decision: GPL-3.0-or-later.** On 2026-10-13 the maintainer decided to keep the
 licence that 0.10.0 shipped under, and #26 is closed. The comparison below
 informed that decision and remains as background. It changes no licence and
@@ -12,15 +12,14 @@ inbound=outbound under GPL-3.0-or-later.
 [Blender's licensing guidance](https://www.blender.org/about/license/) requires
 published Python add-ons to use a GPL-compatible licence. Its separate
 [Extensions Platform policy](https://docs.blender.org/manual/en/latest/advanced/extensions/licenses.html)
-requires GPL-3.0-or-later add-ons and CC0 assets. Our release plan uses GitHub
-assets and a planned extension repository; listing eligibility is a separate
+requires GPL-3.0-or-later add-ons and CC0 assets. Releases use GitHub assets and
+the project's own extension repository; listing eligibility is a separate
 question, not a reason to erase existing asset licences.
 
 The [root GPL text](../../LICENSE) and [packaged copy](../../scenario/LICENSE)
 are identical; the [manifest](../../scenario/blender_manifest.toml) declares
-GPL-3.0-or-later. All 253 tracked Python/shell files in reviewed source revision
-[`e013a26`](https://github.com/scenario-labs/blender-plugin/commit/e013a26d7208f472b0d5d6fee1534763e2632f22)
-carry that SPDX identifier. [Contributions](../../CONTRIBUTING.md#licensing-of-contributions)
+GPL-3.0-or-later. Every tracked Python and shell file carries that SPDX
+identifier. [Contributions](../../CONTRIBUTING.md#licensing-of-contributions)
 and the [PR template](../../.github/pull_request_template.md) already specify
 inbound=outbound GPL-3.0-or-later, with no copyright assignment, CLA or DCO.
 
@@ -57,15 +56,15 @@ badge/notice, the user guide, TRADEMARKS code-licence wording, CONTRIBUTING inbo
 terms, the PR template, canonical agent guidance and licence/bundle checks.
 A split needs an explicit per-component licence map; a manifest list or GitHub
 badge is not that map. Verify GitHub's resulting detection rather than promising
-a particular label. At this evidence base, the header inventory is 253 files,
-not the original issue's 135; no bulk replacement of adopted notices is safe.
+a particular label. The header inventory far exceeds the original issue's 135
+files; no bulk replacement of adopted notices is safe.
 Already published releases retain their original terms and bytes.
 
 The comparison recommended retaining the current policy unless maintainers
 identified a concrete permissive-reuse requirement and, if they did, evaluating
 an independently packaged core before proposing a whole-extension migration.
-The maintainer's 2026-10-13 decision keeps GPL-3.0-or-later, so no licence
-text, header, manifest declaration or contribution term changes.
+The decision followed it, so no licence text, header, manifest declaration or
+contribution term changes.
 
 A later proposal to change the licence would record the chosen option, decision
 date, approvers and verified rights/consents, and amend roadmap D14/D15 while

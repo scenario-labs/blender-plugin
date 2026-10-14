@@ -6,9 +6,9 @@
   "evidence": {
     "path": "tests/smoke/README.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-07",
-    "reviewed_revision": "03b070b9cb663b63cf8a411f6126efb40d4c66d0",
-    "limits": "Merged on 2026-10-14 from 7 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the smoke tools, the shared panorama contract and the workflow. No live quote, upload, paid generation, hosted or scheduled run, or Blender report run; provider acceptance of the committed monthly plan and reference image is not established.",
     "sources": [
       ".github/workflows/smoke.yml",
       "scenario/core/jobs/result_metadata.py",
@@ -24,6 +24,10 @@
       "tests/fixtures/models/model_patina-material.json",
       "tests/fixtures/synthetic/reference-toadstool-512.png",
       "tests/smoke/monthly-plan.json",
+      "tests/smoke/smoke_image.py",
+      "tests/smoke/smoke_image_to_3d.py",
+      "tests/smoke/smoke_material.py",
+      "tests/smoke/smoke_video.py",
       "tests/unit/test_panorama.py",
       "tests/unit/test_panorama_report.py",
       "tests/unit/test_reference_fixture.py",
@@ -38,6 +42,7 @@
       "tools/smoke_ci.py",
       "tools/smoke_image.py",
       "tools/smoke_inputs.py",
+      "tools/smoke_model.py",
       "tools/smoke_suite.py"
     ]
   }

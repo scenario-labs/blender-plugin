@@ -8,17 +8,17 @@ The shared adapter for compact creation, expanded Studio and local MCP must use
 The development dependency group pins this version and the MockTransport test
 client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencies.
 
-This is a prerequisite for [Studio adoption](https://github.com/scenario-labs/blender-plugin/issues/64).
 The SDK is pinned for development and packaged as a runtime dependency. The
-[shared read/estimate adapter](../scenario/core/api/sdk_adapter.py) now uses it;
-the active UI and local MCP now share SDK model listing/detail reads and model
-cost previews through [SDKCatalog](../scenario/core/api/sdk_catalog.py). Cloud
-history also uses this connection as described below. UI and MCP model quote and
-submission now use the selected shared JobSession and existing adapter
-`models.retrieve` / `generate.with_raw_response.run_model` contracts. The prototype service client and its unused endpoint helpers have been removed;
-[the service operation inventory](#service-operation-inventory) records their replacements. See
-[SDK_BUNDLE.md](SDK_BUNDLE.md) for exact artifact/notice pinning,
-supported wheel targets, staging and installed-runtime verification.
+[shared adapter](../scenario/core/api/sdk_adapter.py) uses it; the UI and local
+MCP share SDK model listing/detail reads and model cost previews through
+[SDKCatalog](../scenario/core/api/sdk_catalog.py), and cloud history uses the
+same connection. UI and MCP model quote and submission use the selected shared
+JobSession and the adapter's `models.retrieve` /
+`generate.with_raw_response.run_model` contracts.
+[The service operation inventory](#service-operation-inventory) maps each
+operation to its SDK method. See [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact
+artifact/notice pinning, supported wheel targets, staging and installed-runtime
+verification.
 
 The development fixture recorder also uses this adapter for the twenty-four selected
 model detail reads and one bounded public model-list page. `SDKAdapter.model_page`
@@ -55,14 +55,14 @@ records, lane/schema helpers and local display status classification remain.
 Workflow adapter primitives also use the pinned public SDK methods documented
 below; their presence is not acceptance of a user-facing Film workflow service.
 All paid SDK submissions retain `max_retries=0`, exact approval and durable claim
-requirements. Removing old retrying code does not alter those existing contracts.
+requirements.
 
 Network protocols outside the Scenario service API remain distinct: guarded
 result downloads and signed upload parts use `jobs/transfers.py` and
 `jobs/upload_transfers.py`; model thumbnails use the credential-free downloader
 in `api/assets.py`. Blender owns public update downloads. Local MCP's stdio bridge
 uses authenticated loopback HTTP. None is an alternative Scenario service client.
-The extension User-Agent now lives in `api/user_agent.py`, so SDK and thumbnail
+The extension User-Agent lives in `api/user_agent.py`, so SDK and thumbnail
 requests retain the same package version without importing a retired client.
 
 Regression coverage follows the retained SDK catalog, adapter, coordinator,
@@ -135,15 +135,15 @@ read the service. Every row must convert successfully before a list is cached;
 malformed-record conversion failures become a sanitized `ScenarioError` shared
 by the owner and waiters, so UI/MCP delivery reports `catalog_failed`.
 Public/private reads remain separate, and retirement rejects
-old results. No persistent or cross-credential cache is introduced.
-Cache entries are in memory per connection. The active context also opens
+old results. Cache entries are in memory per connection; none persists or
+crosses credentials. The active context also opens
 [credential-bound local job storage](JOB_STORAGE.md#identity-and-ownership), and
 its adapter carries the same scope. The local account pseudonym isolates records
 without claiming a server identity or adding it to API requests. API-key requests
 do not require explicit tenant selection or a generated SDK discovery method.
 Opening the store does not activate shared job workers or paid submission.
 [Runtime integration status](architecture/sdk-runtime.md#active-sdk-catalog) records
-the remaining shared-job and paid-flow boundaries. The original raw `Catalog` class and its unscoped disk cache writer are removed.
+the remaining shared-job and paid-flow boundaries.
 Pure model records, lane filters and schema hints remain in `api/catalog.py`; all
 service model reads use the scoped SDK catalog.
 
@@ -169,9 +169,8 @@ estimate and no automatic retry.
 
 ## Trained-model catalog reads
 
-The 0.10.0 scope for [#97](https://github.com/scenario-labs/blender-plugin/issues/97)
-is using existing trained models: private LoRAs and compositions of the selected
-credentials and project, plus public Scenario LoRAs. Training is out of scope.
+The extension uses existing trained models: private LoRAs and compositions of
+the selected credentials and project, plus public Scenario LoRAs. It does not train.
 Lane lists are unchanged; the picker lists these records only under its Trained
 chip (see [trained models in the native picker](#trained-models-in-the-native-picker)).
 
@@ -295,7 +294,7 @@ What the reads show:
   that is not in the public list was still readable by ID.
 
 The service's answers to validation probes on FLUX.1 Dev, compared with what
-the client now does before quoting (see [trained-model routes](#trained-model-routes)):
+the client does before quoting (see [trained-model routes](#trained-model-routes)):
 
 | Probe | Service dry run | Client before quoting |
 | --- | --- | --- |
@@ -314,8 +313,7 @@ quote, as its `costImpact: true` declares. FLUX.2 Dev also declares
 compare. `estimate_model` quoted every accepted base-model selection at the
 same price as the minimal request, after adding the schema defaults.
 
-For [#97](https://github.com/scenario-labs/blender-plugin/issues/97), routing
-may therefore offer LoRA stacks and single LoRAs through a base model's
+Routing may therefore offer LoRA stacks and single LoRAs through a base model's
 `lorasComponent`, and compositions through its `modelIdInput`. Direct trained
 IDs stay disabled and the `estimate_model` gate is unchanged. The service does
 not enforce model types, existence, the strength minimum or strength alignment
@@ -343,8 +341,7 @@ Policies where the client is stricter than the captured service answers:
 
 - **No invented strength.** A LoRA without a strength takes the scale input's
   declared default, or the request is refused with "provide a strength for each
-  LoRA". The former 1.0 fallback in `forms.prepare_run` is removed. No captured
-  base declares a default.
+  LoRA". No captured base declares a default.
 - **A LoRA in `modelIdInput` is refused.** The service accepts it, but then
   applies a strength nobody chose; the message asks for the LoRA in the stack
   with a strength.
@@ -354,7 +351,7 @@ Policies where the client is stricter than the captured service answers:
   refuses a trained target, as the captured HTTP 400 answers require.
 
 `forms.prepare_run` reads the LoRA inputs only from `uiConfig.lorasComponent`,
-which `SDKAdapter` now passes with each model or workflow schema
+which `SDKAdapter` passes with each model or workflow schema
 (`forms.record_schema`). A malformed component refuses only a request that sets
 a model or number-array input, so a changed LoRA slot cannot block ordinary
 generations. A selection made only by schema defaults, including a default a
@@ -385,7 +382,7 @@ strengths and composition ID.
 is not available to the selected credentials or project (HTTP 404)", never a
 model ID, name or service reply. The sidebar estimate status shows it instead of
 the generic price error, and local MCP `estimate_cost` returns it as the tool
-error. The native picker and every form request now build selections with `apply`
+error. The native picker and every form request build selections with `apply`
 (see [trained models in the native picker](#trained-models-in-the-native-picker)),
 and so do local MCP requests ([trained models through local MCP](#trained-models-through-local-mcp)).
 A problem the listed records already show, such as a LoRA in `modelIdInput`, is
@@ -449,8 +446,8 @@ failure; the quote then reads every chosen model again as above. Defaults live i
 Every call here is an existing public SDK 2.2.0 method; there is no new SDK method,
 raw fallback, SDK extension, SDK issue or dependency change. Offline and installed
 tests use the captured public fixtures and synthetic private records behind a
-socket-free transport. No live read, dry run or paid run was made for this work,
-and private LoRAs and compositions remain unverified against the service.
+socket-free transport; private LoRAs and compositions remain unverified against
+the service.
 
 ## Trained models through local MCP
 
@@ -488,11 +485,11 @@ instead.
 Every call is an existing public SDK 2.2.0 method; there is no new SDK method, raw
 fallback, SDK extension, SDK issue or dependency change. Installed tests use the
 captured public fixtures and synthetic private records behind a socket-free
-transport; no live read, dry run or paid run was made for this work.
+transport.
 
 ## Model acceptance commands
 
-All model smoke entry points now use `tools.smoke_image` as their shared engine;
+All model smoke entry points use `tools.smoke_image` as their shared engine;
 `tools.smoke_model` selects Image, Material, Video, GLB, audio, panorama or HDRI
 result checks.
 Fresh metadata uses SDK 2.2.0 `models.with_raw_response.retrieve`, exact estimates
@@ -546,7 +543,7 @@ This read-only command does not establish live provider acceptance.
 
 ### Active Blockout plans
 
-Blockout Design and Refine now use the selected JobSession through
+Blockout Design and Refine use the selected JobSession through
 [BlockoutJobs](../scenario/blender/blockout_jobs.py). Fresh model metadata uses
 `models.with_raw_response.retrieve`; the exact quote and single paid submission
 use `generate.with_raw_response.run_model` for `model_scenario-llm`, with the
@@ -558,7 +555,7 @@ scope without requiring discovery or a project override.
 Offline SDK transport fixtures and installed native tests establish command
 wiring and scope/origin guards. Saved-plan recovery reuses these same metadata
 and complete-text reads through the selected JobSession, followed by explicit
-local destination approval. No additional SDK method or exception is introduced.
+local destination approval. No additional SDK method or exception is used.
 Live model compatibility and release acceptance remain separate.
 
 ## Active history reads
@@ -571,13 +568,15 @@ job IDs and the next cursor. The existing adapter supplies selected credentials,
 project context when configured and online permission. There is no raw fallback.
 
 Prompt previews use `assets.with_raw_response.retrieve` on the captured connection,
-bounded to 30 per page. Failed lookups and explicitly incomplete previews stay
+bounded to 30 per page; step jobs that price a workflow run but are missing from
+the page use `jobs.with_raw_response.retrieve`, bounded to 24 per page. Failed
+lookups and explicitly incomplete previews stay
 unresolved, and no prompt cache crosses requests or connections. Main-thread
 delivery rejects stale credentials, superseded requests and cursor cycles before
 changing the visible history. MCP can explicitly retry with `refresh=true` and
 read the next page with `older=true`, which uses the same cursor as **Load older**.
-Job types are filtered locally after each page; the SDK's `type` filter is not used.
-In a live read, that filter returned no rows when combined with `hide_results=False`.
+Job types are filtered locally after each page: the SDK's `type` filter returned
+no rows when combined with `hide_results=False`.
 These reads do not activate durable recovery, project-selection UI, downloads,
 submission or result application. See the
 [runtime history boundary](architecture/sdk-runtime.md#active-sdk-history).
@@ -597,7 +596,7 @@ Synthetic transport/native checks do not prove live provider acceptance.
 
 The operation audit uses the published wheel's `resources/uploads.py`,
 `resources/jobs.py`, `resources/workflows.py`, their generated parameter/response
-models and `pagination.py`. The adapter now exposes bounded job discovery as
+models and `pagination.py`. The adapter exposes bounded job discovery as
 described below; inference cancellation is exposed through the coordinator,
 and multipart upload metadata commands are mapped in
 [SDK_UPLOADS.md](SDK_UPLOADS.md).
@@ -624,27 +623,23 @@ acknowledgement. Only `create` returns the signed part plan; retrieval and the
 action omit it, as described in the [upload contract](SDK_UPLOADS.md#inputs-and-responses).
 Do not silently substitute the docstring value or invent an abort endpoint.
 
-The [upload components](SDK_UPLOADS.md#shared-worker-commands) now stage private
+The [upload components](SDK_UPLOADS.md#shared-worker-commands) stage private
 source snapshots, check signed destinations and expiry, persist mutation claims
-and send bounded parts through a separate storage transport. That transport checks
-online permission, sends no Scenario Authorization header and never follows
-redirects or retries implicitly. Saved records contain no signed transfer URLs.
-Durable claims preserve evidence after failure or interruption; explicit retrieval
-of a known upload can observe its status without replaying a mutation. An upload
-completion acknowledgement alone does not establish that an asset is imported.
+and send bounded parts through a separate storage transport that checks online
+permission, sends no Scenario Authorization header and never follows redirects
+or retries implicitly. Saved records contain no
+signed transfer URLs. Explicit retrieval of a known upload observes its status
+without replaying a mutation; a completion acknowledgement alone does not
+establish that an asset is imported. The
+[JobSession facade](BLENDER_JOB_CONTEXT.md#upload-references) and
+[active reference uploads](SDK_UPLOADS.md#active-reference-uploads) own the UI
+and MCP controls and their recovery. Server-side cleanup and live service
+acceptance remain unverified.
 
-The optional [JobSession facade](BLENDER_JOB_CONTEXT.md#upload-references) forwards
-these commands through the shared workers with captured-origin admission and
-main-thread delivery guards. Active UI/MCP controls, authoritative account/project
-discovery, production storage-host policy, staged-source retention/cleanup and
-user-facing recovery remain separate work. Server-side cleanup and live service
-acceptance remain unverified; no SDK upload-abort method was established.
-
-The [signed result transport](RESULT_TRANSFERS.md) implements the download
-primitive with explicit trusted-host configuration, bounded reads and atomic
-non-overwriting output. The coordinator now connects scoped SDK job/asset metadata to persisted download
-state and explicit retries with fresh URLs. Production host selection, interrupted
-worker reconciliation and UI wiring remain separate work.
+The [signed result transport](RESULT_TRANSFERS.md) downloads results with an
+exact trusted-host policy, bounded reads and atomic non-overwriting output; the
+coordinator binds it to scoped SDK job/asset metadata, persisted download state
+and explicit retries with fresh URLs.
 
 ### Reconciliation and cancellation
 
@@ -834,25 +829,16 @@ Token serialization does not establish browser OAuth acceptance by REST.
 
 The adapter provides reads/estimates, a coordinator-only submission hook and
 unpaid [asset organization writes](#asset-organization-writes) used only by the
-shared organization review commands so far.
+shared organization review commands.
 The [job coordinator](JOB_COORDINATOR.md) commits a scoped intent before dispatch,
-consumes each issued quote once and preserves uncertain outcomes. Inference
-cancellation is available through the coordinator. UI and MCP model submission now
-consumes session-owned quotes and persists intent before the existing adapter
-hook; its active result path uses `jobs.retrieve` and `assets.retrieve` from the
-same adapter, followed by credential-free CDN transfer. Saved-job UI/MCP controls
-also expose known model-job cancellation and download recovery through the same
-coordinator. Explicit recovered Image and selected video/audio application use
-verified local receipts without service calls. Video/audio approval binds one
-asset and the scene/frame before a durable application claim. Static GLB import
-uses the same saved-result boundary with scene/cursor approval and no API call.
-Saved panorama results use explicit World approval and session-local
-restoration through this same local boundary. Non-image MCP jobs stop after
-verified download without automatic scene application. Live capture/Spark acceptance,
-Film, in-place mesh editing and multi-object material application still need
-integration. Completed results can be reused through fresh UI/MCP approval and
-a separate durable local claim without calling Scenario. Explicit saved texture sets now use local
-[material approval](MATERIAL_APPLICATION.md) and verified bytes, with no new API call.
+consumes each issued quote once and preserves uncertain outcomes. UI and MCP model
+submission consumes session-owned quotes and persists intent before the adapter
+hook; its result path uses `jobs.retrieve` and `assets.retrieve` from the same
+adapter, followed by credential-free CDN transfer. Saved-job UI/MCP controls
+expose known model-job cancellation and download recovery through the same
+coordinator. Applying, importing or reusing a saved result in the scene uses
+verified local receipts and a fresh local approval, with no Scenario call; see
+the [Blender job context](BLENDER_JOB_CONTEXT.md#active-saved-job-controls).
 Generated operations use public SDK methods
 with `max_retries=0`; their `with_raw_response` wrappers preserve wire JSON.
 The named discovery and selection exceptions also use the same zero-retry SDK
@@ -920,22 +906,18 @@ its synthetic remote-MCP tests; strengths follow the policy in
 refused rather than given 1.0. That projection and its composition tests do not
 establish REST routing, catalog discovery, model selection UI or paid
 execution. Remote-MCP `run_with` metadata is not silently assumed to exist in
-REST. Upload/job dependency contracts
-are mapped above; multipart metadata commands use the adapter as described in
-[SDK_UPLOADS.md](SDK_UPLOADS.md). Signed result downloads have a standalone
-[transport primitive](RESULT_TRANSFERS.md). Upload byte transfer, durable claims,
-scoped inspection and explicit known-upload status refresh are implemented as
-described above. Local MCP reference uploads now use `uploads.with_raw_response`
-`create`, `retrieve` and `trigger_action(action="complete")` through the same
-adapter, followed by credential-free signed S3 PUTs. Explicit local reference
-uploads support the published SDK kinds `image`, `audio`, `video` and `3d`,
-with extension-specific MIME metadata. The latter is asset upload, not the SDK
-`model` kind used for model import. Status and recovery retain the saved kind
-and MIME type. Typed local-file form upload and saved-reference attachment use
-the same commands, including still captures for image inputs in other lanes.
-Explicit clip/mesh and render scene/first-frame preparation use those same
-upload commands; final render generation uses the existing shared model quote
-and submission path. Render Spark preparation has a separate exact-price approval. The
+REST.
+
+Reference uploads from forms, captures, workflow inputs and local MCP use
+`uploads.with_raw_response` `create`, `retrieve` and
+`trigger_action(action="complete")` through the same adapter, followed by
+credential-free signed S3 PUTs. They support the published SDK kinds `image`,
+`audio`, `video` and `3d`, with extension-specific MIME metadata; `3d` is asset
+upload, not the SDK `model` kind used for model import. The
+[active upload contract](SDK_UPLOADS.md#active-reference-uploads) owns
+destination trust, source limits, attachment and recovery. Render generation
+uses the shared model quote and submission path; Render Spark preparation has a
+separate exact-price approval. The
 [Render Video first-frame handoff](BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame)
 adds no Scenario operation: it places a saved result's existing asset ID in the
 Render Video first-frame target, and the existing
@@ -943,13 +925,8 @@ Render Video first-frame target, and the existing
 other asset ID. That dry run resolves asset IDs but does not check which inputs
 may be combined, so the shared form preparation refuses two file inputs whose
 descriptions say they can't be combined, before any quote. Settings described that
-way are not checked. This is local validation, not an SDK gap. There is no new Scenario API
-fallback or dependency change. See the [active upload contract](SDK_UPLOADS.md#active-reference-uploads)
-for destination trust, source limits and recovery. Form attachment captures
-scene, lane, model, input kind and slot; pending marked uploads block duplicate
-prototype dispatch. Native recovery/reattachment uses those same commands. Authoritative account/project
-discovery, search/organization and workflow cancellation remain integration work.
-Submission uses the coordinator contract above; live acceptance remains separate.
+way are not checked. This is local validation, not an SDK gap. Authoritative
+account/project discovery remains integration work; live acceptance remains separate.
 
 Run the adapter and command contracts offline with:
 
@@ -996,7 +973,7 @@ public-workflow HTTP path and a direct thumbnail download. Its read retries and
 download resume map to SDK per-request retries and the shared transfer policy,
 not to that client. Importing it unchanged would not satisfy the SDK-first contract.
 
-Before the adopted extension is accepted:
+When adopting further Studio code:
 
 - Map the client operations to the exact SDK's methods and response wrappers.
   Verify catalog pagination/schema normalization, team/project discovery,
@@ -1015,9 +992,6 @@ Before the adopted extension is accepted:
 - Maintain the pinned runtime bundle and its licenses, including the SDK's MIT
   notice and `pydantic-core` binary wheels. Re-run actual installed-bundle checks
   on dependency upgrades; a development lockfile alone is not bundle evidence.
-- Complete supported OS/CPU acceptance on Blender 5.0, 5.1 and 5.2, including
-  native UI behavior and coexistence with other extensions. The new isolated
-  dependency/adapter contracts do not establish those broader properties.
 - Preserve Studio source provenance/authorship, GPL text, Poppins OFL and Tabler
   MIT notices when importing useful source, tests and resources. Keep demo
   media, historical ZIPs and account-specific validation exports out of the
@@ -1025,10 +999,9 @@ Before the adopted extension is accepted:
 
 Browser sign-in remains deferred under
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67). The open
-acceptance checks, including Linux and Windows desktop interaction and
-coexistence with other extensions, are in
+acceptance checks on Blender 5.0, 5.1 and 5.2, including Linux and Windows
+desktop interaction and coexistence with other extensions, are in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
-
 
 ### Prompt Spark command boundary
 
@@ -1046,13 +1019,12 @@ Both dry run and dispatch use the same normalized payload, exact response bytes,
 credential scope and zero-retry client. Submission requires the issued quote and
 a committed local intent before one service call. The command returns a durable
 job receipt; it does not deliver inline prompt text or resolve prompt assets.
-Full prompt result retrieval now uses public `jobs.retrieve` and `assets.retrieve`
-through the shared coordinator. Native New/Rewrite controls and MCP now require
+Full prompt result retrieval uses public `jobs.retrieve` and `assets.retrieve`
+through the shared coordinator. Native New/Rewrite controls and MCP require
 a separate exact-price approval, then apply only to the unchanged original field.
-The former Spark/LLM fallback entry points are retired. Render Spark preparation
-uses the same public method and explicit approval; live service acceptance remains.
-No automatic LLM fallback or remote prompt cancellation is enabled.
-
+Render Spark preparation uses the same public method and explicit approval; live
+service acceptance remains. No automatic LLM fallback or remote prompt
+cancellation is enabled.
 
 Prompt result recovery reads the successful job's `metadata.output.prompts` and
 resolves any text asset references. The raw-response wrapper preserves these
@@ -1085,7 +1057,7 @@ raw fallback, retry, authentication or dependency change is involved. See
 The existing `SDKAdapter.asset` path uses SDK 2.2.0
 `assets.with_raw_response.retrieve`, retaining the documented `mimeType` and
 `metadata.type` fields without another API call or fallback. Offline contracts
-exercise those fields through the public wrapper. The result command now stores
+exercise those fields through the public wrapper. The result command stores
 an allowlisted image texture role independently from MIME, for later Materials
 application; unknown semantics remain unknown. See
 [texture result semantics](RESULT_TRANSFERS.md#texture-result-semantics) and the
@@ -1112,8 +1084,6 @@ used: it requests a converted download with a status poll, and none of its
 `target_format` values is EXR. See
 [declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
 and [schema 10](JOB_STORAGE.md#schema-10-declared-originals-and-lane-defaults).
-Live original hosts, sizes and asset layouts remain unverified until an authorized
-panorama run.
 
 ## Panorama model contracts
 
@@ -1127,18 +1097,16 @@ coordinator, with `dry_run="true"` only for quotes and `max_retries=0` unchanged
 The API reference has no skybox-specific pages, so each contract was checked
 against the model's own `GET /models/{id}` inputs, as `run_model` documents.
 
-On 2026-10-10 the read-only [fixture recorder](../tests/fixtures/README.md)
-recorded the five contract models' records with an API-key pair in its
-credential-bound scope. All five are public `custom` models with status
+The read-only [fixture recorder](../tests/fixtures/README.md) records the five
+contract models' records with an API-key pair in its credential-bound scope. All five are public `custom` models with status
 `trained` and no training lineage, so the adapter's estimate gate accepts them
 and the catalog classifies none as trained. The contracts rely only on inputs
 present in these records. The GPT skybox model's free `width` and `height`
 accept any ratio and its resolution presets include cubemap layouts, so the
 contract offers only its 2:1 sizes.
 
-In the same scope, 21 `dryRun=true` quotes through `SDKAdapter.estimate_model`
-covered every contract preset; none was submitted. The service accepted each
-one. The Flux quote scales with `numOutputs`, so the lane default of one output
+In the same scope, `dryRun=true` quotes through `SDKAdapter.estimate_model`
+covered every contract preset, and the service accepted each one. The Flux quote scales with `numOutputs`, so the lane default of one output
 costs about half the schema default of two. GPT quality, size and reference
 count, the HY World backend and the upscale factor each change the quote; the
 HDRI output toggles do not. The dry runs also accepted an ordinary generated
@@ -1146,13 +1114,11 @@ still as the `image` of the HDRI, upscale and Flux models, so an accepted quote
 does not show that a reference is a 360 panorama; the contract checks that
 locally. Offline [contract tests](../tests/unit/test_panorama_contract.py)
 prepare each preset against the recorded schemas and the shared form
-preparation. Paid runs since returned Flux 360, HDRi Skybox, skybox upscale
-and Skybox GPT results (see the
-[release evidence](maintenance/release-acceptance.md#panorama-and-world)). HY
-World output, and whether those runs confirmed `metadata.type` on returned
-assets and the HDR original's host, are open in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440). No SDK gap
-was found, so no scenario-sdk-python issue is needed.
+preparation. Paid-run evidence is in the
+[release record](maintenance/release-acceptance.md#panorama-and-world); HY World
+output, and whether returned assets carry `metadata.type` and the HDR original's
+host, are open in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+No SDK gap was found, so no scenario-sdk-python issue is needed.
 
 ## Verified Film composition quotes
 
@@ -1161,8 +1127,8 @@ was found, so no scenario-sdk-python issue is needed.
 methods with SDK 2.2.0. The former supplies current model inputs; the latter uses `dry_run="true"`
 for estimation, query-only optional project scope and unchanged model parameters.
 Approval submits the same exact estimate once through the existing durable
-coordinator and adapter. Paid retries remain disabled. No raw endpoint or SDK
-extension is introduced for composition.
+coordinator and adapter. Paid retries remain disabled. Composition uses no raw
+endpoint or SDK extension.
 
 Local receipt inspection and current-source checks precede those calls; guards
 are repeated around price preparation and dispatch. The current composition
@@ -1173,8 +1139,8 @@ no service or paid check is implied. See [the composition contract](FILM_PLAN.md
 
 ### Local workflow command integration
 
-Local MCP now exposes public/private listing and input retrieval through the
-existing adapter's `workflows.list` and `workflows.retrieve` wrappers. Estimates
+Native workflow forms and local MCP list public/private workflows and read their
+inputs through the adapter's `workflows.list` and `workflows.retrieve` wrappers. Estimates
 and single approved submissions call `workflows.with_raw_response.run`; the
 selected SDK 2.2.0 resource was inspected for its workflow-specific body,
 `dry_run` and `project_id` query mapping. No adapter, dependency or raw-API
@@ -1206,11 +1172,10 @@ fail with sanitized errors. Normalized pages retain internal asset metadata; MCP
 projects reference fields and omits download URLs, previews and account records.
 
 The existing coordinator and worker pool check active scope and online permission
-around reads; no job, upload, write or paid submission is created. New offline
+around reads; no job, upload, write or paid submission is created. Offline
 SDK contracts inspect actual method, query/body serialization and raw wrappers.
-There is no raw API exception or dependency change. Native Library presentation,
-asset attachment/application and collection/tag writes remain to integrate, and
-synthetic tests do not establish live search quality or provider acceptance.
+There is no raw API exception or dependency change. Synthetic tests do not
+establish live search quality or provider acceptance.
 
 ## Asset organization writes
 
@@ -1298,8 +1263,8 @@ and still needs authorized live evidence:
   read-back shows the actual membership. Offline tests cover both with exactly
   one write request each.
 - **The DELETE JSON body** is serialized by the SDK, as the offline contracts
-  check. Whether the production edge preserves it is unverified, so a 2xx
-  removal acknowledgement is not proof of removal and must be read back.
+  check. A 2xx removal acknowledgement is not proof of removal and must be
+  read back.
 - **Collection names.** No uniqueness or idempotent create is documented.
   Callers must look up the exact name before creating and must not create
   again after an uncertain outcome.
@@ -1337,9 +1302,8 @@ review owner, with a guard before each write and a `get_bulk` read-back. After
 `AlreadyMembers`, they send only the assets read back as not yet members, within
 three add requests per review. The local [MCP organization tools](MCP.md#asset-organization)
 and the native [Library organization](ui/studio-and-library.md#library-organization) controls
-prepare, apply and inspect those reviews. Free live writes passed through local
-MCP and the native operators (see the
-[release evidence](maintenance/release-acceptance.md#library-organization));
+prepare, apply and inspect those reviews. Live evidence is in the
+[release record](maintenance/release-acceptance.md#library-organization);
 Apply from the desktop dialog continues in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440). Run the
 offline contracts with:

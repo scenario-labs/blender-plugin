@@ -10,7 +10,6 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 ## Architecture and implementation
 
 - [Local MCP tools, setup and security](MCP.md)
-
 - [Privacy and data handling](PRIVACY.md)
 - [Runtime map and integration status](architecture/runtime.md)
 - [Blender boundaries and scene application](architecture/blender.md)
@@ -48,6 +47,7 @@ For questions, bugs or account help, see [Support](../SUPPORT.md).
 - [Repository baseline and pending administration](MAINTAINERS.md)
 - [Knowledge checks and review procedure](maintenance/knowledge.md)
 - [API-key release plan](maintenance/release-plan.md)
+- [0.10.0 release acceptance record](maintenance/release-acceptance.md)
 - [Licence decision and the alternatives compared](maintenance/licence-options.md)
 - [Issue disposition and limitations audit](maintenance/backlog.md)
 - [Evidence discovery configuration](knowledge.json)

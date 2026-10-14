@@ -33,8 +33,6 @@ selection, wheel zoom and the front-view key work. Captures show the complete
 field label and helper text without overlap, at the tested default scale and
 window size. The installed package and archive remain byte-identical, no Python
 socket connection/bind attempts occur, and the normal Blender profile is unchanged.
-Two preliminary input runs exited through an automation select-all shortcut;
-the completed run uses Home/Shift-End selection instead.
 
 These synthetic checks do not establish live project permissions, other OS/DPI
 interaction, paid generation or release acceptance; live project permission and
@@ -146,9 +144,9 @@ fails again returns its new reason.
 ### Trained models in the picker
 
 The Image tab's last chip, **Trained**, lists LoRAs and compositions instead of
-base models ([#97](https://github.com/scenario-labs/blender-plugin/issues/97)):
-the selected connection's private trained models first, then public Scenario
-LoRAs and compositions. Other chips and the base lanes never list them. Each row
+base models: the selected connection's private trained models first, then
+public Scenario LoRAs and compositions. Other chips and the base lanes never
+list them. Each row
 says how the model runs in the form the choice lands in (Image, or Render Image
 when the picker opened from it), for example **Private LoRA via FLUX.1 Dev**. A
 model no checked base runs stays readable but greyed, with its reason: the base
@@ -331,8 +329,9 @@ The separate **Upload reference** button sends an immutable snapshot before a
 final price can be requested. Show upload progress and **Inspect uploads** when
 review is needed. Do not offer automatic retry for uncertain uploads or mutate
 the reference during drawing. The maintenance pump attaches a completed asset
-only to the unchanged original scene, lane, model, input type and reference slot,
-then invalidates the old price. A removed/edited slot must never receive a late upload result.
+only to its original scene, unchanged for a scene snapshot, and the unchanged
+lane, model, input type and reference slot, then invalidates the old price.
+A removed/edited slot must never receive a late upload result.
 Transient timer context without the originating scene pauses attachment. Local
 validation rejected before task admission permits correcting and retrying the input;
 uncertain admitted work retains its duplicate-upload guard.
@@ -365,8 +364,9 @@ scene or first-frame slot; require explicit removal first. A saved image reaches
 the first frame only through its own reviewed
 [first-frame handoff](ui/saved-media.md#saved-image-first-frame-handoff), never through
 **Use as reference**. Changing the path or automatic Spark option invalidates the price.
-An empty look with automatic Spark enabled blocks quoting; display its unavailable
-status until separate Spark approval is integrated. Drawing remains read-only.
+An empty look with automatic Spark enabled blocks the render quote until its
+[separate Prompt Spark price](BLENDER_JOB_CONTEXT.md#render-look-preparation)
+is approved, a look is entered or Spark is turned off. Drawing remains read-only.
 
 ## Generations
 

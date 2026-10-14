@@ -7,7 +7,7 @@ Interaction rules and desktop evidence for approving and reusing saved media. Th
 These earlier offline Blender 5.1.2 macOS arm64 captures show the price before
 approval and the delivered text afterward. The model, price and transport are
 synthetic; they are not current service pricing or live generation evidence.
-They predate the shorter CU labels described above. The price request made no
+They predate the shorter [CU labels](../UI_STYLE.md#wording). The price request made no
 submission; the separate approval produced exactly one.
 Native field editing, focus transfer and viewport selection/zoom were exercised.
 Computer-control focus guards interrupted some typing attempts; this does not
@@ -15,7 +15,7 @@ establish exhaustive keyboard or clipboard acceptance. The isolated run exited
 cleanly and left the normal profile unchanged. A disposable Blender copy used a
 distinct application identifier and local development signature to distinguish
 its window; the extension ZIP was unchanged. Supported-version packaged tests
-remain separate from this single-version desktop check and unresolved #263.
+remain separate from this single-version desktop check.
 
 ![Full exact prompt price with a separate approval button](../images/prompt-price-approval.png)
 
@@ -54,7 +54,7 @@ Blender exited cleanly and the normal profile fingerprint was unchanged. The
 test-only app copy used a distinct bundle identifier and local ad-hoc signature
 for reliable window targeting; the vendor executable code and extension ZIP
 were unchanged. This is desktop interaction evidence, not human listening,
-paid provider acceptance, other OS desktop coverage or resolution of #263.
+paid provider acceptance or other OS desktop coverage.
 Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
 
 ## Saved media playback and waveform
@@ -304,8 +304,8 @@ Blender exited cleanly and the normal-profile fingerprint was unchanged. The
 test-only app copy used a distinct bundle identifier and local ad-hoc signature;
 vendor executable code and extension ZIP were unchanged. The earlier attempt
 could not access the window; it was not counted as interaction evidence.
-This check does not establish live provider quality, other OS desktop support,
-full Materials acceptance or resolution of #263. See the
+This check does not establish live provider quality, other OS desktop support
+or full Materials acceptance. See the
 [user guide](../USER_GUIDE.md#materials) for the approval and result screenshots.
 
 
@@ -329,9 +329,8 @@ worked. Blender exited cleanly with the normal-profile fingerprint unchanged.
 The test-only app copy had a distinct bundle identifier and local ad-hoc signature;
 vendor executable code and extension ZIP were unchanged. See the
 [user guide screenshots](../USER_GUIDE.md#reuse-saved-results). This does not establish
-live provider quality, other OS desktop support, resolution of #263 or release
-acceptance. An earlier window-targeting attempt was not counted as interaction
-proof.
+live provider quality, other OS desktop support or release acceptance. An
+earlier window-targeting attempt was not counted as interaction proof.
 
 ## Saved image first-frame handoff
 

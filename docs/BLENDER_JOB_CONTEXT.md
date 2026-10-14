@@ -4,10 +4,11 @@
 connection, scoped store, coordinator and worker pool. Extension registration
 installs file, dependency, frame, undo and redo hooks; it creates no session,
 connection or worker. This is the integration boundary for the shared runtime.
-The active runtime now creates one selected session lazily for local MCP recovery
-inspection, prepared-intent cancellation, and UI/MCP model quote/submission and
-result delivery. Pending files, captures and Prompt Spark preparation require
-separate completion before a native form can obtain its final quote.
+The active runtime creates one selected session lazily for local MCP recovery
+inspection, prepared-intent cancellation, and every UI/MCP submission with its
+quote, upload and result delivery. Pending files, captures and Prompt Spark
+preparation require separate completion before a native form can obtain its
+final quote.
 
 `runtime.ensure_job_session()` binds the session to the catalog's credential-local
 scope and store. The job owner gets a separate SDK HTTP pool using the same
@@ -30,9 +31,8 @@ record revision, and only accepts an unclaimed prepared intent. Resetting, loadi
 switching credentials invalidates the context token, even if another scope has
 the same request ID. Shared saved-job controls below also expose this
 prepared-intent cancellation, known model-job cancellation and download/receipt
-recovery. Uploads and remaining paid entry
-points still need active integration. These recovery
-tools do not import prototype jobs. Model submission creates new durable intents.
+recovery. These recovery tools do not import prototype jobs. Model submission
+creates new durable intents.
 
 Active Image jobs poll and download through this session. `apply_images` requires
 an owned verification completion, resolves the original scene/revision, and claims
@@ -191,8 +191,9 @@ and retirement signal stop owned processes; no panel owns their lifetime.
 `quote_film_composition` queues a fresh exact price for the same issued inspection
 and original origin. The ordinary `drain`/`deliver` checks apply to that quote;
 `prepare_quote` and submission retain the composition source guards in the
-coordinator. These are integration commands with no native/MCP presentation yet.
-They do not install a new recipe or approve spending. See [media prerequisites and limits](FILM_PLAN.md#verified-media-preparation).
+coordinator. [Composition review](#film-composition-review-ownership) presents both
+to native and MCP controls; they do not install a new recipe or approve spending.
+See [media prerequisites and limits](FILM_PLAN.md#verified-media-preparation).
 
 ## Film composition review ownership
 
@@ -400,9 +401,8 @@ and explicit upload refresh do not rediscover or rebind targets.
 
 File identities are deliberately session-local. Restarted records stay available
 for recovery, but automatic application cannot assume an old file or target is
-unchanged. Explicit Image recovery captures a new destination for review;
-matching a scene or object name is insufficient. Other result types still need
-their own explicit recovery integration.
+unchanged. Explicit recovery captures a new destination for review; matching a
+scene or object name is insufficient.
 
 ## Results and lifecycle
 
@@ -410,8 +410,7 @@ their own explicit recovery integration.
 outcomes on the main thread without waiting for network work. Per-task errors
 for invalid worker origin/scope or malformed results do not drop successful
 neighbors from the same drain. Undrained outcomes count against a separate
-admission limit, so a closed view cannot accumulate
-unbounded completed payloads. UI closure itself does not deactivate the session.
+admission limit, so a closed view cannot accumulate unbounded completed payloads.
 
 `deliver(completion, callback)` validates the issuing session, active scope,
 origin revision, selected scene and continued target membership immediately
@@ -438,9 +437,8 @@ allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
 The selected API-key context and worker-safe online snapshot are bound by the
-active runtime as described above. Remaining lane activation and recovered
-application of other result types remain separate work. The account scope is a local pseudonym,
-not a guessed server account ID.
+active runtime as described above. The account scope is a local pseudonym, not a
+guessed server account ID.
 
 ## Recovery inspection and cancellation
 
@@ -501,9 +499,10 @@ records against the issuing origin/scope. Verification returns a frozen result
 containing a tuple of verified local paths. `deliver` still requires the original
 current scene/target and permits the completion to be used once. Receipt
 verification does not lock file bytes, run an importer or mark a job APPLIED;
-callers must preserve private storage ownership. The explicit World command below
-supplies one application path. Download failures remain `DOWNLOAD_FAILED` for explicit retry, while
-local verification failures do not trigger another download or generation.
+callers must preserve private storage ownership. The explicit application
+commands below consume these completions. Download failures remain
+`DOWNLOAD_FAILED` for explicit retry, while local verification failures do not
+trigger another download or generation.
 Explicit interrupted-download recovery only reconciles verified local receipts
 and durable state under the cross-process transfer lock. A restarted session can
 recover those downloads, but its completion cannot rebind an old scene or target.
@@ -671,12 +670,8 @@ reconstructed after restart. Origin invalidation alone does not block bookkeepin
 session shutdown discards pending receipts. A later explicit restoration is left
 intact: APPLIED acknowledges the prior assignment, not the current World binding.
 
-Installed native fixtures cover claim ordering, exact selection, changed bytes,
-safe local retry, original context/ownership, interrupted or uncertain outcomes,
-write acknowledgement loss and guarded restoration. The command is available to
-explicit integrations only; active UI/MCP entry points and recovery UX remain
-separate work.
-
+`apply_world` itself has no UI or MCP entry point; both reach the same primitive
+through the [recovered panorama destination](#recovered-panorama-destination-and-restoration).
 
 ## Shared asynchronous estimates
 
@@ -689,7 +684,7 @@ origin, and `deliver` rechecks the selected captured scene/target as usual.
 original origin once. Scene changes during metadata/estimation reject the quote;
 the caller must recapture inputs and request a new estimate. The quote cannot be
 rebound through the older direct-estimate preparation method. These APIs do not
-authorize paid dispatch or replace the active UI/MCP call sites by themselves.
+authorize paid dispatch by themselves.
 
 ## Asset organization reviews
 
@@ -777,7 +772,7 @@ record is immediate; no completion is queued and no scene mutation, source read,
 file deletion or service request occurs. Initialization races are decided by the
 durable revision claim: already claimed or uncertain uploads cannot be canceled
 through this command. Inactive sessions reject it. It does not provide remote
-abort. Local MCP exposes this through `recover_reference_upload`.
+abort.
 
 `restart_upload(request_id, expected_revision=..., origin=...)` queues the
 explicit [upload restart](SDK_UPLOADS.md#part-plan-source-and-restart-limit) on
@@ -794,13 +789,15 @@ Admission still checks the active scope and completion capacity, but needs no
 current old scene/target, including after restart. The command returns the
 unchanged terminal upload record and never changes the scene or deletes the
 user's original file. Cleanup completions retain their original origin; they do
-not authorize delivery into a replacement target. No active cleanup UI is added.
+not authorize delivery into a replacement target.
 
 The active runtime configures all three dependencies with a credential-scoped
 store, private staging and a separate S3 upload policy. The
-[reference facade](SDK_UPLOADS.md#active-reference-uploads) advances authorized
-local MCP uploads on this same pool. GUI ticks and headless MCP maintenance drain
-progress independently of an open panel. Private capture ownership is retained
+[reference facade](SDK_UPLOADS.md#active-reference-uploads) advances native and
+local MCP uploads on this same pool, and the reference form's saved-upload
+controls and MCP `recover_reference_upload` reach the refresh, local
+cancellation, restart and cleanup commands above. GUI ticks and headless MCP
+maintenance drain progress independently of an open panel. Private capture ownership is retained
 by the session until staging ends or retirement joins the workers; cleanup never
 removes a capture underneath a live staging task. Local MCP inspection and
 explicit recovery do not approve reference attachment into a new scene.
@@ -811,7 +808,7 @@ scene/target before a once-only main-thread callback. A late claimed receipt may
 persist after a file switch, while delivery remains blocked. Restarted origins
 remain unrecognized for automatic application even when status refresh succeeds.
 Callbacks do not by themselves attach a reference or commit a Blender application
-transaction. The [typed form facade](SDK_UPLOADS.md#typed-form-attachment) now
+transaction. The [typed form facade](SDK_UPLOADS.md#typed-form-attachment)
 adds guarded attachment for image, audio, video and 3D inputs across generation
 lanes after upload, without another worker pool. Explicit
 native reattachment captures a fresh destination, requires separate confirmation
@@ -837,8 +834,6 @@ actual CLI loop. Model status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
 Active jobs poll and download through this owner. Only Image automatically
 imports supported images; other lanes stop at saved results for explicit application.
-Local image references use the shared upload path above. Other result types and
-live acceptance remain; this slice must not be advertised as complete release acceptance.
 
 ## Environment lane delivery
 
@@ -865,8 +860,8 @@ admitted to automatic image import, so results stop at saved results and no
 World changes without the explicit approval below. Each maintenance poll
 projects the saved results' server-declared projections into the view
 (`meta["panoramas"]`, LDR or HDR by source and media type, and
-`meta["panorama_inputs"]`, the downloaded LDR results). Schema 10 persists the
-projection, so the label and offers survive a restart. **Make HDRI** is a form
+`meta["panorama_inputs"]`, the downloaded LDR results). The job store persists
+the projection, so the label and offers survive a restart. **Make HDRI** is a form
 prefill, not a saved-job command: it checks the context token and the saved
 result, switches the scene to the Environment HDRI form, attaches the scoped
 reference and retires the form's price. It never quotes or submits.
@@ -894,8 +889,13 @@ revision. Queued commands retain their original scope.
   the offer and pauses delivery with the same message, without a claim.
 - `recover_download` verifies interrupted saved receipts under the existing lock,
   without network access or import.
-- `retry_receipt` saves an already completed image import's outcome without any
-  scene mutation. The exact pending owner-local handle must still exist.
+- `retry_receipt` saves an already completed local application's outcome without
+  any scene mutation. The exact pending owner-local handle must still exist.
+- `mark_reviewed` is offered for a `submitting` or `uncertain` record with no
+  command in flight, whose [identical requests](JOB_COORDINATOR.md#identical-unconfirmed-requests)
+  are refused. After native confirmation (**Mark reviewed**) it lets them through
+  for this session only, sending and saving nothing. MCP `job_status` omits it
+  and `recover_local_job` refuses it.
 - `cancel_prepared` is offered for any unsent prepared intent: model (including
   Blockout), workflow, Film task, prompt or translate, including one queued behind
   other work. Prompt, translate, Blockout and restarted intents get a Jobs panel
@@ -916,7 +916,8 @@ free of `bpy`: it turns one projected view into ordered descriptors with the
 label, icon, operator and operator properties (the context token, then either
 the request ID and observed revision or a ready Blockout review ID, and any
 asset, purpose, action, or workflow node and step review ID). Each job-action descriptor
-keeps the `ModelJobs.actions` name that MCP `job_status` reports. `import_model`
+keeps its `ModelJobs.actions` name, which MCP `job_status` reports except
+`mark_reviewed`. `import_model`
 draws one control per importable unit that `ModelJobs` projected into the view,
 in classified order, instead of one per GLB media type. The sidebar
 Jobs and Generations panels, and the Studio Jobs and Results pages that reuse
@@ -943,13 +944,15 @@ the `prefill` group. A prefill has no `ModelJobs.actions` name because it
 changes no saved job; MCP agents reach the same step with `estimate_cost` on lane
 `panorama` and the saved asset ID.
 
-Downloaded video and audio results also get read-only playback descriptors:
-**Play**, then **Play in Blender** for video or **Waveform** for audio, sharing
-one row per result. They are not `ModelJobs.actions` names: they follow the
+Downloaded video and audio results also get read-only playback descriptors: a
+video row with **Play video** and **Play in Blender**, and for audio a row with
+**Play audio** (**Stop audio** while it plays) and **Waveform**, then a row with
+**Open in system player**. They are not `ModelJobs.actions` names: they follow the
 view's saved state (`ready`, `applying`, `apply_failed` or `applied`) and the
 media types `ResultTypes.playback` lists, never change the job, and MCP
 `job_status` does not report them. Their operators recheck the context token,
-saved revision and downloaded receipt, then use the
+saved revision and downloaded receipt (**Stop audio** names only the playing
+asset), then use the
 [saved media controller](../scenario/blender/result_media.py) described under
 saved-result preview ownership.
 
@@ -1084,9 +1087,7 @@ job card, **Generation details** and MCP `job_status` all read this view error.
 Like progress, the reason stays in memory: the job database stores no message,
 so a job that failed before a restart shows `failed` without a reason, and
 `list_local_jobs` has no error field. Prompt and Blockout jobs and cloud history
-rows show no reason. A server-side failure cannot be produced
-on demand, so installed tests send these documented fields through the
-synthetic SDK transport.
+rows show no reason.
 
 ## Waiting workflow steps
 
@@ -1193,7 +1194,6 @@ same primitive as automatic delivery. `applied` and interrupted `applying`
 records cannot be imported again through this command. No service call, download
 or paid submission occurs during application.
 
-
 ## Prompt Spark command facade
 
 `JobSession.quote_prompt(parameters, origin=...)` requires a main-thread captured
@@ -1202,11 +1202,10 @@ the existing worker pool and returns a task; drain its completion before using
 `prepare_quote` and `submit(operation="prompt", target_id="prompt", ...)`.
 Caller parameter edits after queueing cannot change the quoted request. Scene,
 file, target or account changes prevent preparing/submitting a stale quote.
-The `PromptJobs` facade now owns ephemeral New/Rewrite/Translate UI handles,
+The `PromptJobs` facade owns ephemeral New/Rewrite/Translate UI handles,
 sharing this session and worker pool. `quote_translate` has the same captured-origin
 contract. No extra thread pool or job store is created. Render look preparation
 uses this same facade, with uploaded-reference identity bound to its quote.
-
 
 `read_prompt_results` uses the same record-command admission and completion
 queue. `PromptResults` carries its original stored record through scope/origin
@@ -1349,12 +1348,9 @@ Video and Prompt Spark prices. A failure removes the new slot and restores the
 file and enabled state. It then records one Blender undo step when global undo,
 the undo step count and a window context allow it, and status reports whether
 it did (`undo_recorded`). Background sessions have no desktop history; without a
-step the binding still marks the file modified. An
-installed test enables global undo, lets the runner's window record the step,
-then checks that Undo removes the slot and restores the enabled state and Redo
-restores the slot, with no saved-job change or request. Whether the
-maintenance-pump timer supplies that window context on the desktop is not yet
-proven on Blender 5.0, 5.1 or 5.2.
+step the binding still marks the file modified. Undo of a recorded step
+removes the slot and restores the enabled state; Redo restores the slot. Neither
+changes the saved job or sends a request.
 
 The handoff is a form binding like a saved-upload or Library attachment, not a
 scene application. The job keeps its state and gains no `local_applications`
@@ -1480,13 +1476,13 @@ saved results and material slots unchanged for fresh approval after returning.
 Changing selection cannot retarget it. Multi-object/shared meshes, ambiguous
 texture sets and global undo remain separate work.
 
-
 ## Explicit local result reuse
 
-The five explicit recovered delivery methods accept completed records through
-`_claim_saved_application`. Original `ready`/`apply_failed` records keep their
-recovered claim; `applied` records receive a separate coordinator local claim.
-Automatic image/World delivery never takes this reuse path. The destination,
+The explicit recovered image, media, model, mesh, material and World delivery
+methods, and Film review application, claim through `_claim_saved_application`.
+Original `ready`/`apply_failed` records keep their recovered claim; `applied`
+records receive a separate coordinator local claim. Automatic image import and
+`apply_world` never take this reuse path. The destination,
 purpose and exact selected assets remain bound to the prepared approval and
 stored revision. Verification precedes the claim; each native primitive rechecks
 actual bytes before decoding, with its existing rollback and receipt rules.
@@ -1502,28 +1498,44 @@ retains durable application records without reconstructing live output reference
 The same job may remain `applied` while local scene work is uncertain; inspect
 its local outcomes, actions and error. Owner-local receipt retry never repeats
 Blender work. Restart loses receipt authority and never clears uncertainty.
-World restoration retains only the most recent assignment handle per job in the
-current session; this is not a persistent history of reversible scene edits.
+World restoration retains only the most recent assignment handle per job and
+destination scene in the current session; this is not a persistent history of
+reversible scene edits.
 
 ## Verified saved-mesh replacement
 
 `apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
-policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with an explicit static-mesh or RIG policy
-to an explicitly captured source mesh. The target snapshot must match the resolved
+policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with an
+explicit REMESH, UV, RETEXTURE, PARTS or RIG policy to an explicitly captured
+source mesh. The target snapshot must match the resolved
 scene/object origin and its geometry/context must still match before claiming
 application. A caller captures this source before asynchronous work and binds its
 policy, mapping and Keep original choice to the approved operation; the command
 does not derive provider semantics or infer targets from selection.
 
 The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
-rehashes the actual bytes, imports in isolation and uses the existing remesh/UV
-primitive. Confirmed rollback permits a failed local outcome; incomplete scene
-cleanup retains uncertainty. A successful mesh change followed by a failed store
+rehashes the actual bytes, imports in isolation and uses the existing mesh
+primitive, or the skin primitive for RIG. Confirmed rollback permits a failed
+local outcome; incomplete scene cleanup retains uncertainty. A successful mesh change followed by a failed store
 write retains an owner-issued `ModelResultUncertain` handle for the existing
 `retry_model_receipt`. That retry never imports or replaces again. Shutdown drops
 receipt authority; restart does not authorize replay of an unfinished claim.
 Completed jobs can use a separate `mesh_edit` local claim without changing their
 original generation outcome. Its target identifies the explicitly selected source.
+
+Native **Apply mesh edit** and MCP `prepare_result_application` with
+`purpose: mesh_edit` share this command and its captured target. The
+[review](MESH_APPLICATION.md#saved-mesh-edit-approval) binds policy, coordinate
+placement and Keep original before verification. Editing review options never
+recaptures the source. Admission calls the shared destination guard before
+queuing verification; a retired session rejects the consumed approval without
+queuing work, claiming application or changing the scene. The single-use handle
+cannot be replayed. Delivery rechecks the destination after verification.
+The captured-source mode below links export metadata to that same guard;
+end-to-end edit-lane acceptance remains incomplete. Desktop Undo follows
+[native history](MESH_APPLICATION.md#native-undo-for-saved-mesh-edits); there is
+no persistent restoration handle, new generation request or automatic
+provider-coordinate mapping.
 
 ## Prepared Film review application
 
@@ -1563,18 +1575,6 @@ drops the handles after workers join, and the coordinator removes unconsumed
 copies. Native controls and three MCP tools share these handles; see
 [review controls](FILM_PLAN.md#native-and-mcp-review-controls).
 
-Native **Apply mesh edit** and MCP `prepare_result_application` with
-`purpose: mesh_edit` share this command and its captured target. The
-[review](MESH_APPLICATION.md#saved-mesh-edit-approval) binds policy, coordinate
-placement and Keep original before verification. Editing review options never
-recaptures the source. Admission calls the shared destination guard before
-queuing verification; a retired session rejects the consumed approval without
-queuing work, claiming application or changing the scene. The single-use handle
-cannot be replayed. Delivery rechecks the destination after verification.
-The captured-source mode below links export metadata to that same guard;
-end-to-end edit-lane acceptance remains incomplete. It provides no global undo entry, persistent restoration
-handle, new generation request or automatic provider-coordinate mapping.
-
 ## Source identity in mesh uploads
 
 Mesh capture snapshots the selected source objects before export and rechecks
@@ -1600,7 +1600,6 @@ these snapshots for matching 3D input assets in
 [generation intents](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 They do not restore target authority after restart or prove the current object
 is unchanged from the uploaded snapshot.
-
 
 ## Live captured-source application
 

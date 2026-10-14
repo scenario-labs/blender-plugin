@@ -5,10 +5,10 @@
   "title": "docs/ui/film.md evidence",
   "evidence": {
     "path": "docs/ui/film.md",
-    "coverage": "inherited",
-    "reviewed_at": "2026-09-23",
-    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
-    "limits": "Split from docs/UI_STYLE.md on 2026-10-14 without a new review. It keeps that record's date, revision and coverage; its sources come from the earlier per-topic records about this guide's subjects.",
+    "coverage": "source-reviewed",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Interaction rules checked against the Film control sources. The recorded desktop runs, ZIP hashes and screenshots were not repeated; they describe the builds they name. No live Scenario call, Blender run or desktop interaction.",
     "sources": [
       "docs/images/film-capture-approval.png",
       "docs/images/film-capture-upload-approval.png",
@@ -19,10 +19,13 @@
       "docs/images/film-shot-built.png",
       "docs/images/film-task-approval.png",
       "docs/images/film-task-saved.png",
+      "docs/images/film-timeline-approval.png",
+      "docs/images/film-timeline-built.png",
       "docs/images/film-timeline-edit-mode.png",
       "docs/images/film-timeline-error-before-dismissal.png",
       "docs/images/film-timeline-error-dismissed.png",
       "docs/images/film-timeline-recipe-reloaded.png",
+      "docs/images/film-timeline-sequencer.png",
       "scenario/blender/film.py",
       "scenario/blender/film_application.py",
       "scenario/blender/film_capture.py",
@@ -49,13 +52,9 @@
       "scenario/blender/registry.py",
       "scenario/blender/runtime.py",
       "scenario/blender/studio.py",
-      "scenario/core/jobs/coordinator.py",
       "scenario/core/jobs/film_export_policy.py",
       "scenario/core/jobs/local_case_study.py",
       "scenario/core/jobs/local_export.py",
-      "scenario/core/jobs/upload_sources.py",
-      "scenario/core/jobs/uploads.py",
-      "scenario/core/jobs/workers.py",
       "scenario/core/scene/film_case_study.py",
       "scenario/mcp/tools_scenario.py",
       "tests/blender/run_all.py",
@@ -73,11 +72,7 @@
       "tests/blender/test_studio_view.py",
       "tests/unit/test_film_case_study.py",
       "tests/unit/test_film_export_policy.py",
-      "tests/unit/test_job_workers.py",
-      "tests/unit/test_local_case_study.py",
-      "tests/unit/test_mcp_descriptions.py",
-      "tests/unit/test_mcp_docs.py",
-      "tests/unit/test_upload_sources.py"
+      "tests/unit/test_local_case_study.py"
     ]
   }
 }

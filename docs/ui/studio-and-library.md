@@ -71,13 +71,12 @@ These checks supersede the window-attachment and populated-form evidence gaps.
 Alternate-DPI interaction and IME composition remain unverified: Preferences
 opened, but the attempted scale edit did not change the observed UI scale, and
 Unicode paste is not IME composition. UI scales 1.25 and 1.5 and the IME
-candidate window continue in #440 as acceptance follow-ups; they do not block
-review of this scoped change. The paid desktop pass of 2026-10-13 later ran a
+candidate window continue in #440 as acceptance follow-ups. The paid desktop pass of 2026-10-13 later ran a
 capture, quote, generation, inspection and application journey (see the
 [release evidence](../maintenance/release-acceptance.md#3d-generation-and-imports));
 other-platform desktop interaction continues in #440.
 
-Blur and Studio opening now share the same focused-prompt ownership guard.
+Blur and Studio opening share the same focused-prompt ownership guard.
 A conflicting scene, lane or sidebar prompt keeps both texts and focus intact;
 the outside click is consumed with a warning before any native handoff. With no
 focused prompt, blur writes nothing. Valid edits still commit and pass the same
@@ -152,8 +151,7 @@ Installed tests verify synthetic native registration, shared UI/MCP quote use,
 changed-input rejection, view changes, continued work and saved-form reload.
 The desktop regression checks below record prompt editing, exact price refresh,
 cancel/confirm and saved-job visibility with a synthetic service on their named
-candidate. Open DPI, IME and platform checks are in #440, separately from
-review readiness.
+candidate. Open DPI, IME and platform checks are in #440.
 Live outputs remain outside this implementation.
 
 ### Waiting workflow steps
@@ -254,8 +252,7 @@ focus, DPI, IME and screenshots) is pending.
 ## Native Library controls
 
 Studio's explicit **Library** page has Search, Public assets and Collection ID
-filters, Refresh, and separate Previous/Next actions. Native navigation uses at
-most three tabs per row in narrow views. Filter edits do not start a read or tag
+filters, Refresh, and separate Previous/Next actions. Filter edits do not start a read or tag
 the scene; changed filters require Refresh before page continuation. Reads use
 the shared session and application pump, so unrelated scene edits and closing the
 view do not discard the requested page. Connection retirement clears the view.
@@ -263,7 +260,8 @@ view do not discard the requested page. Connection retirement clears the view.
 Each asset shows its name and MIME type. **Use as reference** opens a separate
 confirmation for the selected scene, generation form, model and compatible input.
 No existing reference is silently replaced. Unknown MIME types cannot attach;
-known file inputs respect their kind and capacity. Confirmation checks the
+known file inputs respect their kind and capacity, and a 360 panorama input is
+not offered. Confirmation checks the
 unchanged destination, adds a scoped asset reference and invalidates its price.
 The dialog displays a captured scene name, so deleting the scene while it is
 open cannot break redraw; confirmation still rejects the unavailable destination.
@@ -273,8 +271,7 @@ its RNA properties; Blender passes `OperatorProperties` to the enum callback,
 not the Python operator carrying the prepared approvals. Installed tests exercise
 that registered callback as well as state and command boundaries. The desktop
 checks below record native browsing and reference confirmation for their named
-candidate. Open Library desktop checks are in #440, separately from review
-readiness.
+candidate. Open Library desktop checks are in #440.
 
 ### Library organization
 

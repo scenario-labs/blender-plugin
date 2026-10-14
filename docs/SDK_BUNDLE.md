@@ -76,8 +76,8 @@ The installed-ZIP native suite imports every runtime dependency, verifies its
 version and imported source bytes against the bundled wheel, and verifies the
 loaded `pydantic-core` binary against the appropriate wheel. It exercises
 Pydantic validation and the real SDK via `httpx.MockTransport`: online permission,
-catalog reads, exact estimates, selected Bearer headers and single-attempt
-failures. `tests.json` records the verified versions, Python version and native
+catalog, team and project reads, workflow decisions, exact estimates, selected
+Bearer headers and single-attempt failures. `tests.json` records the verified versions, Python version and native
 wheel identity under `sdk_bundle`. These are offline runtime checks, not live
 Scenario endpoint or OAuth-token acceptance.
 

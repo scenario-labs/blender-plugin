@@ -74,9 +74,10 @@ The account strip tells you when the selected source lacks its key or secret.
 **Test connection** checks in the background that your credentials can read
 Scenario's models. It doesn't tell you which account or project the key belongs to.
 A **401** (rejected) or **403** (access denied) means you should check the key and
-secret, and, if you set a Project ID, that the project belongs to the key. A
-**429** means too many requests: try again shortly. Other failures show only their
-HTTP code. Error messages never include service responses, credentials or IDs.
+secret; after a 403 with a Project ID set, also check that the project belongs to
+the key. A **429** means too many requests: try again shortly. Other HTTP failures
+show only their code. Error messages never include service responses, credentials
+or IDs.
 
 **Project ID (optional)** works with either source. Leave it blank to use the key's
 default scope, or enter a project you are allowed to use. It's an override, not a
@@ -85,9 +86,7 @@ back to the default project. The ID is saved with Blender's preferences.
 
 Changing the project clears the visible catalog, history and prices, and retires
 pending approvals. Jobs already submitted keep their original credentials and
-project, so switch back to inspect or recover them. Older jobs saved without a
-project can't make requests while a Project ID is set; recover them from saved
-jobs.
+project, so switch back to inspect or recover them.
 
 ### Updates
 
@@ -115,10 +114,9 @@ while unloaded). Don't remove it or install a second copy to recover.
 
 This handbook lives at [blender.scenario.com](https://blender.scenario.com/), which
 the **Website** link in Get Extensions opens; its
-[downloads page](https://blender.scenario.com/repo/) lists the releases the
-repository offers, from 0.10.0. Scenario targets Blender 5.0, 5.1 and 5.2. Updating
-from one repository release to the next will first be checked with the release
-after 0.10.0.
+[downloads page](https://blender.scenario.com/repo/) lists the latest release for
+each supported Blender version and platform. Scenario targets Blender 5.0, 5.1 and
+5.2.
 
 ### Switch from a ZIP to the repository
 
@@ -175,17 +173,15 @@ From top to bottom:
 - **Account strip**: connection status, a button to reload models and a shortcut to the preferences.
 - **Model**: opens the [model picker](#the-model-picker). Picking a model of another type switches to its lane.
 - **Prompt**: drag the size control to make the box taller. Below it, Prompt Spark's **New** (writes a prompt for the model), **Rewrite** (improves yours) and **Translate** (into English) each show their price first; click **Approve...** to run it once. The result replaces the prompt only if you haven't changed the prompt, model, scene or credentials in the meantime. The trash button clears the prompt after asking.
-- **References**: one box per file input (image, video, audio or 3D). **Add** offers a file, a viewport or camera still or clip, or the Render Result; then **Upload reference** sends it. For 3D, **Upload selected mesh** exports your selection. Generate never captures or uploads anything by itself.
-- **Parameters**: built from the model's own settings. Tick an optional parameter to send it; unticked, Scenario uses its default. `(cost)` marks parameters that change the price.
+- **References**: one box per file input (image, video, audio or 3D). Add a file with **Upload**, a still with **Render**, **Viewport** or **Camera**, or a clip with **Viewport clip** or **Camera clip**; then **Upload reference** sends it. For 3D, **Upload selected mesh** exports your selection. Generate never captures or uploads anything by itself.
+- **Parameters**: built from the model's own settings. Tick an optional parameter to send it; unticked, Scenario uses its default. On/off settings are always sent. `(cost)` marks parameters that change the price.
 - **Generate (N CU)**: the exact price for the form as it stands, refreshed as you edit (checking is free). Generate spends that price once. Pending uploads and captures must finish first.
 
 Prices show up to three decimals, and in compact form from 10,000 CU (`12.3K CU`).
 The approval always uses Scenario's exact price.
 
-Every generation is saved as a job. Image results import into their scene by
-themselves; other results wait for you to apply them (see
-[Jobs and results](#jobs-and-results)). Some features below come from the earlier
-prototype and are still being connected; the
+[Jobs and results](#jobs-and-results) explains what happens after you generate. Some
+features below come from the earlier prototype and are still being connected; the
 [known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application) say what
 applies today.
 
@@ -222,8 +218,8 @@ Click the pill to expand it. The card has lane tabs (Audio and Blockout stay in 
 sidebar), the prompt, a model chip that opens the picker, a **Settings** chip that
 opens the lane's full form in a dialog, and **Generate** with its price.
 
-- **Environment** uses its Generate mode; when the sidebar shows another Environment mode, the composer drives Image.
-- **3D Edit**: open **Settings** and select **Edit**; choose the task and mesh in the sidebar or Settings.
+- **Environment** uses its Generate mode. When the sidebar shows another Environment mode, Audio or Blockout, the composer drives Image.
+- **3D Edit**: open **Settings** and select **Edit**; choose the task in the sidebar or Settings, and select the mesh in the viewport.
 - When a model takes no prompt, the field says *This model takes no prompt*.
 
 **Moving and resizing.** Drag the pill or the card to move it; it stays inside the
@@ -271,7 +267,7 @@ click **Upload reference** and wait for it to finish; the form then shows a fres
 price. Uploading never generates.
 
 - While an upload runs, keep the model and slot unchanged, and for a viewport, camera or Render Result snapshot, the scene too; otherwise the late upload won't replace your new choice. A local file keeps uploading while you work.
-- **Inspect uploads** shows progress and lets you cancel or clean up uploads; your original file is never touched. An interrupted upload can't resume: choose **Upload again**, then **Use this reference**.
+- **Inspect uploads** shows progress, cancels an upload that hasn't started sending and cleans up finished ones; your original file is never touched. An interrupted upload can't resume: choose **Upload again**, then **Use this reference**.
 - To reuse an earlier upload, choose **Use saved upload** or **Saved uploads**, then **Use this reference**, and confirm. Uploads belong to the credentials that made them; editing the original file later doesn't change them.
 - The same controls work for audio, video and 3D inputs. Still captures fill image inputs, viewport and camera clips fill video inputs, and **Upload selected mesh** fills a 3D input.
 
@@ -284,13 +280,13 @@ doesn't generate: upload the reference, check the price, then choose **Generate*
 
 #### Use a LoRA or composition
 
-Choose the Image tab's **Trained** chip in the model picker. It lists your trained
-LoRAs and compositions, then Scenario's public ones. Each row names the base models
-that can run it, for example **LoRA via FLUX.1 Dev**; a greyed row says why it can't
-run in this form.
+Choose the Image tab's **Trained** chip in the model picker. It lists the LoRAs and
+compositions this form can run first, yours before Scenario's public ones. Each row
+names the base models that can run it, for example **LoRA via FLUX.1 Dev**; a greyed
+row says why it can't run in this form.
 
-Highlight a LoRA, tick its base under **Runs with**, set its **Strength** and click
-OK; one click is enough, but if you just typed the strength, that first click only
+Highlight a LoRA, choose its base under **Run with** when several can run it, set
+its **Strength** and click OK; if you just typed the strength, the first click only
 confirms the value, so click OK again. The form switches to that base and adds the
 LoRA. Strength starts at the LoRA's own value, or 0.75, within the range the base
 allows. Add more LoRAs the same way to stack them. A composition already combines its LoRAs, so it replaces the form's
@@ -344,14 +340,13 @@ your credentials, and both work offline.
 
 **Adding it to the sequencer.** **Add video strip (N)** asks you to confirm the
 scene and current frame, then places the video (MP4 or WebM, up to 512 MiB) on a
-free channel without generating again. If the scene or frame changes first, confirm
-again. Select the scene in the Sequencer header to see it. The strip plays a local
-copy kept by the extension, which must stay available if you move or share the
-file.
+free channel without generating again. The strip leaves out embedded audio and plays
+at the scene's frame rate. If the scene or frame changes first, confirm again.
+Select the scene in the Sequencer header to see it. The strip plays a local copy
+kept by the extension, which must stay available if you move or share the file.
 
 Results from the earlier prototype offer **Play**, **Play in Blender** and
-**Add video strip**; their strip leaves out embedded audio and plays at the scene's
-frame rate.
+**Add video strip** instead.
 
 ### 3D
 
@@ -427,7 +422,8 @@ restore and save the blend file yourself. See [material application](MATERIAL_AP
 ### Audio
 
 Speech, music and sound effects with ElevenLabs, Google Lyria, ACE-Step, Minimax,
-Gemini TTS, Sonilo and other audio models.
+Gemini TTS, Sonilo and other audio models. When a model makes WAV audio, you get
+that WAV file, not Scenario's compressed MP3 copy.
 
 ![Audio lane with ElevenLabs Music v2, a prompt with the Spark, Rewrite and Translate buttons, duration and format settings](images/panel-audio.png)
 
@@ -452,7 +448,7 @@ Your view, rendered as a finished still by an image-editing model. The
 
 - **Scene to render**: choose Viewport or Scene camera (optionally with Grey clay capture), then **Capture and upload scene**.
 - **Model**: GPT Image 2 by default, or any other image-to-image model.
-- **Look**: describe the result, for example "weathered steampunk copper, overcast light". Leave it empty for a photoreal default, or let **Prepare look with Prompt Spark** write one; Spark has its own price and approval before the render's price.
+- **Look**: describe the result, for example "weathered steampunk copper, overcast light". Left empty, **Prepare look with Prompt Spark** (on by default) writes one, with its own price and approval before the render's; turn it off for a photoreal default.
 - **Style images**: optional references for palette, materials and lighting. The capture is always image 1.
 
 The model is told to keep your scene exactly (objects, positions, camera and
@@ -467,25 +463,26 @@ form through local MCP; see the
 ### Render Video
 
 A playblast of your timeline, rendered as a finished clip by a video model that
-takes a reference video. The look, style images and first frame are in the
+takes a reference video. The look, reference frames and first frame are in the
 **Rendering Style** section.
 
 - **Clip to render**: choose Viewport or Scene camera, build a [camera path](#camera-path) if you want one, then **Capture and upload scene**. The silent 1280x720 clip covers the range shown, without padding or trimming. **Match timeline** sets the model's duration; it doesn't change a clip already uploaded.
 - **Model**: Seedance, Minimax, Runway Aleph, Gemini, Grok and other video-to-video models.
-- **Look** and **Style images**: as in Render Image. Prompt Spark needs a [first frame](#first-frame).
+- **Look** and **Reference frames**: as the look and style images in Render Image. Prompt Spark needs a [first frame](#first-frame).
 
 ![Render Video lane: Clip to render, the Camera path planner with an orbit built, Seedance 2.0, the Look field with Prompt Spark, the first frame row and style images](images/panel-render-video.png)
 
 #### Camera path
 
-Type the shot you want ("slow ellipse 2, 8 s, 35mm") and press **Plan**, or pick a
-move from the library: orbits, ellipses, dolly and truck, crane and arcs, pans and
-flyovers. **Place markers** turns it into numbered `Shot` markers you can move or
-fine-tune; add "hold 2 s" to pause on arrival. Set the duration, focal length and
-start frame, then **Build camera path** to create and animate
-`Scenario Shot Camera` (it asks before replacing an existing path). **Preview**
-plays it, and **Clear path** removes the camera and markers. A Camera clip then
-records exactly that move.
+Type the shot you want ("slow ellipse 2, 8 s, 35mm, hold 2 s") and press **Plan**
+to place `Shot` markers and build the path in one step. Or pick a move from the
+library (orbits, ellipses, dolly and truck, crane and arcs, pans and flyovers),
+choose **Place markers**, move or fine-tune the numbered markers and set a hold on
+any of them, then **Build camera path**. Either way, Blender animates
+`Scenario Shot Camera` and asks before replacing an existing path. With **Match
+timeline** on, the model's duration sets the path's. The play button previews it,
+and **Clear path** removes the camera and markers. A Camera clip then records
+exactly that move.
 
 #### First frame
 
@@ -539,9 +536,10 @@ measure them, and HY World hasn't been checked with a live run yet
 ## Jobs and results
 
 Every generation is saved as a job, so you can follow it, recover it after a restart
-and apply its results when you're ready. Apart from Image results, nothing reaches
-your scene until you confirm where it goes. If a submission's outcome is uncertain,
-never send it again: inspect the saved job first.
+and apply its results when you're ready. Image lane results import by themselves
+in the session that sent them; nothing else reaches your scene until you confirm
+where it goes. If a submission's outcome is uncertain, never send it again: inspect
+the saved job first.
 
 ### Jobs
 

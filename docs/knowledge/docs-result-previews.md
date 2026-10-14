@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/RESULT_PREVIEWS.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-11",
-    "reviewed_revision": "33d00b0554151c4de04731fd1a5e5c64ed50855b",
-    "limits": "Merged on 2026-10-14 from 7 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the preview modules, scheduler, lane commands and Blender owners. No live Scenario preview, workflow review asset or provider audio file; real players, sound output and drawing on Windows, Linux and macOS x64 desktops are not exercised.",
     "sources": [
       ".github/workflows/blender-baseline.yml",
       "scenario/blender/audio_player_worker.py",

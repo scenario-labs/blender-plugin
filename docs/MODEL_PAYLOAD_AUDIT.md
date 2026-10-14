@@ -162,17 +162,7 @@ not executable or rendered schema instructions. The issue distinguishes an
 audit exit of 1 from configuration/report/cleanup errors, missing completion/timeout,
 or a clean audit followed by an artifact failure. Deliberate whole-workflow cancellation
 does not create an issue. Reporting never makes the failed audit job green.
-
-Hosted activation and failure reporting are accepted under
-[closed #41](https://github.com/scenario-labs/blender-plugin/issues/41#issuecomment-6083352106).
-The [retained scheduled run](https://github.com/scenario-labs/blender-plugin/actions/runs/37271766942)
-completed with no fetch/schema failures at the configured HIGH threshold.
-Two deliberate missing-model dispatches failed and commented on the same
-[test incident](https://github.com/scenario-labs/blender-plugin/issues/218),
-verifying delivery and deduplication; that incident was then closed.
-The linked closure evidence records the checked artifacts and scoped findings.
-This accepts schema monitoring, not generation or release readiness. Later runs
-retain their own source/artifact identities and must be inspected independently.
+A passing run accepts schema monitoring, not generation or release readiness.
 GitHub can disable schedules after 60 days without repository activity;
 maintainers can re-enable them after checking the configured test scope.
 
@@ -182,9 +172,9 @@ The exact pinned SDK release and bundle are documented in
 [SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit uses
 `SDKAdapter.model`, which calls SDK 2.2.0's public
 `models.with_raw_response.retrieve(model_id, project_id=...)` method for
-`GET /models/{id}`. It retains the complete model object for the existing parser.
-No raw API fallback, low-level SDK verb or dependency change is introduced.
-The shared adapter disables automatic retries and isolates ambient credentials.
+`GET /models/{id}`. It retains the complete model object for the existing parser
+and uses no raw API fallback or low-level SDK verb. The shared adapter disables
+automatic retries and isolates ambient credentials.
 
 The [public API documentation](https://docs.scenario.com/) and
 [official Python SDK release](https://pypi.org/project/scenario-sdk/2.2.0/)

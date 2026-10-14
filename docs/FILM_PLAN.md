@@ -127,9 +127,9 @@ Literal asset IDs still pass through the selected SDK/model validation and remot
 permissions. Upload-task references require the saved association described below.
 
 Recipe text and parameters are not persisted by this binding; the caller must
-retain/reload the recipe separately. Quotes are immutable snapshots. A future
-view must invalidate its displayed quote when the recipe or production changes
-and pass the exact approved request to submission. No recipe field supplies
+retain/reload the recipe separately. Quotes are immutable snapshots: approval
+rejects a quote whose recipe or production changed and submits the exact
+approved request. No recipe field supplies
 spending approval, authorizes scene application or infers an API key's project.
 
 ## Saved upload tasks
@@ -271,9 +271,7 @@ These are main-thread local primitives, with no SDK, network, paid submission,
 file save, activation control or separate job storage. A receipt proves bytes,
 not credential ownership or approval. The shared shot command below supplies the
 source/destination checks and application claims. Native/MCP scene-building controls
-must use that command; local timeline approval is described below. Primitive tests establish
-synthetic shot, model and sequence behavior, not visual motion acceptance,
-capture/encoding, finishing or export.
+must use that command; local timeline approval is described below.
 
 ## Shared shot application command
 
@@ -343,8 +341,7 @@ A ready review exposes **Build shot** with a separate confirmation naming its
 shot, recipe scene and number of saved heroes. It creates a new scene and keeps
 the working scene selected. The native operator participates in Blender Undo;
 saved job receipts do not rewind, and replaying a consumed review cannot rebuild.
-Synthetic desktop Undo/Redo interaction passes on macOS Blender 5.1.2; see
-[the evidence and limits](ui/film.md#film-shot-controls). A shot with no heroes
+See [desktop evidence](ui/film.md#film-shot-controls). A shot with no heroes
 follows the same explicit approval without inventing a generation job.
 
 **Discard review** retires unapproved work. **Save build receipt** retries only a
@@ -363,8 +360,9 @@ ID, shot ID and explicit per-hero job revision/asset selections.
 `film_shot_review` polls status, discards unapproved work, retries receipts or
 dismisses an inspected uncertain review with `inspected: true`.
 `build_film_shot` is the separate explicit build approval. All four use the same
-session-owned reviews as the native controls. MCP does not create a native
-operator Undo entry. No tool generates, downloads or silently repeats a build.
+session-owned reviews as the native controls. An MCP build records one Undo
+History step afterwards, which [marks the file modified](architecture/blender.md#marking-the-file-modified).
+No tool generates, downloads or silently repeats a build.
 
 ## Editable timeline approval
 
@@ -405,10 +403,9 @@ MCP follows `film_timeline_sources`, `prepare_film_timeline`, then explicitly
 approved `build_film_timeline`. `film_timeline_review` inspects or discards the
 review; discarding uncertainty requires `inspected: true`. Native confirmation
 calls the same prepare/approve methods. Cancelling the dialog creates no review
-or timeline. The native build participates in Undo, while its consumed approval
-cannot replay; MCP does not create an operator Undo entry. Synthetic desktop
-selection, cancellation, Undo/Redo and Sequencer inspection pass on macOS Blender
-5.1.2; see [the evidence and limits](ui/film.md#film-timeline-controls).
+or timeline. The native build participates in Undo and an MCP build records one
+Undo History step afterwards, while the consumed approval cannot replay. See
+[desktop evidence](ui/film.md#film-timeline-controls).
 
 ## Local capture foundation
 
@@ -528,9 +525,9 @@ MCP follows `film_capture_sources`, `prepare_film_capture`, separately approved
 `render_film_capture`, then `film_capture_review` for status/cancel/discard.
 `upload_film_capture` requires separate output approval and returns the ordinary
 reference-upload handle. Use `reference_upload_status` and, after import,
-`bind_film_upload`. These share the native commands. Installed synthetic tests
-cover command behavior; desktop layout/input/focus/viewport and live media
-acceptance remain pending, so the new controls remain draft.
+`bind_film_upload`. These share the native commands. See
+[desktop evidence](ui/film.md#film-capture-controls) for still capture; desktop
+video capture and live media acceptance remain pending.
 
 ## Unpaid composition drafts
 
@@ -586,15 +583,11 @@ The resulting model task resolves through the existing Film task command and
 SDK `generate.with_raw_response.run_model` path. Its eventual estimate must fetch
 current model metadata, validate the payload and preserve the server's exact
 cost; this template is not evidence that a provider currently accepts it. The
-active UI/MCP do not yet install or quote these drafts. The session quote command
-below preserves source/scene/scope identity through price preparation and dispatch;
-active controls must retain the original recipe review and require explicit
-generation approval. Verified media preparation is available through the session
-command below. Native review assembly and video export have separate
-[review](#native-and-mcp-review-controls) and [export](#native-and-mcp-video-export-controls)
-controls; live provider acceptance and human motion/audio review remain
-separate. These helpers alone do not complete
-Film finishing.
+[composition controls](#native-and-mcp-composition-controls) verify media and
+quote these drafts through the session commands below, without installing them
+in the recipe, and require explicit generation approval. Native review assembly
+and video export have separate [review](#native-and-mcp-review-controls) and
+[export](#native-and-mcp-video-export-controls) controls.
 
 ## Verified media preparation
 
@@ -672,10 +665,8 @@ tickets are session-local; restart permits saved-job inspection/recovery, not
 resubmission of an old quote. The existing job schema and SDK transport are
 unchanged, and API keys need no discovered/default project identifier.
 
-This command is verified through the installed native session and offline SDK
-fixtures. The controls below expose this path without installing or modifying
-the recipe. Provider acceptance remains separate work; review scenes export
-through the [video export controls](#native-and-mcp-video-export-controls).
+The controls below expose this path without installing or modifying the recipe.
+Provider acceptance remains separate work.
 
 ## Native and MCP composition controls
 
@@ -720,16 +711,8 @@ never appended a task to the recipe. **Inspect saved jobs** offers the existing
 recovery commands. A new take needs an explicitly different master task identity
 or production; discarding a review does not free a spent identity.
 
-Installed synthetic controls tests cover UI/MCP sharing, exact-price rejection,
-source/recipe/scene invalidation, cancellation, uncertainty, lost acknowledgements,
-read-only drawing, saved-master discovery after reopening the owner and the named
-error for a final recipe without `audio_tracks` or a score task. Synthetic
-desktop mouse/keyboard, focus, confirmation and viewport checks pass on macOS
-arm64 Blender 5.1.2; see [the exact ZIP evidence](ui/film.md#film-composition-controls).
-Live provider/media acceptance and other OS/DPI behavior remain pending; local
-review assembly and video export use the [review](#native-and-mcp-review-controls)
-and [export](#native-and-mcp-video-export-controls) controls.
-These controls do not complete the Film or release acceptance gates.
+See [desktop evidence](ui/film.md#film-composition-controls). Live provider
+acceptance and other OS/DPI behavior remain pending.
 
 ## Native saved-media review primitive
 
@@ -778,14 +761,9 @@ gathers them explicitly. The
 [offline video export](#offline-film-video-export-primitive) renders the
 referenced media into a new MP4 instead.
 
-Installed tests use small first-party synthetic movie/audio fixtures to cover
-trims, contiguous shots, loop phase/ducking, silent/native audio, muted masters,
-scope/receipt/rate failures, rollback uncertainty and a saved-scene library
-round-trip. The standalone primitive is synchronous. The shared preparation and
-application commands below move copying and probing to workers and supply
-current-source checks and application claims. [Native/MCP review controls](#native-and-mcp-review-controls)
-expose those commands; the [portable case-study bundle](#portable-case-study-bundle)
-is separate, and desktop/live acceptance remain pending.
+The standalone primitive is synchronous. The shared preparation and application
+commands below move copying and probing to workers and supply current-source
+checks and application claims.
 
 ## Shared native-review preparation and application
 
@@ -850,11 +828,8 @@ reaping retries at most once every five seconds. Disabling the extension stops i
 timer while retaining in-process ownership; registering again resumes cleanup.
 Process exit or module reload can still require manual inspection of logged files.
 
-Installed tests cover real movie/audio strips from worker copies, generated job
-claims, reuse, stale recipe/origin/copy rejection, rollback, uncertain claims and
-receipt-only recovery. The [native/MCP review controls](#native-and-mcp-review-controls)
-below present this command layer with separate preparation and build approvals.
-It is not desktop, provider motion/audio, portable export or release acceptance.
+The [native/MCP review controls](#native-and-mcp-review-controls) below present
+this command layer with separate preparation and build approvals.
 
 ## Native and MCP review controls
 
@@ -945,36 +920,17 @@ Restart drops review handles and pending receipt authority, as described above;
 saved jobs keep their durable claims for inspection. Undo after a build removes
 the review scene while its private copies and applied receipts remain, so repeated
 build and Undo cycles accumulate copies under `film-review` without an automatic
-sweep. Strict origin invalidation is deliberate for this release: a frame, recipe
-or object edit, object selection, an Undo or Redo, building another review for the
-scene, or leaving the recipe scene and selecting it again, before building requires
-a fresh preparation. Composition and capture waiting use the same shared origin
-check; letting scene activation keep an unchanged origin is separate session work.
+sweep. The strict origin invalidation above is deliberate. Composition and capture
+waiting use the same shared origin check; letting scene activation keep an
+unchanged origin is separate session work.
 
-Installed synthetic tests cover native and MCP preparation and build, shared
-handles, dismissed dialogs, a storage error in the preparation dialog, cancellation
-during probing and, over MCP, after probing returns but before maintenance delivers
-it, a full session queue, frame and recipe invalidation, object
-selection and the session's registered Undo/Redo handler invalidating ready
-reviews and preparing reviews, both while probing runs and after it returns but
-before maintenance, and deleting their copies, the panel's warning line on
-preparing and ready reviews, a real `window.scene` round trip that fails waiting
-and ready reviews while a built review keeps its scene, recipe scene deletion, an
-included saved master built as muted movie and sound strips, and a previs review
-prepared and built beside a ready final review, which then fails and builds again
-after a fresh preparation. They also cover missing master
-and `ffprobe`, a final recipe without `audio_tracks` or a score task (its warning,
-named error and the `"audio_tracks": []` fix), source reasons and logged unexpected
-failures in preparation and the ready check, rollback, receipt-only recovery,
-inspected dismissal, the 16-handle bound, shutdown cleanup, read-only drawing,
-mode navigation, Edit Mode gating and
-the build operator's Undo-only options. The tests call the Undo/Redo handler
-directly rather than stepping Blender's undo history, and evaluate the dependency
-graph explicitly where a window would after a click or build.
-Physical desktop interaction, live provider media, other OS/DPI behavior and human
-motion/audio review remain pending. Built review scenes export to video through
-the [export controls](#native-and-mcp-video-export-controls) over the
-[offline video export primitive](#offline-film-video-export-primitive) below.
+[Installed tests](../tests/blender/test_film_review_controls.py) call the Undo/Redo
+handler directly rather than stepping Blender's undo history, and evaluate the
+dependency graph explicitly where a window would after a click or build. The
+[release evidence](maintenance/release-acceptance.md#film) records a desktop pass
+and a production run through local MCP; other OS/DPI behavior and human
+motion/audio review remain pending. Built review scenes export through the
+[export controls](#native-and-mcp-video-export-controls).
 
 ## Offline Film video export primitive
 
@@ -1115,30 +1071,14 @@ changes. The caller owns the staging directory and removes it with
 leave staging under extension user storage and a zero-byte placeholder or hidden
 partial file next to the destination. There is no startup sweep.
 
-Unit tests cover specification bounds, destination validation including Windows
-names and spellings, case and composition folding and relative private roots, the
-longest valid name, exclusive and pinned reservation, identity-checked publishing,
-free-space checks, replace and permission failures, cancellation at each stage
-including after the copy and during the final hash, container, ffprobe and Blender
-decode mismatches, media changes, output inventory and size, bounded progress
-parsing, environment scrubbing,
-reused snapshots, path-free staging errors, owned-thread admission independent of
-the shared workers, owner retirement, a late render after retirement and a
-bounded shutdown while a media read blocks. Installed tests run a real child export
-of a synthetic 64x64, 48-frame review with Blender's decode check on every
-platform, and the ffprobe check where it is installed. They also cover session
-delivery, mid-render retirement, copy-only re-publishing, channel and meta strip
-audio defaults, the truncated, even default size, the distinct-file media budget,
-the 8-bit encoder setting, a bounded session shutdown that keeps a blocked export
-owned until the reaper releases it without waiting on it at any earlier tick,
-session refusal of a foreign Blender or worker
-and of relative, private, existing and non-portable destinations before any work.
-A build without an H.264 or AAC
-encoder is not exercised. The [native/MCP export controls](#native-and-mcp-video-export-controls)
+[Unit](../tests/unit/test_local_export.py) and
+[installed](../tests/blender/test_film_export_primitive.py) tests include a real
+child export with Blender's decode check; a build without an H.264 or AAC encoder
+is not exercised. The [native/MCP export controls](#native-and-mcp-video-export-controls)
 call these session commands; the [case-study bundle](#portable-case-study-bundle)
 uses the same thread and publish step. Human playback review and Windows/Linux
-desktop evidence remain separate. Export makes no Scenario
-request, spends nothing and writes no job record.
+desktop evidence remain separate. Export makes no Scenario request, spends
+nothing and writes no job record.
 
 ## Native and MCP video export controls
 
@@ -1230,22 +1170,13 @@ copy approvals recheck the Output Folder: an agent cannot approve a file chosen
 natively elsewhere, which stays for native confirmation. See
 [MCP export commands](MCP.md#film-export-commands).
 
-Installed synthetic tests cover inspection filters and blocking reasons, the
-even default size at a 33% resolution scale, the native file browser and Render
-dialogs (including dismissal, numbered names, explicit audio and size choices),
-destination refusals (existing, relative, wrong
-suffix, non-portable, private storage, outside the Output Folder or through a
-link), agent approval refusal for native exports and copies outside the Output
-Folder, exact-destination approval, MCP/native handle sharing, cached progress,
-cancellation without a destination, a failed save followed by a copy-only native
-re-publish, READY invalidation by a frame change, object selection or a new
-destination file, an export surviving a later edit, read-only panel and Studio
-drawing, Edit Mode gating, retirement, shutdown cleanup and the handle bound. One
-real child export of a 128 by 72 review is verified by Blender's decode check;
-the other tests replace the child with a fast handoff while the real publish
-runs. Physical desktop interaction, screenshots, other OS/DPI behavior, human
-playback review and live provider media remain pending. This MP4 export does not
-replace the [portable case-study bundle](#portable-case-study-bundle).
+[Installed tests](../tests/blender/test_film_export_controls.py) run one real child
+export; the others replace the child with a fast handoff while the real publish
+runs. The [release evidence](maintenance/release-acceptance.md#film) records an
+earlier desktop pass and a production run through local MCP; a desktop rerun of
+export, cancel, **Open folder** and **Copy SHA-256**, other OS/DPI behavior and
+human playback review remain pending. This MP4 export does not replace the
+[portable case-study bundle](#portable-case-study-bundle).
 
 ## Portable case-study bundle
 
@@ -1368,50 +1299,26 @@ destination verbatim. Poll `film_case_study_review`; it also cancels, discards,
 and after a failed save uses `prepare_republish` and `republish`. See
 [MCP case-study commands](MCP.md#film-case-study-commands).
 
-Unit tests cover the approved-take selection, sanitizer, recipe reload, ledger,
-documents, specification bounds, media copies and stamps, both child reports,
-private scans across chunk boundaries, archive rereading, cancellation, `.zip`
-destinations and the shared export thread. Installed synthetic tests build a real
-bundle from a review scene and a timeline with a textured, tagged shot; reopen the
-extracted archive in a fresh offline Blender, which resolves every relative file,
-keeps the rebuilt sound strip's animation and renders a frame from the relative
-movie; and check that no archived byte holds a private identifier or the source,
-storage or output folders and that the library stores `/` paths. Others check that
-the fillers leave no byte of the longest paths Blender keeps, that image strip
-frames join their folder and name with `/` so Windows resolves a `//` folder
-beside the saved file, that the scan reads every property and setting container
-and that a removed setting's value kept elsewhere refuses the export. They also
-cover inspection filters and blocking
-reasons, destination refusals, exact and agent approvals, the native file browser
-and Save dialogs, progress, cancellation, a failed save with a copy-only native
-re-publish, invalidation by a timeline or shot change, the shared export thread,
-read-only drawing, Edit Mode gating, shutdown cleanup and registration order.
-Blender keeps unused bytes of earlier settings in some fixed-size fields that this
-export does not rewrite, such as the sequencer's last-used folders; the bundle can
-carry them, so review it before publishing it widely. Physical desktop interaction,
-other OS/DPI behavior, Windows paths, real provider media and human review of a
-bundle remain pending.
+[Unit](../tests/unit/test_local_case_study.py) and
+[installed](../tests/blender/test_film_case_study.py) tests build a real bundle,
+reopen the extracted archive in a fresh offline Blender and check that no
+archived byte holds a private identifier or the source, storage or output
+folders. Blender keeps unused bytes of earlier settings in some fixed-size fields
+that this export does not rewrite, such as the sequencer's last-used folders; the
+bundle can carry them, so review it before publishing it widely. The
+[release evidence](maintenance/release-acceptance.md#film) records a bundle saved
+through local MCP; the desktop save, other OS/DPI behavior, Windows paths and
+human review of a bundle remain pending.
 
 ## Remaining integration and evidence
 
 Mixed-rate normalization and provider-specific preparation remain separate work.
-Keep useful
-source capabilities and tests as those paths are connected; do not describe this
-helper adoption as a completed Film workflow.
+Keep useful source capabilities and tests as those paths are connected; do not
+describe this helper adoption as a completed Film workflow.
 
-[Shared Film job tests](../tests/unit/test_film_jobs.py) cover atomic competing
-reservations, committed-but-unacknowledged writes, uncertain submissions, scope
-isolation and transitive dependency changes. Native session tests cover installed
-Film quote/submission and changed-scene rejection.
-[Upload association tests](../tests/unit/test_film_uploads.py) exercise scope,
-imported-state checks, immutable source selection, competing model/upload
-reservations and cleanup/restart reuse; native tests verify quote resolution and
-late/repeated main-thread delivery.
-
-[Recipe tests](../tests/unit/test_film_plan.py) and
-[scene-plan tests](../tests/unit/test_film_scene_plan.py) cover source timing,
-transforms, continuity and audio contracts plus API-key default scope, exact
-project matching, every foreign-scope dimension, opaque output identifiers,
-reference ordering and invalid input rejection. Installed-package regression
-checks establish package/runtime compatibility only. No Film model task has run
-live; physical desktop interaction and human playback review continue in #440.
+[Film job](../tests/unit/test_film_jobs.py),
+[upload association](../tests/unit/test_film_uploads.py),
+[recipe](../tests/unit/test_film_plan.py) and
+[scene-plan](../tests/unit/test_film_scene_plan.py) tests cover these contracts
+offline. No Film model task has run live; physical desktop interaction and human
+playback review continue in #440.

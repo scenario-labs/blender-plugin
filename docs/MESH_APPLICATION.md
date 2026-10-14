@@ -3,7 +3,7 @@
 `scenario.blender.mesh_application.apply_mesh` is a synchronous Blender main-thread
 primitive for applying one already imported mesh to one explicit source object.
 It has no network, import, job, UI or MCP side effects and never reads selection to
-choose a target. Existing prototype import behavior is unchanged.
+choose a target.
 
 ```python
 receipt = apply_mesh(
@@ -22,12 +22,11 @@ receipt.accept()  # retain the application
 The caller must validate its captured file/scene/object revision immediately before
 this call. It must also select the primary imported mesh and establish the mapping
 from result mesh coordinates into source-local coordinates. Reflection and singular
-mappings are rejected; this slice does not define a handedness/normal-flip policy. The primitive does not
-infer that mapping from object placement, names or current selection. It does not
+mappings are rejected; there is no handedness/normal-flip policy. The primitive
+does not infer that mapping from object placement, names or current selection. It does not
 prove cloud provenance, safe download/import, or that a late result still matches
-its original inputs. The verified saved-mesh command below adds receipt-bound
-import and shared-session bookkeeping; UI/MCP approval and operation-bound input
-metadata remain integration work under #99.
+its original inputs. The [verified saved-mesh command](#captured-source-and-verified-saved-mesh-command)
+adds receipt-bound import, shared-session bookkeeping and UI/MCP review.
 
 ## Supported policies
 
@@ -53,9 +52,10 @@ Only local, non-overridden meshes in Object Mode are supported. Modifiers,
 constraints, vertex groups, shape keys, animation, armature/bone/vertex parenting,
 vertex-parented children, object material overrides and custom mesh properties are
 rejected. Generic attributes are limited to boolean, scalar float/integer, integer
-2D, float 2D/3D and float/byte color types. Other types fail closed. Rigging,
-segmentation grouping, animation transfer and multi-object replacement
-need separate policies. Supplying one explicit result object does not classify
+2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
+command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policies
+cover segmented parts and compatible skins; animation transfer and multi-object
+replacement are unsupported. Supplying one explicit result object does not classify
 other returned helper objects, maps or alternate meshes.
 
 ## Transaction and ownership
@@ -99,8 +99,7 @@ never removes the imported result or a mesh adopted by another object.
 Fingerprinting is linear and runs on the main thread. A limit of 2,000,000 combined
 vertices, edges, loops, polygons and generic-attribute entries bounds each pass;
 this is a work cap, not a latency guarantee. Large meshes and unsupported data
-require another application path. Installed-ZIP tests use local synthetic meshes;
-no OAuth or paid cloud acceptance is implied.
+require another application path.
 
 ## Explicit saved GLB import
 
@@ -133,7 +132,7 @@ below. In-place edits and Film shots still accept only `model/gltf-binary`.
 which Film shots use, rehashes the exact local receipt, writes a private snapshot
 and imports into a disposable scene with scene extras and selection changes
 disabled. The saved-job command reaches the same importer through the package
-path below, so its GLB preflight now runs before the claim. Publication
+path below, so its GLB preflight runs before the claim. Publication
 moves only the new objects into a new destination group. Embedded images remain
 packed after temporary files are removed. Failures remove only newly created
 data and verify the final datablock sets, including staging scenes and shape keys.
@@ -158,9 +157,7 @@ again. Completed jobs can import another saved model under a separate local
 claim after fresh approval. An interrupted original or local `applying` claim
 cannot be replayed.
 Receipt-only retry saves known success without importing another model, and
-session shutdown releases that retry handle. This remains partial #99 work:
-provider-specific edit contracts, rig/animation transfer and edit-specific recovery
-are not established by a successful new-object import.
+session shutdown releases that retry handle.
 
 ### Native undo for saved model imports
 
@@ -217,15 +214,13 @@ that upstream UI writes outside the import context. Imported actions and NLA
 tracks remain on their new owners. Supported Blender 5.0/5.1/5.2 importers multiply
 seconds by `fps * fps_base`; the disposable scene uses reciprocal `fps_base` so
 clips match the destination's effective `fps / fps_base` without changing its
-settings. Native coverage includes a fractional frame rate, deformation, multiple
-clips, UI-list restoration and complete cleanup after failed publication.
+settings.
 
 This imports a complete new character. The separate [RIG policy](#attach-a-returned-rig)
 can attach a compatible returned skin to a captured static mesh; retargeting an
 existing rig remains outside this import command. This new-group command records
 the same [native Undo steps](#native-undo-for-saved-model-imports) as a static
-import. See [interaction evidence](ui/saved-3d.md#animated-model-import-interaction)
-for the exact packaged desktop check and its limits.
+import. See [animated import interaction](ui/saved-3d.md#animated-model-import-interaction).
 
 ## Saved 3D package classification
 
@@ -319,9 +314,9 @@ and `parent_id` (`AssetMetadata.parent_id`). No issue tracks that follow-up yet.
 Until it lands, every stored manifest uses the stricter rules without lineage;
 `members_from_results` accepts lineage only as an explicit mapping, so parent
 binding and generated-output ordering apply only when a caller supplies it.
-Undocumented provider file names are never used. Tests cover synthetic manifests and
-files only. Provider package shapes, SPZ versions and glTF delivery need live
-evidence, and this primary/alternate ordering is not a #99 edit policy.
+Undocumented provider file names are never used. Provider package shapes, SPZ
+versions and glTF delivery need live evidence, and this primary/alternate
+ordering is not a #99 edit policy.
 
 ## Saved model package import
 
@@ -394,16 +389,6 @@ downloaded `model/glb`, Autodesk FBX `application/*` and `model/mtl` results kee
 `.glb`, `.fbx` and `.mtl` local name extensions instead of `.bin`; saved names never
 change, and import uses canonical snapshot names, not local ones.
 
-Native tests build an OBJ with its MTL and PNG, an FBX with an embedded texture, a
-separate glTF with its buffer and a mesh PLY with Blender's own exporters, then
-rename them to the provider's legacy package convention. They cover placement,
-preserved selection, packed images, dropped maps, Non-Color OBJ data maps with the
-normal map through a Normal Map node at full strength or at a saved `-bm` value,
-external FBX textures, a disabled
-FBX add-on, splat PLY and SPZ refusal, changed bytes before the claim, windowless
-callers, rollback and every member in reuse claims. Provider package shapes still
-need live evidence.
-
 ## Saved Gaussian splat import
 
 SPZ, `.splat` and PLY import units are read by a worker before any claim. The
@@ -470,24 +455,9 @@ and each splat becomes one sphere. Denser files are thinned evenly. MCP
 `spz_extensions` until undo history changes, and the native job row shows
 **Shown as points: K of N splats**. When an SPZ header declares extensions, which
 can include a coordinate-system record that is not read, the row also says
-**This SPZ declares extensions; check its axes**.
-
-Installed tests decode synthetic SPZ v2 and v3, 3DGS PLY and `.splat` files on a
-worker thread and check point counts and thinning, both axis conventions, the
-bottom center at the cursor, activated colour, opacity and radius, the evaluated
-point cloud and its material, the radius cap and Point scale, fresh data beside an
-existing **Scenario Splat** material and node group, exact rollback, main-thread
-refusal on workers, a Cycles CPU render on every platform and an EEVEE render on
-macOS. Runtime journeys cover UI and MCP review, options, revision, a mesh PLY
-and a splat PLY in one job, SPZ v4 and changed-file refusals before any claim, a
-busy local slot (refusing SPZ in MCP and the native dialog, importing a mesh PLY
-and stopping a splat PLY), the extension notice, reuse claims, unchanged request,
-paid submission and download counts, and receipt-only retry. The installed suite
-passed on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1; Linux and Windows CI have
-not run these tests yet. In isolated macOS arm64 probes, a 1,000,000-record `.splat` decoded in about 0.3 s and its points were
-built in about 0.04 s on Blender 5.0.1, 5.1.2 and 5.2.1; one run each, not a
-guarantee. Provider files, default axes, viewport performance at 1,000,000 or
-more points and physical desktop review need live evidence.
+**This SPZ declares extensions; check its axes**. Provider files, default axes,
+viewport performance at 1,000,000 or more points and physical desktop review need
+live evidence.
 
 ## Captured source and verified saved-mesh command
 
@@ -533,8 +503,8 @@ categories, including helper actions, while retaining existing data, live
 dependencies and fake-user ownership. Groups are released before their images.
 Animated GLBs are rejected by preflight before import. Morph targets can decode,
 but the mesh policy rejects their shape keys; removing the imported mesh also
-removes its keys. Native tests require exact datablock restoration before a
-confirmed failure permits a newly reviewed local attempt.
+removes its keys. A confirmed failure permits a newly reviewed local attempt only
+after exact datablock restoration.
 
 On failure after replacement, the command attempts guarded rollback before any
 new-data cleanup. It permits a known local failure only after both the exact
@@ -549,13 +519,8 @@ ready/confirmed-failed jobs use their recovered claim; completed jobs use a
 separate `mesh_edit` local claim whose destination identifies the source object.
 `retry_model_receipt` records only known success, never another replacement.
 See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
-
-Installed synthetic tests cover remesh and exact-topology UV, parented/scaled
-sources, shared originals, packed materials, explicit node-transform mapping,
-selection, source changes, multi-scene/multi-mesh rejection, rollback failure,
-separate local reuse and persistence-only recovery. Provider coordinate contracts
-and remaining provider/retargeting acceptance stay open under #99.
-There are no new service calls or live/provider acceptance claims in this command.
+The command makes no service request. Provider coordinate contracts and
+retargeting stay open under #99.
 
 ## Saved mesh edit approval
 
@@ -563,7 +528,8 @@ There are no new service calls or live/provider acceptance claims in this comman
 `purpose: mesh_edit` review one saved GLB against the currently active
 mesh. The review names the scene, source and selected asset. `REMESH` replaces
 geometry, UVs and mesh materials; `UV` replaces only active UVs and requires
-exact indexed topology and positions. **Keep original** defaults to enabled.
+exact indexed topology and positions; `RETEXTURE`, `PARTS` and `RIG` are
+described below. **Keep original** defaults to enabled.
 
 **Scene coordinates** (`WORLD`) maps imported positions through the captured
 source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
@@ -599,7 +565,7 @@ provider retexture/rig contracts, semantic parts classification or end-to-end Ed
 **Apply to captured source (N)** and MCP `prepare_result_application` with
 `purpose: mesh_source` use the original object exported for the generation's
 single captured 3D input. Current selection is ignored. The confirmation still
-names the target, selected result, remesh/UV policy, coordinates and Keep original
+names the target, selected result, edit policy, coordinates and Keep original
 choice before any mutation. More than one input binding or source object is
 ambiguous and cannot select an original target automatically.
 
@@ -691,13 +657,8 @@ and captured-source ownership. The transient `mesh_edit` status is cleared befor
 RNA references and is not rebound by name after Redo. Pending approvals cannot
 survive history changes;
 reuse requires a fresh explicit destination review. Saving/reopening a blend file
-does not restore undo history or source authority from stored names.
-
-Installed native tests exercise actual undo/redo for all three policies, retained
-copies, materials, stale approvals and unchanged durable records/request counts.
-They force checkpoint eligibility in the background runner while retaining the
-real native history operators. Separate desktop proof is recorded in
-[UI interaction evidence](ui/saved-3d.md#saved-mesh-undo-interaction).
+does not restore undo history or source authority from stored names. See
+[undo interaction](ui/saved-3d.md#saved-mesh-undo-interaction).
 
 ## Apply static parts
 
@@ -730,14 +691,8 @@ group without changing durable job state or issuing service requests.
 Known mesh validation or application failures pause delivery with a message to
 inspect the saved GLB, source and edit policy. Uncertain outcomes keep their
 receipt-recovery warning and never authorize another application automatically.
-
-The exact packaged ZIP passed 699 installed native tests on each of macOS arm64
-Blender 5.0.1, 5.1.2 and 5.2.1. Synthetic cases cover transformed/parented sources,
-existing children, shared originals, mapping, count/component limits, empty-anchor
-rejection, publication/cleanup failures, uncertain rollback, captured-source
-UI/MCP application and native history. See [desktop evidence](ui/saved-3d.md#parts-application-interaction).
-Provider alignment, semantic part classification, rigs/animation and integrated
-release acceptance remain separate work.
+See [parts interaction](ui/saved-3d.md#parts-application-interaction). Provider
+alignment and semantic part classification remain separate work.
 
 
 ## Attach a returned rig
@@ -778,10 +733,4 @@ original together. Receipt-only recovery records success without attaching again
 UI **Attach rig** and MCP `mesh_policy: RIG` use the same captured target and
 optional original-export target guards. Session status exposes `mesh_edit.rig`;
 history invalidation retires that status before dereferencing stale Blender data.
-
-Installed synthetic tests cover parented/nonuniformly scaled sources, retained
-appearance/attributes, bone deformation, invalid weights/modifiers/constraints,
-morph/topology rejection, failed cleanup rollback, captured-source UI/MCP,
-undo/redo and failed-receipt recovery without new requests. Provider coordinate,
-vertex-order and returned-skin contracts still need acceptance; this is not full
-#99 or release completion.
+Provider coordinate, vertex-order and returned-skin contracts remain under #99.

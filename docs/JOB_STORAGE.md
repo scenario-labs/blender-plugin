@@ -1,10 +1,9 @@
 # Scoped job intent storage
 
 [`JobStore`](../scenario/core/jobs/store.py) is the local persistence for shared
-jobs, delivered under [#65](https://github.com/scenario-labs/blender-plugin/issues/65).
-The store itself does not start workers, call Scenario or modify Blender. The
-shared coordinator records every UI and local MCP job in it before paid dispatch,
-and the prototype registry is kept only for read-only local records.
+jobs. The store itself does not start workers, call Scenario or modify Blender.
+The shared coordinator records every UI and local MCP job in it before paid
+dispatch, and the prototype registry is kept only for read-only local records.
 
 ## Identity and ownership
 
@@ -40,14 +39,12 @@ No raw API credential is written by this binding. The local
 key is not encryption, and losing it prevents recreating the old scope even with
 the original credentials. Different installation keys produce different scopes.
 
-The runtime retires this store selection together with its catalog when credentials
-change. `ensure_job_store()` reopens the selected local history after a runtime
-reset without starting workers or replaying submissions. Storage failure blocks
-creation of the catalog context too. Explicit local MCP recovery inspection and
-prepared-intent cancellation lazily activate the selected
-[JobSession](BLENDER_JOB_CONTEXT.md). Image UI/MCP submission now persists new
-intents through that same session before paid SDK dispatch. Remaining lanes and
-recovery UI need integration; prototype records are not imported.
+The runtime retires this store selection together with its catalog when the
+credentials or project change. `ensure_job_store()` reopens the selected local
+history after a runtime reset without starting workers or replaying submissions.
+Storage failure blocks creation of the catalog context too. The first job command
+lazily activates the selected [JobSession](BLENDER_JOB_CONTEXT.md); prototype
+records are not imported.
 
 `JobIntent` freezes the local request ID, model/workflow target (or the fixed `prompt`/`translate` target for prompt helpers), payload SHA-256,
 server quote SHA-256, exact quoted cost as a decimal string, and originating
@@ -234,27 +231,15 @@ caller can decide explicit repair; an unreceipted published file is not implicit
 trusted after a crash. Do not promote an interrupted `applying` record to applied
 or retry it automatically: the scene may already have changed.
 
-## Validation and remaining integration
-
-The unit suite exercises reopen, precise cost/identity preservation, all scope
-components, stale and concurrent writers, invalid transitions, failed commit
-rollback, process exit before commit, and corrupt/incompatible databases. An
-installed-ZIP baseline test verifies SQLite and the store inside Blender's Python.
-
-The shared coordinator now uses this store for UI and MCP jobs; the prototype
-registry is kept only for read-only local records (see the
-[runtime map](architecture/runtime.md#local-prototype-records)). Live
-cancellation of an `inference` job continues in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
-
+## Prompt Spark intents
 
 Prompt Spark and translation intents use operations `prompt` and `translate`
-respectively, and the same prepared,
-submitting, uncertain and known-remote lifecycle. These operations add no dedicated database fields; the current storage version
-is documented above. Older readers reject the new operation
-instead of interpreting it as model/workflow intent. Restart can inspect and
-refresh a known job ID; it cannot recover spending authorization or replay the
-request from the stored hashes. Prompt text/results are not persisted here.
+respectively, and the same prepared, submitting, uncertain and known-remote
+lifecycle. These operations add no dedicated database fields. Readers that do not
+know them reject them instead of interpreting them as model/workflow intent.
+Restart can inspect and refresh a known job ID; it cannot recover spending
+authorization or replay the request from the stored hashes. Prompt text/results
+are not persisted here.
 
 
 ## Durable local result reuse
@@ -278,7 +263,7 @@ and increments the job revision in one SQLite write transaction. Competing owner
 cannot both claim the same review. The original intent, exact quote, remote ID,
 results, download receipts, first application origin and generation state remain
 unchanged. Claims do not verify files or establish user permission: the shared
-coordinator and eventual UI/MCP caller must provide those checks.
+coordinator and the UI/MCP caller must provide those checks.
 
 `finish_local_application` records only known success (`applied`) or confirmed
 no-change/full rollback (`failed`) against that same unfinished identity and
@@ -421,8 +406,8 @@ restarted display records remain generic model jobs and show the quoted target
 model. Saved `.blend` properties added by later interface work are separate from
 this database, and the upload database keeps its own version.
 
-This is not yet a frozen release format. Three open maintainer decisions would
-add persisted fields if adopted; each is deferred rather than guessed here:
+Three open maintainer decisions would add persisted fields if adopted, each in a
+new schema version with its own upgrade rather than a new reading of existing rows:
 
 - An intent-level panorama purpose, needed only if live skybox assets lack the
   `metadata.type` that projection depends on
@@ -437,12 +422,10 @@ Live skybox results must also confirm `metadata.type`, `originalMimeType`, an
 `originalFileUrl` host inside the storage policy and a `Content-Length` on the
 original's storage response; see
 [declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection).
-Once candidate builds have written schema 10 stores, adopting any of these needs
-its own version and upgrade rather than a new reading of schema 10 rows.
 
 ### Result source and projection
 
-Every `ResultAsset` now records `source` and `projection`; current records require
+Every `ResultAsset` records `source` and `projection`; current records require
 both keys, even when they hold the defaults. `source: asset` is the asset's own
 file (`url`). `source: original` is a server-declared original (`originalFileUrl`)
 saved instead of an image preview. In schema 10 only the OpenEXR labels
@@ -519,13 +502,12 @@ unknown fields, booleans, numeric strings and non-finite strengths rather than
 coercing them, and the description carries no scope or credential identity.
 
 The Image and Render Image forms use the owner through
-[`trained_defaults`](../scenario/blender/trained_defaults.py) on the main thread
-([#97](https://github.com/scenario-labs/blender-plugin/issues/97)). It reads each
-lane's state once per owner `context_id` into a cache that drawing only reads, so
-a default another Blender session saves later is read after the selection changes
-or a write is refused. **Save** and **Clear** pass the `context_id` and revision
-drawn on their buttons, so a stale or foreign review is refused and the cache is
-read again. Only `stack` and `composition` defaults are written. A form with no
+[`trained_defaults`](../scenario/blender/trained_defaults.py) on the main thread.
+It reads each lane's state once per owner `context_id` into a cache that drawing
+only reads, so a default another Blender session saves later is read after the
+selection changes or a write is refused. **Save** and **Clear** pass the
+`context_id` and revision drawn on their buttons, so a stale or foreign review is
+refused and the cache is read again. Only `stack` and `composition` defaults are written. A form with no
 explicit choice in the scope takes its lane default once the routes check against
 fresh descriptions and the form lists its base; otherwise its price stays blocked
 with the reason, never falling back to the base model. An unreadable row is
@@ -575,8 +557,7 @@ Scenario re-encodes every non-MP3 audio output to a 128 kb/s MP3 asset file and
 keeps the model's file as the asset's original. Saving that MP3 lost quality and
 added encoder padding: a 2.5 s WAV cut came back about 44 ms longer. Schema 11
 lets an audio result record `source: original` with media type `audio/wav` or
-`audio/x-wav`, so the extension saves the WAV instead
-([#472](https://github.com/scenario-labs/blender-plugin/issues/472)). See
+`audio/x-wav`, so the extension saves the WAV instead. See
 [declared originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
 for how the file is chosen and downloaded.
 

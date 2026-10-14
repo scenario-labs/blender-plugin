@@ -49,8 +49,7 @@ before each request. One batch reads its metadata once. The published wheel's
 documents the optional `thumbnail` and `preview` objects, each with an `assetId`
 and a signed `url`; see the
 [asset retrieval contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve).
-The record must match the saved asset identity and MIME type. Signed URLs stay in
-memory and are never written, logged or returned in errors.
+Signed URLs stay in memory and are never written, logged or returned in errors.
 
 Using one method for every batch size gives an absent asset one meaning. An
 asset the server omits, for example one deleted after the job, is treated like
@@ -550,47 +549,20 @@ See the [job context contract](BLENDER_JOB_CONTEXT.md#saved-result-preview-owner
 
 ## Boundaries
 
-These are offline contracts with synthetic SDK and storage fixtures. Which asset
-kinds receive server thumbnails or previews, their sizes and dimensions, signed
-URL lifetime and hosts, where a first request may redirect, their timing after a
-job succeeds, and how `get_bulk` reports a deleted asset are not established by
-live evidence. Neither are the review assets real workflow flows list, nor
-whether their `url` and declared sizes are as documented for results. The
-installed-ZIP native tests decode synthetic WAV, MP3, Ogg, FLAC, Matroska AAC
-and MP4 AAC files in the offline child and exercise its failures, cancellation
-and timeout. They passed on Blender 5.0.1, 5.1.2 and 5.2.1 locally on macOS
-arm64 and in hosted CI on Linux x64 and Windows x64 runners. Provider audio
-files, child start-up time and antivirus behavior on real Windows and Linux
-desktops, macOS x64 and sandboxed Blender packages are not covered. The timing
-figures above are macOS arm64 measurements only. Player copies and the Play and
-Waveform controls have installed native tests with patched players. Partial
-private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video's
-private copy in the system player and in Blender's animation player at UI scale
-1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0; Play audio and
-the waveform's desktop Cancel and Retry were not exercised. A later private
-check there confirmed that the system player opened the private read-only copy
-and that Blender's animation player started without `SCENARIO_`, `PYTHON` or
-proxy names in its environment; real Windows and Linux launchers remain
-unverified. Play audio has installed native tests on macOS arm64 Blender 5.0.1,
-5.1.2 and 5.2.1 that start real children: the installed worker runs with a
-recording output in place of a sound device on synthetic WAV, MP3, Ogg, FLAC,
-ADTS AAC and M4A files, and unmodified on Blender's None output. They cover
-playback to its end, Stop, the lifeline, replacement by a second Play, late
-copies, undecodable and too long audio, a missing executable, the start
-timeout, a file load, retirement and unregistering, and drawing that neither
-starts nor stops a child. A local check on the same three versions played a
-digitally silent WAV through the unmodified worker on the CoreAudio output, so
-nothing was audible. No human listening check, Windows or Linux output, or
-hosted run of these tests is recorded yet. Automatic previews have installed
-native tests on Blender 5.0.1, 5.1.2 and 5.2.1 with synthetic images and a
-synthetic transport, drawn through
-recording layouts. The same desktop passes showed their tiles loading and ready
-in Jobs and ready in Generations and Studio, and the last one showed **Retry
-preview (N)** preparing a still again after its cached file was removed during
-preparation, in the sidebar at UI scales 1.0 and 2.0; Online Access disabled and
-Studio at UI scale 2.0 were not exercised there. Local MCP inspection has
-installed native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 with the
-same kind of synthetic fixtures and the real offline audio decoder. Clip display
-is [#445](https://github.com/scenario-labs/blender-plugin/issues/445); the open
-desktop preview checks, including of the review previews, are in
+These are offline contracts with synthetic SDK and storage fixtures. Live
+evidence does not establish which asset kinds receive server thumbnails or
+previews, their sizes and dimensions, signed URL lifetime and hosts, where a
+first request may redirect, their timing after a job succeeds, or how `get_bulk`
+reports a deleted asset; nor which review assets real workflow flows list, or
+whether their `url` and declared sizes are as documented for results.
+
+Installed native tests cover the offline envelope decoder, player copies, the
+Play, Play audio and Waveform controls with patched players or a recording
+output in place of a sound device, automatic preview tiles drawn through
+recording layouts, and local MCP inspection, all with synthetic media. They do
+not cover provider audio files, child start-up time, antivirus behavior, real
+players and sound output on Windows and Linux desktops, macOS x64 or sandboxed
+Blender packages, and the timing figures above are macOS arm64 measurements.
+Human listening through Play audio and the open desktop preview checks,
+including of the review previews, are in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).

@@ -5,10 +5,10 @@
   "title": "docs/RESULT_TRANSFERS.md evidence",
   "evidence": {
     "path": "docs/RESULT_TRANSFERS.md",
-    "coverage": "inherited",
-    "reviewed_at": "2026-09-26",
-    "reviewed_revision": "42883c40e1071c15f163f87102668b20d8bdf982",
-    "limits": "Merged on 2026-10-14 from 15 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "coverage": "source-reviewed",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the downloader, result commands, metadata, preview and splat decoder code. No live CDN, HDRi original, WAV original or splat provider check and no desktop interaction; live service observations in the document were not repeated.",
     "sources": [
       "docs/RESULT_TRANSFERS.md",
       "pyproject.toml",

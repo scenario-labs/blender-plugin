@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/architecture/workflows-and-library.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-09-24",
-    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
-    "limits": "Split from docs/architecture/runtime.md on 2026-10-14 without a new review. It keeps that record's date, revision and coverage; its sources come from the earlier per-topic records about this guide's subjects.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Source-reviewed against the implementation. The workflow upload and binding lifecycle was spot-checked, not traced through every undo and retirement path. No live Scenario call, native Blender run or desktop interaction.",
     "sources": [
       "docs/architecture/runtime.md",
       "scenario/blender/asset_organization.py",
@@ -86,8 +86,6 @@
       "tests/unit/test_upload_store.py",
       "tests/unit/test_upload_transfers.py",
       "tests/unit/test_workflow_decisions.py",
-      "tools/desktop_review.py",
-      "tools/desktop_review_scene.py",
       "tools/gen_mcp_docs.py",
       "uv.lock"
     ]

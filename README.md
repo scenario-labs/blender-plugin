@@ -12,13 +12,13 @@
   <a href="https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin"><img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/scenario-labs/blender-plugin?label=openssf+scorecard&style=flat"></a>
 </p>
 
-**Experimental.** Bring Scenario image, video, 3D, PBR material and audio generation
-into Blender. Use scene captures and selected meshes as inputs, explore camera
-moves, and turn a written scene description into a greybox layout with Blockout.
-A compact composer, sidebar and local MCP server provide access from your scene.
-This is a Python extension with pinned SDK dependency wheels, licensed
-GPL-3.0-or-later. Read the [known limitations](docs/KNOWN_LIMITATIONS.md) before
-relying on a workflow; shared runtime and interface adoption remain in progress.
+**Experimental.** Bring Scenario image, video, 3D, PBR material, audio and 360
+environment generation into Blender. Use scene captures and selected meshes as
+inputs, explore camera moves, and turn a written scene description into a greybox
+layout with Blockout. A compact composer, sidebar, expanded Studio view and local
+MCP server provide access from your scene. This is a Python extension with pinned
+SDK dependency wheels, licensed GPL-3.0-or-later. Read the
+[known limitations](docs/KNOWN_LIMITATIONS.md) before relying on a workflow.
 
 ![The Scenario sidebar with all creation tabs and a clearly labelled offline Image example](docs/images/panel-image.png)
 
@@ -101,15 +101,18 @@ The [user guide](docs/USER_GUIDE.md) describes each lane and its controls.
 
 - [Image](docs/USER_GUIDE.md#image): generate from text or reference images and use results as textures or references.
 - [Video](docs/USER_GUIDE.md#video): generate from prompts, images or scene playblasts.
-- [3D](docs/USER_GUIDE.md#3d): generate meshes or apply provider edit tasks to an exported selection. Safe in-place editing remains incomplete.
+- [3D](docs/USER_GUIDE.md#3d): generate meshes, run provider edit tasks on a selected mesh and [apply a saved edit](docs/USER_GUIDE.md#apply-a-saved-mesh-edit) back to it.
 - [Materials](docs/USER_GUIDE.md#materials): generate saved PBR texture sets and apply them explicitly to a chosen mesh material slot.
 - [Audio](docs/USER_GUIDE.md#audio): generate speech, music or sound effects and add results to the sequencer.
 - [Render Image](docs/USER_GUIDE.md#render-image): use a scene capture and look references to produce a still.
 - [Render Video](docs/USER_GUIDE.md#render-video): work with timeline captures, a camera path planner and style references.
 - [Blockout](docs/USER_GUIDE.md#blockout): turn a scene description into a greybox layout, then refine or rebuild it.
+- [Environment](docs/USER_GUIDE.md#environment): generate 360 panoramas, HDRIs and upscales, then apply them to the scene World.
 - [Prompt tools and model picker](docs/USER_GUIDE.md#the-form): browse models and prepare prompts; prompt helpers can spend credits.
 - [Floating composer](docs/USER_GUIDE.md#the-floating-composer): access the current lane from the viewport.
 - [Generations](docs/USER_GUIDE.md#generations): inspect local results and available project history.
+- [Expanded Studio view](docs/USER_GUIDE.md#expanded-studio-view): run workflows and browse or organize Library assets.
+- [Film tasks](docs/USER_GUIDE.md#film-tasks): turn a JSON recipe into shots, a timeline, a review scene and an exported video.
 
 ## Agents (MCP)
 
@@ -142,13 +145,14 @@ Blender stores saved credentials in its preferences, not an OS keychain.
 ## What leaves your machine
 
 Cost previews send prompts and parameters to `https://api.cloud.scenario.com`
-while you edit, before Generate. Generation and prompt tools can upload files,
-scene captures or exported meshes and spend credits. Catalogs and thumbnails
-load from Scenario; cloud history loads when requested. Saved keys, prompts,
-job state and media remain in Blender preferences, extension storage or output
-files. Connected local agents can read your scene and request paid work using
-your account. Read [Privacy and data handling](docs/PRIVACY.md) for destinations,
-storage, clipboard use and current limits.
+while you edit, before Generate. Upload reference sends files, scene captures or
+exported meshes; generation and prompt tools spend credits. Catalogs, thumbnails
+and result previews load from Scenario; cloud history and Library assets load
+when requested. Saved keys, prompts, job state and media remain in Blender
+preferences, extension storage or output files. Connected local agents can read
+your scene and request paid work using your account. Read
+[Privacy and data handling](docs/PRIVACY.md) for destinations, storage, clipboard
+use and current limits.
 
 ## Documentation
 
@@ -191,8 +195,8 @@ The `assets check` and `assets optimize` commands share the
 
 Native CI covers Blender 5.0.1, 5.1.2 and 5.2.1 on Linux and Windows for pull
 requests. A separate informational workflow schedules Blender 5.1.2 checks on
-macOS Apple silicon and Windows x64 weekly; see [run evidence and maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)
-for its first hosted acceptance and failure tracking.
+macOS Apple silicon and Windows x64 weekly; see [matrix maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)
+for failure tracking.
 
 ## Sibling integrations
 

@@ -6,16 +6,14 @@
   "evidence": {
     "path": "docs/UI_STYLE.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-09-23",
-    "reviewed_revision": "cdc8775a4a074a4997eca84cec2699e0dbb16e8c",
-    "limits": "Merged on 2026-10-14 from 74 topic records without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Sections were checked against implementation changes made after they were written, with spot checks of labels, constants and helpers; not a claim-by-claim review. Recorded installed-test and desktop evidence was not rerun. No live Scenario call or desktop interaction.",
     "sources": [
       "docs/images/project-scope-default.png",
       "docs/images/project-scope-environment.png",
       "docs/images/project-scope-project-a.png",
       "docs/images/project-scope-viewport.png",
-      "docs/images/render-spark-price.png",
-      "docs/images/render-spark-result.png",
       "scenario/blender/capture.py",
       "scenario/blender/composer/__init__.py",
       "scenario/blender/composer/draw.py",
@@ -24,9 +22,8 @@
       "scenario/blender/composer/state.py",
       "scenario/blender/composer/text_field.py",
       "scenario/blender/film.py",
-      "scenario/blender/film_composition_controls.py",
-      "scenario/blender/film_scene_controls.py",
       "scenario/blender/generation.py",
+      "scenario/blender/icons.py",
       "scenario/blender/job_recovery.py",
       "scenario/blender/job_session.py",
       "scenario/blender/label_wrap.py",
@@ -54,7 +51,6 @@
       "scenario/blender/trained_defaults.py",
       "scenario/blender/trained_models.py",
       "scenario/blender/trained_section.py",
-      "scenario/blender/workflow_uploads.py",
       "scenario/core/api/model_filter.py",
       "scenario/core/api/sdk_adapter.py",
       "scenario/core/api/sdk_catalog.py",
@@ -102,7 +98,6 @@
       "tests/blender/test_studio_view.py",
       "tests/blender/test_trained_models.py",
       "tests/blender/test_trained_section.py",
-      "tests/blender/test_workflow_uploads.py",
       "tests/fixtures/patina-copper-512/job.json",
       "tests/unit/test_capability_status.py",
       "tests/unit/test_catalog_delivery.py",
@@ -117,9 +112,7 @@
       "tests/unit/test_job_strip.py",
       "tests/unit/test_model_filter.py",
       "tests/unit/test_sdk_catalog.py",
-      "tests/unit/test_trained_offers.py",
-      "tools/desktop_review.py",
-      "tools/desktop_review_scene.py"
+      "tests/unit/test_trained_offers.py"
     ]
   }
 }

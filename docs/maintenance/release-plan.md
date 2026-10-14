@@ -28,12 +28,10 @@ The candidate must demonstrate:
 - A tested installed ZIP, required dependency licenses, truthful user guidance,
   declared native support and Blender-native update discovery/install.
 
-For 0.10.0, the maintainer requires completion of all retained generation lanes
+For 0.10.0, the maintainer required completion of all retained generation lanes
 before release: Image, Video, 3D, Materials, audio, render/edit lanes and Film
-generation paths. Image-only acceptance does not satisfy this gate. Split runtime,
-input preparation and result-application integration into reviewable PRs; keep
-#70 on hold until their combined native and service acceptance is complete.
-This does not expand the scope to a general Film editor.
+generation paths. Image-only acceptance did not satisfy that gate, and it did
+not expand the scope to a general Film editor.
 
 Film and unaccepted provider/capability paths retain explicit experimental or
 unavailable status. No broad capability acceptance follows from importing a
@@ -59,11 +57,9 @@ remain the source of acceptance; this sequence does not duplicate their scope.
 | 11 | Hosted validated extension repository and native update actions | #37, #56 |
 | 12 | Exact candidate ZIP, scoped live smoke, native desktop/platform acceptance and release verification | #32, #36, #40, #42, #45, #68 |
 
-The existing cancellation, transfer, origin, upload, schema, mesh and World
-primitives are merged. See the [runtime map](../architecture/runtime.md) for what
-is connected today; the plan is not a claim that the active prototype has already
-been replaced. Mechanical normalization and source provenance must remain
-reviewable when adopting retained source.
+See the [runtime map](../architecture/runtime.md) for what is connected today.
+Mechanical normalization and source provenance must remain reviewable when
+adopting retained source.
 
 ## Evidence and publication
 

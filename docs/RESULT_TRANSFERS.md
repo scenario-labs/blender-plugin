@@ -105,8 +105,10 @@ and `cdn.scenario.com`, used by the official
 The policy never derives hosts from incoming URLs. Download permission uses the
 catalog's worker-safe online-access event, including credential retirement.
 
-Active Image UI/MCP jobs use SDK `jobs.retrieve` and `assets.retrieve` through the
-shared adapter, then this credential-free downloader. The main-thread pump verifies
+Shared model and workflow jobs, including Film tasks and recovered cloud jobs, use
+SDK `jobs.retrieve` and `assets.retrieve` through the shared adapter, then this
+credential-free downloader; generated text uses the
+[full prompt text](#full-prompt-text) reader instead. The main-thread pump verifies
 receipts before importing supported PNG/OpenEXR snapshots. Transfer and application
 failures stop the pipeline and preserve saved results; they cannot repeat the paid
 submission. Synthetic native tests exercise the real downloader with mocked HTTPS
@@ -138,19 +140,17 @@ large panorama, provider format guarantees or HDRI originals: a live HDRi run
 must also confirm that the flag leaves `originalMimeType` and `originalFileUrl`
 unchanged.
 
-## Integration still required
+## Recovery boundaries
 
-Other generation lanes remain unintegrated. Explicit recovered Image application
-uses a separately approved destination and reverified local receipts.
-Image UI/MCP controls can resume downloads and reconcile interrupted receipts;
-neither action grants permission to import into a restarted scene.
-The [coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
-now orchestrates saved manifests/receipts and retrieves fresh URLs for explicit
-download retries through the SDK. Explicit interrupted-download recovery now verifies committed receipts under a
-cooperating cross-process lock; unreceipted files and staging cleanup still need
-separate review. Those commands must bind the trusted asset response and
-receipt to the original account/project/job/target. Live signed-storage acceptance
-and supported OS/filesystem behavior remain separate from offline contracts.
+Saved-job controls and MCP can resume downloads and reconcile interrupted
+receipts; neither grants permission to apply a result in a restarted scene, which
+needs a separately approved destination and reverified local receipts. The
+[coordinator](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
+orchestrates saved manifests/receipts, retrieves fresh URLs for explicit retries
+through the SDK and owns the interrupted-download recovery limits. Those commands
+must bind the trusted asset response and receipt to the original
+account/project/job/target. Live signed-storage acceptance and supported
+OS/filesystem behavior remain separate from offline contracts.
 
 SDK identifier-validation failures in result metadata retrieval become sanitized
 `ResultError` exceptions without changing the saved manifest or starting downloads.
@@ -175,7 +175,7 @@ does not qualify. An explicit `properties.hasFullPreview=true` permits the whole
 preview; otherwise a bounded full-body read must succeed. There is no fallback
 to a truncated prefix. Integral numeric byte counts are normalized to integers
 before transfer. This reader returns text and leaves scene application to its
-caller; it does not adopt the prototype Blockout path on its own.
+caller.
 
 ## Texture result semantics
 
@@ -255,13 +255,12 @@ them only after its own OpenEXR container and color primaries checks; an origina
 whose primaries it refuses stays saved, and the JPEG preview is not kept as a
 fallback. Image import accepts `image/x-exr` but not yet `image/aces`, so an
 ACES-labelled original is offered for World application and inspection only.
-The offline and installed-ZIP tests use mocked storage responses. A live HDRi run
+The offline and installed-ZIP tests use mocked storage responses; a live HDRi run
 must still confirm `metadata.type`, the original's host, size, `Content-Length`
-header and color labelling before the release freezes this behavior. An
-`originalFileUrl` host outside the storage policy, or an original served without
-`Content-Length`, makes each such job end in `download_failed`, where earlier
-builds saved the JPEG preview; that needs a reviewed storage policy or transport
-change, never a host derived from another URL or an unbounded body.
+header and color labelling. An `originalFileUrl` host outside the storage policy,
+or an original served without `Content-Length`, makes each such job end in
+`download_failed`; that needs a reviewed storage policy or transport change,
+never a host derived from another URL or an unbounded body.
 
 ## Local Film media measurement
 
@@ -342,15 +341,9 @@ set, the import must warn that the file may declare other storage axes.
 
 The decoders use standard-library bytes slicing, `bytes.translate` tables and
 `array` instead of numpy, which the development lock does not include and which
-Blender 5.0 and 5.1+ bundle in different major versions. In isolated Blender
-5.0.1, 5.1.2 and 5.2.1 profiles on macOS arm64, synthetic files decoded as
-follows: a random 2,000,000-point SPZ v3 to 1,000,000 points in about 0.4 s, a
-1,000,000-row 3DGS PLY with 62 float columns in about 1.4 s and 1,000,000 .splat
-records in about 0.4 s. Building a 1,000,000-vertex mesh with colour, opacity and
-radius attributes from the read-only views took under 0.05 s. These timings record
-that run; they are not a performance guarantee. On Blender 5.0.1 an attribute
-reference obtained before adding another attribute stopped receiving writes, so a
-builder must look attributes up by name after adding them.
+Blender 5.0 and 5.1+ bundle in different major versions. In Blender 5.0, an
+attribute reference obtained before adding another attribute stops receiving
+writes, so a builder must look attributes up by name after adding them.
 
 The prototype `read_spz` now wraps the SPZ decoder. It rejects versions 1 and 4
 and files with no points or more than 20,000,000 points, keeps at most 2,000,000

@@ -1,7 +1,7 @@
 # Quote-bound job commands
 
 [`JobCoordinator`](../scenario/core/jobs/coordinator.py) implements synchronous
-commands for the shared runtime under #65. It connects the scoped
+commands for the shared runtime. It connects the scoped
 [SDK adapter](SDK_ADOPTION.md) to the [intent store](JOB_STORAGE.md). It has no
 worker pool, timer, UI ownership or bpy calls. UI/MCP model quote and submission
 use these commands through [ModelJobs](../scenario/blender/model_jobs.py).
@@ -20,7 +20,8 @@ approval before the render quote.
    [credential-bound local store](JOB_STORAGE.md#identity-and-ownership) supplies
    the same local account pseudonym to the catalog adapter and store. No server
    identity discovery is needed. These identities are not proof that credentials
-   have been accepted by the remote service. The active runtime constructs it for model quote-bound submission.
+   have been accepted by the remote service. The selected `JobSession` owns the
+   coordinator.
 2. Obtain a real estimate through the adapter. Only the actual unchanged object
    issued by that active adapter is accepted; copying its public fields does not
    create another issued quote.
@@ -37,9 +38,9 @@ approval before the render quote.
 5. Inside the adapter's required `before_send` callback, the coordinator commits
    `prepared → submitting` using the current stored revision. A failed write,
    stale record, inactive coordinator or expired/mismatched quote stops dispatch.
-6. The adapter consumes the issued quote once and calls public
-   `generate.with_raw_response.run_model(...)` or
-   `workflows.with_raw_response.run(...)`, with `max_retries=0`.
+6. The adapter consumes the issued quote once and calls the operation's public
+   `with_raw_response` method (`generate.run_model`, `workflows.run`,
+   `generate.prompt` or `generate.translate`), with `max_retries=0`.
    Submission omits `dry_run`; estimates use `dry_run="true"` in the query.
    Optional project scope stays in the query, and the quoted payload is unchanged.
 7. A valid remote job ID is committed before the command returns a remote record.
@@ -48,8 +49,6 @@ approval before the render quote.
 `submit` is a spending command for an explicitly authorized user/MCP action.
 Neither a quote, `PreparedJob`, callback nor persisted record grants spending
 permission by itself. Integration must preserve its own approval boundary.
-All verification in this change uses MockTransport with external sockets denied;
-no live generation is performed by the test suite.
 
 ## Failure and context boundaries
 
@@ -72,13 +71,9 @@ their HTTP clients. View closure alone must not deactivate application jobs.
 
 Restart recovery must not recreate a `PreparedJob` from stored fingerprints.
 Stored `submitting`/`uncertain` requests require reconciliation; similar inputs in
-job listings are not authoritative correlation. Current-quote validation,
-submission ordering and single-use consumption are tested with the actual SDK,
-including racing callers and late responses. Installed-Blender tests verify the
-same ordering against the bundled SDK and SQLite.
+job listings are not authoritative correlation.
 
-The store persists result manifests and receipts; connecting download commands,
-main-thread application and UI/MCP remains separate integration work. The low-level adapter hook orders persistence but cannot enforce correct
+The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
 
 ## Identical unconfirmed requests
@@ -182,7 +177,7 @@ The command reuses `SDKAdapter.model`, `estimate_model` and `submit_estimate`
 It adds no endpoint or raw fallback. API-key default project scope remains valid.
 `JobWorkers` snapshots recipe data before queueing. `JobSession` captures/delivers
 the existing origin; a changed scene or retired owner rejects the quote before
-preparation. Native/MCP Film controls remain unwired.
+preparation.
 
 `bind_film_upload(recipe, production_id=..., task_id=..., request_id=...,
 expected_revision=..., origin=...)` validates an upload task and reads the selected
@@ -220,8 +215,7 @@ record and can safely retry without spending.
 `JobWorkers` and `JobSession` queue this command through their existing bounded
 pool. A saved record then uses ordinary manifest/download recovery and explicit
 destination approval. Native history **Save for recovery** and MCP
-`recover_cloud_job` now call this command through the same `ModelJobs` facade.
-This does not establish provider/live acceptance.
+`recover_cloud_job` call this command through the same `ModelJobs` facade.
 
 ## Restart inspection and known-job refresh
 
@@ -304,9 +298,8 @@ then closes the SDK connection. It is idempotent and safe for concurrent owners;
 it rejects calls from its own worker threads. It does not kill network I/O or
 promise instant shutdown; HTTP timeout policy still applies. Direct synchronous
 coordinator/adapter users must also be stopped before transferring ownership or
-shutdown. One owner per coordinator is required. UI/MCP lifecycle hooks and
-main-thread result application remain separate integration work; the prototype
-runtime is not replaced or supplemented by a second active runtime here.
+shutdown. One owner per coordinator is required: in Blender, the selected
+`JobSession` (see the [runtime map](architecture/runtime.md)).
 
 
 ## Known model-job cancellation
@@ -352,9 +345,8 @@ a safe reattempt/reset contract is not implemented. This conservative boundary
 can leave a job running after a claim-before-send crash or definitive action
 rejection, while polling still recovers its eventual terminal result.
 
-The SQL schema and stored record fields remain unchanged. The additional
-`cancel_requested` state requires a reader that understands it; older readers
-fail closed on that record instead of silently treating it as dispatchable.
+Readers that do not know `cancel_requested` fail closed on that record instead
+of silently treating it as dispatchable.
 
 `JobWorkers.cancel_remote` uses the bounded application pool and the same task
 polling interface. Deactivation before the action is claimed stops dispatch;
@@ -362,9 +354,7 @@ once claimed, late observations stay bound to the original store. Shutdown
 joins this work before closing the SDK. Scenario documents no endpoint to cancel
 a running workflow step. Live cancellation of an `inference` job and which
 generation lanes return `inference` jobs continue in #440.
-The Image facade now exposes these commands through shared UI/MCP saved-job
-controls. Captured job types and offline tests do not establish live
-cancellation acceptance.
+`ModelJobs` exposes these commands through the shared UI/MCP saved-job controls.
 
 
 ## Waiting workflow step decisions
@@ -493,7 +483,9 @@ identical asset names in separate requests cannot overwrite each other.
 
 `download_results` loads a missing manifest, durably claims `downloading`, and
 retrieves each unfinished asset again for a fresh signed URL. Identity, MIME and
-size must still match the manifest. A saved known texture role must match too.
+size must still match the manifest, apart from
+[legacy OBJ/MTL byte counts](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byte-counts).
+A saved known texture role must match too.
 An unclassified/legacy result remains unclassified even if a fresh response
 supplies a role; that does not rewrite its manifest or grant material semantics.
 The saved source and projection follow the same rule: the manifest's file choice
@@ -520,11 +512,10 @@ is deliberately rejected; a prior scene mutation may already have occurred.
 All three methods are available through `JobWorkers` using the same bounded pool,
 SDK lifetime and main-thread polling interface. Deactivation stops subsequent
 asset work; a transfer already in flight can save its receipt to the old scope.
-Closing a view must not deactivate these application-owned workers. Active Image
-delivery configures the CDN policy and exposes shared download/recovery controls.
-The other model lanes use these workers through ModelJobs, and recovered results
-apply only after fresh destination approval (see the
-[runtime map](architecture/runtime.md)).
+Closing a view must not deactivate these application-owned workers. The runtime
+configures the CDN storage policy, and ModelJobs drives downloads and recovery for
+every model lane; recovered results apply only after fresh destination approval
+(see the [runtime map](architecture/runtime.md)).
 
 
 ### Explicit interrupted-download recovery
@@ -551,8 +542,8 @@ interrupted. Process exit releases the lock; elapsed time does not. The
 [storage lock contract](JOB_STORAGE.md#result-transfer-ownership) requires one
 private database path and cooperating versions; stop older writers before using
 this recovery command. Recovery never resets submitting, uncertain or applying
-records. It is available through the existing `JobWorkers` and `JobSession`
-queues, without activating the prototype UI/MCP runtime.
+records. `JobWorkers` and `JobSession` queue it; native saved-job controls and
+MCP `recover_local_job` offer it as `recover_download`.
 
 ### Worker splat preparation
 
@@ -697,8 +688,8 @@ state of a scene after later edits or explicit restoration.
 `applying` record remains `REVIEW_APPLICATION`: no expiry, reset, automatic
 completion or retry is provided. The SQLite record is durable; verification
 tickets and application claims are owner-local and are never reconstructed from
-names, paths or stored metadata. The active Image facade uses these claims for
-automatic delivery and explicitly approved recovered imports.
+names, paths or stored metadata. `JobSession` uses these claims for automatic
+Image delivery and every explicitly approved saved-result application.
 
 
 ## Reference upload commands
@@ -715,7 +706,6 @@ resume a transfer and offers `restart_upload` instead (see the
 `cancel_prepared_upload` synchronously cancels unclaimed local upload intent,
 including queued initialization, under the original scope and expected revision.
 It does not require a current scene origin, access sources or abort remote work.
-The active UI/MCP still needs to adopt these commands and its recovery controls.
 
 `inspect_upload(request_id)` and `upload_recovery_plan()` provide read-only,
 scope-bound persisted state without exposing the private store. Their immutable
@@ -849,9 +839,8 @@ supply spending approval or automatically submit anything.
 thread, and its normal bounded completion queue delivers the result with its
 captured origin. `prepare_quote` resolves that same scene/target before persisting.
 Frame/file/dependency invalidation, view-independent lifetime and shutdown retain
-the existing session rules. UI/MCP model forms use these quote/submission commands,
-result delivery and saved-job controls, including explicit recovered Image
-application; capture preparation and non-image scene application remain on the integration backlog.
+the existing session rules. UI/MCP model forms use these commands through
+ModelJobs.
 
 Estimate ownership is checked before acquiring the coordinator/origin locks.
 Preparation keeps quote selection and persistence under the coordinator lock,
@@ -872,10 +861,9 @@ A missing or lost receipt leaves uncertainty, never permission to retry.
 the existing bounded pool. It creates no independent thread or job owner.
 
 Known prompt job IDs can be read after restart through `refresh_remote` without
-resubmission. Only model jobs observed as `inference` support remote cancellation. `read_prompt_results` retrieves full generated text from a known successful job,
-including text assets, without resubmission. Native and MCP prompt controls use
-the same explicit approval facade, including render look preparation from uploaded
-images. Preparing a look never submits the render itself.
+resubmission. Native and MCP prompt controls use the same explicit approval
+facade, including render look preparation from uploaded images. Preparing a look
+never submits the render itself.
 
 
 ### Prompt result recovery
@@ -928,7 +916,8 @@ revision before returning. It never writes the text or URLs to the job database,
 changes generation/application state, parses a scene plan or submits generation.
 Restart and transfer failure can repeat this read without another paid request.
 This is fresh remote retrieval, not certification of a previously stored download
-receipt. JobSession, native Blockout and MCP command wiring remain separate work.
+receipt. Native Blockout recovery and MCP `read_model_text` reach it through
+`JobSession`.
 
 `quote_translate` uses the fixed `translate` operation and target, bypassing
 model discovery. Its worker snapshots the prompt and preserves the same bounded
@@ -957,7 +946,7 @@ claims, other owners and a restarted process cannot invent receipt evidence.
 
 `recovery_plan` reports `review_application` for unfinished local reuse even
 though the original generation stays applied. Restart never authorizes replay or
-assumes the scene was unchanged. Native UI/MCP now supply fresh destination and
+assumes the scene was unchanged. Native UI/MCP supply fresh destination and
 selection approval through the [saved-result boundary](BLENDER_JOB_CONTEXT.md#explicit-local-result-reuse).
 These coordinator commands perform no Scenario service operation, download, paid
 submission or Blender mutation; the main-thread caller owns application.
@@ -970,13 +959,12 @@ stores. It produces a [composition draft](FILM_PLAN.md#unpaid-composition-drafts
 without reserving a master or sending an estimate. Revalidation compares each
 request/revision/asset/kind/task digest and rejects an already reserved master.
 A draft is immutable review data, not a quote or spend authorization; its helper
-performs no atomic dispatch claim. Active UI/MCP review remains to be connected;
-the source guards for composition quote delivery and dispatch are described below.
-The existing Film model-task command resolves the draft's references before the ordinary fresh
-schema/estimate and single-dispatch path. No new worker pool or SDK endpoint is
-introduced.
+performs no atomic dispatch claim. The source guards for composition quote
+delivery and dispatch are described below. The existing Film model-task command
+resolves the draft's references before the ordinary fresh schema/estimate and
+single-dispatch path. No new worker pool or SDK endpoint is introduced.
 
-`prepare_film_composition` now wraps that reader with receipt-bound saved-media
+`prepare_film_composition` wraps that reader with receipt-bound saved-media
 measurement through the existing result/upload owners. It snapshots recipe JSON,
 checks the captured origin before and after each probe, and compares all source
 observations again before returning `VerifiedComposition`. Process/file work runs

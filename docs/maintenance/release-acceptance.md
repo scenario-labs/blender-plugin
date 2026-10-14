@@ -11,7 +11,7 @@ and publication authorizes nothing further. OAuth remains deferred under #67. Th
 [0.10.0 evidence by lane](#0100-evidence-by-lane) is the current summary; later
 sections keep their own candidate identities and dates.
 
-From 0.10.1 on, track a version's acceptance status in its release tracking
+After 0.10.0, track a version's acceptance status in its release tracking
 issue, not in this file. Edit this file only to correct the records it holds.
 
 ## 0.10.0 evidence by lane
@@ -125,13 +125,13 @@ The human checks raised these items for the next release. It was planned as
 a merged fix (#464, #465, #466 or #471); #440 tracks the desktop checks that
 remain.
 
-- **Play audio** opens the system's default player
+- **Play audio** opened the system's default player
   ([#435](https://github.com/scenario-labs/blender-plugin/issues/435)).
-- The trained-model picker's experimental label reads like a refusal.
-- **OK** in the trained-model picker sometimes needs repeated clicks.
-- The sidebar Model box names only the base model, not the LoRA.
-- **Set panorama as World** is offered for images that are not 2:1.
-- Studio's pager arrows are about 1.2 interface units wide at UI scale 2.0.
+- The trained-model picker's experimental label read like a refusal.
+- **OK** in the trained-model picker sometimes needed repeated clicks.
+- The sidebar Model box named only the base model, not the LoRA.
+- **Set panorama as World** was offered for images that are not 2:1.
+- Studio's pager arrows were about 1.2 interface units wide at UI scale 2.0.
 
 ### Evidence kinds
 
@@ -264,8 +264,8 @@ their lanes:
   on 2026-10-09.
 - **Status:** passed. The maintainer listened through **Play audio** and
   checked **Waveform** on the candidate ZIP on 2026-10-13 (see the
-  [human checks](#human-checks)). Play audio opens the system's default player,
-  which #435 tracks for 0.11.0; #466 merged playback inside Blender.
+  [human checks](#human-checks)). Play audio then opened the system's default
+  player; it now plays inside Blender (#435), with its desktop check in #440.
 
 ### 3D generation and imports
 
@@ -606,14 +606,13 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 - **Generation defects left:** after the bullet-time snap, Seedance placed the
   second landing about 2 to 2.5 s later than the clay preview, and a chest logo
   came out as a blocky patch in the close-up.
-- **Found again:** a chosen-file reference upload stopped while the session
-  rendered or changed frames, as the
-  [user guide](../USER_GUIDE.md#run-a-workflow) already documents; a fix is
-  planned after 0.10.0.
+- **Fixed since:** a chosen-file reference upload stopped while the session
+  rendered or changed frames, and local MCP did not check required tool
+  arguments. Chosen files now keep uploading through scene, frame and render
+  updates, and local MCP refuses an incomplete call.
 - **New limitations**, now among the
   [known limitations](../KNOWN_LIMITATIONS.md#runtime-and-authentication):
-  the local MCP server does not check required tool arguments, `job_status`
-  lists no files for ready video results or for images not imported
+  `job_status` lists no files for ready video results or for images not imported
   automatically, and several versions in one production are hard to tell apart,
   export and extract side by side.
 
@@ -628,7 +627,7 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 | Failed-job reasons, MCP quotes of uncached models, and the file marked modified after local MCP changes, on a live run | Jobs, MCP | #440 | #425, #427 and #429 merged with installed tests only |
 | Generate workflow confirmation labels and loop-warning wrap after #431, and pager arrows after #432 | Workflows, previews | #440 | Passed on 2026-10-13: #431's labels and wrap, and #432's arrows within 0 to 1 px of the visible image at UI scales 1.0 and 2.0 |
 | IME composition after F2 with a person-selected input source | Composer | Maintainer, #440 | Passed on the candidate ZIP on 2026-10-13; the candidate window was not recorded |
-| Listening through Play and the system player | Audio, previews | Maintainer, #440 | Passed on the candidate ZIP on 2026-10-13; Play audio opens the system default player (#435) |
+| Listening through Play and the system player | Audio, previews | Maintainer, #440 | Passed on the candidate ZIP on 2026-10-13, where Play audio opened the system default player; it now plays inside Blender (#435) |
 | Private LoRAs and compositions | Trained models | Maintainer, #440 | A private LoRA passed on the candidate ZIP on 2026-10-13; no private composition is owned, so none ran |
 | Trained-model picker, strengths and project defaults on merged heads | Trained models | #440 | The picker and a strength passed the human check; project defaults and restart persistence were not rechecked |
 | Desktop export and case-study save after #407, #408 and #428 | Film | #440 | The fixes landed after the desktop pass; the end-to-end run used local MCP |
@@ -671,7 +670,7 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
 ## Earlier 0.9.9 candidate and decision
 
 Reviewed on 2026-10-09 after the implementation stack merged. The supported
-release remains held by #68. The current development candidate includes the
+release was then held by #68. The current development candidate includes the
 [grayscale material fix, #340](https://github.com/scenario-labs/blender-plugin/pull/340).
 That fix and its acceptance record (#341) are merged into `main` at
 `88b6b3ec8ebd5707581f6d39f0fd158c784873a2`. The exact tested source and ZIP
@@ -804,9 +803,8 @@ Initial candidate reviewed on 2026-10-07; later evidence is identified separatel
 | Bundle | Locked Scenario SDK 2.2.0 dependencies; installed bytes verified |
 | Source comparison | All 159 packaged source files match the candidate checkout |
 
-The eventual release-please 0.10.0 ZIP will have different bytes. Repeat candidate
-validation for that artifact and record its checksum and revision here; this
-record cannot certify an unbuilt release. Rebuilding the same source does not
+The release-please 0.10.0 ZIP has different bytes; its checksum and revision
+are under [publication](#publication). Rebuilding the same source does not
 justify substituting a different archive without checking it.
 
 ## Historical verified evidence
@@ -1216,17 +1214,17 @@ tracks the 0.11.0 acceptance and the work that closed issues left open:
 | #64, #65, #66, #68 | Closed on 2026-10-13 after 0.10.0 was published; #64, #65 and #66 as delivered in 0.10.0. The [0.10.0 evidence by lane](#0100-evidence-by-lane) records retained-capability, desktop and live evidence. Their remaining checks, fixes and decisions, including the [pending checks](#pending-checks), continue in #440. Multi-line prompt editing moved to #444, preview clips and 3D turntables to #445, and multi-object material application to #446. |
 | #97 | Closed on 2026-10-13 as delivered in 0.10.0 for using existing trained models; training stays out of scope. The model picker's trained LoRAs and compositions (#409), strengths and project defaults (#410) and MCP trained models and defaults (#411) merged, and the maintainer listed a private LoRA in the picker, applied it with a strength and generated with it on the candidate ZIP, and confirmed its likeness (see [human checks](#human-checks)). A private composition, which the account does not own, project defaults and restart persistence on merged heads, the #411 tools on merged heads, the picker follow-ups and stale base-scan events continue in #440. |
 | #99 | Open. Provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close this scope. |
-| #98 | Closed on 2026-10-13 as delivered in 0.10.0. #415's closing reference had closed it on 2026-10-12, and it was reopened the same day. The native Environment lane (#416) and panorama smoke cases (#417) merged on 2026-10-12. A paid HY World run with seam, pole and HDR range review, the desktop recheck of the merged lane, a panorama input left stuck after a failed upload, **Set panorama as World** offered for images that are not 2:1 and the deferred panorama purpose continue in #440. |
+| #98 | Closed on 2026-10-13 as delivered in 0.10.0. #415's closing reference had closed it on 2026-10-12, and it was reopened the same day. The native Environment lane (#416) and panorama smoke cases (#417) merged on 2026-10-12. A paid HY World run with seam, pole and HDR range review, the desktop recheck of the merged lane, a panorama input left stuck after a failed upload, a desktop check that **Set panorama as World** is no longer offered for images that are not 2:1, and the deferred panorama purpose continue in #440. |
 | #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |
 | #15, #17, #43, #47, #52 | Closed for their headless CLI, capture cleanup, local MCP security, hosted link monitoring and generated MCP documentation scopes. Keep these resolved foundations closed. |
 | #37 | Closed for the native update repository foundation. The 0.10.0 HTTPS install from the hosted repository is recorded under [publication](#publication); an HTTPS update between two published releases awaits the next release (#440). |
 | #36 | Closed on 2026-10-13. The 0.10.0 release workflow, checksums and attestations passed, and the maintainer removed the repository-admin tag bypass and enabled immutable releases (see [publication](#publication)). 0.10.0 predates that setting; reading `immutable: true` back on 0.11.0 is in #440. |
-| #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. For #39, the repository's Actions settings have required full-SHA action pinning since 2026-10-13, read back with allowed actions `all`; #463 proposes a Dependabot cooldown and the matching records. |
+| #39, #40 | Open. The protected hosted five-lane smoke and recovery check is verified, and after #383 a free live single-part reference upload, its receipt and a bound dry-run quote passed for #40; the first approved monthly run is pending. For #39, the repository's Actions settings have required full-SHA action pinning since 2026-10-13, read back with allowed actions `all`, and Dependabot waits seven days before proposing an action update. |
 | #45 | Closed on 2026-10-09 after the required-check update. |
 | #38 | Closed on 2026-10-13. The publish-changelog run for 0.10.0 succeeded (run 38392753556), and the [0.10.0 changelog entry](https://www.scenario.com/changelog/plugins-blender-v0-10-0) is public after a maintainer published the ingested draft. The check that a second dispatch on the same tag creates no duplicate moved to 0.11.0 in #440. |
 | #399, #400 | Closed on 2026-10-13. The 2026-10-12 weekly macOS and Windows runs failed on a stale test expectation that #396 corrected. After #442 gave the full native suite a 900-second timeout and #443 skipped a reverse DNS lookup when local MCP starts, the manual [run 38408708155](https://github.com/scenario-labs/blender-plugin/actions/runs/38408708155) on `main` passed on both platforms. |
-| #189 | Closed on 2026-10-13 as delivered in 0.10.0. Saved shared video and audio results have Play, Play in Blender and Waveform controls on private verified copies and receipt-keyed envelopes from an offline Blender decoder, with installed-ZIP native tests. Partial private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system player and in Blender's animation player at UI scale 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0, the last on a ZIP whose waveform status wrapped by measured width before later amendments to that wrapping; they are not candidate acceptance. Local MCP `inspect_result_previews` reads the same preview states and envelopes, with installed-ZIP native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 only. On 2026-10-13 the maintainer listened to a saved audio result through **Play audio** and drew its **Waveform** on the candidate ZIP on macOS Blender 5.1.2 (see [human checks](#human-checks)); Play audio opens the system's default player, and an in-extension player is #435. The waveform's Cancel, Retry and close on the desktop, clicking Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms are not yet recorded; they continue in #440. |
+| #189 | Closed on 2026-10-13 as delivered in 0.10.0. Saved shared video and audio results have Play, Play in Blender and Waveform controls on private verified copies and receipt-keyed envelopes from an offline Blender decoder, with installed-ZIP native tests. Partial private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system player and in Blender's animation player at UI scale 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0, the last on a ZIP whose waveform status wrapped by measured width before later amendments to that wrapping; they are not candidate acceptance. Local MCP `inspect_result_previews` reads the same preview states and envelopes, with installed-ZIP native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 only. On 2026-10-13 the maintainer listened to a saved audio result through **Play audio** and drew its **Waveform** on the candidate ZIP on macOS Blender 5.1.2 (see [human checks](#human-checks)), where Play audio opened the system's default player; it now plays inside Blender (#435). The waveform's Cancel, Retry and close on the desktop, clicking Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms are not yet recorded; they continue in #440. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md). The 0.10.0 build later ran 591 s of Sequencer playback without errors (see [Audio](#audio)); closure alone supplies no new runtime evidence. |
 
 On 2026-10-07, read-only administration checks found no open **CodeQL** alerts. The six open
@@ -1238,13 +1236,12 @@ when adding `ci-ok`; no repository settings were changed by this audit.
 ## Merge and release decision
 
 Merge accepted implementation layers in dependency order and retarget descendants
-after squash merges. A green implementation PR can reduce #68's remaining work
+after squash merges. A green implementation PR can reduce #440's remaining work
 without satisfying all of it. Keep incomplete issue scope open and use `Refs`.
 No issue is complete merely because historical release notes contain a closing
 keyword or an older primitive was merged.
 
-After the remaining gates pass, replace the candidate identity above with the
-actual release candidate, retain failing/unsupported environments explicitly and
-follow [the release procedure](../RELEASING.md). Public delivery and changelog
-checks that require the published build must be recorded with that build's
-provenance; do not report them in advance.
+Retain failing or unsupported environments explicitly and follow
+[the release procedure](../RELEASING.md). Public delivery and changelog checks
+that require the published build must be recorded with that build's provenance;
+do not report them in advance.

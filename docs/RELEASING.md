@@ -56,9 +56,10 @@ and cache paths returned by `bpy.utils.extension_path_user` in
 [runtime.py](../scenario/blender/runtime.py). Renaming it would break update
 matching and leave existing user state behind.
 
-Distribution uses GitHub release assets; the planned hosted extension repository
-is tracked in #37. Publishing there does not require a globally unique id on
-extensions.blender.org. Keep the id unique within our own repository.
+Distribution uses GitHub release assets and the
+[hosted extension repository](#publish-the-guide-and-repository). Publishing there
+does not require a globally unique id on extensions.blender.org. Keep the id
+unique within our own repository.
 [Manifest tests](../tests/unit/test_manifest.py) enforce this decision and the
 approved Blender 5.0 floor alongside metadata, tags, GPL and permission rules.
 The offline tests are a scoped early check; native ZIP validation and supported
@@ -124,14 +125,8 @@ Before claiming state preservation for an adopted release pair, run the
 [Scenario package update probe](development/validation.md#scenario-package-state-across-updates)
 with the exact previous and candidate ZIPs on each supported Blender series.
 Retain both SHA-256 values, the actual Blender/OS identity and the update/restart
-reports. The current probe also preserves captured-mesh input/upload provenance
-and separate local reuse outcomes, including rejection of an unfinished claim
-after update and restart. It requires packages exposing those storage APIs;
-older package acceptance needs its matching historical probe, not silently
-skipped state coverage. Packages with Film storage additionally preserve task
-bindings and the separate captured-upload association in the same probe. Require
-nonempty Film fixtures in `expected-state.json` when claiming Film preservation;
-older packages without those APIs cannot establish that coverage.
+reports. That guide lists the state the probe preserves and when an older
+package needs its matching historical probe instead of skipped coverage.
 The probe exercises the real installed package and its durable state
 through a loopback repository, without modifying either archive. It does not
 verify attestations or establish the public HTTPS installation/update flow;
@@ -156,8 +151,7 @@ for each release.
 from an explicit inventory of already-built archives. It uses Blender's native
 `extension validate` and `extension server-generate` commands in a fresh isolated
 profile with online access disabled. It never rebuilds a ZIP or changes a manifest.
-The helpers are a partial implementation of
-[#37](https://github.com/scenario-labs/blender-plugin/issues/37); online discovery and deployment are composed by the publication workflow below.
+The publication workflow below adds online discovery and deployment.
 Production native install/update acceptance remains separate. Successful local generation
 does not prove that an archive was published, attested or accepted at runtime.
 
@@ -197,29 +191,21 @@ rediscovers current releases, so it cannot roll back an already deployed newer
 inventory. A publication after the final check is picked up by the next release
 completion; GitHub's release reads and Pages deployment are not one atomic transaction.
 
-Only the pre-adoption `0.9.9` checkout can bootstrap the handbook, and it requires
-a nonempty release snapshot with no adopted tags. The fixed bootstrap version is
-not advanced with releases: release-please retires this path when it changes the
-manifest for the first adopted release. Later empty or withdrawn channels fail
-instead of replacing the live repository with a placeholder. It publishes the guide and a native-downloads explanation, without an
-`index.json` or ZIPs. A draft, prerelease or invalid adopted release cannot trigger
-that fallback. The final freshness check rejects bootstrap if an adopted release
-appeared during the build. The standalone preparer remains strict unless passed
-`--allow-bootstrap`. Neither prototype ZIPs nor synthetic fixtures can seed production. A failed Pages run can be rerun or manually dispatched:
+The handbook-only bootstrap, which published the guide without an `index.json`
+or ZIPs, runs only from the pre-adoption `0.9.9` checkout, so current checkouts
+cannot use it: an empty or withdrawn release channel fails instead of replacing
+the live repository with a placeholder. Neither prototype ZIPs nor synthetic
+fixtures can seed production. A failed Pages run can be rerun or manually dispatched:
 it redownloads and verifies published assets without rebuilding or changing them.
 The standalone release handbook is generated only by the release asset job.
 
-After the first adopted release is published, prepare its inventory locally with:
+Prepare the published releases' inventory locally with:
 
 ```sh
 uv run --locked --no-env-file python tools/prepare_site_release.py --output workdir/verified-releases
 ```
 
 Use a fresh output directory. Then pass its `inventory.json` to `make site`.
-Before that release, add `--allow-bootstrap` to the preparation command. A permitted
-bootstrap produces only `publication.json`, without an inventory; build its preview
-with `uv run --locked --no-env-file python tools/build_site.py --pending-repository
---output dist/handbook-preview` instead of passing an inventory to `make site`.
 Offline orchestration tests cover publication races and retry byte preservation.
 0.10.0 recorded HTTPS delivery and positive release attestations (see its
 [publication record](maintenance/release-acceptance.md#publication)); an HTTPS

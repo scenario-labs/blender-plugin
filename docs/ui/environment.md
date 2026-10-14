@@ -50,48 +50,32 @@ property callbacks or operators; drawing never writes. Contract values and the
 recorded model choice that a catalog load fills in are stored without RNA
 updates, like seeded schema defaults, so they keep captured origins current.
 
-Installed tests on macOS arm64 Blender 5.1.2 cover the appended tab values
-through a saved and reopened blend, mode model lists and price invalidation,
-contract values, read-only drawing of every mode, picker restriction, Quick
-settings, Reload, the composer tab, the panorama upload preflight, material
-maps kept out of every Environment and World control, and a fake service quote,
-submission, saved result, restart, Make HDRI and World approval in a newly
-selected scene.
-
-A physical desktop pass on macOS arm64 Blender 5.1.2 at UI scales 1 and 2 used
-the exact packaged ZIP of this lane before it was rebased onto the World
-candidate fix (#394), with free price quotes only. The tab, modes and mode lines
-in the sidebar and Studio, the mode-restricted dropdown and picker, the Flux,
-GPT and HDRI settings and result lines, the upscale factor cap message, World
-application of saved PNG, OpenEXR and JPEG panoramas, Restore previous World,
-reapplying after a Blender undo, Esc and viewport keys after each dialog, and
-the controls at scale 2 behaved as described here. That pass also found material
-maps offered as World panoramas; the rebased lane uses #394's World candidates,
-which an installed test checks, but the fix was not rechecked physically. Nor
-were the composer's label-sized tab row, a local file through **Upload
-reference** or From image beyond its quote. No screenshot is committed.
+Installed tests cover the appended tab values through a saved and reopened
+blend, mode model lists and price invalidation, contract values, read-only
+drawing of every mode, picker restriction, Quick settings, Reload, the composer
+tab, the panorama upload preflight, material maps kept out of every Environment
+and World control, and a fake service quote, submission, saved result, restart,
+Make HDRI and World approval in a newly selected scene. A physical desktop pass
+before the lane merged, with free quotes only, covered the tab, modes, settings
+and result lines, World application and restore of saved PNG, OpenEXR and JPEG
+panoramas, and Esc and viewport keys after each dialog. The recheck of the
+merged lane, including its composer tab row, is tracked in #440 (see the
+[release evidence](../maintenance/release-acceptance.md#panorama-and-world)).
+No screenshot is committed.
 
 ## Saved panorama approval and restoration
 
 **Set panorama as World (N)** prepares one PNG, JPEG or OpenEXR result and
 identifies the selected scene and current World. A **Selected** line states the
-saved media type's declared format, using the same wording as MCP `format`:
-PNG or JPEG as LDR, or OpenEXR as float with ACES AP0 in ACES2065-1.
+saved media type's declared format in the same wording as MCP `format`.
 Invoke computes that text; drawing only displays it. Explain the
 2:1/equirectangular requirement, packed image, preserved original World, LDR/HDR
-distinction and session-local restore limit. The action's presence is a
-media-type offer that excludes results declaring a texture role and images whose
-file header, read for the current download receipt, declares a size that is not
-2:1 within the World pixel limit. The job owner reads those headers on the
-preview lane and keeps the sizes in memory; drawing never reads a file, a size or
-the job store. A size not read yet, or a header that declares none, keeps the
-button, so a late or inconclusive display read never hides a usable panorama: a
-square image can show the button for a moment after its download. Byte
-compatibility is still checked during application, never in drawing, and that
-check remains the authority. Drawing reads the saved-job projection's candidate
-list and numbers each button by the result's position among all results, like
-the model import buttons such as **Import GLB model (N)**. Cancel discards the
-prepared handle.
+distinction and session-local restore limit. The
+[World guide](../WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) defines
+which results offer the action and how N counts them. Drawing reads only the
+saved-job projection's candidate list, never a file, a size or the job store;
+the application check of the actual bytes remains the authority. Cancel
+discards the prepared handle.
 
 After completed application, **Restore previous World** uses a separate prepared
 approval. It names the current scene/World and explains that edited owned data
@@ -109,12 +93,11 @@ Viewport selection, front-view keyboard input and zoom worked afterward. Blender
 exited cleanly and the normal-profile fingerprint was unchanged. The test-only
 app copy used a distinct bundle identifier and local ad-hoc signature for window
 targeting; vendor executable code and the extension ZIP were unchanged. This does
-not establish actual HDR/seam quality, other OS desktop support, resolution of
-#263 or release acceptance. That capture predates the **Selected** format line
-and the JPEG and `image/aces` offers. Headless native tests cover their invoke,
-draw and cancel handling, and every new dialog line stays within 59 characters,
-the longest line verified in that capture. Desktop interaction with the new
-wording is not yet recorded; that check is in #440.
+not establish actual HDR/seam quality, other OS desktop support or release
+acceptance. That capture predates the **Selected** format line and the JPEG and
+`image/aces` offers; headless native tests cover their invoke, draw and cancel
+handling, and the Environment lane's desktop pass above applied JPEG and OpenEXR
+panoramas through these dialogs.
 
 ## World restoration across scenes
 

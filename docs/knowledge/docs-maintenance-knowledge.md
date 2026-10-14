@@ -6,11 +6,15 @@
   "evidence": {
     "path": "docs/maintenance/knowledge.md",
     "coverage": "navigation",
-    "reviewed_at": "2026-09-25",
-    "reviewed_revision": "0e2debd9ab58977782fa1f673d7028b1da1ea69f",
-    "limits": "Merged on 2026-10-14 from a topic record without a new review. The date, revision and coverage are the most conservative of those records; their detailed limits remain in Git at 297c916d4e9e61a84854769be5c150f1dc74fbde. The next release refresh replaces this note.",
+    "reviewed_at": "2026-10-14",
+    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "limits": "Procedure reviewed against the checker, its CI workflow, the registry and the refresh command adapters. It does not establish that the procedure was followed for any document.",
     "sources": [
+      ".agents/skills/blender-knowledge-refresh/SKILL.md",
+      ".claude/commands/knowledge-refresh.md",
+      ".github/workflows/ci.yml",
       ".github/workflows/knowledge.yml",
+      "docs/knowledge.json",
       "tests/unit/test_knowledge.py",
       "tools/check_knowledge.py"
     ]

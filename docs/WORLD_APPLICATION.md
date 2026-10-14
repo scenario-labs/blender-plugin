@@ -174,11 +174,12 @@ Handles contain live RNA references and are not serializable history records.
 Discard them after file load, undo or extension shutdown. Invalidated/removed
 references fail closed. This primitive creates no undo entry. Operators offering Blender global undo
 must own its transaction and invalidate handles when undo changes ownership.
-The saved-result operator below offers explicit guarded restoration, without
-a global undo transaction. Async jobs must validate captured file, scene, target and revision
+The saved-result path below records one undo step after it applies or restores
+a World, which [marks the file modified](architecture/blender.md#marking-the-file-modified),
+and offers explicit guarded restoration without a global undo transaction. Async jobs must validate captured file, scene, target and revision
 before calling this function; selecting an active scene is not such validation.
 
-## Validation and remaining integration
+## Validation and integration
 
 Unit tests exercise bounded malformed-container rejection, JPEG coding,
 segment, scan and EXIF orientation limits, and OpenEXR color declaration
@@ -200,13 +201,10 @@ keep Blender's choice, while `lin_ap1_scene` beside Rec.709 chromaticities and
 simulated unexpected color spaces fail closed after decoding. They make no
 Scenario service calls.
 
-This is a partial slice of #98 and #65. Optional JobSession integration now binds
-verified downloads to guarded durable World application. The
+JobSession binds verified downloads to guarded durable World application. The
 [Environment lane](MCP.md#environment-lane-360-panoramas), in the native sidebar,
 Studio, composer and local MCP, quotes and submits verified panorama model
-contracts, and its results stay saved for the approval below. Production storage
-policy, global undo operators, seam/pole quality, desktop evidence and authorized
-live generation remain separate work.
+contracts, and its results stay saved for the approval below.
 
 ## Saved-result UI and MCP approval
 
@@ -259,9 +257,8 @@ PNG and JPEG remain LDR, and an accepted EXR does not prove measured HDR range o
 seamless content. Known application failure, including a media type that does not
 match the actual container, is reported with panorama requirements and keeps the
 local retry state. The confirmation does not state the projection; the native
-saved-job rows label a result whose saved metadata declares a 360 projection
-(**360 panorama (LDR)** or **360 HDR environment (OpenEXR)**), and MCP
-`job_status` reports `projection`.
+saved-job rows [label](ui/environment.md#environment-lane) a result whose saved
+metadata declares a 360 projection, and MCP `job_status` reports `projection`.
 
 A successful World assignment exposes **Restore previous World** in the same
 session. MCP prepares `purpose: restore_world` without an asset ID, shows the

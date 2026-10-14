@@ -25,7 +25,8 @@ uv run --locked python -m pytest
 uv downloads the selected Python if needed and creates `.venv` in the current
 checkout or worktree. No environment activation is required. These commands
 also work on Windows. The changelog workflow tests additionally require `bash`
-and `jq` on PATH. Make provides the same workflow:
+and `jq` on PATH; the release workflow tests require `jq`. Make provides the same
+workflow:
 
 ```sh
 make sync
@@ -88,13 +89,10 @@ the supported Blender minimum.
 
 [Python lint CI](../.github/workflows/python-lint.yml) runs `make lint` over the
 whole tree on every PR and push to `main`, so every tracked Python file must stay
-formatted and lint-clean. The tree was normalized under
-[#28](https://github.com/scenario-labs/blender-plugin/issues/28): hand fixes
-first, then one mechanical `ruff check --fix` and `ruff format` pass. Ruff never
-visits nested agent worktrees under `.claude/worktrees/`: they are Git-ignored and
-excluded in `pyproject.toml`, so a whole-tree `make format` in the main checkout
-cannot rewrite another agent's unpushed work. While iterating, scope either
-command to a few paths:
+formatted and lint-clean. Ruff never visits nested agent worktrees under
+`.claude/worktrees/`: they are Git-ignored and excluded in `pyproject.toml`, so a
+whole-tree `make format` in the main checkout cannot rewrite another agent's
+unpushed work. While iterating, scope either command to a few paths:
 
 ```sh
 make format LINT_PATHS="scenario/core/jobs tests/unit/test_manager.py"

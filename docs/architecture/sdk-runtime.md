@@ -149,8 +149,8 @@ and runtime reset stop admission; in-flight receipts keep their original scope.
 File loading retires the selected owner and invalidates its context token; the
 next recovery call creates a fresh session against the same scoped store.
 GUI ticks and the headless MCP loop reap retired sessions after work finishes.
-Native model form entry points use this session for quote-bound submission, as described below.
-Explicit saved-job controls and result transfers across model lanes use the same session below.
+Native model form entry points, explicit saved-job controls and result transfers
+across model lanes use this session, as described below.
 
 ## Optional project selection
 
@@ -200,9 +200,9 @@ usable quote. Completion is routed by the ticket's originating lane, not the
 currently selected tab. Repricing releases only that form's former approval.
 
 The result action **Remove background** selects a current Image background-removal
-model and prepares one local file reference with default settings. It no longer
-submits through the prototype manager. The user explicitly uploads the reference,
-reviews the shared exact estimate and chooses Generate. Failed file/model/schema
+model and prepares one local file reference with default settings. The user
+explicitly uploads the reference, reviews the shared exact estimate and chooses
+Generate. Failed file/model/schema
 preflight preserves the current form; a successful preparation invalidates its
 old quote without canceling existing jobs or admitted uploads.
 
@@ -219,7 +219,9 @@ into the form it was synchronized from, never into a form that replaced it.
 The facade consumes the handle before preparation; the coordinator persists an
 intent and claims `submitting` before the single SDK request. Repeated clicks,
 reused quote handles, changed inputs, stale origins and failed writes cannot
-repeat that submission. Timeouts retain uncertain saved state without retry.
+repeat that submission. Timeouts retain uncertain saved state without retry; an
+[identical request](../JOB_COORDINATOR.md#identical-unconfirmed-requests) in that
+scope is refused until Scenario confirms it or the user marks it reviewed in Blender.
 An unsuccessful UI attempt clears the ready price and requires explicit repricing;
 it never silently obtains another approval. Retained MCP/UI approvals are not evicted
 to admit new quotes. At capacity, new estimates are rejected until a consumed handle
@@ -253,9 +255,7 @@ shared rows take precedence over prototype collisions. Only prototype rows have
 a fifty-row display limit. Active recovered jobs remain visible even without
 creation timestamps. These display rules do not delete saved jobs or stop workers.
 
-This is a pre-release integration slice. Image local-file/capture references
-must be uploaded before pricing/submission. Local MCP now uses the
-[shared reference upload path](../SDK_UPLOADS.md#active-reference-uploads);
+Local MCP uses the [shared reference upload path](../SDK_UPLOADS.md#active-reference-uploads);
 generation forms expose **Upload reference** for typed local files and image
 stills, with guarded lane/input attachment and saved inspection.
 Render forms prepare scene snapshots and optional first-frame uploads in
@@ -270,9 +270,10 @@ Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
 reference lifecycle through both forms and MCP. They stage private snapshots;
 clips preserve the preview/scene range without duration padding, and mesh export
 restores selection. Later source edits do not change an uploaded reference.
-Native recovery can refresh known uploads, cancel unclaimed preparation
-and clean terminal staging copies. Reusing an imported reference after restart or
-form changes requires a fresh destination confirmation and invalidates old prices.
+Native recovery can refresh known uploads, cancel unclaimed preparation, upload
+again one that cannot resume and clean terminal staging copies. Reusing an
+imported reference after restart or form changes requires a fresh destination
+confirmation and invalidates old prices.
 Existing Scenario asset IDs are supported. Downloaded images
 are receipt-verified again on the main thread, decoded from private snapshots and
 packed as image datablocks after a durable application claim. Automatic import
@@ -283,7 +284,7 @@ without another generation. The [transfer policy](../RESULT_TRANSFERS.md#active-
 names the documented CDN hosts. The Jobs panel's **Inspect saved jobs** button
 and MCP `list_local_jobs` provide saved state. UI recovery buttons and
 `recover_local_job` use the current context token and observed revision to refresh,
-resume polling/download, cancel a known model job, reconcile interrupted download
+resume polling/download, cancel a known inference job, reconcile interrupted download
 receipts, or save a pending import receipt. These actions never submit generation.
 Resuming after restart does not approve import into the new scene. **Import saved
 images** captures the selected destination for confirmation. MCP uses
@@ -296,14 +297,14 @@ advance through the same maintenance pump. `wait_for_job` waits on the HTTP work
 while the main thread remains available for delivery. It returns at completion,
 review-required state or timeout, and rejects a changed credential context.
 An unresumed restarted record is returned immediately.
-Native model forms no longer dispatch through the prototype manager. Files,
-captures and Spark preparation must finish before the final quote. Render forms
-require an uploaded scene snapshot and, when enabled, an uploaded or handed-off
-first frame, then use the same quote and submit path. An empty look with automatic Spark enabled remains blocked; users can enter
-a look or disable automatic Spark for the default look. Non-image model jobs now
-use the same durable submission, polling, download, cancellation and recovery
-commands. They stop at saved `ready` results without automatically assigning
-materials, importing meshes or inserting media strips. Status includes the saved
+Files, captures and Spark preparation must finish before the final quote. Render
+forms require an uploaded scene snapshot and, when enabled, an uploaded or
+handed-off first frame, then use the same quote and submit path. An empty look
+with automatic Spark enabled remains blocked; users can enter a look or disable
+automatic Spark for the default look. Non-image model jobs use the same durable
+submission, polling, download, cancellation and recovery commands. They stop at
+saved `ready` results without automatically assigning materials, importing meshes
+or inserting media strips. Status includes the saved
 result manifest and receipt presence, without returning paths for unverified
 application. Restarted display records are generic model jobs; the original lane
 is not persisted, so they have no scene/lane binding. Explicit PNG/EXR import
@@ -329,7 +330,8 @@ point cloud (mesh plus Geometry Nodes and a new material) under the same claim
 and receipt rules; it approximates splats and is not a splat renderer. In-place
 rig/animation transfer remains open.
 Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
-World replacement, with a separate guarded restore in the current session.
+World replacement unless a texture role or a declared header size other than 2:1
+rules it out, with a separate guarded restore in the current session.
 Application refuses a file whose container differs from its saved media type;
 [World application](../WORLD_APPLICATION.md#accepted-local-files) lists the
 accepted variants. Completed jobs can reuse saved results
@@ -359,8 +361,8 @@ Cloud history uses the selected catalog connection's SDK adapter and HTTP pool.
 `assets.with_raw_response.retrieve` resolves at most 30 prompt previews per page.
 Prompt text is local to each read, with no session-wide or cross-credential cache.
 Unavailable or explicitly truncated text previews remain unresolved; an existing
-local job's prompt can still supply the display text. Full text downloads remain
-part of transfer integration.
+local job's prompt can still supply the display text. History downloads no full
+text; see [full prompt text](../RESULT_TRANSFERS.md#full-prompt-text).
 
 A row's cost is `billing.cuCost` plus its `cuCostDetails` add-ons, such as
 quality-gate fees, which the SDK job billing type documents as charged on top of
@@ -426,12 +428,10 @@ can verify and save one completed model job without fabricating a local quote
 or submitting generation. Native **Save for recovery** and MCP
 `recover_cloud_job` share its bounded pending reads and paused saved-job view.
 Completed MCP results remain bound to their owning facade independently of the
-16-entry display cache. Job rows merge by request ID without periodic reordering;
-shared recovery rows take precedence over legacy collisions and are exempt from
-the prototype's existing 50-row limit.
+16-entry display cache. Job rows merge by request ID without periodic reordering,
+following the sidebar row rules above.
 Neither uses old cached files, downloads results or applies to the current scene.
-The old MCP `import_result` now rejects prototype files with recovery guidance.
+The old MCP `import_result` rejects prototype files with recovery guidance.
 History rendering ignores legacy file/action projections, including a duplicate
 session row, while explicit saved-result commands retain their byte verification
-and destination approval. Desktop interaction and live provider acceptance remain
-separate.
+and destination approval.

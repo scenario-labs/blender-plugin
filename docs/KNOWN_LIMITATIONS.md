@@ -149,13 +149,14 @@ full render-lane desktop acceptance.
   default scope without discovering its identity. Live project permission and
   cross-project service acceptance continue in #440; browser sign-in in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
-- An uncertain submission is currently not reconciled automatically. Its saved
-  job stays marked as unconfirmed and offers no resubmission. If a model job
-  completed, recover it from cloud history with **Save for recovery** (local MCP:
-  `recover_cloud_job`) instead of generating again. Uncertain workflow and
-  prompt-helper submissions currently have no in-Blender recovery. Do not repeat
-  them; check their outcome in the Scenario web app. How the web app shows such
-  jobs has not been checked.
+- An uncertain submission is not reconciled automatically. Its saved job stays
+  unconfirmed, and an identical request is refused until the user marks it
+  reviewed in Blender for the session
+  ([identical requests](JOB_COORDINATOR.md#identical-unconfirmed-requests)). If a
+  model job completed, recover it from cloud history with **Save for recovery**
+  (local MCP: `recover_cloud_job`) instead of generating again. Uncertain workflow
+  and prompt-helper submissions have no in-Blender recovery; check their outcome
+  in the Scenario web app, whose display of such jobs has not been checked.
 - Remote cancellation is offered only for jobs Scenario reports as `inference`,
   the only type its job action reference documents as cancellable. Captured
   model generations report `custom`, so Blender does not cancel them; they

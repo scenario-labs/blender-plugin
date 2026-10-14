@@ -10,7 +10,7 @@ registry. Follow the [knowledge review procedure](knowledge.md) when updating it
 | --- | --- |
 | [#4](https://github.com/scenario-labs/blender-plugin/issues/4) | Closed after canonical root instructions, required guides, shared skills/path adapters and fresh CLI instruction-context verification. Historical Blender 4.2, root CLAUDE import and unconditional test requirements are superseded by the current contract. |
 | [#6](https://github.com/scenario-labs/blender-plugin/issues/6) | The sanitized prototype design and plans are retired from the working tree; Git retains their history. Current instructions and useful architecture rationale live in the maintained guides. Personal product-decision comments and report-generator punctuation were cleaned up. Required Studio author credits remain under the current attribution policy; a historical blanket first-name exclusion does not override that policy. |
-| [#25](https://github.com/scenario-labs/blender-plugin/issues/25) | Every legacy report has a current disposition below. Resolved reports stay resolved; existing integration issues retain their scope. The distinct remaining feature requests are filed and the current follow-ups have issue types and project Priority/Effort triage. |
+| [#25](https://github.com/scenario-labs/blender-plugin/issues/25) | Every legacy report has a current disposition below. Resolved reports stay resolved; existing integration issues retain their scope. The distinct remaining feature requests are filed. The project's Priority and Effort fields have no options yet, so follow-ups carry no priority or effort triage. |
 | [#2](https://github.com/scenario-labs/blender-plugin/issues/2), [#13](https://github.com/scenario-labs/blender-plugin/issues/13) | The public README and current guide refresh are merged; both issues are closed. Screenshot optimization closed under #14; the open supported-platform and runtime checks are in #440. |
 | [#48](https://github.com/scenario-labs/blender-plugin/issues/48) | Contributor setup, public-content rules, inbound licensing, attribution, issue triage and release version/override controls are documented against current tooling. Historical direct-profile installs, blanket dependency/originality bans and assumed hosted publication are superseded by the canonical guides. Optional local hooks are implemented; hosted handbook delivery retains its separate gate. |
 | [#47](https://github.com/scenario-labs/blender-plugin/issues/47), [#52](https://github.com/scenario-labs/blender-plugin/issues/52) | Both are closed: the generated MCP reference/native tool contract and hosted external-link monitoring have their own verified checks. [The contribution guide](../development/contributions.md#link-check) describes the link scanner and scheduled reporter; local knowledge checks remain separate. |
@@ -56,7 +56,9 @@ the approved Blender 5.0/5.1/5.2 matrix.
 
 The current follow-up set is #99, #188, #190, #435, #440, #444, #445 and #446,
 with browser sign-in deferred under #67.
-Their issue types and project Priority/Effort fields are recorded in the project;
+On the 2026-10-14 read-back, #99, #188 and #190 were Feature issues on the
+project's Backlog, #440 and #444 to #446 were on the project without an issue
+type, and #435 was not on it. Priority and Effort have no options yet.
 #31 is closed for the implemented portable-tooling foundation; it does not establish every desktop/media acceptance gate. The historical request
 for a fixed number of newly filed issues is reconciled with resolved credential
 and isolation defects and existing integration owners. Do not reopen fixed bugs

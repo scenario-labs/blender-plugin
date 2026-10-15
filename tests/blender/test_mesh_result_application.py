@@ -59,10 +59,23 @@ class MeshResultTests(unittest.TestCase):
         bpy.context.window.scene = self.previous
         self.model._remove_new_data(self.before)
 
+    def unit(self):
+        """The saved results as the session sees them: the first import unit, and every file."""
+        formats = submodule("core.scene.model_formats")
+        items = getattr(self, "items", None) or ((self.item, self.path),)
+        plan = formats.classify_packages(formats.members_from_results(i for i, _ in items))
+        files = {item.asset.asset_id: (item, path) for item, path in items}
+        return plan.units[0], files
+
     def apply(self, **kwargs):
+        """Prepare the snapshot as the session does before its claim, then apply it."""
         options = dict(policy="REMESH", result_to_source=Matrix.Identity(4), keep_original=True)
         options.update(kwargs)
-        return self.module.apply_saved_mesh(self.target, self.item, self.path, **options)
+        snapshot = self.module.prepare_saved_mesh(self.target, *self.unit(), **options)
+        try:
+            return self.module.apply_saved_mesh(self.target, snapshot, **options)
+        finally:
+            snapshot.cleanup()
 
     def morph_result(self):
         length = struct.unpack_from("<I", self.body, 12)[0]
@@ -124,6 +137,8 @@ class MeshResultTests(unittest.TestCase):
             image = bpy.data.images.new("Unused imported image", width=1, height=1)
             image.pixels[:] = (1, 1, 1, 1)
             image.update()
+            # Like an embedded texture: only packed or snapshot images are kept.
+            image.pack()
             group.nodes.new("ShaderNodeTexImage").image = image
 
         with patch.object(self.model, "_import", side_effect=add_action):
@@ -236,7 +251,8 @@ class MeshResultTests(unittest.TestCase):
     def test_corrupt_saved_bytes_preserve_exact_scene(self):
         before = self.model._snapshot()
         self.path.write_bytes(self.body + b"changed")
-        with self.assertRaises(self.module.MeshResultApplicationError):
+        # The rehash runs in the preflight, before any claim or import.
+        with self.assertRaises(self.model.ModelPreflightError):
             self.apply()
         self.assertEqual(self.model._snapshot(), before)
         self.mesh.validate_target(self.target)
@@ -602,17 +618,21 @@ class MeshResultTests(unittest.TestCase):
                 state=self.storage.JobState(state),
                 remote_job_id="fixture-remote" if state == "remote" else None,
             )
+        # A package's saved files, else the single fixture GLB.
+        items = getattr(self, "items", None) or ((self.item, None),)
         record = self.store.set_results(
-            "edit", (self.item.asset,), expected_revision=record.revision
+            "edit", tuple(item.asset for item, _ in items), expected_revision=record.revision
         )
         record = self.store.transition(
             "edit", expected_revision=record.revision, state=self.storage.JobState.DOWNLOADING
         )
         directory = self.session._coordinator._results._directory(record)
-        (directory / self.path.name).write_bytes(self.body)
-        record = self.store.record_download(
-            "edit", "mesh", self.item.receipt, expected_revision=record.revision
-        )
+        for item, path in items:
+            body = self.body if path is None else path.read_bytes()
+            (directory / item.receipt.name).write_bytes(body)
+            record = self.store.record_download(
+                "edit", item.asset.asset_id, item.receipt, expected_revision=record.revision
+            )
         return self.store.transition(
             "edit", expected_revision=record.revision, state=self.storage.JobState.READY
         )
@@ -745,21 +765,17 @@ class MeshResultTests(unittest.TestCase):
             ),
         )
         before = self.module.model_application._snapshot()
-        with self.assertRaises(self.module.MeshResultApplicationError):
-            self.module.apply_saved_mesh(
-                self.target,
-                self.item,
-                self.path,
-                policy="REMESH",
-                result_to_source=Matrix.Identity(4),
-                keep_original=True,
-            )
+        # Static policies refuse skins and animations in the preflight.
+        with self.assertRaises(self.model.ModelPreflightError):
+            self.apply()
         self.assertEqual(self.module.model_application._snapshot(), before)
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
 
 
 class RigResultTests(unittest.TestCase):
     tearDown = MeshResultTests.tearDown
     apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
 
     def setUp(self):
         MeshResultTests.setUp(self)
@@ -804,11 +820,11 @@ class RigResultTests(unittest.TestCase):
         self.assertAlmostEqual(end.x - start.x, 2, places=4)
 
     def test_importer_creates_no_bone_shape_helpers(self):
-        before = self.model._snapshot()
-        with self.model.staged_model(self.item, self.path, before, static_only=False) as (
-            staging,
-            objects,
-        ):
+        before = self.model._snapshot(self.model._PACKAGE_TRACKED)
+        snapshot = self.model.prepare_snapshot(*self.unit())
+        self.addCleanup(snapshot.cleanup)
+        self.model.use_snapshot(snapshot)
+        with self.model.staged_snapshot(snapshot, before) as (staging, objects):
             rigs = [obj for obj in objects if obj.type == "ARMATURE"]
             self.assertEqual(len(rigs), 1)
             self.assertEqual(len(rigs[0].pose.bones), 2)
@@ -1038,6 +1054,7 @@ def _rig_state(rig):
 class RiggedSourceTests(unittest.TestCase):
     tearDown = MeshResultTests.tearDown
     apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
     ready_session = MeshResultTests.ready_session
     verify = MeshResultTests.verify
     deliver = MeshResultTests.deliver
@@ -1346,6 +1363,7 @@ def _rest(rig):
 class AnimateResultTests(unittest.TestCase):
     tearDown = MeshResultTests.tearDown
     apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
     ready_session = MeshResultTests.ready_session
     verify = MeshResultTests.verify
     deliver = MeshResultTests.deliver
@@ -1613,6 +1631,7 @@ class MatchedResultTests(unittest.TestCase):
 
     tearDown = MeshResultTests.tearDown
     apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
 
     def setUp(self):
         MeshResultTests.setUp(self)
@@ -2004,6 +2023,7 @@ class MatchedRigTests(unittest.TestCase):
     setUp = MatchedResultTests.setUp
     tearDown = MeshResultTests.tearDown
     apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
     recapture = MatchedResultTests.recapture
     result = MatchedResultTests.result
     assert_unchanged = MatchedResultTests.assert_unchanged
@@ -2144,3 +2164,608 @@ class MatchedRigTests(unittest.TestCase):
         self.assertEqual(_rig_state(old_rig), old_state)
         self.assertEqual(result.original.modifiers[0].object, old_rig)
         self.assert_rest_pose()
+
+
+def assert_points(case, actual, expected, tolerance=1e-3):
+    """Every expected point has an actual one within `tolerance`, and the reverse."""
+    from mathutils import kdtree
+
+    for left, right in ((actual, expected), (expected, actual)):
+        tree = kdtree.KDTree(len(left))
+        for index, point in enumerate(left):
+            tree.insert(point, index)
+        tree.balance()
+        for point in right:
+            case.assertLess(tree.find(point)[2], tolerance, tuple(point))
+
+
+class FormatResultTests(unittest.TestCase):
+    """FBX, OBJ and glTF results, exported with Blender's own exporters, applied in place."""
+
+    apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
+    recapture = MatchedResultTests.recapture
+    islands = staticmethod(MatchedResultTests.islands)
+    assert_uvs = MatchedResultTests.assert_uvs
+    assert_geometry_kept = MatchedResultTests.assert_geometry_kept
+    fit = MatchedResultTests.fit
+
+    def setUp(self):
+        model = submodule("blender.model_application")
+        self.initial = model._snapshot(model._PACKAGE_TRACKED)
+        MatchedResultTests.setUp(self)
+        self.formats = submodule("core.scene.model_formats")
+        # The fixture source exists; every assertion compares against this.
+        self.before = self.model._snapshot(self.model._PACKAGE_TRACKED)
+        self.items = []
+
+    def tearDown(self):
+        if self.session is not None:
+            self.session.shutdown()
+        bpy.context.window.scene = self.previous
+        self.model._remove_new_data(self.initial, self.model._PACKAGE_DATA)
+
+    def exported(self, change, fmt, **options):
+        """Export an edited copy of the source at its world transform; return the directory."""
+        scratch = self.model._snapshot(self.model._PACKAGE_TRACKED)
+        self.directory = directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        world = self.source.matrix_world.copy()
+        copy = self.source.copy()
+        copy.data = self.source.data.copy()
+        self.scene.collection.objects.link(copy)
+        # Exporters write world positions only for objects whose parents they export.
+        copy.parent = None
+        copy.matrix_world = world
+        objects = change(copy) or [copy]
+        bpy.context.view_layer.update()
+        layer = bpy.context.view_layer
+        for obj in self.scene.objects:
+            obj.select_set(obj in objects)
+        layer.objects.active = objects[0]
+        path = directory / f"result.{fmt}"
+        if fmt == "glb":
+            self.export.export_glb(bpy.context, objects, str(path))
+        elif fmt == "gltf":
+            bpy.ops.export_scene.gltf(
+                filepath=str(path),
+                export_format="GLTF_SEPARATE",
+                use_selection=True,
+                use_active_scene=True,
+                **options,
+            )
+        elif fmt == "fbx":
+            self.assertEqual(
+                bpy.ops.export_scene.fbx(
+                    filepath=str(path),
+                    use_selection=True,
+                    add_leaf_bones=False,
+                    path_mode="COPY",
+                    embed_textures=True,
+                    **{"bake_anim": False, **options},
+                ),
+                {"FINISHED"},
+            )
+        else:
+            self.assertEqual(
+                bpy.ops.wm.obj_export(filepath=str(path), export_selected_objects=True, **options),
+                {"FINISHED"},
+            )
+        # Remove the exported objects and everything made for them.
+        self.model._remove_new_data(scratch, self.model._PACKAGE_DATA)
+        for obj in self.scene.objects:
+            obj.select_set(obj == self.source)
+        layer.objects.active = self.source
+        layer.update()
+        self.recapture()
+        return directory
+
+    def save(self, directory, files):
+        """Save exported files as one job's results: (asset ID, file, media type, role)."""
+        for _, path in self.items:
+            path.unlink()
+        self.items = []
+        for asset_id, name, media_type, role in files:
+            body = (directory / name).read_bytes()
+            path = self.root / f"{asset_id}.bin"
+            path.write_bytes(body)
+            digest = hashlib.sha256(body).hexdigest()
+            self.items.append(
+                (
+                    self.storage.StoredResult(
+                        self.storage.ResultAsset(
+                            asset_id, path.name, media_type, len(body), texture_role=role
+                        ),
+                        self.transfers.DownloadedResult(path.name, len(body), digest),
+                    ),
+                    path,
+                )
+            )
+        self.saved = {path: path.read_bytes() for _, path in self.items}
+
+    def fbx(self, change, **options):
+        self.save(
+            self.exported(change, "fbx", **options),
+            (("result-fbx", "result.fbx", "model/x-fbx", None),),
+        )
+
+    def obj(self, change, *, texture=False, **options):
+        directory = self.exported(change, "obj", **options)
+        files = [
+            ("result-obj", "result.obj", "model/obj", None),
+            ("result-mtl", "result.mtl", "model/mtl", None),
+        ]
+        if texture:
+            files.append(("result-albedo", "albedo.png", "image/png", "albedo"))
+        self.save(directory, files)
+
+    def textured(self, copy, expected):
+        """New UVs and one new material reading an albedo map saved beside the export."""
+        expected.update(self.islands(copy))
+        image = bpy.data.images.new("albedo", width=4, height=4)
+        image.pixels[:] = [0.25, 0.5, 0.75, 1.0] * 16
+        image.file_format = "PNG"
+        image.filepath_raw = str(self.directory / "albedo.png")
+        image.save()
+        material = bpy.data.materials.new("Result paint")
+        material.use_nodes = True
+        node = material.node_tree.nodes.new("ShaderNodeTexImage")
+        node.image = image
+        principled = material.node_tree.nodes["Principled BSDF"]
+        material.node_tree.links.new(node.outputs["Color"], principled.inputs["Base Color"])
+        copy.data.materials.clear()
+        copy.data.materials.append(material)
+        for polygon in copy.data.polygons:
+            polygon.material_index = 0
+
+    def assert_unchanged(self, reason, **kwargs):
+        before = self.model._snapshot(self.model._PACKAGE_TRACKED)
+        with self.assertRaises(self.module.MeshResultApplicationError) as raised:
+            self.apply(**{"result_to_source": self.fit(), **kwargs})
+        self.assertIn(reason, raised.exception.reason or str(raised.exception))
+        self.assertEqual(self.model._snapshot(self.model._PACKAGE_TRACKED), before)
+        self.mesh.validate_target(self.target)
+        self.assertEqual({path: path.read_bytes() for _, path in self.items}, self.saved)
+        # Only the saved files remain; the private snapshot was removed.
+        self.assertEqual(set(self.root.iterdir()), {self.path, *self.saved})
+
+    def assert_only_new(self, result, **kinds):
+        """Only the replacement data and the Keep original copy remain after success."""
+        after = self.model._snapshot(self.model._PACKAGE_TRACKED)
+        self.assertEqual(after["objects"] - self.before["objects"], {result.original})
+        self.assertEqual(after["scenes"], self.before["scenes"])
+        for name in ("actions", "curves", "textures", "armatures", "collections"):
+            self.assertEqual(after[name], self.before[name], name)
+        for name in ("materials", "images"):
+            self.assertEqual(len(after[name] - self.before[name]), kinds.get(name, 0), name)
+        self.assertEqual(set(self.root.iterdir()), {self.path, *self.saved})
+
+    def test_obj_and_glb_of_one_mesh_import_at_the_same_scene_positions(self):
+        def positions(fmt, files):
+            self.save(self.exported(lambda copy: None, fmt), files)
+            unit, members = self.unit()
+            snapshot = self.model.prepare_snapshot(unit, members)
+            self.addCleanup(snapshot.cleanup)
+            self.model.use_snapshot(snapshot)
+            before = self.model._snapshot(self.model._PACKAGE_TRACKED)
+            with self.model.staged_snapshot(snapshot, before) as (_, objects):
+                points = [
+                    obj.matrix_world @ vertex.co
+                    for obj in objects
+                    if obj.type == "MESH"
+                    for vertex in obj.data.vertices
+                ]
+            self.model._remove_new_data(before, self.model._PACKAGE_DATA)
+            return points
+
+        world = sorted(
+            {_rounded(self.source.matrix_world @ v.co) for v in self.source.data.vertices}
+        )
+        glb = positions("glb", (("result-glb", "result.glb", "model/gltf-binary", None),))
+        obj = positions(
+            "obj",
+            (
+                ("result-obj", "result.obj", "model/obj", None),
+                ("result-mtl", "result.mtl", "model/mtl", None),
+            ),
+        )
+        # Float32 positions far from the scene origin: compare within a millimetre.
+        assert_points(self, glb, world)
+        assert_points(self, obj, world)
+
+    def test_uv_from_a_triangulated_rescaled_fbx_fits_a_transformed_source(self):
+        expected = {}
+        self.fbx(
+            lambda copy: expected.update(self.islands(copy)), use_triangles=True, global_scale=2.0
+        )
+        (unit, _) = self.unit()
+        self.assertEqual(unit.format, self.formats.ModelFormat.FBX)
+        materials = list(self.source.data.materials)
+        result = self.apply(policy="UV", result_to_source=self.fit())
+        self.assertEqual((result.policy, result.fitted_from), ("UV", "WORLD"))
+        self.assertAlmostEqual(
+            (Matrix(result.mapping) @ self.mapping.inverted()).to_scale().x, 0.5, places=4
+        )
+        self.assert_geometry_kept()
+        self.assertEqual(list(self.source.data.materials), materials)
+        self.assertEqual(self.source.data.uv_layers.active.name, "Source UV")
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+        self.assert_only_new(result)
+
+    def test_uv_from_a_rescaled_obj_with_its_mtl_fits_a_transformed_source(self):
+        expected = {}
+        self.obj(lambda copy: expected.update(self.islands(copy)), global_scale=0.5)
+        result = self.apply(policy="UV", result_to_source=self.fit())
+        self.assertEqual((result.policy, result.fitted_from), ("UV", "WORLD"))
+        self.assert_geometry_kept()
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+        # The OBJ's own materials were only read, never adopted.
+        self.assert_only_new(result)
+
+    def test_uv_from_a_json_gltf_with_its_buffer_fits_a_transformed_source(self):
+        expected = {}
+        directory = self.exported(
+            lambda copy: expected.update(self.islands(copy)), "gltf", export_materials="NONE"
+        )
+        document = json.loads((directory / "result.gltf").read_text())
+        (buffer,) = document["buffers"]
+        (directory / "result-buffer.bin").write_bytes((directory / buffer["uri"]).read_bytes())
+        buffer["uri"] = "result-buffer.bin"
+        (directory / "result.gltf").write_text(json.dumps(document))
+        self.save(
+            directory,
+            (
+                ("result-gltf", "result.gltf", "model/gltf+json", None),
+                ("result-buffer", "result-buffer.bin", "application/octet-stream", None),
+            ),
+        )
+        result = self.apply(policy="UV", result_to_source=self.fit())
+        self.assertEqual(result.fitted_from, "WORLD")
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+        self.assert_only_new(result)
+
+    def test_retexture_from_an_fbx_with_an_embedded_map(self):
+        expected = {}
+        self.fbx(lambda copy: self.textured(copy, expected))
+        result = self.apply(policy="RETEXTURE", result_to_source=self.fit())
+        self.assertEqual(result.policy, "RETEXTURE")
+        self.assert_geometry_kept()
+        self.assert_retextured(expected)
+        self.assert_only_new(result, materials=1, images=1)
+
+    def test_retexture_from_an_obj_with_its_mtl_and_albedo_map(self):
+        expected = {}
+        self.obj(lambda copy: self.textured(copy, expected), texture=True)
+        result = self.apply(policy="RETEXTURE", result_to_source=self.fit())
+        self.assert_geometry_kept()
+        self.assert_retextured(expected)
+        self.assert_only_new(result, materials=1, images=1)
+
+    def assert_retextured(self, expected):
+        data = self.source.data
+        (material,) = data.materials
+        # The OBJ exporter writes spaces in material names as underscores.
+        self.assertTrue(material.name.replace("_", " ").startswith("Result paint"), material.name)
+        (image,) = [n.image for n in material.node_tree.nodes if n.type == "TEX_IMAGE"]
+        self.assertTrue(image.packed_file and image.filepath == "")
+        self.assertFalse(image.colorspace_settings.is_data)
+        self.assertEqual({polygon.material_index for polygon in data.polygons}, {0})
+        (layer,) = data.uv_layers
+        self.assert_uvs(layer, expected)
+
+    def test_remesh_from_an_fbx_under_a_centimetre_empty(self):
+        expected = []
+
+        def centimetres(copy):
+            # A provider FBX in centimetres: a 0.01-scale Empty over the mesh in cm.
+            mesh = bmesh.new()
+            bmesh.ops.create_icosphere(mesh, subdivisions=2, radius=1.5)
+            mesh.to_mesh(copy.data)
+            mesh.free()
+            copy.data.materials.clear()
+            root = bpy.data.objects.new("Centimetres", None)
+            self.scene.collection.objects.link(root)
+            root.scale = (0.01, 0.01, 0.01)
+            world = copy.matrix_world.copy()
+            copy.parent = root
+            copy.matrix_world = world
+            copy.data.transform(Matrix.Scale(100, 4))
+            copy.scale = copy.scale / 100
+            bpy.context.view_layer.update()
+            expected.extend(copy.matrix_world @ vertex.co for vertex in copy.data.vertices)
+            return [copy, root]
+
+        self.fbx(centimetres)
+        unit, files = self.unit()
+        snapshot = self.model.prepare_snapshot(unit, files)
+        self.addCleanup(snapshot.cleanup)
+        self.model.use_snapshot(snapshot)
+        staged = self.model._snapshot(self.model._PACKAGE_TRACKED)
+        with self.model.staged_snapshot(snapshot, staged) as (_, objects):
+            (empty,) = [obj for obj in objects if obj.type == "EMPTY"]
+            self.assertAlmostEqual(empty.matrix_world.to_scale().x, 0.01, places=6)
+        self.model._remove_new_data(staged, self.model._PACKAGE_DATA)
+        snapshot.cleanup()
+        original = self.source.data
+        result = self.apply(policy="REMESH", result_to_source=self.mapping)
+        self.assertEqual(result.original.data, original)
+        self.assertEqual(len(self.source.data.vertices), len(expected))
+        world = self.source.matrix_world
+        assert_points(self, [world @ vertex.co for vertex in self.source.data.vertices], expected)
+        self.assertEqual(self.source.parent.name, "Matched parent")
+        self.assert_only_new(result)
+
+    def test_fbx_failures_roll_back_every_imported_datablock(self):
+        def moved(copy):
+            self.textured(copy, {})
+            copy.data.vertices[2].co.z += 0.05
+
+        self.fbx(moved)
+        self.assert_unchanged("differs", policy="UV")
+        self.assert_unchanged("differs", policy="RETEXTURE")
+        # REMESH takes one mesh; a second one is a variant, not chosen silently.
+        self.fbx(lambda copy: [copy, self.duplicate(copy)])
+        self.assert_unchanged(
+            "source and saved files remain", policy="REMESH", result_to_source=self.mapping
+        )
+
+    def test_obj_failures_roll_back_every_imported_datablock(self):
+        def moved(copy):
+            self.textured(copy, {})
+            copy.data.vertices[2].co.z += 0.05
+
+        self.obj(moved, texture=True)
+        self.assert_unchanged("differs", policy="RETEXTURE")
+        self.obj(lambda copy: [copy, self.duplicate(copy)])
+        self.assert_unchanged(
+            "source and saved files remain", policy="REMESH", result_to_source=self.mapping
+        )
+
+    def duplicate(self, copy):
+        other = copy.copy()
+        other.data = copy.data.copy()
+        other.name = "Result variant"
+        self.scene.collection.objects.link(other)
+        other.location.x += 10
+        return other
+
+    def test_static_fbx_policies_leave_its_clips_out(self):
+        def animated(copy):
+            expected.update(self.islands(copy))
+            copy.keyframe_insert("location", frame=1)
+            copy.location.x += 3
+            copy.keyframe_insert("location", frame=10)
+            copy.location.x -= 3
+
+        expected = {}
+        self.fbx(animated, bake_anim=True)
+        actions = set(bpy.data.actions)
+        result = self.apply(policy="UV", result_to_source=self.fit())
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+        self.assertEqual(set(bpy.data.actions), actions)
+        self.assert_only_new(result)
+
+    def test_fbx_and_obj_need_a_window_and_stop_before_a_snapshot(self):
+        for fmt, export in (("FBX", self.fbx), ("OBJ", self.obj)):
+            with self.subTest(fmt=fmt):
+                export(lambda copy: None)
+                with bpy.context.temp_override(
+                    window=None, scene=self.scene, view_layer=self.scene.view_layers[0]
+                ):
+                    with self.assertRaises(self.model.ModelPreflightError) as raised:
+                        self.apply(policy="UV", result_to_source=self.fit())
+                self.assertIn(f"{fmt} import requires a Blender window", str(raised.exception))
+                self.assertEqual(self.model._snapshot(self.model._PACKAGE_TRACKED), self.before)
+                self.assertEqual(set(self.root.iterdir()), {self.path, *self.saved})
+
+    def test_splat_and_ply_units_are_refused_before_a_snapshot(self):
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        (directory / "splats").write_bytes(b"NGSP")
+        for key, media_type in (("splats", "model/spz"), ("points", "model/ply")):
+            with self.subTest(media_type=media_type):
+                self.save(directory, ((key, "splats", media_type, None),))
+                unit, files = self.unit()
+                self.assertFalse(self.module.applicable(unit))
+                with self.assertRaises(self.model.ModelPreflightError):
+                    self.apply(policy="REMESH", result_to_source=self.mapping)
+                self.assertEqual(self.model._snapshot(self.model._PACKAGE_TRACKED), self.before)
+                self.mesh.validate_target(self.target)
+
+    ready_session = MeshResultTests.ready_session
+    verify = MeshResultTests.verify
+    deliver = MeshResultTests.deliver
+
+    def test_session_claims_every_obj_member_and_reuses_them_for_another_edit(self):
+        expected = {}
+        self.obj(lambda copy: self.textured(copy, expected), texture=True)
+        record = self.ready_session()
+        members = ("result-obj", "result-mtl", "result-albedo")
+        with self.assertRaises(self.session_module.OriginUnavailable):
+            # A unit's members are not units of their own.
+            self.deliver(self.verify(record), asset_id="result-mtl")
+        self.assertEqual(self.store.get("edit"), record)
+        first = self.deliver(
+            self.verify(record),
+            asset_id="result-obj",
+            policy="RETEXTURE",
+            result_to_source=self.fit(),
+        )
+        self.assertEqual(first.record.state, self.storage.JobState.APPLIED)
+        self.assert_retextured(expected)
+        # A completed job's reuse claim names every member read, unit key first.
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        self.origin = self.session.capture(self.scene, self.source)
+        again = self.deliver(
+            self.verify(first.record),
+            asset_id="result-obj",
+            policy="UV",
+            result_to_source=self.fit(),
+        )
+        local = again.record.local_applications[-1]
+        self.assertEqual((local.asset_ids, local.state.value), (members, "applied"))
+        self.assertEqual(again.record.intent, first.record.intent)
+
+    def test_session_refuses_a_splat_unit_and_a_changed_member_before_a_claim(self):
+        directory = self.exported(lambda copy: None, "fbx")
+        (directory / "splats").write_bytes(b"NGSP" + bytes(60))
+        self.save(
+            directory,
+            (
+                ("result-fbx", "result.fbx", "model/x-fbx", None),
+                ("splats", "splats", "model/spz", None),
+            ),
+        )
+        record = self.ready_session()
+        with self.assertRaises(self.session_module.OriginUnavailable):
+            self.deliver(self.verify(record), asset_id="splats")
+        self.assertEqual(self.store.get("edit"), record)
+        completion = self.verify(record)
+        # The download changes after verification: the preflight stops before a claim.
+        downloads = self.session._coordinator._results._directory(record)
+        saved = downloads / self.items[0][0].receipt.name
+        saved.write_bytes(saved.read_bytes() + b"changed")
+        with self.assertRaises(self.model.ModelPreflightError):
+            self.deliver(
+                completion, asset_id="result-fbx", policy="UV", result_to_source=self.fit()
+            )
+        self.assertEqual(self.store.get("edit"), record)
+        self.assertEqual(self.model._snapshot(self.model._PACKAGE_TRACKED), self.before)
+        self.mesh.validate_target(self.target)
+
+    def test_rig_from_an_fbx_attaches_its_weights_and_rig(self):
+        weights = {}
+        self.fbx(lambda copy: MatchedRigTests.rig(self, copy, weights))
+        result = self.apply(policy="RIG", result_to_source=self.fit())
+        self.assertEqual(result.policy, "RIG")
+        self.assert_geometry_kept()
+        self.assertEqual(self.source.modifiers[0].object, result.rig)
+        self.assertEqual({bone.name for bone in result.rig.data.bones}, {"Root", "Tip"})
+        names = [group.name for group in self.source.vertex_groups]
+        for vertex in self.source.data.vertices:
+            actual = {names[group.group]: group.weight for group in vertex.groups}
+            expected = weights[_rounded(vertex.co)]
+            self.assertEqual(actual.keys(), expected.keys())
+            for name, weight in expected.items():
+                self.assertAlmostEqual(actual[name], weight, places=4)
+        MatchedRigTests.assert_rest_pose(self)
+
+
+class FbxAnimateTests(unittest.TestCase):
+    """Clips exported to FBX by Blender apply to the source's own rig."""
+
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
+    use_clips = AnimateResultTests.use_clips
+    timing = AnimateResultTests.timing
+
+    def setUp(self):
+        AnimateResultTests.setUp(self)
+        # Blender's FBX importer connects a bone whose head is on its parent's
+        # tail; this source rig was attached from such a file.
+        layer = bpy.context.view_layer
+        with bpy.context.temp_override(active_object=self.rig, object=self.rig):
+            layer.objects.active = self.rig
+            bpy.ops.object.mode_set(mode="EDIT")
+            for bone in self.rig.data.edit_bones:
+                bone.use_connect = bone.parent is not None
+            bpy.ops.object.mode_set(mode="OBJECT")
+        layer.objects.active = self.source
+        layer.update()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        self.skin = _skin(self.source, self.mesh)
+
+    def clip_fbx(self, bones):
+        """Export a character on a chain rig whose Spine bends over one baked FBX clip."""
+        from helpers import chain_rig
+
+        names = ("objects", "meshes", "armatures", "scenes", "actions", "collections")
+        before = {name: set(getattr(bpy.data, name)) for name in names}
+        window = bpy.context.window
+        previous = window.scene, window.view_layer
+        scene = bpy.data.scenes.new("FBX clip fixture")
+        directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        try:
+            window.scene, window.view_layer = scene, scene.view_layers[0]
+            rig = chain_rig(scene, "Armature", bones)
+            body = bpy.data.objects.new("Body", bpy.data.meshes.new("Body"))
+            body.data.from_pydata([(0, 0, 1), (1, 0, 1), (0, 0, 0)], [], [(0, 1, 2)])
+            scene.collection.objects.link(body)
+            body.parent = rig
+            body.vertex_groups.new(name=bones[0][0]).add([0, 1, 2], 1.0, "REPLACE")
+            body.modifiers.new("Armature", "ARMATURE").object = rig
+            data = rig.animation_data_create()
+            data.action = bpy.data.actions.new("Bend")
+            spine = rig.pose.bones["Spine"]
+            for frame, angle in ((1, 0.0), (25, 0.6)):
+                spine.rotation_quaternion = (math.cos(angle / 2), math.sin(angle / 2), 0, 0)
+                spine.keyframe_insert("rotation_quaternion", frame=frame)
+            spine.rotation_quaternion = (1, 0, 0, 0)
+            for obj in (rig, body):
+                obj.select_set(True)
+            window.view_layer.objects.active = rig
+            path = directory / "clip.fbx"
+            self.assertEqual(
+                bpy.ops.export_scene.fbx(
+                    filepath=str(path),
+                    use_selection=True,
+                    use_active_collection=False,
+                    add_leaf_bones=False,
+                    bake_anim=True,
+                    bake_anim_use_nla_strips=False,
+                    bake_anim_use_all_actions=False,
+                    bake_anim_force_startend_keying=False,
+                ),
+                {"FINISHED"},
+            )
+            return path.read_bytes()
+        finally:
+            window.scene, window.view_layer = previous
+            bpy.data.scenes.remove(scene)
+            for name in names:
+                values = getattr(bpy.data, name)
+                for value in set(values) - before[name]:
+                    values.remove(value, do_unlink=True)
+
+    def use_fbx(self, bones):
+        from helpers import CHAIN
+
+        self.body = self.clip_fbx(bones or CHAIN)
+        self.path = self.root / "clip.bin"
+        self.path.write_bytes(self.body)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("clip", self.path.name, "model/x-fbx", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+
+    def test_fbx_clip_plays_on_the_existing_rig(self):
+        self.use_fbx(None)
+        objects, mesh = set(bpy.data.objects), self.source.data
+        result = self.apply(policy="ANIMATE")
+        self.assertIs(result.rig, self.rig)
+        self.assertIs(self.source.data, mesh)
+        self.assertEqual(set(bpy.data.objects), objects)
+        self.assertEqual(_skin(self.source, self.mesh), self.skin)
+        self.assertIs(self.rig.animation_data.action, result.clips[0])
+        self.scene.frame_set(25)
+        bend = self.rig.pose.bones["Spine"].rotation_quaternion.angle
+        self.scene.frame_set(1)
+        self.assertAlmostEqual(bend, 0.6, places=2)
+
+    def test_fbx_clip_for_another_rest_pose_is_refused_with_its_reason(self):
+        from helpers import CHAIN
+
+        # The same connected bones, but Spine leans sideways at rest.
+        lean = {"Spine": ((0, 0, 1.2), (0.3, 0, 1.5)), "Head": ((0.3, 0, 1.5), (0.3, 0.1, 1.8))}
+        bones = tuple(
+            (name, parent, *lean.get(name, (head, tail))) for name, parent, head, tail in CHAIN
+        )
+        self.use_fbx(bones)
+        objects, actions = set(bpy.data.objects), set(bpy.data.actions)
+        with self.assertRaises(self.module.MeshResultApplicationError) as raised:
+            self.apply(policy="ANIMATE")
+        self.assertIn("rest pose does not match", raised.exception.reason)
+        self.assertEqual((set(bpy.data.objects), set(bpy.data.actions)), (objects, actions))
+        self.assertEqual(_skin(self.source, self.mesh), self.skin)
+        self.mesh.validate_target(self.target)

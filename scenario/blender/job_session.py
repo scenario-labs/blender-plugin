@@ -54,7 +54,11 @@ from .material_application import (
     validate_target,
 )
 from .media_application import MediaApplicationError, apply_media
-from .mesh_result_application import MeshResultApplicationError, apply_saved_mesh
+from .mesh_result_application import (
+    MeshResultApplicationError,
+    apply_saved_mesh,
+    prepare_saved_mesh,
+)
 from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import (
     MESH_FORMATS,
@@ -1627,7 +1631,14 @@ class JobSession:
         result_to_source,
         keep_original,
     ):
-        """Apply a selected GLB to an explicitly captured mesh, never current selection."""
+        """Apply one saved import unit to an explicitly captured mesh, never current selection.
+
+        `asset_id` is the unit key classified from the verified record: a GLB,
+        JSON glTF, FBX, or OBJ with its MTL and maps. Every member is rehashed into
+        a private snapshot before the claim, so a changed or unsupported result
+        raises ModelPreflightError with the saved job and the scene unchanged. The
+        claim names every member read, unit key first.
+        """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed mesh verification from this session")
@@ -1642,25 +1653,46 @@ class JobSession:
         validate_mesh_request(
             target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
         )
-        selected = [
-            (item, path)
-            for item, path in zip(verified.record.results, verified.paths, strict=True)
-            if item.asset.asset_id == asset_id
-        ]
-        if len(selected) != 1:
-            raise OriginUnavailable("Select one saved mesh asset")
-        item, path = selected[0]
-        del self._issued[id(completion)]
-        claim = self._claim_saved_application(verified, destination, "mesh_edit", (asset_id,))
         try:
-            application = apply_saved_mesh(
-                target,
-                item,
-                path,
-                policy=policy,
-                result_to_source=result_to_source,
-                keep_original=keep_original,
+            unit = import_plan(verified.record).unit(asset_id)
+        except ValueError:
+            unit = None
+        if unit is None or not mesh_result_application.applicable(unit):
+            raise OriginUnavailable("Select one saved GLB, glTF, FBX or OBJ mesh result")
+        files = {
+            item.asset.asset_id: (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+        }
+        del self._issued[id(completion)]
+        snapshot = prepare_saved_mesh(
+            target,
+            unit,
+            files,
+            policy=policy,
+            result_to_source=result_to_source,
+            keep_original=keep_original,
+        )
+        try:
+            claim = self._claim_saved_application(
+                verified, destination, "mesh_edit", snapshot.members
             )
+            return self._finish_mesh(
+                claim,
+                lambda: apply_saved_mesh(
+                    target,
+                    snapshot,
+                    policy=policy,
+                    result_to_source=result_to_source,
+                    keep_original=keep_original,
+                ),
+            )
+        finally:
+            snapshot.cleanup()
+
+    def _finish_mesh(self, claim, run):
+        """Run one claimed mesh edit; failures keep receipt-only recovery."""
+        try:
+            application = run()
         except MeshResultApplicationError:
             try:
                 self._coordinator.fail_application(claim)

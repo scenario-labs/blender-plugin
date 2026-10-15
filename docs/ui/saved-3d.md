@@ -79,9 +79,12 @@ DPI, the post-import status lines, and viewport navigation after a
 ## Saved mesh edit review
 
 **Apply mesh edit (N)** names the captured scene, source mesh and selected saved
-GLB, followed by **(primary result)** or **(alternate result)**. A GLB that is not
-the job's primary result is drawn as **Apply alternate mesh edit: GLB (N)** or
-**Apply alternate to captured source: GLB (N)**, mirroring its import label. The
+result, followed by its format and role, for example **(FBX, primary result)** or
+**(OBJ, alternate result)**. Controls follow the classified GLB, glTF, FBX and OBJ
+units. A primary GLB keeps **Apply mesh edit (N)**; another primary format is named,
+as in **Apply mesh edit: FBX (N)**. A unit that is not the job's primary result is
+drawn as **Apply alternate mesh edit: OBJ (N)** or
+**Apply alternate to captured source: OBJ (N)**, mirroring its import label. The
 dialog shows the replacement policy, scene/local/fitted coordinate placement
 and Keep original choice before confirmation. Invoke starts the policy from the
 prepared approval, and a line under it reads **Default edit follows this job's
@@ -103,8 +106,8 @@ approval instead of selecting a new target. Choosing **Replace active UVs**,
 **Replace textures** or **Attach rig** selects **Fit and verify** in a property
 update; choosing another policy returns to scene (or, when required, object-local)
 coordinates. The new placement stays visible and editable before confirmation.
-Physical desktop evidence of the default-edit line, the alternate labels and the
-fitted coordinates is pending. A stale target or scene requires
+Physical desktop evidence of the default-edit line, the alternate and format
+labels and the fitted coordinates is pending. A stale target or scene requires
 cancellation and fresh review. `draw()` only reads the prepared labels and
 operator properties. Completed-result reviews retain the reuse notice.
 
@@ -231,7 +234,7 @@ keyboard input worked after Redo.
 The saved-mesh review offers **Replace with parts** as an explicit policy. Its
 read-only explanation identifies the source, empty mesh parent, named children,
 2-to-128 part limit, unchanged source context and Keep original behavior. It
-states that every mesh in the chosen GLB is treated as a part. It does not infer
+states that every mesh in the chosen result is treated as a part. It does not infer
 variants or automatically fit the result. The shared UI/MCP command applies the
 [parts contract](../MESH_APPLICATION.md#apply-static-parts).
 

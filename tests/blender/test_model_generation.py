@@ -3510,16 +3510,24 @@ class ModelGenerationTests(unittest.TestCase):
         ]
         self.assertEqual(obj["members"], members)
         self.assertEqual(status["import_findings"], [])
-        # A model/glb result imports as a new group; in-place mesh edits stay GLB-typed.
+        # Both units import as a new group or apply in place, the GLB alias included.
         self.assertIn("import_model", status["actions"])
-        self.assertNotIn("apply_mesh", status["actions"])
+        self.assertIn("apply_mesh", status["actions"])
         recovery = submodule("blender.job_recovery")
         labels = [
             item.label
             for item in recovery.result_actions(owner.views[request_id])
-            if item.action == "import_model"
+            if item.action in {"import_model", "apply_mesh"}
         ]
-        self.assertEqual(labels, ["Import GLB model (4)", "Import alternate: OBJ (1)"])
+        self.assertEqual(
+            labels,
+            [
+                "Import GLB model (4)",
+                "Import alternate: OBJ (1)",
+                "Apply mesh edit (4)",
+                "Apply alternate mesh edit: OBJ (1)",
+            ],
+        )
         before = len(self.calls), len(self.paid), len(self.downloads)
         bpy.context.scene.cursor.location = (4, 5, 6)
         approval = self.prepare_package(request_id, "result-obj")
@@ -3657,6 +3665,67 @@ class ModelGenerationTests(unittest.TestCase):
         ]
         self.assertTrue(images)
         self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
+
+    def test_fbx_and_obj_units_apply_in_place_through_mcp_and_the_native_review(self):
+        # Tencent UV Unwrapping's shape: an FBX first, OBJ alternates and a map.
+        exports = self.package_exports()
+        obj = exports["obj"].read_text().replace("mtllib cube.mtl", "mtllib result-obj.mtl")
+        request_id = self.recovered_package(
+            {
+                "result-fbx": ("model/x-fbx", exports["fbx"].read_bytes(), {"type": "3d23d"}),
+                "result-obj": ("model/obj", obj.encode(), {"type": "3d23d"}),
+                "result-mtl": ("model/mtl", exports["mtl"].read_bytes(), {}),
+                "result-albedo": ("image/png", exports["png"].read_bytes(), {}),
+            }
+        )
+        owner = self.runtime.state.model_jobs
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertIn("apply_mesh", status["actions"])
+        numbers = {key: index for index, key in enumerate(owner.views[request_id].asset_ids, 1)}
+        recovery = submodule("blender.job_recovery")
+        labels = [
+            item.label
+            for item in recovery.result_actions(owner.views[request_id])
+            if item.action == "apply_mesh"
+        ]
+        self.assertEqual(
+            labels,
+            [
+                f"Apply mesh edit: FBX ({numbers['result-fbx']})",
+                f"Apply alternate mesh edit: OBJ ({numbers['result-obj']})",
+            ],
+        )
+        bpy.ops.mesh.primitive_cube_add()
+        source = bpy.context.view_layer.objects.active
+        op, ticket = self.mesh_dialog(request_id, "result-fbx")
+        self.assertEqual((op.result_format, op.result_role), ("FBX", "primary"))
+        self.assertEqual((ticket.format, ticket.primary), ("fbx", True))
+        # A unit's MTL or map is not a result of its own.
+        with self.assertRaises(self.request_error):
+            self.prepare_mesh_edit(request_id, asset_id="result-mtl")
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        old_mesh = source.data
+        approval = self.prepare_mesh_edit(request_id, asset_id="result-obj")
+        self.assertEqual((approval["format"], approval["primary"]), ("obj", False))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertNotEqual(source.data, old_mesh)
+        self.assertEqual(status["mesh_edit"]["policy"], "REMESH")
+        approval = self.prepare_mesh_edit(request_id, asset_id="result-fbx")
+        self.assertTrue(approval["reuse"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["local_applications"][-1]["asset_ids"], ["result-fbx"])
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_a_splat_unit_is_not_offered_for_a_mesh_edit(self):
+        request_id = self.splat_job()
+        bpy.ops.mesh.primitive_cube_add()
+        record = self.store.get(request_id)
+        with self.assertRaises(self.request_error):
+            self.prepare_mesh_edit(request_id, asset_id="result-spz")
+        self.assertEqual(self.store.get(request_id), record)
+        approval = self.prepare_mesh_edit(request_id, asset_id="result-glb")
+        self.assertEqual((approval["format"], approval["primary"]), ("glb", True))
 
     def test_splat_results_are_offered_and_unsupported_models_are_not(self):
         request_id = self.recovered_package(
@@ -5638,7 +5707,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(status["delivery_paused"])
         self.assertEqual(
             status["error"],
-            "Mesh application stopped; inspect the saved GLB, source and edit policy",
+            "Mesh application stopped; inspect the saved result, source and edit policy",
         )
         saved = self.store.get(request_id)
         for _ in range(3):

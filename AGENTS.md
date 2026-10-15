@@ -187,7 +187,10 @@ the recorded dependency order, and validate each PR's incremental diff after
 rebasing. Stacking does not authorize merging any PR or the whole stack.
 The final diff determines
 the PR title and commit type; `commitlint.config.ts` defines the allowed types,
-scopes and 120-character header limit. Preserve attribution. Do not bump versions
+scopes and 120-character header limit. Use `fix` only for behavior that users of
+the released extension or the live site saw; correcting tooling, CI or
+infrastructure they do not run yet is `chore` (or `ci`, `build` or `docs` when
+that fits), without the `bug` label. Preserve attribution. Do not bump versions
 or edit release notes in unrelated work.
 
 Reply in the original GitHub review thread after investigating a finding, with

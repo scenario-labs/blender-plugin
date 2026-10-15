@@ -66,6 +66,16 @@ def test_local_reusable_actions_docker_comments_and_script_literals_are_not_remo
     assert rules.run(rules.RULES, [path], tmp_path) == []
 
 
+def test_only_actions_published_as_a_major_tag_take_a_major_comment(tmp_path):
+    path = workflow(
+        tmp_path,
+        f"  - uses: google/clusterfuzzlite/actions/build_fuzzers@{SHA} # v1\n"
+        f"  - uses: google/clusterfuzzlite/actions/run_fuzzers@{SHA} # 1\n"
+        f"  - uses: google/clusterfuzzlite-fork/actions/run@{SHA} # v1\n",
+    )
+    assert [item.line for item in rules.run(rules.RULES, [path], tmp_path)] == [2, 3]
+
+
 @pytest.mark.parametrize(
     "declaration",
     [

@@ -247,7 +247,8 @@ so a proposed workflow is checked before it is staged.
 
 Write `uses` on its own line with a plain, single-quoted or double-quoted value.
 Remote actions and reusable workflows need a lowercase 40-character SHA and a
-trailing full release-version comment such as `# v1.2.3`. Local `./` references
+trailing full release-version comment such as `# v1.2.3`; ClusterFuzzLite's
+actions, which publish only a `v1` tag, take `# v1`. Local `./` references
 use the caller checkout; `docker://` references remain outside this rule.
 Multiline values, aliases and flow-style action declarations fail with a request
 to use the supported form. Script block contents and comments are not action

@@ -19,6 +19,9 @@ _USES = re.compile(r"^\s*(?:-\s*)?(?:uses|'uses'|\"uses\")\s*:\s*(.*)$")
 _SCALAR = re.compile(r"(?:'([^'\r\n]*)'|\"([^\"\\\r\n]*)\"|([^\s'\"#]+))(?:\s+(#.*))?\s*$")
 _REMOTE = re.compile(r"[\w.-]+/[\w.-]+(?:/[\w./-]+)?@[0-9a-f]{40}", re.ASCII)
 _RELEASE = re.compile(r"#\s*v?\d+\.\d+\.\d+(?:[-+][\w.-]+)?(?:\s|$)", re.ASCII)
+# Actions whose upstream publishes only a major release tag, such as ClusterFuzzLite's v1.
+_MAJOR_TAG_ONLY = ("google/clusterfuzzlite/",)
+_MAJOR = re.compile(r"#\s*v\d+(?:\s|$)", re.ASCII)
 _BLOCK = re.compile(
     r"^\s*(?:-\s*)?(?P<key>[\w.-]+|'[^']+'|\"[^\"]+\")\s*:\s*"
     r"[|>](?:[1-9][+-]?|[+-][1-9]?)?\s*(?:#.*)?$"
@@ -107,7 +110,10 @@ def actions_pinned(files, root):
                     comment = scalar[4] or ""
                     if reference.startswith(("./", "docker://")):
                         continue
-                    if _REMOTE.fullmatch(reference) and _RELEASE.match(comment):
+                    if _REMOTE.fullmatch(reference) and (
+                        _RELEASE.match(comment)
+                        or (reference.startswith(_MAJOR_TAG_ONLY) and _MAJOR.match(comment))
+                    ):
                         continue
                     message = "Pin the remote action/workflow to a full 40-hex SHA with a # vX.Y.Z comment"
                 violations.append(Violation(display, number, "actions-pinned", message))

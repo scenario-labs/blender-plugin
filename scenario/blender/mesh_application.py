@@ -411,6 +411,9 @@ class Surface:
     result: object = field(repr=False)
     match: object = field(repr=False)
     offsets: tuple = field(repr=False)
+    # (vertex, loop, polygon) starts of each source object in the joined `source`
+    # buffers; one entry unless several sources were matched together.
+    source_offsets: tuple = field(default=((0, 0, 0),), repr=False)
 
     def loops(self):
         """Joined result loop -> source loop indices (identity for exact topology)."""
@@ -423,60 +426,54 @@ class Surface:
         return self.match.polygons if self.match else array("i", range(count))
 
 
-def _hypothesis(source, src, results, base, policy, *, fit, scene, label):
-    """Verify one base mapping, optionally with a uniform scale/offset fit."""
+def _hypothesis(src, results, base, policy, *, fit, scene, label, origin, exact, offsets):
+    """Verify one base mapping, optionally with a uniform scale/offset fit.
+
+    `exact` is the one source mesh whose identical indexed topology may skip the
+    correspondence, or None; `origin` widens the tolerance for float32 transforms.
+    """
     pieces = [(obj.data, base @ obj.matrix_world if scene else base) for obj in results]
-    if not fit and len(pieces) == 1 and _same_topology(source.data, *pieces[0]):
+    if exact is not None and not fit and len(pieces) == 1 and _same_topology(exact, *pieces[0]):
         return Surface((pieces[0][0],), base, None, 1.0, None, None, None, ((0, 0, 0),))
     parts = []
     for mesh, local in pieces:
         part = _arrays(mesh)
         rows = tuple(tuple(row) for row in local)
         parts.append(replace(part, co=mesh_correspondence.transformed(part.co, rows)))
-    result, offsets = mesh_correspondence.concatenate(parts)
+    result, result_offsets = mesh_correspondence.concatenate(parts)
     mapping, scale, fitted = base, 1.0, None
     if fit:
         scale, offset = _transfer(policy, mesh_correspondence.similarity_fit, src, result)
         result = replace(result, co=mesh_correspondence.scaled(result.co, scale, offset))
         mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
         fitted = label
-    # Far from the scene origin, float32 file transforms round more coarsely.
-    inverse = source.matrix_world.inverted(None)
-    origin = (inverse @ Vector((0.0, 0.0, 0.0))).length if inverse is not None else 0.0
     tolerance = _transfer(policy, mesh_correspondence.position_tolerance, src.co, origin)
     match = _transfer(policy, mesh_correspondence.match, src, result, tolerance)
     return Surface(
-        tuple(mesh for mesh, _ in pieces), mapping, fitted, scale, src, result, match, offsets
+        tuple(mesh for mesh, _ in pieces),
+        mapping,
+        fitted,
+        scale,
+        src,
+        result,
+        match,
+        result_offsets,
+        offsets,
     )
 
 
-def match_surface(source, results, result_to_source, policy, *, scene=True):
-    """Prove one or more result meshes are the source object's surface.
-
-    With `scene`, each result object's world matrix is composed before the
-    mapping (saved-GLB scene coordinates); otherwise mesh coordinates are mapped
-    directly. Identical indexed topology is the cheap path. Otherwise a verified
-    correspondence accepts triangulated, seam-split or reordered results within
-    the documented tolerance. A `FitRequest` adds a verified uniform scale/offset
-    fit; strict mappings never fit. Nothing is guessed: ambiguity fails closed.
-    """
-    # Split results share one synchronous bound, like parts.
-    if sum(_components(obj.data) for obj in results) > MAX_COMPONENTS:
-        raise MeshApplicationError("Result meshes exceed the synchronous component limit")
-    src = _arrays(source.data)
+def _verify(src, results, result_to_source, policy, *, scene, origin, exact, offsets):
+    """Verify a strict mapping, or each base of an approved `FitRequest`."""
+    options = dict(scene=scene, origin=origin, exact=exact, offsets=offsets)
     if not isinstance(result_to_source, FitRequest):
-        return _hypothesis(
-            source, src, results, result_to_source, policy, fit=False, scene=scene, label=None
-        )
+        return _hypothesis(src, results, result_to_source, policy, fit=False, label=None, **options)
     if policy not in FIT_POLICIES:
         raise MeshApplicationError("Fitted coordinates apply to UV, retexture and rig only")
     verified, reasons = [], []
     for label, rows in result_to_source.bases:
         try:
             verified.append(
-                _hypothesis(
-                    source, src, results, _matrix(rows), policy, fit=True, scene=scene, label=label
-                )
+                _hypothesis(src, results, _matrix(rows), policy, fit=True, label=label, **options)
             )
         except MeshApplicationError as exc:
             reasons.append(f"{label}: {str(exc).split(': ', 1)[-1]}")
@@ -494,6 +491,59 @@ def match_surface(source, results, result_to_source, policy, *, scene=True):
     return first
 
 
+def match_surface(source, results, result_to_source, policy, *, scene=True):
+    """Prove one or more result meshes are the source object's surface.
+
+    With `scene`, each result object's world matrix is composed before the
+    mapping (saved-GLB scene coordinates); otherwise mesh coordinates are mapped
+    directly. Identical indexed topology is the cheap path. Otherwise a verified
+    correspondence accepts triangulated, seam-split or reordered results within
+    the documented tolerance. A `FitRequest` adds a verified uniform scale/offset
+    fit; strict mappings never fit. Nothing is guessed: ambiguity fails closed.
+    """
+    # Split results share one synchronous bound, like parts.
+    if sum(_components(obj.data) for obj in results) > MAX_COMPONENTS:
+        raise MeshApplicationError("Result meshes exceed the synchronous component limit")
+    # Far from the scene origin, float32 file transforms round more coarsely.
+    inverse = source.matrix_world.inverted(None)
+    origin = (inverse @ Vector((0.0, 0.0, 0.0))).length if inverse is not None else 0.0
+    return _verify(
+        _arrays(source.data),
+        results,
+        result_to_source,
+        policy,
+        scene=scene,
+        origin=origin,
+        exact=source.data,
+        offsets=((0, 0, 0),),
+    )
+
+
+def match_sources(sources, results, result_to_source, policy):
+    """Prove result meshes are several source objects' surfaces together, in scene coordinates.
+
+    Each source mesh is placed by its world matrix and the sources are joined into
+    one surface, so `result_to_source` maps result scene coordinates to scene
+    coordinates (identity for `WORLD`), or is a `FitRequest` of that one base.
+    The joined match is split per source with `Surface.source_offsets`.
+    """
+    # The sources and results share one synchronous bound.
+    if sum(_components(obj.data) for obj in (*sources, *results)) > MAX_COMPONENTS:
+        raise MeshApplicationError(
+            "Source and result meshes exceed the synchronous component limit"
+        )
+    parts = []
+    for obj in sources:
+        part = _arrays(obj.data)
+        rows = tuple(tuple(row) for row in obj.matrix_world)
+        parts.append(replace(part, co=mesh_correspondence.transformed(part.co, rows)))
+    src, offsets = mesh_correspondence.concatenate(parts)
+    # Scene positions already carry the distance from the scene origin.
+    return _verify(
+        src, results, result_to_source, policy, scene=True, origin=0.0, exact=None, offsets=offsets
+    )
+
+
 def _corner_values(surface, layers, width, count, policy, label):
     """Join one per-loop buffer per result mesh and resolve it per source loop."""
     values = array("f")
@@ -506,8 +556,11 @@ def _corner_values(surface, layers, width, count, policy, label):
     )
 
 
-def _retexture(staged, surface):
-    """Adopt result UV/material bindings without mutating shared shader graphs."""
+def _retexture_values(surface, sources):
+    """Resolve result UV layers and merged material slots per (joined) source loop and face.
+
+    Every transferred value is resolved before any staged copy changes.
+    """
     meshes = surface.meshes
     if any(not mesh.materials or any(m is None for m in mesh.materials) for mesh in meshes):
         raise MeshApplicationError("Retexture requires nonempty result material slots")
@@ -521,10 +574,12 @@ def _retexture(staged, surface):
     names = [layer.name for layer in first.uv_layers]
     if any([layer.name for layer in mesh.uv_layers] != names for mesh in meshes):
         raise MeshApplicationError("Retexture requires the same UV layers on every result mesh")
-    source_uv_names = {layer.name for layer in staged.uv_layers}
-    other_names = {attribute.name for attribute in staged.attributes} - source_uv_names
-    if any(name in other_names for name in names):
-        raise MeshApplicationError("Result UV names conflict with preserved source attributes")
+    for source in sources:
+        # A staged copy carries exactly the source mesh's attributes.
+        source_uv_names = {layer.name for layer in source.uv_layers}
+        other_names = {attribute.name for attribute in source.attributes} - source_uv_names
+        if any(name in other_names for name in names):
+            raise MeshApplicationError("Result UV names conflict with preserved source attributes")
     # Merge every result mesh's slots (once per material) and remap its faces.
     materials, slots, indices = [], {}, array("i")
     for mesh in meshes:
@@ -536,7 +591,6 @@ def _retexture(staged, surface):
             remap.append(slots[material.as_pointer()])
         local = _buffer(mesh.polygons, "material_index", "i", 1, len(mesh.polygons))
         indices.extend(array("i", (remap[index] for index in local)))
-    # Resolve every transferred value before the staged copy changes.
     layers = [
         (
             layer,
@@ -544,7 +598,7 @@ def _retexture(staged, surface):
                 surface,
                 [mesh.uv_layers[index] for mesh in meshes],
                 2,
-                len(staged.loops),
+                sum(len(source.loops) for source in sources),
                 "RETEXTURE",
                 "UV coordinates",
             ),
@@ -557,23 +611,33 @@ def _retexture(staged, surface):
             mesh_correspondence.faces,
             surface.match,
             indices,
-            len(staged.polygons),
+            sum(len(source.polygons) for source in sources),
             "materials",
         )
+    return materials, layers, indices, first.uv_layers.active_index
+
+
+def _retexture(staged, values, loop, polygon):
+    """Adopt result UV/material bindings without mutating shared shader graphs.
+
+    `loop` and `polygon` are this source's starts in the resolved joined values.
+    """
+    materials, layers, indices, active = values
+    corners = slice(2 * loop, 2 * (loop + len(staged.loops)))
     for layer in tuple(staged.uv_layers):
         staged.uv_layers.remove(layer)
-    for layer, values in layers:
+    for layer, coordinates in layers:
         destination = staged.uv_layers.new(name=layer.name, do_init=False)
         if destination.name != layer.name:
             raise MeshApplicationError("Cannot preserve result UV names")
-        destination.data.foreach_set("uv", values)
+        destination.data.foreach_set("uv", coordinates[corners])
         destination.active_render = layer.active_render
         destination.active_clone = layer.active_clone
-    staged.uv_layers.active_index = first.uv_layers.active_index
+    staged.uv_layers.active_index = active
     staged.materials.clear()
     for material in materials:
         staged.materials.append(material)
-    staged.polygons.foreach_set("material_index", indices)
+    staged.polygons.foreach_set("material_index", indices[polygon : polygon + len(staged.polygons)])
 
 
 def _stage(source, result, policy, mapping):
@@ -588,29 +652,34 @@ def _stage(source, result, policy, mapping):
         raise
 
 
-def _stage_surface(source, surface, policy):
-    """Copy the source mesh with UVs or textures transferred from a verified surface."""
-    values = None
-    if policy == "UV":
-        if any(len(mesh.uv_layers) != 1 for mesh in surface.meshes):
-            raise MeshApplicationError("UV application requires exactly one result UV layer")
-        values = _corner_values(
-            surface,
-            [mesh.uv_layers[0] for mesh in surface.meshes],
-            2,
-            len(source.loops),
-            policy,
-            "UV coordinates",
-        )
+def _surface_values(surface, policy, sources):
+    """Resolve UVs or textures for every source mesh of a verified surface, in order."""
+    if policy == "RETEXTURE":
+        return _retexture_values(surface, sources)
+    if any(len(mesh.uv_layers) != 1 for mesh in surface.meshes):
+        raise MeshApplicationError("UV application requires exactly one result UV layer")
+    return _corner_values(
+        surface,
+        [mesh.uv_layers[0] for mesh in surface.meshes],
+        2,
+        sum(len(source.loops) for source in sources),
+        policy,
+        "UV coordinates",
+    )
+
+
+def _stage_surface(source, surface, policy, values, part=0):
+    """Copy one source mesh with its part of the resolved UVs or textures."""
+    _, loop, polygon = surface.source_offsets[part]
     staged = source.copy()
     try:
         if policy == "RETEXTURE":
-            _retexture(staged, surface)
+            _retexture(staged, values, loop, polygon)
         else:
             destination = staged.uv_layers.active or staged.uv_layers.new(
                 name=surface.meshes[0].uv_layers[0].name
             )
-            destination.data.foreach_set("uv", values)
+            destination.data.foreach_set("uv", values[2 * loop : 2 * (loop + len(staged.loops))])
         staged.update()
         return staged
     except BaseException:
@@ -719,8 +788,12 @@ class MeshApplication:
             self._discard_unused_original()
         self._closed = True
 
-    def rollback(self):
-        """Restore only if both mesh snapshots and the explicit target remain valid."""
+    @property
+    def originals(self):
+        return (self.original,)
+
+    def check_rollback(self):
+        """Raise unless rollback would restore this source; changes nothing."""
         _main_thread()
         if self._closed:
             raise MeshApplicationError("This application receipt is already finalized")
@@ -744,6 +817,10 @@ class MeshApplication:
             raise MeshApplicationError(
                 "Application data was removed; rollback is unavailable"
             ) from None
+
+    def rollback(self):
+        """Restore only if both mesh snapshots and the explicit target remain valid."""
+        self.check_rollback()
         self.source.data = self._before
         self.source.active_material_index = self._before_active
         self._release_holder()
@@ -813,10 +890,107 @@ def apply_surface(
     if not isinstance(result_to_source, FitRequest):
         result_to_source = _matrix(result_to_source)
     surface = match_surface(source, results, result_to_source, policy, scene=scene_coordinates)
-    staged = _stage_surface(source.data, surface, policy)
+    staged = _stage_surface(
+        source.data, surface, policy, _surface_values(surface, policy, (source.data,))
+    )
     receipt = _replace_mesh(scene, source, staged, keep_original=keep_original)
     receipt.surface = surface
     return receipt
+
+
+@dataclass(eq=False)
+class MeshApplications:
+    """One rollback boundary over several sources' receipts, in publication order.
+
+    Rollback first checks every receipt, then restores them in reverse order.
+    """
+
+    receipts: tuple
+    surface: object = field(default=None, repr=False)
+
+    @property
+    def original(self):
+        return None
+
+    @property
+    def originals(self):
+        return tuple(receipt.original for receipt in self.receipts)
+
+    def accept(self):
+        for receipt in self.receipts:
+            receipt.accept()
+
+    def rollback(self):
+        for receipt in self.receipts:
+            receipt.check_rollback()
+        for receipt in reversed(self.receipts):
+            receipt.rollback()
+
+
+def _validate_sources(scene, sources, results):
+    if not 2 <= len(sources) <= 64 or len(set(sources)) != len(sources):
+        raise MeshApplicationError("Choose between two and 64 distinct source meshes")
+    for source in sources:
+        _validate_object(scene, source)
+        if any(source is result or source.data is result.data for result in results):
+            raise MeshApplicationError("Use a separate imported result mesh")
+        _fingerprint(source.data)
+    for result in results:
+        _validate_object(scene, result, read_only=True)
+        _fingerprint(result.data)
+
+
+def apply_surfaces(scene, sources, results, *, policy, result_to_source, keep_original):
+    """Apply UVs or textures to several sources whose joint surface the results form.
+
+    `result_to_source` maps result scene coordinates to scene coordinates, or is
+    an approved `FitRequest` (see `match_sources`). Every source is staged before
+    any is published; a failed publication restores the published ones. The
+    returned `MeshApplications` is one receipt for all of them.
+    """
+    _main_thread()
+    if policy not in {"UV", "RETEXTURE"} or type(keep_original) is not bool or not results:
+        raise MeshApplicationError("Use an explicit UV/RETEXTURE policy and boolean Keep original")
+    _validate_sources(scene, sources, results)
+    if not isinstance(result_to_source, FitRequest):
+        result_to_source = _matrix(result_to_source)
+    surface = match_sources(sources, results, result_to_source, policy)
+    values = _surface_values(surface, policy, tuple(source.data for source in sources))
+    staged = []
+    try:
+        for part, source in enumerate(sources):
+            staged.append(_stage_surface(source.data, surface, policy, values, part))
+    except BaseException:
+        for mesh in staged:
+            bpy.data.meshes.remove(mesh)
+        raise
+    receipt = MeshApplications(
+        _replace_meshes(scene, sources, staged, keep_original=keep_original), surface
+    )
+    return receipt
+
+
+def _replace_meshes(scene, sources, staged, *, keep_original):
+    """Publish one staged mesh per source; on failure, restore those already published.
+
+    Returns the per-source receipts in order. A restoration that cannot be
+    verified raises RuntimeError, leaving the scene for inspection.
+    """
+    receipts = []
+    try:
+        for source, mesh in zip(sources, staged, strict=True):
+            receipts.append(_replace_mesh(scene, source, mesh, keep_original=keep_original))
+    except BaseException:
+        # The failed publication removed its own staged copy.
+        for mesh in staged[len(receipts) + 1 :]:
+            if not mesh.users:
+                bpy.data.meshes.remove(mesh)
+        try:
+            MeshApplications(tuple(receipts)).rollback()
+        except Exception:
+            raise RuntimeError("Mesh replacement is uncertain; inspect the sources") from None
+        raise
+    return tuple(receipts)
 
 
 def _replace_mesh(scene, source, staged, *, keep_original, skin=False):

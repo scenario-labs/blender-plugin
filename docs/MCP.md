@@ -1117,7 +1117,15 @@ Show the returned target, asset, policy, coordinate placement and Keep original
 choice before calling `apply_result_application`. The generic `mesh_edit` purpose
 continues to review the active mesh as an explicit destination.
 
-Multiple captured inputs/sources, changed sources and missing live guards fail
+An input exported from several objects resolves all of them: `target` is null and
+`targets` lists their names. Only `UV`, `RETEXTURE` and `RIG` apply, in `WORLD`
+(identity) or `FIT` coordinates, to every object or to none; `LOCAL`, `REMESH`,
+`PARTS` and `ANIMATE` are refused. `job_status` `mesh_edit.targets` and
+`mesh_edit.originals` then list the edited objects and their copies, with
+`target` and `original` null. See
+[several captured objects](MESH_APPLICATION.md#several-captured-objects).
+
+Multiple captured inputs, changed sources and missing live guards fail
 before mutation. Undo/load, credential retirement and restart cannot restore a
 guard from saved provenance. This shares the native
 [captured-source action](MESH_APPLICATION.md#applying-to-the-captured-mesh-source),
@@ -1132,7 +1140,8 @@ Edit 3D form when this session submitted the job, if that task lists the model,
 otherwise the model's only task. MCP `generate` takes no task, so its jobs use
 the model's only task.
 `mesh_policy_source` is `edit3d_task` (with `edit3d_task` naming it), `default`
-when the job gives no applicable task and REMESH is only the fallback, or
+when the job gives no applicable task and REMESH (UV for several captured
+objects) is only the fallback, or
 `requested` for an explicit `mesh_policy`, which always wins. An Animate job
 starts on ANIMATE for a source already skinned to an armature and on RIG
 otherwise, both with `edit3d_task`. For any other task a skinned source starts on

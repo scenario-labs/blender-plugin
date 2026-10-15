@@ -71,14 +71,14 @@ def export_with_source(context, objects, path, session):
     # A live application guard is stricter than upload provenance: unsupported
     # rigs/modifiers remain uploadable, but never become an in-place edit target.
     # A single Armature skin is retained; the exporter sends its unposed mesh.
-    target = None
-    if len(objects) == 1:
-        try:
-            target = capture_target(scene, objects[0])
-        except MeshApplicationError:
-            # Upload/export supports more sources than in-place replacement.
-            # Preserve the upload without granting a live application guard.
-            pass
+    # Several objects are retained together only when every one is capturable.
+    captured = ()
+    try:
+        captured = tuple(capture_target(scene, obj) for obj in objects)
+    except MeshApplicationError:
+        # Upload/export supports more sources than in-place replacement.
+        # Preserve the upload without granting a live application guard.
+        pass
     mesh_export.export_glb(context, objects, path=str(path))
     context.view_layer.update()
     after, current = _capture_sources(scene, objects, session)
@@ -86,8 +86,8 @@ def export_with_source(context, objects, path, session):
         raise ScenarioError(0, "Source mesh changed during export; inspect it before uploading")
     # Export temporarily changes selection and can evaluate the graph. Freeze the
     # upload revision after restoration, retaining the exact pre-export identities.
-    if target is not None:
-        validate_target(target)
+    for item in captured:
+        validate_target(item)
     if any(
         (old.file_id, old.scene_id, old.target_id) != (new.file_id, new.scene_id, new.target_id)
         for old, new in zip(identities, current, strict=True)
@@ -118,6 +118,6 @@ def export_with_source(context, objects, path, session):
         ),
     )
     origin = current[0] if len(current) == 1 else session.capture(scene)
-    if target is not None:
-        session.retain_mesh_source(origin, source, target)
+    if captured:
+        session.retain_mesh_source(origin, source, captured[0] if len(captured) == 1 else captured)
     return origin, source

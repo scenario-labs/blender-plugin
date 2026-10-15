@@ -38,7 +38,11 @@ from ..core.jobs.store import (
 )
 from ..core.jobs.workers import WorkerError
 from ..core.scene import panorama_contract
-from ..core.scene.mesh_edit_policy import animate_policy, default_policy
+from ..core.scene.mesh_edit_policy import (
+    SEVERAL_SOURCES_FALLBACK,
+    animate_policy,
+    default_policy,
+)
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
@@ -59,7 +63,11 @@ from .media_application import MEDIA_TYPES
 from .mesh_application import FIT_POLICIES, FitRequest, MeshApplicationError
 from .mesh_application import capture_target as capture_mesh_target
 from .mesh_application import validate_target as validate_mesh_target
-from .mesh_result_application import MeshEditApplication, MeshResultApplicationError
+from .mesh_result_application import (
+    SEVERAL_SOURCE_POLICIES,
+    MeshEditApplication,
+    MeshResultApplicationError,
+)
 from .mesh_result_application import applicable as mesh_applicable
 from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import (
@@ -358,6 +366,7 @@ class MeshApplicationApproval:
     scene_name: str
     target_name: str
     asset_id: str
+    # One MeshTarget, or a tuple of the captured sources edited together.
     target: object = field(repr=False)
     policy: str
     placement: str
@@ -373,6 +382,12 @@ class MeshApplicationApproval:
     # Whether the unit is the job's primary result or an alternate, and its format.
     primary: bool | None = None
     format: str = "glb"
+    # Every target object's name, in capture order.
+    target_names: tuple = ()
+
+    @property
+    def targets(self):
+        return self.target if isinstance(self.target, tuple) else (self.target,)
 
 
 class ModelJobs:
@@ -870,6 +885,11 @@ class ModelJobs:
             )
             view.meta["import_units"] = self._unit_rows(record)
             view.meta["import_notices"] = self._import_notices(request_id)
+            # How many objects the captured-source action edits together.
+            bindings = record.intent.mesh_sources
+            view.meta["mesh_source_objects"] = (
+                len(bindings[0].mesh_source.objects) if len(bindings) == 1 else 0
+            )
             self._project_remote(request_id, record, view, online=online)
             view.meta["error_title"] = view.meta["review_note"] = None
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
@@ -1529,10 +1549,8 @@ class ModelJobs:
         # In-place mesh edits stage a classified GLB, glTF, FBX or OBJ unit.
         if reusable and any(mesh_applicable(unit) for unit in self._units(record)):
             actions.append("apply_mesh")
-            if (
-                len(record.intent.mesh_sources) == 1
-                and len(record.intent.mesh_sources[0].mesh_source.objects) == 1
-            ):
+            # One captured input, of one object or several exported together.
+            if len(record.intent.mesh_sources) == 1:
                 actions.append("apply_mesh_source")
         if reusable and self._world_offer(record):
             actions.append("apply_world")
@@ -1855,6 +1873,19 @@ class ModelJobs:
             raise ScenarioError(0, "Choose scene, object-local or fitted result coordinates")
         if placement == "FIT" and policy not in FIT_POLICIES:
             raise ScenarioError(0, "Fitted coordinates apply to UV, retexture and rig only")
+        if isinstance(target, tuple):
+            # Several sources are matched in scene coordinates, each placed by its
+            # own transform: result scene coordinates map to the scene unchanged.
+            if placement == "LOCAL":
+                raise ScenarioError(
+                    0, "Several captured objects use scene coordinates or Fit and verify"
+                )
+            identity = tuple(tuple(row) for row in Matrix.Identity(4))
+            mapping = FitRequest((("WORLD", identity),)) if placement == "FIT" else identity
+            mapping = validate_mesh_request(
+                target, policy=policy, result_to_source=mapping, keep_original=keep_original
+            )
+            return mapping if placement == "FIT" else tuple(tuple(row) for row in mapping)
         validate_mesh_target(target)
         world = target.obj.matrix_world
         if placement == "FIT":
@@ -1905,6 +1936,11 @@ class ModelJobs:
         job starts from ANIMATE for a source skinned to an armature and from RIG
         otherwise. Another skinned source starts from RIG, which with ANIMATE is
         the only policy it accepts.
+
+        A captured source exported from several objects binds all of them
+        (`MeshApplicationApproval.target` is then a tuple) and accepts only UV,
+        RETEXTURE or RIG, in scene coordinates or fitted from them; a job with
+        no derived task starts those on UV instead of REMESH.
         """
         record = self.store.get(request_id)
         if (
@@ -1923,40 +1959,54 @@ class ModelJobs:
         if original_source:
             if len(record.intent.mesh_sources) != 1:
                 raise ScenarioError(0, "Choose a job with exactly one captured mesh input")
-            target = self.session.mesh_source_target(record.intent.mesh_sources[0])
-            scene, obj = target.scene, target.obj
+            targets = self.session.mesh_source_targets(record.intent.mesh_sources[0])
+            target = targets[0] if len(targets) == 1 else targets
+            scene, obj = targets[0].scene, targets[0].obj
         else:
             target = capture_mesh_target(scene, obj)
+            targets = (target,)
+        several = isinstance(target, tuple)
+        skinned = any(item.skin is not None for item in targets)
         view = self.views.get(request_id)
         start = default_policy(
             record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
         )
         source = "requested"
         if policy is None and start.task == "ANIMATE":
-            policy = animate_policy(target.skin is not None)
+            policy = animate_policy(skinned)
             source = "edit3d_task"
-        elif policy is None and target.skin is not None:
+        elif policy is None and skinned:
             # A source skinned to an armature accepts only RIG or ANIMATE.
             policy = "RIG"
             source = "edit3d_task" if start.derived and start.policy == "RIG" else "rigged_source"
         elif policy is None:
             policy = start.policy
             source = "edit3d_task" if start.derived else "default"
+        if several and source == "default" and policy not in SEVERAL_SOURCE_POLICIES:
+            # Several sources keep their geometry; a job's own task is never replaced.
+            policy = SEVERAL_SOURCES_FALLBACK
         # An explicit placement wins; surface-preserving edits start on a verified
         # fit, the others on scene positions.
         if placement is None:
             placement = "FIT" if policy in FIT_POLICIES else "WORLD"
         # Native review chooses its displayed default from the resolved target,
         # which can differ from the selected object. Explicit MCP options stay strict.
-        if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
+        # Several sources are each placed by their own transform.
+        if (
+            review_placement
+            and placement == "WORLD"
+            and not several
+            and target.obj.matrix_world.determinant() <= 0
+        ):
             placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
             record,
-            self.session.capture(scene, obj),
+            # Several sources bind their scene; the job's mesh source lists them.
+            self.session.capture(scene) if several else self.session.capture(scene, obj),
             scene.name,
-            obj.name,
+            "" if several else obj.name,
             asset_id,
             target,
             policy,
@@ -1968,6 +2018,7 @@ class ModelJobs:
             edit3d_task=start.task,
             primary=unit.primary,
             format=unit.format.value,
+            target_names=tuple(item.name for item in targets),
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
@@ -2390,9 +2441,18 @@ class ModelJobs:
             # Retire this transient status; never rebind it by name after redo.
             return None
         objects, actions = tuple(bpy.data.objects), tuple(bpy.data.actions)
+
+        def name(obj):
+            return obj.name if obj in objects else None
+
+        # `target` and `original` name a single source; `targets` and
+        # `originals` list every source edited together, in capture order.
+        several = len(application.sources) > 1
         return {
-            "target": application.source.name if application.source in objects else None,
-            "original": application.original.name if application.original in objects else None,
+            "target": None if several else name(application.source),
+            "targets": [name(obj) for obj in application.sources],
+            "original": None if several else name(application.original),
+            "originals": [name(obj) for obj in application.originals],
             "policy": application.policy,
             "undo_available": application.undo_available,
             "parts": tuple(part.name for part in application.parts if part in objects),

@@ -304,10 +304,13 @@ def _mesh_edits(view, action, job):
 
     A primary GLB keeps the plain wording; another primary names its format, and
     an alternate is named like its import. Numbering counts every saved asset.
+    A captured input exported from several objects names how many it edits.
     """
     source = action == "apply_mesh_source"
-    text = "Apply to captured source" if source else "Apply mesh edit"
-    alternate = "Apply alternate to captured source" if source else "Apply alternate mesh edit"
+    count = view.meta.get("mesh_source_objects", 1) if source else 1
+    sources = f"{count} captured sources" if count > 1 else "captured source"
+    text = f"Apply to {sources}" if source else "Apply mesh edit"
+    alternate = f"Apply alternate to {sources}" if source else "Apply alternate mesh edit"
     numbers = {asset_id: index for index, asset_id in enumerate(view.asset_ids, 1)}
     items = []
     for key, fmt, primary in view.meta.get("import_units", ()):

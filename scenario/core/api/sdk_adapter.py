@@ -854,17 +854,20 @@ class SDKAdapter:
             raise ValueError("Choose whether to retry the workflow read")
         return self._retrieve("workflows", identifier, "workflow", retry=retry)
 
-    def asset(self, identifier, *, original_assets=False):
+    def asset(self, identifier, *, original_assets=False, retry=True):
         """Read one asset; pass original_assets=True before downloading its bytes.
 
         SDK 2.2.0 `original_assets` "returns the original asset without
         transformation". The default `url` of a large image can serve a converted
         file whose bytes differ from `mimeType` and `properties.size`.
+        retry=False makes one attempt, for an optional read among many.
         """
         if type(original_assets) is not bool:
             raise ValueError("Choose whether to request the original asset")
+        if type(retry) is not bool:
+            raise ValueError("Choose whether to retry the asset read")
         options = {"original_assets": True} if original_assets else {}
-        return self._retrieve("assets", identifier, "asset", **options)
+        return self._retrieve("assets", identifier, "asset", retry=retry, **options)
 
     def network_allowed(self):
         """Read the caller's online permission without contacting Scenario."""

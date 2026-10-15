@@ -873,6 +873,12 @@ job worker for one request per read, at most the adapter's 45-second timeout
 each: 45 seconds, or 90 seconds when a waiting workflow's definition is read
 too.
 
+A History page's optional per-row reads also make one attempt: up to 24
+workflow step reads with `SDKAdapter.job(..., retry=False)` and up to 30 prompt
+previews with `SDKAdapter.asset(..., retry=False)`. A failed row only leaves a
+run's cost or a prompt unavailable, and the page read itself keeps the retries,
+so a partial outage costs at most one request per row, as before this change.
+
 A waiting workflow's step-link definition is always read once, with
 `SDKAdapter.workflow(..., retry=False)`, by any refresh or decision: a failed read
 is not fatal and the next retrieval reads it again, so it never adds a second

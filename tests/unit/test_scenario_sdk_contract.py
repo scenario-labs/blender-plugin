@@ -1406,6 +1406,8 @@ SINGLE_ATTEMPTS = {
     # The automatic status poll: ModelJobs schedules its retry without a worker.
     "automatic-job-poll": lambda c: c.job("fixture-job", retry=False),
     "automatic-poll-definition": lambda c: c.workflow("fixture-workflow", retry=False),
+    # History page step and prompt preview reads, up to 24 and 30 per page.
+    "history-row-asset": lambda c: c.asset("fixture-asset", retry=False),
     "cancel": lambda c: c.cancel_inference("fixture-job"),
     "approval": lambda c: c.workflow_decision(
         "fixture-workflow", "fixture-job", "fixture-node", "user-approval", "approve"

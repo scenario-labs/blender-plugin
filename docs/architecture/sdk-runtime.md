@@ -374,8 +374,9 @@ The history worker reads a finished run's missing steps with
 those needing the fewest reads first, so one large loop cannot starve the other
 runs on the page; a run that does not fit gets no reads, since a partial read
 could not price it. A second pass reads the missing steps of nested runs that the
-first pass found, within the same 24 reads, and never reads an identifier again
-beyond the adapter's bounded [read retries](../SDK_ADOPTION.md#read-retries).
+first pass found, within the same 24 reads, and never retries an identifier:
+each step and prompt preview read makes one attempt, without the adapter's
+[read retries](../SDK_ADOPTION.md#read-retries).
 A failed or malformed step read, a nested run still running, a cycle, nesting
 deeper than four runs or nesting that would need a third pass leaves the run's
 cost unavailable instead of reporting 0; a running workflow shows no cost yet.

@@ -200,7 +200,9 @@ class SDKCatalog:
         page are read with `jobs.retrieve` and returned as `related_jobs`,
         which price runs but are not history rows. A second pass reads the
         missing steps of nested runs the first pass found. Both passes share
-        WORKFLOW_STEP_READS and never retry an identifier.
+        WORKFLOW_STEP_READS and never retry an identifier. Step and prompt
+        preview reads are optional, so each makes one attempt without the
+        adapter's read retries; only the page read itself is retried.
         """
         with self._read() as adapter:
             page = adapter.job_page(pagination_token=token)
@@ -214,14 +216,14 @@ class SDKCatalog:
                 ):
                     attempted.append(identifier)
                     try:
-                        related.append(adapter.job(identifier))
+                        related.append(adapter.job(identifier, retry=False))
                     except (AdapterError, ValueError):
                         continue  # An unread step leaves its run's cost unavailable.
             page["related_jobs"] = related
             texts = {}
             for identifier in history.prompt_asset_ids(rows)[:30]:
                 try:
-                    asset = adapter.asset(identifier)
+                    asset = adapter.asset(identifier, retry=False)
                 except (AdapterError, ValueError):
                     continue  # A missing prompt must not hide the cloud job.
                 metadata = asset.get("metadata") or {}

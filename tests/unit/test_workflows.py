@@ -181,14 +181,13 @@ def aggregate():
     assert {job for _, job in inputs} == set(needs), "Gate must inspect every needed result"
     assert len(inputs) == len(needs), "Each result must have one distinct gate input"
     assert len({name for name, _ in inputs}) == len(inputs), "Duplicate gate environment variable"
-    native = re.findall(
-        r"^          ([A-Z_]+): \$\{\{ needs\.changes\.outputs\.native \}\}$", gate, re.MULTILINE
+    assert "NATIVE_CHANGES: ${{ needs.changes.outputs.native }}" in gate, (
+        "Gate must read the changes classification"
     )
-    assert len(native) == 1, "Gate must read the native classification once"
     script = block(gate.replace("run: |", "run:"), "run", indent=8)
     script = "\n".join(line.removeprefix("          ") for line in script.splitlines())
     assert script.strip(), "Expected the actual ci-ok shell script"
-    return dict(inputs), native[0], script
+    return dict(inputs), script
 
 
 def run_script(script, environment, cwd=None):
@@ -210,8 +209,8 @@ def with_outcome(environment, variable, outcome):
 
 @pytest.mark.skipif(os.name == "nt", reason="The CI aggregate executes on hosted Ubuntu bash")
 def test_aggregate_accepts_only_all_success_when_native_inputs_change():
-    inputs, native, script = aggregate()
-    environment = {**os.environ, **dict.fromkeys(inputs, "success"), native: "true"}
+    inputs, script = aggregate()
+    environment = {**os.environ, **dict.fromkeys(inputs, "success"), "NATIVE_CHANGES": "true"}
     result = run_script(script, environment)
     assert result.returncode == 0, result.stderr + result.stdout
     for variable in inputs:
@@ -222,12 +221,12 @@ def test_aggregate_accepts_only_all_success_when_native_inputs_change():
 
 @pytest.mark.skipif(os.name == "nt", reason="The CI aggregate executes on hosted Ubuntu bash")
 def test_aggregate_accepts_a_skipped_baseline_only_without_native_changes():
-    inputs, native, script = aggregate()
+    inputs, script = aggregate()
     blender = next(name for name, job in inputs.items() if job == "blender")
     environment = {
         **os.environ,
         **dict.fromkeys(inputs, "success"),
-        native: "false",
+        "NATIVE_CHANGES": "false",
         blender: "skipped",
     }
     result = run_script(script, environment)
@@ -239,8 +238,8 @@ def test_aggregate_accepts_a_skipped_baseline_only_without_native_changes():
             result = run_script(script, with_outcome(environment, variable, outcome))
             assert result.returncode != 0, f"ci-ok accepted {variable}={outcome!r}"
     for classification in ("true", "False", "", None):
-        result = run_script(script, with_outcome(environment, native, classification))
-        assert result.returncode != 0, f"ci-ok accepted a skip with {native}={classification!r}"
+        result = run_script(script, with_outcome(environment, "NATIVE_CHANGES", classification))
+        assert result.returncode != 0, f"ci-ok accepted a skip with native={classification!r}"
 
 
 def ci_job(name):

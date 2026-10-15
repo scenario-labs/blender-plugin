@@ -181,32 +181,187 @@ def aggregate():
     assert {job for _, job in inputs} == set(needs), "Gate must inspect every needed result"
     assert len(inputs) == len(needs), "Each result must have one distinct gate input"
     assert len({name for name, _ in inputs}) == len(inputs), "Duplicate gate environment variable"
+    assert "NATIVE_CHANGES: ${{ needs.changes.outputs.native }}" in gate, (
+        "Gate must read the changes classification"
+    )
     script = block(gate.replace("run: |", "run:"), "run", indent=8)
     script = "\n".join(line.removeprefix("          ") for line in script.splitlines())
     assert script.strip(), "Expected the actual ci-ok shell script"
     return dict(inputs), script
 
 
-@pytest.mark.skipif(os.name == "nt", reason="The CI aggregate executes on hosted Ubuntu bash")
-def test_aggregate_accepts_only_all_success():
-    inputs, script = aggregate()
-    environment = {**os.environ, **dict.fromkeys(inputs, "success")}
-    result = subprocess.run(
-        ["bash", "-eo", "pipefail", "-c", script], env=environment, capture_output=True, text=True
+def run_script(script, environment, cwd=None):
+    return subprocess.run(
+        ["bash", "-eo", "pipefail", "-c", script],
+        env=environment,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
     )
+
+
+def with_outcome(environment, variable, outcome):
+    changed = {**environment, variable: outcome}
+    if outcome is None:
+        del changed[variable]
+    return changed
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The CI aggregate executes on hosted Ubuntu bash")
+def test_aggregate_accepts_only_all_success_when_native_inputs_change():
+    inputs, script = aggregate()
+    environment = {**os.environ, **dict.fromkeys(inputs, "success"), "NATIVE_CHANGES": "true"}
+    result = run_script(script, environment)
     assert result.returncode == 0, result.stderr + result.stdout
     for variable in inputs:
         for outcome in ("failure", "cancelled", "skipped", "", None):
-            changed = {**environment, variable: outcome}
-            if outcome is None:
-                del changed[variable]
-            result = subprocess.run(
-                ["bash", "-eo", "pipefail", "-c", script],
-                env=changed,
-                capture_output=True,
-                text=True,
-            )
+            result = run_script(script, with_outcome(environment, variable, outcome))
             assert result.returncode != 0, f"ci-ok accepted {variable}={outcome!r}"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The CI aggregate executes on hosted Ubuntu bash")
+def test_aggregate_accepts_a_skipped_baseline_only_without_native_changes():
+    inputs, script = aggregate()
+    blender = next(name for name, job in inputs.items() if job == "blender")
+    environment = {
+        **os.environ,
+        **dict.fromkeys(inputs, "success"),
+        "NATIVE_CHANGES": "false",
+        blender: "skipped",
+    }
+    result = run_script(script, environment)
+    assert result.returncode == 0, result.stderr + result.stdout
+    for variable in inputs:
+        for outcome in ("failure", "cancelled", "skipped", "", None):
+            if variable == blender and outcome == "skipped":
+                continue
+            result = run_script(script, with_outcome(environment, variable, outcome))
+            assert result.returncode != 0, f"ci-ok accepted {variable}={outcome!r}"
+    for classification in ("true", "False", "", None):
+        result = run_script(script, with_outcome(environment, "NATIVE_CHANGES", classification))
+        assert result.returncode != 0, f"ci-ok accepted a skip with native={classification!r}"
+
+
+def ci_job(name):
+    return block(block((ROOT / ".github/workflows/ci.yml").read_text(), "jobs"), name, indent=2)
+
+
+def test_blender_baseline_waits_for_a_native_classification():
+    job = ci_job("blender")
+    assert re.search(r"^    needs:\s*\[?changes\]?\s*$", job, re.MULTILINE)
+    assert re.search(r"^    if:\s*needs\.changes\.outputs\.native == 'true'\s*$", job, re.MULTILINE)
+
+
+def changes_script():
+    job = ci_job("changes")
+    assert re.search(r"^          fetch-depth: 2\s*$", job, re.MULTILINE), (
+        "Fetch both parents of the pull request merge commit"
+    )
+    assert re.search(
+        r"^      native: \$\{\{ steps\.classify\.outputs\.native \}\}$", job, re.MULTILINE
+    ), "Publish the classify step's native output"
+    script = block(job.replace("run: |", "run:"), "run", indent=8)
+    script = "\n".join(line.removeprefix("          ") for line in script.splitlines())
+    assert script.strip(), "Expected the actual changes shell script"
+    return script
+
+
+BASE_FILES = {
+    "AGENTS.md": "# Rules\n",
+    "README.md": "# Readme\n",
+    "LICENSE": "License\n",
+    "docs/index.md": "# Index\n",
+    "scenario/core.py": "VALUE = 1\n",
+    "tests/blender/README.md": "# Native tests\n",
+    ".github/workflows/ci.yml": "name: CI\n",
+}
+
+
+def git(root, *args):
+    return subprocess.check_output(["git", "-C", str(root), *args], text=True).strip()
+
+
+def commit(root, files, message):
+    for path, text in files.items():
+        target = root / path
+        if text is None:
+            target.unlink()
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "--allow-empty", "-m", message)
+
+
+def classify(tmp_path, files, event="pull_request", merge=True):
+    """Classify ``files`` changed by a PR merged over a base that moved meanwhile."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    git(repo, "config", "user.name", "Workflow test")
+    git(repo, "config", "user.email", "test@example.invalid")
+    commit(repo, BASE_FILES, "test: base")
+    git(repo, "checkout", "-q", "-b", "pr")
+    commit(repo, files, "test: change")
+    git(repo, "checkout", "-q", "main")
+    commit(repo, {"tools/moved.py": "VALUE = 3\n"}, "test: base moves")
+    if merge:
+        git(repo, "merge", "-q", "--no-ff", "--no-edit", "pr")
+    else:
+        git(repo, "checkout", "-q", "pr")
+    output = tmp_path / "output"
+    environment = {**os.environ, "EVENT_NAME": event, "GITHUB_OUTPUT": str(output)}
+    result = run_script(changes_script(), environment, cwd=repo)
+    assert result.returncode == 0, result.stderr + result.stdout
+    values = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    return values["native"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The CI classifier executes on hosted Ubuntu bash")
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"AGENTS.md": "# Changed\n"},
+        {"README.md": "# Changed\n", "docs/index.md": "# Changed\n"},
+        {"docs/new/page.md": "# New\n", "docs/index.md": None},
+        {".agents/skills/s/SKILL.md": "x\n", ".claude/CLAUDE.md": "x\n", ".codex/config.toml": ""},
+        {".github/ISSUE_TEMPLATE/bug.yml": "x\n", ".github/pull_request_template.md": "x\n"},
+        {"tools/site_proxy/middleware.ts": "x\n", "tests/site/middleware.test.ts": "x\n"},
+        {"tools/site_proxy/vercel.json": "{}\n", "docs/index.md": "# Changed\n"},
+    ],
+)
+def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, files):
+    assert classify(tmp_path, files) == "false"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The CI classifier executes on hosted Ubuntu bash")
+@pytest.mark.parametrize(
+    "files",
+    [
+        {"scenario/core.py": "VALUE = 2\n"},
+        {"docs/index.md": "# Changed\n", "scenario/core.py": "VALUE = 2\n"},
+        {"tests/blender/README.md": "# Changed\n"},
+        {"LICENSE": "Changed\n"},
+        {".github/workflows/ci.yml": "name: Changed\n"},
+        {"scenario/core.py": None, "docs/core.py": "VALUE = 1\n"},
+        {"tools/site_proxy/middleware.ts": "x\n", "scenario/core.py": "VALUE = 2\n"},
+        {"tools/site_proxy.py": "x\n"},
+        {"tests/site.py": "x\n"},
+        {},
+    ],
+)
+def test_any_other_pull_request_change_runs_native_checks(tmp_path, files):
+    assert classify(tmp_path, files) == "true"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The CI classifier executes on hosted Ubuntu bash")
+def test_pushes_always_run_native_checks(tmp_path):
+    assert classify(tmp_path, {"AGENTS.md": "# Changed\n"}, event="push") == "true"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="The CI classifier executes on hosted Ubuntu bash")
+def test_a_checkout_without_the_merge_commit_runs_native_checks(tmp_path):
+    assert classify(tmp_path, {"AGENTS.md": "# Changed\n"}, merge=False) == "true"
 
 
 @pytest.mark.parametrize("count,command_exit", [(0, 0), (2, 0), (1, 0), (1, 17)])

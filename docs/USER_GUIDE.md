@@ -1,4 +1,4 @@
-# Scenario for Blender: user guide
+# Scenario for Blender: *user guide*
 
 Scenario for Blender brings Scenario's generation models into Blender. You need
 Blender 5.0 or later, a Scenario account with API access (see the

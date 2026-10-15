@@ -27,10 +27,8 @@ to every coding agent.
 
 ## Project and current direction
 
-This is a Python Blender extension with a local MCP server. Read `README.md`
-for the current checkout and `docs/UI_STYLE.md` before changing UI behavior.
-Older design documents and session notes describe the prototype; they do not
-override the user's instructions or the current issue and PR scope.
+This is a Python Blender extension with a local MCP server; `README.md`
+describes the current checkout.
 
 The approved direction is one consolidated extension, a compact default UI,
 optional expanded Studio and Blender-native updates. The current release uses
@@ -66,12 +64,10 @@ the UI, jobs, local MCP and supporting tools. Its source and issue tracker are
 4. Only then add a narrow raw API fallback for that operation inside the shared
    adapter. Link the SDK issue in the code and PR, test the fallback, and record
    the condition for removing it. Recheck exceptions on SDK upgrades.
-   Follow the [named SDK extension workflow](docs/SDK_ADOPTION.md#sdk-resource-extensions):
-   add a method to the adapter-owned extension layer, reuse its configured SDK
-   client and transport, and preserve credential isolation, permission checks,
-   sanitized errors and retry policy. Do not wait for SDK regeneration when a
-   verified API contract and tracked SDK gap allow this path; do not invent an
-   endpoint when neither documentation nor inspected first-party code establishes it.
+   Add it as a named method in the adapter's
+   [extension layer](docs/SDK_ADOPTION.md#sdk-resource-extensions) without waiting
+   for SDK regeneration; never invent an endpoint that neither documentation nor
+   first-party code establishes.
 5. Custom endpoint calls through low-level SDK HTTP verbs are fallbacks too.
    A documented endpoint's `with_raw_response` wrapper is still SDK usage.
    Browser authorization, signed storage transfers and update repositories are
@@ -92,14 +88,12 @@ result. OAuth tenant selection is a separate contract.
 
 Before changing the shared SDK adapter or its dependency pin, read
 `docs/SDK_ADOPTION.md` and run
-`uv run --locked python -m pytest tests/unit/test_scenario_sdk_contract.py -rx`.
+`uv run --locked --no-env-file python -m pytest tests/unit/test_scenario_sdk_contract.py -rx`.
 The known authentication expected failure is an unresolved gap, not production
 acceptance. Extend these offline contracts when mapping adopted operations.
 
 Changes to Scenario API calls must identify the SDK method or the documented
 exception in the PR. Documentation-only work does not need an API coverage audit.
-The SDK is an adoption requirement; its presence in these instructions does not
-mean the current prototype client has already been replaced.
 
 ## Blender, jobs and authentication
 
@@ -132,11 +126,12 @@ retired code in `archive/`. Recover history from commits/tags; update durable
 engineering explanations in the appropriate docs instead of agent session logs.
 
 Keep documentation changes in feature PRs small: correct only the prose your
-change makes wrong, in the existing style. Test runs, platforms and review notes
-belong in the PR body, not in docs. Do not edit `docs/knowledge/` records except
-to add one for a new document or to fix a checker error. Source drift warnings
-are expected; one [release refresh](docs/maintenance/knowledge.md#release-refresh)
-per version reviews them.
+change makes wrong, in the fewest words that state current behavior. Test runs,
+platforms and review notes belong in the PR body, not in docs. Do not edit
+`docs/knowledge/` records except to add one for a new document or to fix a
+checker error. Source drift warnings are expected; one
+[release refresh](docs/maintenance/knowledge.md#release-refresh) per version
+reviews them.
 
 This repository is public. Do not add session/resume IDs, personal paths, account
 records, workspace identifiers, spend anecdotes or private research exports.
@@ -180,6 +175,11 @@ track concrete follow-up checks in the owning issue and link them from the PR.
 Use the [readiness policy](docs/development/contributions.md#review-readiness-and-acceptance-follow-ups)
 for actual draft blockers; never claim unperformed checks passed.
 
+Write PR descriptions, commit bodies and review replies briefly: what changed and
+why, the checks you ran (one line each), and any action needed after merge or
+known gap. Omit what the diff, CI or template already shows; explain an unticked
+check only when the change needed it.
+
 Use short-lived conventional branches. Independent PRs and the bottom of a stack
 target `main`; dependent PRs target their immediate parent branch. Follow the
 [stack workflow](docs/development/contributions.md#stacked-pull-requests), preserve
@@ -187,7 +187,10 @@ the recorded dependency order, and validate each PR's incremental diff after
 rebasing. Stacking does not authorize merging any PR or the whole stack.
 The final diff determines
 the PR title and commit type; `commitlint.config.ts` defines the allowed types,
-scopes and 120-character header limit. Preserve attribution. Do not bump versions
+scopes and 120-character header limit. Use `fix` only for behavior that users of
+the released extension or the live site saw; correcting tooling, CI or
+infrastructure they do not run yet is `chore` (or `ci`, `build` or `docs` when
+that fits), without the `bug` label. Preserve attribution. Do not bump versions
 or edit release notes in unrelated work.
 
 Reply in the original GitHub review thread after investigating a finding, with

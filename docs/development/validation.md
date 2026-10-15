@@ -6,18 +6,26 @@ developer credentials and explicit live commands.
 Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
 the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
 `make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
-focused tests. Dependency and interpreter changes follow
+focused tests. `pyproject.toml` already passes `-q`; another `-q` hides the pass
+count. Dependency and interpreter changes follow
 [Python style](../PYTHON_STYLE.md#dependency-changes). Blender native tests still
 use Blender's bundled Python and an isolated profile. Preserve exit codes when
 capturing logs, and distinguish passed checks from checks that were not run.
 
 [CI](../../.github/workflows/ci.yml) runs Python lint, unit tests, SDK contracts,
-the Linux/Windows Blender baseline, knowledge checks and agent-skill validation
-as reusable workflows on pull requests and pushes to `main`. The `ci-ok` job
-waits for all six workloads in that run and passes only when each succeeds;
-failed, cancelled, skipped or missing results fail the gate. PR updates cancel
-older CI runs for that PR. Concurrency belongs to the caller so reusable
-workflows cannot cancel their parent run.
+the Linux/Windows Blender baseline, knowledge checks, agent-skill validation and
+the site script tests as reusable workflows on pull requests and pushes to `main`.
+Its `changes` job skips the Blender baseline on a pull request when every changed
+file is a root Markdown file, the PR template, or under `docs/`, `.agents/`,
+`.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `tools/site_proxy/` or
+`tests/site/`. Any other path, a push or an unreadable diff runs the baseline.
+Changes to that list need matching cases in `tests/unit/test_workflows.py`.
+The `ci-ok` job waits for that classification and all seven workloads and passes
+only when each succeeds. It accepts a skipped
+baseline only when the classification succeeded and found no native input;
+failed, cancelled, other skipped or missing results fail the gate. PR
+updates cancel older CI runs for that PR. Concurrency belongs to the caller so
+reusable workflows cannot cancel their parent run.
 
 Individual job names can include their caller prefix; artifact names and native
 matrix coverage are unchanged. The separate `pr-title` and `commits` checks
@@ -29,7 +37,9 @@ those settings. Keep their reported names synchronized with the ruleset.
 into their local reusable workflows and composite actions to check the explicit
 read-only/no-secrets convention. They also check distinct declared job contexts
 and run the actual `ci-ok` shell with every workload successful, failed,
-cancelled, skipped, empty or absent. Every workload must appear in the gate's
+cancelled, skipped, empty or absent, with and without native changes. They run
+the actual `changes` shell on a temporary merge commit, including a rename out of
+`scenario/`. Every workload must appear in the gate's
 dependencies and result inputs. These stdlib checks cover the repository's
 block-style workflow subset and reject unsupported trigger/permission forms;
 they do not replace general YAML/action validation or GitHub's actual scheduling,

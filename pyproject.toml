@@ -54,7 +54,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit"]
+testpaths = ["tests/unit", "tests/fuzz"]
 addopts = "-q --strict-markers"
 markers = [
     "allow_network: explicitly permit non-loopback connections in this test process",

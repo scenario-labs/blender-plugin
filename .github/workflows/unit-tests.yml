@@ -37,7 +37,7 @@ jobs:
       - name: Run every offline unit test
         id: tests
         run: |
-          uv run --locked --no-env-file --python "$PYTHON_VERSION" python -m pytest tests/unit -rx \
+          uv run --locked --no-env-file --python "$PYTHON_VERSION" python -m pytest tests/unit tests/fuzz -rx \
             --cov --cov-report=term --cov-report=xml --cov-report=html \
             --cov-report="markdown-append:$GITHUB_STEP_SUMMARY"
       - name: Retain unit coverage reports

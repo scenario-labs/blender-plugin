@@ -330,6 +330,7 @@ def classify(tmp_path, files, event="pull_request", merge=True):
         {"tools/site_proxy/vercel.json": "{}\n", "docs/index.md": "# Changed\n"},
         {".nvmrc": "24\n", "package.json": "{}\n", "pnpm-lock.yaml": "x\n"},
         {"vitest.config.mts": "x\n", "tests/site/middleware.fuzz.ts": "x\n"},
+        {".clusterfuzzlite/build.sh": "x\n", "tests/fuzz/fuzz_glb.py": "x\n"},
     ],
 )
 def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, files):
@@ -351,6 +352,8 @@ def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, 
         {"tests/site.py": "x\n"},
         {"package.json": "{}\n", "scenario/core.py": "VALUE = 2\n"},
         {"tools/package.json": "{}\n"},
+        {"tests/fuzz/fuzz_glb.py": "x\n", "scenario/core.py": "VALUE = 2\n"},
+        {"tests/fuzz.py": "x\n"},
         {},
     ],
 )

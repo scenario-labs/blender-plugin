@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Coverage-guided Atheris fuzzing of the tests/fuzz harnesses with ClusterFuzzLite:
+# the changed code on pull requests, every harness weekly. The actions clone the
+# repository themselves with the read-only workflow token, so there is no checkout
+# step, and keep corpora and crash reproducers as workflow artifacts.
+name: ClusterFuzzLite
+
+on:
+  pull_request:
+    paths:
+      - "scenario/**"
+      - "tests/fuzz/**"
+      - ".clusterfuzzlite/**"
+      - ".github/workflows/cflite.yml"
+  schedule:
+    - cron: "17 4 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cflite-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  code-change:
+    name: clusterfuzzlite-pr
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Build the harnesses
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: address
+          github-token: ${{ github.token }}
+      - name: Fuzz the changed code
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: address
+          mode: code-change
+          fuzz-seconds: 300
+          github-token: ${{ github.token }}
+
+  batch:
+    name: clusterfuzzlite-batch
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Build the harnesses
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: address
+          github-token: ${{ github.token }}
+      - name: Fuzz every harness
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: python
+          sanitizer: address
+          mode: batch
+          fuzz-seconds: 3600
+          github-token: ${{ github.token }}

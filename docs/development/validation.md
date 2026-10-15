@@ -18,8 +18,9 @@ the site script tests as reusable workflows on pull requests and pushes to `main
 Its `changes` job skips the Blender baseline on a pull request when every changed
 file is a root Markdown file, the PR template, `.nvmrc`, `package.json`,
 `pnpm-lock.yaml`, `vitest.config.mts`, or under `docs/`, `.agents/`,
-`.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `tools/site_proxy/` or
-`tests/site/`. Any other path, a push or an unreadable diff runs the baseline.
+`.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `.clusterfuzzlite/`,
+`tools/site_proxy/`, `tests/site/` or `tests/fuzz/`. Any other path, a push or an
+unreadable diff runs the baseline.
 Changes to that list need matching cases in `tests/unit/test_workflows.py`.
 The `ci-ok` job waits for that classification and all seven workloads and passes
 only when each succeeds. It accepts a skipped
@@ -59,6 +60,15 @@ See [matrix maintenance and failure reporting](../../CONTRIBUTING.md#bumping-the
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
 dotenv loading disabled. It needs no credentials.
 
+Fuzz harnesses for the local MCP server, the upload policy and media parsers live
+in `tests/fuzz/`; `make test` and unit CI run each on its seeds and a fixed
+pseudo-random corpus. [ClusterFuzzLite](../../.github/workflows/cflite.yml) fuzzes
+them with Atheris for five minutes on pull requests that change `scenario/` or the
+harnesses, and for an hour weekly. To fuzz locally with Docker, run
+`python infra/helper.py build_fuzzers --external <checkout>`, then
+`python infra/helper.py run_fuzzer --external <checkout> fuzz_glb`, from an
+[OSS-Fuzz](https://github.com/google/oss-fuzz) clone.
+
 Each unit matrix leg measures statement coverage for `scenario/core` and
 `scenario/mcp` using the pinned pytest-cov development dependency and locked
 coverage.py version. The log and Actions summary contain per-file totals;
@@ -71,7 +81,7 @@ Blender behavior or subprocess execution and do not prove live service acceptanc
 To generate the same XML and HTML reports locally from the repository root:
 
 ```sh
-uv run --locked --no-env-file python -m pytest tests/unit -rx \
+uv run --locked --no-env-file python -m pytest tests/unit tests/fuzz -rx \
   --cov --cov-report=term --cov-report=xml --cov-report=html
 ```
 

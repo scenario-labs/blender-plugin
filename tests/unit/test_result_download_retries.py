@@ -214,7 +214,7 @@ def test_cancellation_mid_download_stops_without_a_receipt_or_partial_file(env):
     served += [
         Response(headers={"Content-Length": str(len(DATA)), "ETag": ETAG}, on_read=cancel_midway)
     ]
-    with pytest.raises(ResultError, match="canceled"):
+    with pytest.raises(results.DownloadCanceled, match="canceled"):
         coordinator.download_results("request", expected_revision=manifest.revision, cancel=cancel)
     failed = store.get("request")
     assert failed.state == JobState.DOWNLOAD_FAILED
@@ -244,7 +244,7 @@ def test_cancellation_during_the_retry_wait_stops_before_another_request(env, mo
 
     served += [Unavailable(), Response()]
     reads = len(asset_reads)
-    with pytest.raises(ResultError, match="canceled"):
+    with pytest.raises(results.DownloadCanceled, match="canceled"):
         coordinator.download_results("request", expected_revision=manifest.revision, cancel=cancel)
     assert len(requests) == 1 and len(asset_reads) == reads + 1
     assert store.get("request").state == JobState.DOWNLOAD_FAILED
@@ -309,7 +309,8 @@ def test_a_real_failure_seen_while_canceling_is_not_reported_as_cancellation(env
             return super().getheader(key, default)
 
     served += [Encoded()]
-    with pytest.raises(ResultError, match="did not complete"):
+    with pytest.raises(ResultError, match="did not complete") as caught:
         coordinator.download_results("request", expected_revision=manifest.revision, cancel=cancel)
+    assert not isinstance(caught.value, results.DownloadCanceled)
     assert len(requests) == 1
     assert store.get("request").state == JobState.DOWNLOAD_FAILED

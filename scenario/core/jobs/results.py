@@ -47,6 +47,10 @@ class ResultError(RuntimeError):
     """Sanitized result failure; review saved progress, never regenerate implicitly."""
 
 
+class DownloadCanceled(ResultError):
+    """The download's cancel event stopped it; no receipt or partial file was saved."""
+
+
 class _Canceled(Exception):
     """The download's cancel event was set; it ends without a receipt."""
 
@@ -489,7 +493,7 @@ class ResultCommands:
                 request_id, expected_revision=current.revision, state=JobState.DOWNLOAD_FAILED
             )
             if isinstance(error, _Canceled):
-                raise ResultError(
+                raise DownloadCanceled(
                     "Result download was canceled; no partial file was saved and Resume "
                     "starts it again"
                 ) from None

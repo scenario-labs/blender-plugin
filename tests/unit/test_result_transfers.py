@@ -1162,3 +1162,55 @@ def test_real_http_body_reads_can_time_out_and_continue(tmp_path, storage, monke
     finally:
         client_end.close()
         server_end.close()
+
+
+@pytest.mark.parametrize("failure", ["status", "connect"])
+def test_a_resume_attempt_that_fails_before_its_body_keeps_the_staged_bytes(
+    failure, tmp_path, storage
+):
+    first = Mock()
+    first.getresponse.return_value = Broken(
+        fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}
+    )
+    second = Mock()
+    if failure == "status":
+        second.getresponse.return_value = Response(status=503)
+    else:
+        second.connect.side_effect = OSError("private-fixture connect failure")
+    third = Mock()
+    third.getresponse.return_value = Response(
+        LARGE[5000:],
+        status=206,
+        headers={
+            "Content-Length": str(len(LARGE) - 5000),
+            "Content-Range": f"bytes 5000-{len(LARGE) - 1}/{len(LARGE)}",
+            "ETag": ETAG,
+        },
+    )
+    storage[1].side_effect = [first, second, third]
+    client, partial = downloader(), transfers.PartialDownload()
+    for _ in range(2):
+        with pytest.raises(transfers.TransferError) as caught:
+            client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+        assert caught.value.retryable and partial.size == 5000 and partial.resumable
+    receipt = client.download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+    )
+    assert sent_headers(third)["Range"] == "bytes=5000-"
+    assert receipt.sha256 == hashlib.sha256(LARGE).hexdigest()
+
+
+def test_a_range_the_server_cannot_satisfy_starts_again_from_zero(tmp_path, storage):
+    first, second, third = connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+        Response(status=416),
+        Response(LARGE),
+    )
+    client, partial = downloader(), transfers.PartialDownload()
+    for _ in range(2):
+        with pytest.raises(transfers.TransferError):
+            client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    assert partial.size == 0
+    client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    assert "Range" not in sent_headers(third)

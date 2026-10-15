@@ -155,7 +155,9 @@ carry the same ETag and a `Content-Range` that starts at the staged size and
 declares the same total; otherwise the attempt fails and the next one starts
 from zero. A 200 reply, which a server sends when the ETag no longer matches or
 it ignores ranges, replaces the staged bytes from zero. A missing or weak ETag,
-or a staged file whose size changed, also starts from zero. The digest covers
+a 416 reply, or a staged file whose size changed, also starts from zero. An
+attempt that fails before any body byte, such as a 503 reply or a connection
+error, keeps the staged bytes for the next one. The digest covers
 the staged and the resumed bytes and is checked against the whole published
 file, as for a single attempt. Staged bytes live only in a private
 `.scenario-download-*` directory and only during the command; nothing partial is

@@ -391,7 +391,7 @@ class ResultDownloader:
             return self._online_access() and (cancel is None or not cancel.is_set())
 
         connection = None
-        keep = retain = False
+        retain = False
         try:
             root = _root(root)
             destination = root / validate_result_name(name)
@@ -477,7 +477,10 @@ class ResultDownloader:
                     offset, total = 0, None
                     staged._reset()
                 else:
-                    staged._reset()
+                    # A refused or failed request leaves the staged bytes as
+                    # they were; only an unsatisfiable range invalidates them.
+                    if response.status == 416:
+                        staged._reset()
                     raise RetryableTransferError("Storage request did not return a complete result")
                 if response.getheader("Content-Encoding", "identity").lower() != "identity":
                     raise TransferError("Encoded storage responses are unsupported")
@@ -522,8 +525,6 @@ class ResultDownloader:
                     output = temporary.open("xb")
                     os.chmod(temporary, 0o600)
                 with output:
-                    # Keep resumable bytes only after a retryable transport failure.
-                    keep = True
                     idle_since = time.monotonic()
                     while True:
                         check_permission_and_deadline(POLL_INTERVAL)
@@ -552,7 +553,6 @@ class ResultDownloader:
                         and size != expected_size
                     ):
                         raise RetryableTransferError("Storage response is incomplete")
-                    keep = False
                     digest = staged._digest.hexdigest()
                     if expected_sha256 is not None and digest != expected_sha256:
                         raise TransferError("Storage response digest does not match")
@@ -567,20 +567,23 @@ class ResultDownloader:
         except Exception as error:
             cancelled = cancel is not None and cancel.is_set()
             if isinstance(error, TransferError) and not (cancelled and error.retryable):
-                retain = keep and error.retryable
+                retain = error.retryable
                 raise
             if cancelled:
                 # A cancelled read may end in EOF, a reset or a TLS error: all
                 # of them are this cancellation, never a retryable failure.
                 raise TransferInterrupted("Storage transfer interrupted") from None
             # Sockets, TLS, HTTP framing and local writes: another attempt may succeed.
-            retain = keep
+            retain = True
             raise RetryableTransferError("Storage transfer failed") from None
         finally:
             if connection is not None:
                 _cleanup(connection.close)
-            # Success, control exceptions and every other failure remove the
-            # staging; only a caller's resumable PartialDownload survives.
+            # Success, control exceptions and every non-retryable failure remove
+            # the staging. A caller's PartialDownload survives a retryable one,
+            # including one before any body byte, while its staged bytes still
+            # resume: every reply that replaces or contradicts them resets it,
+            # and the next attempt checks the staged file's size first.
             if partial is None or not retain or not staged.resumable:
                 staged.discard()
 

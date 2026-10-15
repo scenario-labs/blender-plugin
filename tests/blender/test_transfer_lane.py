@@ -328,6 +328,35 @@ class StopDownloadTests(unittest.TestCase):
         # Two generations were sent and none was repeated.
         self.assertEqual(len(self.paid), 2)
 
+    def test_a_real_failure_at_stop_time_is_not_shown_as_a_stop(self):
+        results = submodule("core.jobs.results")
+        coordinator = self.runtime.ensure_job_session()._coordinator
+        real = coordinator.download_results
+
+        def coincidental(request_id, *, expected_revision, cancel):
+            # The transfer ends just as the user stops it, but for another reason.
+            try:
+                return real(request_id, expected_revision=expected_revision, cancel=cancel)
+            except results.DownloadCanceled:
+                raise results.ResultError(
+                    "Result download did not complete; review saved files before retrying"
+                ) from None
+
+        self.enterContext(patch.object(coordinator, "download_results", coincidental))
+        request_id, _ = self.downloading()
+        owner = self.runtime.state.model_jobs
+        task = owner._commands[request_id][1]
+        owner.control(request_id, self.store.get(request_id).revision, "stop_download")
+        with self.assertRaises(self.results_error):
+            task.result(5)
+        self.runtime.sync_catalog_context()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "download_failed")
+        self.assertNotEqual(status["error"], self.model_jobs.DOWNLOAD_STOPPED)
+        self.assertEqual(
+            status["error"], "Result delivery stopped; review the saved job before retrying"
+        )
+
     @property
     def results_error(self):
         return submodule("core.jobs.results").ResultError

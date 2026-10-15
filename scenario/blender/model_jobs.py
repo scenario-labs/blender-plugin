@@ -27,7 +27,7 @@ from ..core.jobs.coordinator import (
 )
 from ..core.jobs.preview_scheduler import BATCH_LIMIT
 from ..core.jobs.records import JobRecord
-from ..core.jobs.results import ResultError
+from ..core.jobs.results import DownloadCanceled, ResultError
 from ..core.jobs.store import (
     JobOrigin,
     JobState,
@@ -814,12 +814,18 @@ class ModelJobs:
                 # The coordinator refused before any claim or action; the job keeps running.
                 self._cancellable.pop(request_id, None)
                 self._pause(request_id, CANCEL_UNSUPPORTED)
-            except Exception:
+            except Exception as error:
                 if command == "verify_first_frame":
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
-                elif stopped and command == "download_results":
+                elif (
+                    stopped
+                    and command == "download_results"
+                    and isinstance(error, DownloadCanceled)
+                ):
+                    # Only the cancellation itself reads as a stop; a real
+                    # failure at the same moment keeps the review wording.
                     self._pause(request_id, DOWNLOAD_STOPPED)
                 else:
                     self._pause(

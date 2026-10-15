@@ -32,7 +32,10 @@ docs/development/contributions.md#screenshots.
 - [ ] UI changes include before/after screenshots and native input, focus and viewport evidence, with Blender/OS versions.
 - [ ] Live/paid smoke status is stated. Any paid check had prior authorization for its project, exact quote and budget; private approval details remain private.
 
-<!-- One line per command run and its result. -->
+Commands and results:
+
+<!-- One line per command run and its result. Keep the line above: it stops
+GitHub merging this list into the checklist. -->
 
 ## Public content
 

@@ -12,7 +12,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from scenario.core.api.sdk_adapter import READ_RETRIES, AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import AdapterError, Credentials, SDKAdapter
 from scenario.core.jobs.coordinator import (
     DecisionRefused,
     DecisionSnapshot,
@@ -672,16 +672,15 @@ def test_an_unreadable_definition_blocks_choosing_and_is_read_again(setup, defin
     )
     assert item.blocked == "unverified" and item.actions == ("reject",)
     coordinator.refresh_remote("request", expected_revision=record.revision)
-    # A definition read is a workflow retrieve: the SDK retries a 5xx first.
-    failed = isinstance(definition, httpx.Response)
-    assert len(setup.reads) == 2 * (1 + READ_RETRIES if failed else 1) and len(calls) == 2
+    # The definition read makes one attempt: the next retrieval reads it again.
+    assert len(setup.reads) == 2 and len(calls) == 2
 
 
 @pytest.mark.parametrize("failure", ["timeout", 503])
 @pytest.mark.parametrize("automatic", [True, False])
-def test_an_automatic_poll_reads_the_definition_once(setup, failure, automatic):
-    # The automatic poll's owner retries it later, so neither its job read nor
-    # the step-link definition read behind it holds a worker for SDK retries.
+def test_the_definition_read_makes_one_attempt_for_any_refresh(setup, failure, automatic):
+    # The step-link definition is read again at the next retrieval, so its read
+    # never adds SDK retries to a poll, an explicit refresh or a decision.
     def fail(request):
         if failure == "timeout":
             raise httpx.ReadTimeout("private fixture detail", request=request)
@@ -694,12 +693,11 @@ def test_an_automatic_poll_reads_the_definition_once(setup, failure, automatic):
     )
     assert snapshot.links is None
     assert len(calls) == 1
-    assert len(setup.reads) == (1 if automatic else 1 + READ_RETRIES)
+    assert len(setup.reads) == 1
 
 
 def test_an_unreadable_definition_logs_only_its_error_type_once_until_read(setup, caplog):
-    # Not found, a server error the SDK's read retry recovers from with the readable
-    # definition, then another workflow's definition.
+    # Not found, a server error, a readable definition, then another workflow's definition.
     answers = iter(
         [None, httpx.Response(500, json={"message": "private fixture detail"}), INTO_LOOP]
         + [{**INTO_LOOP, "id": "another"}] * 2

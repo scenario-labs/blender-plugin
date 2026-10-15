@@ -864,9 +864,7 @@ and `workflows`.
 
 The periodic status polls are the exception. The automatic `refresh_remote` of
 `ModelJobs`, Prompt Spark/Translate and Blockout passes `automatic=True` to the
-coordinator, which reads the job once with `SDKAdapter.job(..., retry=False)`
-and, for a workflow waiting at a step, its step-link definition once with
-`SDKAdapter.workflow(..., retry=False)`. `ModelJobs` retries a failed poll later
+coordinator, which reads the job once with `SDKAdapter.job(..., retry=False)`. `ModelJobs` retries a failed poll later
 with its own [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures), which
 holds no worker; Prompt Spark/Translate and Blockout keep their existing
 failure handling, as before this change. Stacking SDK retries under a poll would
@@ -875,11 +873,24 @@ job worker for one request per read, at most the adapter's 45-second timeout
 each: 45 seconds, or 90 seconds when a waiting workflow's definition is read
 too.
 
+A waiting workflow's step-link definition is always read once, with
+`SDKAdapter.workflow(..., retry=False)`, by any refresh or decision: a failed read
+is not fatal and the next retrieval reads it again, so it never adds a second
+retried read to the same command.
+
 Every other job retrieve keeps the retries, since it has no outer backoff: an
 explicit Refresh status or Resume download, the reads around a cancellation or
 a workflow decision, and cloud job adoption. Such a read, like any allow-listed
 read, holds its worker for at most three requests and two waits: 3 x 45 seconds
-plus 2 x 60 seconds of `Retry-After`, 255 seconds.
+plus 2 x 60 seconds of `Retry-After`, 255 seconds. A command that makes several
+reads adds them up. The worst-case worker holds per command are:
+
+| Command | Worst case | Requests |
+| --- | --- | --- |
+| Automatic status poll | 90 s | one job read and one definition read, single attempts |
+| Explicit refresh or resume | 300 s | retried job read, then one definition read |
+| Model-job cancellation | 555 s | retried job read, one action, retried job read |
+| Workflow step decision | 645 s | retried job read and one definition read, one decision, then the same two reads again |
 
 Both `get_bulk` methods are POSTs only because they carry the requested IDs in
 the body. The API documents them as reads, they change nothing, and the SDK

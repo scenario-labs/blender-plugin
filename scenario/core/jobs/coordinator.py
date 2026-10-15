@@ -1548,10 +1548,10 @@ class JobCoordinator:
     def refresh_remote(self, request_id, *, expected_revision, automatic=False):
         """Poll a known ID and persist its terminal status; never submit/rebind.
 
-        An `automatic` poll reads the job, and a waiting workflow's definition,
-        once each, without the adapter's read retries: its owner schedules the
-        next poll after a failure, so it never holds a job worker for SDK
-        retries. Explicit refreshes keep them.
+        An `automatic` poll reads the job once, without the adapter's read
+        retries: its owner schedules the next poll after a failure, so it never
+        holds a job worker for SDK retries. Explicit refreshes keep them for the
+        job read; a waiting workflow's definition is always read once.
         """
         with self._lock:
             if not self._active:
@@ -1565,7 +1565,7 @@ class JobCoordinator:
             ):
                 raise StoreConflict("Only the current known remote job can be refreshed")
         response = self._adapter.job(current.remote_job_id, retry=not automatic)
-        return self._observe_remote(current, response, retry=not automatic)
+        return self._observe_remote(current, response)
 
     def adopt_cloud_job(self, identifier, *, expected_model_id, origin):
         """Retrieve an explicitly selected completed model job, without submission."""
@@ -1607,7 +1607,7 @@ class JobCoordinator:
         with self._request_guard():
             return self._store.adopt_cloud_job(intent, identifier)
 
-    def _observe_remote(self, current, response, *, retry=True):
+    def _observe_remote(self, current, response):
         """Commit only retrieval evidence, never cancellation acknowledgements."""
         request_id = current.intent.request_id
         if response.get("jobId") != current.remote_job_id:
@@ -1645,12 +1645,10 @@ class JobCoordinator:
                 raise StoreConflict("Job changed during polling; refresh the local record")
         links = None
         if current.intent.operation == "workflow":
-            links = self._step_links(
-                current, response if status not in terminal else None, retry=retry
-            )
+            links = self._step_links(current, response if status not in terminal else None)
         return RemoteSnapshot(updated, raw, links)
 
-    def _step_links(self, current, response, *, retry=True):
+    def _step_links(self, current, response):
         """Definition links for a workflow job whose retrieval shows a waiting step.
 
         The flow of a retrieved job may omit the links between its nodes, so
@@ -1659,8 +1657,9 @@ class JobCoordinator:
         or parsing failure returns None and is retried at the next retrieval;
         `pending_steps` then blocks choosing items in a flow that may loop.
         A failure logs only its error type, once per waiting period until a
-        read succeeds. With retry=False (an automatic poll) the definition read
-        makes one attempt, since the next poll reads it again anyway.
+        read succeeds. The read makes one attempt, without the adapter's read
+        retries: a failure is not fatal and the next retrieval reads it again,
+        so it never adds a second retried read to a refresh or a decision.
         """
         key = current.remote_job_id
         if response is None or not waiting(response):
@@ -1675,7 +1674,7 @@ class JobCoordinator:
         workflow_id = current.intent.target_id
         try:
             links = definition_links(
-                self._adapter.workflow(workflow_id, retry=retry), workflow_id=workflow_id
+                self._adapter.workflow(workflow_id, retry=False), workflow_id=workflow_id
             )
         except Exception as error:
             # Never log the record: it may carry signed thumbnail URLs.

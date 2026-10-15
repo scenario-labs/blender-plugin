@@ -214,9 +214,10 @@ Directory `tools/site_proxy`, framework preset Other, no build or install
 command, production branch `main`, and deployments skipped when that directory
 is unchanged. [vercel.json](../tools/site_proxy/vercel.json) forwards every path
 to the Pages address above, and redirects `/repo` to `/repo/`, which Pages would
-otherwise redirect to its own host. [.vercelignore](../tools/site_proxy/.vercelignore)
-uploads only that file and the middleware, so no other file in the directory
-shadows a forwarded path. Production deployments stay public because Blender
+otherwise redirect to its own host. The directory holds only that file and the
+middleware: Vercel would serve any other file there instead of forwarding its
+path, and a Git deployment applies a `.vercelignore` from the repository root,
+so the tests live in `tests/site/`. Production deployments stay public because Blender
 cannot authenticate. The DNS CNAME `blender` points to the target Vercel shows
 for the domain. Cutover and acceptance are tracked in #492.
 
@@ -230,10 +231,10 @@ repository index lists it. The middleware reads that index from Pages, caches
 it for five minutes and rereads it at most once a minute for an unseen version.
 Any other name, which Pages cannot serve, counts as `unknown`, and so does every
 ZIP while the index cannot be read. A new release's first minutes can count as
-`unknown` until both caches refresh: Pages also serves the index for ten minutes. It reads the project token from
-`POSTHOG_PROJECT_TOKEN`, the optional ingestion host from `POSTHOG_HOST`
-(US cloud by default) and the optional Pages address from `SITE_ORIGIN`;
-without a token it counts nothing. A send that fails or takes over two seconds
+`unknown` until both caches refresh: Pages also serves the index for ten
+minutes. It reads the project token from `POSTHOG_PROJECT_TOKEN`, the optional
+ingestion host from `POSTHOG_HOST` (US cloud by default) and the optional Pages
+address from `SITE_ORIGIN`; without a token it counts nothing. A send that fails or takes over two seconds
 is logged and dropped without changing the response.
 
 A Blender download is an install or an update; the request does not say which.
@@ -241,8 +242,8 @@ Index requests are repository additions and manual update checks, not active
 installations, because the extension sets up the repository without startup
 checks. Manual installs from release assets are not counted, and the release
 download counters include CI downloads. [CI](../.github/workflows/site.yml)
-type-checks the middleware and runs [its tests](../tools/site_proxy/middleware.test.ts);
-locally, run `node --test tools/site_proxy/middleware.test.ts` with Node 24.
+type-checks the middleware and runs [its tests](../tests/site/middleware.test.ts);
+locally, run `node --test tests/site/middleware.test.ts` with Node 24.
 
 ## Access
 

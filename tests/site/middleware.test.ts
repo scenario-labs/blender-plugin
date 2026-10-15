@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Scenario Inc.
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Run from the repository root: node --test tools/site_proxy/middleware.test.ts
+// Run from the repository root: node --test tests/site/middleware.test.ts
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, test } from "node:test";
 
-import middleware, { config, ORIGIN } from "./middleware.ts";
+import middleware, { config, ORIGIN } from "../../tools/site_proxy/middleware.ts";
 
 const BLENDER = "Blender/5.0.1 (Darwin arm64; cycle=release)";
 const BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/140.0";
@@ -116,6 +116,12 @@ test("uses a new anonymous identifier for every request", async () => {
 
   assert.equal(received.length, 2);
   assert.notEqual(received[0].body.distinct_id, received[1].body.distinct_id);
+});
+
+test("deploys only the middleware and its routing", () => {
+  // Vercel serves any other file in the project directory instead of forwarding
+  // that path, and a Git deployment applies .vercelignore from the repository root.
+  assert.deepEqual(readdirSync("tools/site_proxy").sort(), ["middleware.ts", "vercel.json"]);
 });
 
 test("forwards to the same GitHub Pages address as vercel.json", () => {

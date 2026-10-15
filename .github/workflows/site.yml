@@ -28,7 +28,7 @@ jobs:
           "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" --noEmit --strict --target es2022
           --module nodenext --moduleResolution nodenext --allowImportingTsExtensions
           --typeRoots "$RUNNER_TEMP/tsc/node_modules/@types" --types node
-          tools/site_proxy/middleware.ts tools/site_proxy/middleware.test.ts
+          tools/site_proxy/middleware.ts tests/site/middleware.test.ts
       - name: Type-check the handbook search
         run: >-
           "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" --noEmit --strict --target es2022
@@ -37,4 +37,4 @@ jobs:
           --typeRoots "$RUNNER_TEMP/tsc/node_modules/@types" --types node
           docs/handbook-search.js tests/site/handbook-search.test.ts
       - name: Test the middleware and the handbook search
-        run: node --test tools/site_proxy/middleware.test.ts tests/site/handbook-search.test.ts
+        run: node --test tests/site/middleware.test.ts tests/site/handbook-search.test.ts

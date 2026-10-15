@@ -141,6 +141,32 @@ def test_pages_share_the_handbook_navigation(pages):
     assert nav(pages.pending_page()) == nav(template)
 
 
+def test_pages_inline_the_light_and_dark_favicons(pages):
+    for page in (pages.downloads_page({"data": [release("1.0.0")]}), pages.pending_page()):
+        icons = re.findall(
+            r"<link rel=\"(icon|apple-touch-icon)\" href=\"data:image/png;base64,[^\"]+\"([^>]*)>",
+            page,
+        )
+        assert len(icons) == 7
+        assert sum("prefers-color-scheme: dark" in extra for _rel, extra in icons) == 3
+        assert sum(rel == "apple-touch-icon" for rel, _extra in icons) == 1
+
+
+def test_handbook_template_declares_the_same_favicons():
+    template = (ROOT / "docs/handbook-template.html").read_text(encoding="utf-8")
+
+    for name in (
+        "favicon-16x16.png",
+        "favicon-32x32.png",
+        "favicon-196x196.png",
+        "favicon-dark-16x16.png",
+        "favicon-dark-32x32.png",
+        "favicon-dark-196x196.png",
+        "apple-touch-icon.png",
+    ):
+        assert f'href="images/{name}"' in template, name
+
+
 def test_pending_page_explains_that_downloads_follow_the_first_release(pages):
     page = pages.pending_page()
 

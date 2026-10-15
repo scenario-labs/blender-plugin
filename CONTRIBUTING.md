@@ -708,8 +708,8 @@ single-file handbook searches offline; test it with
 `node --test tests/site/handbook-search.test.ts` (Node 24). The downloads pages
 under `repo/` come from [tools/site_pages.py](tools/site_pages.py) and inline the
 same stylesheet and wordmark. `make docs` renders the guide to ignored `site/index.html`
-and copies just its referenced images beside it. A neighboring `.assets.json`
-record lets repeat builds remove unchanged image copies that the guide no longer
+and copies just its referenced images, the template's favicons included, beside
+it. A neighboring `.assets.json` record lets repeat builds remove unchanged image copies that the guide no longer
 uses, including when switching the same output to inline mode. Unrecorded files
 are retained; modified old copies and symlinked destinations stop the build for
 inspection. Keep that record with a website output directory between builds.

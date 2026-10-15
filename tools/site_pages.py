@@ -21,6 +21,16 @@ PLATFORMS = {
     "macos-arm64": "macOS Apple silicon",
     "macos-x64": "macOS Intel",
 }
+# The same favicons as mcp.scenario.com, in light and dark variants.
+FAVICONS = [
+    ("icon", "favicon-16x16.png", "16x16", "light"),
+    ("icon", "favicon-dark-16x16.png", "16x16", "dark"),
+    ("icon", "favicon-32x32.png", "32x32", "light"),
+    ("icon", "favicon-dark-32x32.png", "32x32", "dark"),
+    ("icon", "favicon-196x196.png", "196x196", "light"),
+    ("icon", "favicon-dark-196x196.png", "196x196", "dark"),
+    ("apple-touch-icon", "apple-touch-icon.png", "152x152", None),
+]
 COPY_SCRIPT = """<script>
 document.addEventListener("click", async event => {
   const button = event.target.closest("button[data-copy]");
@@ -48,6 +58,17 @@ def _wordmark():
     return "data:image/svg+xml;base64," + base64.b64encode(data).decode("ascii")
 
 
+def _favicons():
+    links = []
+    for rel, name, sizes, scheme in FAVICONS:
+        data = base64.b64encode((ROOT / "docs/images" / name).read_bytes()).decode("ascii")
+        media = f' type="image/png" media="(prefers-color-scheme: {scheme})"' if scheme else ""
+        links.append(
+            f'<link rel="{rel}" href="data:image/png;base64,{data}" sizes="{sizes}"{media}>'
+        )
+    return "\n".join(links)
+
+
 def _page(title, body, *, script=""):
     logo = _wordmark()
     return f"""<!DOCTYPE html>
@@ -56,6 +77,7 @@ def _page(title, body, *, script=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{html.escape(title)}</title>
+{_favicons()}
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">

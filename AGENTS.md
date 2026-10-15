@@ -194,9 +194,8 @@ that fits), and its issue is a Task, not a Bug. Preserve attribution. Do not bum
 versions or edit release notes in unrelated work.
 
 Give every new issue the GitHub issue type its title implies: Bug for `fix`,
-Feature for `feat`, otherwise Task; no label replaces it. `gh issue create`
-cannot set a type, so file issues with
-`gh api repos/scenario-labs/blender-plugin/issues -f type=<Type> -f title=... -f body=...`.
+Feature for `feat`, otherwise Task; no label replaces it. Set it with
+`gh issue create --type <Type>` (gh 2.94 or later).
 
 Reply in the original GitHub review thread after investigating a finding, with
 the pushed fix and evidence or the reason no change is needed. Use `Closes` only

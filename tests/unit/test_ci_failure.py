@@ -149,7 +149,7 @@ def test_cli_builds_scoped_tracking_issue(monkeypatch):
     assert f"https://github.com/{REPOSITORY}/actions/runs/42" in body
     assert "blender-tests-windows-latest" in body
     assert labels == ["area:ci", "os:windows", "blender:5.1"]
-    assert issue_type == "Bug"
+    assert issue_type == "Task"
 
 
 @pytest.mark.parametrize(

@@ -174,7 +174,7 @@ def main(argv=None):
             f"blender:{args.version.rsplit('.', 1)[0]}",
         ]
         try:
-            outcome = report_failure(args.repository, title, body, labels, "Bug")
+            outcome = report_failure(args.repository, title, body, labels, "Task")
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(
                 f"Failure reporting failed for {platform} ({type(error).__name__}); "

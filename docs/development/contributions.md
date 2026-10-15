@@ -95,11 +95,11 @@ needed, or describe what remains unresolved. Apply this to human and bot
 comments alike. A local fix or a chat response alone does not complete the
 review follow-up. Do not claim a fix is pushed before it is available remotely.
 
-For local commit linting, use the versions and command from
+For local commit linting, install the Node tooling with the Node version in
+`.nvmrc` and `pnpm install --frozen-lockfile`, then run the command from
 `.github/workflows/pr-name.yml`:
-`npx --no-install commitlint --config commitlint.config.ts --verbose`.
-If unavailable, use that workflow's ad-hoc npm install command. Do not add a
-Node project or lockfile for the Blender extension.
+`pnpm exec commitlint --config commitlint.config.ts --verbose`.
+The root `package.json` holds development tooling only, never extension code.
 
 Do not manually bump package versions or edit release notes in an unrelated PR.
 Read the actual release workflow/configuration before describing release behavior.

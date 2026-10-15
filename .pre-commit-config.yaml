@@ -32,6 +32,8 @@ repos:
         entry: uv run --locked --no-env-file check-yaml
         language: system
         types: [yaml]
+        # pnpm writes its lockfile as two YAML documents.
+        exclude: ^pnpm-lock\.yaml$
       - id: detect-private-key
         name: detect private keys
         entry: uv run --locked --no-env-file detect-private-key

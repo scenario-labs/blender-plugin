@@ -328,6 +328,7 @@ def classify(tmp_path, files, event="pull_request", merge=True):
         {".github/ISSUE_TEMPLATE/bug.yml": "x\n", ".github/pull_request_template.md": "x\n"},
         {"tools/site_proxy/middleware.ts": "x\n", "tests/site/middleware.test.ts": "x\n"},
         {"tools/site_proxy/vercel.json": "{}\n", "docs/index.md": "# Changed\n"},
+        {".nvmrc": "24\n", "package.json": "{}\n", "pnpm-lock.yaml": "x\n"},
     ],
 )
 def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, files):
@@ -347,6 +348,8 @@ def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, 
         {"tools/site_proxy/middleware.ts": "x\n", "scenario/core.py": "VALUE = 2\n"},
         {"tools/site_proxy.py": "x\n"},
         {"tests/site.py": "x\n"},
+        {"package.json": "{}\n", "scenario/core.py": "VALUE = 2\n"},
+        {"tools/package.json": "{}\n"},
         {},
     ],
 )

@@ -123,8 +123,8 @@ gh api repos/scenario-labs/blender-plugin --jq '{allow_squash_merge,allow_merge_
 | Fork PR workflow approval | `all_external_contributors` |
 | Immutable releases | Enabled on 2026-10-13 after 0.10.0 was published and verified (#36); not enforced by the owner. 0.10.0 predates the setting and is not itself immutable. |
 
-[Dependabot](../.github/dependabot.yml) updates GitHub Actions weekly, seven days
-after each release at the earliest.
+[Dependabot](../.github/dependabot.yml) updates GitHub Actions and the Node
+tooling in `pnpm-lock.yaml` weekly, seven days after each release at the earliest.
 The extension also has pinned Python/SDK dependencies and bundled wheels; the
 old stdlib-only assumption is obsolete. Their coordinated update procedure is
 [SDK_BUNDLE.md](SDK_BUNDLE.md), not automatic version updates from the Actions

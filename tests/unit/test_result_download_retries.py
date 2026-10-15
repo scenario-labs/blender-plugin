@@ -249,3 +249,67 @@ def test_cancellation_during_the_retry_wait_stops_before_another_request(env, mo
     assert len(requests) == 1 and len(asset_reads) == reads + 1
     assert store.get("request").state == JobState.DOWNLOAD_FAILED
     assert not files(root)
+
+
+def test_a_failed_url_refresh_uses_one_attempt_and_keeps_the_staged_bytes(env, monkeypatch):
+    coordinator, store, manifest, served, requests, asset_reads, root = env
+    adapter = coordinator._adapter
+    real = adapter.asset
+    calls = []
+
+    def flaky(identifier, **options):
+        calls.append(identifier)
+        if len(calls) == 2:
+            raise results.AdapterError("private transient refresh failure")
+        return real(identifier, **options)
+
+    monkeypatch.setattr(adapter, "asset", flaky)
+    served += [
+        Response(fail_after=6000, headers={"Content-Length": str(len(DATA)), "ETag": ETAG}),
+        Response(
+            DATA[6000:],
+            status=206,
+            headers={
+                "Content-Length": str(len(DATA) - 6000),
+                "Content-Range": f"bytes 6000-{len(DATA) - 1}/{len(DATA)}",
+                "ETag": ETAG,
+            },
+        ),
+    ]
+    ready = coordinator.download_results("request", expected_revision=manifest.revision)
+    assert ready.state == JobState.READY
+    # Attempt 1 failed in storage, attempt 2 in the SDK read, attempt 3 resumed.
+    assert len(calls) == 3 and len(requests) == 2
+    assert requests[1][1]["Range"] == "bytes=6000-"
+
+
+def test_url_refresh_failures_are_bounded_too(env, monkeypatch):
+    coordinator, store, manifest, served, requests, _, root = env
+
+    def failing(identifier, **options):
+        raise results.AdapterError("private refresh failure")
+
+    monkeypatch.setattr(coordinator._adapter, "asset", failing)
+    with pytest.raises(ResultError, match="did not complete"):
+        coordinator.download_results("request", expected_revision=manifest.revision)
+    assert requests == [] and store.get("request").state == JobState.DOWNLOAD_FAILED
+
+
+def test_a_real_failure_seen_while_canceling_is_not_reported_as_cancellation(env):
+    coordinator, store, manifest, served, requests, _, root = env
+    cancel = threading.Event()
+
+    class Encoded(Response):
+        """A refused encoding, observed just as the user stops the download."""
+
+        def getheader(self, key, default=None):
+            if key == "Content-Encoding":
+                cancel.set()
+                return "gzip"
+            return super().getheader(key, default)
+
+    served += [Encoded()]
+    with pytest.raises(ResultError, match="did not complete"):
+        coordinator.download_results("request", expected_revision=manifest.revision, cancel=cancel)
+    assert len(requests) == 1
+    assert store.get("request").state == JobState.DOWNLOAD_FAILED

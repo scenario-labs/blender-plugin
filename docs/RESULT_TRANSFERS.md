@@ -136,8 +136,10 @@ attempt it reads the asset again through `SDKAdapter.asset(original_assets=True)
 (SDK `assets.with_raw_response.retrieve`) for a fresh signed URL, and the
 response must still match the saved manifest. Only transport failures retry: a
 connection or TLS error, a non-success status such as an expired signature, a
-body that ended short or a missed deadline. A changed host, size, encoding or
-digest, revoked Online Access and cancellation stop at once. The exact-host
+body that ended short or a missed deadline. A failed SDK read of the asset
+also uses up one attempt, keeping the staged bytes. A changed manifest, host,
+size, encoding or digest, revoked Online Access and cancellation stop at once;
+a failure that coincides with cancellation is still reported as that failure. The exact-host
 policy, redirect rules and SHA-256 receipt apply to every attempt. After the
 last failure the job is `download_failed` and Resume works as before.
 

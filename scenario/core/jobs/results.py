@@ -23,7 +23,13 @@ from .result_metadata import (
     texture_role,
 )
 from .store import JobState, ResultAsset, StoreConflict, StoredJob, StoreError, _identity, _json
-from .transfers import PartialDownload, ResultDownloader, TransferError, _root
+from .transfers import (
+    PartialDownload,
+    ResultDownloader,
+    TransferError,
+    TransferInterrupted,
+    _root,
+)
 from .upload_sources import _open, _stamp
 
 # Originals carry no size metadata, so the World file limit bounds each transfer,
@@ -482,7 +488,7 @@ class ResultCommands:
             self._store.transition(
                 request_id, expected_revision=current.revision, state=JobState.DOWNLOAD_FAILED
             )
-            if isinstance(error, _Canceled) or (cancel is not None and cancel.is_set()):
+            if isinstance(error, _Canceled):
                 raise ResultError(
                     "Result download was canceled; no partial file was saved and Resume "
                     "starts it again"
@@ -515,8 +521,10 @@ class ResultCommands:
     def _transfer(self, item, directory, cancel):
         """At most DOWNLOAD_ATTEMPTS storage attempts, each with a fresh signed URL.
 
-        Only a retryable transport failure is tried again. A strong ETag lets
-        the next attempt resume the staged bytes; nothing partial outlives this.
+        Only a retryable transport failure, or an SDK read failure while
+        refreshing the URL, is tried again. A strong ETag lets the next attempt
+        resume the staged bytes; nothing partial outlives this. Only an
+        interruption caused by the set cancel event reports cancellation.
         """
         waiter = cancel if cancel is not None else threading.Event()
         options = {}
@@ -532,7 +540,15 @@ class ResultCommands:
                     raise _Canceled()
                 with self._guard():
                     pass
-                url = self._fresh_asset(item)
+                try:
+                    url = self._fresh_asset(item)
+                except AdapterError:
+                    # A transient SDK read failure costs one attempt; a changed
+                    # manifest (ResultError) still stops at once.
+                    attempt += 1
+                    if attempt == DOWNLOAD_ATTEMPTS:
+                        raise
+                    continue
                 try:
                     return self._downloader.download(
                         url,
@@ -545,7 +561,11 @@ class ResultCommands:
                         **options,
                     )
                 except TransferError as error:
-                    if cancel is not None and cancel.is_set():
+                    if (
+                        isinstance(error, TransferInterrupted)
+                        and cancel is not None
+                        and cancel.is_set()
+                    ):
                         raise _Canceled() from None
                     attempt += 1
                     if not error.retryable or attempt == DOWNLOAD_ATTEMPTS:

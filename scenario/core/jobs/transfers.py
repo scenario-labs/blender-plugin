@@ -31,6 +31,10 @@ class TransferError(RuntimeError):
     retryable = False
 
 
+class TransferInterrupted(TransferError):
+    """Online Access or the caller's cancel event stopped the transfer; never retried."""
+
+
 class RetryableTransferError(TransferError):
     """A transport failure: a refused or failed request, a cut-short body or the deadline."""
 
@@ -394,7 +398,7 @@ class ResultDownloader:
             if destination.exists() or destination.is_symlink():
                 raise TransferError("Result filename already exists")
             if not permitted():
-                raise TransferError("Online access is disabled")
+                raise TransferInterrupted("Online access is disabled")
             temporary = staged._bind(root, name)
             resume = staged.resumable
             if resume:
@@ -413,7 +417,7 @@ class ResultDownloader:
 
             def check_permission_and_deadline(wait=None):
                 if not permitted():
-                    raise TransferError("Storage transfer interrupted")
+                    raise TransferInterrupted("Storage transfer interrupted")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise RetryableTransferError("Storage transfer interrupted")
@@ -568,7 +572,7 @@ class ResultDownloader:
             if cancelled:
                 # A cancelled read may end in EOF, a reset or a TLS error: all
                 # of them are this cancellation, never a retryable failure.
-                raise TransferError("Storage transfer interrupted") from None
+                raise TransferInterrupted("Storage transfer interrupted") from None
             # Sockets, TLS, HTTP framing and local writes: another attempt may succeed.
             retain = keep
             raise RetryableTransferError("Storage transfer failed") from None

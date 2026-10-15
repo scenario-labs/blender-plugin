@@ -222,15 +222,6 @@ so the tests live in `tests/site/`. Production deployments stay public because B
 cannot authenticate. The DNS CNAME `blender` points to the target Vercel shows
 for the domain; #492 records the move from GitHub Pages.
 
-When the domain moves between hosts, lower the CNAME TTL at least an hour ahead.
-Vercel may not issue the certificate on its own:
-`vercel certs issue blender.scenario.com --scope scenario-labs` requests it.
-After the Pages custom domain is removed, GitHub's CDN can keep serving its old
-redirects to `blender.scenario.com` for about 30 minutes, so some requests loop
-until they expire. Vercel caches forwarded responses for as long as Pages allows,
-ten minutes; `vercel cache purge --type cdn`, run from a folder linked to the
-project, clears them.
-
 [The middleware](../tools/site_proxy/middleware.ts) runs on `/repo/*` and sends
 one anonymous PostHog event per counted request after the request continues:
 `extension_downloaded` for `GET /repo/scenario-X.Y.Z.zip` and

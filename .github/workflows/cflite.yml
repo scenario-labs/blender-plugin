@@ -19,6 +19,8 @@ on:
 
 permissions:
   contents: read
+  # Download earlier corpora and coverage, which ClusterFuzzLite keeps as workflow artifacts.
+  actions: read
 
 concurrency:
   group: cflite-${{ github.workflow }}-${{ github.ref }}
@@ -29,7 +31,9 @@ jobs:
     name: clusterfuzzlite-pr
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    # Each harness first pages through every repository artifact for its corpus, a
+    # few minutes per harness on top of the build and the fuzzing time.
+    timeout-minutes: 60
     steps:
       - name: Build the harnesses
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
@@ -50,7 +54,7 @@ jobs:
     name: clusterfuzzlite-batch
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - name: Build the harnesses
         uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1

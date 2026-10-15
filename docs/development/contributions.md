@@ -111,11 +111,11 @@ release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releas
 Show a visible change (panel, composer, viewport result or site page) with
 screenshots in a Markdown table, before and after for UI changes.
 [Repeatable GUI screenshots](../../CONTRIBUTING.md#repeatable-gui-screenshots)
-capture the Blender UI. To attach images without a browser, push them to an
-orphan `pr-assets/<topic>` branch and link each one pinned to that commit:
-`https://github.com/scenario-labs/blender-plugin/blob/<sha>/<file>.png?raw=true`.
-Delete the branch after review. The images are public: show no credentials,
-account or project names, or private assets.
+capture the Blender UI. Attach images by dragging them into the PR description
+or a comment; never commit them or push asset branches. An agent without a
+browser saves them under `workdir/` and asks the person to attach them. The
+images are public: show no credentials, account or project names, or private
+assets.
 
 ## Review readiness and acceptance follow-ups
 

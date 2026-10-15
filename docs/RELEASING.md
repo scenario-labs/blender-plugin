@@ -75,7 +75,8 @@ Blender runtime acceptance remain separate requirements.
    SHA and checkout SHA to match.
 3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP, render the standalone
    `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS` for the ZIP and handbook,
-   and attest all three files. Attach them to the draft.
+   and attest all three files. Attach them and the attestation's Sigstore bundle,
+   `scenario-X.Y.Z.sigstore.json`, to the draft.
 4. Validate that same ZIP with Blender 5.1.2 and 5.2.1.
 5. Publish only after those jobs succeed. Publication creates the tag through
    the release App and triggers the separate public-changelog workflow. Successful completion of the release

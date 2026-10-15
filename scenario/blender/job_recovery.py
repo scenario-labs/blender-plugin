@@ -636,9 +636,9 @@ def _draw_animate(layout, review_error):
         layout.label(text=review_error, icon="ERROR")
 
 
-_FIT_POLICIES = {"UV", "RETEXTURE", "RIG"}
+_FIT_POLICIES = {"REMESH", "UV", "RETEXTURE", "PARTS", "RIG"}
 # Several captured sources edited together; the review names this many of them.
-_SEVERAL_POLICIES = _FIT_POLICIES
+_SEVERAL_POLICIES = {"UV", "RETEXTURE", "RIG"}
 _NAMED_SOURCES = 4
 
 
@@ -650,8 +650,8 @@ def _source_names(names):
 
 
 def _mesh_policy_changed(self, _context):
-    # A property update, never draw(): surface-preserving edits default to a
-    # verified fit; the others cannot fit. check() then revises the approval.
+    # A property update, never draw(): mesh edits default to a verified fit;
+    # ANIMATE uses no coordinates. check() then revises the approval.
     if self.policy in _FIT_POLICIES:
         self.placement = "FIT"
     elif self.placement == "FIT":
@@ -851,6 +851,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.prop(self, "keep_original")
         if self.policy == "REMESH":
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
+            layout.label(text="Several meshes in the result are joined into one remesh.")
         elif self.policy == "RIG":
             layout.label(text="Attach bone weights and rig; preserve geometry, UVs and materials.")
             if self.source_rigged:
@@ -866,8 +867,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         elif self.policy == "PARTS":
             layout.label(text="Replace source geometry with an empty mesh parent and named parts.")
             layout.label(
-                text="Treat every mesh in this result as a part, not an alternate variant."
+                text="Treat each of the result's 2 to 128 meshes as a part, not a variant."
             )
+            layout.label(text="Parts made of this surface split it, keeping its UVs and materials;")
+            layout.label(text="other parts, such as remeshed ones, are copied from the result.")
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
             layout.label(text="The result must match this surface; triangles and seams are fine.")
@@ -879,12 +882,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             else "Keep the source object's name, transforms, parenting and collections."
         )
         layout.label(
-            text="One static result, 2 to 128 parts. No automatic fitting or scale adjustment."
-            if self.policy == "PARTS"
-            else "One static result mesh only. No automatic fitting or scale adjustment."
-            if self.policy == "REMESH"
-            else "Fit and verify scales uniformly, never rotates, and stops on any mismatch."
+            text="Fit and verify scales uniformly, never rotates, and stops on any mismatch."
             if self.placement == "FIT"
+            else "No fitting or scale adjustment: positions are used as they are."
+            if self.policy in {"REMESH", "PARTS"}
             else "All result meshes form one surface. No fitting or scale adjustment."
         )
         layout.label(

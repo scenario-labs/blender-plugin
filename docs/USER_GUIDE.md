@@ -647,16 +647,19 @@ FBX and OBJ results can be applied: a main result in another format shows it, as
 **Apply mesh edit: FBX (N)**, and a job's other results show as
 **Apply alternate mesh edit: OBJ (N)**.
 
-- **Replace geometry**: geometry, UVs and materials.
+- **Replace geometry**: geometry, UVs and materials. A result that comes back in several pieces is joined into one mesh.
 - **Replace active UVs** or **Replace textures**: only when the result is the same surface as your mesh. Triangulated, split or reordered results are fine; changed shapes are refused.
-- **Replace with parts**: replaces the mesh with the result's named parts, under an empty parent.
+- **Replace with parts**: replaces the mesh with the result's named parts, under an empty parent. When the parts are cut from your mesh's own surface, your mesh is split along them and every part keeps your UVs and materials; otherwise the returned parts are used.
 - **Attach rig**: adds the returned armature and weights to your mesh, when its skin is the same surface. If the mesh already has a rig, its weights are replaced and the old rig is left as it was; **Keep original** keeps a copy that still follows the old rig. A mesh with a rig can only use Attach rig or Apply animation. Move the new rig group with the mesh afterwards.
 - **Apply animation**: for a mesh that already has a rig, adds the returned animation to that rig and keeps your mesh, weights and rig as they are. The bones must have the same names, parents and rest pose as the returned character, for example a rig you attached earlier from the same service; animation made for a different skeleton is refused. The first clip plays, and the others and your previous animation stay in muted NLA tracks. Your timeline doesn't change.
 
 Choose **Scene coordinates** or **Object local coordinates** for the result's
-positions. For UVs, textures and rigs, **Fit and verify** (their default) also
-accepts a result that the service resized or moved, but only when it then lines up
-with your mesh everywhere. If a result doesn't match, the job says why and your
+positions. **Fit and verify**, the default for every edit but **Apply animation**,
+also accepts a result that the service resized or moved, but only when it then
+lines up with your mesh: exactly for UVs, textures, rigs and parts cut from your
+mesh, and within a small margin for new geometry and other parts. When the
+dialog says the edit is not from this job's task, **Replace geometry** starts on
+**Scene coordinates**. If a result doesn't match, the job says why and your
 mesh is unchanged. **Keep original** (on by default)
 leaves an unselected copy. With Global Undo on, Undo and Redo restore the scene
 before and after the edit, but don't refund it. If the outcome is uncertain, inspect

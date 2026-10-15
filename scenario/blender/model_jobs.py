@@ -1872,7 +1872,7 @@ class ModelJobs:
         if placement not in {"WORLD", "LOCAL", "FIT"}:
             raise ScenarioError(0, "Choose scene, object-local or fitted result coordinates")
         if placement == "FIT" and policy not in FIT_POLICIES:
-            raise ScenarioError(0, "Fitted coordinates apply to UV, retexture and rig only")
+            raise ScenarioError(0, "Fitted coordinates do not apply to animation")
         if isinstance(target, tuple):
             # Several sources are matched in scene coordinates, each placed by its
             # own transform: result scene coordinates map to the scene unchanged.
@@ -1985,10 +1985,12 @@ class ModelJobs:
         if several and source == "default" and policy not in SEVERAL_SOURCE_POLICIES:
             # Several sources keep their geometry; a job's own task is never replaced.
             policy = SEVERAL_SOURCES_FALLBACK
-        # An explicit placement wins; surface-preserving edits start on a verified
-        # fit, the others on scene positions.
+        # An explicit placement wins. Mesh edits start on a verified fit; ANIMATE,
+        # which uses no coordinates, and a REMESH fallback the job did not choose,
+        # whose result need not be the source surface, start on scene positions.
         if placement is None:
-            placement = "FIT" if policy in FIT_POLICIES else "WORLD"
+            fallback = source == "default" and policy == "REMESH"
+            placement = "FIT" if policy in FIT_POLICIES and not fallback else "WORLD"
         # Native review chooses its displayed default from the resolved target,
         # which can differ from the selected object. Explicit MCP options stay strict.
         # Several sources are each placed by their own transform.
@@ -2460,6 +2462,14 @@ class ModelJobs:
             "clips": tuple(clip.name for clip in application.clips if clip in actions),
             "result_to_source": [list(row) for row in application.mapping],
             "fitted_from": application.fitted_from,
+            "fit_residual": {
+                "max_distance": application.fit_residual[0],
+                "beyond_tolerance": application.fit_residual[1],
+            }
+            if application.fit_residual
+            else None,
+            "parts_from": application.parts_from,
+            "joined_meshes": application.joined_meshes,
         }
 
     def _model_import_status(self, request_id):

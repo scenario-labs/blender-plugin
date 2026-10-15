@@ -5407,8 +5407,9 @@ class ModelGenerationTests(unittest.TestCase):
                 )
                 self.assertEqual(approval["edit3d_task"], task)
                 self.assertIs(approval["primary"], True)
-                # Coordinates follow the derived policy unless chosen.
-                placement = "FIT" if policy in {"UV", "RETEXTURE", "RIG"} else "WORLD"
+                # Coordinates follow the derived policy unless chosen: a fit, except
+                # for a REMESH fallback the job did not choose.
+                placement = "WORLD" if source == "default" else "FIT"
                 self.assertEqual(approval["mesh_placement"], placement)
                 explicit = self.prepare_mesh_edit(request_id, mesh_policy="UV")
                 self.assertEqual(
@@ -5447,10 +5448,13 @@ class ModelGenerationTests(unittest.TestCase):
             (approval["mesh_policy"], approval["mesh_policy_source"], approval["edit3d_task"]),
             ("PARTS", "edit3d_task", "PARTS"),
         )
+        self.assertEqual(approval["mesh_placement"], "FIT")
         op, ticket = self.mesh_dialog(request_id, original_source=True)
         self.assertIs(ticket.target.obj, source)
         self.assertEqual((op.policy, ticket.policy), ("PARTS", "PARTS"))
         self.assertEqual(op.policy_note, "Default edit follows this job's Parts task.")
+        # The fixture's parts are not this source's surface: apply them in place.
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_placement="WORLD")
         status = self.finish_application(approval)
         self.assertEqual(status["status"], "applied", status)
         self.assertEqual(status["mesh_edit"]["policy"], "PARTS")
@@ -5489,8 +5493,13 @@ class ModelGenerationTests(unittest.TestCase):
         request_id = self.recovered_mesh_edit()
         source = bpy.context.view_layer.objects.active
         old_mesh = source.data
-        with self.assertRaises(self.request_error):
-            self.prepare_mesh_edit(request_id, mesh_placement="FIT")
+        # A REMESH fallback the job did not choose starts on scene coordinates,
+        # but may be fitted on request.
+        self.assertEqual(self.prepare_mesh_edit(request_id)["mesh_placement"], "WORLD")
+        fitted = self.prepare_mesh_edit(request_id, mesh_placement="FIT")
+        self.assertEqual(
+            (fitted["mesh_policy"], fitted["fit_bases"]), ("REMESH", ["WORLD", "LOCAL"])
+        )
         approval = self.prepare_mesh_edit(request_id, mesh_policy="UV")
         self.assertEqual(approval["mesh_placement"], "FIT")
         self.assertIsNone(approval["result_to_source"])
@@ -5501,6 +5510,50 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "apply_failed", status)
         self.assertIn("UV result does not match the source mesh after fitting", status["error"])
         self.assertEqual(source.data, old_mesh)
+
+    def test_mcp_parts_split_a_matching_source_and_report_their_path(self):
+        from helpers import cube_result_glb
+
+        request_id = self.recovered_mesh_edit(cube_result_glb(parts=2))
+        source = bpy.context.view_layer.objects.active
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="PARTS")
+        self.assertEqual(approval["mesh_placement"], "FIT")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        edit = status["mesh_edit"]
+        self.assertEqual(
+            (edit["parts_from"], edit["fitted_from"], edit["fit_residual"], edit["joined_meshes"]),
+            ("source_faces", "WORLD", None, None),
+        )
+        parts = [bpy.data.objects[name] for name in edit["parts"]]
+        self.assertEqual([len(part.data.polygons) for part in parts], [3, 3])
+        # The cube's own UVs stay on its parts; the result carried none.
+        self.assertTrue(all(part.data.uv_layers for part in parts))
+        self.assertTrue(all(part.parent == source for part in parts))
+
+    def test_native_remesh_review_fits_a_normalized_result_and_reports_residual(self):
+        from helpers import cube_result_glb
+
+        request_id = self.recovered_mesh_edit(cube_result_glb(subdivide=2))
+        source = bpy.context.view_layer.objects.active
+        op, ticket = self.mesh_dialog(request_id, policy="REMESH")
+        self.assertEqual((op.placement, ticket.placement), ("FIT", "FIT"))
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="REMESH")
+        # The operator confirms its own reviewed options, as the dialog's OK does.
+        args = dict(self.import_args(approval), policy="REMESH", placement="FIT")
+        self.assertEqual(bpy.ops.scenario.apply_saved_mesh(**args), {"FINISHED"})
+        jobs = self.runtime.state.model_jobs
+        jobs._commands[request_id][1].result(5)
+        status = jobs.status(request_id)
+        self.assertEqual(status["status"], "applied", status)
+        edit = status["mesh_edit"]
+        self.assertEqual((edit["fitted_from"], edit["joined_meshes"]), ("WORLD", 1))
+        self.assertIsNone(edit["parts_from"])
+        self.assertLess(edit["fit_residual"]["max_distance"], 1e-4)
+        self.assertEqual(edit["fit_residual"]["beyond_tolerance"], 0)
+        # The exported result comes back as triangles: 6 faces x 9 quads x 2.
+        self.assertEqual(len(source.data.polygons), 108)
+        self.assertAlmostEqual(max(abs(v.co.x) for v in source.data.vertices), 1, places=4)
 
     def test_mesh_edit_world_placement_preserves_imported_positions_with_transformed_source(self):
         request_id = self.recovered_mesh_edit()
@@ -5553,7 +5606,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(op.placement, "FIT")
         self.assertEqual(jobs._application_approvals[op.application_id].placement, "FIT")
         op._sync_options = lambda op=op: operator._sync_options(op)
-        for policy, placement in (("REMESH", "WORLD"), ("RIG", "FIT"), ("PARTS", "WORLD")):
+        for policy, placement in (("REMESH", "FIT"), ("RIG", "FIT"), ("PARTS", "FIT")):
             op.policy = policy
             recovery._mesh_policy_changed(op, context)
             self.assertEqual(op.placement, placement)
@@ -5787,9 +5840,11 @@ class ModelGenerationTests(unittest.TestCase):
             # Exercise real native memfile history in the installed background
             # runner; production enables automatic checkpoints on desktop only.
             with patch.object(module, "_undo_enabled", return_value=True):
+                # The fixture is not the source surface: place geometry as given.
+                placement = {"mesh_placement": "WORLD"} if policy in {"REMESH", "PARTS"} else {}
                 status = self.finish_application(
                     self.prepare_mesh_edit(
-                        request_id, mesh_policy=policy, keep_original=keep_original
+                        request_id, mesh_policy=policy, keep_original=keep_original, **placement
                     )
                 )
             self.assertEqual(status["status"], "applied", status)
@@ -6638,7 +6693,9 @@ class ModelGenerationTests(unittest.TestCase):
         other = bpy.context.object
         other_mesh = other.data
         calls = len(self.calls), len(self.paid), len(self.downloads)
-        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="PARTS")
+        approval = self.prepare_mesh_edit(
+            request_id, purpose="mesh_source", mesh_policy="PARTS", mesh_placement="WORLD"
+        )
         self.assertEqual(approval["target"], source.name)
         self.assertEqual(approval["mesh_policy"], "PARTS")
         status = self.finish_application(approval)

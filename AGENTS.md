@@ -27,10 +27,8 @@ to every coding agent.
 
 ## Project and current direction
 
-This is a Python Blender extension with a local MCP server. Read `README.md`
-for the current checkout and `docs/UI_STYLE.md` before changing UI behavior.
-Older design documents and session notes describe the prototype; they do not
-override the user's instructions or the current issue and PR scope.
+This is a Python Blender extension with a local MCP server; `README.md`
+describes the current checkout.
 
 The approved direction is one consolidated extension, a compact default UI,
 optional expanded Studio and Blender-native updates. The current release uses
@@ -66,12 +64,10 @@ the UI, jobs, local MCP and supporting tools. Its source and issue tracker are
 4. Only then add a narrow raw API fallback for that operation inside the shared
    adapter. Link the SDK issue in the code and PR, test the fallback, and record
    the condition for removing it. Recheck exceptions on SDK upgrades.
-   Follow the [named SDK extension workflow](docs/SDK_ADOPTION.md#sdk-resource-extensions):
-   add a method to the adapter-owned extension layer, reuse its configured SDK
-   client and transport, and preserve credential isolation, permission checks,
-   sanitized errors and retry policy. Do not wait for SDK regeneration when a
-   verified API contract and tracked SDK gap allow this path; do not invent an
-   endpoint when neither documentation nor inspected first-party code establishes it.
+   Add it as a named method in the adapter's
+   [extension layer](docs/SDK_ADOPTION.md#sdk-resource-extensions) without waiting
+   for SDK regeneration; never invent an endpoint that neither documentation nor
+   first-party code establishes.
 5. Custom endpoint calls through low-level SDK HTTP verbs are fallbacks too.
    A documented endpoint's `with_raw_response` wrapper is still SDK usage.
    Browser authorization, signed storage transfers and update repositories are
@@ -92,14 +88,12 @@ result. OAuth tenant selection is a separate contract.
 
 Before changing the shared SDK adapter or its dependency pin, read
 `docs/SDK_ADOPTION.md` and run
-`uv run --locked python -m pytest tests/unit/test_scenario_sdk_contract.py -rx`.
+`uv run --locked --no-env-file python -m pytest tests/unit/test_scenario_sdk_contract.py -rx`.
 The known authentication expected failure is an unresolved gap, not production
 acceptance. Extend these offline contracts when mapping adopted operations.
 
 Changes to Scenario API calls must identify the SDK method or the documented
 exception in the PR. Documentation-only work does not need an API coverage audit.
-The SDK is an adoption requirement; its presence in these instructions does not
-mean the current prototype client has already been replaced.
 
 ## Blender, jobs and authentication
 

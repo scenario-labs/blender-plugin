@@ -81,7 +81,7 @@ Run the tests with:
 
 ```sh
 uv sync --locked
-uv run --locked python -m pytest tests/unit/test_scenario_sdk_contract.py -rx
+uv run --locked --no-env-file python -m pytest tests/unit/test_scenario_sdk_contract.py -rx
 ```
 
 [The tests](../tests/unit/test_scenario_sdk_contract.py) call public SDK methods

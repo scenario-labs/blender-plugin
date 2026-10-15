@@ -231,7 +231,9 @@ the [privacy page](PRIVACY.md#where-it-goes). Every event carries
 plugins. Its `client` says who made the request: `blender`, `browser`, `tool`
 for scripts and command-line clients, `bot` for crawlers and link checkers, or
 `other`. Events recorded before that split use `other` for everything except
-Blender. The dashboard's download counts leave out `bot` and `tool`. HEAD
+Blender. The dashboard counts downloads in Blender (`blender`) and outside it
+(`browser`, `tool` and `other`) separately, and shows `bot` only in its chart by
+source. HEAD
 requests, resumed downloads and other files are not counted. A ZIP keeps its
 version only when the repository index lists it. The middleware reads that index
 from Pages, caches it for five minutes and rereads it at most once a minute for

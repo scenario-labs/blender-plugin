@@ -65,11 +65,13 @@ function closeness(term, word) {
   if (word === term) return 1;
   if (word.startsWith(term)) return 0.75;
   if (term.length >= 3 && word.includes(term)) return 0.5;
-  // Typos only count in longer words, where they cannot be another word.
-  const allowed = term.length >= 9 ? 2 : term.length >= 5 ? 1 : 0;
+  // Typos only count in words of five letters or more, judged by the word in
+  // the guide: "imge" is one letter short of "image".
+  const allowed = term.length >= 4 && word.length >= 5 ? (word.length >= 9 ? 2 : 1) : 0;
   if (allowed && distance(term, word, allowed) <= allowed) return 0.4;
   // A typo while the word is still being typed: compare with its start.
-  if (allowed && word.length > term.length && distance(term, word.slice(0, term.length), allowed) <= allowed) {
+  const partial = term.length >= 9 ? 2 : term.length >= 5 ? 1 : 0;
+  if (partial && word.length > term.length && distance(term, word.slice(0, term.length), partial) <= partial) {
     return 0.35;
   }
   return 0;
@@ -301,7 +303,11 @@ function attach(document) {
     select(links.length ? 0 : -1);
     show(Boolean(query));
   };
+  // Closing forgets the results, so Enter and the arrows cannot act on hidden ones.
   const close = () => {
+    list.replaceChildren();
+    links = [];
+    status.textContent = "";
     show(false);
     select(-1);
   };
@@ -353,7 +359,7 @@ function attach(document) {
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { search, collect, normalize };
+  module.exports = { search, collect, normalize, attach };
 } else if (typeof document !== "undefined") {
   attach(document);
 }

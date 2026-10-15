@@ -1,18 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Coverage-guided Atheris fuzzing of the tests/fuzz harnesses with ClusterFuzzLite:
-# the changed code on pull requests, every harness weekly. The actions clone the
-# repository themselves with the read-only workflow token, so there is no checkout
-# step, and keep corpora and crash reproducers as workflow artifacts.
+# Coverage-guided Atheris fuzzing of every tests/fuzz harness with ClusterFuzzLite,
+# weekly or on demand; pull requests run the same harnesses through pytest instead.
+# The actions clone the repository themselves with the read-only workflow token, so
+# there is no checkout step, and keep corpora and crash reproducers as artifacts.
 name: ClusterFuzzLite
 
 on:
-  pull_request:
-    paths:
-      - "scenario/**"
-      - "tests/fuzz/**"
-      - ".clusterfuzzlite/**"
-      - ".github/workflows/cflite.yml"
   schedule:
     - cron: "17 4 * * 3"
   workflow_dispatch:
@@ -24,36 +18,14 @@ permissions:
 
 concurrency:
   group: cflite-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
-  code-change:
-    name: clusterfuzzlite-pr
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
-    # Each harness first pages through every repository artifact for its corpus, a
-    # few minutes per harness on top of the build and the fuzzing time.
-    timeout-minutes: 60
-    steps:
-      - name: Build the harnesses
-        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
-        with:
-          language: python
-          sanitizer: address
-          github-token: ${{ github.token }}
-      - name: Fuzz the changed code
-        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
-        with:
-          language: python
-          sanitizer: address
-          mode: code-change
-          fuzz-seconds: 300
-          github-token: ${{ github.token }}
-
   batch:
     name: clusterfuzzlite-batch
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-24.04
+    # Each harness first pages through every repository artifact for its corpus, a
+    # few minutes per harness on top of the build and the hour of fuzzing.
     timeout-minutes: 150
     steps:
       - name: Build the harnesses

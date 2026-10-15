@@ -63,8 +63,8 @@ dotenv loading disabled. It needs no credentials.
 Fuzz harnesses for the local MCP server, the upload policy and media parsers live
 in `tests/fuzz/`; `make test` and unit CI run each on its seeds and a fixed
 pseudo-random corpus. [ClusterFuzzLite](../../.github/workflows/cflite.yml) fuzzes
-them with Atheris for five minutes on pull requests that change `scenario/` or the
-harnesses, and for an hour weekly. To fuzz locally with Docker, run
+them with Atheris for an hour weekly, or on demand for any branch from the Actions
+tab. To fuzz locally with Docker, run
 `python infra/helper.py build_fuzzers --external <checkout>`, then
 `python infra/helper.py run_fuzzer --external <checkout> fuzz_glb`, from an
 [OSS-Fuzz](https://github.com/google/oss-fuzz) clone.

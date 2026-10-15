@@ -211,15 +211,25 @@ gh api graphql -f query='{ repository(owner:"scenario-labs", name:"blender-plugi
 
 `blender.scenario.com` is a Vercel project built from this repository with Root
 Directory `tools/site_proxy`, framework preset Other, no build or install
-command, production branch `main`, and deployments skipped when that directory
-is unchanged. [vercel.json](../tools/site_proxy/vercel.json) forwards every path
-to the Pages address above, and redirects `/repo` to `/repo/`, which Pages would
+command, and production branch `main`. Its Ignored Build Step,
+`git diff --quiet HEAD^ HEAD -- .`, skips a deployment when the last commit left
+that directory unchanged. [vercel.json](../tools/site_proxy/vercel.json)
+forwards every path to the Pages address above, and redirects `/repo` to `/repo/`, which Pages would
 otherwise redirect to its own host. The directory holds only that file and the
 middleware: Vercel would serve any other file there instead of forwarding its
 path, and a Git deployment applies a `.vercelignore` from the repository root,
 so the tests live in `tests/site/`. Production deployments stay public because Blender
 cannot authenticate. The DNS CNAME `blender` points to the target Vercel shows
-for the domain. Cutover and acceptance are tracked in #492.
+for the domain; #492 records the move from GitHub Pages.
+
+When the domain moves between hosts, lower the CNAME TTL at least an hour ahead.
+Vercel may not issue the certificate on its own:
+`vercel certs issue blender.scenario.com --scope scenario-labs` requests it.
+After the Pages custom domain is removed, GitHub's CDN can keep serving its old
+redirects to `blender.scenario.com` for about 30 minutes, so some requests loop
+until they expire. Vercel caches forwarded responses for as long as Pages allows,
+ten minutes; `vercel cache purge --type cdn`, run from a folder linked to the
+project, clears them.
 
 [The middleware](../tools/site_proxy/middleware.ts) runs on `/repo/*` and sends
 one anonymous PostHog event per counted request after the request continues:
@@ -389,7 +399,7 @@ to perform it.
 - [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
 - [x] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36. Done on 2026-10-13 after 0.10.0 was published and its downloads verified, and read back: the tag ruleset keeps both patterns and its four rules with the release App as its only bypass actor, and immutable releases are enabled.
 - [x] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39. Decided and applied on 2026-10-13: full-SHA pinning is required and allowed actions stay `all`, read back through the API; a Pages run on `main` passed with the setting on.
-- [ ] Move `blender.scenario.com` behind the Vercel project and accept its download counts: #492.
+- [x] Move `blender.scenario.com` behind the Vercel project and accept its download counts: #492. Done on 2026-10-15: the site is served through Vercel and the first installs were counted.
 - [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. The native repository has served releases since 0.10.0.
 - [x] Upload the reviewed, merged social-preview card and verify its custom-image flag and URL: #19. Uploaded on 2026-10-13 and read back: the flag is `true`, the URL is on `repository-images.githubusercontent.com` and the image matches the committed card byte for byte.
 - [ ] Recheck the rendered shared-link preview of the repository in an application that unfurls links once its link cache refreshes. A Slack unfurl right after the 2026-10-13 upload still showed the previous card. #19 is closed with the GitHub-side evidence above.

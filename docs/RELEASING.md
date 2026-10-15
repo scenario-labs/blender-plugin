@@ -177,6 +177,11 @@ and counts downloads, as described in
 deployments do not need a committed CNAME file. Check DNS, certificate issuance
 and HTTPS before acceptance.
 
+After each release's Pages deployment, confirm that the live `index.json` lists
+the new version and that downloads of its ZIP appear on the PostHog downloads
+dashboard as `extension_downloaded` with that version, not `unknown`. The proxy
+rereads the index within a few minutes of the deployment.
+
 The workflow runs on relevant `main` changes, successful release-workflow
 completion and manual dispatch. It always checks out current `main`. The
 `workflow_run` trigger keeps deployments on the default branch, compatible with

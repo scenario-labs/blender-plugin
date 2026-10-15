@@ -638,7 +638,9 @@ action spends anything. Save the blend file yourself.
 ### Apply a saved mesh edit
 
 Select your mesh, then choose **Apply mesh edit (N)** on the saved job and pick how
-to apply it:
+to apply it. The choice starts on the edit the job ran, such as **Replace textures**
+for a Retexture job; when the dialog says the edit is not from this job's task,
+pick it yourself. A job's other results show as **Apply alternate mesh edit: GLB (N)**.
 
 - **Replace geometry**: geometry, UVs and materials.
 - **Replace active UVs** or **Replace textures**: only when the result's topology matches your mesh exactly.

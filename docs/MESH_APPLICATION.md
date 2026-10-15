@@ -227,7 +227,8 @@ import. See [animated import interaction](ui/saved-3d.md#animated-model-import-i
 [`model_formats.classify_packages`](../scenario/core/scene/model_formats.py)
 groups a saved job's results into ordered import units without Blender, files or
 network access. The [saved package import](#saved-model-package-import) offers and
-claims these units; the Film and in-place mesh-edit paths do not use them.
+claims these units. In-place mesh edits use them only to name a GLB primary or
+alternate; the Film path does not use them.
 
 Inputs are URL-free manifest facts typed by the pinned SDK 2.2.0
 [asset response](https://docs.scenario.com/api/python/resources/assets/methods/retrieve):
@@ -478,8 +479,14 @@ private byte snapshot, isolated staging scene and image packing. It requires
 exactly one mesh with optional Empty parents for `REMESH`, `UV` and `RETEXTURE`.
 The explicit `PARTS` policy accepts 2 to 128 static surface meshes in that one GLB;
 other object types fail for these static policies. RIG requires one compatible
-mesh and armature with optional Empty parents. The caller chooses the policy
-and Keep original.
+mesh and armature with optional Empty parents. A mesh an imported armature uses
+as a bone custom shape is a display helper: it is not counted as a result mesh
+and is removed with the other imported objects (the importer is told not to
+create these). Every other mesh counts, so an unskinned mesh beside the skin,
+which may be an accessory, makes RIG refuse the result instead of discarding it.
+A clips-only result, whose rig drives no mesh, fails the skin checks. A skinned
+bone-display mesh cannot be told from a character and fails the topology check.
+The caller chooses the policy and Keep original.
 Multiple result assets are never combined or ranked automatically.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
@@ -526,10 +533,24 @@ retargeting stay open under #99.
 
 **Apply mesh edit (N)** and MCP `prepare_result_application` with
 `purpose: mesh_edit` review one saved GLB against the currently active
-mesh. The review names the scene, source and selected asset. `REMESH` replaces
+mesh. The review names the scene, source and selected asset, and whether that
+GLB is the job's primary or an alternate result, as
+[classified](#saved-3d-package-classification); an alternate GLB's control reads
+**Apply alternate mesh edit: GLB (N)**, and MCP returns `primary`. `REMESH` replaces
 geometry, UVs and mesh materials; `UV` replaces only active UVs and requires
 exact indexed topology and positions; `RETEXTURE`, `PARTS` and `RIG` are
 described below. **Keep original** defaults to enabled.
+
+The default edit follows the job's Edit 3D task
+([`mesh_edit_policy`](../scenario/core/scene/mesh_edit_policy.py)): the task this
+session submitted the job with when that task lists its model, otherwise the
+model's only task in the Edit 3D lists. Remesh, Retexture, UV Unwrap, Rigging and
+Parts start on `REMESH`, `RETEXTURE`, `UV`, `RIG` and `PARTS`; MCP reports
+`mesh_policy_source: edit3d_task` and the task. Animate, models in no list and a
+model in two lists, such as Rodin Bang after a restart, start on `REMESH`
+(`mesh_policy_source: default`), and the dialog says the edit is not from the
+job's task. The submitted task is not saved with the job. An explicit choice in
+the dialog or MCP `mesh_policy` always wins (`requested`).
 
 **Scene coordinates** (`WORLD`) maps imported positions through the captured
 source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
@@ -562,7 +583,8 @@ provider retexture/rig contracts, semantic parts classification or end-to-end Ed
 
 ## Applying to the captured mesh source
 
-**Apply to captured source (N)** and MCP `prepare_result_application` with
+**Apply to captured source (N)**, or **Apply alternate to captured source: GLB (N)**
+for an alternate GLB, and MCP `prepare_result_application` with
 `purpose: mesh_source` use the original object exported for the generation's
 single captured 3D input. Current selection is ignored. The confirmation still
 names the target, selected result, edit policy, coordinates and Keep original

@@ -360,6 +360,20 @@ def test_rank_orders_formats_then_manifest_and_marks_one_primary():
     )
 
 
+def test_a_rig_job_without_lineage_puts_its_largest_glb_first():
+    # A rigging job can return the rigged character beside smaller clip GLBs,
+    # some of which carry only a bone-display mesh. Size, then order, decides.
+    sizes = (("rigged", 400), ("walk", 380), ("walk_bones", 90), ("run", 370), ("run_bones", 80))
+    plan = classify_packages([member(key, "model/gltf-binary", size) for key, size in sizes])
+    assert [(unit.key, unit.primary) for unit in plan.units] == [
+        ("rigged", True),
+        ("walk", False),
+        ("run", False),
+        ("walk_bones", False),
+        ("run_bones", False),
+    ]
+
+
 def test_ties_prefer_more_bound_companions_then_larger_files():
     job = [
         member("asset_obj_a", "model/obj", kind="txt23d", parent="asset_input"),

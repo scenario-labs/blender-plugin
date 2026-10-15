@@ -6,7 +6,8 @@ developer credentials and explicit live commands.
 Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
 the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
 `make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
-focused tests. Dependency and interpreter changes follow
+focused tests. `pyproject.toml` already passes `-q`; another `-q` hides the pass
+count. Dependency and interpreter changes follow
 [Python style](../PYTHON_STYLE.md#dependency-changes). Blender native tests still
 use Blender's bundled Python and an isolated profile. Preserve exit codes when
 capturing logs, and distinguish passed checks from checks that were not run.
@@ -18,6 +19,7 @@ Its `changes` job skips the Blender baseline on a pull request when every change
 file is a root Markdown file, the PR template, or under `docs/`, `.agents/`,
 `.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `tools/site_proxy/` or
 `tests/site/`. Any other path, a push or an unreadable diff runs the baseline.
+Changes to that list need matching cases in `tests/unit/test_workflows.py`.
 The `ci-ok` job waits for that classification and all seven workloads and passes
 only when each succeeds. It accepts a skipped
 baseline only when the classification succeeded and found no native input;

@@ -77,8 +77,8 @@ Blender-imported-scene-to-source-local matrix, edit policy and Keep original cho
 Native **Apply mesh edit** and MCP `purpose: mesh_edit` prepare the same
 captured target, explicit scene/local placement, policy and Keep original review.
 It makes no service request and uses no second executor. The captured-source flow
-below connects export metadata to this review. Provider mapping contracts remain
-under #99.
+below connects export metadata to this review. [Surface matching](../MESH_APPLICATION.md#surface-matching)
+verifies provider results that are triangulated, reordered or rescaled.
 
 ## Mesh upload source identity
 
@@ -104,8 +104,8 @@ restart; saved IDs alone cannot recreate original-source ownership. See
 [the mesh contract](../MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
 A source skinned to one Armature modifier keeps that authority for RIG and ANIMATE only.
 Several exported objects are retained together, for UV, RETEXTURE and RIG
-applied to all of them at once. Other modified sources and provider coordinate
-contracts still limit #99 acceptance.
+applied to all of them at once. Other modified sources stay uploadable without
+in-place authority.
 
 ## Composition preparation component
 

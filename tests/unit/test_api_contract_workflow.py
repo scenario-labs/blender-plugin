@@ -58,7 +58,8 @@ def test_repeated_api_failure_uses_exact_paginated_tracking_issue(tmp_path, monk
     assert reporter.main(arguments(report)) == 0
     assert writes[0][0] == "repos/example/extension/issues"
     assert writes[0][1]["title"] == reporter.TITLE
-    assert writes[0][1]["labels"] == ["bug", "feature:API", "quality", "area:ci"]
+    assert writes[0][1]["labels"] == ["feature:API", "quality", "area:ci"]
+    assert writes[0][1]["type"] == "Bug"
     assert "A HIGH finding" in writes[0][1]["body"]
     assert writes[1][0] == "repos/example/extension/issues/9/comments"
 

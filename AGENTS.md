@@ -190,8 +190,13 @@ the PR title and commit type; `commitlint.config.ts` defines the allowed types,
 scopes and 120-character header limit. Use `fix` only for behavior that users of
 the released extension or the live site saw; correcting tooling, CI or
 infrastructure they do not run yet is `chore` (or `ci`, `build` or `docs` when
-that fits), without the `bug` label. Preserve attribution. Do not bump versions
-or edit release notes in unrelated work.
+that fits), and its issue is a Task, not a Bug. Preserve attribution. Do not bump
+versions or edit release notes in unrelated work.
+
+Give every new issue the GitHub issue type its title implies: Bug for `fix`,
+Feature for `feat`, otherwise Task; no label replaces it. `gh issue create`
+cannot set a type, so file issues with
+`gh api repos/scenario-labs/blender-plugin/issues -f type=<Type> -f title=... -f body=...`.
 
 Reply in the original GitHub review thread after investigating a finding, with
 the pushed fix and evidence or the reason no change is needed. Use `Closes` only

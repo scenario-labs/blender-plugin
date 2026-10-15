@@ -145,8 +145,8 @@ reviews do not constitute human approval.
 
 ## How issues are triaged
 
-Maintainers choose the issue type and one primary area, using labels such as
-`bug`, `enhancement`, `documentation`, `question` and `area:*`. For defects, include
+Maintainers set the issue type (Bug, Feature or Task) and one primary area, using
+labels such as `documentation`, `question` and `area:*`. For defects, include
 the observed Blender and OS versions; `needs-repro` or `needs-info` requests
 missing evidence. `model-behaviour` distinguishes provider behavior from an
 extension defect, while `known-limit` points to the limitations guide.

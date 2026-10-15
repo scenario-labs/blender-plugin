@@ -442,6 +442,59 @@ def _tag_changes(values, field):
     return tags
 
 
+# The `types` values SDK 2.2.0 `jobs.list` accepts.
+JOB_LIST_TYPES = frozenset(
+    {
+        "assets-download",
+        "model-training",
+        "flux-model-training",
+        "musubi-model-training",
+        "inference",
+        "pixelate",
+        "embed",
+        "remove-background",
+        "vectorize",
+        "canvas-export",
+        "image-generation",
+        "image-prompt-editing",
+        "caption",
+        "generate-prompt",
+        "describe-style",
+        "translate",
+        "detection",
+        "restyle",
+        "repaint",
+        "reframe",
+        "segment",
+        "skybox-base-360",
+        "skybox-upscale-360",
+        "skybox-hdri",
+        "skybox-3d",
+        "texture",
+        "upscale",
+        "upscale-skybox",
+        "upscale-texture",
+        "flux",
+        "openai-image-generation",
+        "upload",
+        "custom",
+        "splat",
+        "mesh-preview-rendering",
+        "workflow",
+    }
+)
+
+
+def _job_types(values):
+    """1 to 8 distinct listable job types in request order; ValueError otherwise."""
+    if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
+        raise ValueError("Use a list of job types")
+    types = list(dict.fromkeys(values))
+    if not 1 <= len(types) <= 8 or any(value not in JOB_LIST_TYPES for value in types):
+        raise ValueError("Choose 1 to 8 supported job types")
+    return types
+
+
 def _identifier_list(values, noun):
     """Valid identifiers in request order with repeats removed; ValueError otherwise."""
     if isinstance(values, (str, bytes)) or not isinstance(values, (list, tuple)):
@@ -1216,6 +1269,7 @@ class SDKAdapter:
         author_id=None,
         workflow_id=None,
         job_type=None,
+        job_types=None,
         status=None,
         hide_results=True,
         page_size=100,
@@ -1245,6 +1299,8 @@ class SDKAdapter:
             raise ValueError("Choose a supported job status")
         if not isinstance(hide_results, bool):
             raise ValueError("Result visibility must be a boolean")
+        if job_type is not None and job_types is not None:
+            raise ValueError("Choose one job type or a list of types")
         options = {"page_size": page_size, "hide_results": hide_results}
         for key, value in (
             ("author_id", author_id),
@@ -1253,8 +1309,37 @@ class SDKAdapter:
         ):
             if value is not None:
                 options[key] = _identifier(value)
+        if job_types is not None:
+            options["types"] = _job_types(job_types)
         if status is not None:
             options["status"] = status
+        rows, complete = self._job_rows(options, max_pages)
+        if not complete:
+            raise AdapterError("Scenario job history exceeded the page limit")
+        return rows
+
+    def recent_jobs(self, *, job_types=None, workflow_id=None, page_size=100, max_pages=2):
+        """Read a bounded window of the newest scoped jobs: (rows, complete).
+
+        For listing recovery candidates only: unlike `jobs`, reaching the page
+        limit returns what was read with `complete` false instead of failing.
+        A row is never evidence of which request created it.
+        """
+        if job_types is None and workflow_id is None:
+            raise ValueError("Filter recent jobs by type or workflow")
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("Recent job page size must be between 1 and 100")
+        if type(max_pages) is not int or not 1 <= max_pages <= 5:
+            raise ValueError("Read between 1 and 5 pages of recent jobs")
+        options = {"page_size": page_size, "hide_results": True}
+        if job_types is not None:
+            options["types"] = _job_types(job_types)
+        if workflow_id is not None:
+            options["workflow_id"] = _identifier(workflow_id)
+        return self._job_rows(options, max_pages)
+
+    def _job_rows(self, options, max_pages):
+        """Follow the opaque cursor for at most `max_pages`; (unique rows, exhausted)."""
         records, tokens = {}, set()
         for _ in range(max_pages):
             page = _json(self._request(self._sdk.jobs.with_raw_response.list, **options))
@@ -1271,12 +1356,12 @@ class SDKAdapter:
                 records[identifier] = row
             token = page.get("nextPaginationToken")
             if token is None or token == "":
-                return list(records.values())
+                return list(records.values()), True
             if not isinstance(token, str) or token in tokens:
                 raise AdapterError("Scenario repeated or returned an invalid job cursor")
             tokens.add(token)
             options["pagination_token"] = token
-        raise AdapterError("Scenario job history exceeded the page limit")
+        return list(records.values()), False
 
     def _catalog(self, resource, privacy, max_pages):
         if privacy not in {"public", "private"}:

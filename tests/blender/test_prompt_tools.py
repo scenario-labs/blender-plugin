@@ -5,6 +5,7 @@
 import json
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,6 +50,7 @@ class PromptToolsTests(unittest.TestCase):
         )
         self.sessions, self.calls, self.paid = [], [], []
         self.lose_response = False
+        self.cloud_jobs = []
         self.result_text = "A copper teapot\nSoft studio light"
         self.fail_read = False
         self.render_model = None  # served to model description reads
@@ -62,6 +64,9 @@ class PromptToolsTests(unittest.TestCase):
             if request.method == "GET":
                 if "/models/" in request.url.path:
                     return httpx.Response(200, json={"model": self.render_model})
+                if request.url.path == "/v1/jobs":
+                    # Recent prompt jobs for an unconfirmed submission; read-only.
+                    return httpx.Response(200, json={"jobs": list(self.cloud_jobs)})
                 if self.fail_read:
                     return httpx.Response(503)
                 index = int(request.url.path.rsplit("-", 1)[-1]) - 1
@@ -323,10 +328,98 @@ class PromptToolsTests(unittest.TestCase):
             deferred.finish(deferred.run())
         jobs = self.runtime.ensure_model_jobs()
         record = self.runtime.state.job_store.get(request_id)
-        self.assertEqual(jobs.actions(record), ("mark_reviewed",))
+        self.assertEqual(jobs.actions(record), ("find_cloud_job", "mark_reviewed"))
         jobs.control(request_id, record.revision, "mark_reviewed")
         deferred = self.mcp.estimate_prompt({"lane": "image", "action": "GENERATE"})
         self.assertIn("quote_id", deferred.finish(deferred.run()))
+        self.assertEqual(len(self.paid), 1)
+
+    def settle_model_jobs(self, owner):
+        for _ in range(10):
+            owner.poll()
+            tasks = [task for _, task in tuple(owner._commands.values())]
+            if not tasks:
+                return
+            for task in tasks:
+                try:
+                    task.result(5)
+                except Exception:
+                    pass  # The owner records each outcome when it drains the task.
+        self.fail("Saved prompt job commands did not settle")
+
+    def lost_prompt(self):
+        """An approved prompt whose response is lost, with one listed cloud job."""
+        item = self.quote()
+        self.cloud_jobs = [
+            {
+                # The fake serves retrievals of remote-N from the Nth paid request.
+                "jobId": "remote-1",
+                "jobType": "generate-prompt",
+                "status": "success",
+                "createdAt": self.storage.claim_time(time.time() + 1),
+                "metadata": {"input": {"prompt": "a teapot"}},
+            }
+        ]
+        self.lose_response = True
+        self.approve(item)
+        self.advance(item)
+        self.lose_response = False
+        self.assertEqual(item.phase, "ERROR")
+        self.assertIn("find its cloud job in Jobs", item.error)
+        return item
+
+    def link(self, owner, request_id, job_id="remote-1"):
+        rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
+        link = next(row for row in rows if row.action == "link_cloud_job")
+        self.assertEqual(
+            bpy.ops.scenario.link_cloud_job("EXEC_DEFAULT", **dict(link.properties), job_id=job_id),
+            {"FINISHED"},
+        )
+        self.settle_model_jobs(owner)
+
+    def test_a_linked_prompt_job_fills_its_unchanged_field_in_the_same_session(self):
+        item = self.lost_prompt()
+        owner = self.runtime.inspect_model_jobs()
+        self.settle_model_jobs(owner)
+        listings = [r for r in self.calls if r.url.path == "/v1/jobs"]
+        self.assertEqual(listings[0].url.params["types"], "generate-prompt,image-prompt-editing")
+        view = owner.views[item.request_id]
+        self.assertEqual(view.meta["cloud_lookup"], "1 possible cloud job found")
+        self.link(owner, item.request_id)
+        record = self.runtime.state.job_store.get(item.request_id)
+        self.assertEqual((record.state.value, record.remote_job_id), ("succeeded", "remote-1"))
+        # Seen finished while Online Access is off, the action waits instead of stopping.
+        with online_access(False):
+            self.jobs().poll()
+        self.assertEqual(item.phase, "ERROR")
+        self.assertIn("allow Online Access", item.error)
+        self.assertEqual(self.lane.prompt, "a teapot")
+        self.advance(item)
+        self.assertEqual(item.phase, "DONE")
+        self.assertEqual(self.lane.prompt, self.result_text)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_linked_prompt_job_after_restart_offers_its_text_to_copy(self):
+        item = self.lost_prompt()
+        request_id = item.request_id
+        self.runtime.state.reset()
+        owner = self.runtime.inspect_model_jobs()
+        self.settle_model_jobs(owner)
+        self.link(owner, request_id)
+        record = self.runtime.state.job_store.get(request_id)
+        self.assertEqual(record.state.value, "succeeded")
+        self.assertEqual(owner.actions(record), ("read_prompt_text",))
+        status = self.mcp.job_status({"job_id": request_id})
+        # MCP keeps its own read_prompt_result tool for the text.
+        self.assertNotIn("read_prompt_text", status["actions"])
+        owner.control(request_id, record.revision, "read_prompt_text")
+        self.settle_model_jobs(owner)
+        rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
+        copy = next(row for row in rows if row.operator == "scenario.copy_text")
+        self.assertEqual(dict(copy.properties)["text"], self.result_text)
+        self.assertEqual(bpy.ops.scenario.copy_text(**dict(copy.properties)), {"FINISHED"})
+        # The field is never written by a restarted job.
+        self.assertEqual(self.lane.prompt, "a teapot")
         self.assertEqual(len(self.paid), 1)
 
     def test_native_cancellation_of_queued_prompt_request_never_dispatches(self):

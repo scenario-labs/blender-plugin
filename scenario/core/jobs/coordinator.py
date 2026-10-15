@@ -19,7 +19,7 @@ from ..api import trained_routes
 from ..api.sdk_adapter import AdapterStatusError, Estimate, SDKAdapter
 from ..scene.splats import SplatCancelled
 from ..schema.forms import RouteError, _fields, chosen_inputs, is_file_field, record_schema
-from . import local_case_study, local_export, local_render, playback
+from . import local_case_study, local_export, local_render, playback, reconcile
 from .film_finishing import (
     CompositionDraft,
     validate_composition_draft,
@@ -50,6 +50,7 @@ from .store import (
     StoreConflict,
     StoredJob,
     _identity,
+    claim_time,
 )
 from .uploads import UploadCommands, UploadError
 from .workflow_nodes import definition_links, pending_steps, validate_decision, waiting
@@ -315,6 +316,7 @@ class JobCoordinator:
         *,
         quote_ttl=120.0,
         clock=time.monotonic,
+        wall_clock=time.time,
         origin_guard=None,
         result_downloader=None,
         result_root=None,
@@ -330,6 +332,7 @@ class JobCoordinator:
             or not math.isfinite(quote_ttl)
             or quote_ttl <= 0
             or not callable(clock)
+            or not callable(wall_clock)
         ):
             raise ValueError("Use a positive finite quote lifetime and monotonic clock")
         if adapter.account_id is None:
@@ -344,6 +347,8 @@ class JobCoordinator:
         self._store = store
         self._ttl = quote_ttl
         self._clock = clock
+        # Wall-clock seconds for the saved submission claim time only, never quotes.
+        self._wall_clock = wall_clock
         self._active = True
         self._lock = threading.RLock()
         self._prepared = WeakValueDictionary()
@@ -353,6 +358,9 @@ class JobCoordinator:
         self._quotes = WeakValueDictionary()
         # Unconfirmed request IDs the user marked reviewed; in memory only, never saved.
         self._reviewed = set()
+        # Request IDs this coordinator has claimed and is still sending; no
+        # candidate lookup or link may treat them as abandoned.
+        self._sending = set()
         self._deciding = set()
         # Definition links of waiting workflow jobs, by remote job ID; see _step_links.
         self._step_links_cache = {}
@@ -1378,6 +1386,79 @@ class JobCoordinator:
         with self._lock:
             return request_id in self._reviewed
 
+    def _unconfirmed(self, request_id, expected_revision):
+        """The current unconfirmed record that no sender in this process still owns."""
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            if request_id in self._sending:
+                raise StoreConflict("This request is still being sent; wait for Scenario's answer")
+            record = self._store.get(request_id)
+            if (
+                record is None
+                or type(expected_revision) is not int
+                or record.revision != expected_revision
+                or record.state not in UNCONFIRMED
+            ):
+                raise StoreConflict("The saved job changed; inspect it again")
+            return record
+
+    def unconfirmed_candidates(self, request_id, *, expected_revision):
+        """List cloud jobs a person may link to an unconfirmed request; saves nothing.
+
+        One bounded `jobs.list` read through `SDKAdapter.recent_jobs`, filtered
+        to the request's job type and target and to jobs not already saved in
+        this scope. A candidate is never evidence: the service offers no
+        idempotency key or client reference (SDK gap:
+        https://github.com/scenario-labs/scenario-sdk-python-staging/issues/11).
+        """
+        record = self._unconfirmed(request_id, expected_revision)
+        filters = reconcile.query(record)
+        if filters is None:
+            raise RecoveryError("This saved request has no cloud job type to look up")
+        rows, complete = self._adapter.recent_jobs(**filters)
+        saved = self._store.remote_job_ids()
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+        return reconcile.lookup(record, rows, saved=saved, complete=complete)
+
+    def link_unconfirmed(self, request_id, *, expected_revision, remote_job_id):
+        """Save a person's confirmed choice of cloud job for an unconfirmed request.
+
+        The choice is the correlation; the service cannot provide one. A fresh
+        `jobs.retrieve` must still show that exact job, of this operation's job
+        type, model or workflow and project, created no earlier than the claim
+        allows, and the store refuses an ID already saved in this scope. Nothing
+        is submitted, and a refused link changes nothing.
+        """
+        _identity(remote_job_id)
+        record = self._unconfirmed(request_id, expected_revision)
+        if reconcile.query(record) is None:
+            raise RecoveryError("This saved request has no cloud job type to link")
+        try:
+            response = self._adapter.job(remote_job_id)
+        except AdapterStatusError as error:
+            raise RecoveryError(
+                "Scenario did not return the selected job in this project"
+            ) from error
+        if response.get("jobId") != remote_job_id:
+            raise RecoveryError("Scenario returned a different remote job identity")
+        reason = reconcile.refusal(record, response)
+        if reason is not None:
+            raise reconcile.LinkRefused(reason)
+        with self._lock:
+            if not self._active:
+                raise RecoveryError("This job context is inactive")
+            if request_id in self._sending:
+                raise StoreConflict("This request is still being sent; wait for Scenario's answer")
+            linked = self._store.link_remote(
+                request_id, expected_revision=expected_revision, remote_job_id=remote_job_id
+            )
+            # Only a saved link ends the review; a refused one keeps the user's mark.
+            self._reviewed.discard(request_id)
+            return linked
+
     def prepare(self, estimate: Estimate, origin: JobOrigin):
         """Accept direct SDK estimates; bound quotes must use prepare_quote."""
         if not self._adapter.owns_estimate(estimate):
@@ -1476,40 +1557,46 @@ class JobCoordinator:
                         intent.request_id,
                         expected_revision=current.revision,
                         state=JobState.SUBMITTING,
+                        claimed_at=claim_time(self._wall_clock()),
                     )
                     claimed = True
+                    self._sending.add(intent.request_id)
 
         if not isinstance(prepared, PreparedJob):
             raise QuoteError("Use a prepared request from this coordinator")
         try:
-            receipt = self._adapter.submit_estimate(prepared.estimate, before_send=claim)
-            # A receipt must also satisfy the exact persisted identity contract.
-            # Validate inside the uncertainty boundary before storing its ID.
-            _identity(receipt["jobId"])
-        except Exception:
-            if not claimed:
-                raise
+            try:
+                receipt = self._adapter.submit_estimate(prepared.estimate, before_send=claim)
+                # A receipt must also satisfy the exact persisted identity contract.
+                # Validate inside the uncertainty boundary before storing its ID.
+                _identity(receipt["jobId"])
+            except Exception:
+                if not claimed:
+                    raise
+                current = self._store.get(prepared.intent.request_id)
+                if current is not None and current.state == JobState.SUBMITTING:
+                    self._store.transition(
+                        current.intent.request_id,
+                        expected_revision=current.revision,
+                        state=JobState.UNCERTAIN,
+                    )
+                raise SubmissionUncertain(
+                    "Submission outcome is unknown; do not submit it again"
+                ) from None
+            # Network work is outside the lock: a context switch can deactivate this
+            # coordinator, while the receipt still goes only to its original store.
             current = self._store.get(prepared.intent.request_id)
-            if current is not None and current.state == JobState.SUBMITTING:
-                self._store.transition(
-                    current.intent.request_id,
-                    expected_revision=current.revision,
-                    state=JobState.UNCERTAIN,
-                )
-            raise SubmissionUncertain(
-                "Submission outcome is unknown; do not submit it again"
-            ) from None
-        # Network work is outside the lock: a context switch can deactivate this
-        # coordinator, while the receipt still goes only to its original store.
-        current = self._store.get(prepared.intent.request_id)
-        if current is None or current.intent != prepared.intent:
-            raise StoreConflict("Cannot attach receipt to a changed request")
-        return self._store.transition(
-            current.intent.request_id,
-            expected_revision=current.revision,
-            state=JobState.REMOTE,
-            remote_job_id=receipt["jobId"],
-        )
+            if current is None or current.intent != prepared.intent:
+                raise StoreConflict("Cannot attach receipt to a changed request")
+            return self._store.transition(
+                current.intent.request_id,
+                expected_revision=current.revision,
+                state=JobState.REMOTE,
+                remote_job_id=receipt["jobId"],
+            )
+        finally:
+            with self._lock:
+                self._sending.discard(prepared.intent.request_id)
 
     def recovery_plan(self):
         """Inspect only this scope; never replay or guess that a worker is dead.

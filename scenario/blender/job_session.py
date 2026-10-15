@@ -36,6 +36,7 @@ from ..core.jobs.organization import (
 )
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.preview_scheduler import ResultPreviewScheduler
+from ..core.jobs.reconcile import CandidateLookup
 from ..core.jobs.results import (
     ModelTextResult,
     PreparedModelImport,
@@ -650,6 +651,16 @@ class JobSession:
     def refresh_remote(self, request_id, *, expected_revision):
         return self._record_command("refresh_remote", request_id, expected_revision)
 
+    def unconfirmed_candidates(self, request_id, *, expected_revision):
+        """Queue a read-only cloud listing for an unconfirmed request; saves nothing."""
+        return self._record_command("unconfirmed_candidates", request_id, expected_revision)
+
+    def link_unconfirmed(self, request_id, *, expected_revision, remote_job_id):
+        """Queue a confirmed, verified link of one cloud job; never submits."""
+        return self._record_command(
+            "link_unconfirmed", request_id, expected_revision, remote_job_id=remote_job_id
+        )
+
     def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
         """Queue an explicit cloud-result read; this never approves scene application."""
         _main_thread()
@@ -1173,7 +1184,14 @@ class JobSession:
                 if isinstance(result, PreparedModelImport):
                     record = result.verified.record
                 elif isinstance(
-                    result, (RemoteSnapshot, VerifiedResults, PromptResults, ModelTextResult)
+                    result,
+                    (
+                        RemoteSnapshot,
+                        VerifiedResults,
+                        PromptResults,
+                        ModelTextResult,
+                        CandidateLookup,
+                    ),
                 ):
                     record = result.record
                 else:

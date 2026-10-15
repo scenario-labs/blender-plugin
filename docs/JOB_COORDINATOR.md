@@ -36,8 +36,10 @@ approval before the render quote.
    the prepared request. UI callers must invalidate/rebuild the current request
    when fields, account/project, scene or target revision change.
 5. Inside the adapter's required `before_send` callback, the coordinator commits
-   `prepared → submitting` using the current stored revision. A failed write,
-   stale record, inactive coordinator or expired/mismatched quote stops dispatch.
+   `prepared → submitting` using the current stored revision, with the wall-clock
+   claim time (`claimed_at`, see [schema 12](JOB_STORAGE.md#schema-12-submission-claim-time)).
+   A failed write, stale record, inactive coordinator or expired/mismatched quote
+   stops dispatch.
 6. The adapter consumes the issued quote once and calls the operation's public
    `with_raw_response` method (`generate.run_model`, `workflows.run`,
    `generate.prompt` or `generate.translate`), with `max_retries=0`.
@@ -70,8 +72,10 @@ selected scene or object. A worker owner must wait for active calls before closi
 their HTTP clients. View closure alone must not deactivate application jobs.
 
 Restart recovery must not recreate a `PreparedJob` from stored fingerprints.
-Stored `submitting`/`uncertain` requests require reconciliation; similar inputs in
-job listings are not authoritative correlation.
+Stored `submitting`/`uncertain` requests require reconciliation. Similar inputs in
+job listings are not authoritative correlation: only a person's confirmed choice,
+verified by a fresh retrieval, links one to its cloud job
+([candidates and links](#unconfirmed-submission-candidates-and-links)).
 
 The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
@@ -90,9 +94,10 @@ submissions send at most one. A confirmed `remote` job never blocks: repeating a
 generation is a deliberate new request. The store's `unconfirmed()` lookup
 filters these rows in SQLite, so quoting never decodes unrelated history.
 
-There is deliberately no command that resolves an uncertain record. The user
-checks Scenario history (and can save a completed job with **Save for
-recovery**), then marks the record reviewed through
+No command resolves an uncertain record by itself. The user can
+[link the cloud job](#unconfirmed-submission-candidates-and-links) the request
+created, which makes it an ordinary `remote` job, or check Scenario history (and
+save a completed job with **Save for recovery**) and mark the record reviewed through
 `mark_unconfirmed_reviewed(request_id, expected_revision=...)`. The mark is kept
 in memory by the coordinator only: nothing is sent or saved, and a new
 coordinator, after a restart or context change, refuses again. `ModelJobs`
@@ -106,6 +111,44 @@ automatic form pricing stays off until Blender restarts even when that quote was
 superseded or discarded unread. `ModelJobs.finish_quote` turns a delivered error
 into `AutomaticEstimatesStopped`, naming the job. Nothing is resubmitted. Cloud adoption accepts only
 completed jobs, so the user saves that job from history once it finishes.
+
+## Unconfirmed submission candidates and links
+
+Scenario documents no idempotency key, client reference or request filter for
+`generate.run_model`, `workflows.run`, `generate.prompt` or `generate.translate`,
+and the pinned SDK sends none (tracked as an SDK gap, linked from
+[`reconcile.py`](../scenario/core/jobs/reconcile.py)). A lost response therefore
+cannot be matched to its job automatically. Two commands let a person do it,
+without ever submitting again:
+
+- `unconfirmed_candidates(request_id, expected_revision=...)` requires the current
+  `submitting` or `uncertain` record, refusing one this coordinator is still
+  sending. It reads one bounded window through `SDKAdapter.recent_jobs` (SDK
+  `jobs.list`, at most 2 pages of 100, selected project): `types=custom,inference`
+  for a model, `generate-prompt,image-prompt-editing` for Prompt Spark, `translate`
+  for Translate, and `workflowId` for a workflow. Rows must have that job type, a
+  known status, the model ID or workflow ID (a workflow step with a
+  `workflowJobId` is not a run), and, with a Project ID override, no other
+  `ownerId`; jobs already saved in the scope are left out. With a known claim
+  time, only jobs created from 10 minutes before to 1 hour after it are kept,
+  ordered by distance from it; otherwise newest first. At most 20 are returned in
+  a `CandidateLookup`, whose `complete` is false when the window stopped early.
+  Nothing is saved and nothing is picked.
+- `link_unconfirmed(request_id, expected_revision=..., remote_job_id=...)` saves a
+  person's choice. It retrieves that exact job through `SDKAdapter.job`, applies
+  the same checks plus a creation time no earlier than 10 minutes before the
+  claim, and raises `LinkRefused` with the reason, or `RecoveryError` when the
+  selected project cannot read it. The store's `link_remote` then saves `remote`
+  with that ID in one transaction that refuses an ID already saved in the scope.
+  It also clears this session's review mark. The job is then polled, downloaded and
+  applied like any other; nothing is applied without the usual review.
+
+Both run on the shared worker pool. Offline access, an inactive context, a stale
+revision or a request still being sent change nothing. A `submitting` record left
+by an earlier session can be linked; stop other Blender processes that might
+still be sending it first, since a later receipt would then conflict with the
+link. When Scenario offers an idempotency key or client reference, an exact
+lookup should replace the candidate list.
 
 ## Local capture queue
 
@@ -240,8 +283,9 @@ commits nothing and keeps the saved revision; Blender's owner derives a validate
 in-memory [progress reading](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)
 from the snapshot's `status` and `progress` with the bpy-free
 [`progress.observe`](../scenario/core/jobs/progress.py). The saved remote ID
-allows result metadata to be fetched again. There is deliberately no command to
-attach a guessed remote ID or regenerate an unknown submission.
+allows result metadata to be fetched again. No command attaches a guessed remote
+ID or regenerates an unknown submission; `link_unconfirmed` saves only a person's
+choice that a fresh retrieval verifies.
 
 `cancel_prepared(request_id, expected_revision=...)` durably cancels only an
 unclaimed local intent and sends no request. A queued submit will subsequently

@@ -1064,6 +1064,7 @@ def test_schema_nine_manifest_keeps_downloading_its_saved_preview(setup, tmp_pat
         value = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
         for item in value["results"]:
             del item["asset"]["source"], item["asset"]["projection"]
+        del value["claimed_at"]
         connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
         connection.execute("DROP TABLE trained_defaults")
         connection.execute("PRAGMA user_version=9")

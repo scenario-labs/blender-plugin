@@ -25,6 +25,11 @@ const INDEX_TTL_MS = 5 * 60_000;
 const INDEX_RETRY_MS = 60_000;
 const published = new Map<string, { versions: Set<string>; at: number }>();
 
+// Read through globalThis: Vercel type-checks this file without Node's types.
+function env(name: string): string | undefined {
+  return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
+}
+
 function describe(request: Request): { event: string; properties: Record<string, unknown> } | undefined {
   if (request.method !== "GET") return undefined;
   // A resumed download already counted when it started.
@@ -64,7 +69,7 @@ function describe(request: Request): { event: string; properties: Record<string,
 
 async function isPublished(version: string): Promise<boolean> {
   // Read the index from Pages directly: through this site it would count itself.
-  const origin = process.env.SITE_ORIGIN || ORIGIN;
+  const origin = env("SITE_ORIGIN") || ORIGIN;
   const now = Date.now();
   const cached = published.get(origin);
   const age = cached ? now - cached.at : Infinity;
@@ -89,7 +94,7 @@ async function send(token: string, event: string, properties: Record<string, unk
   if (event === "extension_downloaded" && !(await isPublished(String(properties.extension_version)))) {
     properties.extension_version = "unknown";
   }
-  const host = process.env.POSTHOG_HOST || "https://us.i.posthog.com";
+  const host = env("POSTHOG_HOST") || "https://us.i.posthog.com";
   try {
     const response = await fetch(`${host}/i/v0/e/`, {
       method: "POST",
@@ -104,7 +109,7 @@ async function send(token: string, event: string, properties: Record<string, unk
 }
 
 export default function middleware(request: Request, context: RequestContext): undefined {
-  const token = process.env.POSTHOG_PROJECT_TOKEN;
+  const token = env("POSTHOG_PROJECT_TOKEN");
   const described = token ? describe(request) : undefined;
   if (token && described) context.waitUntil(send(token, described.event, described.properties));
   return undefined;

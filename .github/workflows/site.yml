@@ -29,6 +29,12 @@ jobs:
           --module nodenext --moduleResolution nodenext --allowImportingTsExtensions
           --typeRoots "$RUNNER_TEMP/tsc/node_modules/@types" --types node
           tools/site_proxy/middleware.ts tests/site/middleware.test.ts
+      # Vercel type-checks the middleware alone, without Node's types.
+      - name: Type-check the middleware as Vercel builds it
+        run: >-
+          "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" --noEmit --strict --target es2022
+          --lib es2022,dom --module nodenext --moduleResolution nodenext
+          --typeRoots "$RUNNER_TEMP/no-types" tools/site_proxy/middleware.ts
       - name: Type-check the handbook search
         run: >-
           "$RUNNER_TEMP/tsc/node_modules/.bin/tsc" --noEmit --strict --target es2022

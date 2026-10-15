@@ -705,7 +705,9 @@ and version slots only, plus `{{style}}` and `{{search}}`, which inline
 [docs/site.css](docs/site.css) and [docs/handbook-search.js](docs/handbook-search.js)
 from beside it. The search indexes the page's own sections when it loads, so the
 single-file handbook searches offline; test it with
-`node --test tests/site/handbook-search.test.ts` (Node 24). The downloads pages
+`node --test tests/site/handbook-search.test.ts` (Node 24). It stays JavaScript
+because browsers run the inlined file as is; `// @ts-check` and JSDoc types let
+the Site CI job type-check it with `tsc --checkJs`. The downloads pages
 under `repo/` come from [tools/site_pages.py](tools/site_pages.py) and inline the
 same stylesheet and wordmark. `make docs` renders the guide to ignored `site/index.html`
 and copies just its referenced images, the template's favicons included, beside
@@ -853,11 +855,12 @@ retain the original and print the reason. An unchanged truecolour screenshot
 still fails readiness; reshoot it or review a justified exception in
 [the shared image policy](tools/docs_images.py), rather than changing a test alone.
 
-The original `scenario-logo.png` is deliberately excluded: its unchanged bytes
-are preserved. The image checks permit that one exception; the CLI and unit
-suite share checks for missing images, unused screenshots, truecolour
-screenshots and short Markdown alt text. Evidence
-frontmatter cannot keep an unused image alive. The social card, when present,
+The original `scenario-logo.png` and the favicons are deliberately excluded:
+they are Scenario's own brand assets, kept byte-identical to their source and
+added without a licence note, since [TRADEMARKS.md](TRADEMARKS.md) covers them.
+The image checks permit those exceptions; the CLI and unit suite share checks
+for missing images, unused screenshots, truecolour screenshots and short
+Markdown alt text. Evidence frontmatter cannot keep an unused image alive. The social card, when present,
 has an explicit unused-image exception because GitHub repository settings host it.
 Optimization also preserves this generated card; use its dedicated generator
 below to rebuild it. An invalid non-palette card still fails the shared checks.

@@ -106,6 +106,17 @@ Read the actual release workflow/configuration before describing release behavio
 New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
 release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
 
+### Screenshots
+
+Show a visible change (panel, composer, viewport result or site page) with
+screenshots in a Markdown table, before and after for UI changes.
+[Repeatable GUI screenshots](../../CONTRIBUTING.md#repeatable-gui-screenshots)
+capture the Blender UI. To attach images without a browser, push them to an
+orphan `pr-assets/<topic>` branch and link each one pinned to that commit:
+`https://github.com/scenario-labs/blender-plugin/blob/<sha>/<file>.png?raw=true`.
+Delete the branch after review. The images are public: show no credentials,
+account or project names, or private assets.
+
 ## Review readiness and acceptance follow-ups
 
 Move a scoped, reviewable change out of draft when its implementation is complete

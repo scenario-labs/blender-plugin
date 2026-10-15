@@ -14,7 +14,9 @@ without comment. Never claim review, results or authorization that has not happe
 
 <!-- One to three sentences: the problem and what changes. Add a before/after
 only for a behavior change. Name any action needed after merge and any known gap.
-Closes #n for complete issue scope; Refs #n otherwise, saying what remains. -->
+Closes #n for complete issue scope; Refs #n otherwise, saying what remains.
+Show a visible change with screenshots in a table, before/after for UI; see
+docs/development/contributions.md#screenshots. -->
 
 ## Validation
 

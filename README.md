@@ -10,6 +10,7 @@
   <a href="https://help.scenario.com"><img alt="App documentation" src="https://img.shields.io/badge/documentation-app-black.svg"></a>
   <a href="https://mcp.scenario.com/docs"><img alt="MCP documentation" src="https://img.shields.io/badge/documentation-mcp-black.svg"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin"><img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/scenario-labs/blender-plugin?label=openssf+scorecard&style=flat"></a>
+  <a href="https://www.bestpractices.dev/projects/15531"><img alt="OpenSSF Best Practices" src="https://img.shields.io/cii/level/15531?label=openssf+best+practices&style=flat"></a>
 </p>
 
 **Experimental.** Bring Scenario image, video, 3D, PBR material, audio and 360

@@ -328,7 +328,8 @@ and Gaussian splat PLY results are decoded by a worker in the local-operation
 slot with reviewed point limits and axes, then built on the main thread as a new
 point cloud (mesh plus Geometry Nodes and a new material) under the same claim
 and receipt rules; it approximates splats and is not a splat renderer. In-place
-rig/animation transfer remains open.
+clip application needs a matching skeleton; retargeting across skeletons remains
+open.
 Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
 World replacement unless a texture role or a declared header size other than 2:1
 rules it out, with a separate guarded restore in the current session.

@@ -438,7 +438,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -1132,10 +1132,12 @@ otherwise the model's only task. MCP `generate` takes no task, so its jobs use
 the model's only task.
 `mesh_policy_source` is `edit3d_task` (with `edit3d_task` naming it), `default`
 when the job gives no applicable task and REMESH is only the fallback, or
-`requested` for an explicit `mesh_policy`, which always wins. A source already
-skinned to an armature starts on RIG instead, whatever the task, with
-`rigged_source` (or `edit3d_task` when the task is Rigging); an explicit static
-`mesh_policy` on it is rejected. Show `default` to the user as an unconfirmed
+`requested` for an explicit `mesh_policy`, which always wins. An Animate job
+starts on ANIMATE for a source already skinned to an armature and on RIG
+otherwise, both with `edit3d_task`. For any other task a skinned source starts on
+RIG, with `rigged_source` (or `edit3d_task` when the task is Rigging); an
+explicit static `mesh_policy` on it, or ANIMATE on an unskinned source, is
+rejected. Show `default` to the user as an unconfirmed
 choice. `primary: false` means the selected GLB is an
 alternate result of the job, as in `job_status` `import_units`. See
 [the approval contract](MESH_APPLICATION.md#saved-mesh-edit-approval).
@@ -1177,9 +1179,9 @@ Use `mesh_policy: RIG` with `purpose: mesh_source` for the unchanged original
 exported source, or `mesh_edit` for a newly reviewed destination. Show the named
 source, coordinate mapping and Keep original choice. One returned mesh and
 armature must have exactly matching indexed geometry and normalized bone weights.
-A source already skinned to an armature accepts only RIG: its skin is replaced,
-its old rig is unchanged and Keep original's copy still follows that rig. Other
-policies on such a source are rejected; see
+A source already skinned to an armature accepts only RIG or ANIMATE. RIG replaces
+its skin, its old rig is unchanged and Keep original's copy still follows that rig.
+Static policies on such a source are rejected; see
 [replacing an existing skin](MESH_APPLICATION.md#replace-an-existing-skin).
 This preserves source geometry, UVs and materials while adding the returned
 skin/rig clips. Morphs, mesh animation and incompatible
@@ -1188,6 +1190,22 @@ afterward. `mesh_edit.rig` names the current session's attached armature; it is 
 a durable lookup authority after undo/load. The shared native history and
 receipt-only recovery rules apply. See [the RIG contract](MESH_APPLICATION.md#attach-a-returned-rig)
 for bounds and provider/retargeting limitations.
+
+
+## Applying returned animation
+
+Use `mesh_policy: ANIMATE` with `purpose: mesh_source` or `mesh_edit` and one
+saved GLB from an Animate job when the source is skinned to an armature. The
+returned armature's clips are copied onto that existing rig; the source's mesh,
+skin, rig and object context stay, and no returned object is added. Every
+animated bone needs the same name, parent and rest pose (within 15 degrees) as
+the rig, and location keys are scaled to the rig's units. The first clip becomes
+the active action; it, the other clips and the previous action stay in muted NLA
+tracks. `mesh_placement` and `keep_original` are not used. An unskinned source,
+a different skeleton or a result without clips is rejected, leaving the job
+reviewable. `mesh_edit.rig` names the animated rig and `mesh_edit.clips` the new
+actions while the status is current. The shared native history and receipt-only
+recovery rules apply. See [the ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
 
 
 ## Blockout plan commands

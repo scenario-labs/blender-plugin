@@ -1944,7 +1944,7 @@ def prepare_result_application(args):
             "asset_id": approval.asset_id,
             "mesh_policy": approval.policy,
             # requested, edit3d_task (the job's task chose it), rigged_source (a skinned
-            # source accepts only RIG) or default (REMESH fallback).
+            # source starts on RIG) or default (REMESH fallback).
             "mesh_policy_source": approval.policy_source,
             "edit3d_task": approval.edit3d_task,
             "primary": approval.primary,
@@ -1952,8 +1952,9 @@ def prepare_result_application(args):
             "keep_original": approval.keep_original,
             "result_to_source": [list(row) for row in approval.mapping],
             "note": "Approve applying one saved GLB to this captured mesh. "
-            "Without mesh_policy the review starts from the job's Edit 3D task, or from RIG for a "
-            "source already skinned to an armature (mesh_policy_source rigged_source); mesh_policy_source "
+            "Without mesh_policy the review starts from the job's Edit 3D task (an Animate job: "
+            "ANIMATE for a source already skinned to an armature, else RIG), or from RIG for "
+            "another skinned source (mesh_policy_source rigged_source); mesh_policy_source "
             "default means REMESH was not chosen from the job, so confirm the edit with the user. "
             "primary false means the GLB is an alternate result, not the job's primary one. "
             "REMESH replaces geometry, UVs and mesh materials; UV replaces only active UVs "
@@ -1965,7 +1966,12 @@ def prepare_result_application(args):
             "and one returned rig with its clips. Indexed geometry must match; morphs and mesh "
             "animation are unsupported. A source already skinned to an armature accepts only RIG, "
             "which replaces its skin; its old rig is unchanged and Keep original's copy still "
-            "follows it. Move the source and its new rig group together afterward. "
+            "follows it, or ANIMATE. Move the source and its new rig group together afterward. "
+            "ANIMATE copies the returned armature's clips onto the rig that skins the source, "
+            "keeping its mesh, skin and rig and adding no returned object. Every animated bone "
+            "needs the same name, parent and rest pose (within 15 degrees); location keys are "
+            "scaled to the rig. The first clip becomes active; it, the others and the previous "
+            "action stay in muted NLA tracks. ANIMATE does not use placement or keep_original. "
             "WORLD preserves imported scene "
             "positions; LOCAL treats imported positions as object-local. Neither fits or rescales "
             "the result automatically. Keep original preserves an unselected copy. "
@@ -3439,7 +3445,7 @@ SPECS = (
             "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or video_first_frame image, or the key of one importable unit from job_status import_units for a GLB, glTF, FBX, OBJ or PLY model or SPZ or .splat Gaussian splats. Omit for PNG/EXR image import.\n"
             "  - splat_max_points: optional integer 250000, 500000, 1000000 (default) or 2000000 for an SPZ, PLY or .splat unit; denser files are thinned evenly.\n"
             "  - splat_axes: optional OPENGL (saved right/up/back) or OPENCV (saved right/down/forward) for an SPZ, PLY or .splat unit; the default is the file format's convention (OPENGL for SPZ, OPENCV for PLY and .splat), which providers may not follow.\n"
-            "  - mesh_policy: omit to start from RIG for a source already skinned to an armature (mesh_policy_source rigged_source unless the job's task is Rigging), else from the job's Edit 3D task (Remesh, Retexture, UV Unwrap, Rigging or Parts: the task chosen in the native Edit 3D form when this session submitted it, else its model's only task; MCP generate takes no task), otherwise REMESH; an explicit value wins. REMESH replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant. RIG preserves source geometry, UVs and materials and attaches matching weights and one rig with clips; it requires exact indexed geometry and rejects morphs/mesh animation. A source already skinned to an armature accepts only RIG, which replaces its skin and leaves its old rig unchanged; an explicit other policy is rejected.\n"
+            "  - mesh_policy: omit to start from the job's Edit 3D task: Animate starts from ANIMATE for a source already skinned to an armature and from RIG otherwise (mesh_policy_source edit3d_task); any other task starts from RIG for a skinned source (mesh_policy_source rigged_source unless the job's task is Rigging), else from the task (Remesh, Retexture, UV Unwrap, Rigging or Parts: the task chosen in the native Edit 3D form when this session submitted it, else its model's only task; MCP generate takes no task), otherwise REMESH; an explicit value wins. REMESH replaces geometry/UV/materials; UV replaces only active UVs; RETEXTURE preserves geometry/non-UV attributes and replaces all UV layers/materials. UV and RETEXTURE require exact topology/position matching. PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts from the selected static GLB; every mesh is a part, not an alternate variant. RIG preserves source geometry, UVs and materials and attaches matching weights and one rig with clips; it requires exact indexed geometry and rejects morphs/mesh animation. A source already skinned to an armature accepts only RIG, which replaces its skin and leaves its old rig unchanged, or ANIMATE; an explicit other policy is rejected. ANIMATE needs such a source: it copies the returned armature's clips onto that existing rig when every animated bone has the same name, parent and rest pose, scales location keys to the rig, makes the first clip active and keeps the clips and any previous action in muted NLA tracks; it does not use mesh_placement or keep_original.\n"
             "  - mesh_placement: WORLD (default) preserves imported scene positions; LOCAL uses imported positions in the object's local coordinates. No fitting is inferred.\n"
             "  - keep_original: boolean, default true; preserve an unselected original mesh copy. These mesh options apply to mesh_edit and mesh_source, which require asset_id. mesh_source requires exactly one captured input and its unchanged live export source; it ignores current selection and cannot restore authority after undo/load/restart.\n"
             "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor and splat_options (max_points and axes, null for mesh formats), or World format, and note. mesh_edit and mesh_source return target, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, primary (null when the GLB is unclassified), mesh_placement, keep_original and result_to_source. video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
@@ -3467,7 +3473,7 @@ SPECS = (
                 },
                 "mesh_policy": {
                     "type": "string",
-                    "enum": ["REMESH", "UV", "RETEXTURE", "PARTS", "RIG"],
+                    "enum": ["REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"],
                 },
                 "mesh_placement": {"type": "string", "enum": ["WORLD", "LOCAL"]},
                 "keep_original": {"type": "boolean"},

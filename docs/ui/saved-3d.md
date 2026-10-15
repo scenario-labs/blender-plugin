@@ -85,9 +85,10 @@ the job's primary result is drawn as **Apply alternate mesh edit: GLB (N)** or
 dialog shows the replacement policy, scene/local coordinate placement
 and Keep original choice before confirmation. Invoke starts the policy from the
 prepared approval, and a line under it reads **Default edit follows this job's
-Retexture task.** (with the job's task), **This mesh already has a rig, so the
-edit starts on Attach rig.** (a skinned source) or **Default edit is not from
-this job's task; check it.** Explain geometry/UV/material
+Retexture task.** (with the job's task), **This mesh has no rig, so the Animate
+result starts on Attach rig.** (an Animate job and an unskinned mesh), **This
+mesh already has a rig, so the edit starts on Attach rig.** (a skinned source) or
+**Default edit is not from this job's task; check it.** Explain geometry/UV/material
 replacement, exact-topology UV/retexture restrictions, no automatic fitting, preserved
 object context and the dependence of undo on Blender settings. Defaults keep an
 original copy. Explain that history changes affect the scene only, not saved jobs
@@ -277,9 +278,10 @@ The saved-mesh review offers **Attach rig**. It names the captured source and
 explains matching geometry, retained source UVs/materials, bone weights and clips,
 Keep original and native undo. It also explains that the source and new rig group
 must move together afterward. For a source already skinned to an armature, the
-review starts on Attach rig unless an edit was chosen, says the old rig stays and
-that Keep original's copy uses it, and names Attach rig as the only choice when
-another edit is selected.
+review starts on Attach rig unless an edit was chosen or the job is an Animate
+job, which starts on Apply animation; it says the old rig stays and that Keep
+original's copy uses it, and names Attach rig or Apply animation when another
+edit is selected.
 Drawing stays read-only; the shared UI/MCP command
 implements the [skin attachment contract](../MESH_APPLICATION.md#attach-a-returned-rig).
 
@@ -296,3 +298,17 @@ establish provider compatibility or existing-rig retargeting.
 [Animated source, original copy and preserved selection](../images/saved-mesh-rig-animated.png).
 
 ![Rig approval names the captured source and explains compatibility](../images/saved-mesh-rig-approval.png)
+
+## Animation application interaction
+
+The saved-mesh review offers **Apply animation**. It names the captured source
+and explains that the returned clips go onto this mesh's rig while its mesh and
+skin stay, that bone names, parents and rest pose must match and clips are scaled
+to the rig, that the first clip plays while it, the others and the previous action
+stay in NLA, that the returned character is not added and the timeline stays
+unchanged, and how Undo behaves. **Result coordinates** and **Keep original** are
+not shown because ANIMATE changes no mesh data. A skinned source starts on Apply
+animation for an Animate job or when it was requested, otherwise on Attach rig;
+choosing Apply animation for an unskinned mesh shows **Apply animation needs a mesh skinned to an armature**.
+Drawing stays read-only; the shared UI/MCP command implements the
+[animation contract](../MESH_APPLICATION.md#apply-returned-animation).

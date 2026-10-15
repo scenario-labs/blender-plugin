@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Apply an explicitly chosen GLB mesh, skin or parts policy to a captured source."""
+"""Apply an explicitly chosen GLB mesh, skin, clips or parts policy to a captured source."""
 
 import logging
 from dataclasses import dataclass, field
@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 import bpy
 from mathutils import Matrix
 
-from . import mesh_application, model_application, rig_application
+from . import animation_application, mesh_application, model_application, rig_application
 from .model_application import _undo_enabled, _undo_push
 
 _log = logging.getLogger("scenario.jobs")
@@ -26,22 +26,31 @@ class MeshEditApplication:
     undo_available: bool = False
     parts: tuple = field(default=(), repr=False)
     rig: object = field(default=None, repr=False)
+    # New actions ANIMATE assigned to the rig, the active one first.
+    clips: tuple = field(default=(), repr=False)
+
+
+POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
+# Policies that import a returned rig and its clips; the others require a static GLB.
+_RIGGED = frozenset({"RIG", "ANIMATE"})
 
 
 def validate_request(target, *, policy, result_to_source, keep_original):
     """Validate the captured source and explicit policy without decoding files."""
     mesh_application.validate_target(target)
-    if (
-        policy not in {"REMESH", "UV", "RETEXTURE", "PARTS", "RIG"}
-        or type(keep_original) is not bool
-    ):
+    if policy not in POLICIES or type(keep_original) is not bool:
         raise MeshResultApplicationError(
-            "Choose REMESH, UV, RETEXTURE, PARTS or RIG and an explicit Keep original value"
+            "Choose REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE and an explicit Keep original value"
         )
-    if target.skin is not None and policy != "RIG":
+    if target.skin is not None and policy not in _RIGGED:
         # Static policies would silently drop the source's skin and rig binding.
         raise MeshResultApplicationError(
-            "This source is skinned to an armature; choose RIG to replace its skin"
+            "This source is skinned to an armature; choose RIG to replace its skin "
+            "or ANIMATE to apply returned clips to its rig"
+        )
+    if target.skin is None and policy == "ANIMATE":
+        raise MeshResultApplicationError(
+            "ANIMATE needs a mesh skinned to an armature; choose RIG to attach the returned rig"
         )
     if policy == "PARTS" and (not target.mesh.vertices or not target.mesh.polygons):
         raise MeshResultApplicationError(
@@ -143,22 +152,21 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
     before = model_application._snapshot()
     receipt = None
     try:
-        with model_application.staged_model(item, path, before, static_only=policy != "RIG") as (
-            staging,
-            objects,
-        ):
+        with model_application.staged_model(
+            item, path, before, static_only=policy not in _RIGGED
+        ) as (staging, objects):
             # Display helpers are not results; they go with the other imported data.
             helpers = _helpers(objects)
             meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
-            if policy != "RIG" and any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
+            if policy not in _RIGGED and any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
                 raise MeshResultApplicationError("Choose static meshes with optional Empty parents")
-            parts = ()
+            parts = clips = ()
             rig = None
             if policy == "PARTS":
                 parts, primary = _stage_parts(target, meshes, mapping)
                 objects = (*objects, primary)
                 local_mapping = Matrix.Identity(4)
-            else:
+            elif policy != "ANIMATE":
                 if len(meshes) != 1:
                     raise MeshResultApplicationError("Choose one primary mesh without variants")
                 primary = meshes[0]
@@ -170,7 +178,14 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                 name: set(getattr(bpy.data, name)) - previous for name, previous in before.items()
             }
             mesh_application.validate_target(target)
-            if policy == "RIG":
+            if policy == "ANIMATE":
+                # Clips are pose data on the source's own rig: no mapping and no
+                # returned object is kept.
+                receipt = animation_application.apply_clips(
+                    target, tuple(obj for obj in objects if obj not in helpers)
+                )
+                rig, clips = receipt.rig, receipt.actions
+            elif policy == "RIG":
                 skin = tuple(obj for obj in objects if obj not in helpers)
                 receipt = rig_application.apply_skin(
                     target, primary, skin, mapping, keep_original=keep_original
@@ -201,7 +216,9 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                     # application and must never authorize another replacement.
                     undo = False
                     _log.warning("Mesh applied, but Blender undo could not be recorded")
-            return MeshEditApplication(target.obj, receipt.original, policy, undo, parts, rig)
+            return MeshEditApplication(
+                target.obj, receipt.original, policy, undo, parts, rig, clips
+            )
     except Exception:
         if receipt is not None:
             try:

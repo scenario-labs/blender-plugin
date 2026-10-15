@@ -105,6 +105,16 @@ def test_summarizes_h264_and_aac_tracks(tmp_path):
     assert (audio.codec, audio.sample_rate, audio.channels, audio.duration) == ("aac", 48000, 2, 2)
 
 
+def test_a_movie_box_with_a_64_bit_size_reads_the_same(tmp_path):
+    data = movie(video_track(), audio_track())
+    offset = data.index(b"moov") - 4
+    (size,) = struct.unpack_from(">I", data, offset)
+    large = data[:offset] + struct.pack(">I4sQ", 1, b"moov", size + 8) + data[offset + 8 :]
+    expected = mp4.inspect(write(tmp_path, data))
+    actual = mp4.inspect(write(tmp_path, large, "large.mp4"))
+    assert actual == expected
+
+
 def test_real_mpeg4_part2_fixture_is_not_reported_as_h264():
     summary = mp4.inspect(FIXTURES / "synthetic" / "film-four-seconds-audio.mp4")
     (video,) = summary.video

@@ -34,9 +34,11 @@ BASELINE = (
     "test_icons",
     "test_model_picker",
     "test_generation",
+    "test_edit3d_lane",
     "test_result_media",
     "test_result_preview_tiles",
     "test_mcp_result_previews",
+    "test_mcp_job_files",
     "test_apply_image",
     "test_apply_material",
     "test_apply_3d",
@@ -105,6 +107,12 @@ BASELINE = (
     "test_library_organization",
     "test_workflow_references",
     "test_workflow_uploads",
+    # Status polling after failed refreshes and cancel requests (#451); the rest of
+    # this module needs the full suite's time budget.
+    "test_model_generation.ModelGenerationTests.test_transient_refresh_failures_keep_polling_then_deliver",
+    "test_model_generation.ModelGenerationTests.test_refresh_failure_ceiling_pauses_delivery_for_review",
+    "test_model_generation.ModelGenerationTests.test_lost_cancel_request_keeps_the_job_polled_without_sending_it_again",
+    "test_model_generation.ModelGenerationTests.test_cancel_not_sent_after_a_failed_read_keeps_the_job_polled",
 )
 
 

@@ -228,7 +228,9 @@ claim another process's worker is dead or silently change its state.
 
 `refresh_remote(request_id, expected_revision=...)` only accepts the current
 `remote` or `cancel_requested` record with a known remote ID. It uses `SDKAdapter.job`, which calls the
-public SDK `jobs.retrieve` with the selected project and online-access guard.
+public SDK `jobs.retrieve` with the selected project and online-access guard and
+its bounded [read retries](SDK_ADOPTION.md#read-retries); an `automatic=True`
+poll makes one attempt, since its owner retries it later.
 A matching ID and recognized terminal state are committed before returning an
 immutable `RemoteSnapshot`. Unknown states, mismatched IDs, read failures and
 failed persistence preserve local state. A stale polling result cannot overwrite
@@ -340,7 +342,8 @@ remains `cancel_requested`, a completed job becomes `succeeded`, and only observ
 
 Action/observation transport or malformed-wrapper failures report
 `CancellationUncertain`; invalid status/identity evidence reports `RecoveryError`.
-Both preserve the durable cancellation claim and known ID for explicit refresh.
+Both preserve the durable cancellation claim and known ID for refresh; Blender's
+owner keeps polling it automatically.
 Persistence and revision conflicts also propagate; failed writes never report
 terminal success. After restart, `recovery_plan()` suggests polling that saved ID,
 including if the process died after the claim but before sending. Recovery never
@@ -585,7 +588,7 @@ remote job and asset, without a receipt. The caller, which owns the waiting
 step projection, supplies that step's asset IDs.
 
 The [preview lane](#application-owned-workers) runs six commands with the cache
-root supplied by the application, and a seventh, `world_sizes`, without it. `prepare_result_previews(work, root=...)`
+root supplied by the application, and two more, `world_sizes` and `result_files`, without it. `prepare_result_previews(work, root=...)`
 rechecks that each target still holds the same receipt (a review target, the
 same `remote` workflow job), reads verified cache
 entries, issues private decode copies for images and audio, and reads server
@@ -621,7 +624,14 @@ with the declared width and height, or none when the record no longer holds
 that receipt as a candidate, the file cannot be read or those bytes declare no
 size. It neither hashes nor copies; the
 [World offer](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) uses it only
-as a display filter. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
+as a display filter. `result_files(targets)` takes the same bounded triples
+naming downloaded results of a ready job (`ready`, `applying`, `apply_failed` or
+`applied`) and rehashes each file against its receipt without following links.
+It returns each triple with a check (verified, missing or changed, the file's
+location and its identity as hashed; unavailable when the file changed while it
+was hashed), or none when the record no longer holds that receipt in a ready job. Local MCP
+[`job_status`](MCP.md#saved-result-files) lists only verified files;
+the check authorizes no application. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
 revision, claims application or submits work. See
 [result previews](RESULT_PREVIEWS.md) for renditions, limits and the polling
 window.

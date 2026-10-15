@@ -155,7 +155,7 @@ left a partial file; a recorded artifact can later expire or be deleted.
 
 A separate downstream job owns issue-writing permission and creates or comments
 on the exact open title `api: model schema drift detected by the weekly contract check`,
-with `bug`, `feature:API`, `quality` and `area:ci` labels. Workflow concurrency
+with the Task type and `feature:API`, `quality` and `area:ci` labels. Workflow concurrency
 serializes reporting; paginated exact-title lookup rejects ambiguous duplicates
 and does not retry an uncertain write. Reports are bounded literal excerpts,
 not executable or rendered schema instructions. The issue distinguishes an
@@ -173,8 +173,9 @@ The exact pinned SDK release and bundle are documented in
 `SDKAdapter.model`, which calls SDK 2.2.0's public
 `models.with_raw_response.retrieve(model_id, project_id=...)` method for
 `GET /models/{id}`. It retains the complete model object for the existing parser
-and uses no raw API fallback or low-level SDK verb. The shared adapter disables
-automatic retries and isolates ambient credentials.
+and uses no raw API fallback or low-level SDK verb. The shared adapter retries
+this read only within its bounded [read retries](SDK_ADOPTION.md#read-retries)
+and isolates ambient credentials.
 
 The [public API documentation](https://docs.scenario.com/) and
 [official Python SDK release](https://pypi.org/project/scenario-sdk/2.2.0/)

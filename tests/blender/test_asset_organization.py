@@ -503,7 +503,9 @@ class AssetOrganizationToolTests(unittest.TestCase):
         self.assertEqual(result["result"]["requests_sent"], 1)
         review = self.ready(operation="update_tags", asset_ids=["asset-b"], add_tags=["x"])
         self.service.fault("PUT", "/v1/assets/asset-b/tags", "apply-timeout")
-        self.service.fault("POST", "/v1/assets/get-bulk", 503)
+        # The read-back fails after the SDK's own read retries.
+        attempts = 1 + submodule("core.api.sdk_adapter").READ_RETRIES
+        self.service.fault("POST", "/v1/assets/get-bulk", *[503] * attempts)
         result = self.apply(review)
         self.assertEqual(result["result"]["state"], "UNCONFIRMED")
         self.assertEqual(result["result"]["outcomes"][0]["state"], "UNCONFIRMED")
@@ -545,7 +547,8 @@ class AssetOrganizationToolTests(unittest.TestCase):
         self.assertEqual(len(self.service.requests), reads)
 
     def test_service_text_never_reaches_results(self):
-        self.service.fault("POST", "/v1/assets/get-bulk", 500)
+        attempts = 1 + submodule("core.api.sdk_adapter").READ_RETRIES
+        self.service.fault("POST", "/v1/assets/get-bulk", *[500] * attempts)
         failed = self.prepare(operation="update_tags", asset_ids=["asset-a"], add_tags=["x"])
         self.assertEqual(failed["phase"], "REJECTED")
         self.assert_public(failed)

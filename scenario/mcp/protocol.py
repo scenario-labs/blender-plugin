@@ -180,9 +180,13 @@ def handle_message(message, registry, server_info, executor=None):
             INVALID_REQUEST,
             "Invalid JSON-RPC request",
         )
-    method, msg_id, params = message["method"], message.get("id"), message.get("params") or {}
+    method, msg_id, params = message["method"], message.get("id"), message.get("params")
     if msg_id is None:  # notification
         return None
+    if params is None:  # Omitted, or null from a lenient client.
+        params = {}
+    if not isinstance(params, dict):
+        return _error(msg_id, INVALID_PARAMS, "Invalid params: use a JSON object")
     if method == "initialize":
         wanted = params.get("protocolVersion")
         version = wanted if wanted in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
@@ -201,7 +205,7 @@ def handle_message(message, registry, server_info, executor=None):
         return _result(msg_id, {"tools": registry.list_payload()})
     if method == "tools/call":
         name = params.get("name")
-        spec = registry.get(name) if name else None
+        spec = registry.get(name) if isinstance(name, str) else None
         if spec is None:
             return _error(msg_id, INVALID_PARAMS, f"Unknown tool: {name}")
         arguments = params.get("arguments") or {}
@@ -233,5 +237,5 @@ def handle_message(message, registry, server_info, executor=None):
 def parse_body(raw):
     try:
         return json.loads(raw.decode("utf-8") if isinstance(raw, (bytes, bytearray)) else raw), None
-    except (ValueError, UnicodeDecodeError) as err:
+    except (ValueError, RecursionError) as err:  # Python 3.11 stops near 1000 nested levels.
         return None, _error(None, PARSE_ERROR, f"Parse error: {err}")

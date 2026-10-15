@@ -975,10 +975,14 @@ def draw_shared_status(layout, rec, model):
     if reading is not None and reading.percent is not None:
         layout.progress(factor=reading.fraction, type="BAR", text=f"{reading.percent}%")
     offline = None if runtime.online() else SHARED_OFFLINE_TEXT.get(state)
+    # A refresh being retried or an unconfirmed cancel says why the status is behind.
+    notes = rec.meta.get("status_notes", ())
     if offline is not None:
         layout.label(text=offline, icon="INFO")
-    elif reading is not None and reading.stale:
+    elif reading is not None and reading.stale and not notes:
         layout.label(text="Status is not updating", icon="INFO")
+    for note in notes:
+        layout.label(text=note, icon="INFO")
 
 
 def draw_active_job(layout, rec):

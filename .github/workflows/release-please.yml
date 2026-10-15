@@ -106,13 +106,14 @@ jobs:
           (cd dist && sha256sum "scenario-${VERSION}.zip" "scenario-handbook-${VERSION}.html" > SHA256SUMS && cat SHA256SUMS)
 
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        id: provenance
         with:
           subject-path: |
             dist/scenario-${{ env.VERSION }}.zip
             dist/scenario-handbook-${{ env.VERSION }}.html
             dist/SHA256SUMS
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-zip
           path: dist/scenario-${{ env.VERSION }}.zip
@@ -126,16 +127,20 @@ jobs:
           client-id: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_CLIENT_ID }}
           private-key: ${{ secrets.GH_ACTIONS_TOKEN_RETRIEVER_PUBLIC_REPO_PRIVATE_KEY }}
 
-      - name: Attach the ZIP, handbook and SHA256SUMS to the draft release
+      # The attestation's Sigstore bundle lets anyone verify the three files
+      # without GitHub's attestation API; OpenSSF Scorecard counts it as a signature.
+      - name: Attach the ZIP, handbook, SHA256SUMS and provenance bundle to the draft release
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_SHA: ${{ needs.release-please.outputs.sha }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
         run: |
           set -euo pipefail
           RELEASE="$(gh release view "$TAG" --json isDraft,targetCommitish)"
           jq -e --arg sha "$RELEASE_SHA" '.isDraft and .targetCommitish == $sha' <<<"$RELEASE" > /dev/null
-          gh release upload "$TAG" "dist/scenario-${VERSION}.zip" "dist/scenario-handbook-${VERSION}.html" dist/SHA256SUMS --clobber
+          cp "$BUNDLE" "dist/scenario-${VERSION}.sigstore.json"
+          gh release upload "$TAG" "dist/scenario-${VERSION}.zip" "dist/scenario-handbook-${VERSION}.html" dist/SHA256SUMS "dist/scenario-${VERSION}.sigstore.json" --clobber
 
   # The zip content does not depend on which Blender builds it, so the artefact
   # built above is the file validated here on the other supported LTS lines.
@@ -163,7 +168,7 @@ jobs:
           version: ${{ matrix.version }}
           sha256: ${{ matrix.sha256 }}
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-zip
           path: dist
@@ -195,11 +200,12 @@ jobs:
         run: |
           set -euo pipefail
           RELEASE="$(gh release view "$TAG" --json isDraft,targetCommitish,assets)"
-          jq -e --arg sha "$RELEASE_SHA" --arg zip "scenario-${TAG#blender-plugin-v}.zip" --arg handbook "scenario-handbook-${TAG#blender-plugin-v}.html" '
+          jq -e --arg sha "$RELEASE_SHA" --arg zip "scenario-${TAG#blender-plugin-v}.zip" --arg handbook "scenario-handbook-${TAG#blender-plugin-v}.html" --arg bundle "scenario-${TAG#blender-plugin-v}.sigstore.json" '
             .isDraft and .targetCommitish == $sha and
             any(.assets[]; .name == "SHA256SUMS") and
             any(.assets[]; .name == $zip) and
-            any(.assets[]; .name == $handbook)
+            any(.assets[]; .name == $handbook) and
+            any(.assets[]; .name == $bundle)
           ' <<<"$RELEASE" > /dev/null
           gh release edit "$TAG" --draft=false
 

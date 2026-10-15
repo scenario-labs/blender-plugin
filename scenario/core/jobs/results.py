@@ -5,6 +5,7 @@
 import hashlib
 import os
 import re
+import stat
 import tempfile
 import threading
 from dataclasses import asdict, dataclass, field, replace
@@ -14,7 +15,7 @@ from ..api.sdk_adapter import AdapterError
 from ..config import ext_for_mime
 from ..scene import splats
 from ..scene.panorama import MAX_FILE_BYTES, world_candidate
-from . import playback
+from . import playback, result_files
 from . import result_previews as previews
 from .result_metadata import (
     REWRITTEN_MESH_TYPES,
@@ -152,6 +153,36 @@ def _prompt_asset_id(value):
     return value.startswith("asset_") and not any(char.isspace() for char in value)
 
 
+def _unverified_state(path, receipt):
+    """Why a saved file failed verification: unavailable when it could not be read.
+
+    The verifier reports a read failure like a mismatch. A regular file of the
+    receipt's size that cannot be read is unavailable and checked again later;
+    anything else, including bytes that match through an unsafe path, is changed.
+    """
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode) or info.st_size != receipt.size:
+            return result_files.CHANGED
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NONBLOCK", 0)
+        digest = hashlib.sha256()
+        with os.fdopen(os.open(path, flags), "rb") as source:
+            while chunk := source.read(1 << 20):
+                digest.update(chunk)
+    except OSError:
+        return result_files.UNAVAILABLE
+    return result_files.CHANGED
+
+
+def _directory_keys(record):
+    """Include all scope components and request identity, not just asset names."""
+    return (
+        hashlib.sha256(_json(asdict(record.intent.scope)).encode()).hexdigest(),
+        hashlib.sha256(record.intent.request_id.encode()).hexdigest(),
+    )
+
+
 def _download_url(record, source):
     """Select the documented destination for the saved file, never a fallback."""
     url = record.get("originalFileUrl" if source == "original" else "url")
@@ -227,6 +258,41 @@ class ResultCommands:
         self._adapter, self._store, self._guard = adapter, store, guard
         self._downloader = downloader
         self._root = _root(root) if root is not None else None
+        # (request_id, asset_id) -> result_files.FileCheck: the identity of each
+        # file this session verified against its receipt. Memory only, so a
+        # restarted session checks its files again; see verified_files.
+        self._verified_files = {}
+        self._verified_lock = threading.Lock()
+
+    def _file_path(self, record, receipt):
+        """Where a receipt's file is saved, for display; verification resolves it safely."""
+        return os.fspath(Path(self._root, *_directory_keys(record), receipt.name))
+
+    def _verify_saved(self, record, directory, asset_id, receipt):
+        """Verify one receipt and remember the file's identity as this session hashed it."""
+        path = self._file_path(record, receipt)
+        before = result_files.file_stamp(path)
+        verified = self._downloader.verify(directory, receipt)
+        if before is not None and result_files.file_stamp(path) == before:
+            check = result_files.FileCheck(receipt.sha256, result_files.VERIFIED, path, before)
+            key = (record.intent.request_id, asset_id)
+            with self._verified_lock:
+                # Newest last; beyond the limit the oldest is forgotten and its
+                # file is simply checked again by a worker when asked.
+                self._verified_files.pop(key, None)
+                self._verified_files[key] = check
+                while len(self._verified_files) > result_files.VERIFIED_LIMIT:
+                    del self._verified_files[next(iter(self._verified_files))]
+        return verified
+
+    def verified_files(self, request_id):
+        """(asset_id, FileCheck) pairs this session verified for a job; reads no file."""
+        with self._verified_lock:
+            return tuple(
+                (asset_id, check)
+                for (owner, asset_id), check in self._verified_files.items()
+                if owner == request_id
+            )
 
     def _current(self, request_id, revision, states):
         with self._guard():
@@ -427,12 +493,7 @@ class ResultCommands:
         if self._root is None:
             raise ResultError("Result storage has not been configured")
         root = _root(self._root)
-        # Include all scope components and request identity, not just asset names.
-        keys = (
-            hashlib.sha256(_json(asdict(record.intent.scope)).encode()).hexdigest(),
-            hashlib.sha256(record.intent.request_id.encode()).hexdigest(),
-        )
-        for key in keys:
+        for key in _directory_keys(record):
             child = root / key
             if create:
                 child.mkdir(mode=0o700, exist_ok=True)
@@ -467,10 +528,10 @@ class ResultCommands:
                 with self._guard():
                     pass
                 if item.receipt is not None:
-                    self._downloader.verify(directory, item.receipt)
+                    self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
                     continue
                 receipt = self._transfer(item, directory, cancel)
-                self._downloader.verify(directory, receipt)
+                self._verify_saved(current, directory, item.asset.asset_id, receipt)
                 current = self._store.record_download(
                     request_id,
                     item.asset.asset_id,
@@ -589,7 +650,7 @@ class ResultCommands:
                     with self._guard():
                         pass
                     if item.receipt is not None:
-                        self._downloader.verify(directory, item.receipt)
+                        self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
                     elif (directory / item.asset.name).exists() or (
                         directory / item.asset.name
                     ).is_symlink():
@@ -724,7 +785,9 @@ class ResultCommands:
                     pass
                 if cancel is not None and cancel.is_set():
                     raise splats.SplatCancelled("Splat preparation cancelled")
-                paths.append(self._downloader.verify(directory, item.receipt))
+                paths.append(
+                    self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
+                )
             # Stale verification cannot authorize a subsequent application.
             if self._store.get(request_id) != current:
                 raise StoreConflict("Result job changed during verification")
@@ -1134,6 +1197,70 @@ class ResultCommands:
                 raise previews.PreviewCanceled("The World size check was canceled")
             sizes.append((*target, self._world_size(*target)))
         return tuple(sizes)
+
+    def check_files(self, targets, *, cancel):
+        """Rehash downloaded results of ready jobs for status display; see result_files.
+
+        Preview-lane work. Each target is a (request_id, asset_id, sha256)
+        triple; the answer appends a ``FileCheck`` (unavailable when the file
+        changed while it was hashed), or None when this scope's store no longer
+        holds that receipt in a ready job. It never fetches, applies or writes
+        the job store.
+        """
+        # Imported here: the scheduler imports the workers, which import this module.
+        from .preview_scheduler import BATCH_LIMIT
+
+        try:
+            targets = tuple(
+                (_identity(request_id), _identity(asset_id), sha256)
+                for request_id, asset_id, sha256 in targets
+            )
+        except (TypeError, ValueError):
+            raise ResultError("Choose saved results to check") from None
+        if not 1 <= len(targets) <= BATCH_LIMIT or not all(
+            isinstance(sha256, str) and re.fullmatch(r"[a-f0-9]{64}", sha256)
+            for *_, sha256 in targets
+        ):
+            raise ResultError("Choose saved results to check")
+        if self._root is None or self._downloader is None:
+            raise ResultError("Result storage has not been configured")
+        checks = []
+        for target in targets:
+            if cancel.is_set():
+                raise previews.PreviewCanceled("The result file check was canceled")
+            checks.append((*target, self._check_file(*target)))
+        return tuple(checks)
+
+    def _check_file(self, request_id, asset_id, sha256):
+        with self._guard():
+            record = self._store.get(request_id)
+        if record is None or record.state not in result_files.READY_STATES:
+            return None
+        receipt = next(
+            (
+                item.receipt
+                for item in record.results
+                if item.asset.asset_id == asset_id
+                and item.receipt is not None
+                and item.receipt.sha256 == sha256
+            ),
+            None,
+        )
+        if receipt is None:
+            return None
+        path = self._file_path(record, receipt)
+        before = result_files.file_stamp(path)
+        if before is None:
+            return result_files.FileCheck(sha256, result_files.MISSING, path, None)
+        try:
+            self._downloader.verify(self._directory(record, create=False), receipt)
+            state = result_files.VERIFIED
+        except Exception:
+            state = _unverified_state(path, receipt)
+        if result_files.file_stamp(path) != before:
+            # Changed while it was hashed: retried after a delay, not on every poll.
+            return result_files.FileCheck(sha256, result_files.UNAVAILABLE, path)
+        return result_files.FileCheck(sha256, state, path, before)
 
     def _world_size(self, request_id, asset_id, sha256):
         with self._guard():

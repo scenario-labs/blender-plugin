@@ -25,7 +25,7 @@ def github(*arguments, payload=None):
     return json.loads(result.stdout)
 
 
-def report_failure(repository, title, body, labels, *, scope_label="area:ci"):
+def report_failure(repository, title, body, labels, issue_type, *, scope_label="area:ci"):
     """Match exact open issue titles across all pages, without search-index lag.
 
     The calling workflow serializes runs. Ambiguous or malformed listing results
@@ -70,7 +70,7 @@ def report_failure(repository, title, body, labels, *, scope_label="area:ci"):
     if matches:
         github(f"{endpoint}/{matches[0]}/comments", payload={"body": body})
         return "commented"
-    github(endpoint, payload={"title": title, "body": body, "labels": labels})
+    github(endpoint, payload={"title": title, "body": body, "labels": labels, "type": issue_type})
     return "created"
 
 
@@ -169,13 +169,12 @@ def main(argv=None):
             "The workflow remains informational; triage without loosening tests."
         )
         labels = [
-            "bug",
             "area:ci",
             f"os:{platform.removesuffix('-latest')}",
             f"blender:{args.version.rsplit('.', 1)[0]}",
         ]
         try:
-            outcome = report_failure(args.repository, title, body, labels)
+            outcome = report_failure(args.repository, title, body, labels, "Task")
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(
                 f"Failure reporting failed for {platform} ({type(error).__name__}); "

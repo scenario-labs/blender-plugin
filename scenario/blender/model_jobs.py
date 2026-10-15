@@ -16,7 +16,7 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, EstimateStartedJob
-from ..core.jobs import failures, progress, workflow_nodes
+from ..core.jobs import failures, progress, refresh_backoff, workflow_nodes
 from ..core.jobs.coordinator import (
     UNCONFIRMED,
     CancellationUnsupported,
@@ -27,6 +27,7 @@ from ..core.jobs.coordinator import (
 )
 from ..core.jobs.preview_scheduler import BATCH_LIMIT
 from ..core.jobs.records import JobRecord
+from ..core.jobs.result_files import CHECKING, UNAVAILABLE, VERIFIED, ResultFiles
 from ..core.jobs.results import DownloadCanceled, ResultError
 from ..core.jobs.store import (
     JobOrigin,
@@ -90,6 +91,15 @@ UNCONFIRMED_REVIEW = (
 UNCONFIRMED_REVIEWED = (
     "Marked reviewed for this session: an identical request can be sent again. "
     "Check your Scenario history first, or you may be charged twice."
+)
+# Status notes: one information line each, never a review error. See _status_notes.
+REFRESH_RETRYING = "Status not refreshed; retrying"
+CANCEL_NOT_SENT = "Cancel not sent; the job keeps running"
+CANCEL_UNCONFIRMED = "Cancel not confirmed yet; checking the job's status"
+# Delivery pauses with this once refresh_backoff.FAILURE_CEILING refreshes in a row failed.
+REFRESH_STOPPED = (
+    "Status not refreshed after repeated tries; the job may still be running. "
+    "Choose Resume download to check again"
 )
 
 _log = logging.getLogger("scenario.jobs")
@@ -384,6 +394,11 @@ class ModelJobs:
         self._online_seen = online()
         self._commands = {}
         self._next_poll = {}
+        # request_id -> consecutive transient refresh failures of a polled job,
+        # and request_id -> (saved revision, note) after a cancel request that
+        # failed. Memory only; see _refresh_failed and _status_notes.
+        self._refresh_failures = {}
+        self._cancel_notes = {}
         # In-memory workflow step projections and the last decision's error
         # text with the review IDs then waiting; never persisted.
         self._steps = {}
@@ -424,6 +439,13 @@ class ModelJobs:
         # again for the same receipt. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
+        # Verified local files of the jobs MCP job_status asked about, checked on
+        # the preview lane against their saved receipts. Memory only; it follows
+        # the saved store, so a restarted job is checked like a current one.
+        self._files = ResultFiles()
+        # request_id -> number of `wait` calls on MCP HTTP workers waiting for it.
+        self._file_waits = {}
+        self._file_waits_lock = threading.Lock()
         self._plans = {}
         self._model_imports = {}
         self.cloud_reads = {}
@@ -638,6 +660,7 @@ class ModelJobs:
             return
         self._poll_cloud_reads()
         self._finish_world_sizes()
+        self._files.finish()
         for request_id, task in tuple(self.submissions.items()):
             if task.done():
                 outcomes = self.session.drain(task=task)
@@ -753,6 +776,7 @@ class ModelJobs:
                     self._paused.discard(request_id)
                 elif command in ("refresh_remote", "cancel_remote"):
                     observed = completion.result
+                    self._refresh_failures.pop(request_id, None)
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except first_frame_handoff.FirstFrameHandoffError as error:
                 self._remember_first_frame(request_id, first_frame, error=error.reason)
@@ -827,6 +851,10 @@ class ModelJobs:
                     # Only the cancellation itself reads as a stop; a real
                     # failure at the same moment keeps the review wording.
                     self._pause(request_id, DOWNLOAD_STOPPED)
+                elif command in ("refresh_remote", "cancel_remote") and self._refresh_failed(
+                    request_id, command, error
+                ):
+                    pass
                 else:
                     self._pause(
                         request_id,
@@ -872,6 +900,7 @@ class ModelJobs:
             )
             view.meta["import_units"] = self._unit_rows(record)
             view.meta["import_notices"] = self._import_notices(request_id)
+            view.meta["status_notes"] = self._status_notes(request_id, record, online=online)
             self._project_remote(request_id, record, view, online=online)
             view.meta["error_title"] = view.meta["review_note"] = None
             if record.state in (JobState.SUBMITTING, JobState.UNCERTAIN):
@@ -904,15 +933,43 @@ class ModelJobs:
             elif record.state == JobState.READY and request_id in self._automatic_application:
                 command = "verify_results"
             if command:
+                # The automatic poll reads once; _refresh_failed schedules the retry.
+                options = {"automatic": True} if command == "refresh_remote" else {}
                 try:
                     task = getattr(self.session, command)(
-                        request_id, expected_revision=record.revision
+                        request_id, expected_revision=record.revision, **options
                     )
                     self._commands[request_id] = (command, task)
                 except Exception:
                     self._pause(request_id, "Result delivery could not start; inspect saved jobs")
         self._prune_world_sizes()
         self._read_world_sizes(unread_sizes)
+        self._check_files()
+
+    def _check_files(self):
+        """Queue one preview-lane check of the watched jobs' unchecked result files.
+
+        Files this session verified are settled even while a batch is in flight,
+        so a wait on them does not wait for another job's check.
+        """
+        busy = self._files.busy
+        targets = []
+        for request_id in self._files.watched:
+            try:
+                record = self.store.get(request_id)
+            except Exception:
+                # An unreadable record is reported by status; it is checked later.
+                continue
+            if record is None:
+                self._files.forget(request_id)
+                continue
+            self._files.seed(record, self.session.verified_files(request_id))
+            if not busy:
+                # A waited job also notices a file changed since its check.
+                targets.extend(
+                    self._files.unchecked(record, revalidate=request_id in self._file_waits)
+                )
+        self._files.start(self.session.result_files, targets)
 
     def _unread_world_sizes(self, record):
         """World candidates of an offerable job whose current receipt has no read size."""
@@ -991,6 +1048,71 @@ class ModelJobs:
     def _pause(self, request_id, message):
         self._paused.add(request_id)
         self.views[request_id].error = message
+
+    def _refresh_failed(self, request_id, command, error):
+        """Poll again after a failed automatic refresh or any failed cancel request.
+
+        Returns False to pause delivery for review as before: on an explicit
+        one-time refresh (the job is already paused), a record that is no
+        longer polled, or a refresh error that a later read would repeat. A
+        transient refresh failure (`refresh_backoff.transient`) delays the next
+        poll with the bounded backoff and shows REFRESH_RETRYING; the
+        FAILURE_CEILING-th in a row pauses with REFRESH_STOPPED. A failed cancel
+        request never stops polling: its note says whether the cancellation was
+        claimed, and the next refresh, which never sends a cancel, decides.
+        CancellationUnsupported keeps its own pause above. Nothing is sent
+        again and no saved state changes here.
+        """
+        if request_id in self._paused:
+            return False
+        try:
+            record = self.store.get(request_id)
+        except Exception:
+            return False
+        if record is None or record.state not in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
+            return False
+        transient = refresh_backoff.transient(error)
+        if command == "cancel_remote":
+            claimed = record.state == JobState.CANCEL_REQUESTED
+            note = CANCEL_UNCONFIRMED if claimed else CANCEL_NOT_SENT
+            self._cancel_notes[request_id] = (record.revision, note)
+            if not transient:
+                self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
+                return True
+        elif not transient:
+            return False
+        failures = self._refresh_failures.get(request_id, 0) + 1
+        if refresh_backoff.exhausted(failures):
+            self._refresh_failures.pop(request_id, None)
+            self._pause(request_id, REFRESH_STOPPED)
+            return True
+        self._refresh_failures[request_id] = failures
+        self._next_poll[request_id] = time.monotonic() + refresh_backoff.delay(
+            failures, error, interval=POLL_INTERVAL
+        )
+        return True
+
+    def _status_notes(self, request_id, record, *, online):
+        """Information lines for a job whose status or cancellation is not confirmed.
+
+        A cancel note lasts while the saved revision it was written for is
+        unchanged. REFRESH_RETRYING shows while transient failures delay an
+        automatic refresh that Online Access allows. Reads memory and the given
+        record only.
+        """
+        notes = []
+        cancel = self._cancel_notes.get(request_id)
+        if cancel is not None:
+            if cancel[0] == record.revision:
+                notes.append(cancel[1])
+            else:
+                del self._cancel_notes[request_id]
+        if request_id in self._refresh_failures:
+            if record.state not in (JobState.REMOTE, JobState.CANCEL_REQUESTED):
+                del self._refresh_failures[request_id]
+            elif online and request_id not in self._paused:
+                notes.append(REFRESH_RETRYING)
+        return tuple(notes)
 
     def _observe_cancellation(self, request_id, snapshot):
         """Remember whether the latest owned retrieval confirmed a cancellable job.
@@ -1371,8 +1493,9 @@ class ModelJobs:
         """Keep a reading only for its unchanged known job, and mark it stale.
 
         Stale means automatic polling is not keeping the reading current:
-        delivery is paused, Online Access is off or the scheduled refresh is
-        overdue by the grace. It is display state; nothing is persisted.
+        delivery is paused, Online Access is off, the last refresh failed and
+        is being retried, or the scheduled refresh is overdue by the grace. It
+        is display state; nothing is persisted.
         """
         reading = view.meta.get("remote")
         if reading is None:
@@ -1385,7 +1508,12 @@ class ModelJobs:
             del view.meta["remote"]
             return
         due = max(self._next_poll.get(request_id, 0.0), reading.observed_monotonic)
-        stale = not online or request_id in self._paused or time.monotonic() > due + STALE_GRACE
+        stale = (
+            not online
+            or request_id in self._paused
+            or request_id in self._refresh_failures
+            or time.monotonic() > due + STALE_GRACE
+        )
         if stale != reading.stale:
             view.meta["remote"] = replace(reading, stale=stale)
 
@@ -1670,6 +1798,10 @@ class ModelJobs:
         self._commands[request_id] = (command, task)
         view.meta["recovery_actions"] = ()
         self._automatic_application.discard(request_id)
+        # An explicit read starts a new count; a new cancel request replaces its note.
+        self._refresh_failures.pop(request_id, None)
+        if action == "cancel":
+            self._cancel_notes.pop(request_id, None)
         view.error = None
         if action in ("resume", "cancel"):
             self._paused.discard(request_id)
@@ -2306,18 +2438,26 @@ class ModelJobs:
         """Wait on an HTTP worker using only saved state; the main thread advances jobs."""
         deadline = time.monotonic() + timeout
         sleeper = threading.Event()
-        while self.session.active:
-            if stopped():
-                raise ScenarioError(0, "The job wait stopped; generation was not cancelled")
-            record = self.store.get(request_id)
-            if record is None:
-                raise ScenarioError(0, "Saved job is unavailable")
-            if not self._delivering(request_id, record):
-                return
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            sleeper.wait(min(0.1, remaining))
+        with self._file_waits_lock:
+            self._file_waits[request_id] = self._file_waits.get(request_id, 0) + 1
+        try:
+            while self.session.active:
+                if stopped():
+                    raise ScenarioError(0, "The job wait stopped; generation was not cancelled")
+                record = self.store.get(request_id)
+                if record is None:
+                    raise ScenarioError(0, "Saved job is unavailable")
+                if not self._delivering(request_id, record) and not self._files.pending(record):
+                    return
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return
+                sleeper.wait(min(0.1, remaining))
+        finally:
+            with self._file_waits_lock:
+                self._file_waits[request_id] -= 1
+                if not self._file_waits[request_id]:
+                    del self._file_waits[request_id]
         raise ScenarioError(0, "The job context changed while waiting; inspect saved jobs again")
 
     def _advancing(self, request_id, record):
@@ -2430,6 +2570,16 @@ class ModelJobs:
         ]
         return units, findings
 
+    def _file_rows(self, record):
+        """This status read's file rows; it asks a worker to check what is unchecked."""
+        self._files.watch(record.intent.request_id)
+        # Files this session just downloaded or imported are listed at once.
+        self._files.seed(record, self.session.verified_files(record.intent.request_id))
+        rows = self._files.project(record)
+        if self.session.active:
+            self._check_files()
+        return rows
+
     def status(self, reference):
         self.poll()
         matches = [
@@ -2451,6 +2601,7 @@ class ModelJobs:
         failed = self._step_errors.get(record.intent.request_id)
         binding = self._bindings.get(record.intent.request_id)
         units, findings = self._import_units_status(record)
+        files = self._file_rows(record)
         return {
             **notice,
             "local_id": record.intent.request_id,
@@ -2472,9 +2623,11 @@ class ModelJobs:
             "kind": self.views[record.intent.request_id].kind
             if record.intent.request_id in self.views
             else "model",
-            "files": list(self.views[record.intent.request_id].files)
-            if record.intent.request_id in self.views
-            else [],
+            # Downloaded results whose local bytes a worker matched to their saved
+            # receipts, whatever their kind, import or restart; see result_files.
+            "files": [row.file for row in files if row.state == VERIFIED],
+            # A check still to come: checking, or unavailable until a retry runs.
+            "file_check_pending": any(row.state in (CHECKING, UNAVAILABLE) for row in files),
             "results": [
                 {
                     "asset_id": item.asset.asset_id,
@@ -2484,8 +2637,10 @@ class ModelJobs:
                     "source": item.asset.source,
                     "projection": item.asset.projection,
                     "downloaded": item.receipt is not None,
+                    "file": row.file,
+                    "file_state": row.state,
                 }
-                for item in record.results
+                for item, row in zip(record.results, files, strict=True)
             ],
             "local_applications": [
                 {
@@ -2510,6 +2665,8 @@ class ModelJobs:
             "delivery_paused": record.intent.request_id in self._paused,
             "delivery_active": self._delivering(record.intent.request_id, record),
             "delivery_offline": self._offline(record.intent.request_id, record),
+            # Information lines the Jobs row draws; they never pause delivery.
+            "status_notes": list(view.meta.get("status_notes", ())) if view is not None else [],
             # Only the user marks an unconfirmed request reviewed, in Blender's Jobs list.
             "actions": tuple(item for item in self.actions(record) if item not in NATIVE_ONLY),
             "error": self.views[record.intent.request_id].error

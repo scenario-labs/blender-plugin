@@ -852,6 +852,22 @@ class JobCoordinator:
                 raise PreviewCanceled("The World size check was canceled")
         return sizes
 
+    def result_files(self, targets, *, cancel):
+        """Preview-lane command: rehash downloaded results of ready jobs for status display.
+
+        Display only: a verified file authorizes nothing, and every application
+        still rehashes the bytes it reads.
+        """
+        checks = self._results.check_files(targets, cancel=cancel)
+        with self._result_guard():
+            if cancel.is_set():
+                raise PreviewCanceled("The result file check was canceled")
+        return checks
+
+    def verified_files(self, request_id):
+        """Files this connection already verified for a job, from memory; reads no file."""
+        return self._results.verified_files(request_id)
+
     def claim_application(self, verified: VerifiedResults):
         """Claim verified results before a caller mutates the captured Blender target.
 
@@ -1548,8 +1564,14 @@ class JobCoordinator:
                 request_id, expected_revision=expected_revision, state=JobState.CANCELED
             )
 
-    def refresh_remote(self, request_id, *, expected_revision):
-        """Poll a known ID and persist its terminal status; never submit/rebind."""
+    def refresh_remote(self, request_id, *, expected_revision, automatic=False):
+        """Poll a known ID and persist its terminal status; never submit/rebind.
+
+        An `automatic` poll reads the job once, without the adapter's read
+        retries: its owner schedules the next poll after a failure, so it never
+        holds a job worker for SDK retries. Explicit refreshes keep them for the
+        job read; a waiting workflow's definition is always read once.
+        """
         with self._lock:
             if not self._active:
                 raise RecoveryError("This job context is inactive")
@@ -1561,7 +1583,7 @@ class JobCoordinator:
                 or current.remote_job_id is None
             ):
                 raise StoreConflict("Only the current known remote job can be refreshed")
-        response = self._adapter.job(current.remote_job_id)
+        response = self._adapter.job(current.remote_job_id, retry=not automatic)
         return self._observe_remote(current, response)
 
     def adopt_cloud_job(self, identifier, *, expected_model_id, origin):
@@ -1654,7 +1676,9 @@ class JobCoordinator:
         or parsing failure returns None and is retried at the next retrieval;
         `pending_steps` then blocks choosing items in a flow that may loop.
         A failure logs only its error type, once per waiting period until a
-        read succeeds.
+        read succeeds. The read makes one attempt, without the adapter's read
+        retries: a failure is not fatal and the next retrieval reads it again,
+        so it never adds a second retried read to a refresh or a decision.
         """
         key = current.remote_job_id
         if response is None or not waiting(response):
@@ -1668,7 +1692,9 @@ class JobCoordinator:
             return links
         workflow_id = current.intent.target_id
         try:
-            links = definition_links(self._adapter.workflow(workflow_id), workflow_id=workflow_id)
+            links = definition_links(
+                self._adapter.workflow(workflow_id, retry=False), workflow_id=workflow_id
+            )
         except Exception as error:
             # Never log the record: it may carry signed thumbnail URLs.
             with self._lock:

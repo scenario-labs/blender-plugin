@@ -123,7 +123,7 @@ def envelope(output, *, max_seconds=MAX_SECONDS, max_samples=MAX_DECODED_SAMPLES
     """Check the child's header and blocks, then fold them into an ``AudioEnvelope``."""
     try:
         header = json.loads(_read(output / "envelope.json", HEADER_MAX_BYTES))
-    except ValueError:
+    except (ValueError, RecursionError):
         raise WaveformError(_INVALID) from None
     names = {"format", "sample_rate", "channels", "frames", "block"}
     if (

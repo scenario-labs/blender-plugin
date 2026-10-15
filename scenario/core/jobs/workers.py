@@ -343,6 +343,10 @@ class JobWorkers:
         """Queue a header read of saved World candidates on the preview lane."""
         return self._enqueue_preview(self._coordinator.world_sizes, tuple(targets))
 
+    def result_files(self, targets):
+        """Queue a rehash of saved results for status display on the preview lane."""
+        return self._enqueue_preview(self._coordinator.result_files, tuple(targets))
+
     def cancel_preview(self, task):
         with self._preview_condition:
             cancel = self._preview_cancels.get(task)
@@ -443,9 +447,14 @@ class JobWorkers:
             payload=snapshot,
         )
 
-    def refresh_remote(self, request_id, *, expected_revision):
+    def refresh_remote(self, request_id, *, expected_revision, automatic=False):
+        # Only an automatic poll passes the option: it reads the job once.
+        options = {"automatic": True} if automatic else {}
         return self._enqueue(
-            self._coordinator.refresh_remote, request_id, expected_revision=expected_revision
+            self._coordinator.refresh_remote,
+            request_id,
+            expected_revision=expected_revision,
+            **options,
         )
 
     def adopt_cloud_job(self, identifier, *, expected_model_id, origin):

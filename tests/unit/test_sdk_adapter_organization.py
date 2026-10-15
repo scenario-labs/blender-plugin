@@ -20,6 +20,7 @@ from scenario.core.api.sdk_adapter import (
     MAX_ASSET_RECORDS,
     MAX_COLLECTION_ASSETS,
     MAX_TAG_CHANGES,
+    READ_RETRIES,
     AdapterError,
     AlreadyMembers,
     Credentials,
@@ -726,7 +727,8 @@ def test_failed_verification_read_is_a_sanitized_adapter_error(adapter, failure)
         adapter(handler).asset_records(["asset-a"])
     assert not isinstance(error.value, (WriteRejected, WriteUncertain))
     assert PRIVATE not in str(error.value)
-    assert len(requests) == 1
+    # The read-back changes nothing, so the SDK retries a transient failure.
+    assert len(requests) == (1 if failure == 404 else 1 + READ_RETRIES)
 
 
 class FakeLibrary:

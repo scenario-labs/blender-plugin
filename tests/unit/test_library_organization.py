@@ -12,7 +12,7 @@ import socket
 import pytest
 from organization_service import PRIVATE, URL, OrganizationService, asset, collection
 
-from scenario.core.api.sdk_adapter import MAX_TAG_CHANGES
+from scenario.core.api.sdk_adapter import MAX_TAG_CHANGES, READ_RETRIES
 from scenario.core.jobs.organization import (
     NOTICE,
     Operation,
@@ -317,7 +317,8 @@ def test_finished_cards_report_read_back_states(service):
         apply=True,
         faults=[
             ("PUT", "/v1/assets/asset-b/tags", "apply-timeout"),
-            ("POST", "/v1/assets/get-bulk", 503),
+            # The read-back and both of its SDK retries fail.
+            *[("POST", "/v1/assets/get-bulk", 503)] * (1 + READ_RETRIES),
         ],
         asset_ids=["asset-b"],
         add_tags=["x"],

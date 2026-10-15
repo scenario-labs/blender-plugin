@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The real release publication predicate must require the standalone handbook."""
+"""The real release publication predicate must require the handbook and provenance bundle."""
 
 import json
 import re
@@ -12,7 +12,7 @@ import pytest
 WORKFLOW = Path(__file__).resolve().parents[2] / ".github/workflows/release-please.yml"
 
 
-@pytest.mark.parametrize("missing", [None, "zip", "handbook", "sums"])
+@pytest.mark.parametrize("missing", [None, "zip", "handbook", "sums", "bundle"])
 def test_publish_gate_rejects_incomplete_release_assets(missing):
     text = WORKFLOW.read_text()
     publish = text.split("  publish:\n", 1)[1].split("  release-pr:\n", 1)[0]
@@ -21,6 +21,7 @@ def test_publish_gate_rejects_incomplete_release_assets(missing):
         "zip": "scenario-1.0.0.zip",
         "handbook": "scenario-handbook-1.0.0.html",
         "sums": "SHA256SUMS",
+        "bundle": "scenario-1.0.0.sigstore.json",
     }
     result = subprocess.run(
         [
@@ -35,6 +36,9 @@ def test_publish_gate_rejects_incomplete_release_assets(missing):
             "--arg",
             "handbook",
             names["handbook"],
+            "--arg",
+            "bundle",
+            names["bundle"],
             predicate,
         ],
         input=json.dumps(
@@ -64,3 +68,14 @@ def test_handbook_is_built_checksummed_attested_and_attached_before_publication(
     upload = next(line for line in assets.splitlines() if 'gh release upload "$TAG"' in line)
     assert '"dist/scenario-handbook-${VERSION}.html"' in upload
     assert "needs: [release-please, assets, validate]" in text
+
+
+def test_provenance_bundle_is_attached_before_publication():
+    text = WORKFLOW.read_text()
+    assets = text.split("  assets:\n", 1)[1].split("  validate:\n", 1)[0]
+    attest = assets.split("actions/attest-build-provenance@", 1)[1].split("- uses:", 1)[0]
+    assert "id: provenance" in attest
+    assert "BUNDLE: ${{ steps.provenance.outputs.bundle-path }}" in assets
+    assert 'cp "$BUNDLE" "dist/scenario-${VERSION}.sigstore.json"' in assets
+    upload = next(line for line in assets.splitlines() if 'gh release upload "$TAG"' in line)
+    assert '"dist/scenario-${VERSION}.sigstore.json"' in upload

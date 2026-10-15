@@ -18,9 +18,20 @@ from tools.check_knowledge import parse_record
 
 ROOT = Path(__file__).resolve().parents[1]
 UNREFERENCED_OK = {"social-preview.png"}  # GitHub's repository settings host the card.
-TRUECOLOUR_OK = {"scenario-logo.png"}  # Preserve the exact upstream trademark asset.
+# The favicons are unchanged copies of the mcp.scenario.com set.
+FAVICONS = {
+    "favicon-16x16.png",
+    "favicon-32x32.png",
+    "favicon-196x196.png",
+    "favicon-dark-16x16.png",
+    "favicon-dark-32x32.png",
+    "favicon-dark-196x196.png",
+    "apple-touch-icon.png",
+}
+TRUECOLOUR_OK = {"scenario-logo.png", *FAVICONS}  # Preserve the exact brand assets.
 OPTIMIZE_EXCLUSIONS = {
     "scenario-logo.png": "preserve upstream bytes",
+    **{name: "preserve the mcp.scenario.com favicon bytes" for name in FAVICONS},
     "social-preview.png": "regenerate with tools/make_social_preview.py",
 }
 MIN_ALT_WORDS = 8

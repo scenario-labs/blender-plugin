@@ -1,4 +1,4 @@
-# Scenario for Blender: user guide
+# Scenario for Blender: *user guide*
 
 Scenario for Blender brings Scenario's generation models into Blender. You need
 Blender 5.0 or later, a Scenario account with API access (see the
@@ -549,6 +549,8 @@ job stays here until you apply its results.
 
 - A progress bar appears when Scenario reports progress; some models don't.
 - With Online Access off, checking and downloading pause; the job continues on Scenario.
+- If Scenario can't be reached for a moment, the job shows "Status not refreshed; retrying" and keeps checking, waiting a little longer each time. After about four minutes without an answer it stops and asks you to choose **Resume download** once Scenario is reachable again.
+- If a cancel request doesn't go through, the job says so and keeps checking its status. The cancel is never sent twice.
 - A download that fails is tried again automatically, up to three times in all. If it still fails, use **Resume download**; a large download never holds up checking other jobs.
 - **Stop download** stops a download in progress without keeping a partial file. **Resume download** starts it again later.
 - After a restart, choose **Inspect saved jobs**, then **Refresh status** or **Resume download**.

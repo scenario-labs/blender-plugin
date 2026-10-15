@@ -23,7 +23,8 @@ summary and no trailing period. For example,
 | style / chore / revert | Formatting, maintenance or a revert                       |
 
 Squash merges use the PR title as the commit header. Keep branch commits
-conventional too: current CI checks them. A missing scope is a warning; when a
+conventional too: current CI checks them. Branch commit bodies are optional;
+keep them to a sentence or two. A missing scope is a warning; when a
 scope fits, choose it from the map below. Every accepted type can appear in the
 generated release notes; see [release behavior](../RELEASING.md#included-commit-types).
 
@@ -59,21 +60,20 @@ Tests for a product area keep that area's scope; `tests` names harness changes.
 
 ## PR descriptions and review
 
-Complete the [PR template](../../.github/pull_request_template.md). Mark applicable
-checks and explain omitted validation. A pending human review is not approval:
+Complete the [PR template](../../.github/pull_request_template.md). Tick only checks
+you performed; explain an unticked one only when the change needed it. A pending
+human review is not approval:
 agents may submit a reviewable PR, but must not mark that review complete.
 Original contributions use the repository's GPL-3.0-or-later license. Adopted
 sources retain their original compatible licenses, notices and attribution.
 
 Start PR descriptions with `## What does this PR change?` from the template.
-Explain the problem and resulting behavior for users or maintainers. For behavior
-changes, use a concrete before/after example when helpful; for internal work,
-explain the maintenance benefit. State any action needed to use or validate the
-change and material limitations. Keep the detail proportional to the change;
-a file inventory alone does not explain its effect. Automated summaries follow
-the same structure and describe the final diff, including after a scope change.
-Include relevant validation; do not invent passing counts, approvals or authorship.
-Use `Closes` only for fully completed issues and `Refs` for partial work.
+State the problem and the change in one to three sentences; add a before/after
+only for a behavior change. Name any action needed after merge and any known gap.
+List validation one line per command with its result. Omit file lists, test-case
+lists and narrative the diff already shows. Automated summaries describe the final
+diff; do not invent passing counts, approvals or authorship. Use `Closes` only for
+fully completed issues and `Refs` for partial work, saying what remains.
 Before creating or updating a PR, read related issues and check their current
 acceptance criteria against the final diff and verified evidence. Add missing
 references, explain remaining scope for partial work, and verify GitHub's closing
@@ -95,16 +95,41 @@ needed, or describe what remains unresolved. Apply this to human and bot
 comments alike. A local fix or a chat response alone does not complete the
 review follow-up. Do not claim a fix is pushed before it is available remotely.
 
-For local commit linting, use the versions and command from
+For local commit linting, install the Node tooling with the Node version in
+`.nvmrc` and `pnpm install --frozen-lockfile`, then run the command from
 `.github/workflows/pr-name.yml`:
-`npx --no-install commitlint --config commitlint.config.ts --verbose`.
-If unavailable, use that workflow's ad-hoc npm install command. Do not add a
-Node project or lockfile for the Blender extension.
+`pnpm exec commitlint --config commitlint.config.ts --verbose`.
+The root `package.json` holds development tooling only, never extension code.
 
 Do not manually bump package versions or edit release notes in an unrelated PR.
 Read the actual release workflow/configuration before describing release behavior.
 New release tags use `blender-plugin-vX.Y.Z`; package versions stay `X.Y.Z` and
 release ZIPs stay `scenario-X.Y.Z.zip`. Preserve historical `v*` tags and releases.
+
+### Screenshots
+
+Show a visible change (panel, composer, viewport result or site page) with
+screenshots in a Markdown table, before and after for UI changes.
+[Repeatable GUI screenshots](../../CONTRIBUTING.md#repeatable-gui-screenshots)
+capture the Blender UI. Attach images by dragging them into the PR description
+or a comment; never commit them or push asset branches. The images are public:
+show no credentials, account or project names, or private assets.
+
+GitHub has no command-line upload for attachments, so an agent prepares the drop:
+
+1. Save the images in `workdir/pr-screenshots/<branch>/` with numbered names,
+   such as `01-sidebar-before.png`.
+2. Put a placeholder naming each file in the table cell where it belongs:
+
+   ```markdown
+   | Before | After |
+   | --- | --- |
+   | [drop 01-sidebar-before.png] | [drop 02-sidebar-after.png] |
+   ```
+
+3. Give the person the folder's absolute path, opened in their file manager
+   when possible. They drop each file on its placeholder and delete the
+   placeholder text.
 
 ## Review readiness and acceptance follow-ups
 

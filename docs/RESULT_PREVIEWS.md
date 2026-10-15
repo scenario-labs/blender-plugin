@@ -43,8 +43,9 @@ Metadata uses the selected SDK 2.2.0 through the shared
 [adapter](../scenario/core/api/sdk_adapter.py):
 `assets.with_raw_response.get_bulk` for every batch, a single asset included, in
 chunks of 100 identities (the SDK documents a 200-identity limit). It carries the
-selected project, uses the client's `max_retries=0` and checks online access
-before each request. One batch reads its metadata once. The published wheel's
+selected project, gets the adapter's bounded
+[read retries](SDK_ADOPTION.md#read-retries) and checks online access before each
+request. One batch reads its metadata once, apart from those retries. The published wheel's
 `types/asset_get_bulk_response.py`, like `types/asset_retrieve_response.py`,
 documents the optional `thumbnail` and `preview` objects, each with an `assetId`
 and a signed `url`; see the

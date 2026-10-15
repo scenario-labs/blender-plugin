@@ -142,10 +142,93 @@ def test_output_image_symlink_cannot_write_outside_output_directory(inputs):
     assert list(outside.iterdir()) == []
 
 
+def with_inlined_slots(inputs, style="body{color:#252322}", search="window.found = 1;"):
+    inputs["template"].write_text(
+        TEMPLATE.replace("</head>", "<style>{{style}}</style></head>").replace(
+            "</body>", "<script>{{search}}</script></body>"
+        )
+    )
+    (inputs["template"].parent / "site.css").write_text(style)
+    (inputs["template"].parent / "handbook-search.js").write_text(search)
+
+
+def with_icon(inputs, href="images/icon.png", rel="icon"):
+    # A file only the icon link uses, so copying it proves the link was handled.
+    (inputs["template"].parent / "images/icon.png").write_bytes(PNG)
+    icon = f'<link rel="{rel}" href="{href}" media="(prefers-color-scheme: dark)">'
+    stylesheet = '<link rel="stylesheet" href="https://fonts.example/css">'
+    inputs["template"].write_text(TEMPLATE.replace("</head>", icon + stylesheet + "</head>"))
+
+
+@pytest.mark.parametrize("rel", ["icon", "apple-touch-icon"])
+def test_icon_links_are_copied_like_images(inputs, rel):
+    with_icon(inputs, rel=rel)
+
+    text = build_handbook(**inputs).read_text()
+
+    assert f'<link rel="{rel}" href="images/icon.png"' in text
+    assert (inputs["output"].parent / "images/icon.png").read_bytes() == PNG
+    assert '<link rel="stylesheet" href="https://fonts.example/css">' in text
+
+
+def test_standalone_inlines_icon_links(inputs):
+    with_icon(inputs)
+
+    text = build_handbook(**inputs, inline_images=True).read_text()
+
+    assert f'href="data:image/png;base64,{base64.b64encode(PNG).decode()}"' in text
+
+
+@pytest.mark.parametrize("href", ["images/missing.png", "https://example.invalid/icon.png"])
+def test_icon_links_require_a_local_image(inputs, href):
+    with_icon(inputs, href=href)
+
+    with pytest.raises(HandbookError):
+        build_handbook(**inputs)
+    assert not inputs["output"].exists()
+
+
+def test_style_and_search_slots_inline_the_files_beside_the_template(inputs):
+    with_inlined_slots(inputs)
+
+    for inline_images in (False, True):
+        text = build_handbook(**inputs, inline_images=inline_images).read_text()
+        assert "<style>body{color:#252322}</style>" in text
+        assert "<script>window.found = 1;</script>" in text
+        assert "{{" not in text
+
+
+@pytest.mark.parametrize(
+    "style,search",
+    [
+        ("body{}</style><script>alert(1)</script>", "window.found = 1;"),
+        ("body{}", "document.write('</SCRIPT>')"),
+    ],
+)
+def test_inlined_files_cannot_close_their_element(inputs, style, search):
+    with_inlined_slots(inputs, style, search)
+
+    with pytest.raises(HandbookError, match="must not close"):
+        build_handbook(**inputs)
+    assert not inputs["output"].exists()
+
+
+@pytest.mark.parametrize("name", ["site.css", "handbook-search.js"])
+def test_inlined_slot_requires_its_file(inputs, name):
+    with_inlined_slots(inputs)
+    (inputs["template"].parent / name).unlink()
+
+    with pytest.raises(HandbookError, match=f"needs {name}"):
+        build_handbook(**inputs)
+    assert not inputs["output"].exists()
+
+
 @pytest.mark.parametrize(
     "before,after",
     [
         ("{{content}}", "{{unknown}}"),
+        ("</head>", "<style>{{style}}{{style}}</style></head>"),
+        ("</body>", "<script>{{search}}</script><script>{{search}}</script></body>"),
         ("{{toc}}", "{{toc}}{{toc}}"),
         ("{{version}}", ""),
         ('<meta charset="utf-8">', ""),

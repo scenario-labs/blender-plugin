@@ -1011,6 +1011,10 @@ def test_read_prompt_text_offers_a_preview_and_a_copy_control_for_each_text():
             "Created 2026-10-14 21:18 UTC, queued, 12.3K CU",
         ),
         ({"status": "exploded"}, "Creation time unknown, unknown state"),
+        (
+            {"seconds_after_claim": 0.0, "status": "success", "cost": "not a number"},
+            "Created 0 s after sending, finished, cost unavailable",
+        ),
     ],
 )
 def test_candidate_text_describes_without_suggesting_a_match(candidate, title):

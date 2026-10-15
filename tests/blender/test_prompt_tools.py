@@ -388,6 +388,12 @@ class PromptToolsTests(unittest.TestCase):
         self.link(owner, item.request_id)
         record = self.runtime.state.job_store.get(item.request_id)
         self.assertEqual((record.state.value, record.remote_job_id), ("succeeded", "remote-1"))
+        # Seen finished while Online Access is off, the action waits instead of stopping.
+        with online_access(False):
+            self.jobs().poll()
+        self.assertEqual(item.phase, "ERROR")
+        self.assertIn("allow Online Access", item.error)
+        self.assertEqual(self.lane.prompt, "a teapot")
         self.advance(item)
         self.assertEqual(item.phase, "DONE")
         self.assertEqual(self.lane.prompt, self.result_text)

@@ -22,6 +22,7 @@ from ..core.jobs.coordinator import (
     CancellationUnsupported,
     DecisionRefused,
     DecisionUncertain,
+    RecoveryError,
     RemoteSnapshot,
     cancellable_job,
 )
@@ -1730,6 +1731,9 @@ class ModelJobs:
             message = f"{error}; nothing was saved"
         except StoreConflict as error:
             message = str(error)
+        except RecoveryError as error:
+            # The coordinator's own fixed reasons, such as a job outside this project.
+            message = f"{error}; nothing was saved" if command == LINK else str(error)
         except AdapterError as error:
             if command == FIND and "Online access" in str(error):
                 # Nothing was read: look again automatically once access is allowed.

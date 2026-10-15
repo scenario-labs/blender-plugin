@@ -77,6 +77,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.status_after_cancel = "canceled"
         self.lose_response = False
         self.cloud_jobs = []  # the recent-jobs listing an unconfirmed submission reads
+        self.missing_jobs = set()  # job IDs whose retrieval this project cannot read
         self.dry_run_costs = {}
         self.dry_run_job = None  # a job ID a misbehaving dry run would return
         self.failed_descriptions = 0  # model reads that Scenario answers with HTTP 503
@@ -114,6 +115,8 @@ class ModelGenerationTests(unittest.TestCase):
                     # Recent cloud jobs for an unconfirmed submission; read-only.
                     return httpx.Response(200, json={"jobs": list(self.cloud_jobs)})
                 if "/jobs/" in request.url.path:
+                    if request.url.path.rsplit("/", 1)[-1] in self.missing_jobs:
+                        return httpx.Response(404, json={"error": "not found"})
                     if getattr(self, "block_cloud_read", False):
                         self.entered.set()
                         self.assertTrue(self.release.wait(5))
@@ -1830,6 +1833,23 @@ class ModelGenerationTests(unittest.TestCase):
             "This cloud job used another model; nothing was saved",
         )
         self.assertEqual(owner.views[request_id].meta["cloud_lookup_icon"], "ERROR")
+        # A job the selected project cannot read is refused with that reason too.
+        self.job_model_id = self.model["id"]
+        self.missing_jobs.add("cloud-close")
+        rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
+        link = next(item for item in rows if item.action == "link_cloud_job")
+        self.assertEqual(
+            bpy.ops.scenario.link_cloud_job(
+                "EXEC_DEFAULT", **dict(link.properties), job_id="cloud-close"
+            ),
+            {"FINISHED"},
+        )
+        self.settle_lookups()
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(
+            owner.views[request_id].meta["cloud_lookup"],
+            "Scenario did not return the selected job in this project; nothing was saved",
+        )
         self.assertEqual(len(self.paid), 1)
 
     def test_a_restarted_uncertain_job_looks_up_once_and_offline_sends_nothing(self):

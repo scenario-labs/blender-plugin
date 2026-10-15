@@ -231,7 +231,8 @@ def candidate_text(candidate):
         try:
             parts.append(f"{format_cu(candidate['cost'])} CU")
         except (ArithmeticError, ValueError):
-            pass
+            # An unreadable cost is named as such, never shown as 0.
+            parts.append("cost unavailable")
     prompt = candidate.get("prompt") or "No prompt text"
     return ", ".join(parts), prompt
 

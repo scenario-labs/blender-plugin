@@ -246,7 +246,7 @@ def test_link_binds_a_selected_remote_job_to_an_unconfirmed_request(store):
 
 
 def test_link_accepts_a_submitting_request_left_by_an_earlier_session(store):
-    record = store.create(_intent(store.scope))
+    store.create(_intent(store.scope))
     record = store.transition(
         "request", expected_revision=0, state=JobState.SUBMITTING, claimed_at=CLAIMED
     )

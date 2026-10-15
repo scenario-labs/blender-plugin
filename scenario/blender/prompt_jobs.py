@@ -181,8 +181,12 @@ class PromptJobs:
         if record.state == JobState.REMOTE:
             item.error = "Linked cloud job is still running; its text follows when it finishes"
             return
+        if record.state == JobState.SUCCEEDED and not self._online():
+            # Keep waiting: the text is read once Online Access is allowed again.
+            item.error = "Linked cloud job finished; allow Online Access to read its text"
+            return
         item.unconfirmed = False
-        if record.state != JobState.SUCCEEDED or not self._online():
+        if record.state != JobState.SUCCEEDED:
             item.error = "Prompt action stopped; inspect the saved job"
             return
         try:

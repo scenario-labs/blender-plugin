@@ -420,7 +420,7 @@ def test_a_request_still_being_sent_cannot_be_listed_or_linked(tmp_path):
         return service(request)
 
     store = JobStore(tmp_path / "jobs.sqlite3", SCOPE)
-    adapter = SDKAdapter(
+    with SDKAdapter(
         Credentials("selected", "secret"),
         online=lambda: True,
         base_url=SCOPE.service,
@@ -428,8 +428,7 @@ def test_a_request_still_being_sent_cannot_be_listed_or_linked(tmp_path):
         project_id=SCOPE.project_id,
         team_id=SCOPE.team_id,
         transport=httpx.MockTransport(handler),
-    )
-    try:
+    ) as adapter:
         coordinator = JobCoordinator(adapter, store)
         prepared = coordinator.prepare(adapter.estimate_model(MODEL, {"prompt": "x"}), ORIGIN)
         with ThreadPoolExecutor(1) as pool:
@@ -453,8 +452,6 @@ def test_a_request_still_being_sent_cannot_be_listed_or_linked(tmp_path):
                     command(record.intent.request_id, expected_revision=record.revision, **extra)
             release.set()
             assert future.result(5).remote_job_id == "real"
-    finally:
-        adapter.close()
 
 
 def test_a_link_clears_the_session_review_and_identical_requests_follow_the_saved_job(setup):
@@ -469,3 +466,29 @@ def test_a_link_clears_the_session_review_and_identical_requests_follow_the_save
     again = coordinator.prepare(adapter.estimate_model(MODEL, {"prompt": "x"}), ORIGIN)
     assert again.intent.request_id != record.intent.request_id
     assert len(service.paid()) == 1
+
+
+def test_a_refused_link_keeps_the_users_review_mark(setup):
+    coordinator, store, record, service, adapter = setup()
+    adopted = job("adopted", metadata={"input": {"modelId": "model"}, "assetIds": ["asset"]})
+    service.jobs["adopted"] = adopted
+    coordinator.adopt_cloud_job("adopted", expected_model_id="model", origin=CLOUD_ORIGIN)
+    coordinator.mark_unconfirmed_reviewed(
+        record.intent.request_id, expected_revision=record.revision
+    )
+    service.jobs["other-model"] = job("other-model", metadata={"input": {"modelId": "another"}})
+    for remote_job_id, error in (
+        ("adopted", StoreConflict),
+        ("other-model", reconcile.LinkRefused),
+        ("missing", RecoveryError),
+    ):
+        with pytest.raises(error):
+            coordinator.link_unconfirmed(
+                record.intent.request_id,
+                expected_revision=record.revision,
+                remote_job_id=remote_job_id,
+            )
+        assert coordinator.unconfirmed_reviewed(record.intent.request_id)
+    # The mark still lets an identical request through; nothing was linked.
+    coordinator.prepare(adapter.estimate_model(MODEL, {"prompt": "x"}), ORIGIN)
+    assert store.get(record.intent.request_id) == record

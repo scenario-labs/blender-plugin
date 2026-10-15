@@ -1452,10 +1452,12 @@ class JobCoordinator:
                 raise RecoveryError("This job context is inactive")
             if request_id in self._sending:
                 raise StoreConflict("This request is still being sent; wait for Scenario's answer")
-            self._reviewed.discard(request_id)
-            return self._store.link_remote(
+            linked = self._store.link_remote(
                 request_id, expected_revision=expected_revision, remote_job_id=remote_job_id
             )
+            # Only a saved link ends the review; a refused one keeps the user's mark.
+            self._reviewed.discard(request_id)
+            return linked
 
     def prepare(self, estimate: Estimate, origin: JobOrigin):
         """Accept direct SDK estimates; bound quotes must use prepare_quote."""

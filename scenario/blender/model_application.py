@@ -2,13 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Import receipt-bound saved models into a new group at an approved cursor.
 
-`apply_model` keeps the single embedded-GLB contract that Film shots and saved
-mesh edits use. A saved job's classified import unit (GLB, JSON glTF, FBX, OBJ
-with its MTL and maps, or mesh PLY) takes two main-thread steps instead:
-`prepare_snapshot` rehashes every member into a private snapshot with rewritten
-references before any application claim, so a changed or unsupported package
-leaves the saved job unchanged; `import_snapshot` then imports that snapshot in
-a disposable scene, keeps only images packed from it and publishes new data.
+`apply_model` keeps the single embedded-GLB contract that Film shots use. A
+saved job's classified import unit (GLB, JSON glTF, FBX, OBJ with its MTL and
+maps, or mesh PLY) takes two main-thread steps instead: `prepare_snapshot`
+rehashes every member into a private snapshot with rewritten references before
+any application claim, so a changed or unsupported package leaves the saved job
+unchanged; `import_snapshot` then imports that snapshot in a disposable scene,
+keeps only images packed from it and publishes new data. Saved mesh edits stage
+the same snapshot with `staged_snapshot` and apply it to their source instead.
 SPZ, .splat and PLY units are first read on a worker: splats are decoded there
 and shown by `splat_application`, and a mesh PLY returns here. While the
 local-operation slot is busy, a PLY is only verified and imports here if it is
@@ -26,6 +27,7 @@ import tempfile
 import threading
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import bpy
@@ -528,7 +530,7 @@ def _members(files, asset_ids):
     return selected
 
 
-def _snapshot_glb(unit, files, directory):
+def _snapshot_glb(unit, files, directory, *, static_only=False):
     item, path = _members(files, (unit.key,))[0]
     if item.asset.media_type not in GLB_MEDIA_TYPES:
         raise ModelPreflightError("Choose a supported saved GLB receipt")
@@ -536,7 +538,7 @@ def _snapshot_glb(unit, files, directory):
         data = source.read()
         source.finish()
     try:
-        document = inspect_glb(data, static_only=False)
+        document = inspect_glb(data, static_only=static_only)
     except GLBError as error:
         raise ModelPreflightError(str(error)) from None
     entry = directory / "model.glb"
@@ -544,7 +546,7 @@ def _snapshot_glb(unit, files, directory):
     return entry, unit.members, 0, bool(document.get("skins"))
 
 
-def _snapshot_gltf(unit, files, directory):
+def _snapshot_gltf(unit, files, directory, *, static_only=False):
     item, path = _members(files, (unit.key,))[0]
     with _Receipt(item, path, MAX_GLTF_JSON_BYTES) as source:
         data = source.read()
@@ -559,7 +561,7 @@ def _snapshot_gltf(unit, files, directory):
             )
         )
     try:
-        package = inspect_gltf_json(data, resources=resources, static_only=False)
+        package = inspect_gltf_json(data, resources=resources, static_only=static_only)
         rigged = bool(json.loads(package.document).get("skins"))
     except (ModelPackageError, ValueError) as error:
         raise ModelPreflightError(str(error)) from None
@@ -647,14 +649,15 @@ _SNAPSHOTS = {
 }
 
 
-def prepare_snapshot(unit, files):
+def prepare_snapshot(unit, files, *, static_only=False):
     """Rehash one unit's members into a private snapshot before any claim.
 
     `files` maps every saved asset ID of the verified job to its (StoredResult,
     path). Members are opened without following links, must match their
     receipts byte for byte and are written under canonical names after OBJ, MTL
     and glTF references are rewritten. Nothing touches the scene. Any failure
-    raises ModelPreflightError and removes the snapshot.
+    raises ModelPreflightError and removes the snapshot. `static_only` also
+    refuses a GLB or glTF with skins or animations, as static mesh edits require.
     """
     if threading.current_thread() is not threading.main_thread():
         raise ModelPreflightError("Import models on Blender's main thread")
@@ -668,9 +671,10 @@ def prepare_snapshot(unit, files):
     try:
         # The fourth value is whether the importer needs a window: Blender's FBX,
         # OBJ and PLY operators require one, and glTF needs it only for armatures.
-        entry, members, dropped, windowed = _SNAPSHOTS[unit.format](
-            unit, files, Path(temporary.name)
-        )
+        snapshot = _SNAPSHOTS[unit.format]
+        if unit.format in (ModelFormat.GLB, ModelFormat.GLTF):
+            snapshot = partial(snapshot, static_only=static_only)
+        entry, members, dropped, windowed = snapshot(unit, files, Path(temporary.name))
         if windowed and bpy.context.window is None:
             raise ModelPreflightError(
                 "Rigged model import requires a Blender window context"
@@ -693,20 +697,28 @@ def _discard(temporary):
         _log.warning("Model snapshot cleanup failed; temporary files may remain")
 
 
-def _run_importer(fmt, entry):
+def _run_importer(fmt, entry, *, animation=True):
     if fmt in (ModelFormat.GLB, ModelFormat.GLTF):
         _import(entry)
         return
     if fmt is ModelFormat.FBX:
+        # The file's own axes and units apply; its unit scale stays on the
+        # imported objects, so world transforms keep their size.
         result = bpy.ops.import_scene.fbx(
             filepath=str(entry),
             use_image_search=False,
-            use_anim=True,
+            use_anim=animation,
             mtl_name_collision_mode="MAKE_UNIQUE",
         )
     elif fmt is ModelFormat.OBJ:
+        # Y-up, -Z forward: the glTF convention, so an OBJ and a GLB of the same
+        # coordinates land in the same Blender positions.
         result = bpy.ops.wm.obj_import(
-            filepath=str(entry), validate_meshes=True, mtl_name_collision_mode="MAKE_UNIQUE"
+            filepath=str(entry),
+            validate_meshes=True,
+            mtl_name_collision_mode="MAKE_UNIQUE",
+            forward_axis="NEGATIVE_Z",
+            up_axis="Y",
         )
     else:
         result = bpy.ops.wm.ply_import(filepath=str(entry))
@@ -797,6 +809,34 @@ def _pack_snapshot_images(previous, directory):
         image.filepath = ""
 
 
+def use_snapshot(snapshot):
+    """Mark a prepared, unused snapshot as consumed; it imports at most once."""
+    if not isinstance(snapshot, ModelSnapshot) or snapshot.used or snapshot._temporary is None:
+        raise ModelApplicationError("Prepare the saved model again")
+    snapshot.used = True
+
+
+@contextmanager
+def staged_snapshot(snapshot, previous, *, animation=True):
+    """Import a consumed snapshot into a disposable scene; yield it and the new objects.
+
+    Images get the unit's texture roles and must be packed from the model or the
+    snapshot itself. `animation=False` keeps FBX clips out. The caller owns
+    removing the staging scene and every datablock new since `previous`.
+    """
+    fmt = snapshot.unit.format
+    gltf = fmt in (ModelFormat.GLB, ModelFormat.GLTF)
+    staging, objects = _stage(
+        previous,
+        lambda: _run_importer(fmt, snapshot.entry, animation=animation),
+        gltf_timing=gltf,
+        deselect=not gltf,
+    )
+    _apply_texture_roles(previous, snapshot.directory, snapshot.unit.texture_files)
+    _pack_snapshot_images(previous, snapshot.directory)
+    yield staging, objects
+
+
 def import_snapshot(scene, snapshot, *, cursor, history=False):
     """Import one prepared snapshot into a new group; only new data is published.
 
@@ -806,40 +846,33 @@ def import_snapshot(scene, snapshot, *, cursor, history=False):
     must not record its partial states.
     """
     validate_destination(scene, cursor)
-    if not isinstance(snapshot, ModelSnapshot) or snapshot.used or snapshot._temporary is None:
-        raise ModelApplicationError("Prepare the saved model again")
-    snapshot.used = True
+    use_snapshot(snapshot)
     undo = _begin_history(history)
     fmt = snapshot.unit.format
     gltf = fmt in (ModelFormat.GLB, ModelFormat.GLTF)
     previous = _snapshot(_PACKAGE_TRACKED)
     destination = scene.render.fps / scene.render.fps_base
     try:
-        staging, objects = _stage(
-            previous,
-            lambda: _run_importer(fmt, snapshot.entry),
-            gltf_timing=gltf,
-            deselect=not gltf,
-        )
-        _apply_texture_roles(previous, snapshot.directory, snapshot.unit.texture_files)
-        _pack_snapshot_images(previous, snapshot.directory)
-        # glTF converts seconds at the destination rate. FBX instead sets the
-        # file's frame rate on the staging scene; the destination keeps its own,
-        # so different rates play the imported clips at another speed.
-        mismatch = (
-            not gltf
-            and bool(set(bpy.data.actions) - previous["actions"])
-            and not math.isclose(
-                staging.render.fps / staging.render.fps_base, destination, rel_tol=1e-6
+        with staged_snapshot(snapshot, previous) as (staging, objects):
+            # glTF converts seconds at the destination rate. FBX instead sets the
+            # file's frame rate on the staging scene; the destination keeps its own,
+            # so different rates play the imported clips at another speed.
+            mismatch = (
+                not gltf
+                and bool(set(bpy.data.actions) - previous["actions"])
+                and not math.isclose(
+                    staging.render.fps / staging.render.fps_base, destination, rel_tol=1e-6
+                )
             )
-        )
-        layer = staging.view_layers[0]
-        with bpy.context.temp_override(scene=staging, view_layer=layer):
-            staging.frame_set(0)
-            layer.update()
-            anchor = _bottom_center(objects)
-        application = _publish(scene, objects, cursor, snapshot.unit.key, anchor, snapshot.members)
-        bpy.data.scenes.remove(staging)
+            layer = staging.view_layers[0]
+            with bpy.context.temp_override(scene=staging, view_layer=layer):
+                staging.frame_set(0)
+                layer.update()
+                anchor = _bottom_center(objects)
+            application = _publish(
+                scene, objects, cursor, snapshot.unit.key, anchor, snapshot.members
+            )
+            bpy.data.scenes.remove(staging)
     except Exception:
         _remove_new_data(previous, _PACKAGE_DATA)
         if _snapshot(_PACKAGE_TRACKED) != previous:

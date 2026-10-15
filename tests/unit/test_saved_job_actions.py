@@ -16,12 +16,10 @@ from scenario.core.ui import saved_job_actions as sja
 
 ROOT = Path(__file__).resolve().parents[2]
 TYPES = sja.ResultTypes(
-    model="model/gltf-binary",
     media={"video/mp4": "video", "video/webm": "video", "audio/wav": "audio"},
     world=WORLD_MEDIA_TYPES,
 )
 PLAYABLE = sja.ResultTypes(
-    model=TYPES.model,
     media=TYPES.media,
     world=TYPES.world,
     playback={media_type: kind for media_type, (kind, _) in PLAYBACK_TYPES.items()},
@@ -399,11 +397,74 @@ def test_media_and_model_controls_number_every_saved_asset():
         ),
         AWAITING,
     ]
-    # Without a classified unit, a GLB keeps the plain wording.
+    # In-place edits stage a classified unit; an unclassified GLB offers none.
     unclassified = view(("apply_mesh",), "apply_failed", assets, import_units=())
-    assert [item.label for item in sja.describe(unclassified, CONTEXT, TYPES)][:2] == [
-        "Apply mesh edit (4)",
-        "Apply mesh edit (6)",
+    assert [item.key for item in sja.describe(unclassified, CONTEXT, TYPES)] == ["awaiting_review"]
+
+
+def test_mesh_edits_name_fbx_obj_and_gltf_units_and_skip_splats_and_ply():
+    # A UV job: FBX first, two OBJ alternates, maps; then other formats.
+    assets = (
+        ("albedo", "image/png"),
+        ("fbx", "model/x-fbx"),
+        ("obj-a", "model/obj"),
+        ("obj-b", "model/obj"),
+        ("gltf", "model/gltf+json"),
+        ("ply", "model/ply"),
+        ("spz", "model/spz"),
+    )
+    units = (
+        ("fbx", "fbx", True),
+        ("gltf", "gltf", False),
+        ("obj-a", "obj", False),
+        ("obj-b", "obj", False),
+        ("ply", "ply", False),
+        ("spz", "spz", False),
+    )
+    actions = ("apply_mesh", "apply_mesh_source")
+    subject = view(actions, "ready", assets, import_units=units)
+    mesh = "scenario.apply_saved_mesh"
+    edit = {"original_source": False}
+    source = {"original_source": True}
+    assert rows(sja.describe(subject, CONTEXT, TYPES)) == [
+        asset("apply_mesh", mesh, "Apply mesh edit: FBX (2)", "fbx", **edit),
+        asset("apply_mesh", mesh, "Apply alternate mesh edit: glTF (5)", "gltf", **edit),
+        asset("apply_mesh", mesh, "Apply alternate mesh edit: OBJ (3)", "obj-a", **edit),
+        asset("apply_mesh", mesh, "Apply alternate mesh edit: OBJ (4)", "obj-b", **edit),
+        asset("apply_mesh_source", mesh, "Apply to captured source: FBX (2)", "fbx", **source),
+        asset(
+            "apply_mesh_source",
+            mesh,
+            "Apply alternate to captured source: glTF (5)",
+            "gltf",
+            **source,
+        ),
+        asset(
+            "apply_mesh_source",
+            mesh,
+            "Apply alternate to captured source: OBJ (3)",
+            "obj-a",
+            **source,
+        ),
+        asset(
+            "apply_mesh_source",
+            mesh,
+            "Apply alternate to captured source: OBJ (4)",
+            "obj-b",
+            **source,
+        ),
+        AWAITING,
+    ]
+    # A primary GLB keeps the plain wording beside an alternate OBJ.
+    remesh = view(
+        ("apply_mesh",),
+        "ready",
+        (("glb", "model/gltf-binary"), ("obj", "model/obj")),
+        import_units=(("glb", "glb", True), ("obj", "obj", False)),
+    )
+    assert [item.label for item in sja.describe(remesh, CONTEXT, TYPES)][:2] == [
+        "Apply mesh edit (1)",
+        "Apply alternate mesh edit: OBJ (2)",
     ]
 
 
@@ -587,7 +648,7 @@ def test_descriptors_are_immutable_and_reading_does_not_change_the_view():
         item.label = "Changed"
     assert (subject.asset_ids, subject.asset_types, subject.meta) == before
     # Result types hold a mapping yet stay usable as a key, by identity.
-    assert {TYPES: True}[TYPES] and TYPES != sja.ResultTypes(TYPES.model, {}, frozenset())
+    assert {TYPES: True}[TYPES] and TYPES != sja.ResultTypes({}, frozenset())
 
 
 def _mcp_spec(name):

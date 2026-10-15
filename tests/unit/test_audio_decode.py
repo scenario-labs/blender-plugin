@@ -245,6 +245,13 @@ def test_invalid_child_output_is_rejected(monkeypatch, spec, workspace, header, 
     assert list(directory.iterdir()) == [source]
 
 
+def test_a_deeply_nested_header_is_an_invalid_waveform(tmp_path):
+    # Within the header size limit, yet past Python 3.11's JSON nesting limit.
+    (tmp_path / "envelope.json").write_bytes(b"[" * 2000 + b"]" * 2000)
+    with pytest.raises(WaveformError, match="invalid waveform"):
+        audio_decode.envelope(tmp_path)
+
+
 def test_decoded_sample_and_duration_limits_bind_the_output(monkeypatch, spec, workspace):
     samples = tone(RATE, 0.25, 0.5)
     install(monkeypatch, Child(samples))

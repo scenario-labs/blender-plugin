@@ -1155,14 +1155,20 @@ alternate result of the job, as in `job_status` `import_units`. See
 
 ## Mesh coordinates and surface matching
 
-Without `mesh_placement`, the review starts on `FIT` when the requested or derived
-policy is `UV`, `RETEXTURE` or `RIG`, and on `WORLD` otherwise; an explicit value
-wins; `ANIMATE` uses no coordinates. The approval returns `fit_bases` and a
-null `result_to_source` for a fit, which is verified only during application. `WORLD` and `LOCAL` stay strict.
-These three policies match every returned result mesh together, and a mismatch
-stops with its counted reason in the job `error`. After success,
-`mesh_edit.result_to_source` and `mesh_edit.fitted_from` report the mapping used.
-See [surface matching](MESH_APPLICATION.md#surface-matching).
+Without `mesh_placement`, the review starts on `FIT`, except on `WORLD` for
+`ANIMATE`, which uses no coordinates, and for a `REMESH` with
+`mesh_policy_source: default`; an explicit value wins. The approval returns
+`fit_bases` and a null `result_to_source` for a fit, which is verified only during
+application. `WORLD` and `LOCAL` stay strict.
+UV, RETEXTURE, RIG and PARTS split from the source's faces match every returned
+result mesh together; REMESH and copied PARTS verify a fit by surface distance.
+A mismatch stops with its reason in the job `error`. After success,
+`mesh_edit.result_to_source` and `mesh_edit.fitted_from` report the mapping used,
+`mesh_edit.fit_residual` the surface-distance check (`max_distance` and
+`beyond_tolerance`, fractions of the source size; null without one) and
+`mesh_edit.joined_meshes` how many REMESH result meshes were joined into one.
+See [surface matching](MESH_APPLICATION.md#surface-matching) and the
+[bounds fit](MESH_APPLICATION.md#bounds-fit-for-remeshes-and-copied-parts).
 
 
 ## Saved mesh undo status
@@ -1188,7 +1194,12 @@ Use `mesh_policy: PARTS` with `purpose: mesh_edit` or `mesh_source` and one
 explicit saved mesh unit. Review that every mesh in this artifact is intended as
 a part. The source retains its object identity and becomes an empty mesh parent
 with 2 to 128 named static children; Keep original defaults to true. The same
-explicit coordinate mapping, target checks, durable claims and undo limits apply.
+coordinate mapping or fit, target checks, durable claims and undo limits apply.
+When those meshes together are the source surface, the source is split along
+them and each part keeps its UVs, materials and attributes
+(`mesh_edit.parts_from: source_faces`); otherwise, such as for remeshed parts,
+the result meshes are copied (`result_meshes`). Which applies is known only
+after import, so describe both before approval.
 `mesh_edit.parts` reports the child names while the live application is valid;
 history invalidation clears the transient mesh status without resetting the job.
 Do not reconstruct authority from those names. See the

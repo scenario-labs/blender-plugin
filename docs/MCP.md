@@ -438,7 +438,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -1143,6 +1143,18 @@ alternate result of the job, as in `job_status` `import_units`. See
 [the approval contract](MESH_APPLICATION.md#saved-mesh-edit-approval).
 
 
+## Mesh coordinates and surface matching
+
+Without `mesh_placement`, the review starts on `FIT` when the requested or derived
+policy is `UV`, `RETEXTURE` or `RIG`, and on `WORLD` otherwise; an explicit value
+wins; `ANIMATE` uses no coordinates. The approval returns `fit_bases` and a
+null `result_to_source` for a fit, which is verified only during application. `WORLD` and `LOCAL` stay strict.
+These three policies match every returned result mesh together, and a mismatch
+stops with its counted reason in the job `error`. After success,
+`mesh_edit.result_to_source` and `mesh_edit.fitted_from` report the mapping used.
+See [surface matching](MESH_APPLICATION.md#surface-matching).
+
+
 ## Saved mesh undo status
 
 `mesh_edit.undo_available` reports whether a desktop Blender history checkpoint
@@ -1177,8 +1189,8 @@ Do not reconstruct authority from those names. See the
 
 Use `mesh_policy: RIG` with `purpose: mesh_source` for the unchanged original
 exported source, or `mesh_edit` for a newly reviewed destination. Show the named
-source, coordinate mapping and Keep original choice. One returned mesh and
-armature must have exactly matching indexed geometry and normalized bone weights.
+source, coordinate mapping and Keep original choice. One returned armature's
+skinned meshes must together be the source surface, with normalized bone weights.
 A source already skinned to an armature accepts only RIG or ANIMATE. RIG replaces
 its skin, its old rig is unchanged and Keep original's copy still follows that rig.
 Static policies on such a source are rejected; see

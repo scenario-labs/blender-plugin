@@ -187,6 +187,35 @@ class MeshApplicationTests(unittest.TestCase):
             self.apply(policy="UV")
         self.assertIs(self.source.data, before)
 
+    def test_uv_accepts_rounding_and_a_triangulated_reordered_result(self):
+        self.result.data.vertices[0].co.x = 1e-6
+        receipt = self.apply(policy="UV")
+        self.assertIsNotNone(receipt.surface.match)
+        self.receipts.remove(receipt)
+        receipt.rollback()
+        self.result.data.clear_geometry()
+        for layer in tuple(self.result.data.uv_layers):
+            self.result.data.uv_layers.remove(layer)
+        self.result.data.from_pydata(
+            [(1, 1, 0), (0, 1, 0), (0, 0, 0), (1, 0, 0)], [], [(0, 1, 2), (2, 3, 0)]
+        )
+        layer = self.result.data.uv_layers.new(name="Result UV")
+        uv = {0: (0.75, 0.75), 1: (0.25, 0.75), 2: (0.25, 0.25), 3: (0.75, 0.25)}
+        for loop in self.result.data.loops:
+            layer.data[loop.index].uv = uv[loop.vertex_index]
+        self.apply(policy="UV")
+        expected = [(0.25, 0.25), (0.75, 0.25), (0.75, 0.75), (0.25, 0.75)]
+        self.assertEqual([tuple(item.uv) for item in self.source.data.uv_layers[0].data], expected)
+
+    def test_split_results_share_one_component_bound(self):
+        other = self.mesh("Second result")
+        sizes = [self.module._components(obj.data) for obj in (self.result, other)]
+        with patch.object(self.module, "MAX_COMPONENTS", sum(sizes) - 1):
+            with self.assertRaisesRegex(self.module.MeshApplicationError, "component limit"):
+                self.module.match_surface(
+                    self.source, (self.result, other), Matrix.Identity(4), "UV"
+                )
+
     def test_uv_rejects_changed_indexed_topology(self):
         self.result.data.clear_geometry()
         self.result.data.from_pydata(
@@ -276,14 +305,18 @@ class MeshApplicationTests(unittest.TestCase):
     def test_retexture_rejects_geometry_change_and_reindexed_faces(self):
         before = self.source.data
         self.result.data.vertices[0].co.x = 0.01
-        with self.assertRaisesRegex(self.module.MeshApplicationError, "topology"):
+        with self.assertRaisesRegex(
+            self.module.MeshApplicationError, "does not match the source mesh"
+        ):
             self.apply(policy="RETEXTURE")
         self.assertIs(self.source.data, before)
         self.result.data.clear_geometry()
         self.result.data.from_pydata(
             [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)], [], [(3, 2, 1, 0)]
         )
-        with self.assertRaisesRegex(self.module.MeshApplicationError, "topology"):
+        with self.assertRaisesRegex(
+            self.module.MeshApplicationError, "does not match the source mesh"
+        ):
             self.apply(policy="RETEXTURE")
         self.assertIs(self.source.data, before)
 

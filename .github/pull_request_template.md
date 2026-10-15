@@ -19,7 +19,8 @@ only for a behavior change. Name any action needed after merge and any known gap
 Closes #n for complete issue scope; Refs #n otherwise, saying what remains.
 
 When relevant, show a visible change with screenshots in a table, before/after
-for UI; see docs/development/contributions.md#screenshots.
+for UI. Agents leave a [drop <file>] placeholder per image; see
+docs/development/contributions.md#screenshots.
 
 -->
 

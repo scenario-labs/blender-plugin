@@ -112,10 +112,24 @@ Show a visible change (panel, composer, viewport result or site page) with
 screenshots in a Markdown table, before and after for UI changes.
 [Repeatable GUI screenshots](../../CONTRIBUTING.md#repeatable-gui-screenshots)
 capture the Blender UI. Attach images by dragging them into the PR description
-or a comment; never commit them or push asset branches. An agent without a
-browser saves them under `workdir/` and asks the person to attach them. The
-images are public: show no credentials, account or project names, or private
-assets.
+or a comment; never commit them or push asset branches. The images are public:
+show no credentials, account or project names, or private assets.
+
+GitHub has no command-line upload for attachments, so an agent prepares the drop:
+
+1. Save the images in `workdir/pr-screenshots/<branch>/` with numbered names,
+   such as `01-sidebar-before.png`.
+2. Put a placeholder naming each file in the table cell where it belongs:
+
+   ```markdown
+   | Before | After |
+   | --- | --- |
+   | [drop 01-sidebar-before.png] | [drop 02-sidebar-after.png] |
+   ```
+
+3. Give the person the folder's absolute path, opened in their file manager
+   when possible. They drop each file on its placeholder and delete the
+   placeholder text.
 
 ## Review readiness and acceptance follow-ups
 

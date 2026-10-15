@@ -239,12 +239,17 @@ def _copy(action, slot, rig, ratio):
 
 def _track(data, name, action, slot):
     track = data.nla_tracks.new()
-    track.name = name
-    strip = track.strips.new(name, math.floor(action.frame_range[0]), action)
-    strip.action_slot = slot
-    track.mute = True
-    if strip.action_slot != slot:
-        raise mesh.MeshApplicationError("Could not keep a clip in the NLA")
+    try:
+        track.name = name
+        strip = track.strips.new(name, math.floor(action.frame_range[0]), action)
+        strip.action_slot = slot
+        track.mute = True
+        if strip.action_slot != slot:
+            raise mesh.MeshApplicationError("Could not keep a clip in the NLA")
+    except BaseException:
+        # The caller's rollback only knows the tracks returned to it.
+        data.nla_tracks.remove(track)
+        raise
     return track
 
 

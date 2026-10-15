@@ -1443,15 +1443,22 @@ class AnimateResultTests(unittest.TestCase):
         hips.location = (0, 0, 0)
         self.mesh.validate_target(self.target)
         before = _animation(self.rig)
+        track = self.animation._track
         failures = {
-            "cleanup": (self.module, "_release_import"),
-            "receipt": (self.animation, "AnimationApplication"),
+            "cleanup": (self.module, "_release_import", RuntimeError("synthetic")),
+            "receipt": (self.animation, "AnimationApplication", RuntimeError("synthetic")),
+            # A clip track that fails after Blender created it.
+            "track": (
+                self.animation,
+                "_track",
+                lambda data, name, action, slot: track(data, name, object(), slot),
+            ),
         }
-        for kind, (owner, name) in failures.items():
+        for kind, (owner, name, effect) in failures.items():
             with self.subTest(failure=kind):
                 snapshot = self.model._snapshot()
                 with (
-                    patch.object(owner, name, side_effect=RuntimeError("synthetic")),
+                    patch.object(owner, name, side_effect=effect),
                     self.assertRaises(self.module.MeshResultApplicationError),
                 ):
                     self.apply(policy="ANIMATE")

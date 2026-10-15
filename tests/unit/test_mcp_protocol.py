@@ -264,12 +264,19 @@ def test_a_deeply_nested_body_is_a_parse_error():
 
 
 @pytest.mark.parametrize("method", ["initialize", "ping", "tools/call"])
-@pytest.mark.parametrize("params", [["echo"], "echo", 3, 1.5, True])
+@pytest.mark.parametrize("params", [["echo"], "echo", 3, 1.5, True, [], "", 0, 0.0, False])
 def test_parameters_that_are_not_an_object_are_invalid(method, params):
     reply = protocol.handle_message(
         {"jsonrpc": "2.0", "id": 4, "method": method, "params": params}, registry(), INFO
     )
     assert reply["id"] == 4 and reply["error"]["code"] == protocol.INVALID_PARAMS
+
+
+def test_null_parameters_are_omitted_parameters():
+    reply = protocol.handle_message(
+        {"jsonrpc": "2.0", "id": 4, "method": "ping", "params": None}, registry(), INFO
+    )
+    assert reply == {"jsonrpc": "2.0", "id": 4, "result": {}}
 
 
 @pytest.mark.parametrize("name", [["echo"], {"echo": 1}, 3])

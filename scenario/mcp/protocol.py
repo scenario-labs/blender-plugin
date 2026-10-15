@@ -180,9 +180,11 @@ def handle_message(message, registry, server_info, executor=None):
             INVALID_REQUEST,
             "Invalid JSON-RPC request",
         )
-    method, msg_id, params = message["method"], message.get("id"), message.get("params") or {}
+    method, msg_id, params = message["method"], message.get("id"), message.get("params")
     if msg_id is None:  # notification
         return None
+    if params is None:  # Omitted, or null from a lenient client.
+        params = {}
     if not isinstance(params, dict):
         return _error(msg_id, INVALID_PARAMS, "Invalid params: use a JSON object")
     if method == "initialize":

@@ -73,7 +73,8 @@ Use the [canonical contribution guide](docs/development/contributions.md) for
 the type definitions, [scope-to-path map](docs/development/contributions.md#scopes),
 breaking changes, attribution and review follow-up. Complete the
 [PR template](.github/pull_request_template.md) briefly, with the checks you
-actually ran; human review can remain pending when an agent opens the PR.
+actually ran, any action needed after merge and any known gap; human review can
+remain pending when an agent opens the PR.
 Release automation owns version fields and changelog updates. See the
 [release procedure](docs/RELEASING.md) for current publication behavior.
 

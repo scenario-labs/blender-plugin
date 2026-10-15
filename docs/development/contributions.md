@@ -69,10 +69,11 @@ sources retain their original compatible licenses, notices and attribution.
 
 Start PR descriptions with `## What does this PR change?` from the template.
 State the problem and the change in one to three sentences; add a before/after
-only for a behavior change. List validation one line per command with its result.
-Omit file lists, test-case lists and narrative the diff already shows. Automated
-summaries describe the final diff; do not invent passing counts, approvals or authorship.
-Use `Closes` only for fully completed issues and `Refs` for partial work.
+only for a behavior change. Name any action needed after merge and any known gap.
+List validation one line per command with its result. Omit file lists, test-case
+lists and narrative the diff already shows. Automated summaries describe the final
+diff; do not invent passing counts, approvals or authorship. Use `Closes` only for
+fully completed issues and `Refs` for partial work, saying what remains.
 Before creating or updating a PR, read related issues and check their current
 acceptance criteria against the final diff and verified evidence. Add missing
 references, explain remaining scope for partial work, and verify GitHub's closing

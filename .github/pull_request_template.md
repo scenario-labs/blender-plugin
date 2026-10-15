@@ -13,7 +13,8 @@ without comment. Never claim review, results or authorization that has not happe
 ## What does this PR change?
 
 <!-- One to three sentences: the problem and what changes. Add a before/after
-only for a behavior change. Closes #n for complete issue scope, Refs #n otherwise. -->
+only for a behavior change. Name any action needed after merge and any known gap.
+Closes #n for complete issue scope; Refs #n otherwise, saying what remains. -->
 
 ## Validation
 

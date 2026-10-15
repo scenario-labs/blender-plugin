@@ -182,8 +182,9 @@ Use the [readiness policy](docs/development/contributions.md#review-readiness-an
 for actual draft blockers; never claim unperformed checks passed.
 
 Write PR descriptions, commit bodies and review replies briefly: what changed and
-why, then the checks you ran, one line each. Omit what the diff, CI or template
-already shows; explain an unticked check only when the change needed it.
+why, the checks you ran (one line each), and any action needed after merge or
+known gap. Omit what the diff, CI or template already shows; explain an unticked
+check only when the change needed it.
 
 Use short-lived conventional branches. Independent PRs and the bottom of a stack
 target `main`; dependent PRs target their immediate parent branch. Follow the

@@ -226,8 +226,9 @@ for the domain; #492 records the move from GitHub Pages.
 one anonymous PostHog event per counted request after the request continues:
 `extension_downloaded` for `GET /repo/scenario-X.Y.Z.zip` and
 `repository_checked` for `GET /repo/index.json`, with the properties listed in
-the [privacy page](PRIVACY.md#where-it-goes). HEAD requests, resumed downloads
-and other files are not counted. A ZIP keeps its version only when the
+the [privacy page](PRIVACY.md#where-it-goes). Every event carries
+`plugin: "blender"`, because the PostHog project is shared with other Scenario
+plugins. HEAD requests, resumed downloads and other files are not counted. A ZIP keeps its version only when the
 repository index lists it. The middleware reads that index from Pages, caches
 it for five minutes and rereads it at most once a minute for an unseen version.
 Any other name, which Pages cannot serve, counts as `unknown`, and so does every

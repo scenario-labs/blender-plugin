@@ -87,7 +87,7 @@ test("runs only for the repository directory", () => {
   assert.equal(config.runtime, "nodejs");
 });
 
-test("records a Blender download with its versions, platform and country only", async () => {
+test("records a Blender download with its plugin, versions, platform and country only", async () => {
   const result = await visit("/repo/scenario-0.10.0.zip", { "user-agent": BLENDER, "x-vercel-ip-country": "FR" });
 
   assert.equal(result, undefined);
@@ -98,6 +98,7 @@ test("records a Blender download with its versions, platform and country only", 
   assert.equal(body.event, "extension_downloaded");
   assert.match(String(body.distinct_id), /^[0-9a-f-]{36}$/);
   assert.deepEqual(body.properties, {
+    plugin: "blender",
     extension_version: "0.10.0",
     client: "blender",
     blender_version: "5.0.1",
@@ -179,6 +180,7 @@ test("records a repository check from Blender", async () => {
   assert.equal(received.length, 1);
   assert.equal(received[0].body.event, "repository_checked");
   assert.deepEqual(received[0].body.properties, {
+    plugin: "blender",
     client: "blender",
     blender_version: "5.0.1",
     os: "Darwin",
@@ -194,6 +196,7 @@ test("records other clients without Blender details", async () => {
 
   assert.equal(received.length, 1);
   assert.deepEqual(received[0].body.properties, {
+    plugin: "blender",
     extension_version: "0.10.0",
     client: "other",
     $process_person_profile: false,

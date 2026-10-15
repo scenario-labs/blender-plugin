@@ -37,7 +37,8 @@ function describe(request: Request): { event: string; properties: Record<string,
   if (range && !range.startsWith("bytes=0-")) return undefined;
 
   const path = new URL(request.url).pathname;
-  const properties: Record<string, unknown> = {};
+  // The PostHog project is shared with other Scenario plugins.
+  const properties: Record<string, unknown> = { plugin: "blender" };
   let event: string;
   const archive = ARCHIVE.exec(path);
   if (archive) {

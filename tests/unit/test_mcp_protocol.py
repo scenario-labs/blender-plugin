@@ -258,6 +258,30 @@ def test_parse_body_errors():
     assert protocol.parse_body(b'{"jsonrpc":"2.0","id":1,"method":"ping"}')[0]["method"] == "ping"
 
 
+def test_a_deeply_nested_body_is_a_parse_error():
+    message, err = protocol.parse_body(b"[" * 100_000 + b"]" * 100_000)
+    assert message is None and err["error"]["code"] == protocol.PARSE_ERROR
+
+
+@pytest.mark.parametrize("method", ["initialize", "ping", "tools/call"])
+@pytest.mark.parametrize("params", [["echo"], "echo", 3, 1.5, True])
+def test_parameters_that_are_not_an_object_are_invalid(method, params):
+    reply = protocol.handle_message(
+        {"jsonrpc": "2.0", "id": 4, "method": method, "params": params}, registry(), INFO
+    )
+    assert reply["id"] == 4 and reply["error"]["code"] == protocol.INVALID_PARAMS
+
+
+@pytest.mark.parametrize("name", [["echo"], {"echo": 1}, 3])
+def test_a_tool_name_that_is_not_a_string_names_no_tool(name):
+    reply = protocol.handle_message(
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": name}},
+        registry(),
+        INFO,
+    )
+    assert reply["error"]["code"] == protocol.INVALID_PARAMS
+
+
 PRIVATE_PATH = "/fixture-home/blender-profile/extensions/user_default/scenario/private.png"
 INSTALLED_DIR = os.path.dirname(os.path.dirname(protocol.__file__))
 UNEXPECTED = "fail failed unexpectedly; see the Blender console"

@@ -396,7 +396,7 @@ Use `make test-blender` to create the managed profile and exact candidate ZIP.
 
 [Blender baseline CI](.github/workflows/blender-baseline.yml) runs the same native
 baseline on Linux x64 and Windows x64 with Blender **5.0.1, 5.1.2 and 5.2.1**;
-documentation-only pull requests [skip it](docs/development/validation.md). It reuses the release pipeline's checksum-verifying setup action and
+documentation-only and site-only pull requests [skip it](docs/development/validation.md). It reuses the release pipeline's checksum-verifying setup action and
 publishes logs/reports/ZIPs, including on failure. The `blender-baseline-ok` check
 requires every leg to pass. To change a pinned version, verify each platform
 archive checksum in the official [Blender download directory](https://download.blender.org/release/), update the

@@ -16,9 +16,10 @@ the Linux/Windows Blender baseline, knowledge checks, agent-skill validation and
 the site script tests as reusable workflows on pull requests and pushes to `main`.
 Its `changes` job skips the Blender baseline on a pull request when every changed
 file is a root Markdown file, the PR template, or under `docs/`, `.agents/`,
-`.claude/`, `.codex/` or `.github/ISSUE_TEMPLATE/`. Any other path, a push or an
-unreadable diff runs the baseline. The `ci-ok` job waits for that classification
-and all seven workloads and passes only when each succeeds. It accepts a skipped
+`.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `tools/site_proxy/` or
+`tests/site/`. Any other path, a push or an unreadable diff runs the baseline.
+The `ci-ok` job waits for that classification and all seven workloads and passes
+only when each succeeds. It accepts a skipped
 baseline only when the classification succeeded and found no native input;
 failed, cancelled, other skipped or missing results fail the gate. PR
 updates cancel older CI runs for that PR. Concurrency belongs to the caller so

@@ -326,9 +326,11 @@ def classify(tmp_path, files, event="pull_request", merge=True):
         {"docs/new/page.md": "# New\n", "docs/index.md": None},
         {".agents/skills/s/SKILL.md": "x\n", ".claude/CLAUDE.md": "x\n", ".codex/config.toml": ""},
         {".github/ISSUE_TEMPLATE/bug.yml": "x\n", ".github/pull_request_template.md": "x\n"},
+        {"tools/site_proxy/middleware.ts": "x\n", "tests/site/middleware.test.ts": "x\n"},
+        {"tools/site_proxy/vercel.json": "{}\n", "docs/index.md": "# Changed\n"},
     ],
 )
-def test_documentation_only_pull_requests_skip_native_checks(tmp_path, files):
+def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, files):
     assert classify(tmp_path, files) == "false"
 
 
@@ -342,6 +344,9 @@ def test_documentation_only_pull_requests_skip_native_checks(tmp_path, files):
         {"LICENSE": "Changed\n"},
         {".github/workflows/ci.yml": "name: Changed\n"},
         {"scenario/core.py": None, "docs/core.py": "VALUE = 1\n"},
+        {"tools/site_proxy/middleware.ts": "x\n", "scenario/core.py": "VALUE = 2\n"},
+        {"tools/site_proxy.py": "x\n"},
+        {"tests/site.py": "x\n"},
         {},
     ],
 )

@@ -41,6 +41,7 @@ jobs:
               case "$path" in
                 docs/* | .agents/* | .claude/* | .codex/* | .github/ISSUE_TEMPLATE/*) ;;
                 .github/pull_request_template.md) ;;
+                tools/site_proxy/* | tests/site/*) ;;
                 */*) echo "Native input: $path"; native=true ;;
                 *.md) ;;
                 *) echo "Native input: $path"; native=true ;;

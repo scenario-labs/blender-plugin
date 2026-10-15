@@ -32,7 +32,7 @@ tools/*.blend?
 *.blend1
 *.blend2
 
-# Commitlint run locally with the same npm command as CI
+# Node tooling installs with pnpm from pnpm-lock.yaml; npm's lockfile is not used
 node_modules/
 package-lock.json
 

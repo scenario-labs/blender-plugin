@@ -10,6 +10,7 @@
   <a href="https://help.scenario.com"><img alt="App documentation" src="https://img.shields.io/badge/documentation-app-black.svg"></a>
   <a href="https://mcp.scenario.com/docs"><img alt="MCP documentation" src="https://img.shields.io/badge/documentation-mcp-black.svg"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/scenario-labs/blender-plugin"><img alt="OpenSSF Scorecard" src="https://img.shields.io/ossf-scorecard/github.com/scenario-labs/blender-plugin?label=openssf+scorecard&style=flat"></a>
+  <a href="https://www.bestpractices.dev/projects/15531"><img alt="OpenSSF Best Practices" src="https://img.shields.io/cii/level/15531?label=openssf+best+practices&style=flat"></a>
 </p>
 
 **Experimental.** Bring Scenario image, video, 3D, PBR material, audio and 360
@@ -245,6 +246,3 @@ The [SPZ reader](scenario/core/scene/spz.py) reads
 [Niantic's SPZ Gaussian splat format](https://github.com/nianticlabs/spz).
 The [MCP protocol module](scenario/mcp/protocol.py) supports protocol revisions
 2025-06-18, 2025-03-26 and 2024-11-05.
-
-The Scenario logo comes from the [official skills repository](https://github.com/scenario-labs/skills/blob/main/resources/scenario-logo.png);
-its [original source licence](docs/images/scenario-logo.LICENSE) is retained.

@@ -1,6 +1,5 @@
 name: Bug report
 description: The plugin, a generation, or an MCP tool behaves wrong
-labels: ["bug"]
 type: Bug
 projects: ["scenario-labs/31"]
 body:

@@ -581,7 +581,7 @@ remote job and asset, without a receipt. The caller, which owns the waiting
 step projection, supplies that step's asset IDs.
 
 The [preview lane](#application-owned-workers) runs six commands with the cache
-root supplied by the application, and a seventh, `world_sizes`, without it. `prepare_result_previews(work, root=...)`
+root supplied by the application, and two more, `world_sizes` and `result_files`, without it. `prepare_result_previews(work, root=...)`
 rechecks that each target still holds the same receipt (a review target, the
 same `remote` workflow job), reads verified cache
 entries, issues private decode copies for images and audio, and reads server
@@ -617,7 +617,14 @@ with the declared width and height, or none when the record no longer holds
 that receipt as a candidate, the file cannot be read or those bytes declare no
 size. It neither hashes nor copies; the
 [World offer](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) uses it only
-as a display filter. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
+as a display filter. `result_files(targets)` takes the same bounded triples
+naming downloaded results of a ready job (`ready`, `applying`, `apply_failed` or
+`applied`) and rehashes each file against its receipt without following links.
+It returns each triple with a check (verified, missing or changed, the file's
+location and its identity as hashed; unavailable when the file changed while it
+was hashed), or none when the record no longer holds that receipt in a ready job. Local MCP
+[`job_status`](MCP.md#saved-result-files) lists only verified files;
+the check authorizes no application. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
 revision, claims application or submits work. See
 [result previews](RESULT_PREVIEWS.md) for renditions, limits and the polling
 window.

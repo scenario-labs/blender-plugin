@@ -72,8 +72,9 @@ are checked with [commitlint.config.ts](commitlint.config.ts).
 Use the [canonical contribution guide](docs/development/contributions.md) for
 the type definitions, [scope-to-path map](docs/development/contributions.md#scopes),
 breaking changes, attribution and review follow-up. Complete the
-[PR template](.github/pull_request_template.md) with actual validation evidence
-and limitations; human review can remain pending when an agent opens the PR.
+[PR template](.github/pull_request_template.md) briefly, with the checks you
+actually ran, any action needed after merge and any known gap; human review can
+remain pending when an agent opens the PR.
 Release automation owns version fields and changelog updates. See the
 [release procedure](docs/RELEASING.md) for current publication behavior.
 
@@ -144,8 +145,8 @@ reviews do not constitute human approval.
 
 ## How issues are triaged
 
-Maintainers choose the issue type and one primary area, using labels such as
-`bug`, `enhancement`, `documentation`, `question` and `area:*`. For defects, include
+Maintainers set the issue type (Bug, Feature or Task) and one primary area, using
+labels such as `documentation`, `question` and `area:*`. For defects, include
 the observed Blender and OS versions; `needs-repro` or `needs-info` requests
 missing evidence. `model-behaviour` distinguishes provider behavior from an
 extension defect, while `known-limit` points to the limitations guide.
@@ -394,9 +395,9 @@ Do not invoke `tests/blender/run_all.py` directly; missing, malformed or unrelat
 runner ownership records are refused with exit status 2 before importing `bpy`.
 Use `make test-blender` to create the managed profile and exact candidate ZIP.
 
-[Blender baseline CI](.github/workflows/blender-baseline.yml) runs the full offline
-unit suite on Linux and the same native baseline on Linux x64 and Windows x64
-with Blender **5.0.1, 5.1.2 and 5.2.1**. It reuses the release pipeline's checksum-verifying setup action and
+[Blender baseline CI](.github/workflows/blender-baseline.yml) runs the same native
+baseline on Linux x64 and Windows x64 with Blender **5.0.1, 5.1.2 and 5.2.1**;
+documentation-only and site-only pull requests [skip it](docs/development/validation.md). It reuses the release pipeline's checksum-verifying setup action and
 publishes logs/reports/ZIPs, including on failure. The `blender-baseline-ok` check
 requires every leg to pass. To change a pinned version, verify each platform
 archive checksum in the official [Blender download directory](https://download.blender.org/release/), update the
@@ -701,9 +702,17 @@ other OS/GPU acceptance.
 
 Edit [the Markdown guide](docs/USER_GUIDE.md) for all guide prose. The
 [handbook template](docs/handbook-template.html) contains presentation, navigation
-and version slots only. `make docs` renders the guide to ignored `site/index.html`
-and copies just its referenced images beside it. A neighboring `.assets.json`
-record lets repeat builds remove unchanged image copies that the guide no longer
+and version slots only, plus `{{style}}` and `{{search}}`, which inline
+[docs/site.css](docs/site.css) and [docs/handbook-search.js](docs/handbook-search.js)
+from beside it. The search indexes the page's own sections when it loads, so the
+single-file handbook searches offline; test it with
+`node --test tests/site/handbook-search.test.ts` (Node 24). It stays JavaScript
+because browsers run the inlined file as is; `// @ts-check` and JSDoc types let
+the Site CI job type-check it with `tsc --checkJs`. The downloads pages
+under `repo/` come from [tools/site_pages.py](tools/site_pages.py) and inline the
+same stylesheet and wordmark. `make docs` renders the guide to ignored `site/index.html`
+and copies just its referenced images, the template's favicons included, beside
+it. A neighboring `.assets.json` record lets repeat builds remove unchanged image copies that the guide no longer
 uses, including when switching the same output to inline mode. Unrecorded files
 are retained; modified old copies and symlinked destinations stop the build for
 inspection. Keep that record with a website output directory between builds.
@@ -847,11 +856,12 @@ retain the original and print the reason. An unchanged truecolour screenshot
 still fails readiness; reshoot it or review a justified exception in
 [the shared image policy](tools/docs_images.py), rather than changing a test alone.
 
-The original `scenario-logo.png` is deliberately excluded: its unchanged upstream
-bytes and separate licence record are preserved. The image checks permit that
-one provenance exception; the CLI and unit suite share checks for missing images,
-unused screenshots, truecolour screenshots and short Markdown alt text. Evidence
-frontmatter cannot keep an unused image alive. The social card, when present,
+The original `scenario-logo.png` and the favicons are deliberately excluded:
+they are Scenario's own brand assets, kept byte-identical to their source and
+added without a licence note, since [TRADEMARKS.md](TRADEMARKS.md) covers them.
+The image checks permit those exceptions; the CLI and unit suite share checks
+for missing images, unused screenshots, truecolour screenshots and short
+Markdown alt text. Evidence frontmatter cannot keep an unused image alive. The social card, when present,
 has an explicit unused-image exception because GitHub repository settings host it.
 Optimization also preserves this generated card; use its dedicated generator
 below to rebuild it. An invalid non-palette card still fails the shared checks.

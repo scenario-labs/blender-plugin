@@ -155,7 +155,7 @@ left a partial file; a recorded artifact can later expire or be deleted.
 
 A separate downstream job owns issue-writing permission and creates or comments
 on the exact open title `api: model schema drift detected by the weekly contract check`,
-with `bug`, `feature:API`, `quality` and `area:ci` labels. Workflow concurrency
+with the Task type and `feature:API`, `quality` and `area:ci` labels. Workflow concurrency
 serializes reporting; paginated exact-title lookup rejects ambiguous duplicates
 and does not retry an uncertain write. Reports are bounded literal excerpts,
 not executable or rendered schema instructions. The issue distinguishes an

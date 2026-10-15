@@ -618,8 +618,8 @@ as a display filter. `result_files(targets)` takes the same bounded triples
 naming downloaded results of a ready job (`ready`, `applying`, `apply_failed` or
 `applied`) and rehashes each file against its receipt without following links.
 It returns each triple with a check (verified, missing or changed, the file's
-location and its identity as hashed), or none when the record no longer holds
-that receipt in a ready job or the file changed while it was hashed. Local MCP
+location and its identity as hashed; unavailable when the file changed while it
+was hashed), or none when the record no longer holds that receipt in a ready job. Local MCP
 [`job_status`](MCP.md#saved-result-files) lists only verified files;
 the check authorizes no application. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
 revision, claims application or submits work. See

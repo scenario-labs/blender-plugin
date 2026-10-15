@@ -911,9 +911,12 @@ class ModelJobs:
         self._check_files()
 
     def _check_files(self):
-        """Queue one preview-lane check of the watched jobs' unchecked result files."""
-        if self._files.busy:
-            return
+        """Queue one preview-lane check of the watched jobs' unchecked result files.
+
+        Files this session verified are settled even while a batch is in flight,
+        so a wait on them does not wait for another job's check.
+        """
+        busy = self._files.busy
         targets = []
         for request_id in self._files.watched:
             try:
@@ -923,8 +926,9 @@ class ModelJobs:
                 continue
             if record is None:
                 self._files.forget(request_id)
-            else:
-                self._files.seed(record, self.session.verified_files(request_id))
+                continue
+            self._files.seed(record, self.session.verified_files(request_id))
+            if not busy:
                 # A waited job also notices a file changed since its check.
                 targets.extend(
                     self._files.unchecked(record, revalidate=request_id in self._file_waits)

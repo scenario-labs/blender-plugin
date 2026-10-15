@@ -90,7 +90,7 @@ class ResultFiles:
     ``BATCH_LIMIT`` targets is in flight at a time, so the checks never hold
     the preview lane longer than a preview batch. A check that could not run
     (``unavailable``) is still to come: it is queued again after a delay that
-    doubles up to ``RETRY_CAP``.
+    doubles up to ``RETRY_CAP``, and no wait waits for it.
     """
 
     def __init__(self, *, clock=time.monotonic):
@@ -164,21 +164,19 @@ class ResultFiles:
         return tuple(due)
 
     def pending(self, record):
-        """Whether a status read of this watched ready job would report a check to come.
+        """Whether a wait on this watched ready job waits for a check.
 
-        That is a result still checking or unavailable, including a listed
-        file whose identity changed since its check.
+        That is a result still checking, including a listed file whose identity
+        changed since its check. An unavailable check's retry holds no wait.
         """
         request_id = record.intent.request_id
         if request_id not in self._watched or record.state not in READY_STATES:
             return False
-        for item in record.results:
-            if item.receipt is None:
-                continue
-            check = self._current((request_id, item.asset.asset_id), item)
-            if check is None or check.state == UNAVAILABLE:
-                return True
-        return False
+        return any(
+            item.receipt is not None
+            and self._current((request_id, item.asset.asset_id), item) is None
+            for item in record.results
+        )
 
     def seed(self, record, verified):
         """Settle results this session already verified, from (asset_id, FileCheck) pairs.

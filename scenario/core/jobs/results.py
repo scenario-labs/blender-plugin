@@ -1129,9 +1129,10 @@ class ResultCommands:
         """Rehash downloaded results of ready jobs for status display; see result_files.
 
         Preview-lane work. Each target is a (request_id, asset_id, sha256)
-        triple; the answer appends a ``FileCheck``, or None when this scope's
-        store no longer holds that receipt in a ready job or the file changed
-        while it was hashed. It never fetches, applies or writes the job store.
+        triple; the answer appends a ``FileCheck`` (unavailable when the file
+        changed while it was hashed), or None when this scope's store no longer
+        holds that receipt in a ready job. It never fetches, applies or writes
+        the job store.
         """
         # Imported here: the scheduler imports the workers, which import this module.
         from .preview_scheduler import BATCH_LIMIT
@@ -1184,8 +1185,8 @@ class ResultCommands:
         except Exception:
             state = _unverified_state(path, receipt)
         if result_files.file_stamp(path) != before:
-            # Changed while it was hashed: the next poll checks it again.
-            return None
+            # Changed while it was hashed: retried after a delay, not on every poll.
+            return result_files.FileCheck(sha256, result_files.UNAVAILABLE, path)
         return result_files.FileCheck(sha256, state, path, before)
 
     def _world_size(self, request_id, asset_id, sha256):

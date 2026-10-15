@@ -90,12 +90,17 @@ class McpJobFilesTests(unittest.TestCase):
         self.enterContext(patch.object(self.runtime, "JobSession", side_effect=session))
         owner = self
         self.assets, self.files, self.downloads = {}, {}, []
+        # Cleared by a test to hold downloads until it sets it again.
+        self.gate = threading.Event()
+        self.gate.set()
+        self.addCleanup(self.gate.set)
 
         class OfflineDownloader(self.transfers.ResultDownloader):
             """The real host policy and verification, with bytes served from memory."""
 
             def download(self, url, *, root, name, max_bytes=None, **kwargs):
                 self._policy.destination(url)
+                owner.gate.wait(30)
                 owner.downloads.append(name)
                 data = owner.files[url]
                 with (Path(root) / name).open("xb") as target:
@@ -322,6 +327,62 @@ class McpJobFilesTests(unittest.TestCase):
         self.restart()
         status = self.wait(self.mcp.wait_for_job({"job_id": "request", "timeout": 30}))
         self.assertFalse(status["file_check_pending"])
+        self.assert_listed(status, directory)
+
+    def test_wait_for_job_does_not_wait_for_the_retry_of_a_check_that_could_not_run(self):
+        self.saved()
+        self.restart()
+        session = self.runtime.ensure_job_session()
+        error = submodule("core.jobs.results").ResultError
+
+        def failing(targets, *, cancel):
+            raise error("The check could not run")
+
+        self.enterContext(patch.object(session._coordinator, "result_files", failing))
+        started = time.monotonic()
+        status = self.wait(self.mcp.wait_for_job({"job_id": "request", "timeout": 20}))
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertIs(self.runtime.state.job_session, session)
+        # Blender retries it by itself; job_status still reports a check to come.
+        self.assertTrue(status["file_check_pending"])
+        self.assertEqual(status["files"], [])
+        self.assertEqual({row["file_state"] for row in status["results"]}, {"unavailable"})
+
+    def test_files_downloaded_while_another_job_is_checked_end_a_wait_at_once(self):
+        self.saved("held")
+        record = self.succeeded()
+        self.runtime.inspect_model_jobs()
+        coordinator = self.runtime.state.job_session._coordinator
+        release = threading.Event()
+        self.addCleanup(release.set)
+        check = coordinator.result_files
+
+        def held(targets, *, cancel):
+            release.wait(30)
+            return check(targets, cancel=cancel)
+
+        self.enterContext(patch.object(coordinator, "result_files", held))
+        # The first read of a job this session did not verify holds the preview lane.
+        self.assertTrue(self.served("job_status", {"job_id": "held"})["file_check_pending"])
+        files = self.runtime.state.model_jobs._files
+        self.assertTrue(files.busy)
+        self.gate.clear()
+        with online_access(True):
+            self.runtime.control_model_job(
+                self.runtime.state.job_context_id, "delivered", record.revision, "resume"
+            )
+            deferred = self.mcp.wait_for_job({"job_id": "delivered", "timeout": 20})
+            threading.Timer(0.2, self.gate.set).start()
+            started = time.monotonic()
+            status = self.wait(deferred)
+        # The download hashed these bytes, so the wait ends without the other check.
+        self.assertLess(time.monotonic() - started, 10)
+        self.assertTrue(files.busy)
+        self.assertEqual(status["status"], "ready")
+        self.assertFalse(status["file_check_pending"], status)
+        directory = coordinator._results._directory(
+            self.runtime.state.job_store.get("delivered"), create=False
+        )
         self.assert_listed(status, directory)
 
     def test_missing_or_changed_files_are_reported_but_never_listed(self):

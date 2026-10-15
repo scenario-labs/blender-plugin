@@ -299,7 +299,15 @@ def test_checks_stay_in_their_credential_scope(env):
     )
 
 
-def test_a_file_changing_while_it_is_checked_is_checked_again(env, monkeypatch):
+class Clock:
+    def __init__(self):
+        self.now = 100.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_a_file_changing_while_it_is_checked_is_retried_with_a_growing_delay(env, monkeypatch):
     record = ready_job(env, "request", [("clip", "video/mp4", MP4)])
     path = directory_of(env, record) / record.results[0].asset.name
     verify = env.downloader.verify
@@ -310,21 +318,22 @@ def test_a_file_changing_while_it_is_checked_is_checked_again(env, monkeypatch):
         return value
 
     monkeypatch.setattr(env.downloader, "verify", racing)
-    files = ResultFiles()
-    rows = settle(files, env.coordinator, record)
-    assert states(rows) == [("clip", CHECKING)] and files.pending(record)
-    assert files.unchecked(record) == (("request", "clip", record.results[0].receipt.sha256),)
+    clock = Clock()
+    files = ResultFiles(clock=clock)
+    target = ("request", "clip", record.results[0].receipt.sha256)
+    for delay in (5.0, 10.0):
+        rows = settle(files, env.coordinator, record)
+        # A file that keeps changing is not rehashed on every poll.
+        assert states(rows) == [("clip", UNAVAILABLE)] and listed(rows) == []
+        clock.now += delay - 0.5
+        assert files.unchecked(record) == ()
+        clock.now += 0.5
+        assert files.unchecked(record) == (target,)
+    monkeypatch.setattr(env.downloader, "verify", verify)
+    assert listed(settle(files, env.coordinator, record)) == [str(path)]
 
 
-class Clock:
-    def __init__(self):
-        self.now = 100.0
-
-    def __call__(self):
-        return self.now
-
-
-def test_a_check_that_could_not_run_stays_pending_and_is_retried_with_a_growing_delay(env):
+def test_a_check_that_could_not_run_is_retried_with_a_growing_delay_and_holds_no_wait(env):
     record = ready_job(env, "request", [("clip", "video/mp4", MP4)])
     clock = Clock()
     files = ResultFiles(clock=clock)
@@ -337,8 +346,8 @@ def test_a_check_that_could_not_run_stays_pending_and_is_retried_with_a_growing_
         files.start(failing, files.unchecked(record))
         files.finish()
         assert states(files.project(record)) == [("clip", UNAVAILABLE)]
-        # Still a check to come, so a wait keeps waiting for it.
-        assert files.pending(record)
+        # Its retry runs by itself, so a wait does not wait for it.
+        assert not files.pending(record)
         clock.now += delay - 0.5
         assert files.unchecked(record) == ()
         clock.now += 0.5
@@ -361,7 +370,7 @@ def test_an_unreadable_file_is_unavailable_not_changed(env):
     finally:
         path.chmod(0o600)
     assert states(rows) == [("clip", UNAVAILABLE)] and listed(rows) == []
-    assert files.pending(record)
+    assert not files.pending(record)
     clock.now += 5.0
     assert listed(settle(files, env.coordinator, record)) == [str(path)]
 

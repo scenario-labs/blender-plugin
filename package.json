@@ -6,6 +6,6 @@
     "@commitlint/config-conventional": "^21.2.3",
     "@commitlint/types": "^21.2.3",
     "@types/node": "^24.19.2",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }

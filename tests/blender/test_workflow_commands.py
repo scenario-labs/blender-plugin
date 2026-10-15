@@ -316,15 +316,26 @@ class WorkflowCommandTests(unittest.TestCase):
         linked = self.store.get(request_id)
         self.assertEqual((linked.state.value, linked.remote_job_id), ("remote", "workflow-job"))
         # Polled like any workflow job: a waiting step would now be reviewable.
+        self.settle_commands(owner)
         polls = self.job_reads()
         owner._next_poll[request_id] = 0
         self.settle()
         self.assertGreater(self.job_reads(), polls)
+        self.settle_commands(owner)
         self.remote_job["status"] = "failure"
         owner._next_poll[request_id] = 0
         self.settle()
+        self.settle_commands(owner)
         self.assertEqual(self.store.get(request_id).state.value, "failed")
         self.assertEqual(len(self.paid), 1)
+
+    def settle_commands(self, owner):
+        """Finish every command in flight, so a later poll starts from a quiet owner."""
+        for _ in range(10):
+            if not owner._commands:
+                return
+            self.settle()
+        self.fail("Saved workflow job commands did not settle")
 
     def test_failed_persistence_consumes_approval_without_spending(self):
         quote = self.quote()

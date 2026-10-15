@@ -132,11 +132,12 @@ retired code in `archive/`. Recover history from commits/tags; update durable
 engineering explanations in the appropriate docs instead of agent session logs.
 
 Keep documentation changes in feature PRs small: correct only the prose your
-change makes wrong, in the existing style. Test runs, platforms and review notes
-belong in the PR body, not in docs. Do not edit `docs/knowledge/` records except
-to add one for a new document or to fix a checker error. Source drift warnings
-are expected; one [release refresh](docs/maintenance/knowledge.md#release-refresh)
-per version reviews them.
+change makes wrong, in the fewest words that state current behavior. Test runs,
+platforms and review notes belong in the PR body, not in docs. Do not edit
+`docs/knowledge/` records except to add one for a new document or to fix a
+checker error. Source drift warnings are expected; one
+[release refresh](docs/maintenance/knowledge.md#release-refresh) per version
+reviews them.
 
 This repository is public. Do not add session/resume IDs, personal paths, account
 records, workspace identifiers, spend anecdotes or private research exports.
@@ -179,6 +180,10 @@ reviewable PR draft solely for unverified edge cases or broader issue acceptance
 track concrete follow-up checks in the owning issue and link them from the PR.
 Use the [readiness policy](docs/development/contributions.md#review-readiness-and-acceptance-follow-ups)
 for actual draft blockers; never claim unperformed checks passed.
+
+Write PR descriptions, commit bodies and review replies briefly: what changed and
+why, then the checks you ran, one line each. Omit what the diff, CI or template
+already shows; explain an unticked check only when the change needed it.
 
 Use short-lived conventional branches. Independent PRs and the bottom of a stack
 target `main`; dependent PRs target their immediate parent branch. Follow the

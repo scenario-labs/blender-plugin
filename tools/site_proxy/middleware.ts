@@ -4,9 +4,13 @@
 // It runs before vercel.json forwards the request to GitHub Pages and never
 // changes the response: the event is sent after the request continues, and
 // any failure only loses that count. Nothing identifies the visitor: no IP
-// address, no stable identifier, only the fields built below.
+// address, no stable identifier, only the fields built below. A ZIP keeps its
+// version only when the repository index lists it; any other name, which
+// Pages cannot serve, counts as "unknown".
 
 export const config = { matcher: "/repo/:path*", runtime: "nodejs" };
+// The GitHub Pages copy of the site: vercel.json forwards every request there.
+export const ORIGIN = "https://scenario-labs.github.io/blender-plugin";
 
 interface RequestContext {
   waitUntil(promise: Promise<unknown>): void;
@@ -16,6 +20,10 @@ interface RequestContext {
 const BLENDER = /^Blender\/(\d+\.\d+\.\d+)(?: \(([^ ;)]+) ([^ ;)]+); cycle=([a-z]+)\))?/;
 const ARCHIVE = /^\/repo\/scenario-(\d+\.\d+\.\d+)\.zip$/;
 const TIMEOUT_MS = 2000;
+// Published versions are cached; an unseen version rereads at most once a minute.
+const INDEX_TTL_MS = 5 * 60_000;
+const INDEX_RETRY_MS = 60_000;
+const published = new Map<string, { versions: Set<string>; at: number }>();
 
 function describe(request: Request): { event: string; properties: Record<string, unknown> } | undefined {
   if (request.method !== "GET") return undefined;
@@ -54,7 +62,33 @@ function describe(request: Request): { event: string; properties: Record<string,
   return { event, properties };
 }
 
+async function isPublished(version: string): Promise<boolean> {
+  // Read the index from Pages directly: through this site it would count itself.
+  const origin = process.env.SITE_ORIGIN || ORIGIN;
+  const now = Date.now();
+  const cached = published.get(origin);
+  const age = cached ? now - cached.at : Infinity;
+  if (cached && age < INDEX_TTL_MS && (cached.versions.has(version) || age < INDEX_RETRY_MS)) {
+    return cached.versions.has(version);
+  }
+  let versions = cached?.versions ?? new Set<string>();
+  try {
+    const response = await fetch(`${origin}/repo/index.json`, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (response.ok) {
+      const index = (await response.json()) as { data?: { version?: unknown }[] };
+      versions = new Set((index.data ?? []).map((item) => String(item.version)));
+    }
+  } catch {
+    // Keep the last versions read; an unreadable index only makes this count unknown.
+  }
+  published.set(origin, { versions, at: now });
+  return versions.has(version);
+}
+
 async function send(token: string, event: string, properties: Record<string, unknown>): Promise<void> {
+  if (event === "extension_downloaded" && !(await isPublished(String(properties.extension_version)))) {
+    properties.extension_version = "unknown";
+  }
   const host = process.env.POSTHOG_HOST || "https://us.i.posthog.com";
   try {
     const response = await fetch(`${host}/i/v0/e/`, {

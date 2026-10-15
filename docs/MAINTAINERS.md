@@ -225,10 +225,16 @@ one anonymous PostHog event per counted request after the request continues:
 `extension_downloaded` for `GET /repo/scenario-X.Y.Z.zip` and
 `repository_checked` for `GET /repo/index.json`, with the properties listed in
 the [privacy page](PRIVACY.md#where-it-goes). HEAD requests, resumed downloads
-and other files are not counted. It reads the project token from
-`POSTHOG_PROJECT_TOKEN` and the optional ingestion host from `POSTHOG_HOST`
-(US cloud by default); without a token it counts nothing. A send that fails or
-takes over two seconds is logged and dropped without changing the response.
+and other files are not counted. A ZIP keeps its version only when the
+repository index lists it. The middleware reads that index from Pages, caches
+it for five minutes and rereads it at most once a minute for an unseen version.
+Any other name, which Pages cannot serve, counts as `unknown`, and so does every
+ZIP while the index cannot be read. A new release's first minutes can count as
+`unknown` until both caches refresh: Pages also serves the index for ten minutes. It reads the project token from
+`POSTHOG_PROJECT_TOKEN`, the optional ingestion host from `POSTHOG_HOST`
+(US cloud by default) and the optional Pages address from `SITE_ORIGIN`;
+without a token it counts nothing. A send that fails or takes over two seconds
+is logged and dropped without changing the response.
 
 A Blender download is an install or an update; the request does not say which.
 Index requests are repository additions and manual update checks, not active

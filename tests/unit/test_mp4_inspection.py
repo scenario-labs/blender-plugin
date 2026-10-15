@@ -111,7 +111,8 @@ def test_a_movie_box_with_a_64_bit_size_reads_the_same(tmp_path):
     (size,) = struct.unpack_from(">I", data, offset)
     large = data[:offset] + struct.pack(">I4sQ", 1, b"moov", size + 8) + data[offset + 8 :]
     expected = mp4.inspect(write(tmp_path, data))
-    assert mp4.inspect(write(tmp_path, large, "large.mp4")) == expected
+    actual = mp4.inspect(write(tmp_path, large, "large.mp4"))
+    assert actual == expected
 
 
 def test_real_mpeg4_part2_fixture_is_not_reported_as_h264():

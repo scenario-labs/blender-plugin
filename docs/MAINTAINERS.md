@@ -228,9 +228,14 @@ one anonymous PostHog event per counted request after the request continues:
 `repository_checked` for `GET /repo/index.json`, with the properties listed in
 the [privacy page](PRIVACY.md#where-it-goes). Every event carries
 `plugin: "blender"`, because the PostHog project is shared with other Scenario
-plugins. HEAD requests, resumed downloads and other files are not counted. A ZIP keeps its version only when the
-repository index lists it. The middleware reads that index from Pages, caches
-it for five minutes and rereads it at most once a minute for an unseen version.
+plugins. Its `client` says who made the request: `blender`, `browser`, `tool`
+for scripts and command-line clients, `bot` for crawlers and link checkers, or
+`other`. Events recorded before that split use `other` for everything except
+Blender. The dashboard's download counts leave out `bot` and `tool`. HEAD
+requests, resumed downloads and other files are not counted. A ZIP keeps its
+version only when the repository index lists it. The middleware reads that index
+from Pages, caches it for five minutes and rereads it at most once a minute for
+an unseen version.
 Any other name, which Pages cannot serve, counts as `unknown`, and so does every
 ZIP while the index cannot be read. A new release's first minutes can count as
 `unknown` until both caches refresh: Pages also serves the index for ten

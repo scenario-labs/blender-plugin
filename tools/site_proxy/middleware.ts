@@ -18,6 +18,11 @@ interface RequestContext {
 
 // Blender's extension manager sends "Blender/5.0.1 (Darwin arm64; cycle=release)".
 const BLENDER = /^Blender\/(\d+\.\d+\.\d+)(?: \(([^ ;)]+) ([^ ;)]+); cycle=([a-z]+)\))?/;
+// Crawlers, link checkers and previews, matched before browsers because many
+// announce themselves as "Mozilla/5.0 (compatible; ...bot...)".
+const BOT = /bot|crawl|spider|slurp|facebookexternalhit|preview|lychee|linkcheck|headless|lighthouse/i;
+// Scripts and command-line tools; an empty User-Agent counts as one too.
+const TOOL = /^(curl|wget|python|go-http-client|node|undici|axios|okhttp|java|libwww|httpie|aiohttp)|powershell/i;
 const ARCHIVE = /^\/repo\/scenario-(\d+\.\d+\.\d+)\.zip$/;
 const TIMEOUT_MS = 2000;
 // Published versions are cached; an unseen version rereads at most once a minute.
@@ -28,6 +33,14 @@ const published = new Map<string, { versions: Set<string>; at: number }>();
 // Read through globalThis: Vercel type-checks this file without Node's types.
 function env(name: string): string | undefined {
   return (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[name];
+}
+
+/** Who made a request that is not Blender: a crawler, a script, a browser or something else. */
+function classify(agent: string): string {
+  if (BOT.test(agent)) return "bot";
+  if (!agent || TOOL.test(agent)) return "tool";
+  if (agent.startsWith("Mozilla/")) return "browser";
+  return "other";
 }
 
 function describe(request: Request): { event: string; properties: Record<string, unknown> } | undefined {
@@ -50,8 +63,9 @@ function describe(request: Request): { event: string; properties: Record<string,
     return undefined;
   }
 
-  const blender = BLENDER.exec(request.headers.get("user-agent") ?? "");
-  properties.client = blender ? "blender" : "other";
+  const agent = request.headers.get("user-agent") ?? "";
+  const blender = BLENDER.exec(agent);
+  properties.client = blender ? "blender" : classify(agent);
   if (blender) {
     properties.blender_version = blender[1];
     if (blender[2]) {

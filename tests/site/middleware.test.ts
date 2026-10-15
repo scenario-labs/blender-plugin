@@ -191,17 +191,41 @@ test("records a repository check from Blender", async () => {
   });
 });
 
-test("records other clients without Blender details", async () => {
+test("records a browser download without Blender details", async () => {
   await visit("/repo/scenario-0.10.0.zip", { "user-agent": BROWSER, "x-vercel-ip-country": "not a code" });
 
   assert.equal(received.length, 1);
   assert.deepEqual(received[0].body.properties, {
     plugin: "blender",
     extension_version: "0.10.0",
-    client: "other",
+    client: "browser",
     $process_person_profile: false,
     $geoip_disable: true,
   });
+});
+
+test("sorts other clients into crawlers, scripts, browsers and the rest", async () => {
+  const cases: [string, string][] = [
+    ["Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", "bot"],
+    ["Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)", "bot"],
+    ["facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)", "bot"],
+    ["Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/141.0 Safari/537.36", "bot"],
+    ["Scenario-Blender-LinkCheck lychee/0.24.2", "bot"],
+    ["curl/8.7.1", "tool"],
+    ["Wget/1.21.4", "tool"],
+    ["python-requests/2.32.3", "tool"],
+    ["Go-http-client/2.0", "tool"],
+    ["", "tool"],
+    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36", "browser"],
+    ["SomethingElse/1.0", "other"],
+  ];
+
+  for (const [agent, client] of cases) {
+    received = [];
+    await visit("/repo/scenario-0.10.0.zip", agent ? { "user-agent": agent } : {});
+
+    assert.equal((received[0].body.properties as Record<string, unknown>).client, client, agent || "(no User-Agent)");
+  }
 });
 
 test("ignores other repository files, HEAD requests and resumed downloads", async () => {

@@ -76,10 +76,11 @@ agent connection uses loopback HTTP, described below.
 The official update repository and handbook use `https://blender.scenario.com/`,
 served by Vercel from the copy hosted by GitHub Pages. The site counts each
 download of a release ZIP and each fetch of the repository index. A count records
-that it comes from this extension, the extension version for a download, whether the request came from Blender,
-Blender's version, release cycle, operating system and processor from its
-User-Agent, and the country Vercel derives from your address. The count holds
-no IP address and no identifier that links one request to another. The Release
+that it comes from this extension, the extension version for a download, whether
+the request came from Blender, a browser, a script or a crawler, Blender's
+version, release cycle, operating system and processor from its User-Agent, and
+the country Vercel derives from your address. The count holds no IP address, no
+User-Agent text and no identifier that links one request to another. The Release
 ZIPs button opens `https://github.com/scenario-labs/blender-plugin/releases` in
 your browser.
 Blender stores the repository configuration and cache through its native manager.

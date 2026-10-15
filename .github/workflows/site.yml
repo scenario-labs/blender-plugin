@@ -20,13 +20,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - name: Install TypeScript from the lockfile
+      - name: Install TypeScript and Vitest from the lockfile
         run: pnpm install --frozen-lockfile
       - name: Type-check the proxy middleware
         run: >-
           pnpm exec tsc --noEmit --strict --target es2022
           --module nodenext --moduleResolution nodenext --allowImportingTsExtensions
           --types node tools/site_proxy/middleware.ts tests/site/middleware.test.ts
+          tests/site/middleware.fuzz.ts
       # Vercel type-checks the middleware alone, without Node's types.
       - name: Type-check the middleware as Vercel builds it
         run: >-
@@ -45,3 +46,5 @@ jobs:
         run: >-
           node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
           --test tests/site/middleware.test.ts tests/site/handbook-search.test.ts
+      - name: Fuzz the middleware with property-based tests
+        run: pnpm exec vitest run

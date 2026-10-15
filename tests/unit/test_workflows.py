@@ -329,6 +329,7 @@ def classify(tmp_path, files, event="pull_request", merge=True):
         {"tools/site_proxy/middleware.ts": "x\n", "tests/site/middleware.test.ts": "x\n"},
         {"tools/site_proxy/vercel.json": "{}\n", "docs/index.md": "# Changed\n"},
         {".nvmrc": "24\n", "package.json": "{}\n", "pnpm-lock.yaml": "x\n"},
+        {"vitest.config.mts": "x\n", "tests/site/middleware.fuzz.ts": "x\n"},
     ],
 )
 def test_documentation_and_site_only_pull_requests_skip_native_checks(tmp_path, files):

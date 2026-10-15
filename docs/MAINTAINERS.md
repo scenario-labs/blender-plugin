@@ -251,8 +251,9 @@ Index requests are repository additions and manual update checks, not active
 installations, because the extension sets up the repository without startup
 checks. Manual installs from release assets are not counted, and the release
 download counters include CI downloads. [CI](../.github/workflows/site.yml)
-type-checks the middleware and runs [its tests](../tests/site/middleware.test.ts);
-locally, run `node --test tests/site/middleware.test.ts` with Node 24.
+type-checks the middleware and runs [its tests](../tests/site/middleware.test.ts)
+and [property-based tests](../tests/site/middleware.fuzz.ts); locally, run
+`node --test tests/site/middleware.test.ts` and `pnpm exec vitest run` with Node 24.
 
 ## Access
 

@@ -42,7 +42,7 @@ jobs:
                 docs/* | .agents/* | .claude/* | .codex/* | .github/ISSUE_TEMPLATE/*) ;;
                 .github/pull_request_template.md) ;;
                 tools/site_proxy/* | tests/site/*) ;;
-                .nvmrc | package.json | pnpm-lock.yaml) ;;
+                .nvmrc | package.json | pnpm-lock.yaml | vitest.config.mts) ;;
                 */*) echo "Native input: $path"; native=true ;;
                 *.md) ;;
                 *) echo "Native input: $path"; native=true ;;

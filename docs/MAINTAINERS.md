@@ -262,8 +262,9 @@ The inspected repository team grants are `@scenario-labs/platform` with
 On 2026-10-13 the maintainer lowered `platform` from admin to maintain, and both
 grants were read back (#20, #21). By the same decision no extra direct write
 grants are added; do not publish personal access records.
-[CODEOWNERS](../.github/CODEOWNERS) requests reviews for specific release,
-automation, licence and security paths; it grants no access. Required
+[CODEOWNERS](../.github/CODEOWNERS) requests the maintainer's review on every
+pull request, and the platform team's on release, automation, licence and
+security paths; it grants no access. Required
 code-owner approval stays off by the maintainer's decision while there is one
 active maintainer (#21).
 

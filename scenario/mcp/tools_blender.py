@@ -72,13 +72,14 @@ def _summary_filter(args):
         collection = bpy.data.collections.get(args["collection"])
         if collection is None:
             raise ValueError(f"No collection named {args['collection']!r}")
-        members = {obj.name for obj in collection.all_objects}
+        # A linked object can share a local object's name, so match the objects themselves.
+        members = {obj.as_pointer() for obj in collection.all_objects}
     needle = name_contains.casefold()
 
     def keep(obj):
         return (
             (types is None or obj.type in types)
-            and (members is None or obj.name in members)
+            and (members is None or obj.as_pointer() in members)
             and needle in obj.name.casefold()
             and (not selected_only or obj.select_get())
         )

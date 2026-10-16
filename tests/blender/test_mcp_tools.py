@@ -75,6 +75,23 @@ class McpToolsTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 self.tb.scene_summary(bad)
 
+    def test_scene_summary_collection_filter_ignores_a_linked_namesake(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "twin.blend")
+            twin = bpy.data.objects.new("Twin", None)
+            bpy.data.libraries.write(path, {twin})
+            bpy.data.objects.remove(twin)
+            with bpy.data.libraries.load(path, link=True) as (_, target):
+                target.objects = ["Twin"]
+            bpy.context.scene.collection.objects.link(target.objects[0])
+            stage = bpy.data.collections.new("Stage")
+            bpy.context.scene.collection.children.link(stage)
+            stage.objects.link(bpy.data.objects.new("Twin", None))
+            twins = self.tb.scene_summary({"name_contains": "Twin", "fields": []})
+            self.assertEqual(twins["total"], 2)
+            staged = self.tb.scene_summary({"collection": "Stage", "fields": []})
+            self.assertEqual((staged["total"], staged["objects"]), (1, [{"name": "Twin"}]))
+
     def test_scene_summary_caps_selected_and_camera_names(self):
         for index in range(55):
             camera = bpy.data.objects.new(f"Shot {index:02}", bpy.data.cameras.new("Shot"))

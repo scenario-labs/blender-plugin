@@ -25,13 +25,13 @@ import stat
 import tempfile
 import threading
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import bpy
 from mathutils import Vector
 
-from ..core.scene import splat_ply, splats
+from ..core.scene import placement, splat_ply, splats
 from ..core.scene.glb import MAX_GLB_BYTES, GLBError, inspect_glb
 from ..core.scene.model_formats import (
     FORMAT_MEDIA_TYPES,
@@ -105,6 +105,13 @@ class ModelApplication:
     frame_rate_mismatch: bool = False
     # Point counts, axes and SPZ flags of a splat import; None for meshes.
     splat: dict | None = None
+    # The group's world-space mesh bounds measured after publication and any
+    # requested scaling: (x, y, z) size and lowest height, empty/None if unmeasurable.
+    dimensions: tuple = ()
+    bottom: float | None = None
+    # The uniform factor on the group root and the reviewed longest side, if any.
+    scale: float = 1.0
+    target_size: float | None = None
 
 
 def _read(item, path, *, static_only=True):
@@ -142,7 +149,8 @@ def _import(path):
         raise ModelApplicationError("Blender could not import the saved GLB")
 
 
-def _bottom_center(objects):
+def _bounds(objects):
+    """World-space low and high corners of the objects' mesh bounds, or None."""
     points = [
         obj.matrix_world @ Vector(corner)
         for obj in objects
@@ -150,13 +158,34 @@ def _bottom_center(objects):
         for corner in obj.bound_box
     ]
     if not points or any(not math.isfinite(value) for point in points for value in point):
-        raise ModelApplicationError("GLB contains no supported finite mesh geometry")
+        return None
     low = [min(point[axis] for point in points) for axis in range(3)]
     high = [max(point[axis] for point in points) for axis in range(3)]
+    return low, high
+
+
+def _bottom_center(objects, bounds=None):
+    bounds = bounds or _bounds(objects)
+    if bounds is None:
+        raise ModelApplicationError("GLB contains no supported finite mesh geometry")
+    low, high = bounds
     return Vector(((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]))
 
 
-def _publish(scene, objects, cursor, asset_id, anchor, members=()):
+def _fit(bounds, target_size):
+    """The root scale for a reviewed longest side; 1.0 keeps the saved size."""
+    try:
+        return placement.fit_scale(*bounds, target_size)
+    except ValueError as error:
+        raise ModelApplicationError(str(error)) from None
+
+
+def _publish(scene, objects, cursor, asset_id, anchor, members=(), scale=1.0):
+    """Group new objects under a root that puts the scaled anchor at the cursor.
+
+    A uniform root scale keeps the anchor (the bottom center) on the cursor. The
+    returned application carries the group's measured world bounds.
+    """
     collection = bpy.data.collections.new("Scenario Model")
     scene.collection.children.link(collection)
     root = bpy.data.objects.new("Scenario Model", None)
@@ -168,13 +197,23 @@ def _publish(scene, objects, cursor, asset_id, anchor, members=()):
         obj["scenario_asset"] = asset_id
         if obj.parent not in objects:
             obj.parent = root
-    root.location = Vector(cursor) - anchor
+    if scale != 1.0:
+        root.scale = (scale, scale, scale)
+    root.location = Vector(cursor) - anchor * scale
     root["scenario_asset"] = asset_id
     if members:
         # Every saved file the package import read, unit key first.
         root["scenario_assets"] = ",".join(members)
     bpy.context.view_layer.update()
-    return ModelApplication(collection, root, tuple(objects))
+    # Measured in the destination at its current frame, after any scaling.
+    bounds = _bounds(objects)
+    dimensions = (
+        () if bounds is None else tuple(high - low for low, high in zip(*bounds, strict=True))
+    )
+    bottom = None if bounds is None else bounds[0][2]
+    return ModelApplication(
+        collection, root, tuple(objects), dimensions=dimensions, bottom=bottom, scale=scale
+    )
 
 
 def validate_destination(scene, cursor):
@@ -797,15 +836,26 @@ def _pack_snapshot_images(previous, directory):
         image.filepath = ""
 
 
-def import_snapshot(scene, snapshot, *, cursor, history=False):
+def _target_size(value):
+    try:
+        return placement.target_size(value)
+    except ValueError as error:
+        raise ModelApplicationError(str(error)) from None
+
+
+def import_snapshot(scene, snapshot, *, cursor, history=False, target_size=None):
     """Import one prepared snapshot into a new group; only new data is published.
 
     ``history`` records desktop Undo checkpoints around a standalone import, which
     runs outside any native operator: one before staging and one after
     publication. Callers importing inside a larger build own their history and
-    must not record its partial states.
+    must not record its partial states. ``target_size`` is the reviewed longest
+    side in metres: the group root is scaled uniformly to it, measured like the
+    anchor, with the bottom center kept at the cursor. A model with no measurable
+    size then fails and is rolled back like other import failures.
     """
     validate_destination(scene, cursor)
+    target_size = _target_size(target_size)
     if not isinstance(snapshot, ModelSnapshot) or snapshot.used or snapshot._temporary is None:
         raise ModelApplicationError("Prepare the saved model again")
     snapshot.used = True
@@ -837,8 +887,12 @@ def import_snapshot(scene, snapshot, *, cursor, history=False):
         with bpy.context.temp_override(scene=staging, view_layer=layer):
             staging.frame_set(0)
             layer.update()
-            anchor = _bottom_center(objects)
-        application = _publish(scene, objects, cursor, snapshot.unit.key, anchor, snapshot.members)
+            bounds = _bounds(objects)
+            anchor = _bottom_center(objects, bounds)
+            scale = _fit(bounds, target_size)
+        application = _publish(
+            scene, objects, cursor, snapshot.unit.key, anchor, snapshot.members, scale
+        )
         bpy.data.scenes.remove(staging)
     except Exception:
         _remove_new_data(previous, _PACKAGE_DATA)
@@ -848,12 +902,11 @@ def import_snapshot(scene, snapshot, *, cursor, history=False):
             "Could not import the verified model; saved files remain"
         ) from None
     _end_history(undo)
-    return ModelApplication(
-        application.collection,
-        application.root,
-        application.objects,
-        fmt.value,
-        snapshot.members,
-        snapshot.dropped_references,
-        mismatch,
+    return replace(
+        application,
+        format=fmt.value,
+        members=snapshot.members,
+        dropped_references=snapshot.dropped_references,
+        frame_rate_mismatch=mismatch,
+        target_size=target_size,
     )

@@ -34,6 +34,9 @@ from helpers import (
     textured_model_exports,
 )
 
+# Size fields every model_import summary adds after the import.
+SIZE_FIELDS = ("root", "target_size_m", "scale", "dimensions_m", "bottom_z_m")
+
 
 class ModelGenerationTests(unittest.TestCase):
     def setUp(self):
@@ -3226,11 +3229,25 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.get(result["local_id"]).state, self.storemod.JobState.READY)
         return result["local_id"]
 
-    def prepare_model(self, request_id):
+    def prepare_model(self, request_id, **options):
         args = self.recovery_args(request_id, "import_model")
         del args["action"]
         args["asset_id"] = "result-image"
-        return self.tools.prepare_result_application(args)
+        return self.tools.prepare_result_application(dict(args, **options))
+
+    def group_bounds(self, names):
+        """World-space mesh bounds of imported objects, measured independently of the importer."""
+        from mathutils import Vector
+
+        points = [
+            bpy.data.objects[name].matrix_world @ Vector(corner)
+            for name in names
+            if bpy.data.objects[name].type == "MESH"
+            for corner in bpy.data.objects[name].bound_box
+        ]
+        low = [min(point[axis] for point in points) for axis in range(3)]
+        high = [max(point[axis] for point in points) for axis in range(3)]
+        return low, high
 
     def test_mcp_model_recovery_imports_one_group_without_more_requests(self):
         request_id = self.recovered_model()
@@ -3246,6 +3263,93 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def test_mcp_model_without_target_size_keeps_its_saved_size_and_reports_it(self):
+        request_id = self.recovered_model()
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        approval = self.prepare_model(request_id)
+        self.assertIsNone(approval["target_size_m"])
+        self.assertIn("at its saved size", approval["note"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        root = bpy.data.objects[summary["root"]]
+        self.assertEqual(tuple(root.scale), (1.0, 1.0, 1.0))
+        self.assertEqual(root["scenario_asset"], "result-image")
+        self.assertIn(root, {bpy.data.objects[name].parent for name in status["objects"]})
+        # The fixture triangle is 1 m wide and 1 m tall, with no depth.
+        self.assertEqual((summary["target_size_m"], summary["scale"]), (None, 1.0))
+        self.assertEqual(summary["dimensions_m"], [1.0, 0.0, 1.0])
+        self.assertEqual(summary["bottom_z_m"], 6.0)
+        low, high = self.group_bounds(status["objects"])
+        self.assertEqual(
+            [round(hi - lo, 4) for lo, hi in zip(low, high, strict=True)], summary["dimensions_m"]
+        )
+        # Later status reads return the same session-local summary.
+        self.assertEqual(self.tools.job_status({"job_id": request_id})["model_import"], summary)
+
+    def test_mcp_model_target_size_scales_the_group_with_its_bottom_center_on_the_cursor(self):
+        request_id = self.recovered_model()
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_model(request_id, target_size_m=0.5)
+        self.assertEqual(approval["target_size_m"], 0.5)
+        self.assertIn(
+            "longest side is 0.5 m, with its bottom center at the cursor", approval["note"]
+        )
+        self.assertEqual(approval["cursor"], [4, 5, 6])
+        history = self.model_history()
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+        with history:
+            status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        root = bpy.data.objects[summary["root"]]
+        self.assertEqual(tuple(root.scale), (0.5, 0.5, 0.5))
+        self.assertEqual((summary["target_size_m"], summary["scale"]), (0.5, 0.5))
+        self.assertEqual(summary["dimensions_m"], [0.5, 0.0, 0.5])
+        self.assertEqual(summary["bottom_z_m"], 6.0)
+        low, high = self.group_bounds(status["objects"])
+        center = ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2])
+        for actual, expected in zip(center, (4, 5, 6), strict=True):
+            self.assertAlmostEqual(actual, expected, places=4)
+        self.assertAlmostEqual(
+            max(hi - lo for lo, hi in zip(low, high, strict=True)), 0.5, places=4
+        )
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        # One Undo removes the scaled group; Redo restores it at the same scale.
+        names = {obj.name for obj in bpy.data.objects}
+        root_name = root.name
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertNotIn(root_name, {obj.name for obj in bpy.data.objects})
+        self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+        self.assertEqual({obj.name for obj in bpy.data.objects}, names)
+        self.assertEqual(tuple(bpy.data.objects[root_name].scale), (0.5, 0.5, 0.5))
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+
+    def test_mcp_model_target_size_is_refused_before_any_capture(self):
+        request_id = self.recovered_model()
+        record, objects = self.store.get(request_id), set(bpy.data.objects)
+        owner = self.runtime.state.model_jobs
+        approvals = dict(owner._application_approvals)
+        for value in (0, -1, 0.001, 1000.5, float("inf"), float("nan"), True, "1"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(self.request_error, "target_size_m must be"):
+                    self.prepare_model(request_id, target_size_m=value)
+        args = self.recovery_args(request_id, "import_model")
+        del args["action"]
+        # Only a model import unit can be sized: not PNG/EXR images or other purposes.
+        with self.assertRaisesRegex(ValueError, "target_size_m needs"):
+            self.tools.prepare_result_application(dict(args, target_size_m=1.0))
+        with self.assertRaisesRegex(ValueError, "target_size_m needs"):
+            self.tools.prepare_result_application(
+                dict(args, purpose="world", asset_id="result-image", target_size_m=1.0)
+            )
+        self.assertEqual(owner._application_approvals, approvals)
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(set(bpy.data.objects), objects)
+        # A valid review still works afterwards.
+        self.assertEqual(self.prepare_model(request_id, target_size_m=2)["target_size_m"], 2.0)
 
     def test_shared_animated_model_import_retains_rig_and_clips_without_more_requests(self):
         request_id = self.recovered_model(animated_glb())
@@ -3715,8 +3819,10 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertIn("dropped_references", approval["note"])
         status = self.finish_application(approval)
         self.assertEqual(status["status"], "applied", status)
+        summary = dict(status["model_import"])
+        size = {key: summary.pop(key) for key in SIZE_FIELDS}
         self.assertEqual(
-            status["model_import"],
+            summary,
             {
                 "unit": "result-obj",
                 "format": "obj",
@@ -3728,6 +3834,14 @@ class ModelGenerationTests(unittest.TestCase):
         )
         (name,) = status["objects"]
         root = bpy.data.objects[name].parent
+        self.assertEqual(
+            (size["root"], size["target_size_m"], size["scale"], size["bottom_z_m"]),
+            (root.name, None, 1.0, 6.0),
+        )
+        low, high = self.group_bounds(status["objects"])
+        self.assertEqual(
+            [round(hi - lo, 4) for lo, hi in zip(low, high, strict=True)], size["dimensions_m"]
+        )
         self.assertEqual(root["scenario_assets"], "result-obj,result-mtl,result-albedo")
         approval = self.prepare_package(request_id, "result-obj")
         self.assertTrue(approval["reuse"])
@@ -3970,8 +4084,10 @@ class ModelGenerationTests(unittest.TestCase):
             status = self.finish_application(approval)
         self.assertEqual(threads, [False])
         self.assertEqual(status["status"], "applied", status)
+        summary = dict(status["model_import"])
+        size = {key: summary.pop(key) for key in SIZE_FIELDS}
         self.assertEqual(
-            status["model_import"],
+            summary,
             {
                 "unit": "result-spz",
                 "format": "spz",
@@ -3991,6 +4107,10 @@ class ModelGenerationTests(unittest.TestCase):
         obj = bpy.data.objects[name]
         self.assertEqual(len(obj.data.vertices), 12)
         self.assertEqual(obj.parent["scenario_assets"], "result-spz")
+        self.assertEqual(
+            (size["root"], size["target_size_m"], size["scale"]), (obj.parent.name, None, 1.0)
+        )
+        self.assertEqual(len(size["dimensions_m"]), 3)
         self.assertEqual(obj.modifiers[0].type, "NODES")
         rows = [item.label for item in recovery.result_actions(owner.views[request_id])]
         self.assertIn("Shown as points: 12 of 12 splats", rows)

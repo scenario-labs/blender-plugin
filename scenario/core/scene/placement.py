@@ -3,8 +3,14 @@
 """Placement math, importer selection and primary-mesh choice for 3D results. No bpy."""
 
 import json
+import math
 import pathlib
 import struct
+
+# Accepted longest side of a saved model import, in metres (Blender units at the
+# default unit scale): a small prop up to a large building or world.
+MIN_TARGET_SIZE_M = 0.01
+MAX_TARGET_SIZE_M = 1000.0
 
 _IMPORTERS = {
     ".glb": "gltf",
@@ -39,6 +45,38 @@ def bottom_center_offset(bbox_min, bbox_max, target):
     cx = (bbox_min[0] + bbox_max[0]) / 2.0
     cy = (bbox_min[1] + bbox_max[1]) / 2.0
     return (float(target[0] - cx), float(target[1] - cy), float(target[2] - bbox_min[2]))
+
+
+def target_size(value):
+    """Validate an optional requested longest side in metres; None keeps the saved size.
+
+    The longest side does not depend on how a provider oriented the model, and
+    it is the size usually quoted for an object.
+    """
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not MIN_TARGET_SIZE_M <= value <= MAX_TARGET_SIZE_M
+    ):
+        raise ValueError(
+            f"target_size_m must be a number of metres from {MIN_TARGET_SIZE_M:g} "
+            f"to {MAX_TARGET_SIZE_M:g}"
+        )
+    return float(value)
+
+
+def fit_scale(bbox_min, bbox_max, size):
+    """The uniform factor that gives the box's longest side `size`; 1.0 when size is None."""
+    if size is None:
+        return 1.0
+    longest = max(float(high) - float(low) for low, high in zip(bbox_min, bbox_max, strict=True))
+    factor = size / longest if longest > 0 else math.inf
+    if not math.isfinite(factor) or factor <= 0:
+        raise ValueError("The model has no measurable size to scale")
+    return factor
 
 
 def glb_summary(path):

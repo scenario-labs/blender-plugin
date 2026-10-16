@@ -171,6 +171,16 @@ unsupported. See [model import](MESH_APPLICATION.md#explicit-saved-glb-import) a
 [package import](MESH_APPLICATION.md#saved-model-package-import) for bounds and
 recovery. This never replaces an existing mesh.
 
+To import a model at a known size, also pass `target_size_m`, the longest side in
+metres from 0.01 to 1000. The new group is scaled uniformly to it and its bottom
+center stays at the cursor. The longest side does not depend on how a provider
+oriented the model and is the size usually quoted for an object. The approval
+returns `target_size_m` (null keeps the saved size); to change it, prepare again.
+After the import, `model_import` adds the group's `root`, the `scale` applied, and
+its world `dimensions_m` and `bottom_z_m` after scaling, so the agent can compare
+them with `scene_summary` dimensions without another call. Sizes are Blender
+units, metres at the default unit scale.
+
 SPZ, `.splat` and PLY units also return `splat_options` with the approved
 `max_points` and `axes` (null for mesh formats). Pass `splat_max_points`
 (250000, 500000, 1000000 or 2000000) and `splat_axes` (`OPENGL` or `OPENCV`) to
@@ -444,7 +454,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |

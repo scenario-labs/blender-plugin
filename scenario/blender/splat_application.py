@@ -16,18 +16,20 @@ ours is never reused or changed.
 """
 
 import math
+from dataclasses import replace
 
 import bpy
 
 from ..core.scene.splats import FORMAT_AXES
 from .model_application import (
-    ModelApplication,
     ModelApplicationError,
     _begin_history,
     _end_history,
+    _fit,
     _publish,
     _remove_new_data,
     _snapshot,
+    _target_size,
     validate_destination,
 )
 
@@ -181,24 +183,29 @@ def _anchor(splat):
     return ((low_x + high_x) / 2, (low_y + high_y) / 2, low_z)
 
 
-def import_splat(scene, splat, *, cursor, unit_key, members, fmt, history=False):
+def import_splat(scene, splat, *, cursor, unit_key, members, fmt, history=False, target_size=None):
     """Publish one decoded snapshot as a new group with its bottom center at the cursor.
 
     Nothing existing is reused, selected or changed. On failure every new
     datablock is removed; an incomplete cleanup is reported as uncertain.
     ``history`` records the same desktop Undo checkpoints as a saved model
-    import, before building and after publication.
+    import, before building and after publication. ``target_size`` scales the
+    group so the longest side of the decoded splat centres has that length.
     """
     from mathutils import Vector
 
     validate_destination(scene, cursor)
+    target_size = _target_size(target_size)
     if splat is None or not math.isfinite(sum(_anchor(splat))):
         raise ModelApplicationError("Prepare the saved splats again")
+    scale = _fit(splat.bounds, target_size)
     undo = _begin_history(history)
     previous = _snapshot(_DATA)
     try:
         obj = build_points(splat)
-        application = _publish(scene, (obj,), cursor, unit_key, Vector(_anchor(splat)), members)
+        application = _publish(
+            scene, (obj,), cursor, unit_key, Vector(_anchor(splat)), members, scale
+        )
         application.root["scenario_splat_points"] = splat.count
         application.root["scenario_splat_kept"] = splat.kept
     except Exception:
@@ -209,13 +216,12 @@ def import_splat(scene, splat, *, cursor, unit_key, members, fmt, history=False)
             "Could not show the verified splats; saved files remain"
         ) from None
     _end_history(undo)
-    return ModelApplication(
-        application.collection,
-        application.root,
-        application.objects,
-        fmt,
-        tuple(members),
+    return replace(
+        application,
+        format=fmt,
+        members=tuple(members),
         splat=splat_summary(splat),
+        target_size=target_size,
     )
 
 

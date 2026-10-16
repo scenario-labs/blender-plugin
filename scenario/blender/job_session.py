@@ -1543,7 +1543,9 @@ class JobSession:
         del self._media_receipts[outcome]
         return AppliedMedia(record, application)
 
-    def apply_recovered_model(self, completion, *, destination, asset_id, cursor, options=None):
+    def apply_recovered_model(
+        self, completion, *, destination, asset_id, cursor, options=None, target_size=None
+    ):
         """Import one saved model unit at the approved scene/cursor after worker preparation.
 
         `asset_id` is the unit key classified from the verified record. A mesh unit
@@ -1555,6 +1557,7 @@ class JobSession:
         without splat data takes the mesh snapshot path. A PLY may also come from
         `verify_results` when the local-operation slot was busy; it then imports
         only as a mesh. A reuse claim of a completed job names every member read.
+        `target_size` is the approved longest side in metres, or None for the saved size.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1605,13 +1608,17 @@ class JobSession:
                     members=unit.members,
                     fmt=unit.format.value,
                     history=True,
+                    target_size=target_size,
                 ),
             )
         snapshot = prepare_snapshot(unit, files)
         try:
             claim = self._claim_saved_application(verified, destination, "model", snapshot.members)
             return self._finish_model(
-                claim, lambda: import_snapshot(scene, snapshot, cursor=cursor, history=True)
+                claim,
+                lambda: import_snapshot(
+                    scene, snapshot, cursor=cursor, history=True, target_size=target_size
+                ),
             )
         finally:
             snapshot.cleanup()

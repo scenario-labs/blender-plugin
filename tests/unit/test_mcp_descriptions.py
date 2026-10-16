@@ -359,6 +359,30 @@ def test_splat_options_match_the_reviewed_choices_everywhere():
     assert "spz_extensions" in status
 
 
+def test_model_target_size_matches_the_validated_range_and_is_reported():
+    from scenario.core.scene.placement import MAX_TARGET_SIZE_M, MIN_TARGET_SIZE_M
+
+    _, calls = specs("tools_scenario")
+    descriptions = {call.args[0].value: call.args[1].value for call in calls}
+    call = next(call for call in calls if call.args[0].value == "prepare_result_application")
+    schema = {
+        ast.literal_eval(key): ast.literal_eval(value)
+        for key, value in zip(call.args[2].args[0].keys, call.args[2].args[0].values, strict=True)
+    }
+    assert schema["target_size_m"] == {
+        "type": "number",
+        "minimum": MIN_TARGET_SIZE_M,
+        "maximum": MAX_TARGET_SIZE_M,
+    }
+    prepare = descriptions["prepare_result_application"]
+    assert f"from {MIN_TARGET_SIZE_M:g} to {MAX_TARGET_SIZE_M:g}" in prepare
+    assert "longest side" in prepare and "bottom center still at the cursor" in prepare
+    # Size feedback reaches the agent in the import reply and in later status reads.
+    for name in ("apply_result_application", "job_status"):
+        for field in ("root", "scale", "dimensions_m", "bottom_z_m"):
+            assert field in descriptions[name], (name, field)
+
+
 def test_panorama_lane_contract_is_described_where_agents_choose_and_spend():
     _, calls = specs("tools_scenario")
     descriptions = {call.args[0].value: call.args[1].value for call in calls}

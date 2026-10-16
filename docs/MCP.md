@@ -379,12 +379,12 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
-| `scene_summary` | Inspect the open Blender scene before choosing a scene operation. | none | read-only annotation |
+| `scene_summary` | Inspect the open Blender scene before choosing a scene operation; large scenes come back in pages. | `limit`: integer<br>`offset`: integer<br>`types`: array<br>`collection`: string<br>`name_contains`: string<br>`selected_only`: boolean<br>`fields`: array | read-only annotation |
 | `object_detail` | Inspect one named Blender object's transform, geometry summary and custom properties. | `name`*: string | read-only annotation |
 | `execute_python` | Run arbitrary Python with bpy on Blender's main thread, only when explicitly enabled in preferences. | `code`*: string; Python source. bpy and result = {} are preloaded. | destructive annotation; Python preference gate; off by default |
 | `select_objects` | Replace the selection in the current view layer with the named Blender objects. | `names`*: array | - |
 | `set_frame` | Move Blender's timeline to a frame and evaluate the scene there. | `frame`*: integer | - |
-| `screenshot_viewport` | Capture the visible 3D viewport area as a PNG image, including its UI overlays. | none | read-only annotation; GUI required |
+| `screenshot_viewport` | Capture the largest visible 3D viewport as a PNG image, including its UI overlays. | `max_size`: integer | read-only annotation; GUI required |
 | `camera_path` | Build an animated scene camera from a preset, description or explicit waypoints for Render Video. | `preset`: string<br>`duration`: number; seconds<br>`focal`: number; mm<br>`aim_at_subject`: boolean<br>`description`: string; e.g. 'slow orbit, 8 s, 35mm'<br>`waypoints`: array | - |
 | `render_still` | Capture a quick OpenGL camera or viewport still as a PNG at the requested size. | `source`: string (['CAMERA', 'VIEWPORT'])<br>`width`: integer<br>`height`: integer | read-only annotation; GUI required |
 | `blender_api_help` | Inspect Blender's running Python API before writing a script. | `path`*: string; e.g. bpy.ops.mesh.primitive_cube_add, bpy.types.Object, bpy.data.objects | read-only annotation |

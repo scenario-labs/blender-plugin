@@ -18,31 +18,99 @@ def _vec(v):
     return [round(float(x), 4) for x in v]
 
 
-def scene_summary(args):
-    scene = bpy.context.scene
-    objects = []
-    for obj in scene.objects:
-        objects.append(
-            {
-                "name": obj.name,
-                "type": obj.type,
-                "location": _vec(obj.location),
-                "dimensions": _vec(obj.dimensions),
-                "parent": obj.parent.name if obj.parent else None,
-                "collections": [c.name for c in obj.users_collection],
-                "materials": [
-                    s.material.name for s in getattr(obj, "material_slots", []) if s.material
-                ],
-                "hidden": obj.hide_get(),
-            }
+# One entry per object field scene_summary can return; name is always included.
+OBJECT_FIELDS = {
+    "type": lambda obj: obj.type,
+    "location": lambda obj: _vec(obj.location),
+    "dimensions": lambda obj: _vec(obj.dimensions),
+    "parent": lambda obj: obj.parent.name if obj.parent else None,
+    "collections": lambda obj: [c.name for c in obj.users_collection],
+    "materials": lambda obj: [
+        s.material.name for s in getattr(obj, "material_slots", []) if s.material
+    ],
+    "hidden": lambda obj: obj.hide_get(),
+}
+# A scene of a few thousand objects would otherwise fill an agent's context in one call.
+SUMMARY_LIMIT, SUMMARY_MAX_LIMIT, SUMMARY_NAME_LIMIT = 100, 500, 50
+
+
+def _text_list(args, key, allowed, normalize=str):
+    values = args.get(key)
+    if values is None:
+        return None
+    if not isinstance(values, list) or not all(isinstance(v, str) and v for v in values):
+        raise ValueError(f"{key} must be an array of nonempty strings")
+    values = [normalize(v) for v in values]
+    unknown = sorted(set(values) - set(allowed))
+    if unknown:
+        raise ValueError(f"Unknown {key}: {', '.join(unknown)}; use {', '.join(allowed)}")
+    return values
+
+
+def _summary_filter(args):
+    """Read scene_summary's paging and filter arguments before reading the scene."""
+    limit, offset = args.get("limit", SUMMARY_LIMIT), args.get("offset", 0)
+    if type(limit) is not int or not 1 <= limit <= SUMMARY_MAX_LIMIT:
+        raise ValueError(f"limit must be an integer from 1 to {SUMMARY_MAX_LIMIT}")
+    if type(offset) is not int or offset < 0:
+        raise ValueError("offset must be a nonnegative integer")
+    object_types = [
+        item.identifier for item in bpy.types.Object.bl_rna.properties["type"].enum_items
+    ]
+    types = _text_list(args, "types", object_types, str.upper)
+    fields = _text_list(args, "fields", tuple(OBJECT_FIELDS))
+    name_contains = args.get("name_contains", "")
+    if not isinstance(name_contains, str):
+        raise ValueError("name_contains must be a string")
+    selected_only = args.get("selected_only", False)
+    if type(selected_only) is not bool:
+        raise ValueError("selected_only must be a boolean")
+    members = None
+    if args.get("collection") is not None:
+        if not isinstance(args["collection"], str):
+            raise ValueError("collection must be a collection name")
+        collection = bpy.data.collections.get(args["collection"])
+        if collection is None:
+            raise ValueError(f"No collection named {args['collection']!r}")
+        members = {obj.name for obj in collection.all_objects}
+    needle = name_contains.casefold()
+
+    def keep(obj):
+        return (
+            (types is None or obj.type in types)
+            and (members is None or obj.name in members)
+            and needle in obj.name.casefold()
+            and (not selected_only or obj.select_get())
         )
+
+    return keep, limit, offset, fields if fields is not None else tuple(OBJECT_FIELDS)
+
+
+def scene_summary(args):
+    keep, limit, offset, fields = _summary_filter(args)
+    scene = bpy.context.scene
+    matched = [obj for obj in scene.objects if keep(obj)]
+    page = matched[offset : offset + limit]
+    end = offset + len(page)
+    next_offset = end if end < len(matched) else None
+    objects = [
+        {"name": obj.name, **{field: OBJECT_FIELDS[field](obj) for field in fields}} for obj in page
+    ]
+    selected = [o.name for o in bpy.context.selected_objects]
+    cameras = [o.name for o in scene.objects if o.type == "CAMERA"]
     active = bpy.context.view_layer.objects.active
-    return {
+    summary = {
         "file": bpy.data.filepath or "(unsaved)",
+        "scene_object_count": len(scene.objects),
+        "total": len(matched),
+        "offset": offset,
+        "next_offset": next_offset,
         "objects": objects,
         "active": active.name if active else None,
-        "selected": [o.name for o in bpy.context.selected_objects],
-        "cameras": [o.name for o in scene.objects if o.type == "CAMERA"],
+        "selected": selected[:SUMMARY_NAME_LIMIT],
+        "selected_count": len(selected),
+        "cameras": cameras[:SUMMARY_NAME_LIMIT],
+        "camera_count": len(cameras),
         "scene_camera": scene.camera.name if scene.camera else None,
         "frame_range": [scene.frame_start, scene.frame_end],
         "frame_current": scene.frame_current,
@@ -52,6 +120,12 @@ def scene_summary(args):
         "cursor": _vec(scene.cursor.location),
         "blender": bpy.app.version_string,
     }
+    if next_offset is not None:
+        summary["note"] = (
+            f"{len(matched) - next_offset} more matching objects: call scene_summary again with "
+            f"offset {next_offset}, or narrow it with types, collection, name_contains or selected_only."
+        )
+    return summary
 
 
 def object_detail(args):
@@ -155,33 +229,77 @@ def _private_png(name):
         yield os.path.join(directory, name)
 
 
+# Longest side of a returned screenshot: a Retina viewport is often over 2500 pixels wide, a
+# payload most clients scale down anyway.
+SCREENSHOT_MAX_SIZE = 1280
+IMAGE_MIN_SIZE, IMAGE_MAX_SIZE = 16, 4096
+
+
+def _image_size(args, key, default, minimum=IMAGE_MIN_SIZE):
+    value = args.get(key, default)
+    if type(value) is not int or not minimum <= value <= IMAGE_MAX_SIZE:
+        raise ValueError(f"{key} must be an integer from {minimum} to {IMAGE_MAX_SIZE} pixels")
+    return value
+
+
+def _largest_viewport():
+    """The largest 3D viewport in any window: the main view, not a small one beside an editor."""
+    areas = [
+        (area.width * area.height, window, area)
+        for window in bpy.context.window_manager.windows
+        for area in window.screen.areas
+        if area.type == "VIEW_3D"
+    ]
+    if not areas:
+        raise RuntimeError("No 3D viewport is open")
+    _, window, area = max(areas, key=lambda item: item[0])  # the first one wins a tie
+    return window, area
+
+
+def _fit_png(path, max_size):
+    """Scale a PNG down in place so its longest side is at most max_size pixels."""
+    import imbuf
+
+    image = imbuf.load(path)
+    try:
+        width, height = image.size
+        scale = max_size / max(width, height)
+        if scale < 1:
+            image.resize(
+                (max(1, round(width * scale)), max(1, round(height * scale))), method="BILINEAR"
+            )
+            imbuf.write(image, filepath=path)
+    finally:
+        image.free()
+
+
 def screenshot_viewport(args):
     if bpy.app.background:
         raise RuntimeError("Screenshots need the Blender GUI")
-    wm = bpy.context.window_manager
-    window = wm.windows[0]
-    area = next((a for a in window.screen.areas if a.type == "VIEW_3D"), None)
-    if area is None:
-        raise RuntimeError("No 3D viewport is open")
+    max_size = _image_size(args, "max_size", SCREENSHOT_MAX_SIZE, minimum=64)
+    window, area = _largest_viewport()
     region = next(r for r in area.regions if r.type == "WINDOW")
     with _private_png("shot.png") as path:
         with bpy.context.temp_override(
             window=window, screen=window.screen, area=area, region=region
         ):
             bpy.ops.screen.screenshot_area(filepath=path)
+        _fit_png(path, max_size)
         return _png_content(path)
 
 
 def render_still(args):
     from ..blender import capture
 
+    width = _image_size(args, "width", 1280)
+    height = _image_size(args, "height", 720)
     with _private_png("render.png") as path:
         capture.capture_still(
             bpy.context,
             path,
             source=args.get("source", "CAMERA"),
-            width=int(args.get("width", 1280)),
-            height=int(args.get("height", 720)),
+            width=width,
+            height=height,
         )
         return _png_content(path)
 
@@ -341,14 +459,34 @@ SPECS = (
     ToolSpec(
         "scene_summary",
         (
-            "Inspect the open Blender scene before choosing a scene operation.\n"
-            "Args: none.\n"
-            "Returns: file, objects[] (name, type, location, dimensions, parent, collections, materials, hidden), active, selected, cameras, scene_camera, frame_range, frame_current, fps, resolution, unit_system, cursor and blender version.\n"
-            "Example: {}.\n"
+            "Inspect the open Blender scene before choosing a scene operation; large scenes come back in pages.\n"
+            "Args:\n"
+            "  - limit: optional integer from 1 to 500, objects per call (default 100).\n"
+            "  - offset: optional nonnegative integer (default 0); pass the previous next_offset to continue.\n"
+            "  - types: optional array of object types such as MESH, CAMERA, LIGHT, EMPTY or ARMATURE.\n"
+            "  - collection: optional exact collection name; objects in it and its child collections.\n"
+            "  - name_contains: optional text matched against object names, ignoring case.\n"
+            "  - selected_only: optional boolean.\n"
+            "  - fields: optional array of per-object fields from type, location, dimensions, parent, collections, materials and hidden (default all); name is always returned, alone for an empty array.\n"
+            "Returns: file, scene_object_count, total matching objects, offset, next_offset (null on the last page), objects[] (name plus the chosen fields), active, selected (first 50) with selected_count, cameras (first 50) with camera_count, scene_camera, frame_range, frame_current, fps, resolution, unit_system, cursor and blender version. A partial page adds a note naming the next offset; an unknown type, field or collection raises ValueError.\n"
+            'Example: {"types": ["MESH"], "fields": ["location", "dimensions"], "limit": 50}.\n'
             "Prefer object_detail for one object's geometry or modifiers; this does not return mesh vertex data.\n"
             "No platform equivalent."
         ),
-        _schema({}),
+        _schema(
+            {
+                "limit": {"type": "integer", "minimum": 1, "maximum": SUMMARY_MAX_LIMIT},
+                "offset": {"type": "integer", "minimum": 0},
+                "types": {"type": "array", "items": {"type": "string"}},
+                "collection": {"type": "string"},
+                "name_contains": {"type": "string"},
+                "selected_only": {"type": "boolean"},
+                "fields": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(OBJECT_FIELDS)},
+                },
+            }
+        ),
         scene_summary,
         {"readOnlyHint": True},
     ),
@@ -421,14 +559,15 @@ SPECS = (
     ToolSpec(
         "screenshot_viewport",
         (
-            "Capture the visible 3D viewport area as a PNG image, including its UI overlays.\n"
-            "Args: none.\n"
+            "Capture the largest visible 3D viewport as a PNG image, including its UI overlays.\n"
+            "Args:\n"
+            "  - max_size: optional integer from 64 to 4096, the longest side in pixels (default 1280); larger captures are scaled down.\n"
             "Returns: PNG image content for the MCP client, not a permanent file path.\n"
-            "Example: {}.\n"
+            'Example: {"max_size": 1024}.\n'
             "Do not use in background mode or without a 3D viewport: it raises RuntimeError. Prefer render_still for a camera or viewport still at a chosen size. Temporary capture files are cleaned up.\n"
             "No platform equivalent."
         ),
-        _schema({}),
+        _schema({"max_size": {"type": "integer", "minimum": 64, "maximum": IMAGE_MAX_SIZE}}),
         screenshot_viewport,
         {"readOnlyHint": True},
     ),
@@ -477,8 +616,8 @@ SPECS = (
             "Capture a quick OpenGL camera or viewport still as a PNG at the requested size.\n"
             "Args:\n"
             "  - source: optional string, CAMERA (default) or VIEWPORT.\n"
-            "  - width: optional integer, default 1280 pixels.\n"
-            "  - height: optional integer, default 720 pixels.\n"
+            "  - width: optional integer from 16 to 4096, default 1280 pixels.\n"
+            "  - height: optional integer from 16 to 4096, default 720 pixels.\n"
             "Returns: PNG image content, with temporary capture files cleaned up.\n"
             'Example: {"source": "CAMERA", "width": 1280, "height": 720}.\n'
             "Do not use in background mode: capture needs the GUI and a 3D viewport or raises RuntimeError. Prefer screenshot_viewport to inspect the visible viewport UI.\n"
@@ -487,8 +626,8 @@ SPECS = (
         _schema(
             {
                 "source": {"type": "string", "enum": ["CAMERA", "VIEWPORT"]},
-                "width": {"type": "integer"},
-                "height": {"type": "integer"},
+                "width": {"type": "integer", "minimum": IMAGE_MIN_SIZE, "maximum": IMAGE_MAX_SIZE},
+                "height": {"type": "integer", "minimum": IMAGE_MIN_SIZE, "maximum": IMAGE_MAX_SIZE},
             }
         ),
         render_still,

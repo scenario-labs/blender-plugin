@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   # PRs are squash-merged, so the PR title becomes the commit header on main and
-  # the line release-please writes in CHANGELOG.md. The main ruleset requires
+  # the line release-please writes in CHANGELOG.md. The main rulesets require
   # this check by its context, which is the job id: do not rename it.
   pr-title:
     runs-on: ubuntu-latest

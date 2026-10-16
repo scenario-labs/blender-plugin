@@ -84,7 +84,8 @@ class JobRegistry:
                     for item in json.loads(self.path.read_text(encoding="utf-8")):
                         rec = JobRecord.from_dict(item)
                         self._records[rec.local_id] = rec
-                except (ValueError, TypeError, KeyError):
+                except (ValueError, TypeError, KeyError, AttributeError, RecursionError):
+                    # Unparsable, not a list of records or nested past Python's JSON limit.
                     self._records = {}
         return self
 

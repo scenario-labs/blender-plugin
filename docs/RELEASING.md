@@ -14,7 +14,8 @@ The [release configuration](../release-please-config.json) uses semantic version
 Before 1.0, fixes increase the patch version, features increase the minor version,
 and breaking changes increase the minor version. After 1.0, breaking changes
 increase the major version. Mark a breaking change with `!` or a
-`BREAKING CHANGE` footer; review the proposed version before merging the release PR.
+`BREAKING CHANGE` footer; review the proposed version before merging the release
+PR.
 
 1.0.0 is a deliberate maintainer decision, not an automatic bump: use a
 `Release-As: 1.0.0` footer on the squash commit of an ordinary PR whose description
@@ -73,14 +74,15 @@ Blender runtime acceptance remain separate requirements.
 1. Discover an unfinished draft or create a release draft when a release is due.
 2. Check out its exact commit and require the release SHA, triggering workflow
    SHA and checkout SHA to match.
-3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP, render the standalone
-   `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS` for the ZIP and handbook,
-   and attest all three files. Attach them and the attestation's Sigstore bundle,
-   `scenario-X.Y.Z.sigstore.json`, to the draft.
+3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP,
+   render the standalone `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS`
+   for the ZIP and handbook, and attest all three files. Attach them and the
+   attestation's Sigstore bundle, `scenario-X.Y.Z.sigstore.json`, to the draft.
 4. Validate that same ZIP with Blender 5.1.2 and 5.2.1.
 5. Publish only after those jobs succeed. Publication creates the tag through
-   the release App and triggers the separate public-changelog workflow. Successful completion of the release
-   workflow triggers the Pages workflow on `main`.
+   the release App and triggers the separate public-changelog workflow.
+   Successful completion of the release workflow triggers the Pages workflow on
+   `main`.
 6. Generate/update the next release PR after publication, or when no release
    was due.
 

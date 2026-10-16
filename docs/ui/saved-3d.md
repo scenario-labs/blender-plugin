@@ -1,9 +1,10 @@
 # Saved 3D results
 
-Interaction rules and desktop evidence for saved models, splats and mesh edits. The shared rules are in the [UI style guide](../UI_STYLE.md).
-The desktop checks below used an isolated installed package on macOS with
-synthetic transport; their catalog, estimate and price labels are fixture state.
-They do not establish provider output, live pricing or other platforms.
+Interaction rules and desktop evidence for saved models, splats and mesh edits.
+The shared rules are in the [UI style guide](../UI_STYLE.md). The desktop checks
+below used an isolated installed package on macOS with synthetic transport;
+their catalog, estimate and price labels are fixture state. They do not
+establish provider output, live pricing or other platforms.
 
 ## Saved static model confirmation
 
@@ -38,9 +39,9 @@ cursor, the new group, packed textures and preserved selection. Format lines
 follow: GLB and glTF keep scene FPS and the timeline, FBX packs embedded textures,
 rejects external texture files and keeps the file's clip timing, OBJ leaves out
 maps that were not saved, and PLY says a file without splat data imports as a
-mesh. A last line says the files are checked again first. Every line stays within 66 characters, the longest line
-the earlier 480 px desktop capture showed. Drawing only reads the prepared
-values; cancel discards the approval.
+mesh. A last line says the files are checked again first. Every line stays
+within 66 characters, the longest line the earlier 480 px desktop capture
+showed. Drawing only reads the prepared values; cancel discards the approval.
 
 Physical desktop evidence of this dialog, its fit at other sizes and DPI,
 and viewport interaction after a non-GLB import is pending.

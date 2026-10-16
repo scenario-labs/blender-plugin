@@ -31,10 +31,10 @@ limits of its current controls. It does not replace Scenario's service policies.
   preview is not ready; image previews are decoded from the downloaded files
   without a request. Test connection requests one
   public-model list page with at most one model to verify model access; it does
-  not discover account or project identity. Refresh cloud and Older in Generations retrieve job
-  history and prompt text; connected agents can request history too. Local
-  MCP `inspect_result_previews` requests the same previews for any downloaded
-  saved job an agent names, with the same reads.
+  not discover account or project identity. Refresh cloud and Older in
+  Generations retrieve job history and prompt text; connected agents can request
+  history too. Local MCP `inspect_result_previews` requests the same previews
+  for any downloaded saved job an agent names, with the same reads.
 - Scenario API requests authenticate with your selected key/secret pair using an
   HTTP Basic `Authorization` header over TLS. They identify the extension with
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;
@@ -80,7 +80,11 @@ that it comes from this extension, the extension version for a download, whether
 the request came from Blender, a browser, a script or a crawler, Blender's
 version, release cycle, operating system and processor from its User-Agent, and
 the country Vercel derives from your address. The count holds no IP address, no
-User-Agent text and no identifier that links one request to another. The Release
+User-Agent text and no identifier that links one request to another. In a web
+browser, the site's pages also count visits and Download ZIP clicks with Vercel
+Web Analytics, without cookies: it records the page address, referrer, location,
+browser, operating system and device type, and tells visitors apart for 24 hours
+by a hash of the request. The Release
 ZIPs button opens `https://github.com/scenario-labs/blender-plugin/releases` in
 your browser.
 Blender stores the repository configuration and cache through its native manager.
@@ -90,15 +94,15 @@ and the folder and file buttons (**Output folder**, the Film **Open capture**
 and **Open capture files**, and the Film export and case-study **Open folder**)
 start your web browser, file manager or default application: the extension
 starts `open` on macOS, `xdg-open` on Linux, or on Windows Blender's isolated
-Python interpreter calling `os.startfile`, and strips `SCENARIO_`, `PYTHON` and proxy variables
-from the environment it passes. They never use Blender's `wm.path_open` or
-`wm.url_open`, which pass Blender's whole environment, including
-`SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when Credentials > Environment
-supplies them, to the application they start. Links open only as `https`
-addresses. A browser or file manager that is already running receives only the
-link or path; what it records, such as history, is outside the extension's
-control, and macOS still adds proxy settings from your login session to every
-application it launches.
+Python interpreter calling `os.startfile`, and strips `SCENARIO_`, `PYTHON` and
+proxy variables from the environment it passes. They never use Blender's
+`wm.path_open` or `wm.url_open`, which pass Blender's whole environment,
+including `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` when Credentials >
+Environment supplies them, to the application they start. Links open only as
+`https` addresses. A browser or file manager that is already running receives
+only the link or path; what it records, such as history, is outside the
+extension's control, and macOS still adds proxy settings from your login session
+to every application it launches.
 
 The extension has no telemetry, analytics or automatic crash-reporting service,
 and no independent update-check service. Blender manages configured extension
@@ -164,56 +168,56 @@ never the saved file, in the system player, your operating system's default
 application started like the links above, or in a separate Blender animation
 player. Neither player receives `SCENARIO_`, `PYTHON` or proxy variables, and
 so no Scenario credentials; one already running receives only the copy's path,
-and what it records, such as recent files, is outside the extension's control. Up to four copies or 1 GiB are kept for reuse; the rest,
-and every copy when the connection changes, a file loads or the extension is
-disabled, are removed unless a running animation player, system player launcher
-or audio playback still uses one. A copy left behind, for example one a player
-still read when the extension was disabled or a Windows player held open, is
-removed once a day old by the next Play. The **Play** and **Play in Blender**
-buttons of retained prototype results start their players the same way.
-**Play audio** plays the same kind of private copy through Blender's audio
-engine in a separate offline Blender process, not in your session. That process
-starts from the same filtered environment, without `SCENARIO_`, `BLENDER_`,
-`PYTHON` or proxy variables, does not load the extension, and makes no network
-request. It reads only the copy and sends its sound to the output device chosen
-in Blender's Preferences > System > Sound. Its request, disposable profile,
-temporary files and two small status files live in a private `listen-*`
-directory under `cache/audio-player`, without a URL, credential or prompt; its
-output is discarded. The directory is removed when the process ends, and one
-left by a crash is removed once a day old by the next Play audio. Stop, another
-Play audio, a connection change, a file load, disabling the extension and
-quitting Blender end the process; it also ends when Blender exits unexpectedly.
-Capture/export staging and thumbnails also use the extension's user state/cache
-directories. Explicit local output tools can write to the configured Output
-Folder, normally `~/Downloads/Scenario`.
-A Film video export writes only to the destination you approve; local agents
-can choose destinations only inside the Output Folder. Its private
-staging keeps a scene snapshot, the encoded video and child logs until the
-owner discards it; the Blender console logs the destination file name and its
-SHA-256. An interrupted export can leave an empty placeholder or a hidden
-`.scenario-*.partial` file next to the destination for manual removal.
-A Film case-study bundle follows the same destination, staging and leftover
-rules; its staging also holds copies of the bundled media until the archive is
-verified. The archive contains the chosen scenes, copies of the media they use,
-the recipe without its project, credentials or URLs, and a production ledger with
-titles, models, saved states and quoted costs but no credentials, URLs, request,
-job, asset, upload, project or team identifiers or local paths. Scenario
-properties naming jobs, assets or productions and the extension's saved settings
-(composer lanes with their reference uploads and local reference paths, Film and
-workflow forms) are removed from the bundled data, and the export refuses a
-bundle that still holds a known private identifier, extension storage or a source
-media folder. Model IDs, scene and object names, other custom properties,
-output-only path settings the export does not rewrite (such as strip proxy
-folders, which can name your user folder) and unused bytes Blender keeps from
-earlier settings can remain; review a bundle before sharing it.
-Scene properties, imported media and prompts can be saved in your `.blend` file.
-A form's chosen LoRAs and compositions are saved there too: their model IDs,
-names, strengths and a hashed connection scope that stops another credential pair
-or project from using them. Model IDs are opaque references, not credentials.
-Thumbnails of your private models are cached in a separate folder per credential
-and project scope, apart from public model thumbnails.
-Older `state/jobs.json` or model-cache files may remain from the prototype; local
-record inspection does not resume their cloud jobs or migrate their ownership.
+and what it records, such as recent files, is outside the extension's control.
+Up to four copies or 1 GiB are kept for reuse; the rest, and every copy when the
+connection changes, a file loads or the extension is disabled, are removed
+unless a running animation player, system player launcher or audio playback
+still uses one. A copy left behind, for example one a player still read when the
+extension was disabled or a Windows player held open, is removed once a day old
+by the next Play. The **Play** and **Play in Blender** buttons of retained
+prototype results start their players the same way. **Play audio** plays the
+same kind of private copy through Blender's audio engine in a separate offline
+Blender process, not in your session. That process starts from the same filtered
+environment, without `SCENARIO_`, `BLENDER_`, `PYTHON` or proxy variables, does
+not load the extension, and makes no network request. It reads only the copy and
+sends its sound to the output device chosen in Blender's Preferences > System >
+Sound. Its request, disposable profile, temporary files and two small status
+files live in a private `listen-*` directory under `cache/audio-player`, without
+a URL, credential or prompt; its output is discarded. The directory is removed
+when the process ends, and one left by a crash is removed once a day old by the
+next Play audio. Stop, another Play audio, a connection change, a file load,
+disabling the extension and quitting Blender end the process; it also ends when
+Blender exits unexpectedly. Capture/export staging and thumbnails also use the
+extension's user state/cache directories. Explicit local output tools can write
+to the configured Output Folder, normally `~/Downloads/Scenario`. A Film video
+export writes only to the destination you approve; local agents can choose
+destinations only inside the Output Folder. Its private staging keeps a scene
+snapshot, the encoded video and child logs until the owner discards it; the
+Blender console logs the destination file name and its SHA-256. An interrupted
+export can leave an empty placeholder or a hidden `.scenario-*.partial` file
+next to the destination for manual removal. A Film case-study bundle follows the
+same destination, staging and leftover rules; its staging also holds copies of
+the bundled media until the archive is verified. The archive contains the chosen
+scenes, copies of the media they use, the recipe without its project,
+credentials or URLs, and a production ledger with titles, models, saved states
+and quoted costs but no credentials, URLs, request, job, asset, upload, project
+or team identifiers or local paths. Scenario properties naming jobs, assets or
+productions and the extension's saved settings (composer lanes with their
+reference uploads and local reference paths, Film and workflow forms) are
+removed from the bundled data, and the export refuses a bundle that still holds
+a known private identifier, extension storage or a source media folder. Model
+IDs, scene and object names, other custom properties, output-only path settings
+the export does not rewrite (such as strip proxy folders, which can name your
+user folder) and unused bytes Blender keeps from earlier settings can remain;
+review a bundle before sharing it. Scene properties, imported media and prompts
+can be saved in your `.blend` file. A form's chosen LoRAs and compositions are
+saved there too: their model IDs, names, strengths and a hashed connection scope
+that stops another credential pair or project from using them. Model IDs are
+opaque references, not credentials. Thumbnails of your private models are cached
+in a separate folder per credential and project scope, apart from public model
+thumbnails. Older `state/jobs.json` or model-cache files may remain from the
+prototype; local record inspection does not resume their cloud jobs or migrate
+their ownership.
 
 Uninstalling is not a promise to erase these files. Remove extension user data,
 outputs and `.blend` copies separately when no longer needed. Local deletion does

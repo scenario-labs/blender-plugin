@@ -77,9 +77,9 @@ version and imported source bytes against the bundled wheel, and verifies the
 loaded `pydantic-core` binary against the appropriate wheel. It exercises
 Pydantic validation and the real SDK via `httpx.MockTransport`: online permission,
 catalog, team and project reads, workflow decisions, exact estimates, selected
-Bearer headers and single-attempt failures. `tests.json` records the verified versions, Python version and native
-wheel identity under `sdk_bundle`. These are offline runtime checks, not live
-Scenario endpoint or OAuth-token acceptance.
+Bearer headers and single-attempt failures. `tests.json` records the verified
+versions, Python version and native wheel identity under `sdk_bundle`. These are
+offline runtime checks, not live Scenario endpoint or OAuth-token acceptance.
 
 The test runs in a fresh profile. Interactions with another extension's already
 loaded dependency versions need separate acceptance; do not infer that behavior

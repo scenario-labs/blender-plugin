@@ -116,7 +116,9 @@ def test_downloads_escapes_every_index_value(pages):
     )
 
     assert "<script>alert(1)" not in page
-    assert page.count("<script>") == 1
+    assert page.count("<script>") == pages.downloads_page({"data": [release("1.0.0")]}).count(
+        "<script>"
+    )
 
 
 def test_pages_inline_the_shared_style_and_wordmark(pages):
@@ -139,6 +141,16 @@ def test_pages_share_the_handbook_navigation(pages):
 
     assert nav(pages.downloads_page({"data": [release("1.0.0")]})) == nav(template)
     assert nav(pages.pending_page()) == nav(template)
+
+
+def test_pages_count_visits_and_download_clicks_like_the_handbook(pages):
+    template = (ROOT / "docs/handbook-template.html").read_text(encoding="utf-8")
+    page = pages.downloads_page({"data": [release("1.0.0")]})
+
+    assert pages.ANALYTICS in template
+    assert pages.ANALYTICS in page and pages.ANALYTICS in pages.pending_page()
+    assert 'href="./scenario-1.0.0.zip" data-track="Download"' in page
+    assert 'closest("a[data-track]")' in page
 
 
 def test_pages_inline_the_light_and_dark_favicons(pages):

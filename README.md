@@ -100,20 +100,34 @@ The [user guide](docs/USER_GUIDE.md) describes each lane and its controls.
 
 ## Features
 
-- [Image](docs/USER_GUIDE.md#image): generate from text or reference images and use results as textures or references.
+- [Image](docs/USER_GUIDE.md#image): generate from text or reference images and
+  use results as textures or references.
 - [Video](docs/USER_GUIDE.md#video): generate from prompts, images or scene playblasts.
-- [3D](docs/USER_GUIDE.md#3d): generate meshes, run provider edit tasks on a selected mesh and [apply a saved edit](docs/USER_GUIDE.md#apply-a-saved-mesh-edit) back to it.
-- [Materials](docs/USER_GUIDE.md#materials): generate saved PBR texture sets and apply them explicitly to a chosen mesh material slot.
-- [Audio](docs/USER_GUIDE.md#audio): generate speech, music or sound effects and add results to the sequencer.
-- [Render Image](docs/USER_GUIDE.md#render-image): use a scene capture and look references to produce a still.
-- [Render Video](docs/USER_GUIDE.md#render-video): work with timeline captures, a camera path planner and style references.
-- [Blockout](docs/USER_GUIDE.md#blockout): turn a scene description into a greybox layout, then refine or rebuild it.
-- [Environment](docs/USER_GUIDE.md#environment): generate 360 panoramas, HDRIs and upscales, then apply them to the scene World.
-- [Prompt tools and model picker](docs/USER_GUIDE.md#the-form): browse models and prepare prompts; prompt helpers can spend credits.
-- [Floating composer](docs/USER_GUIDE.md#the-floating-composer): access the current lane from the viewport.
-- [Generations](docs/USER_GUIDE.md#generations): inspect local results and available project history.
-- [Expanded Studio view](docs/USER_GUIDE.md#expanded-studio-view): run workflows and browse or organize Library assets.
-- [Film tasks](docs/USER_GUIDE.md#film-tasks): turn a JSON recipe into shots, a timeline, a review scene and an exported video.
+- [3D](docs/USER_GUIDE.md#3d): generate meshes, run provider edit tasks on a
+  selected mesh and
+  [apply a saved edit](docs/USER_GUIDE.md#apply-a-saved-mesh-edit) back to it.
+- [Materials](docs/USER_GUIDE.md#materials): generate saved PBR texture sets and
+  apply them explicitly to a chosen mesh material slot.
+- [Audio](docs/USER_GUIDE.md#audio): generate speech, music or sound effects and
+  add results to the sequencer.
+- [Render Image](docs/USER_GUIDE.md#render-image): use a scene capture and look
+  references to produce a still.
+- [Render Video](docs/USER_GUIDE.md#render-video): work with timeline captures,
+  a camera path planner and style references.
+- [Blockout](docs/USER_GUIDE.md#blockout): turn a scene description into a
+  greybox layout, then refine or rebuild it.
+- [Environment](docs/USER_GUIDE.md#environment): generate 360 panoramas, HDRIs
+  and upscales, then apply them to the scene World.
+- [Prompt tools and model picker](docs/USER_GUIDE.md#the-form): browse models
+  and prepare prompts; prompt helpers can spend credits.
+- [Floating composer](docs/USER_GUIDE.md#the-floating-composer): access the
+  current lane from the viewport.
+- [Generations](docs/USER_GUIDE.md#generations): inspect local results and
+  available project history.
+- [Expanded Studio view](docs/USER_GUIDE.md#expanded-studio-view): run workflows
+  and browse or organize Library assets.
+- [Film tasks](docs/USER_GUIDE.md#film-tasks): turn a JSON recipe into shots, a
+  timeline, a review scene and an exported video.
 
 ## Agents (MCP)
 
@@ -159,10 +173,11 @@ use and current limits.
 
 Start with the [user guide](docs/USER_GUIDE.md), [known limitations](docs/KNOWN_LIMITATIONS.md)
 and [changelog](CHANGELOG.md). The [documentation index](docs/index.md) links
-architecture, integration status and developer references. The public HTML handbook address is
-[blender.scenario.com](https://blender.scenario.com/). Build HTML from the maintained
-Markdown with `make docs`; see [documentation builds](CONTRIBUTING.md#documentation-builds)
-for website and single-file outputs.
+architecture, integration status and developer references. The public HTML
+handbook address is [blender.scenario.com](https://blender.scenario.com/). Build
+HTML from the maintained Markdown with `make docs`; see
+[documentation builds](CONTRIBUTING.md#documentation-builds) for website and
+single-file outputs.
 
 ## Staying up to date
 
@@ -205,19 +220,25 @@ Scenario for Blender is one of several Scenario integrations. The plugins share
 the Scenario name, the id `scenario` inside each host's namespace and the support
 channel (support@scenario.com), not necessarily the same licence.
 
-- [Scenario for Unity](https://github.com/scenario-labs/Scenario-Unity), Unity package `com.scenarioinc.scenario`. Scenario for Unity is MIT-licensed; this extension is GPL-3.0-or-later because Blender add-ons that import bpy must be GPL-compatible.
+- [Scenario for Unity](https://github.com/scenario-labs/Scenario-Unity), Unity
+  package `com.scenarioinc.scenario`. Scenario for Unity is MIT-licensed; this
+  extension is GPL-3.0-or-later because Blender add-ons that import bpy must be
+  GPL-compatible.
 - [Scenario skills for agents](https://github.com/scenario-labs/skills) (MIT).
-- The [Scenario MCP server](https://mcp.scenario.com) provides Scenario tools outside Blender. The [MCP guide](docs/MCP.md#local-server-and-mcpscenariocom) explains how it relates to this extension's local server.
+- The [Scenario MCP server](https://mcp.scenario.com) provides Scenario tools
+  outside Blender. The [MCP guide](docs/MCP.md#local-server-and-mcpscenariocom)
+  explains how it relates to this extension's local server.
 
 ## Licence
 
 Copyright 2026 Scenario Inc. First-party extension code is free software: you
 can redistribute it and/or modify it under the terms of the GNU General Public
-License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-It is distributed WITHOUT ANY WARRANTY; see [LICENSE](LICENSE) for the full text.
-First-party source headers and the extension manifest declare GPL-3.0-or-later,
-and the extension ZIP includes the same GPL text. Bundled dependencies, adopted
-sources and assets retain their original licences and notices; see the
+License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. It is distributed WITHOUT ANY
+WARRANTY; see [LICENSE](LICENSE) for the full text. First-party source headers
+and the extension manifest declare GPL-3.0-or-later, and the extension ZIP
+includes the same GPL text. Bundled dependencies, adopted sources and assets
+retain their original licences and notices; see the
 [SDK bundle](docs/SDK_BUNDLE.md) and [source adoption](docs/STUDIO_ADOPTION.md).
 The [bundled icon notice](scenario/icons/README.md) records the generator, the
 font option and the icons' first-party design origin. Scenario Inc. made the
@@ -230,7 +251,10 @@ GPL-compatible licence for published add-ons using its Python API. The
 requires GPL-3.0-or-later for add-ons it hosts. This project distributes outside
 that platform and uses GPL-3.0-or-later for its first-party extension code.
 
-The GPL grants no trademark rights: "Scenario" and the Scenario logo belong to Scenario Inc., and Blender is a registered trademark of the Blender Foundation; this extension is not affiliated with or endorsed by the Blender Foundation. See [TRADEMARKS.md](TRADEMARKS.md).
+The GPL grants no trademark rights: "Scenario" and the Scenario logo belong to
+Scenario Inc., and Blender is a registered trademark of the Blender Foundation;
+this extension is not affiliated with or endorsed by the Blender Foundation. See
+[TRADEMARKS.md](TRADEMARKS.md).
 
 ### Acknowledgements
 

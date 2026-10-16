@@ -86,7 +86,9 @@ uv run --locked --no-env-file python -m pytest tests/unit/test_scenario_sdk_cont
 
 [The tests](../tests/unit/test_scenario_sdk_contract.py) call public SDK methods
 through `httpx.MockTransport`, with socket connections forbidden. All IDs,
-credentials, payloads and responses are synthetic. `dry_run="true"`, `dry_run="api"` and omission for actual submission are tested without contacting Scenario or spending credits.
+credentials, payloads and responses are synthetic. `dry_run="true"`,
+`dry_run="api"` and omission for actual submission are tested without contacting
+Scenario or spending credits.
 [SDK contracts CI](../.github/workflows/sdk-contracts.yml) repeats these checks
 using the locked environment.
 
@@ -164,10 +166,10 @@ selected credentials and the connection's online-access gate. Its exact
 `Estimate` object is an in-memory preview, not a durable approval. Missing or
 invalid cost data is an error; explicit zero remains valid. A dry-run response
 that carries a job raises `EstimateStartedJob` and issues no `Estimate`; see
-[identical unconfirmed requests](JOB_COORDINATOR.md#identical-unconfirmed-requests). Native UI and MCP
-model quotes use fresh metadata through the selected JobSession instead;
-submission consumes that quote through the coordinator with the same raw SDK
-estimate and no automatic retry.
+[identical unconfirmed requests](JOB_COORDINATOR.md#identical-unconfirmed-requests).
+Native UI and MCP model quotes use fresh metadata through the selected
+JobSession instead; submission consumes that quote through the coordinator with
+the same raw SDK estimate and no automatic retry.
 
 ## Trained-model catalog reads
 
@@ -358,28 +360,29 @@ which `SDKAdapter` passes with each model or workflow schema
 (`forms.record_schema`). A malformed component refuses only a request that sets
 a model or number-array input, so a changed LoRA slot cannot block ordinary
 generations. A selection made only by schema defaults, including a default a
-form echoes back, is the service's own and is left unchanged. `SDKAdapter.prepare_model` and `prepare_workflow` return the
-exact target and payload that `estimate_model` and `estimate_workflow` would
-quote, without a request.
+form echoes back, is the service's own and is left unchanged.
+`SDKAdapter.prepare_model` and `prepare_workflow` return the exact target and
+payload that `estimate_model` and `estimate_workflow` would quote, without a
+request.
 
 Before any dry run, `JobCoordinator._quote` prepares the payload, then reads
 every model the caller chose in a `model` or `model_array` input (a value other
-than empty or the schema default) again with `SDKAdapter.model` (`models.with_raw_response.retrieve`, selected
-project in the query), composition concepts included. Reads are sequential,
-deduplicated and bounded at 16 per quote, and the scene origin is rechecked
-before each one. A deleted or inaccessible model (`AdapterUnavailable`, HTTP 403
-or 404), an untrained one, a type the input does not accept, a LoRA in
-`modelIdInput`, a composition whose concept LoRAs the stack would not accept,
-or a strength policy failure raises `RouteQuoteError`, a `QuoteError`. So does
-a chosen model in an input whose declared `modelTypes` is malformed, before any
-reference read, rather than accepting every type. Item limits and strength
-bounds stay form validation errors, as before. Nothing is
-quoted, dispatched or persisted. Model and workflow quotes get the same
-check; workflow `lorasComponent` inputs have no captured contract, so the check
-only restricts them. The coordinator then quotes as before and refuses the
-quote if its target or payload differs from the checked one. The durable intent
-keeps the base model as target, and its payload hash covers the LoRA IDs,
-strengths and composition ID.
+than empty or the schema default) again with `SDKAdapter.model`
+(`models.with_raw_response.retrieve`, selected project in the query),
+composition concepts included. Reads are sequential, deduplicated and bounded at
+16 per quote, and the scene origin is rechecked before each one. A deleted or
+inaccessible model (`AdapterUnavailable`, HTTP 403 or 404), an untrained one, a
+type the input does not accept, a LoRA in `modelIdInput`, a composition whose
+concept LoRAs the stack would not accept, or a strength policy failure raises
+`RouteQuoteError`, a `QuoteError`. So does a chosen model in an input whose
+declared `modelTypes` is malformed, before any reference read, rather than
+accepting every type. Item limits and strength bounds stay form validation
+errors, as before. Nothing is quoted, dispatched or persisted. Model and
+workflow quotes get the same check; workflow `lorasComponent` inputs have no
+captured contract, so the check only restricts them. The coordinator then quotes
+as before and refuses the quote if its target or payload differs from the
+checked one. The durable intent keeps the base model as target, and its payload
+hash covers the LoRA IDs, strengths and composition ID.
 
 `RouteQuoteError` text names input labels and positions, such as "Flux LoRA [2]
 is not available to the selected credentials or project (HTTP 404)", never a
@@ -444,7 +447,8 @@ form's default names a base whose description is not loaded yet, the existing
 model-description read loads it (`SDKAdapter.model`,
 `models.with_raw_response.retrieve` with the selected project), at most once per
 base and selection, never while one is pending and not again after a recorded
-failure; the quote then reads every chosen model again as above. Defaults live in the local job store, not in the service.
+failure; the quote then reads every chosen model again as above. Defaults live
+in the local job store, not in the service.
 
 Every call here is an existing public SDK 2.2.0 method; there is no new SDK method,
 raw fallback, SDK extension, SDK issue or dependency change. Offline and installed
@@ -657,8 +661,8 @@ Malformed pages and later-page errors never return a silent partial result.
 Discovery omits embedded results by default (`hide_results=True`); callers can
 explicitly request them with `False`. This option stays unchanged on every page.
 Job IDs use the same validation as retrieval, so malformed or padded IDs fail
-the listing. Unknown response fields/statuses are preserved. Listings are not server snapshots;
-retrieve a known remote ID again before acting on its state.
+the listing. Unknown response fields/statuses are preserved. Listings are not
+server snapshots; retrieve a known remote ID again before acting on its state.
 
 The inspected SDK has no dedicated lookup by client request identity or explicit
 idempotency parameter for model/workflow submission. Generic extension parameters
@@ -864,14 +868,14 @@ and `workflows`.
 
 The periodic status polls are the exception. The automatic `refresh_remote` of
 `ModelJobs`, Prompt Spark/Translate and Blockout passes `automatic=True` to the
-coordinator, which reads the job once with `SDKAdapter.job(..., retry=False)`. `ModelJobs` retries a failed poll later
-with its own [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures), which
-holds no worker; Prompt Spark/Translate and Blockout keep their existing
-failure handling, as before this change. Stacking SDK retries under a poll would
-only keep one of the two job workers busy (see #453). A poll therefore holds a
-job worker for one request per read, at most the adapter's 45-second timeout
-each: 45 seconds, or 90 seconds when a waiting workflow's definition is read
-too.
+coordinator, which reads the job once with `SDKAdapter.job(..., retry=False)`.
+`ModelJobs` retries a failed poll later with its own
+[backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures), which holds no
+worker; Prompt Spark/Translate and Blockout keep their existing failure
+handling, as before this change. Stacking SDK retries under a poll would only
+keep one of the two job workers busy (see #453). A poll therefore holds a job
+worker for one request per read, at most the adapter's 45-second timeout each:
+45 seconds, or 90 seconds when a waiting workflow's definition is read too.
 
 A History page's optional per-row reads also make one attempt: up to 24
 workflow step reads with `SDKAdapter.job(..., retry=False)` and up to 30 prompt
@@ -936,11 +940,12 @@ allow-listed read and each single-attempt operation through the adapter.
 
 Each client owns an immutable selected project and connection scope. Estimates
 from a different client fail `owns_estimate`, including a recreated client for
-the same account. Only the original issued object is accepted; copies and consumed quotes fail
-ownership checks. The coordinator binds it to persisted request/origin identity;
-neither mechanism grants spending authorization. Online permission is
-checked before every request, including every catalog page. Blender callers must
-supply a predicate reflecting their actual online-access permission.
+the same account. Only the original issued object is accepted; copies and
+consumed quotes fail ownership checks. The coordinator binds it to persisted
+request/origin identity; neither mechanism grants spending authorization. Online
+permission is checked before every request, including every catalog page.
+Blender callers must supply a predicate reflecting their actual online-access
+permission.
 
 Custom-model records must explicitly declare `type=custom`; a trained model is
 never the quoted target and runs only through a base model's
@@ -1139,9 +1144,9 @@ policy, provider acceptance or the dependency pin.
 
 The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.2.0
 `originalFileUrl` and `originalMimeType` fields. The typed
-`AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes a
-JPEG preview as `url` and its `.exr` or `.hdr` file as the original; for images
-the extension selects only the OpenEXR labels. Its `original_file_url`
+`AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes
+a JPEG preview as `url` and its `.exr` or `.hdr` file as the original; for
+images the extension selects only the OpenEXR labels. Its `original_file_url`
 docstring still describes only video, audio and 3D originals, which is a
 documentation gap rather than a missing operation. For audio, the extension also
 selects a WAV original behind the MP3 that Scenario re-encodes
@@ -1168,23 +1173,24 @@ The API reference has no skybox-specific pages, so each contract was checked
 against the model's own `GET /models/{id}` inputs, as `run_model` documents.
 
 The read-only [fixture recorder](../tests/fixtures/README.md) records the five
-contract models' records with an API-key pair in its credential-bound scope. All five are public `custom` models with status
-`trained` and no training lineage, so the adapter's estimate gate accepts them
-and the catalog classifies none as trained. The contracts rely only on inputs
-present in these records. The GPT skybox model's free `width` and `height`
-accept any ratio and its resolution presets include cubemap layouts, so the
-contract offers only its 2:1 sizes.
+contract models' records with an API-key pair in its credential-bound scope. All
+five are public `custom` models with status `trained` and no training lineage,
+so the adapter's estimate gate accepts them and the catalog classifies none as
+trained. The contracts rely only on inputs present in these records. The GPT
+skybox model's free `width` and `height` accept any ratio and its resolution
+presets include cubemap layouts, so the contract offers only its 2:1 sizes.
 
 In the same scope, `dryRun=true` quotes through `SDKAdapter.estimate_model`
-covered every contract preset, and the service accepted each one. The Flux quote scales with `numOutputs`, so the lane default of one output
-costs about half the schema default of two. GPT quality, size and reference
-count, the HY World backend and the upscale factor each change the quote; the
-HDRI output toggles do not. The dry runs also accepted an ordinary generated
-still as the `image` of the HDRI, upscale and Flux models, so an accepted quote
-does not show that a reference is a 360 panorama; the contract checks that
-locally. Offline [contract tests](../tests/unit/test_panorama_contract.py)
-prepare each preset against the recorded schemas and the shared form
-preparation. Paid-run evidence is in the
+covered every contract preset, and the service accepted each one. The Flux quote
+scales with `numOutputs`, so the lane default of one output costs about half the
+schema default of two. GPT quality, size and reference count, the HY World
+backend and the upscale factor each change the quote; the HDRI output toggles do
+not. The dry runs also accepted an ordinary generated still as the `image` of
+the HDRI, upscale and Flux models, so an accepted quote does not show that a
+reference is a 360 panorama; the contract checks that locally. Offline
+[contract tests](../tests/unit/test_panorama_contract.py) prepare each preset
+against the recorded schemas and the shared form preparation. Paid-run evidence
+is in the
 [release record](maintenance/release-acceptance.md#panorama-and-world); HY World
 output, and whether returned assets carry `metadata.type` and the HDR original's
 host, are open in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
@@ -1194,11 +1200,11 @@ No SDK gap was found, so no scenario-sdk-python issue is needed.
 
 `JobSession.quote_film_composition` uses the existing shared adapter
 `models.with_raw_response.retrieve` and `generate.with_raw_response.run_model`
-methods with SDK 2.2.0. The former supplies current model inputs; the latter uses `dry_run="true"`
-for estimation, query-only optional project scope and unchanged model parameters.
-Approval submits the same exact estimate once through the existing durable
-coordinator and adapter. Paid retries remain disabled. Composition uses no raw
-endpoint or SDK extension.
+methods with SDK 2.2.0. The former supplies current model inputs; the latter
+uses `dry_run="true"` for estimation, query-only optional project scope and
+unchanged model parameters. Approval submits the same exact estimate once
+through the existing durable coordinator and adapter. Paid retries remain
+disabled. Composition uses no raw endpoint or SDK extension.
 
 Local receipt inspection and current-source checks precede those calls; guards
 are repeated around price preparation and dispatch. The current composition
@@ -1210,12 +1216,13 @@ no service or paid check is implied. See [the composition contract](FILM_PLAN.md
 ### Local workflow command integration
 
 Native workflow forms and local MCP list public/private workflows and read their
-inputs through the adapter's `workflows.list` and `workflows.retrieve` wrappers. Estimates
-and single approved submissions call `workflows.with_raw_response.run`; the
-selected SDK 2.2.0 resource was inspected for its workflow-specific body,
-`dry_run` and `project_id` query mapping. No adapter, dependency or raw-API
-exception is added. The same JobSession and ModelJobs own scoped metadata,
-approvals, persisted identity, uncertainty, polling and explicit saved results.
+inputs through the adapter's `workflows.list` and `workflows.retrieve` wrappers.
+Estimates and single approved submissions call
+`workflows.with_raw_response.run`; the selected SDK 2.2.0 resource was inspected
+for its workflow-specific body, `dry_run` and `project_id` query mapping. No
+adapter, dependency or raw-API exception is added. The same JobSession and
+ModelJobs own scoped metadata, approvals, persisted identity, uncertainty,
+polling and explicit saved results.
 
 Installed synthetic tests exercise pagination, schema retention, exact prices,
 model/workflow approval isolation, changed scenes/projects, failed persistence
@@ -1354,12 +1361,12 @@ and still needs authorized live evidence:
   U+202E, U+2066 to U+2069), invisible separators and operators (U+200B,
   U+2060 to U+2064, U+FEFF, U+180E), the soft hyphen and tag characters
   (U+E0001, U+E0020 to U+E007F), which could hide or reorder text or break
-  Library and MCP rows. Joiners (U+200C, U+200D) remain valid between other characters for
-  scripts and emoji sequences, but not alone or at either end. Rejecting tag
-  characters also rejects subdivision flag emoji. This is not a confusable
-  check: homoglyphs, combining marks, variation selectors and blank-looking
-  letters such as U+3164 pass, so displays must still treat labels as
-  untrusted text. A tag cannot be added and removed in the same change.
+  Library and MCP rows. Joiners (U+200C, U+200D) remain valid between other
+  characters for scripts and emoji sequences, but not alone or at either end.
+  Rejecting tag characters also rejects subdivision flag emoji. This is not a
+  confusable check: homoglyphs, combining marks, variation selectors and
+  blank-looking letters such as U+3164 pass, so displays must still treat labels
+  as untrusted text. A tag cannot be added and removed in the same change.
   Commas are allowed at this layer.
   The service may normalize case or spelling; a normalized acknowledgement is
   uncertain and must be read back.
@@ -1371,7 +1378,8 @@ call these methods through the coordinator, its workers and the JobSession
 review owner, with a guard before each write and a `get_bulk` read-back. After
 `AlreadyMembers`, they send only the assets read back as not yet members, within
 three add requests per review. The local [MCP organization tools](MCP.md#asset-organization)
-and the native [Library organization](ui/studio-and-library.md#library-organization) controls
+and the native
+[Library organization](ui/studio-and-library.md#library-organization) controls
 prepare, apply and inspect those reviews. Live evidence is in the
 [release record](maintenance/release-acceptance.md#library-organization);
 Apply from the desktop dialog continues in

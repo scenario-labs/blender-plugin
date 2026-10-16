@@ -100,9 +100,9 @@ full render-lane desktop acceptance.
   recipe and a production ledger into a new ZIP; it shares that thread, refuses
   linked data (including the Essentials brushes a scene links once a sculpt or
   paint mode was used in it), movie clips, packed sound strip audio, image
-  sequences and other unportable data, keeps model IDs in the recipe and output-only path
-  settings such as strip proxy folders, and cannot clear Blender's unused bytes
-  of earlier settings, so review a bundle before
+  sequences and other unportable data, keeps model IDs in the recipe and
+  output-only path settings such as strip proxy folders, and cannot clear
+  Blender's unused bytes of earlier settings, so review a bundle before
   publishing it widely. It notices an edit of its unshown scenes only through the
   review's frames, rate, size and strip count, the scene and media counts and bytes
   and the ledger. It has installed synthetic coverage and the bundle of that
@@ -166,15 +166,17 @@ full render-lane desktop acceptance.
   continue in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 - Remote job progress is advisory and kept only in memory. Providers may report
   no fraction, or 0 until completion, so a job may show only `generating`; a
-  fraction below 1% shows no bar, and no time estimate is given. Readings and the submitting scene/lane binding are not
-  persisted: after a restart, progress appears only after an explicit refresh or
-  resume, and recovered jobs remain unbound. In paid desktop passes, TripoSplat
-  and Tencent UV Unwrapping reported several intermediate fractions, GPT Image 2
-  only 3%, and no job reported a queued state; other providers are unobserved.
-  At UI scale 1.0 the composer's strip and collapsed pill filled to the reported
-  fraction over a dim track. The composer bar at UI scale 2.0 and the Jobs rows'
-  bars still need desktop evidence
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)). See [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
+  fraction below 1% shows no bar, and no time estimate is given. Readings and
+  the submitting scene/lane binding are not persisted: after a restart, progress
+  appears only after an explicit refresh or resume, and recovered jobs remain
+  unbound. In paid desktop passes, TripoSplat and Tencent UV Unwrapping reported
+  several intermediate fractions, GPT Image 2 only 3%, and no job reported a
+  queued state; other providers are unobserved. At UI scale 1.0 the composer's
+  strip and collapsed pill filled to the reported fraction over a dim track. The
+  composer bar at UI scale 2.0 and the Jobs rows' bars still need desktop
+  evidence ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+  See
+  [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 - Scenario cannot cancel a running workflow step: rejecting a waiting approval
   or selection step (**Stop workflow**, or MCP `decide_workflow_step` `reject`)
   is the only way to stop a workflow, and completed steps stay charged. Steps
@@ -503,27 +505,28 @@ full render-lane desktop acceptance.
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme
   rather than the custom composer drawing.
-- Studio > Library [organization](ui/studio-and-library.md#library-organization) changes one
-  asset per review (local MCP accepts up to 49) and loads at most 200 collections.
-  Applied changes are immediate account metadata that Blender Undo does not
-  reverse. Collection rename and deletion, model collections and tag listing are
-  not available, and pages loaded with Public assets cannot be organized. Reviews
-  and results are session-local: a restart, file load or connection change loses
-  the card, while a sent write keeps its effect. Search results may lag behind
-  tag changes; verification reads the assets back instead. An add of an asset
-  that is already a member is refused as a whole and writes nothing, as the
-  service was observed to behave; the review then reads the asset back as
-  verified without another request. This is not yet checked live from this
-  repository. On 2026-10-10 a free live run from a pre-merge build applied and
-  read back one asset's collection add and removal and tag changes, through local
-  MCP and the native operators in background Blender, so that removal's DELETE
-  body reached the service; name uniqueness, tag normalization and service limits
-  are unverified live. On macOS, Japanese IME composition did not start in the
-  Organize dialog's Tags field, as in Blender's own text fields, where pasting the
-  text worked. A read-only physical pass on macOS arm64 Blender 5.1.2 checked the
-  card placement and read-enabled controls at UI scales 1.0 and 2.0; at 2.0 only
-  the review card's header shows at the bottom of the Studio popup until it is
-  scrolled. Apply on a desktop still needs a physical check
+- Studio > Library [organization](ui/studio-and-library.md#library-organization)
+  changes one asset per review (local MCP accepts up to 49) and loads at most
+  200 collections. Applied changes are immediate account metadata that Blender
+  Undo does not reverse. Collection rename and deletion, model collections and
+  tag listing are not available, and pages loaded with Public assets cannot be
+  organized. Reviews and results are session-local: a restart, file load or
+  connection change loses the card, while a sent write keeps its effect. Search
+  results may lag behind tag changes; verification reads the assets back
+  instead. An add of an asset that is already a member is refused as a whole and
+  writes nothing, as the service was observed to behave; the review then reads
+  the asset back as verified without another request. This is not yet checked
+  live from this repository. On 2026-10-10 a free live run from a pre-merge
+  build applied and read back one asset's collection add and removal and tag
+  changes, through local MCP and the native operators in background Blender, so
+  that removal's DELETE body reached the service; name uniqueness, tag
+  normalization and service limits are unverified live. On macOS, Japanese IME
+  composition did not start in the Organize dialog's Tags field, as in Blender's
+  own text fields, where pasting the text worked. A read-only physical pass on
+  macOS arm64 Blender 5.1.2 checked the card placement and read-enabled controls
+  at UI scales 1.0 and 2.0; at 2.0 only the review card's header shows at the
+  bottom of the Studio popup until it is scrolled. Apply on a desktop still
+  needs a physical check
   ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 
 ## Verification

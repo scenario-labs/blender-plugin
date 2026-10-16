@@ -31,7 +31,12 @@ FAVICONS = [
     ("icon", "favicon-dark-196x196.png", "196x196", "dark"),
     ("apple-touch-icon", "apple-touch-icon.png", "152x152", None),
 ]
-COPY_SCRIPT = """<script>
+# Vercel Web Analytics, as in the handbook template; vercel.json serves the script.
+ANALYTICS = """<script>
+window.va = window.va || function () { (window.vaq = window.vaq || []).push(arguments); };
+</script>
+<script defer src="/handbook/page.js"></script>"""
+DOWNLOADS_SCRIPT = """<script>
 document.addEventListener("click", async event => {
   const button = event.target.closest("button[data-copy]");
   if (!button) return;
@@ -42,6 +47,10 @@ document.addEventListener("click", async event => {
     button.textContent = "Select and copy";
   }
   setTimeout(() => { button.textContent = "Copy"; }, 2000);
+});
+document.addEventListener("click", event => {
+  const link = event.target.closest("a[data-track]");
+  if (link) window.va("event", { name: link.dataset.track });
 });
 </script>"""
 
@@ -82,6 +91,7 @@ def _page(title, body, *, script=""):
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400..700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>{_style()}</style>
+{ANALYTICS}
 </head>
 <body>
 <a class="skip" href="#main">Skip to downloads</a>
@@ -134,7 +144,7 @@ def _release(item, latest):
     badge = ' <span class="latest">Latest</span>' if latest else ""
     return f"""<li class="release">
   <h3>{escape(item["name"])} {escape(item["version"])}{badge}</h3>
-  <a class="button" href="{escape(item["archive_url"], quote=True)}">Download ZIP</a>
+  <a class="button" href="{escape(item["archive_url"], quote=True)}" data-track="Download">Download ZIP</a>
   <dl>
     <dt>Blender</dt><dd>{escape(_blender_range(item))}</dd>
     <dt>Platforms</dt><dd>{escape(platforms)}</dd>
@@ -164,7 +174,7 @@ def downloads_page(index):
 </ol>
 <p class="note">Check a download before installing it: <a href="../#verify-your-download">Verify your download</a>. Blender reads the same files from the <a href="./index.json">repository index</a>.</p>
 </main>"""
-    return _page("Scenario for Blender: downloads", body, script=COPY_SCRIPT)
+    return _page("Scenario for Blender: downloads", body, script=DOWNLOADS_SCRIPT)
 
 
 def pending_page():

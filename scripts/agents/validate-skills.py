@@ -5,6 +5,7 @@
 #   "skills-ref @ git+https://github.com/agentskills/agentskills.git@69ef37e9424c0a7ea9dd2293b559e43ec8176379#subdirectory=skills-ref",
 # ]
 # ///
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Validate canonical skills and check or repair agent compatibility links."""

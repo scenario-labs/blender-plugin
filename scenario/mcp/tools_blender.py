@@ -9,7 +9,7 @@ import tempfile
 
 import bpy
 
-from ..blender import file_state
+from ..blender import file_state, selection
 from . import sandbox
 from .protocol import ToolSpec
 
@@ -97,7 +97,7 @@ def scene_summary(args):
     objects = [
         {"name": obj.name, **{field: OBJECT_FIELDS[field](obj) for field in fields}} for obj in page
     ]
-    selected = [o.name for o in bpy.context.selected_objects]
+    selected = [o.name for o in selection.selected_objects(bpy.context)]
     cameras = [o.name for o in scene.objects if o.type == "CAMERA"]
     active = bpy.context.view_layer.objects.active
     summary = {

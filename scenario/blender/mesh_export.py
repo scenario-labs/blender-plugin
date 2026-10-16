@@ -7,7 +7,7 @@ import time
 
 import bpy
 
-from . import runtime
+from . import runtime, selection
 
 log = logging.getLogger("scenario.mesh_export")
 
@@ -20,9 +20,10 @@ def export_dir():
 
 def source_objects(context):
     """The meshes to send: the selected mesh objects, else the active one if it is a mesh."""
-    meshes = [o for o in context.selected_objects if o.type == "MESH"]
-    if not meshes and context.active_object is not None and context.active_object.type == "MESH":
-        meshes = [context.active_object]
+    meshes = [o for o in selection.selected_objects(context) if o.type == "MESH"]
+    active = selection.active_object(context)
+    if not meshes and active is not None and active.type == "MESH":
+        meshes = [active]
     return meshes
 
 
@@ -36,7 +37,7 @@ def export_glb(context, objects, path=None):
         raise RuntimeError("Blender's glTF exporter is not available")
     path = path or str(export_dir() / f"edit3d_{int(time.time() * 1000)}.glb")
     view_layer = context.view_layer
-    previous = [o for o in context.selected_objects]
+    previous = selection.selected_objects(context)
     active = view_layer.objects.active
     try:
         for obj in previous:

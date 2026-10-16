@@ -13,6 +13,9 @@ requests and catalog worker events; the
 [MCP service](../../scenario/blender/mcp_service.py) supplies headless queue
 processing. A GUI timer is not proof that background mode delivers work.
 Never mutate properties in `draw()` or keep a worker dependent on a live panel.
+A saved file read with `--background` gives commands and timers a context
+without `selected_objects` or `active_object`; code that local MCP tools reach
+reads them through [`selection.py`](../../scenario/blender/selection.py).
 
 Check `bpy.app.online_access` before network activity. Store state and cache
 through `bpy.utils.extension_path_user`; never write into the installed package.

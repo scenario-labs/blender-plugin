@@ -179,6 +179,7 @@ def fixture(directory, version):
     """Create test-only artifacts, never modify a released or checkout package."""
     directory.mkdir()
     path = directory / f"scenario-{version}.zip"
+    # REUSE-IgnoreStart: the fixture headers below are data, not this file's licence.
     manifest = (
         "# SPDX-FileCopyrightText: 2026 Scenario Inc.\n"
         "# SPDX-License-Identifier: GPL-3.0-or-later\n"
@@ -192,6 +193,7 @@ def fixture(directory, version):
         "# SPDX-FileCopyrightText: 2026 Scenario Inc.\n"
         "# SPDX-License-Identifier: GPL-3.0-or-later\n"
         "import bpy\n"
+        # REUSE-IgnoreEnd
         f"VERSION = {version!r}\n"
         "def register():\n"
         "    bpy.types.WindowManager.scenario_update_fixture_version = VERSION\n"

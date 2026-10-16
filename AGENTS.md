@@ -32,9 +32,10 @@ describes the current checkout.
 
 The approved direction is one consolidated extension, a compact default UI,
 optional expanded Studio and Blender-native updates. The current release uses
-explicit API key/secret configuration; browser OAuth is deferred under #67. There is no
-prototype-data migration requirement. Preserve useful capabilities and tests,
-source attribution and required third-party notices when adopting code.
+explicit API key/secret configuration; browser OAuth is deferred under #67.
+There is no prototype-data migration requirement. Preserve useful capabilities
+and tests, source attribution and required third-party notices when adopting
+code.
 
 The current package is `scenario/`; the approved minimum is Blender 5.0.
 Adoption must validate native behavior and bundled dependencies on Blender 5.0,
@@ -137,6 +138,10 @@ This repository is public. Do not add session/resume IDs, personal paths, accoun
 records, workspace identifiers, spend anecdotes or private research exports.
 Preserve GPL text and first-party SPDX notices; preserve the original licenses
 and attribution of third-party code, fonts, icons and SDK dependencies.
+`make check-rules` enforces SPDX headers, no em dashes, the `bpy` boundary,
+approved dependencies, SDK adapter imports, the public-content denylist, version
+literals and no snapshot directories; the unit suite runs it. Files that cannot
+carry a header are covered by `REUSE.toml`; `make lint-licence` validates it.
 
 Useful prototype lessons to retain while changing implementations:
 

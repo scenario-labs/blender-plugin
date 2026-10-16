@@ -1,6 +1,8 @@
 # SDK catalog, pricing and history
 
-Integration status of the SDK catalog, project selection, cost previews, submission and history. The [runtime map](runtime.md) lists the entry points and shared components.
+Integration status of the SDK catalog, project selection, cost previews,
+submission and history. The [runtime map](runtime.md) lists the entry points and
+shared components.
 
 ## Active SDK catalog
 
@@ -55,11 +57,12 @@ See [trained-model catalog reads](../SDK_ADOPTION.md#trained-model-catalog-reads
 The GUI pump and main-thread MCP catalog/schema calls deliver the same queued
 completions. An MCP call that needs a model description not loaded yet waits for
 its read's worker on the request thread, then delivers it on the main thread
-([MCP quote contract](../MCP.md#model-quote-and-submission-contract)). Credential changes retire the context, discard its model/schema
-caches and visible quotes, and reject late success/error events from the old
-context. Main-thread entry points and GUI ticks mirror Blender's online-access
-permission into a thread-safe event; each SDK request, including subsequent
-catalog pages, checks that snapshot. Workers never read `bpy`.
+([MCP quote contract](../MCP.md#model-quote-and-submission-contract)).
+Credential changes retire the context, discard its model/schema caches and
+visible quotes, and reject late success/error events from the old context.
+Main-thread entry points and GUI ticks mirror Blender's online-access permission
+into a thread-safe event; each SDK request, including subsequent catalog pages,
+checks that snapshot. Workers never read `bpy`.
 
 The list is delivered before the curated model schemas finish warming. Each
 successful detail becomes available independently; the final catalog event
@@ -78,8 +81,9 @@ new selection. All events retain the credential-context identity check.
 
 Catalog-driven form synchronization does not tag a scene for a dependency
 update, except when an Edit 3D or Environment form's saved model left the
-catalog: selecting the first model then goes through RNA. Blender tags the scene on every RNA assignment to a property with an
-update callback, even with an unchanged value, and that update makes the scene's
+catalog: selecting the first model then goes through RNA. Blender tags the scene
+on every RNA assignment to a property with an update callback, even with an
+unchanged value, and that update makes the scene's
 [captured origins](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime) stale.
 Seeding a new or replaced parameter with its schema default, correcting an enum
 value the schema no longer offers and restoring a model enum index therefore
@@ -169,11 +173,11 @@ normalized-equivalent edits keep the current session. Explicit trained-model lan
 defaults follow the same selection: `ensure_model_defaults` opens an owner of the
 selected store's scope without any service request, and this retirement path
 retires it, so a default reviewed under the old selection cannot be written into
-the new one ([runtime owner](../JOB_STORAGE.md#runtime-owner)). The native Image and
-Render Image forms read those defaults into a per-selection cache that drawing only
-reads; the GUI pump, before pricing, and local MCP render inspection, quotes or
-`configure` without a model give a form with no explicit choice its lane default
-once the route checks, without tagging the scene
+the new one ([runtime owner](../JOB_STORAGE.md#runtime-owner)). The native Image
+and Render Image forms read those defaults into a per-selection cache that
+drawing only reads; the GUI pump, before pricing, and local MCP render
+inspection, quotes or `configure` without a model give a form with no explicit
+choice its lane default once the route checks, without tagging the scene
 ([catalog delivery](#active-sdk-catalog)), and block its price
 with the reason otherwise
 ([trained models section](../UI_STYLE.md#trained-models-section-and-project-defaults)).
@@ -213,9 +217,9 @@ Image approval into a render, material or other lane submission. A displayed flo
 is not used to reconstruct the price. The 3D tab in Edit mode resolves to the
 Edit 3D lane through one rule (`props.effective_lane`) shared by the pricing pump,
 the sidebar and Settings forms, the composer and the Generate operator, so a ready
-3D-tab price cannot label or enable an Edit 3D submission. The model picker maps a
-chosen model to its form in the other direction. The composer writes its text only
-into the form it was synchronized from, never into a form that replaced it.
+3D-tab price cannot label or enable an Edit 3D submission. The model picker maps
+a chosen model to its form in the other direction. The composer writes its text
+only into the form it was synchronized from, never into a form that replaced it.
 The facade consumes the handle before preparation; the coordinator persists an
 intent and claims `submitting` before the single SDK request. Repeated clicks,
 reused quote handles, changed inputs, stale origins and failed writes cannot
@@ -229,11 +233,12 @@ can be reclaimed; repricing a UI form explicitly releases its previous approval.
 
 GUI and headless main-thread context maintenance drains completed submissions,
 polls their known remote IDs at two-second intervals and downloads successful
-results through the coordinator. Saved state is projected into the existing Jobs view. This projection is
-not registered with the prototype manager. Each poll also projects the latest
-validated remote status and progress fraction, and submissions record a
-display-only scene and lane binding; both stay in memory and MCP `job_status`
-reports the same values ([projection rules](../BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)).
+results through the coordinator. Saved state is projected into the existing Jobs
+view. This projection is not registered with the prototype manager. Each poll
+also projects the latest validated remote status and progress fraction, and
+submissions record a display-only scene and lane binding; both stay in memory
+and MCP `job_status` reports the same values
+([projection rules](../BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)).
 A retrieval that observes a failure also projects the `metadata.error`/`metadata.hint`
 reason, shown when plain text and otherwise a fixed sentence, as the failed view's
 error, in memory only
@@ -263,96 +268,99 @@ explicit role-bound slots. Native saved-job controls and local MCP can also
 hand one downloaded saved PNG, JPEG or WebP result to the Render Video
 first-frame slot by reusing its asset ID, without an upload or a stored file
 path; see the
-[handoff command](../BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame). Saved video/audio, GLB, glTF, FBX, OBJ and mesh PLY
-models, material maps and supported mesh edits use explicit destination approval through the shared session; their
-format and target limits are described below and in the application guides.
-Explicit viewport/camera clips and selected-mesh GLB uploads now share the typed
-reference lifecycle through both forms and MCP. They stage private snapshots;
-clips preserve the preview/scene range without duration padding, and mesh export
-restores selection. Later source edits do not change an uploaded reference.
-Native recovery can refresh known uploads, cancel unclaimed preparation, upload
-again one that cannot resume and clean terminal staging copies. Reusing an
-imported reference after restart or form changes requires a fresh destination
-confirmation and invalidates old prices.
-Existing Scenario asset IDs are supported. Downloaded images
-are receipt-verified again on the main thread, decoded from private snapshots and
-packed as image datablocks after a durable application claim. Automatic import
-supports bounded 8-/16-bit grayscale/RGB/RGBA PNG and scanline OpenEXR; other formats remain saved
-without import. It does not assign textures or replace scene targets. A stale
-origin, read/download error or uncertain application stops automatic delivery
-without another generation. The [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery)
-names the documented CDN hosts. The Jobs panel's **Inspect saved jobs** button
-and MCP `list_local_jobs` provide saved state. UI recovery buttons and
-`recover_local_job` use the current context token and observed revision to refresh,
-resume polling/download, cancel a known inference job, reconcile interrupted download
-receipts, or save a pending import receipt. These actions never submit generation.
-Resuming after restart does not approve import into the new scene. **Import saved
-images** captures the selected destination for confirmation. MCP uses
-`prepare_result_application` followed by explicit `apply_result_application`.
-Both reverify local bytes and recheck the approved scene revision before an
-atomic application claim saves the destination separately from the original job
-origin. An interrupted import cannot be claimed again.
-Its `job_status` and `wait_for_job` return the current saved state; active jobs
-advance through the same maintenance pump. `wait_for_job` waits on the HTTP worker
-while the main thread remains available for delivery. It returns at completion,
-review-required state or timeout, and rejects a changed credential context.
-An unresumed restarted record is returned immediately.
+[handoff command](../BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame).
+Saved video/audio, GLB, glTF, FBX, OBJ and mesh PLY models, material maps and
+supported mesh edits use explicit destination approval through the shared
+session; their format and target limits are described below and in the
+application guides. Explicit viewport/camera clips and selected-mesh GLB uploads
+now share the typed reference lifecycle through both forms and MCP. They stage
+private snapshots; clips preserve the preview/scene range without duration
+padding, and mesh export restores selection. Later source edits do not change an
+uploaded reference. Native recovery can refresh known uploads, cancel unclaimed
+preparation, upload again one that cannot resume and clean terminal staging
+copies. Reusing an imported reference after restart or form changes requires a
+fresh destination confirmation and invalidates old prices. Existing Scenario
+asset IDs are supported. Downloaded images are receipt-verified again on the
+main thread, decoded from private snapshots and packed as image datablocks after
+a durable application claim. Automatic import supports bounded 8-/16-bit
+grayscale/RGB/RGBA PNG and scanline OpenEXR; other formats remain saved without
+import. It does not assign textures or replace scene targets. A stale origin,
+read/download error or uncertain application stops automatic delivery without
+another generation. The
+[transfer policy](../RESULT_TRANSFERS.md#active-image-delivery) names the
+documented CDN hosts. The Jobs panel's **Inspect saved jobs** button and MCP
+`list_local_jobs` provide saved state. UI recovery buttons and
+`recover_local_job` use the current context token and observed revision to
+refresh, resume polling/download, cancel a known inference job, reconcile
+interrupted download receipts, or save a pending import receipt. These actions
+never submit generation. Resuming after restart does not approve import into the
+new scene. **Import saved images** captures the selected destination for
+confirmation. MCP uses `prepare_result_application` followed by explicit
+`apply_result_application`. Both reverify local bytes and recheck the approved
+scene revision before an atomic application claim saves the destination
+separately from the original job origin. An interrupted import cannot be claimed
+again. Its `job_status` and `wait_for_job` return the current saved state;
+active jobs advance through the same maintenance pump. `wait_for_job` waits on
+the HTTP worker while the main thread remains available for delivery. It returns
+at completion, review-required state or timeout, and rejects a changed
+credential context. An unresumed restarted record is returned immediately.
 Files, captures and Spark preparation must finish before the final quote. Render
 forms require an uploaded scene snapshot and, when enabled, an uploaded or
 handed-off first frame, then use the same quote and submit path. An empty look
 with automatic Spark enabled remains blocked; users can enter a look or disable
 automatic Spark for the default look. Non-image model jobs use the same durable
 submission, polling, download, cancellation and recovery commands. They stop at
-saved `ready` results without automatically assigning materials, importing meshes
-or inserting media strips. Status includes the saved
-result manifest and receipt presence, without returning paths for unverified
-application. Restarted display records are generic model jobs; the original lane
-is not persisted, so they have no scene/lane binding. Explicit PNG/EXR import
-remains available by result type.
-For supported video/audio, **Add video/audio strip** and MCP
+saved `ready` results without automatically assigning materials, importing
+meshes or inserting media strips. Status includes the saved result manifest and
+receipt presence, without returning paths for unverified application. Restarted
+display records are generic model jobs; the original lane is not persisted, so
+they have no scene/lane binding. Explicit PNG/EXR import remains available by
+result type. For supported video/audio, **Add video/audio strip** and MCP
 `prepare_result_application(asset_id=...)` capture one asset and the selected
 scene/frame for approval. The shared command verifies local receipts and claims
 application before inserting one strip. Receipt retry never repeats insertion;
-see [saved media application](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application).
+see
+[saved media application](../BLENDER_JOB_CONTEXT.md#explicit-saved-video-and-audio-application).
 The same asset-selected MCP approval and the per-unit **Import <format> model**
 controls support one classified import unit at the captured cursor: a
 self-contained GLB, a JSON glTF with its saved buffers and images, a binary FBX,
-an OBJ with its saved MTL and maps, or a mesh PLY. The main thread rehashes every
-member into a private snapshot before the claim, then imports it in a disposable
-scene, preserves existing selection and packs textures only from the package. GLB
-and glTF rigs, weights and node/morph animation clips remain in the new group;
-timing uses scene FPS without changing the current frame or timeline range, while
-FBX clips keep the file's rate. Its separate durable claim, which lists every
-member for a reuse, and receipt recovery follow the same session. SPZ, `.splat`
-and Gaussian splat PLY results are decoded by a worker in the local-operation
-slot with reviewed point limits and axes, then built on the main thread as a new
-point cloud (mesh plus Geometry Nodes and a new material) under the same claim
-and receipt rules; it approximates splats and is not a splat renderer. In-place
-rig/animation transfer remains open.
-Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit
-World replacement unless a texture role or a declared header size other than 2:1
-rules it out, with a separate guarded restore in the current session.
-Application refuses a file whose container differs from its saved media type;
+an OBJ with its saved MTL and maps, or a mesh PLY. The main thread rehashes
+every member into a private snapshot before the claim, then imports it in a
+disposable scene, preserves existing selection and packs textures only from the
+package. GLB and glTF rigs, weights and node/morph animation clips remain in the
+new group; timing uses scene FPS without changing the current frame or timeline
+range, while FBX clips keep the file's rate. Its separate durable claim, which
+lists every member for a reuse, and receipt recovery follow the same session.
+SPZ, `.splat` and Gaussian splat PLY results are decoded by a worker in the
+local-operation slot with reviewed point limits and axes, then built on the main
+thread as a new point cloud (mesh plus Geometry Nodes and a new material) under
+the same claim and receipt rules; it approximates splats and is not a splat
+renderer. In-place rig/animation transfer remains open. Saved PNG, JPEG and
+OpenEXR results, including `image/aces`, also offer explicit World replacement
+unless a texture role or a declared header size other than 2:1 rules it out,
+with a separate guarded restore in the current session. Application refuses a
+file whose container differs from its saved media type;
 [World application](../WORLD_APPLICATION.md#accepted-local-files) lists the
-accepted variants. Completed jobs can reuse saved results
-through fresh UI/MCP approval and a separate durable local claim, preserving the
-original generation outcome. Interrupted local claims block another application.
-Saved texture sets also offer explicit one-mesh material-slot approval, using
-[stored roles and packed material construction](../MATERIAL_APPLICATION.md).
-MCP lane `panorama` (Environment) lists only the models of the bpy-free
-[panorama contracts](../../scenario/core/scene/panorama_contract.py) and prepares
-their requests through them before the shared quote: locked and lane-default
-values, 2:1 sizes, and panorama references limited to saved, downloaded 360
-results of the selected scope. A changed model schema fails closed. The lane's
-jobs have no automatic image or World application, and the same models stay in
-the Image and Render Image lanes. The native Environment tab, Studio Create and
-the composer's Generate mode build the same contract body through
-`generation.build_request`; native panorama references are rechecked saved
-results or files that passed a 2:1 preflight before a byte-bound upload. See
+accepted variants. Completed jobs can reuse saved results through fresh UI/MCP
+approval and a separate durable local claim, preserving the original generation
+outcome. Interrupted local claims block another application. Saved texture sets
+also offer explicit one-mesh material-slot approval, using
+[stored roles and packed material construction](../MATERIAL_APPLICATION.md). MCP
+lane `panorama` (Environment) lists only the models of the bpy-free
+[panorama contracts](../../scenario/core/scene/panorama_contract.py) and
+prepares their requests through them before the shared quote: locked and
+lane-default values, 2:1 sizes, and panorama references limited to saved,
+downloaded 360 results of the selected scope. A changed model schema fails
+closed. The lane's jobs have no automatic image or World application, and the
+same models stay in the Image and Render Image lanes. The native Environment
+tab, Studio Create and the composer's Generate mode build the same contract body
+through `generation.build_request`; native panorama references are rechecked
+saved results or files that passed a 2:1 preflight before a byte-bound upload.
+See
 [Environment lane delivery](../BLENDER_JOB_CONTEXT.md#environment-lane-delivery).
 Render-lane MCP calls use the native form preparation described below, including
-uploaded inputs, prompt decoration and separate Spark approval. Do not describe this slice as
-complete generation or supported release acceptance.
+uploaded inputs, prompt decoration and separate Spark approval. Do not describe
+this slice as complete generation or supported release acceptance.
 
 ## Active SDK history
 

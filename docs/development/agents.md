@@ -41,13 +41,13 @@ needed.
 Each command includes a Codex picker description and starting prompt in
 `agents/openai.yaml`. Keep these consistent with its canonical instructions.
 
-Run `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --sync` after adding or
-renaming a skill. Without `--sync`, the same command checks all skills with the
-pinned Agent Skills reference validator and verifies the rulebook and command
-links without writing. Registered local maintainer commands additionally allow
-`argument-hint` and `disable-model-invocation`, checked against their command
-contracts; native skills retain strict reference validation. CI runs this check
-on every pull request.
+Run `uv run --no-project --python 3.12 scripts/agents/validate-skills.py --sync`
+after adding or renaming a skill. Without `--sync`, the same command checks all
+skills with the pinned Agent Skills reference validator and verifies the
+rulebook and command links without writing. Registered local maintainer commands
+additionally allow `argument-hint` and `disable-model-invocation`, checked
+against their command contracts; native skills retain strict reference
+validation. CI runs this check on every pull request.
 
 CI also checks direct command links, argument hints, Codex picker metadata,
 explicit invocation guards on both agents, and the Codex instruction byte limit.

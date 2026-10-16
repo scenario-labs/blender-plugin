@@ -30,9 +30,11 @@ from dataclasses import replace
 from pathlib import Path
 
 SERVICE = "https://service.example.invalid/v1"
+# REUSE-IgnoreStart: the fixture header below is data, not this file's licence.
 HEADER = (
     "-- SPDX-FileCopyrightText: 2026 Scenario Inc.\n"
     "-- SPDX-License-Identifier: GPL-3.0-or-later\n"
+    # REUSE-IgnoreEnd
     "-- Schema 9 job store written by tools/make_job_store_fixture.py with the\n"
     "-- predecessor's storage code; see tests/fixtures/README.md. Synthetic data only.\n"
 )

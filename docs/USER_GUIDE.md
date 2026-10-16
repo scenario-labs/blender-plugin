@@ -71,6 +71,11 @@ The two sources never mix: environment values are ignored while **Saved in
 Blender** is selected, and a missing value is never borrowed from the other source.
 The account strip tells you when the selected source lacks its key or secret.
 
+Create the key in the Scenario web app under **Settings > Organization > API Keys**.
+Creating a key takes a team admin or the project's owner, and the secret is shown
+only once, right after creation; see
+[API keys and scopes](https://help.scenario.com/articles/2952168846-api-keys-and-scopes).
+
 **Test connection** checks in the background that your credentials can read
 Scenario's models. It doesn't tell you which account or project the key belongs to.
 A **401** (rejected) or **403** (access denied) means you should check the key and
@@ -749,8 +754,9 @@ The local server starts on its own while **Allow Online Access** is on and accep
 connections only from this computer, and an agent can upload only files Scenario
 saved or files you chose in Blender during this session.
 
-Copy a client setup from the **Agents (MCP)** panel. It contains a live token, so
-keep it out of screenshots, logs and source control. **Allow connected agents to
+Copy a client setup for Claude Code, Codex, Cursor or Claude Desktop from the
+**Agents (MCP)** panel. It contains a live token, so keep it out of screenshots,
+logs and source control. **Allow connected agents to
 run Python** is off by default. For headless use, run
 `blender --background scene.blend --command scenario_blender`. The
 [MCP reference](MCP.md) covers tools, setup and security.
@@ -803,6 +809,10 @@ can read your scene and request paid work. See
 - **The render moved things around**: use a cleaner capture (Grey clay, camera view), fewer style images, and describe materials and light rather than content.
 - **The sidebar doesn't look like the composer**: the sidebar follows your Blender theme.
 - **Film can't find ffmpeg or ffprobe**: Film checks Blender's PATH and the usual Homebrew, MacPorts and Linux folders. Elsewhere, or on Windows, add the tool's folder to the PATH Blender starts with.
+- **An agent can't connect to Blender (connection refused)**: the local server runs only while Blender is open with Allow Online Access on. Open Blender first, or press **Start MCP server** in the Agents (MCP) panel if you allowed Online Access after Blender started. Then reconnect the agent: run `/mcp` in Claude Code, start a new Codex session, or restart Cursor or Claude Desktop.
+- **An agent is refused as unauthorized after Blender restarts**: each Blender session makes a new token. Copy the client setup again; for Codex, export the new token before starting it.
+- **The panel shows a port other than 9876**: another program, often another Blender MCP add-on, holds that port, so the server took the next free one. The copied setup carries the actual port: copy it again, or choose a free **MCP Port** in the extension's preferences.
+- **An agent's call times out**: some clients stop waiting after 60 seconds, Codex by default (`tool_timeout_sec`). The work goes on in Blender, so ask the agent to check the job's status instead of generating again.
 - **Where are the logs?** In Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS and Linux), prefixed `scenario`.
 - **Still stuck?** See [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md).
 

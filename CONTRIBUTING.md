@@ -704,13 +704,13 @@ Edit [the Markdown guide](docs/USER_GUIDE.md) for all guide prose. The
 [handbook template](docs/handbook-template.html) contains presentation, navigation
 and version slots only, plus `{{style}}` and `{{search}}`, which inline
 [docs/site.css](docs/site.css) and [docs/handbook-search.js](docs/handbook-search.js)
-from beside it. The search indexes the page's own sections when it loads, so the
+from beside it, and the site's Web Analytics snippet. The search indexes the page's own sections when it loads, so the
 single-file handbook searches offline; test it with
 `node --test tests/site/handbook-search.test.ts` (Node 24). It stays JavaScript
 because browsers run the inlined file as is; `// @ts-check` and JSDoc types let
 the Site CI job type-check it with `tsc --checkJs`. The downloads pages
 under `repo/` come from [tools/site_pages.py](tools/site_pages.py) and inline the
-same stylesheet and wordmark. `make docs` renders the guide to ignored `site/index.html`
+same stylesheet, wordmark and analytics snippet. `make docs` renders the guide to ignored `site/index.html`
 and copies just its referenced images, the template's favicons included, beside
 it. A neighboring `.assets.json` record lets repeat builds remove unchanged image copies that the guide no longer
 uses, including when switching the same output to inline mode. Unrecorded files

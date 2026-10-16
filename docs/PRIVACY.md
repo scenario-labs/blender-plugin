@@ -80,7 +80,11 @@ that it comes from this extension, the extension version for a download, whether
 the request came from Blender, a browser, a script or a crawler, Blender's
 version, release cycle, operating system and processor from its User-Agent, and
 the country Vercel derives from your address. The count holds no IP address, no
-User-Agent text and no identifier that links one request to another. The Release
+User-Agent text and no identifier that links one request to another. In a web
+browser, the site's pages also count visits and Download ZIP clicks with Vercel
+Web Analytics, without cookies: it records the page address, referrer, location,
+browser, operating system and device type, and tells visitors apart for 24 hours
+by a hash of the request. The Release
 ZIPs button opens `https://github.com/scenario-labs/blender-plugin/releases` in
 your browser.
 Blender stores the repository configuration and cache through its native manager.

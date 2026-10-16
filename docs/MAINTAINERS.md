@@ -214,8 +214,12 @@ Directory `tools/site_proxy`, framework preset Other, no build or install
 command, and production branch `main`. Its Ignored Build Step,
 `git diff --quiet HEAD^ HEAD -- .`, skips a deployment when the last commit left
 that directory unchanged. [vercel.json](../tools/site_proxy/vercel.json)
-forwards every path to the Pages address above, and redirects `/repo` to `/repo/`, which Pages would
-otherwise redirect to its own host. The directory holds only that file and the
+serves the project's Web Analytics script at `/handbook/page.js`, because blocker
+lists block Vercel's own path, forwards every other path to the Pages address above, and redirects `/repo` to `/repo/`, which Pages would
+otherwise redirect to its own host. Web Analytics counts page visits, and Download
+ZIP clicks as a `Download` event, from the snippet in the
+[handbook template](handbook-template.html) and
+[the downloads pages](../tools/site_pages.py). The directory holds only that file and the
 middleware: Vercel would serve any other file there instead of forwarding its
 path, and a Git deployment applies a `.vercelignore` from the repository root,
 so the tests live in `tests/site/`. Production deployments stay public because Blender

@@ -115,6 +115,8 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
             if self.action == "cancel_prepared"
             else "Marked reviewed for this session; an identical request can be sent again"
             if self.action == "mark_reviewed"
+            else "Stopping the download; Resume download starts it again"
+            if self.action == "stop_download"
             else "Recovery requested; no new generation was submitted"
         )
         return {"FINISHED"}

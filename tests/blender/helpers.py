@@ -621,3 +621,76 @@ def assert_finished_without_download(test, request_id):
         )
         jobs.label.assert_any_call(text="No job running", icon="CHECKMARK")
     return view, status
+
+
+class LoopbackStorage:
+    """A loopback stand-in for signed storage that streams a synthetic body slowly.
+
+    `connect` replaces `http.client.HTTPSConnection` in the transfer module, so
+    the installed downloader talks plain HTTP to 127.0.0.1 and nothing leaves
+    the machine. The body is `size` zero bytes at about 3 MiB/s; `fast` sends the
+    rest at once, and `silent_after` stops sending after that many bytes until
+    the test stops the server. `streaming` is set once 1 MiB was sent and
+    `closed` once a client closed its connection mid-body.
+    """
+
+    def __init__(self, size, *, silent_after=None, etag='"loopback-fixture"'):
+        import http.server
+        import threading
+
+        owner = self
+        self.size, self.silent_after, self.etag = size, silent_after, etag
+        self.requests, self.hosts, self.threads = [], [], []
+        self.stop, self.fast = threading.Event(), threading.Event()
+        self.streaming, self.closed = threading.Event(), threading.Event()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                owner.requests.append(self.path)
+                self.send_response(200)
+                self.send_header("Content-Length", str(owner.size))
+                self.send_header("ETag", owner.etag)
+                self.send_header("Connection", "close")
+                self.end_headers()
+                sent, chunk = 0, bytes(64 * 1024)
+                try:
+                    while sent < owner.size and not owner.stop.is_set():
+                        if owner.silent_after is not None and sent >= owner.silent_after:
+                            # Silent: hold the connection open without sending.
+                            owner.stop.wait(30)
+                            break
+                        part = chunk[: owner.size - sent]
+                        self.wfile.write(part)
+                        sent += len(part)
+                        if sent >= min(owner.size, 1024 * 1024):
+                            owner.streaming.set()
+                        if not owner.fast.is_set():
+                            owner.fast.wait(0.02)
+                except OSError:
+                    owner.closed.set()
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.server.daemon_threads = True
+        self._thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self._thread.start()
+
+    @property
+    def port(self):
+        return self.server.server_address[1]
+
+    def connect(self, host, *, timeout, **_):
+        import http.client
+        import threading
+
+        self.hosts.append(host)
+        self.threads.append(threading.current_thread().name)
+        return http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
+
+    def close(self):
+        self.stop.set()
+        self.server.shutdown()
+        self.server.server_close()
+        self._thread.join(5)

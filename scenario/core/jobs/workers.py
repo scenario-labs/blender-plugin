@@ -56,15 +56,24 @@ class JobWorkers:
 
     Result previews use one dedicated lane thread with its own bounded queue, so
     preview polling and downloads never occupy the job workers used by remote
-    refresh, result downloads and submissions.
+    refresh, cancellation and submissions. Storage transfers (result downloads
+    and upload parts) likewise run on their own bounded transfer lane, so a
+    large download never takes the worker a poll, cancel or submit needs.
     """
 
     def __init__(
-        self, coordinator: JobCoordinator, *, workers=2, pending_limit=16, preview_limit=8
+        self,
+        coordinator: JobCoordinator,
+        *,
+        workers=2,
+        pending_limit=16,
+        preview_limit=8,
+        transfers=2,
+        transfer_limit=16,
     ):
         if not isinstance(coordinator, JobCoordinator):
             raise TypeError("Use the shared job coordinator")
-        for value in (workers, pending_limit, preview_limit):
+        for value in (workers, pending_limit, preview_limit, transfers, transfer_limit):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise ValueError("Worker and pending limits must be positive integers")
         self._coordinator = coordinator
@@ -79,12 +88,21 @@ class JobWorkers:
         self._preview_cancels = {}
         self._preview_accepting = True
         self._preview_running = False
+        self._transfer_limit = transfer_limit
+        self._transfer_condition = threading.Condition()
+        self._transfers = deque()
+        self._transfer_cancels = {}
+        self._transfer_accepting = True
         self._closed = False
         self._shutdown_lock = threading.Lock()
         self._threads = [
             threading.Thread(target=self._run, name=f"ScenarioJob-{i}") for i in range(workers)
         ]
         self._threads.append(threading.Thread(target=self._run_previews, name="ScenarioPreview"))
+        self._threads += [
+            threading.Thread(target=self._run_transfers, name=f"ScenarioTransfer-{i}")
+            for i in range(transfers)
+        ]
         started = []
         try:
             for thread in self._threads:
@@ -97,6 +115,9 @@ class JobWorkers:
             with self._preview_condition:
                 self._preview_accepting = False
                 self._preview_condition.notify_all()
+            with self._transfer_condition:
+                self._transfer_accepting = False
+                self._transfer_condition.notify_all()
             for thread in started:
                 thread.join()
             raise
@@ -345,6 +366,31 @@ class JobWorkers:
             expected_sha256=expected_sha256,
         )
 
+    def _enqueue_transfer(self, command, *args, cancellable=False, **kwargs):
+        """Admit one storage transfer to the transfer lane, never the job workers."""
+        with self._transfer_condition:
+            if not self._transfer_accepting:
+                raise WorkerError("This job owner is inactive")
+            if len(self._transfers) >= self._transfer_limit:
+                raise WorkerError("Transfer queue is full; wait before adding more transfers")
+            task = JobTask()
+            if cancellable:
+                # The downloader checks it at least every half second, also
+                # while a storage server sends nothing.
+                cancel = threading.Event()
+                kwargs = {**kwargs, "cancel": cancel}
+                self._transfer_cancels[task] = cancel
+            self._transfers.append((task, command, args, kwargs))
+            self._transfer_condition.notify()
+            return task
+
+    def cancel_transfer(self, task):
+        """Signal one queued or running download; it stops at its next chunk unpublished."""
+        with self._transfer_condition:
+            cancel = self._transfer_cancels.get(task)
+            if cancel is not None:
+                cancel.set()
+
     def initialize_upload(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.initialize_upload, request_id, expected_revision=expected_revision
@@ -360,7 +406,9 @@ class JobWorkers:
             )
 
     def transfer_upload_part(self, request_id, *, expected_revision):
-        return self._enqueue(
+        # A signed PUT already in flight is never interrupted: that would make
+        # the part uncertain. It shares the transfer lane, not its cancel event.
+        return self._enqueue_transfer(
             self._coordinator.transfer_upload_part, request_id, expected_revision=expected_revision
         )
 
@@ -436,8 +484,12 @@ class JobWorkers:
         )
 
     def download_results(self, request_id, *, expected_revision):
-        return self._enqueue(
-            self._coordinator.download_results, request_id, expected_revision=expected_revision
+        """Queue a result download on the transfer lane; ``cancel_transfer`` stops it."""
+        return self._enqueue_transfer(
+            self._coordinator.download_results,
+            request_id,
+            cancellable=True,
+            expected_revision=expected_revision,
         )
 
     def verify_results(self, request_id, *, expected_revision):
@@ -552,6 +604,39 @@ class JobWorkers:
                 self._finish_preview(task)
             del task, command, args, kwargs
 
+    def _run_transfers(self):
+        """One transfer-lane thread: storage transfers only, never job commands."""
+        while True:
+            with self._transfer_condition:
+                self._transfer_condition.wait_for(
+                    lambda: self._transfers or not self._transfer_accepting
+                )
+                if not self._transfers:
+                    return
+                task, command, args, kwargs = self._transfers.popleft()
+            if task._future.set_running_or_notify_cancel():
+                try:
+                    result = command(*args, **kwargs)
+                except Exception as exc:
+                    self._finish_transfer(task)
+                    task._future.set_exception(exc)
+                except BaseException as exc:
+                    self._finish_transfer(task)
+                    task._future.set_exception(exc)
+                    self.deactivate()
+                    raise
+                else:
+                    self._finish_transfer(task)
+                    task._future.set_result(result)
+                    del result
+            else:
+                self._finish_transfer(task)
+            del task, command, args, kwargs
+
+    def _finish_transfer(self, task):
+        with self._transfer_condition:
+            self._transfer_cancels.pop(task, None)
+
     def _finish_preview(self, task):
         with self._preview_condition:
             self._preview_cancels.pop(task, None)
@@ -578,6 +663,16 @@ class JobWorkers:
                 task._future.cancel()
                 self._preview_cancels.pop(task, None)
             self._preview_condition.notify_all()
+        with self._transfer_condition:
+            # A running download stops at its next chunk without publishing.
+            self._transfer_accepting = False
+            for cancel in self._transfer_cancels.values():
+                cancel.set()
+            while self._transfers:
+                task, _, _, _ = self._transfers.popleft()
+                task._future.cancel()
+                self._transfer_cancels.pop(task, None)
+            self._transfer_condition.notify_all()
 
     def shutdown(self):
         """Wait for in-flight persistence before closing the connection, once.

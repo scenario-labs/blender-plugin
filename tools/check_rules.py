@@ -157,8 +157,9 @@ SPDX_SUFFIXES = {
     ".html",
 }
 SPDX_NAMES = {"Makefile"}
-# Blender parses the manifest; REUSE.toml covers it until a header is validated natively.
-SPDX_EXEMPT = {"scenario/blender_manifest.toml"}
+# REUSE.toml covers these: Blender parses the manifest, whose header awaits native
+# validation, and pnpm regenerates its lockfile without comments.
+SPDX_EXEMPT = {"scenario/blender_manifest.toml", "pnpm-lock.yaml"}
 # Licence texts are reproduced verbatim; media and archives are not text.
 EXCLUDED_NAMES = {"LICENSE", "scenario/LICENSE"}
 EXCLUDED_PREFIXES = ("LICENSES/",)
@@ -219,7 +220,8 @@ VERSION_FILES = {
     "uv.lock",
     WHEEL_LOCK,
 }
-VERSION_PREFIXES = ("docs/maintenance/",)
+# Tests use sample release versions, which every release eventually matches.
+VERSION_PREFIXES = ("docs/maintenance/", "tests/")
 
 
 def relative(path, root):

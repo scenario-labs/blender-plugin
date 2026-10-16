@@ -12,10 +12,12 @@ path = [
   "**/*.md",
   "**/*.json",
   "uv.lock",
+  "pnpm-lock.yaml",
   "scenario/blender_manifest.toml",
   ".env.example",
   ".gitignore",
   ".lycheeignore",
+  ".nvmrc",
   ".python-version",
 ]
 precedence = "aggregate"

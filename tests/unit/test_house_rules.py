@@ -79,7 +79,7 @@ def test_only_actions_published_as_a_major_tag_take_a_major_comment(tmp_path):
         f"  - uses: google/clusterfuzzlite/actions/run_fuzzers@{SHA} # 1\n"
         f"  - uses: google/clusterfuzzlite-fork/actions/run@{SHA} # v1\n",
     )
-    assert [item.line for item in rules.run(rules.RULES, [path], tmp_path)] == [2, 3]
+    assert [item.line for item in rules.run(ACTIONS, [path], tmp_path)] == [2, 3]
 
 
 @pytest.mark.parametrize(
@@ -248,7 +248,8 @@ def test_spdx_requires_both_lines_near_the_top_of_source_files(tmp_path):
     late = write(tmp_path, "Makefile", "\n" * 10 + HEADER)
     licence_only = write(tmp_path, "a.toml", HEADER.splitlines()[1] + "\n")
     prose = write(tmp_path, "docs/notes.md", "No header needed: REUSE.toml covers Markdown.\n")
-    assert found("spdx", tmp_path, missing, shebang, html, late, licence_only, prose) == [
+    lock = write(tmp_path, "pnpm-lock.yaml", "lockfileVersion: '9.0'\n")
+    assert found("spdx", tmp_path, missing, shebang, html, late, licence_only, prose, lock) == [
         ("Makefile", 1),
         ("a.toml", 1),
         ("tools/missing.py", 1),
@@ -348,8 +349,9 @@ def test_version_literal_is_limited_to_release_files(tmp_path):
     )
     changelog = write(tmp_path, "CHANGELOG.md", "## 1.2.3\n")
     record = write(tmp_path, "docs/maintenance/release-plan.md", "1.2.3 acceptance\n")
+    sample = write(tmp_path, "tests/site/index.test.ts", 'publish(["1.2.2", "1.2.3"]);\n')
     manifest = tmp_path / rules.MANIFEST
-    assert found("version-literal", tmp_path, readme, changelog, record, manifest) == [
+    assert found("version-literal", tmp_path, readme, changelog, record, sample, manifest) == [
         ("README.md", 1),
         ("README.md", 2),
     ]

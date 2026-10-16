@@ -271,13 +271,13 @@ The same checker enforces the remaining house rules. Each violation prints
 
 | Rule | Checks |
 | --- | --- |
-| `spdx` | First-party source and configuration files carry the copyright and GPL-3.0-or-later lines within their first 10 lines. Shared skills pinned in `skills-lock.json` and the Blender manifest, which `REUSE.toml` covers, are skipped. |
+| `spdx` | First-party source and configuration files carry the copyright and GPL-3.0-or-later lines within their first 10 lines. Shared skills pinned in `skills-lock.json`, the Blender manifest and `pnpm-lock.yaml`, which `REUSE.toml` covers, are skipped. |
 | `em-dash` | No em dash in any text file except the licence texts. |
 | `bpy-boundary` | `scenario/core` and the MCP modules other than `sandbox.py`, `tools_blender.py` and `tools_scenario.py` import no Blender-only module, numpy included. |
 | `approved-dependencies` | `scenario/` imports only the standard library, Blender's modules, the package and the distributions pinned in `scenario/sdk-wheel-lock.json`. [Wheel-bundle tests](../../tests/unit/test_wheel_bundle.py) keep the manifest wheels, that lock, its notices and the SDK closure in `uv.lock` identical. |
 | `sdk-adapter` | Only `sdk_adapter.py` and `sdk_extensions.py` import `scenario_sdk` or `httpx`. Signed storage and other distinct protocols keep their own clients; review still verifies each documented SDK exception. |
 | `public-content` | No line matches [the denylist](../../tools/public_content_denylist.txt). Reports name the pattern's line number, never the matched text; keep its patterns generic. |
-| `version-literal` | The manifest version appears only in the release-please files, `CHANGELOG.md`, dependency locks and `docs/maintenance/` records. |
+| `version-literal` | The manifest version appears only in the release-please files, `CHANGELOG.md`, dependency locks, `docs/maintenance/` records and the sample releases in `tests/`. |
 | `no-snapshot-dirs` | No tracked path under `versions/` or an `archive/` directory. |
 
 These are convention checks, not proof: an import scan cannot establish that an

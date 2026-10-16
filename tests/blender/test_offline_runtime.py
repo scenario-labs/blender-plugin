@@ -396,6 +396,109 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertIsNone(self.service.start())
         self.assertFalse(self.service.status()["running"])
 
+    def free_mcp_port(self):
+        saved_port = self.prefs.mcp_port
+        self.addCleanup(setattr, self.prefs, "mcp_port", saved_port)
+        with socket.socket() as reservation:
+            reservation.bind(("127.0.0.1", 0))
+            self.prefs.mcp_port = reservation.getsockname()[1]
+        # Ticks below only follow online access; a loaded catalog keeps them from reading one.
+        self.runtime.state.catalog_loaded = True
+
+    def gui_ticks(self, count=3):
+        for _ in range(count):
+            self.pump._process()
+
+    def assert_serving(self, token):
+        status = self.service.status()
+        self.assertTrue(status["running"])
+        self.assertEqual(status["error"], "")
+        self.assertEqual(status["token"], token)
+        with socket.create_connection(("127.0.0.1", self.runtime.state.mcp.port), timeout=2):
+            pass
+
+    def assert_stopped(self, port, error):
+        status = self.service.status()
+        self.assertFalse(status["running"])
+        self.assertEqual(status["error"], error)
+        # Refused, or on Windows possibly timed out while it retries a closed port.
+        with self.assertRaises(OSError):
+            socket.create_connection(("127.0.0.1", port), timeout=5).close()
+
+    def test_switching_online_access_on_starts_the_window_server_without_restart(self):
+        self.free_mcp_port()
+        self.assertIsNone(self.service.start_with_extension())
+        self.assertEqual(self.service.status()["error"], self.service.OFFLINE)
+        with online_access(True):
+            self.gui_ticks()
+            token = self.runtime.state.mcp_token
+            self.assertTrue(token)
+            self.assert_serving(token)
+
+    def test_switching_online_access_off_stops_the_server_and_on_restarts_it(self):
+        self.free_mcp_port()
+        with online_access(True):
+            server = self.service.start_with_extension()
+            token = self.runtime.state.mcp_token
+            self.assert_serving(token)
+        self.gui_ticks()
+        self.assertFalse(server.running)
+        self.assert_stopped(server.port, self.service.OFFLINE)
+        with online_access(True):
+            self.gui_ticks()
+            # The per-session token survives, so connected agents keep their setup.
+            self.assert_serving(token)
+
+    def test_a_server_stopped_by_hand_stays_stopped_when_online_access_returns(self):
+        self.free_mcp_port()
+        with online_access(True):
+            server = self.service.start_with_extension()
+            token = self.runtime.state.mcp_token
+            self.assertEqual(bpy.ops.scenario.mcp_stop(), {"FINISHED"})
+            self.assert_stopped(server.port, "")
+        self.gui_ticks()
+        with online_access(True):
+            self.gui_ticks()
+            self.assert_stopped(server.port, "")
+            self.assertEqual(bpy.ops.scenario.mcp_start(), {"FINISHED"})
+            self.assert_serving(token)
+        # Start MCP server ends the hand stop: the next switch follows online access again.
+        self.gui_ticks()
+        self.assertFalse(self.service.status()["running"])
+        with online_access(True):
+            self.gui_ticks()
+            self.assert_serving(token)
+
+    def test_nothing_starts_while_online_access_is_off_or_in_background_sessions(self):
+        self.free_mcp_port()
+        with patch.object(self.service, "McpServer", wraps=self.service.McpServer) as constructor:
+            # Background registration never arms following: only the explicit command starts it.
+            with online_access(True):
+                self.gui_ticks()
+            self.gui_ticks()
+            with online_access(True):
+                self.gui_ticks()
+            constructor.assert_not_called()
+            self.assertIsNone(self.service.start_with_extension())
+            self.gui_ticks(5)
+            constructor.assert_not_called()
+        self.assertEqual(self.service.status()["error"], self.service.OFFLINE)
+        self.assertFalse(self.service.status()["running"])
+
+    def test_a_failed_start_waits_for_the_next_switch_instead_of_retrying_every_tick(self):
+        self.free_mcp_port()
+        self.service.start_with_extension()
+        with (
+            patch.object(
+                self.service.McpServer, "start", side_effect=OSError("synthetic busy port")
+            ) as bind,
+            online_access(True),
+        ):
+            self.gui_ticks(5)
+            self.assertEqual(bind.call_count, 1)
+            self.assertEqual(self.service.status()["error"], "synthetic busy port")
+            self.assertFalse(self.service.status()["running"])
+
     def test_network_operator_polls_follow_real_preference_with_credentials_present(self):
         operators = (
             bpy.ops.scenario.generate,

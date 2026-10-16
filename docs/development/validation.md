@@ -5,9 +5,9 @@ developer credentials and explicit live commands.
 
 Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
 the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
-`make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
-focused tests. `pyproject.toml` already passes `-q`; another `-q` hides the pass
-count. Dependency and interpreter changes follow
+`make test` runs `uv run --locked --no-env-file python -m pytest`; use the same
+prefix for focused tests. `pyproject.toml` already passes `-q`; another `-q`
+hides the pass count. Dependency and interpreter changes follow
 [Python style](../PYTHON_STYLE.md#dependency-changes). Blender native tests still
 use Blender's bundled Python and an isolated profile. Preserve exit codes when
 capturing logs, and distinguish passed checks from checks that were not run.
@@ -133,8 +133,8 @@ GUI probes never spend credits; capture requires a desktop session with the
 necessary display access, which may be unavailable to a cloud agent.
 
 The portable build/install tools also create fresh isolated profiles and scrub
-inherited credentials and path overrides. For every direct Blender invocation outside these tools,
-including probes, export an absolute disposable profile:
+inherited credentials and path overrides. For every direct Blender invocation
+outside these tools, including probes, export an absolute disposable profile:
 `export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
 Never install development builds into the user's normal profile.
 
@@ -206,35 +206,36 @@ uv run --locked --no-env-file python tools/test_repository_update.py \
   --candidate-zip artifacts/scenario-CANDIDATE.zip
 ```
 
-For a selected release pair, both ZIP options are required together. The candidate must have a newer stable
-version and the same `scenario` identity. The runner copies the selected archives
-without rebuilding or rewriting their contents, generates each repository through
-the existing validator, and verifies installed bytes before and after upgrade.
-Only the index and the two explicit archive filenames are served on loopback.
-The default invocation still runs the small synthetic fixture above.
+For a selected release pair, both ZIP options are required together. The
+candidate must have a newer stable version and the same `scenario` identity. The
+runner copies the selected archives without rebuilding or rewriting their
+contents, generates each repository through the existing validator, and verifies
+installed bytes before and after upgrade. Only the index and the two explicit
+archive filenames are served on loopback. The default invocation still runs the
+small synthetic fixture above.
 
 The package probe seeds synthetic saved preferences, credentials and a nonempty
-Project ID, six durable job states (prepared, uncertain, remote, download failed, ready and applied), a
-second credential scope with the same project, result manifests/receipts and
-local result bytes,
-three image upload states plus an imported captured-mesh upload with verified
-staged bytes, and a saved blend with a reference.
-It compares these after native upgrade in the same process and after reopening
-the blend in a second, offline Blender process. Exact quote strings, nonempty texture roles, application
-origins, upload markers and the installation's scope key must survive. Original
-reference bytes are checked too. The saved project preference and runtime job scope
-must agree; the same key with default scope or another project must see no jobs,
-uploads or Film upload association. Both native reports require
-`project_scope_preserved: true`. Packages without the optional project preference
-need their matching historical probe and cannot establish this coverage.
-Ready/applied jobs retain the exact mesh input
-binding, export hash, source transform and upload revision. The completed job
-retains successful, confirmed-failed and unfinished local application claims;
-the probe attempts another claim and requires rejection without changing the
-record before update, after update and after restart. These fixtures require
-packages with the captured-source and local-reuse storage APIs. They do not
-restore live object authority or replay scene application. The actual package's storage APIs perform reads
-and verification; no mocked add-on replaces the installed extension.
+Project ID, six durable job states (prepared, uncertain, remote, download
+failed, ready and applied), a second credential scope with the same project,
+result manifests/receipts and local result bytes, three image upload states plus
+an imported captured-mesh upload with verified staged bytes, and a saved blend
+with a reference. It compares these after native upgrade in the same process and
+after reopening the blend in a second, offline Blender process. Exact quote
+strings, nonempty texture roles, application origins, upload markers and the
+installation's scope key must survive. Original reference bytes are checked too.
+The saved project preference and runtime job scope must agree; the same key with
+default scope or another project must see no jobs, uploads or Film upload
+association. Both native reports require `project_scope_preserved: true`.
+Packages without the optional project preference need their matching historical
+probe and cannot establish this coverage. Ready/applied jobs retain the exact
+mesh input binding, export hash, source transform and upload revision. The
+completed job retains successful, confirmed-failed and unfinished local
+application claims; the probe attempts another claim and requires rejection
+without changing the record before update, after update and after restart. These
+fixtures require packages with the captured-source and local-reuse storage APIs.
+They do not restore live object authority or replay scene application. The
+actual package's storage APIs perform reads and verification; no mocked add-on
+replaces the installed extension.
 
 When the installed predecessor exposes Film task storage, all six selected jobs
 also retain their production/task and recipe hashes. When Film upload storage is
@@ -267,8 +268,9 @@ When the package seeding the defaults ships the runtime
 them through `runtime.ensure_model_defaults` instead of the store. After the update
 and after the offline restart it reads every seeded lane through the candidate's
 owner, whose scope must equal the selected store's and whose states must equal the
-stored rows. Both reports record `model_defaults_preserved`; the runner requires it
-to be true exactly when the candidate archive contains `core/jobs/model_defaults.py`.
+stored rows. Both reports record `model_defaults_preserved`; the runner requires
+it to be true exactly when the candidate archive contains
+`core/jobs/model_defaults.py`.
 
 When the candidate declares a newer schema than the predecessor, the runner then
 starts one more offline Blender process with factory settings, so neither package
@@ -313,12 +315,12 @@ predecessors report false: they show only that an older saved tab survives the
 appended item.
 
 When the predecessor saves trained-model choices on generation forms, the probe
-seeds two LoRAs with strengths and ranges on the Image form, including a Unicode name,
-each tagged with the selected connection's scope. After the update and the offline
-reopen it compares their IDs, names, kinds, strengths, ranges and scope tags. The
-candidate's trained-model scope check must accept them for the selected store and
-refuse them under the other credential scope and under the same credentials with
-the default scope or another project. Both reports include
+seeds two LoRAs with strengths and ranges on the Image form, including a Unicode
+name, each tagged with the selected connection's scope. After the update and the
+offline reopen it compares their IDs, names, kinds, strengths, ranges and scope
+tags. The candidate's trained-model scope check must accept them for the
+selected store and refuse them under the other credential scope and under the
+same credentials with the default scope or another project. Both reports include
 `trained_selection_preserved`, which must be true exactly when
 `expected-state.json` contains a trained choice; predecessors without these
 properties report false.
@@ -365,12 +367,13 @@ actual schema upgrade through Blender's updater; like the candidate-derived mode
 it is synthetic version evidence, not published release-pair acceptance.
 
 Each Linux and Windows baseline job runs both the small fixture and this
-actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly one
-ZIP from that job's successful native run and preserves update/restart reports,
-logs, indices and both test archives on failure as well as success. A failed
-package check fails its matrix job and the existing aggregate gate. Hosted results
-remain evidence for their actual run, platform and archives; this CI mode does
-not establish published release-pair compatibility or public update availability.
+actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly
+one ZIP from that job's successful native run and preserves update/restart
+reports, logs, indices and both test archives on failure as well as success. A
+failed package check fails its matrix job and the existing aggregate gate.
+Hosted results remain evidence for their actual run, platform and archives; this
+CI mode does not establish published release-pair compatibility or public update
+availability.
 
 - `make build`: build and validate the extension ZIP; use
   `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.

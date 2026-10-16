@@ -1,11 +1,12 @@
 # Local panorama World application
 
-`scenario.blender.world_application.apply_world(scene, filepath, *, expected_receipt=None, media_type=None)` is a synchronous,
-main-thread primitive for an explicitly selected scene. It creates a packed image
-and a separate World with an equirectangular Environment Texture → Background →
-World Output graph. The original World, including its nodes and other scene users,
-is untouched. The returned session-local handle can restore that exact original
-World. A scene with no original World restores to `None`.
+`scenario.blender.world_application.apply_world(scene, filepath, *, expected_receipt=None, media_type=None)`
+is a synchronous, main-thread primitive for an explicitly selected scene. It
+creates a packed image and a separate World with an equirectangular Environment
+Texture → Background → World Output graph. The original World, including its
+nodes and other scene users, is untouched. The returned session-local handle can
+restore that exact original World. A scene with no original World restores to
+`None`.
 
 ## Accepted local files
 
@@ -54,13 +55,14 @@ primitive for one selected saved result.
   ends with that marker. An EXIF orientation other than 1 is rejected. Blender
   must decode the result as a JPEG image; Blender 5.0, 5.1 and 5.2 use `sRGB`
   (see below on ICC profiles).
-- Single-part, non-deep OpenEXR version 2 scanline files (compression types 0–9), with matching data
-  and display windows. Explicit cubemap metadata is rejected. Blender must decode
-  the result as a floating-point image.
-- All formats require a 2:1 aspect ratio, minimum 4×2, at most 32 megapixels and 128 MiB
-  on disk. EXR header scanning is limited to 1 MiB; the expected scanline table, block
-  coordinates and complete nonoverlapping byte extents are checked before decode. Non-regular files are rejected;
-  POSIX FIFOs are opened without waiting for a writer.
+- Single-part, non-deep OpenEXR version 2 scanline files (compression types
+  0–9), with matching data and display windows. Explicit cubemap metadata is
+  rejected. Blender must decode the result as a floating-point image.
+- All formats require a 2:1 aspect ratio, minimum 4×2, at most 32 megapixels and
+  128 MiB on disk. EXR header scanning is limited to 1 MiB; the expected
+  scanline table, block coordinates and complete nonoverlapping byte extents are
+  checked before decode. Non-regular files are rejected; POSIX FIFOs are opened
+  without waiting for a writer.
 
 The parser follows the [OpenEXR file layout](https://openexr.com/en/latest/OpenEXRFileLayout.html)
 (version/flags and null-terminated attribute headers),
@@ -159,10 +161,11 @@ establish a supported model/output contract and validate live results.
 It requires the original live scene, the applied World still assigned there, the
 original World still available, and unchanged owned World/image settings. A changed
 node graph, socket value, mapping/image-user setting, World setting, image color
-space, dirty pixel buffer or changed packed bytes refuses restoration. This conservative fingerprint
-excludes the large image pixel array (dirty state and the bounded packed-byte
-digest guard content edits). It also includes writable UI properties such as node positions/names; preserve edits
-or restore manually when it refuses. It never searches by scene or World name.
+space, dirty pixel buffer or changed packed bytes refuses restoration. This
+conservative fingerprint excludes the large image pixel array (dirty state and
+the bounded packed-byte digest guard content edits). It also includes writable
+UI properties such as node positions/names; preserve edits or restore manually
+when it refuses. It never searches by scene or World name.
 
 Restore preserves the applied World/image if another scene or material has acquired
 users. Unused owned data is removed best effort. Preparation/decoding failures
@@ -172,12 +175,14 @@ is not given a fake user: manually purging it makes later restoration unavailabl
 
 Handles contain live RNA references and are not serializable history records.
 Discard them after file load, undo or extension shutdown. Invalidated/removed
-references fail closed. This primitive creates no undo entry. Operators offering Blender global undo
-must own its transaction and invalidate handles when undo changes ownership.
-The saved-result path below records one undo step after it applies or restores
-a World, which [marks the file modified](architecture/blender.md#marking-the-file-modified),
-and offers explicit guarded restoration without a global undo transaction. Async jobs must validate captured file, scene, target and revision
-before calling this function; selecting an active scene is not such validation.
+references fail closed. This primitive creates no undo entry. Operators offering
+Blender global undo must own its transaction and invalidate handles when undo
+changes ownership. The saved-result path below records one undo step after it
+applies or restores a World, which
+[marks the file modified](architecture/blender.md#marking-the-file-modified),
+and offers explicit guarded restoration without a global undo transaction. Async
+jobs must validate captured file, scene, target and revision before calling this
+function; selecting an active scene is not such validation.
 
 ## Validation and integration
 

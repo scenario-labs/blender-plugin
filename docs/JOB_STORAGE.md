@@ -46,8 +46,9 @@ Storage failure blocks creation of the catalog context too. The first job comman
 lazily activates the selected [JobSession](BLENDER_JOB_CONTEXT.md); prototype
 records are not imported.
 
-`JobIntent` freezes the local request ID, model/workflow target (or the fixed `prompt`/`translate` target for prompt helpers), payload SHA-256,
-server quote SHA-256, exact quoted cost as a decimal string, and originating
+`JobIntent` freezes the local request ID, model/workflow target (or the fixed
+`prompt`/`translate` target for prompt helpers), payload SHA-256, server quote
+SHA-256, exact quoted cost as a decimal string, and originating
 file/scene/target/revision IDs. IDs describe the captured origin, never current
 selection. Generate a fresh request ID for an intentional new operation and hash
 the exact immutable payload/quote bytes held by the SDK estimate. The caller must
@@ -96,14 +97,15 @@ its database disappears. Previous shared schemas 2 through 10 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
-results receive an unknown (`None`) texture role; schema 4 roles are preserved. Migration never contacts
-Scenario or infers semantics from filenames. Schema 3 application destinations
-are preserved, while schema 2 retains its original-origin application semantics.
-Schemas before 5 receive an empty local-application history; schema 5 preserves
-its existing claims, including unfinished applications. Schemas before 6
-receive empty mesh input bindings; schema 6 preserves its captured mesh sources.
-Schema 7 cloud results remain cloud records without synthetic spend or Film
-bindings. Schemas before 10 receive the asset's own file and no projection (see
+results receive an unknown (`None`) texture role; schema 4 roles are preserved.
+Migration never contacts Scenario or infers semantics from filenames. Schema 3
+application destinations are preserved, while schema 2 retains its
+original-origin application semantics. Schemas before 5 receive an empty
+local-application history; schema 5 preserves its existing claims, including
+unfinished applications. Schemas before 6 receive empty mesh input bindings;
+schema 6 preserves its captured mesh sources. Schema 7 cloud results remain
+cloud records without synthetic spend or Film bindings. Schemas before 10
+receive the asset's own file and no projection (see
 [schema 10](#schema-10-declared-originals-and-lane-defaults)). Schema 10 rows keep
 their exact bytes ([schema 11](#schema-11-wav-originals)). Older extension builds
 reject a newer schema; stop older Blender processes before upgrading and do not
@@ -306,9 +308,10 @@ The shared quote path matches only declared 3D file inputs to completed captured
 uploads in the selected credential/project scope. Prompt strings, unknown assets
 and ordinary file uploads acquire no inferred source. Repeated array values keep
 their positions for both `type: file_array` and `type: file` with `array: true`,
-matching payload validation. Ambiguous captured records for the same asset reject the quote.
-The coordinator rechecks every binding before preparation and again before the
-paid claim. A missing or changed upload stops dispatch while preserving the job.
+matching payload validation. Ambiguous captured records for the same asset
+reject the quote. The coordinator rechecks every binding before preparation and
+again before the paid claim. A missing or changed upload stops dispatch while
+preserving the job.
 
 Bindings describe the immutable uploaded snapshot, not the current geometry of
 an object. Their origin may differ from the generation's current scene context.
@@ -399,12 +402,13 @@ metadata; see [legacy mesh transfers](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byt
 Schema 10 batches into one upgrade the persisted fields that the accepted 0.10.0
 designs need: result file source, result projection and per-scope lane defaults
 for trained or private models. Live remote progress, a failed job's reason, the
-composer's scene/lane binding, workflow step decisions, Film review/export state, asset organization
-reviews and preview caches stay in memory or in disposable caches, so they add
-nothing here. No intent-level lane or trained-model display name is stored:
-restarted display records remain generic model jobs and show the quoted target
-model. Saved `.blend` properties added by later interface work are separate from
-this database, and the upload database keeps its own version.
+composer's scene/lane binding, workflow step decisions, Film review/export
+state, asset organization reviews and preview caches stay in memory or in
+disposable caches, so they add nothing here. No intent-level lane or
+trained-model display name is stored: restarted display records remain generic
+model jobs and show the quoted target model. Saved `.blend` properties added by
+later interface work are separate from this database, and the upload database
+keeps its own version.
 
 Three open maintainer decisions would add persisted fields if adopted, each in a
 new schema version with its own upgrade rather than a new reading of existing rows:
@@ -437,9 +441,10 @@ bytes. Radiance HDR, mesh, splat, video and other audio originals keep the asset
 own file. `projection: equirectangular` is set only when Scenario's
 `metadata.type` declares a 360 image (`skybox-base-360`, `upscale-skybox` or
 `skybox-hdri`); `skybox-3d` and every other value stay `None`. The store rejects
-other labels, an original of any other type and a projection on a non-image file. Neither
-field authorizes World application, implies a measured dynamic range or replaces
-Blender's decoder checks. The [result command](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
+other labels, an original of any other type and a projection on a non-image
+file. Neither field authorizes World application, implies a measured dynamic
+range or replaces Blender's decoder checks. The
+[result command](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection)
 chooses the file and refreshes its destination.
 
 ### Lane defaults for trained models
@@ -507,12 +512,13 @@ It reads each lane's state once per owner `context_id` into a cache that drawing
 only reads, so a default another Blender session saves later is read after the
 selection changes or a write is refused. **Save** and **Clear** pass the
 `context_id` and revision drawn on their buttons, so a stale or foreign review is
-refused and the cache is read again. Only `stack` and `composition` defaults are written. A form with no
-explicit choice in the scope takes its lane default once the routes check against
-fresh descriptions and the form lists its base; otherwise its price stays blocked
-with the reason, never falling back to the base model. An unreadable row is
-reported for its lane and left unchanged. `render_form` inspection and render
-quotes apply a Render Image form's default the way the GUI pump does.
+refused and the cache is read again. Only `stack` and `composition` defaults are
+written. A form with no explicit choice in the scope takes its lane default once
+the routes check against fresh descriptions and the form lists its base;
+otherwise its price stays blocked with the reason, never falling back to the
+base model. An unreadable row is reported for its lane and left unchanged.
+`render_form` inspection and render quotes apply a Render Image form's default
+the way the GUI pump does.
 
 Local MCP `model_defaults` reads, saves and clears the same rows through the same
 module ([trained models](MCP.md#trained-models-loras-and-compositions)). `get`

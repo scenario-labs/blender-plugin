@@ -32,9 +32,10 @@ describes the current checkout.
 
 The approved direction is one consolidated extension, a compact default UI,
 optional expanded Studio and Blender-native updates. The current release uses
-explicit API key/secret configuration; browser OAuth is deferred under #67. There is no
-prototype-data migration requirement. Preserve useful capabilities and tests,
-source attribution and required third-party notices when adopting code.
+explicit API key/secret configuration; browser OAuth is deferred under #67.
+There is no prototype-data migration requirement. Preserve useful capabilities
+and tests, source attribution and required third-party notices when adopting
+code.
 
 The current package is `scenario/`; the approved minimum is Blender 5.0.
 Adoption must validate native behavior and bundled dependencies on Blender 5.0,

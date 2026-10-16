@@ -26,7 +26,8 @@ mention refresh commits too.
    `origin/main` in a separate worktree. Record `origin/main`'s full SHA: it is
    the `reviewed_revision` for every record you refresh.
 4. Run `uv run --locked --no-env-file python tools/check_knowledge.py --base origin/main --json`
-   and keep its `drift` list. Stop if it reports errors that this refresh did not cause.
+   and keep its `drift` list. Stop if it reports errors that this refresh did
+   not cause.
 
 ## Review each drifted document
 

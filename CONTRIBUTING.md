@@ -111,8 +111,8 @@ policy.
 
 By submitting an original contribution you agree that it is licensed under
 GPL-3.0-or-later, the licence of this repository (inbound = outbound).
-You keep the copyright in your work: there is no copyright assignment, no CLA and no DCO sign-off.
-Existing history is not re-signed.
+You keep the copyright in your work: there is no copyright assignment, no CLA
+and no DCO sign-off. Existing history is not re-signed.
 
 First-party source files carry the SPDX copyright and GPL-3.0-or-later lines
 from [scenario/__init__.py](scenario/__init__.py), after a shebang when present.
@@ -222,8 +222,9 @@ explicit tokens are rejected rather than silently replaced.
 A project ID is **not required for API-key authentication**. Leave the optional
 project variable blank to use the API key’s default scope, or supply a project ID
 to select the intended project explicitly. Project-selection tests may require
-their own fixture and skip clearly when it is absent; that is not a global credential requirement.
-Never put development credentials in the extension ZIP or a normal Blender profile.
+their own fixture and skip clearly when it is absent; that is not a global
+credential requirement. Never put development credentials in the extension ZIP
+or a normal Blender profile.
 
 ## Live commands
 
@@ -288,9 +289,10 @@ must first be uploaded explicitly through the native/MCP shared upload path or
 the [reviewed reference-plan command](tests/smoke/README.md#prepare-reference-inputs).
 The [aggregate suite and protected workflow](tests/smoke/README.md#one-aggregate-budget-for-a-suite)
 quote all cases before checking one total cap. Hosted environment setup and live
-acceptance remain #40; none of these scripts runs live in offline verification. uv loads every variable
-in a dotenv file, so keep `SCENARIO_SMOKE=1` on the command line only. Credentials,
-an opt-in flag or a prepared quote alone do not authorize spending.
+acceptance remain #40; none of these scripts runs live in offline verification.
+uv loads every variable in a dotenv file, so keep `SCENARIO_SMOKE=1` on the
+command line only. Credentials, an opt-in flag or a prepared quote alone do not
+authorize spending.
 
 ## Native Blender test loop
 
@@ -397,10 +399,12 @@ Use `make test-blender` to create the managed profile and exact candidate ZIP.
 
 [Blender baseline CI](.github/workflows/blender-baseline.yml) runs the same native
 baseline on Linux x64 and Windows x64 with Blender **5.0.1, 5.1.2 and 5.2.1**;
-documentation-only and site-only pull requests [skip it](docs/development/validation.md). It reuses the release pipeline's checksum-verifying setup action and
-publishes logs/reports/ZIPs, including on failure. The `blender-baseline-ok` check
-requires every leg to pass. To change a pinned version, verify each platform
-archive checksum in the official [Blender download directory](https://download.blender.org/release/), update the
+documentation-only and site-only pull requests
+[skip it](docs/development/validation.md). It reuses the release pipeline's
+checksum-verifying setup action and publishes logs/reports/ZIPs, including on
+failure. The `blender-baseline-ok` check requires every leg to pass. To change a
+pinned version, verify each platform archive checksum in the official
+[Blender download directory](https://download.blender.org/release/), update the
 matrix version and hash together, and inspect the actual runtime report from CI.
 
 ### Bumping the Blender matrix
@@ -451,10 +455,11 @@ candidate or desktop, GPU/audio or live-service acceptance.
 
 ### Portable build, install and download tools
 
-The build/install/download tools use Python 3.11.13+ and the standard library. Select Blender with `BLENDER`
-or `--blender`; an explicitly selected missing binary is an error. Build/install
-commands create fresh profiles under `.blender-profile/tools-*`, strip inherited
-Scenario credentials and Blender/Python path overrides, and retain per-phase logs.
+The build/install/download tools use Python 3.11.13+ and the standard library.
+Select Blender with `BLENDER` or `--blender`; an explicitly selected missing
+binary is an error. Build/install commands create fresh profiles under
+`.blender-profile/tools-*`, strip inherited Scenario credentials and
+Blender/Python path overrides, and retain per-phase logs.
 
 ```sh
 uv run --locked --no-env-file python tools/build.py --output dist
@@ -475,7 +480,8 @@ accept `BLENDER_BUILD_ARGS` and `BLENDER_INSTALL_ARGS`, respectively.
 `make repo` forwards the build arguments and adds `--repo`; `make install-isolated`
 is an alias for the already isolated `make install` command.
 
-On Linux x64, Windows x64 or macOS Apple silicon, fetch an official Blender release with:
+On Linux x64, Windows x64 or macOS Apple silicon, fetch an official Blender
+release with:
 
 ```sh
 uv run --locked --no-env-file python tools/fetch_blender.py --version 5.0.1
@@ -491,19 +497,19 @@ The fetcher reads the official checksum file, verifies the archive before
 extraction and prints the executable path to use with `BLENDER`. CI supplies
 `--sha256` to pin the expected digest. Archives are cached under `.blender/`;
 every invocation re-extracts the verified archive into the same managed slot for
-that platform, version and checksum. Successful replacement removes the previous extraction;
-a failed extraction leaves it intact. On macOS, the verified DMG is mounted read-only
-at a private temporary path; only `Blender.app` is copied. The tool detaches that
-mount before publishing the installation, retrying a busy mount once with forced
-detach. If macOS refuses both attempts, the command fails and leaves the private
-mount named in the error for manual cleanup, without traversing its contents.
-Do not fetch a build while using that cached
-Blender executable. Older builds from the previous tool may leave randomly named
-version directories; remove those manually when no longer in use.
-Other platforms require a separately installed Blender selected with `BLENDER`.
-No download happens implicitly during build, install or tests.
-The reusable setup action and pull-request native matrix cover Linux and Windows;
-the separate weekly workflow adds macOS.
+that platform, version and checksum. Successful replacement removes the previous
+extraction; a failed extraction leaves it intact. On macOS, the verified DMG is
+mounted read-only at a private temporary path; only `Blender.app` is copied. The
+tool detaches that mount before publishing the installation, retrying a busy
+mount once with forced detach. If macOS refuses both attempts, the command fails
+and leaves the private mount named in the error for manual cleanup, without
+traversing its contents. Do not fetch a build while using that cached Blender
+executable. Older builds from the previous tool may leave randomly named version
+directories; remove those manually when no longer in use. Other platforms
+require a separately installed Blender selected with `BLENDER`. No download
+happens implicitly during build, install or tests. The reusable setup action and
+pull-request native matrix cover Linux and Windows; the separate weekly workflow
+adds macOS.
 
 Screenshot probes prepare the blockout form without submitting a design.
 Design/refine operators also respect offline access, missing credentials and
@@ -704,21 +710,23 @@ Edit [the Markdown guide](docs/USER_GUIDE.md) for all guide prose. The
 [handbook template](docs/handbook-template.html) contains presentation, navigation
 and version slots only, plus `{{style}}` and `{{search}}`, which inline
 [docs/site.css](docs/site.css) and [docs/handbook-search.js](docs/handbook-search.js)
-from beside it, and the site's Web Analytics snippet. The search indexes the page's own sections when it loads, so the
-single-file handbook searches offline; test it with
-`node --test tests/site/handbook-search.test.ts` (Node 24). It stays JavaScript
-because browsers run the inlined file as is; `// @ts-check` and JSDoc types let
-the Site CI job type-check it with `tsc --checkJs`. The downloads pages
-under `repo/` come from [tools/site_pages.py](tools/site_pages.py) and inline the
-same stylesheet, wordmark and analytics snippet. `make docs` renders the guide to ignored `site/index.html`
-and copies just its referenced images, the template's favicons included, beside
-it. A neighboring `.assets.json` record lets repeat builds remove unchanged image copies that the guide no longer
-uses, including when switching the same output to inline mode. Unrecorded files
-are retained; modified old copies and symlinked destinations stop the build for
-inspection. Keep that record with a website output directory between builds.
-The version comes from the
-extension manifest. Python-Markdown is pinned in the development environment;
-it is not included in the extension ZIP or imported by shared build/install tools.
+from beside it, and the site's Web Analytics snippet. The search indexes the
+page's own sections when it loads, so the single-file handbook searches offline;
+test it with `node --test tests/site/handbook-search.test.ts` (Node 24). It
+stays JavaScript because browsers run the inlined file as is; `// @ts-check` and
+JSDoc types let the Site CI job type-check it with `tsc --checkJs`. The
+downloads pages under `repo/` come from
+[tools/site_pages.py](tools/site_pages.py) and inline the same stylesheet,
+wordmark and analytics snippet. `make docs` renders the guide to ignored
+`site/index.html` and copies just its referenced images, the template's favicons
+included, beside it. A neighboring `.assets.json` record lets repeat builds
+remove unchanged image copies that the guide no longer uses, including when
+switching the same output to inline mode. Unrecorded files are retained;
+modified old copies and symlinked destinations stop the build for inspection.
+Keep that record with a website output directory between builds. The version
+comes from the extension manifest. Python-Markdown is pinned in the development
+environment; it is not included in the extension ZIP or imported by shared
+build/install tools.
 
 For a single HTML file containing the content and images:
 
@@ -861,12 +869,13 @@ they are Scenario's own brand assets, kept byte-identical to their source and
 added without a licence note, since [TRADEMARKS.md](TRADEMARKS.md) covers them.
 The image checks permit those exceptions; the CLI and unit suite share checks
 for missing images, unused screenshots, truecolour screenshots and short
-Markdown alt text. Evidence frontmatter cannot keep an unused image alive. The social card, when present,
-has an explicit unused-image exception because GitHub repository settings host it.
-Optimization also preserves this generated card; use its dedicated generator
-below to rebuild it. An invalid non-palette card still fails the shared checks.
-Generated website and handbook output remain untracked. Optimization does not
-generate alt text, remove unused files or establish native UI acceptance.
+Markdown alt text. Evidence frontmatter cannot keep an unused image alive. The
+social card, when present, has an explicit unused-image exception because GitHub
+repository settings host it. Optimization also preserves this generated card;
+use its dedicated generator below to rebuild it. An invalid non-palette card
+still fails the shared checks. Generated website and handbook output remain
+untracked. Optimization does not generate alt text, remove unused files or
+establish native UI acceptance.
 
 ### Repository sharing card
 

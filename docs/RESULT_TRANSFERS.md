@@ -27,12 +27,13 @@ rejected. Each hop uses a fresh credential-free connection, the same total
 deadline and a fresh online-permission check. Redirect bodies are not read and
 responses/connections are closed before continuing. Final size/digest checks
 and atomic publication are unchanged. This accommodates same-host CDN delivery
-redirects without retrying generation or deriving new trusted hosts. TLS verifies the hostname and bundled certificate
-authorities; ambient certificate/key-log environment variables are ignored.
-Status 200 is required. Content and transfer encodings are rejected; compressed
-or chunked responses require a separately reviewed transport contract.
-Exceptions exposed to callers and successful receipts omit the URL and response
-body. Caller instrumentation must also avoid logging the input URL or locals.
+redirects without retrying generation or deriving new trusted hosts. TLS
+verifies the hostname and bundled certificate authorities; ambient
+certificate/key-log environment variables are ignored. Status 200 is required.
+Content and transfer encodings are rejected; compressed or chunked responses
+require a separately reviewed transport contract. Exceptions exposed to callers
+and successful receipts omit the URL and response body. Caller instrumentation
+must also avoid logging the input URL or locals.
 
 The caller must provide an online-access predicate reflecting Blender's actual
 permission. Permission is checked before connecting, sending and reading, and
@@ -69,8 +70,8 @@ without `close_notify` as the end of data, so a response with neither bound is
 rejected as incomplete: nothing is published and no receipt is returned. With a
 known expected size, a body without `Content-Length` must still match that size.
 The returned immutable `DownloadedResult(name, size, sha256)` contains no URL. The
-[job store](JOB_STORAGE.md) can persist this receipt; `verify_download` rehashes it
-before explicit recovery or Blender application. Verification accepts only a
+[job store](JOB_STORAGE.md) can persist this receipt; `verify_download` rehashes
+it before explicit recovery or Blender application. Verification accepts only a
 regular nonsymlink file with the saved size/digest, enforces a byte cap and checks
 for changes during reading. It does not repair files or make service calls.
 On Windows Python 3.12+, descriptor and path queries can give `ctime` different

@@ -532,7 +532,9 @@ or after dispatch.
 A call that omits an argument its input schema lists as required, or whose
 arguments are not an object, is refused before the tool runs with
 `ValueError: Missing required argument: <name>` (or the plural form); argument
-values are still checked by each tool.
+values are still checked by each tool. A top-level argument sent as `null` counts
+as omitted, as clients using strict function calling send `null` for every option
+the model left out; a required argument sent as `null` is missing.
 A failed tool call returns an `isError` result with one line, `Type: message`,
 and no traceback. The message is returned only when the extension wrote it: a
 validation error or refusal raised by the tool or by extension code it calls,
@@ -694,7 +696,11 @@ as a new request, or clean a finished private source copy; it never resends a
 part to the same upload or deletes the original file.
 See [upload limits and destination policy](SDK_UPLOADS.md#active-reference-uploads).
 
-`wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 170).
+`wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 45).
+Codex and clients built on the MCP TypeScript SDK stop waiting for a tool call
+after 60 seconds unless configured otherwise, so the default wait answers first;
+an expired wait returns `delivery_active` true and the agent calls again. Pass a
+longer timeout only to a client that waits longer.
 A zero timeout reads status immediately. Shared waits observe their scoped session
 on the HTTP thread while main-thread maintenance performs delivery. Server stop
 interrupts waiting; a changed session rejects the old completion. Waiting does

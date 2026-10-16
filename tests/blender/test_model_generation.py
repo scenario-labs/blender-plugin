@@ -1589,6 +1589,20 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(waited, self.tools.job_status({"job_id": result["local_id"]}))
         self.assertEqual(len(self.paid), 1)
 
+    def test_shared_wait_defaults_inside_a_one_minute_client_limit(self):
+        self.remote_progress = 0.75
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        waited = []
+        with patch.object(
+            owner, "wait", side_effect=lambda _, timeout, **__: waited.append(timeout)
+        ):
+            self.tools.wait_for_job({"job_id": result["local_id"]}).run()
+        self.assertEqual(waited, [self.tools.WAIT_DEFAULT_SECONDS])
+        self.assertLess(self.tools.WAIT_DEFAULT_SECONDS, 60)
+        self.assertEqual(len(self.paid), 1)
+
     def wait_briefly(self, request_id, timeout=8):
         """Run one shared MCP wait on a worker and return its result and duration."""
         deferred = self.tools.wait_for_job({"job_id": request_id, "timeout": timeout})

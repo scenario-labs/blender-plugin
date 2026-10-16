@@ -314,11 +314,7 @@ sites can fail independently of a code change.
 
 Lychee 0.24.2 treats redirects as failures. The scanner defaults to two
 concurrent requests per host, spaces requests by at least 500 ms and waits at least
-five seconds before retries. [The shared configuration](../../lychee.toml)
-limits `www.gnu.org` to one concurrent request with at least 10 seconds between
-requests because the default pacing still encountered HTTP 429 responses.
-GNU.org also receives an explicit `Scenario-Blender-LinkCheck` User-Agent with
-the repository URL, because it answers the generic Lychee identity with 429.
+five seconds before retries, as set in [the shared configuration](../../lychee.toml).
 CI and local scans use the same settings and report per-host statistics. These
 limits apply within each scan, not across independent runners; persistent 429s
 can still reflect server or shared-IP limits. Rate-limit responses remain failures,
@@ -351,9 +347,10 @@ lychee --no-progress --max-redirects 0 --exclude-loopback \
 
 Pages requiring authentication or blocking automated clients belong in
 [.lycheeignore](../../.lycheeignore) with a precise pattern and reason. In addition
-to Scenario service endpoints, Blender's browser challenge and reserved examples,
-the current exceptions cover the repository's exact login forms and internal
-organization pages that require access. These exclusions do not verify those
+to Scenario service endpoints, Blender's browser challenge, GNU.org licence pages
+that time out from hosted runners and reserved examples, the current exceptions
+cover the repository's exact login forms and internal organization pages that
+require access. These exclusions do not verify those
 destinations.
 Do not silence a new redirect by excluding an entire public host.
 

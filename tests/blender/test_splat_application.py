@@ -125,6 +125,51 @@ class SplatApplicationTests(unittest.TestCase):
                 self.assertEqual(set(bpy.context.selected_objects), {self.existing})
                 self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
 
+    def test_target_size_scales_the_splat_centres_with_the_bottom_center_at_the_cursor(self):
+        # OPENGL centres span 9 m along x and z: the longest side becomes 3 m.
+        splat = self.decode(spz_bytes([(index, 1, -index) for index in range(10)]), "model/spz")
+        application = self.module.import_splat(
+            self.scene,
+            splat,
+            cursor=(4.0, 5.0, 6.0),
+            unit_key="splat-key",
+            members=("splat-key",),
+            fmt="spz",
+            target_size=3.0,
+        )
+        self.assertEqual(application.target_size, 3.0)
+        self.assertAlmostEqual(application.scale, 1 / 3)
+        for value in application.root.scale:
+            self.assertAlmostEqual(value, 1 / 3, places=6)
+        points = self.world_points(application)
+        low = [min(point[i] for point in points) for i in range(3)]
+        high = [max(point[i] for point in points) for i in range(3)]
+        self.assertAlmostEqual(
+            max(hi - lo for lo, hi in zip(low, high, strict=True)), 3.0, places=4
+        )
+        self.assert_bottom_center(application, (4.0, 5.0, 6.0))
+        # The reported size is the displayed points, which extend past their centres.
+        self.assertEqual(len(application.dimensions), 3)
+        centres = [hi - lo for lo, hi in zip(low, high, strict=True)]
+        for reported, extent in zip(application.dimensions, centres, strict=True):
+            self.assertGreater(reported, extent)
+        self.assertLess(application.bottom, 6.0)
+        self.assertEqual(set(bpy.context.selected_objects), {self.existing})
+
+    def test_unmeasurable_splats_refuse_a_target_size_before_building(self):
+        splat = self.decode(spz_bytes([(1, 1, 1)]), "model/spz")
+        with self.assertRaisesRegex(self.model.ModelApplicationError, "no measurable size"):
+            self.module.import_splat(
+                self.scene,
+                splat,
+                cursor=(0.0, 0.0, 0.0),
+                unit_key="splat-key",
+                members=("splat-key",),
+                fmt="spz",
+                target_size=1.0,
+            )
+        self.assertEqual(self.data(), self.before)
+
     def test_saved_axes_choose_which_way_is_up(self):
         # Saved +y is up in OPENGL (right/up/back) and down in OPENCV (right/down/forward).
         data = splat_records([(0.0, 0.0, 0.0), (0.0, 2.0, 0.0), (0.0, 0.0, 3.0)])

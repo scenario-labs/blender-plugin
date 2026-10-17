@@ -334,6 +334,26 @@ class ResultTests(fixture(model_tests.ModelGenerationTests)):
         self.assertEqual(marks, ["Scenario model import"])
         self.assertTrue(bpy.data.is_dirty)
 
+    def test_a_sized_saved_model_marks_the_file_once(self):
+        request_id = self.recovered_model()
+        with file_marks(self) as marks:
+            status = self.finish_application(self.prepare_model(request_id, target_size_m=0.5))
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["model_import"]["scale"], 0.5)
+        self.assertEqual(marks, ["Scenario model import"])
+        self.assertTrue(bpy.data.is_dirty)
+
+    def test_a_refused_model_target_size_leaves_the_file_clean(self):
+        request_id = self.recovered_model()
+        objects = set(bpy.data.objects)
+        with file_marks(self) as marks:
+            for value in (0, 5000, float("nan")):
+                with self.subTest(value=value), self.assertRaises(self.request_error):
+                    self.prepare_model(request_id, target_size_m=value)
+        self.assertEqual(marks, [])
+        assert_unmarked(self)
+        self.assertEqual(set(bpy.data.objects), objects)
+
     def test_saved_model_history_checkpoints_mark_the_file_without_another_step(self):
         request_id = self.recovered_model()
         module = submodule("blender.model_application")

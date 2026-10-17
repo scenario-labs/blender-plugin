@@ -1466,6 +1466,14 @@ handles. Model status includes names of its retained imported objects, the
 `model_import` summary; names do not authorize replay or locate replacement
 targets after restart.
 
+An MCP approval of any unit can also carry `target_size` (`target_size_m`), the
+longest side in metres that publication scales the new group to. Preparation
+validates it before capturing anything, so a refused value creates no approval
+and leaves the file unmarked. It is part of the reviewed operation rather than
+an apply argument: the single-use handle carries it unchanged to delivery, and
+another size needs a new preparation. The summary adds the group root, applied
+scale and measured world dimensions and bottom height.
+
 SPZ, `.splat` and PLY units also carry a reviewed point limit and saved axes in
 the approval; `revise_model_application` exchanges a native review for a new
 handle with other options and the same captured destination, cursor and unit.

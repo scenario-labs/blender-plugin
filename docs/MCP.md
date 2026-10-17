@@ -187,7 +187,7 @@ unsupported. See [model import](MESH_APPLICATION.md#explicit-saved-glb-import) a
 recovery. This never replaces an existing mesh.
 
 To import a model at a known size, also pass `target_size_m`, the longest side
-in metres from 0.01 to 1000. The new group is scaled uniformly to it and its
+from 0.01 to 1000. The new group is scaled uniformly to it and its
 bottom center stays at the cursor. The longest side does not depend on how a
 provider oriented the model and is the size usually quoted for an object. The
 approval returns `target_size_m` (null keeps the saved size); to change it,

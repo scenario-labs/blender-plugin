@@ -850,7 +850,7 @@ def import_snapshot(scene, snapshot, *, cursor, history=False, target_size=None)
     runs outside any native operator: one before staging and one after
     publication. Callers importing inside a larger build own their history and
     must not record its partial states. ``target_size`` is the reviewed longest
-    side in metres: the group root is scaled uniformly to it, measured like the
+    side in Blender units: the group root is scaled uniformly to it, measured like the
     anchor, with the bottom center kept at the cursor. A model with no measurable
     size then fails and is rolled back like other import failures.
     """

@@ -7,8 +7,8 @@ import math
 import pathlib
 import struct
 
-# Accepted longest side of a saved model import, in metres (Blender units at the
-# default unit scale): a small prop up to a large building or world.
+# Accepted longest side of a saved model import, in Blender units (metres at the
+# default unit scale, as every MCP length): a small prop up to a large building.
 MIN_TARGET_SIZE_M = 0.01
 MAX_TARGET_SIZE_M = 1000.0
 
@@ -48,7 +48,7 @@ def bottom_center_offset(bbox_min, bbox_max, target):
 
 
 def target_size(value):
-    """Validate an optional requested longest side in metres; None keeps the saved size.
+    """Validate an optional requested longest side in Blender units; None keeps the saved size.
 
     The longest side does not depend on how a provider oriented the model, and
     it is the size usually quoted for an object.
@@ -62,7 +62,7 @@ def target_size(value):
         or not MIN_TARGET_SIZE_M <= value <= MAX_TARGET_SIZE_M
     ):
         raise ValueError(
-            f"target_size_m must be a number of metres from {MIN_TARGET_SIZE_M:g} "
+            f"target_size_m must be a length in Blender units from {MIN_TARGET_SIZE_M:g} "
             f"to {MAX_TARGET_SIZE_M:g}"
         )
     return float(value)

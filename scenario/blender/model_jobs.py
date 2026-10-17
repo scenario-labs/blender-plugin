@@ -351,7 +351,7 @@ class ModelApplicationApproval:
 
     SPZ, .splat and PLY units also carry the reviewed point limit and saved axes;
     mesh units leave both None. `target_size` is the reviewed longest side in
-    metres, or None to keep the saved size.
+    Blender units, or None to keep the saved size.
     """
 
     identifier: str
@@ -2148,7 +2148,7 @@ class ModelJobs:
 
         SPZ, .splat and PLY units take a point limit (default 1,000,000) and saved
         axes (default: the file format's convention); mesh units take neither.
-        Any unit takes an optional `target_size`, the longest side in metres that
+        Any unit takes an optional `target_size`, the longest side in Blender units that
         the new group is scaled to; it is checked here, before anything is captured.
         """
         try:

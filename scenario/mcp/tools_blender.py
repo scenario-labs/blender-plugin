@@ -320,7 +320,8 @@ CAPTURE_ANGLES = {
     "three_quarter": ((1.0, -1.0, 0.8), "3/4", False),
 }
 CAPTURE_DEFAULT_ANGLES = ("front", "right", "top", "three_quarter")
-_CAPTURE_GEOMETRY = {
+# Object types whose bounding box frames what Workbench draws.
+_CAPTURE_BOUNDED = {
     "MESH",
     "CURVE",
     "SURFACE",
@@ -330,9 +331,6 @@ _CAPTURE_GEOMETRY = {
     "POINTCLOUD",
     "VOLUME",
     "GREASEPENCIL",
-    "ARMATURE",
-    "EMPTY",
-    "LIGHT",
 }
 _CAPTURE_FOV = 0.698  # 40 degrees for the perspective three-quarter view
 
@@ -382,6 +380,15 @@ def _capture_request(args):
     return mode, max_size, list(dict.fromkeys(frames)), None
 
 
+def _collection_instance(obj):
+    return obj.type == "EMPTY" and obj.instance_type == "COLLECTION" and obj.instance_collection
+
+
+def _frameable(obj):
+    """Something Workbench draws: geometry, a collection instance or an armature."""
+    return obj.type in _CAPTURE_BOUNDED or obj.type == "ARMATURE" or bool(_collection_instance(obj))
+
+
 def _capture_targets(args, scene):
     names = args.get("objects")
     if names is not None:
@@ -392,28 +399,44 @@ def _capture_targets(args, scene):
         if missing:
             raise ValueError(f"Not in this scene: {', '.join(missing)}")
         return "objects", [members[name] for name in dict.fromkeys(names)]
-    selected = [obj for obj in bpy.context.view_layer.objects if obj.select_get()]
+    # A selected camera or light, common after camera_path, would frame empty space.
+    selected = [
+        obj for obj in bpy.context.view_layer.objects if obj.select_get() and _frameable(obj)
+    ]
     if selected:
         return "selection", selected
     visible = [
         obj
         for obj in scene.objects
-        if obj.type in _CAPTURE_GEOMETRY - {"LIGHT", "EMPTY"} and not obj.hide_render
+        if (obj.type in _CAPTURE_BOUNDED or _collection_instance(obj)) and not obj.hide_render
     ]
     if not visible:
         raise ValueError("The scene has no renderable object to frame")
     return "scene", visible
 
 
+def _object_points(obj, matrix, depth=0):
+    """World-space points that bound what obj draws, through nested collection instances."""
+    from mathutils import Matrix, Vector
+
+    collection = _collection_instance(obj)
+    if collection and depth < 8:
+        base = matrix @ Matrix.Translation(-collection.instance_offset)
+        points = [
+            point
+            for child in collection.all_objects
+            for point in _object_points(child, base @ child.matrix_world, depth + 1)
+        ]
+        return points or [matrix.translation.copy()]
+    if obj.type in _CAPTURE_BOUNDED:
+        return [matrix @ Vector(corner) for corner in obj.bound_box]
+    return [matrix.translation.copy()]
+
+
 def _capture_bounds(objects):
     from mathutils import Vector
 
-    points = []
-    for obj in objects:
-        if obj.type in _CAPTURE_GEOMETRY - {"EMPTY", "LIGHT", "ARMATURE"}:
-            points.extend(obj.matrix_world @ Vector(corner) for corner in obj.bound_box)
-        else:
-            points.append(obj.matrix_world.translation.copy())
+    points = [point for obj in objects for point in _object_points(obj, obj.matrix_world)]
     low = Vector(tuple(min(p[i] for p in points) for i in range(3)))
     high = Vector(tuple(max(p[i] for p in points) for i in range(3)))
     center = (low + high) / 2
@@ -446,6 +469,9 @@ def _capture_settings(scene, saved, width, height):
         ("resolution_x", width),
         ("resolution_y", height),
         ("resolution_percentage", 100),
+        # Frames tiles already carry the camera's pixel aspect in their shape.
+        ("pixel_aspect_x", 1.0),
+        ("pixel_aspect_y", 1.0),
         ("use_compositing", False),
         ("use_sequencer", False),
         ("use_border", False),
@@ -506,6 +532,7 @@ def capture_views(args):
 
     mode, max_size, views, targets = _capture_request(args)
     scene = bpy.context.scene
+    bpy.context.view_layer.update()  # world matrices of objects moved since the last redraw
     render = scene.render
     if mode == "angles":
         aspect = 1.0
@@ -927,7 +954,7 @@ SPECS = (
             "Args:\n"
             "  - mode: optional string, angles (default) or frames.\n"
             "  - angles: optional array for mode angles from front, back, left, right, top and three_quarter (default front, right, top, three_quarter); three_quarter is perspective, the others orthographic.\n"
-            "  - objects: optional array of object names to frame in mode angles; default the selection, else every renderable object.\n"
+            "  - objects: optional array of object names to frame in mode angles; default the selected geometry or collection instances, else every renderable object.\n"
             "  - frames: optional array of 1 to 12 frame numbers for mode frames, rendered through the scene camera.\n"
             "  - frame_count: optional integer from 1 to 12 for mode frames instead of frames, spread over the frame range (default 4).\n"
             "  - max_size: optional integer from 256 to 2048, the sheet's longest side in pixels (default 1280).\n"

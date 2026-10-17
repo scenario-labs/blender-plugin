@@ -10,7 +10,7 @@ import struct
 import sys
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock
 
 import bpy
 from helpers import assert_unmarked, reset_scene, submodule
@@ -65,6 +65,8 @@ class CaptureViewsTests(unittest.TestCase):
                 render.filepath,
                 render.use_compositing,
                 render.film_transparent,
+                render.pixel_aspect_x,
+                render.pixel_aspect_y,
                 settings.file_format,
                 settings.color_mode,
                 getattr(settings, "media_type", ""),
@@ -113,7 +115,7 @@ class CaptureViewsTests(unittest.TestCase):
             )
             return targa(scene.render.resolution_x, scene.render.resolution_y)
 
-        return seen, mock.patch.object(self.tb, "_render_tile", render)
+        return seen, unittest.mock.patch.object(self.tb, "_render_tile", render)
 
     def test_angles_frame_the_scene_from_a_temporary_camera_and_restore_everything(self):
         before = self.state()
@@ -149,6 +151,50 @@ class CaptureViewsTests(unittest.TestCase):
         self.assertEqual(named["size"], [512, 512])
         self.assertEqual((selected["framed"], selected["objects"]), ("selection", ["Crate"]))
         self.assertEqual(selected["tiles"], ["FRONT", "LEFT"])
+
+    def test_a_selected_camera_is_not_framed_and_collection_instances_are(self):
+        seen, patch = self.fake_tiles()
+        self.scene.camera.select_set(True)
+        with patch:
+            _, camera_only = self.capture({"angles": ["front"]})
+        self.assertEqual(camera_only["framed"], "scene")
+        self.scene.camera.select_set(False)
+        props = bpy.data.collections.new("Props")
+        for obj in list(self.scene.collection.objects):
+            if obj.type == "MESH":
+                self.scene.collection.objects.unlink(obj)
+                props.objects.link(obj)
+        instance = bpy.data.objects.new("Props instance", None)
+        instance.instance_type, instance.instance_collection = "COLLECTION", props
+        instance.location = (100, 0, 0)
+        self.scene.collection.objects.link(instance)
+        with patch:
+            _, whole = self.capture({"angles": ["front"]})
+            instance.select_set(True)
+            _, selected = self.capture({"angles": ["front"]})
+        self.assertEqual((whole["framed"], whole["objects"]), ("scene", ["Props instance"]))
+        self.assertEqual(selected["framed"], "selection")
+        # Framed on the instanced cube and sphere, not on the empty's origin alone.
+        self.assertAlmostEqual(selected["center"][0], 102.0, places=3)
+        self.assertGreater(selected["radius"], 2.0)
+
+    def test_pixel_aspect_is_square_while_rendering_and_restored(self):
+        render = self.scene.render
+        render.pixel_aspect_x = 2.0
+        aspects = []
+
+        def tile(scene, path):
+            aspects.append((scene.render.pixel_aspect_x, scene.render.pixel_aspect_y))
+            return targa(scene.render.resolution_x, scene.render.resolution_y)
+
+        before = self.state()
+        with unittest.mock.patch.object(self.tb, "_render_tile", tile):
+            _, caption = self.capture({"mode": "frames", "frames": [1], "max_size": 512})
+        self.assertEqual(aspects, [(1.0, 1.0)])
+        self.assertEqual(self.state(), before)
+        # 960x540 at pixel aspect 2:1 is a 32:9 picture.
+        width, height = caption["size"]
+        self.assertAlmostEqual((width - 8) / (height - 8), 32 / 9, delta=0.05)
 
     def test_frames_render_the_scene_camera_and_return_to_the_current_frame(self):
         before = self.state()

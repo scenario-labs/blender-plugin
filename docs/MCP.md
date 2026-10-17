@@ -347,6 +347,28 @@ Restart a client launched before the environment variable was set. See the
 [official Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 for configuration and token-environment behavior.
 
+In a repository checkout, the committed `.codex/config.toml` entry is disabled
+and gets the token from a headers helper instead:
+
+```toml
+http_headers_helper = "uv run --locked --env-file .env.local python -m tools.codex_mcp_auth"
+```
+
+Set `SCENARIO_BLENDER_TOKEN` in `.env.local` to the token in the panel's Codex
+setup, then start Codex from the checkout root with
+`codex -c mcp_servers.scenario-blender.enabled=true`. Codex runs the helper with a
+minimal environment, so an exported token does not reach it, and a
+`bearer_token_env_var` on the same entry would take precedence. uv loads all of
+`.env.local` into the helper, which prints only the `Authorization` header for
+Codex; the token stays out of command arguments, configuration and the model's
+context, but an agent that can read `.env.local` can still read it.
+
+After a Blender restart, update `.env.local`. The next request gets a 401, Codex
+runs the helper again and retries once with the new token; a session that
+started with a stale token needs a new Codex session. Codex hides the helper's
+errors: add `--check` to the helper command to report a missing or malformed
+token without printing it.
+
 ### Connection check
 
 This request lists tool metadata; it does not call a generation tool:

@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass, field
 
 from scenario.core.config import Credentials
+from scenario.mcp.cli import resolve_cli_token
 
 
 @dataclass(frozen=True)
@@ -27,3 +28,19 @@ def live_settings(environ=None):
         )
     project_id = (environ.get("SCENARIO_TEST_PROJECT_ID") or "").strip() or None
     return LiveSettings(credentials, project_id)
+
+
+def local_mcp_token(environ=None):
+    """The local Blender MCP bearer token, separate from Scenario credentials."""
+    environ = os.environ if environ is None else environ
+    token = (environ.get("SCENARIO_BLENDER_TOKEN") or "").strip()
+    if not token:
+        raise SystemExit(
+            "no local MCP token: set SCENARIO_BLENDER_TOKEN in .env.local to the token "
+            "in Blender's Codex setup (Scenario > Agents (MCP))"
+        )
+    try:
+        resolve_cli_token(token)
+    except ValueError as error:
+        raise SystemExit(f"malformed local MCP token: {error}") from None
+    return token

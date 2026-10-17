@@ -216,7 +216,9 @@ the default unit-test collection and are not added to PR workflows.
 | `SCHEMA_CACHE` | `tools/audit_payloads.py` | Optional private persistent schema-cache root; otherwise each run uses a new temporary cache. Live subdirectories are partitioned by credentials, project and API base URL | Developer |
 
 `SCENARIO_BLENDER_TOKEN` supplies the local MCP bearer token to the headless
-`scenario_blender` command and the generated Codex client snippet. An explicit
+`scenario_blender` command and the generated Codex client snippet. In
+`.env.local`, it feeds the repository Codex entry's
+[headers helper](docs/MCP.md#codex), `tools/codex_mcp_auth.py`. An explicit
 `--token` wins over this environment value. With neither configured, the command
 generates and displays a session token; supplied tokens are hidden in its startup
 banner. This is separate from Scenario API authentication. Empty or malformed

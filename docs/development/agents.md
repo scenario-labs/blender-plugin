@@ -30,7 +30,8 @@ spending approval still apply. Keep personal allow rules in ignored
 `.claude/settings.local.json`. Root `.mcp.json` registers the local
 `scenario-blender` server for Claude Code, as described in
 [client setup](../MCP.md#claude-code). `tests/unit/test_agent_settings.py`
-checks both files.
+checks both files. `.codex/config.toml` defines the same server for Codex,
+disabled, with a [headers helper](../MCP.md#codex) that reads `.env.local`.
 
 ## Shared skills and command validation
 

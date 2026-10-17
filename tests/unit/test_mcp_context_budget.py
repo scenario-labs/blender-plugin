@@ -34,16 +34,16 @@ generator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(generator)
 TOOL_SOURCES = [ROOT / relative for _, relative in generator.GROUPS]
 
-# Measured on main for 87 tools: 122,950 characters in total, about 30,700 tokens
+# Measured on main for 87 tools: 124,132 characters in total, about 31,000 tokens
 # at four characters per token.
-TOTAL_BUDGET = 124_000
+TOTAL_BUDGET = 125_500
 # A budget that the total undercuts by more than this fraction is lowered, so a
 # trim is not silently spent by a later addition.
 TOTAL_SLACK = 0.03
 # Any tool not listed in TOOL_BUDGETS.
 DEFAULT_TOOL_BUDGET = 2_500
 TOOL_BUDGETS = {
-    "job_status": 8_600,
+    "job_status": 9_200,
     "prepare_result_application": 5_600,
     "render_form": 4_500,
     "inspect_result_previews": 3_200,

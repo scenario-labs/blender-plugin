@@ -166,9 +166,10 @@ Use a reviewed file allowlist, rather than copying the repository wholesale:
   when source moves.
 - Fonts require `resources/Poppins-OFL.txt`; Tabler SVG icons require
   `resources/Tabler-LICENSE.txt`. Carry their notices into the ZIP alongside used
-  resources and record their provenance in `scenario/icons/README.md`; the repository has no
-  separate third-party notices file. Review `resources/icons.json` references
-  when pruning unused icons. No new bundled asset arrived in 0.2.0.
+  resources and record their provenance in `scenario/icons/README.md`; the
+  repository has no separate third-party notices file. Review
+  `resources/icons.json` references when pruning unused icons. No new bundled
+  asset arrived in 0.2.0.
 - Audit bundled `resources/models.json` and `resources/schemas.json` before use:
   retain only appropriate public metadata or synthetic offline fixtures, with
   schema refresh behavior. Review preview PNG provenance before including them.
@@ -253,16 +254,17 @@ view registration, media binary or sample media is imported by this step.
 The first-party [Film scene primitive](../scenario/blender/film_scene.py) implements
 the retained shot/timeline responsibilities identified in the selected Studio
 `src/scenario_studio/film_scene.py` and scene adapter at
-`e2b0277064f0c502d46524fba1d006d0ac83f846`: editable primitives and cameras, role metadata,
-hero placement and animation, and a director sequence. It uses current validated
-recipe contracts, data-based geometry construction and the existing receipt-bound
-GLB importer. Motion/NLA choreography is adapted from Emmanuel de Maistre's
-selected source; attribution is retained with the adaptation. Geometry creation,
-receipt preflight, transaction cleanup and scene identity checks use the current
-package's contracts. No prototype file-path importer, global source-asset cache, transport,
-production-state file, snapshot history or automatic project save is carried over.
-Actor geometry/rig/morph data are independent, trading extra import/memory cost for
-explicit instance isolation. Shared hero claims and the
+`e2b0277064f0c502d46524fba1d006d0ac83f846`: editable primitives and cameras,
+role metadata, hero placement and animation, and a director sequence. It uses
+current validated recipe contracts, data-based geometry construction and the
+existing receipt-bound GLB importer. Motion/NLA choreography is adapted from
+Emmanuel de Maistre's selected source; attribution is retained with the
+adaptation. Geometry creation, receipt preflight, transaction cleanup and scene
+identity checks use the current package's contracts. No prototype file-path
+importer, global source-asset cache, transport, production-state file, snapshot
+history or automatic project save is carried over. Actor geometry/rig/morph data
+are independent, trading extra import/memory cost for explicit instance
+isolation. Shared hero claims and the
 [native/MCP shot controls](FILM_PLAN.md#native-and-mcp-shot-controls) build on it;
 this local component is not completed Film acceptance.
 

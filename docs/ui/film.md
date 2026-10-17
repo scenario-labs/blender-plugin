@@ -1,6 +1,8 @@
 # Film controls
 
-Interaction rules and desktop evidence for Film tasks, shots, capture, timeline, composition, review, export and case studies. The shared rules are in the [UI style guide](../UI_STYLE.md).
+Interaction rules and desktop evidence for Film tasks, shots, capture, timeline,
+composition, review, export and case studies. The shared rules are in the
+[UI style guide](../UI_STYLE.md).
 
 ## Film task controls
 
@@ -175,8 +177,8 @@ an isolated profile. The local fixture supplies two recipe shots and a second
 take for one shot, with external Python sockets blocked. Native mouse input
 opens the panel and confirmation, which displays 180 frames at 30 fps. Selecting
 the nondefault scene for the second shot and pressing Escape leaves every scene
-and saved job unchanged and creates no review. A fresh dialog accepts the same explicit scene
-choice, and Return confirms the build.
+and saved job unchanged and creates no review. A fresh dialog accepts the same
+explicit scene choice, and Return confirms the build.
 
 ![Timeline approval shows the frame count and an explicit choice between takes](../images/film-timeline-approval.png)
 
@@ -303,14 +305,15 @@ log. Preparing and ready reviews add "Selecting, editing or Undo here discards
 it": object selection or edits and any Undo or Redo invalidate an unbuilt review
 and delete its copies. Preparing and waiting reviews show a status line with
 **Cancel preparation**; stopping and building show status only. The waiting line
-says the scene was left and that reselecting it needs a new preparation: selecting the
-recipe scene again invalidates its unbuilt reviews and deletes their copies. Ready,
-failed and cancelled reviews offer **Discard review** with confirmation. Uncertain
-builds hide preparation and offer **Save review receipt** or **Acknowledge
-inspection** (with its checkbox), plus **Inspect saved jobs**. **Error details**
-wraps the complete error and offers copying. Drawing reads cached status only; the
-maintenance pump owns progress. Studio's Film page adds a sixth **Review** tab,
-drawn as two rows of three at narrow widths.
+says the scene was left and that reselecting it needs a new preparation:
+selecting the recipe scene again invalidates its unbuilt reviews and deletes
+their copies. Ready, failed and cancelled reviews offer **Discard review** with
+confirmation. Uncertain builds hide preparation and offer **Save review
+receipt** or **Acknowledge inspection** (with its checkbox), plus **Inspect
+saved jobs**. **Error details** wraps the complete error and offers copying.
+Drawing reads cached status only; the maintenance pump owns progress. Studio's
+Film page adds a sixth **Review** tab, drawn as two rows of three at narrow
+widths.
 
 [Installed tests](../../tests/blender/test_film_review_controls.py) drive these
 controls. The [release evidence](../maintenance/release-acceptance.md#film)

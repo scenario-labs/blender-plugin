@@ -211,9 +211,7 @@ def mcp_call(name, arguments, *, during=None):
     from concurrent.futures import ThreadPoolExecutor
 
     registry = submodule("blender.mcp_service").build_registry()
-    server = submodule("mcp.server").McpServer(
-        "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
-    )
+    server = submodule("mcp.server").McpServer("127.0.0.1", 0, registry, {}, timeout=5)
     message = {"id": 1, "method": "tools/call", "params": {"name": name, "arguments": arguments}}
     with ThreadPoolExecutor(max_workers=1) as worker:
         result = worker.submit(server.handle, message)

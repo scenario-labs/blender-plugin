@@ -32,3 +32,13 @@ updates:
     labels: ["dependencies", "area:tooling"]
     commit-message:
       prefix: "chore(deps)"
+  # The ClusterFuzzLite builder image, pinned by digest in .clusterfuzzlite/Dockerfile.
+  - package-ecosystem: "docker"
+    directory: "/.clusterfuzzlite"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    labels: ["dependencies", "area:ci"]
+    commit-message:
+      prefix: "ci(deps)"

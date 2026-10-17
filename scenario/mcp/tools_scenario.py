@@ -2163,9 +2163,14 @@ def _finish_recovery(jobs, task, request_id):
     return DeferredTool(run, finish)
 
 
+# Codex and clients built on the MCP TypeScript SDK stop waiting for a tool after 60 seconds
+# by default; a shorter default wait answers first, and the agent calls again.
+WAIT_DEFAULT_SECONDS = 45
+
+
 def wait_for_job(args):
     ref = _job_ref(args)
-    timeout = args.get("timeout", 170)
+    timeout = args.get("timeout", WAIT_DEFAULT_SECONDS)
     if (
         isinstance(timeout, bool)
         or not isinstance(timeout, (int, float))
@@ -3923,7 +3928,7 @@ SPECS = (
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence.\n"
-            "  - timeout: optional finite number of seconds from 0 to 170, default 170.\n"
+            "  - timeout: optional finite number of seconds from 0 to 170, default 45 so the answer arrives before the 60-second tool limit many MCP clients apply; pass more only when the client waits longer.\n"
             "Returns: shared jobs return the job_status fields, including lane, remote_status, progress, remote_observed_at, remote_stale, delivery_active and delivery_offline, when delivery finishes, pauses for review (delivery_paused true), a workflow step waits for a decision (awaiting_decision true, returned at once), is held by disabled Online Access (delivery_offline true, returned at once) or the wait expires. delivery_active true means the wait expired, including while an automatic image import is pending in ready or applying; call again. With delivery_offline true, do not call again until the user allows Online Access. Prototype records return local_id, job_id, status, progress, cu_cost, files, error and kind, with a recovery note while unfinished.\n"
             'Example: {"job_id": "job_example", "timeout": 30}.\n'
             "Prefer job_status for a quick check. Waiting runs off the main thread; it does not cancel, retry or submit generation. Context changes require a fresh status query.\n"

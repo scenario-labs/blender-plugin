@@ -45,10 +45,10 @@ Metadata uses the selected SDK 2.2.0 through the shared
 chunks of 100 identities (the SDK documents a 200-identity limit). It carries the
 selected project, gets the adapter's bounded
 [read retries](SDK_ADOPTION.md#read-retries) and checks online access before each
-request. One batch reads its metadata once, apart from those retries. The published wheel's
-`types/asset_get_bulk_response.py`, like `types/asset_retrieve_response.py`,
-documents the optional `thumbnail` and `preview` objects, each with an `assetId`
-and a signed `url`; see the
+request. One batch reads its metadata once, apart from those retries. The
+published wheel's `types/asset_get_bulk_response.py`, like
+`types/asset_retrieve_response.py`, documents the optional `thumbnail` and
+`preview` objects, each with an `assetId` and a signed `url`; see the
 [asset retrieval contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve).
 Signed URLs stay in memory and are never written, logged or returned in errors.
 
@@ -300,9 +300,9 @@ a warning that names no path, rather than forgotten, and its watcher keeps
 reaping it. The controller's persistent timer reads each child's phase from
 memory every quarter second while audio plays and every tenth of a second while
 a child starts or stops; it never touches the file system for a child. Drawing
-reads only the controller's memory: it never starts, polls or stops a child. Playback is local: it works with
-Online Access disabled and makes no service request. No local MCP tool plays
-audio.
+reads only the controller's memory: it never starts, polls or stops a child.
+Playback is local: it works with Online Access disabled and makes no service
+request. No local MCP tool plays audio.
 
 ## Automatic previews in Blender
 
@@ -440,9 +440,9 @@ previous pass, whether or not more previews are requested. A ready status can
 outlive its evicted file; an explicit retry reads or fetches it again. Only
 removed bytes count toward the budget: an entry the system refuses to delete,
 such as a file another process holds open on Windows, leaves the next oldest
-entry to go instead and is tried again on the next pass. The cache is safe to delete, even
-while Blender runs: each lane command recreates the root as a private directory
-when its parent still exists.
+entry to go instead and is tried again on the next pass. The cache is safe to
+delete, even while Blender runs: each lane command recreates the root as a
+private directory when its parent still exists.
 
 ## Workflow review assets
 
@@ -565,6 +565,5 @@ recording layouts, and local MCP inspection, all with synthetic media. They do
 not cover provider audio files, child start-up time, antivirus behavior, real
 players and sound output on Windows and Linux desktops, macOS x64 or sandboxed
 Blender packages, and the timing figures above are macOS arm64 measurements.
-Human listening through Play audio and the open desktop preview checks,
-including of the review previews, are in
+The open desktop preview checks, including of the review previews, are in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).

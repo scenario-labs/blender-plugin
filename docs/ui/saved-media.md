@@ -1,15 +1,16 @@
 # Saved media, previews and image handoff
 
-Interaction rules and desktop evidence for approving and reusing saved media. The shared rules are in the [UI style guide](../UI_STYLE.md).
+Interaction rules and desktop evidence for approving and reusing saved media.
+The shared rules are in the [UI style guide](../UI_STYLE.md).
 
 ## Prompt approval interaction evidence
 
 These earlier offline Blender 5.1.2 macOS arm64 captures show the price before
 approval and the delivered text afterward. The model, price and transport are
 synthetic; they are not current service pricing or live generation evidence.
-They predate the shorter [CU labels](../UI_STYLE.md#wording). The price request made no
-submission; the separate approval produced exactly one.
-Native field editing, focus transfer and viewport selection/zoom were exercised.
+They predate the shorter [CU labels](../UI_STYLE.md#wording). The price request
+made no submission; the separate approval produced exactly one. Native field
+editing, focus transfer and viewport selection/zoom were exercised.
 Computer-control focus guards interrupted some typing attempts; this does not
 establish exhaustive keyboard or clipboard acceptance. The isolated run exited
 cleanly and left the normal profile unchanged. A disposable Blender copy used a
@@ -136,10 +137,11 @@ maintainer listened through **Play audio** on the 0.10.0 candidate ZIP, when it
 opened the system player (see the
 [human checks](../maintenance/release-acceptance.md#human-checks)). These passes
 predate the in-extension **Play audio**, **Stop audio** and **Open in system
-player** rows. Clicking them, listening through them, the waveform's Cancel,
-Retry and close on the desktop, clicking **Play video** or **Play in Blender**
-at UI scale 2.0, Studio at UI scale 2.0, viewport interaction and other
-platforms are not yet recorded; they continue in #440.
+player** rows; on a #440 candidate ZIP the maintainer played, stopped and
+listened through **Play audio** and **Stop audio**. **Open in system player**,
+the waveform's Cancel, Retry and close on the desktop, clicking **Play video** or
+**Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
+interaction and other platforms are not yet recorded; they continue in #440.
 
 ## Saved result previews
 
@@ -202,8 +204,8 @@ Status lines wrap like the waveform box's, by the width Blender's interface
 font measures less the sidebar's panel, job box and icon space, and a caption
 such as **Model (2)** stays whole on one line. Drawing
 reads only the controller's precomputed tiles and pages: no file, store or
-session access, decode, request or property write. Requests, image decoding and icons happen in
-the controller's timer, outside drawing.
+session access, decode, request or property write. Requests, image decoding and
+icons happen in the controller's timer, outside drawing.
 
 Installed exact-ZIP tests on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 draw
 tiles through recording layouts with file and store reads refused, and through
@@ -258,9 +260,9 @@ Studio request, around the job box Studio draws, not in Studio's popup itself.
 Measured in its screenshots, the earlier arrows were 1.21 and 1.23 steps wide
 at UI scale 2.0 and 329 units, and 1.05 and 1.08 at UI scale 1.0 and 960 units;
 the new ones were exactly one step in both, as tall as before. A row sized for
-the default sidebar drew about one step before and after. The physical recheck
-of the arrows' width in Studio and the sidebar at UI scales 1.0, 1.5 and 2.0 is
-pending.
+the default sidebar drew about one step before and after. On the #440
+candidate, Studio's Jobs page at UI scale 2.0 showed one-step arrows; the other
+UI scales are not recorded.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
 1.0, with system mouse and wheel events and ZIPs built before the measured

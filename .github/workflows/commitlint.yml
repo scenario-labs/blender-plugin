@@ -1,16 +1,22 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
 name: commitlint
 
 on:
   pull_request:
+  merge_group:
 
 permissions:
   contents: read
 
 jobs:
-  # Advisory: branch commits are discarded by the squash merge, so this job is
-  # never a required check. It lints every commit the PR adds on top of its base
-  # branch with the same commitlint.config.ts as the pr-title job in pr-name.yml.
+  # A required check in the main rulesets, with pr-title and ci-ok. It lints
+  # every commit the PR adds on top of its base branch with the same
+  # commitlint.config.ts as the pr-title job in pr-name.yml. Do not rename it.
   commits:
+    # Branch commits are linted on the pull request; in the merge queue the job is skipped, which
+    # counts as passing, and pr-title lints the squash commits instead.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

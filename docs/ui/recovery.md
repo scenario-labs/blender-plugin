@@ -1,6 +1,7 @@
 # Blockout plans and cloud recovery
 
-Interaction rules and desktop evidence for Blockout plans and recovering cloud jobs. The shared rules are in the [UI style guide](../UI_STYLE.md).
+Interaction rules and desktop evidence for Blockout plans and recovering cloud
+jobs. The shared rules are in the [UI style guide](../UI_STYLE.md).
 
 ## Blockout plan approval interaction
 

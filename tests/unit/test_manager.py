@@ -4,6 +4,8 @@
 
 import json
 
+import pytest
+
 from scenario.core.jobs.manager import JobManager
 from scenario.core.jobs.records import JobRecord, JobRegistry
 
@@ -16,6 +18,17 @@ def test_record_roundtrip():
         again.local_id == rec.local_id and again.job_id == "job_1" and again.status == "submitting"
     )
     assert not again.is_terminal
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["{not json", "5", "[1]", "[[]]", '"jobs"', '{"job": {}}', "[" * 2000 + "]" * 2000],
+    ids=["not-json", "number", "numbers", "lists", "string", "object", "deeply-nested"],
+)
+def test_a_registry_that_is_not_a_list_of_records_loads_empty(tmp_path, text):
+    path = tmp_path / "jobs.json"
+    path.write_text(text, encoding="utf-8")
+    assert JobRegistry(path).load().all() == []
 
 
 def test_catalog_worker_lifetime_preserves_unscoped_records(tmp_path):

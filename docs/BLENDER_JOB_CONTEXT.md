@@ -27,12 +27,12 @@ The next recovery call creates a fresh owner and context token for the same stor
 The local MCP tools `list_local_jobs` and `cancel_prepared_job` perform no service
 requests. Inspection returns exact saved costs and recovery suggestions, not new
 spending approval. Cancellation needs the current context token and observed
-record revision, and only accepts an unclaimed prepared intent. Resetting, loading a file or
-switching credentials invalidates the context token, even if another scope has
-the same request ID. Shared saved-job controls below also expose this
-prepared-intent cancellation, known model-job cancellation and download/receipt
-recovery. These recovery tools do not import prototype jobs. Model submission
-creates new durable intents.
+record revision, and only accepts an unclaimed prepared intent. Resetting,
+loading a file or switching credentials invalidates the context token, even if
+another scope has the same request ID. Shared saved-job controls below also
+expose this prepared-intent cancellation, known model-job cancellation and
+download/receipt recovery. These recovery tools do not import prototype jobs.
+Model submission creates new durable intents.
 
 Active Image jobs poll and download through this session. `apply_images` requires
 an owned verification completion, resolves the original scene/revision, and claims
@@ -43,8 +43,9 @@ Confirmed rollback records `apply_failed`; incomplete rollback or uncertain
 receipt persistence retains `applying`. `retry_image_receipt` can acknowledge a
 known completed import without importing again, using its owner-local handle.
 These methods never rebind a restarted job by scene name. Explicit recovered
-image imports use a separately approved destination as described below. The Image facade exposes
-receipt-only retry to UI/MCP while its original owner retains the outcome handle.
+image imports use a separately approved destination as described below. The
+Image facade exposes receipt-only retry to UI/MCP while its original owner
+retains the outcome handle.
 
 ## Film model task command
 
@@ -58,19 +59,19 @@ network dispatch. The shared [Film task controls](FILM_PLAN.md#native-and-mcp-ta
 persist recipe/production identity in scene properties, bind approvals to their
 exact values and discard obsolete ready quotes, including captured frame/dependency
 revision changes. Approval rechecks before persistence and does not replace a
-submitted task's saved status with a new estimate attempt. The session command still operates
-on a snapshot; no additional worker or job engine is introduced.
+submitted task's saved status with a new estimate attempt. The session command
+still operates on a snapshot; no additional worker or job engine is introduced.
 Finished quote and association tasks leave the shared completion queue immediately.
 Their bounded Film handles retain the outcomes until the unchanged source scene
 can receive them, so an unselected scene cannot occupy shared admission slots.
 
 `JobSession.bind_film_upload` queues the local upload-task association with an
 explicit observed upload revision and captured caller origin. It shares normal
-admission, recipe snapshotting and delivery guards. A saved association survives a
-late rejected callback; it never applies to the changed scene. Repeating the same
-association from another scene delivers the unchanged saved reference to that new
-reader. Imported-upload eligibility is checked through the selected coordinator's
-upload store, with no remote read, staging or upload replay.
+admission, recipe snapshotting and delivery guards. A saved association survives
+a late rejected callback; it never applies to the changed scene. Repeating the
+same association from another scene delivers the unchanged saved reference to
+that new reader. Imported-upload eligibility is checked through the selected
+coordinator's upload store, with no remote read, staging or upload replay.
 
 ## Film shot application
 
@@ -88,12 +89,13 @@ slots even while its review waits for the original scene. Temporary admission
 failure preserves earlier verification and retries only the unqueued local read,
 after rechecking the recipe, origin and sources. Confirmed rollback records failure;
 partial claims or incomplete cleanup remain uncertain. Known success/failure
-receipt writes can be retried without repeating scene work. Explicitly acknowledging inspection can
-dismiss an uncertain review only after known receipts have been saved; it never
-clears an uncertain durable claim or rebuilds a scene. Restart requires a fresh review, using the
-same durable results and explicit application recovery policy. The command is
-shared by the [native and MCP shot controls](FILM_PLAN.md#native-and-mcp-shot-controls).
-The maintenance pump advances its verification independently of an open view.
+receipt writes can be retried without repeating scene work. Explicitly
+acknowledging inspection can dismiss an uncertain review only after known
+receipts have been saved; it never clears an uncertain durable claim or rebuilds
+a scene. Restart requires a fresh review, using the same durable results and
+explicit application recovery policy. The command is shared by the
+[native and MCP shot controls](FILM_PLAN.md#native-and-mcp-shot-controls). The
+maintenance pump advances its verification independently of an open view.
 Drawing only reads matching cached reviews and hides retired credential contexts.
 
 ## Film capture ownership
@@ -369,11 +371,12 @@ them and their registry entries are dropped; live targets in other scenes retain
 their origins. The target pass reads captured RNA references, proportional to captured
 target count; it does not scan every object or rediscover targets by name. Unlinked
 but still live objects remain recorded, while delivery still requires originating-scene
-membership. Reused object names never rebind a deleted target. This is an event-level guard, not synchronous interception of every
-scene deletion; work already durably claimed remains in flight.
-Render-thread frame/dependency callbacks invalidate only the thread-safe revision
-registry conservatively across sessions; they never inspect or mutate bpy data. Callers
-must prepare inputs and capture their origin together on the main thread.
+membership. Reused object names never rebind a deleted target. This is an
+event-level guard, not synchronous interception of every scene deletion; work
+already durably claimed remains in flight. Render-thread frame/dependency
+callbacks invalidate only the thread-safe revision registry conservatively
+across sessions; they never inspect or mutate bpy data. Callers must prepare
+inputs and capture their origin together on the main thread.
 
 A payload that does not come from the scene, such as a file the user chose to
 upload, binds only to the scene it is for. `capture_destination(scene)` records a
@@ -390,9 +393,10 @@ inside the submission claim, with its lock held through the durable SUBMITTING
 write. Invalidation is serialized against that boundary; it cannot slip between
 the origin check and storage commit. A queued
 quote whose origin was invalidated cannot spend. Work already claimed can finish
-and persist to its originating scope. The optional `origin_guard` context-manager factory on
-`JobCoordinator` must be thread-safe and must never access Blender. The guard covers local
-SQLite work only, never HTTP; invalidation may briefly wait for that commit.
+and persist to its originating scope. The optional `origin_guard`
+context-manager factory on `JobCoordinator` must be thread-safe and must never
+access Blender. The guard covers local SQLite work only, never HTTP;
+invalidation may briefly wait for that commit.
 
 The coordinator can apply this same pure revision guard to configured upload
 preparation and mutation claims; see [upload commands](SDK_UPLOADS.md#shared-worker-commands).
@@ -406,11 +410,12 @@ scene or object name is insufficient.
 
 ## Results and lifecycle
 
-`submit`, `refresh_remote` and `cancel_remote` return task handles. `drain()` returns completed
-outcomes on the main thread without waiting for network work. Per-task errors
-for invalid worker origin/scope or malformed results do not drop successful
-neighbors from the same drain. Undrained outcomes count against a separate
-admission limit, so a closed view cannot accumulate unbounded completed payloads.
+`submit`, `refresh_remote` and `cancel_remote` return task handles. `drain()`
+returns completed outcomes on the main thread without waiting for network work.
+Per-task errors for invalid worker origin/scope or malformed results do not drop
+successful neighbors from the same drain. Undrained outcomes count against a
+separate admission limit, so a closed view cannot accumulate unbounded completed
+payloads.
 
 `deliver(completion, callback)` validates the issuing session, active scope,
 origin revision, selected scene and continued target membership immediately
@@ -458,14 +463,14 @@ completion queue as refresh/submission. Its original origin is loaded from this
 connection's scoped store, never captured from the currently selected scene.
 The [coordinator's model-job cancellation contract](JOB_COORDINATOR.md#known-model-job-cancellation)
 still governs eligibility (documented `inference` jobs only), the durable
-single-action claim and authoritative status polling. A canceled acknowledgement alone cannot report terminal success;
-an uncertain response remains recoverable by refreshing the known ID without
-replaying the action. A running workflow cannot be canceled; rejecting a
-[waiting workflow step](#waiting-workflow-steps) is the only way to stop one.
-`ModelJobs.control` answers `cancel` on a running (`remote`) workflow job with
-`WorkflowCancelUnavailable`, which says so, before its revision and action
-checks and without queuing a command. A prepared workflow job that was never
-sent keeps its local `cancel_prepared` action.
+single-action claim and authoritative status polling. A canceled acknowledgement
+alone cannot report terminal success; an uncertain response remains recoverable
+by refreshing the known ID without replaying the action. A running workflow
+cannot be canceled; rejecting a [waiting workflow step](#waiting-workflow-steps)
+is the only way to stop one. `ModelJobs.control` answers `cancel` on a running
+(`remote`) workflow job with `WorkflowCancelUnavailable`, which says so, before
+its revision and action checks and without queuing a command. A prepared
+workflow job that was never sent keeps its local `cancel_prepared` action.
 
 Cancellation, refresh and recovery inspection deliberately do not require the
 old scene/target to remain available. This allows explicit cancellation and
@@ -536,17 +541,17 @@ reason. The decoder runs in a separate process started from the preview lane, so
 it neither touches this Blender's data nor holds its Python lock.
 
 The existing session maintenance timer, and `reap_retired` in headless loops,
-call `service_previews` to collect results and queue due polls or cache maintenance. Preview
-tasks are not session completions, so `drain` never returns them. `deactivate`
-closes the scheduler and cancels its lane work, but an SDK metadata read already
-in flight cannot be interrupted. The timer therefore shuts a retired session
-down only once its preview lane is idle as well as its tracked tasks are done:
-the session stays registered meanwhile, and the main thread never joins
-preview I/O. After `shutdown` joins the workers, it removes private copies still
-owned by outstanding decode requests. Extension disable or exit calls `shutdown`
-directly and still waits for a running preview command; a running audio decode
-is signaled first, so its process is terminated, or killed three seconds later.
-Worker threads cannot call these methods.
+call `service_previews` to collect results and queue due polls or cache
+maintenance. Preview tasks are not session completions, so `drain` never returns
+them. `deactivate` closes the scheduler and cancels its lane work, but an SDK
+metadata read already in flight cannot be interrupted. The timer therefore shuts
+a retired session down only once its preview lane is idle as well as its tracked
+tasks are done: the session stays registered meanwhile, and the main thread
+never joins preview I/O. After `shutdown` joins the workers, it removes private
+copies still owned by outstanding decode requests. Extension disable or exit
+calls `shutdown` directly and still waits for a running preview command; a
+running audio decode is signaled first, so its process is terminated, or killed
+three seconds later. Worker threads cannot call these methods.
 
 `prepare_playback` queues a [private player copy](RESULT_PREVIEWS.md#private-player-copies)
 of one saved result on the same preview lane and returns its task; it is not a
@@ -570,14 +575,15 @@ kills it when it overstays and removes its directory. Another Play audio,
 **Stop audio**, retirement, a file load and unregistering stop it, and
 unregistering waits for it; a process that survives even the kill is kept with a
 warning while its watcher keeps reaping it. A copy that arrives for a replaced
-Play audio or a retired context never starts one. For **Waveform** it asks `result_previews` for the envelope
-rendition only, so no server still is polled, and polls its status from a timer;
-Cancel, and selecting another result's waveform while one loads, call the
-scheduler's `cancel`, which terminates a running decode. A late copy or envelope is discarded unless the
-context token, session and receipt are unchanged. Retirement, a file load and
-unregistering clear the selection and remove copies no running player reads,
-including copies evicted for a Play whose lane command, which removes them
-first, has not run: deactivation cancels a queued command.
+Play audio or a retired context never starts one. For **Waveform** it asks
+`result_previews` for the envelope rendition only, so no server still is polled,
+and polls its status from a timer; Cancel, and selecting another result's
+waveform while one loads, call the scheduler's `cancel`, which terminates a
+running decode. A late copy or envelope is discarded unless the context token,
+session and receipt are unchanged. Retirement, a file load and unregistering
+clear the selection and remove copies no running player reads, including copies
+evicted for a Play whose lane command, which removes them first, has not run:
+deactivation cancels a queued command.
 
 `world_sizes` queues the coordinator's header read of saved World candidates on
 the same preview lane and returns its task, which is not a session completion
@@ -715,14 +721,15 @@ read, returning a review ID. `poll` moves finished worker outcomes into the
 calls it, and MCP can wait on `task(review_id)` off the main thread before
 polling. `status` and `discard` return a JSON-safe projection without URLs,
 owner IDs or service text, including the per-asset change, the number of writes
-apply sends when each succeeds and the no-credit, no-undo notice. `apply` consumes a READY
-review once; if the command cannot even be queued, the review returns to READY
-because nothing was sent. `collections` and `take_collections` read one page
-of collections without thumbnails or owner IDs; like `poll`, a failed read
-reports only text written for these surfaces, never the worker's own error text.
-A finished page nobody takes within the 10-minute review lifetime, for example
-after a local MCP request stopped waiting, is discarded unread by `poll`, so it
-cannot hold a session admission slot; taking it later asks for a new read.
+apply sends when each succeeds and the no-credit, no-undo notice. `apply`
+consumes a READY review once; if the command cannot even be queued, the review
+returns to READY because nothing was sent. `collections` and `take_collections`
+read one page of collections without thumbnails or owner IDs; like `poll`, a
+failed read reports only text written for these surfaces, never the worker's own
+error text. A finished page nobody takes within the 10-minute review lifetime,
+for example after a local MCP request stopped waiting, is discarded unread by
+`poll`, so it cannot hold a session admission slot; taking it later asks for a
+new read.
 
 A review moves from PREPARING to READY, UNCHANGED (nothing to change) or
 REJECTED, then from READY to APPLYING and FINISHED or NOT_SENT; it can also be
@@ -740,9 +747,10 @@ the right connection; nothing is resent automatically. The local
 [MCP organization tools](MCP.md#asset-organization) use this owner and accept a
 review only with the `job_context_id` issued alongside it, so a replaced session
 rejects an old context. The native Library's
-[Organize dialog and review card](ui/studio-and-library.md#library-organization) use the same
-owner; `review(review_id)` returns the raw review state, including read-back
-records, so the view can update its loaded rows without another request.
+[Organize dialog and review card](ui/studio-and-library.md#library-organization)
+use the same owner; `review(review_id)` returns the raw review state, including
+read-back records, so the view can update its loaded rows without another
+request.
 
 ## Upload references
 
@@ -761,10 +769,10 @@ chose takes a [destination-only origin](#origin-and-quote-lifetime). Main-thread
 admission checks that origin and completion capacity before queuing staging.
 `initialize_upload`, `transfer_upload_part` and `finalize_upload` load the
 persisted record through public `inspect_upload`, resolve its original target at
-admission, and queue the existing command with the supplied expected revision. The core
-origin guard checks again before intent persistence and mutation claims, so a
-queued command cannot use a stale captured revision. No source read, storage PUT
-or service call runs on Blender's main thread.
+admission, and queue the existing command with the supplied expected revision.
+The core origin guard checks again before intent persistence and mutation
+claims, so a queued command cannot use a stale captured revision. No source
+read, storage PUT or service call runs on Blender's main thread.
 
 `inspect_upload` and `upload_recovery_plan` are synchronous main-thread metadata
 reads. They remain available when completion capacity is full and do not require
@@ -807,10 +815,11 @@ store, private staging and a separate S3 upload policy. The
 local MCP uploads on this same pool, and the reference form's saved-upload
 controls and MCP `recover_reference_upload` reach the refresh, local
 cancellation, restart and cleanup commands above. GUI ticks and headless MCP
-maintenance drain progress independently of an open panel. Private capture ownership is retained
-by the session until staging ends or retirement joins the workers; cleanup never
-removes a capture underneath a live staging task. Local MCP inspection and
-explicit recovery do not approve reference attachment into a new scene.
+maintenance drain progress independently of an open panel. Private capture
+ownership is retained by the session until staging ends or retirement joins the
+workers; cleanup never removes a capture underneath a live staging task. Local
+MCP inspection and explicit recovery do not approve reference attachment into a
+new scene.
 
 Upload task outcomes use the normal `drain`/`deliver` path: successful records
 must match the stored scope/origin, and delivery rechecks the current captured
@@ -832,10 +841,11 @@ runtime supplies credential-bound scope without requiring project discovery.
 [ModelJobs](../scenario/blender/model_jobs.py) retains bounded ephemeral quote
 handles and in-memory display projections for the selected session. UI and MCP
 model generation share its quote and submission commands. Handles bind the
-captured scene, originating lane, exact input snapshot and session-issued SDK estimate. Submission
-validates the current inputs and exact approved cost before consuming the handle
-and persisting intent. The coordinator still checks origin, ownership and expiry
-at dispatch. No handle is reconstructed from a saved fingerprint after restart.
+captured scene, originating lane, exact input snapshot and session-issued SDK
+estimate. Submission validates the current inputs and exact approved cost before
+consuming the handle and persisting intent. The coordinator still checks origin,
+ownership and expiry at dispatch. No handle is reconstructed from a saved
+fingerprint after restart.
 
 `drain(task=...)` collects only the requested task, leaving other consumers'
 completions intact. Context maintenance routes each quote back to its originating
@@ -924,10 +934,11 @@ revision. Queued commands retain their original scope.
   `ModelJobs.control`, with the context token and observed revision. It sends no
   service request. The queued submission then fails its stored-state check and the
   job shows as canceled; the prompt field and the Blockout panel report the local
-  cancellation instead of a stopped action. A claimed request or stale revision is rejected. The dialog
-  warns that a canceled Film task stays reserved, so another take needs a new name.
-  MCP `job_status` lists the same `cancel_prepared` action name, and its
-  description maps that name to `cancel_prepared_job`.
+  cancellation instead of a stopped action. A claimed request or stale revision
+  is rejected. The dialog warns that a canceled Film task stays reserved, so
+  another take needs a new name. MCP `job_status` lists the same
+  `cancel_prepared` action name, and its description maps that name to
+  `cancel_prepared_job`.
 
 Native surfaces draw these controls from one descriptor list.
 [`saved_job_actions.describe`](../scenario/core/ui/saved_job_actions.py) is
@@ -1376,14 +1387,15 @@ with uploaded first frames: a single image input named like a first frame, unles
 the model says it can't be combined with the reference video that carries the
 scene clip, else the first image array that can go with the clip. The review
 reports `sent_as` (`first_frame`, or `reference_image` for image 1 of that
-array), its `reason` and a `note`. A model whose schema is not loaded is refused without
-starting a read; select or configure it in the form first. The single-use
-approval binds the job revision, the asset and its receipt digest, the scene
-revision and the reviewed form: model, input, existing references, any chosen
-first-frame file and whether the first frame is enabled.
+array), its `reason` and a `note`. A model whose schema is not loaded is refused
+without starting a read; select or configure it in the form first. The
+single-use approval binds the job revision, the asset and its receipt digest,
+the scene revision and the reviewed form: model, input, existing references, any
+chosen first-frame file and whether the first frame is enabled.
 
 `apply_result_application`, or confirming the native dialog, rechecks the
-record, the scene and that form, then queues the existing receipt verification. On delivery,
+record, the scene and that form, then queues the existing receipt verification.
+On delivery,
 [`first_frame_handoff.bind`](../scenario/blender/first_frame_handoff.py) consumes
 the verification through `JobSession.verified_result`, which takes no
 application claim. It rehashes the file against its receipt (at most 128 MiB,
@@ -1553,8 +1565,8 @@ reversible scene edits.
 ## Verified saved-mesh replacement
 
 `apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
-policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with an
-explicit REMESH, UV, RETEXTURE, PARTS or RIG policy to an explicitly captured
+policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with
+an explicit REMESH, UV, RETEXTURE, PARTS or RIG policy to an explicitly captured
 source mesh. The target snapshot must match the resolved
 scene/object origin and its geometry/context must still match before claiming
 application. A caller captures this source before asynchronous work and binds its
@@ -1564,12 +1576,13 @@ does not derive provider semantics or infer targets from selection.
 The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
 rehashes the actual bytes, imports in isolation and uses the existing mesh
 primitive, or the skin primitive for RIG. Confirmed rollback permits a failed
-local outcome; incomplete scene cleanup retains uncertainty. A successful mesh change followed by a failed store
-write retains an owner-issued `ModelResultUncertain` handle for the existing
-`retry_model_receipt`. That retry never imports or replaces again. Shutdown drops
-receipt authority; restart does not authorize replay of an unfinished claim.
-Completed jobs can use a separate `mesh_edit` local claim without changing their
-original generation outcome. Its target identifies the explicitly selected source.
+local outcome; incomplete scene cleanup retains uncertainty. A successful mesh
+change followed by a failed store write retains an owner-issued
+`ModelResultUncertain` handle for the existing `retry_model_receipt`. That retry
+never imports or replaces again. Shutdown drops receipt authority; restart does
+not authorize replay of an unfinished claim. Completed jobs can use a separate
+`mesh_edit` local claim without changing their original generation outcome. Its
+target identifies the explicitly selected source.
 
 Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The

@@ -1,8 +1,10 @@
 # Scene inputs and application boundaries
 
-Integration status of Film inputs, render and mesh capture, composition preparation and saved 3D edits. The [runtime map](runtime.md) lists the entry points and shared components.
-Physical desktop interaction and live provider acceptance of these components
-continue in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+Integration status of Film inputs, render and mesh capture, composition
+preparation and saved 3D edits. The [runtime map](runtime.md) lists the entry
+points and shared components. Physical desktop interaction and live provider
+acceptance of these components continue in
+[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ## Film input contracts
 
@@ -69,8 +71,9 @@ and [context contract](../BLENDER_JOB_CONTEXT.md#mcp-render-form-commands).
 
 The [verified saved-mesh command](../MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
 connects receipt-checked GLB import to explicit remesh/UV/retexture/parts and
-[compatible rig attachment](../MESH_APPLICATION.md#attach-a-returned-rig). `JobSession.apply_recovered_mesh` binds one selected asset to a captured
-source object and a durable original or local-reuse claim. It rejects changed
+[compatible rig attachment](../MESH_APPLICATION.md#attach-a-returned-rig).
+`JobSession.apply_recovered_mesh` binds one selected asset to a captured source
+object and a durable original or local-reuse claim. It rejects changed
 geometry/context, ambiguous multi-mesh results and uncertain rollback, while
 known receipt retry only saves persistence. The caller supplies an explicit
 Blender-imported-scene-to-source-local matrix, edit policy and Keep original choice.
@@ -110,7 +113,8 @@ contracts still limit #99 acceptance.
 The [unpaid Film composition helpers](../FILM_PLAN.md#unpaid-composition-drafts)
 can prepare and revalidate final/previs task drafts from scoped saved outputs.
 They preserve cut and audio timing without mutating the recipe, reserving a job
-or making service requests. The existing `JobSession.prepare_film_composition` and worker pool provide
+or making service requests. The existing `JobSession.prepare_film_composition`
+and worker pool provide
 [receipt-bound media measurement](../FILM_PLAN.md#verified-media-preparation),
 current-source rechecks and guarded delivery. The session also exposes
 [composition quoting](../FILM_PLAN.md#quoted-composition-generation) with saved-source

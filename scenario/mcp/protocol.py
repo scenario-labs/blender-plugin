@@ -164,13 +164,19 @@ def _check_arguments(spec, arguments):
 
     Handlers would otherwise read a missing context as a changed one, or fail
     on a missing key. Only presence is checked; handlers still validate values.
+    Returns the arguments without top-level nulls: clients that fill every declared
+    property, as strict function calling does, send null for an option the model
+    left out, and no tool schema declares null as a value. A required argument sent
+    as null counts as missing.
     """
     if not isinstance(arguments, dict):
         raise ValueError("Tool arguments must be a JSON object")
+    arguments = {name: value for name, value in arguments.items() if value is not None}
     missing = [name for name in spec.input_schema.get("required", ()) if name not in arguments]
     if missing:
         plural = "s" if len(missing) > 1 else ""
         raise ValueError(f"Missing required argument{plural}: {', '.join(missing)}")
+    return arguments
 
 
 def handle_message(message, registry, server_info, executor=None):
@@ -210,7 +216,7 @@ def handle_message(message, registry, server_info, executor=None):
             return _error(msg_id, INVALID_PARAMS, f"Unknown tool: {name}")
         arguments = params.get("arguments") or {}
         try:
-            _check_arguments(spec, arguments)
+            arguments = _check_arguments(spec, arguments)
             if executor is not None and not spec.offthread:
                 value = executor(spec.handler, arguments)
             else:

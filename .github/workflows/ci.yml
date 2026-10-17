@@ -4,6 +4,7 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
 
@@ -32,6 +33,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
+          # Pushes and merge queue groups run every workload.
           native=true
           # A pull request checks out its merge commit; the first parent is the base.
           if [ "$EVENT_NAME" = pull_request ] && git rev-parse -q --verify HEAD^2 >/dev/null \
@@ -42,6 +44,7 @@ jobs:
                 docs/* | .agents/* | .claude/* | .codex/* | .github/ISSUE_TEMPLATE/*) ;;
                 .github/pull_request_template.md) ;;
                 tools/site_proxy/* | tests/site/*) ;;
+                .clusterfuzzlite/* | tests/fuzz/*) ;;
                 .nvmrc | package.json | pnpm-lock.yaml | vitest.config.mts) ;;
                 */*) echo "Native input: $path"; native=true ;;
                 *.md) ;;

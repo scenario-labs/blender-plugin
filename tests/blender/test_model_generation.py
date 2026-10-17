@@ -1589,6 +1589,20 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(waited, self.tools.job_status({"job_id": result["local_id"]}))
         self.assertEqual(len(self.paid), 1)
 
+    def test_shared_wait_defaults_inside_a_one_minute_client_limit(self):
+        self.remote_progress = 0.75
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        waited = []
+        with patch.object(
+            owner, "wait", side_effect=lambda _, timeout, **__: waited.append(timeout)
+        ):
+            self.tools.wait_for_job({"job_id": result["local_id"]}).run()
+        self.assertEqual(waited, [self.tools.WAIT_DEFAULT_SECONDS])
+        self.assertLess(self.tools.WAIT_DEFAULT_SECONDS, 60)
+        self.assertEqual(len(self.paid), 1)
+
     def wait_briefly(self, request_id, timeout=8):
         """Run one shared MCP wait on a worker and return its result and duration."""
         deferred = self.tools.wait_for_job({"job_id": request_id, "timeout": timeout})
@@ -2737,7 +2751,8 @@ class ModelGenerationTests(unittest.TestCase):
         ):
             with self.subTest(lane=lane):
                 self.result_media_type = media_type
-                self.result_bytes = b"synthetic saved output, never passed to a decoder"
+                # Bytes differ per lane, so another lane's file cannot pass for this one.
+                self.result_bytes = f"synthetic {lane} output, never passed to a decoder".encode()
                 self.remote_status = "success"
                 result = self.mcp_submit(self.mcp_quote(lane))
                 reference = result["local_id"]
@@ -2747,7 +2762,16 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(status["status"], "ready", status)
                 self.assertIsNone(status["error"])
                 self.assertEqual(status["images"], [])
-                self.assertEqual(status["files"], [])
+                # job_status lists every verified download (#523); listing applies nothing.
+                self.assertFalse(status["file_check_pending"])
+                self.assertEqual(status["results"][0]["file_state"], "verified")
+                self.assertEqual(status["files"], [status["results"][0]["file"]])
+                listed = Path(status["files"][0])
+                # Windows spells result paths in the extended \\?\ namespace, which pathlib
+                # never relates to the configured state_dir; in_cache compares both in it.
+                inside = submodule("core.jobs.result_previews").in_cache
+                self.assertTrue(inside(listed, self.runtime.paths().state_dir), listed)
+                self.assertEqual(listed.read_bytes(), self.result_bytes)
                 with self.assertRaisesRegex(ValueError, "prepare_result_application"):
                     self.tools.import_result({"job_id": reference})
                 self.assertEqual(status["results"][0]["media_type"], media_type)
@@ -3276,7 +3300,6 @@ class ModelGenerationTests(unittest.TestCase):
                         def call(name, arguments):
                             response = connection.post(
                                 url,
-                                headers={"Authorization": "Bearer synthetic-cli-token"},
                                 json={
                                     "jsonrpc": "2.0",
                                     "id": 1,
@@ -3312,7 +3335,7 @@ class ModelGenerationTests(unittest.TestCase):
             patch.object(server_type, "serve_blocking", serve_once),
             patch.object(service, "McpServer", side_effect=ephemeral_server),
         ):
-            self.assertEqual(service.cli(["--token", "synthetic-cli-token"]), 0)
+            self.assertEqual(service.cli([]), 0)
         self.assertEqual((bpy.context.window, bpy.context.scene, bpy.context.view_layer), context)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         self.assertEqual(len(completed), 1)

@@ -91,9 +91,9 @@ or root and have no group/other write bits, except trusted-owner sticky director
 such as `/tmp`. Parent aliases such as macOS `/var` are resolved before use.
 Existing permissions are never changed. Missing persistent cache/scoped directories
 are created privately only after a successful model read. Extended ACLs and Windows
-ownership are not inspected by these standard-library checks: choose a parent and cache
-accessible only to the intended user and trusted administrators. The checks
-do not defend against other software running as that user or authenticate
+ownership are not inspected by these standard-library checks: choose a parent
+and cache accessible only to the intended user and trusted administrators. The
+checks do not defend against other software running as that user or authenticate
 cached schema contents.
 
 An explicitly supplied offline directory has no implicit account selection.
@@ -169,8 +169,8 @@ maintainers can re-enable them after checking the configured test scope.
 ## SDK operation
 
 The exact pinned SDK release and bundle are documented in
-[SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit uses
-`SDKAdapter.model`, which calls SDK 2.2.0's public
+[SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit
+uses `SDKAdapter.model`, which calls SDK 2.2.0's public
 `models.with_raw_response.retrieve(model_id, project_id=...)` method for
 `GET /models/{id}`. It retains the complete model object for the existing parser
 and uses no raw API fallback or low-level SDK verb. The shared adapter retries

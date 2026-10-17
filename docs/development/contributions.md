@@ -22,6 +22,11 @@ summary and no trailing period. For example,
 | ci                     | Workflows and automation                                  |
 | style / chore / revert | Formatting, maintenance or a revert                       |
 
+Pull requests merge through the merge queue: choose **Merge when ready** or run
+`gh pr merge`. The queue squash-merges a PR only after CI passes on it combined with
+the current `main` and any PRs queued ahead of it. A repository admin can bypass the
+queue when merging, which skips that check.
+
 Squash merges use the PR title as the commit header. Keep branch commits
 conventional too: current CI checks them. Branch commit bodies are optional;
 keep them to a sentence or two. A missing scope is a warning; when a
@@ -236,18 +241,20 @@ the release version in a trailing comment, for example
 changes together, including upstream release notes, workflow permissions and CI
 results. Dependabot update PRs follow the ordinary review and merge process.
 
-[The offline house-rule checker](../../tools/check_rules.py) currently implements
-`actions-pinned` for workflow YAML and local composite-action manifests. Run
-`make check-rules`, or use `uv run --locked --no-env-file python tools/check_rules.py`
-with explicit file paths and optional `--rule actions-pinned`. `--list` reports
-only implemented rules. The unit suite checks the repository and exercises
-failure cases, so ordinary unit CI also enforces the convention.
+[The offline house-rule checker](../../tools/check_rules.py) implements
+`actions-pinned` for workflow YAML and local composite-action manifests; see
+[house rules](#house-rules) for its other rules. Run `make check-rules`, or use
+`uv run --locked --no-env-file python tools/check_rules.py` with explicit file
+paths and optional `--rule actions-pinned`. `--list` reports every rule. The
+unit suite checks the repository and exercises failure cases, so ordinary unit
+CI also enforces the convention.
 The default scan includes tracked files and new files that Git does not ignore,
 so a proposed workflow is checked before it is staged.
 
 Write `uses` on its own line with a plain, single-quoted or double-quoted value.
 Remote actions and reusable workflows need a lowercase 40-character SHA and a
-trailing full release-version comment such as `# v1.2.3`. Local `./` references
+trailing full release-version comment such as `# v1.2.3`; ClusterFuzzLite's
+actions, which publish only a `v1` tag, take `# v1`. Local `./` references
 use the caller checkout; `docker://` references remain outside this rule.
 Multiline values, aliases and flow-style action declarations fail with a request
 to use the supported form. Script block contents and comments are not action
@@ -259,10 +266,31 @@ This configuration covers GitHub Actions only. Python/SDK updates still require
 the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
 them requires coordinating development pins with the exact packaged wheel bundle.
 The repository's Actions settings also require full-SHA pinning, so GitHub
-refuses a workflow run that references an unpinned action. Other
-house rules, approved-dependency enforcement and REUSE coverage remain under #29;
-the checker does not claim they are implemented. Local checks do not prove that
-GitHub's administrative gates are enabled.
+refuses a workflow run that references an unpinned action. Local checks do not
+prove that GitHub's administrative gates are enabled.
+
+## House rules
+
+The same checker enforces the remaining house rules. Each violation prints
+`path:line: rule: message` and the command exits 1.
+
+| Rule | Checks |
+| --- | --- |
+| `spdx` | First-party source and configuration files carry the copyright and GPL-3.0-or-later lines within their first 10 lines. Shared skills pinned in `skills-lock.json`, the Blender manifest and `pnpm-lock.yaml`, which `REUSE.toml` covers, are skipped. |
+| `em-dash` | No em dash in any text file except the licence texts. |
+| `markdown-wrap` | Markdown prose wraps at 100 columns. A longer line fails only if it can break after column 100 outside code spans, links and inline HTML; never start a wrapped line with a list, heading or quote marker. Tables, headings, HTML, frontmatter, fences, generated blocks, `CHANGELOG.md`, `.github/`, `tests/fixtures/`, `docs/knowledge/` and vendored skills are skipped. |
+| `bpy-boundary` | `scenario/core` and the MCP modules other than `sandbox.py`, `tools_blender.py` and `tools_scenario.py` import no Blender-only module, numpy included. |
+| `approved-dependencies` | `scenario/` imports only the standard library, Blender's modules, the package and the distributions pinned in `scenario/sdk-wheel-lock.json`. [Wheel-bundle tests](../../tests/unit/test_wheel_bundle.py) keep the manifest wheels, that lock, its notices and the SDK closure in `uv.lock` identical. |
+| `sdk-adapter` | Only `sdk_adapter.py` and `sdk_extensions.py` import `scenario_sdk` or `httpx`. Signed storage and other distinct protocols keep their own clients; review still verifies each documented SDK exception. |
+| `public-content` | No line matches [the denylist](../../tools/public_content_denylist.txt). Reports name the pattern's line number, never the matched text; keep its patterns generic. |
+| `version-literal` | The manifest version appears only in the release-please files, `CHANGELOG.md`, dependency locks, `docs/maintenance/` records and the sample releases in `tests/`. |
+| `no-snapshot-dirs` | No tracked path under `versions/` or an `archive/` directory. |
+
+These are convention checks, not proof: an import scan cannot establish that an
+SDK gap is real, and a denylist cannot recognize every private value.
+[REUSE.toml](../../REUSE.toml) records the licence of files that cannot carry a
+header, including third-party notices. `make lint-licence` runs the locked
+`reuse lint`, which Python lint CI also runs.
 
 ## Scorecard triage
 
@@ -313,11 +341,7 @@ sites can fail independently of a code change.
 
 Lychee 0.24.2 treats redirects as failures. The scanner defaults to two
 concurrent requests per host, spaces requests by at least 500 ms and waits at least
-five seconds before retries. [The shared configuration](../../lychee.toml)
-limits `www.gnu.org` to one concurrent request with at least 10 seconds between
-requests because the default pacing still encountered HTTP 429 responses.
-GNU.org also receives an explicit `Scenario-Blender-LinkCheck` User-Agent with
-the repository URL, because it answers the generic Lychee identity with 429.
+five seconds before retries, as set in [the shared configuration](../../lychee.toml).
 CI and local scans use the same settings and report per-host statistics. These
 limits apply within each scan, not across independent runners; persistent 429s
 can still reflect server or shared-IP limits. Rate-limit responses remain failures,
@@ -350,9 +374,10 @@ lychee --no-progress --max-redirects 0 --exclude-loopback \
 
 Pages requiring authentication or blocking automated clients belong in
 [.lycheeignore](../../.lycheeignore) with a precise pattern and reason. In addition
-to Scenario service endpoints, Blender's browser challenge and reserved examples,
-the current exceptions cover the repository's exact login forms and internal
-organization pages that require access. These exclusions do not verify those
+to Scenario service endpoints, Blender's browser challenge, GNU.org licence pages
+that time out from hosted runners and reserved examples, the current exceptions
+cover the repository's exact login forms and internal organization pages that
+require access. These exclusions do not verify those
 destinations.
 Do not silence a new redirect by excluding an entire public host.
 

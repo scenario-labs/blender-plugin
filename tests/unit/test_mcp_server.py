@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Local MCP browser-origin and explicit bearer-token boundaries."""
+"""Local MCP browser-origin, Host and bind-address boundaries."""
 
 import ast
 import socket
@@ -74,22 +74,6 @@ def test_non_origin_and_non_loopback_values_are_rejected(origin):
 
 
 @pytest.mark.parametrize(
-    "header,token,expected",
-    [
-        ("Bearer tok", "tok", True),
-        ("Bearer tok ", "tok", True),
-        ("Basic tok", "tok", False),
-        ("Bearer wrong", "tok", False),
-        ("", "tok", False),
-        ("Bearer tök", "tok", False),
-        ("Bearer ", "", False),
-    ],
-)
-def test_explicit_bearer_token(header, token, expected):
-    assert server.token_matches(header, token) is expected
-
-
-@pytest.mark.parametrize(
     "host",
     [
         "127.0.0.1",
@@ -143,35 +127,30 @@ def test_rebinding_and_malformed_hosts_are_rejected(host):
     assert not server.host_allowed(host)
 
 
-def test_server_cannot_start_without_an_explicit_token():
-    with pytest.raises(ValueError, match="nonempty"):
-        server.McpServer("127.0.0.1", 9876, "", None, {})
-
-
 @pytest.mark.parametrize(
     "host", ["0.0.0.0", "", "192.168.1.20", "::", "::1", "localhost", "127.0.0.2", None]
 )
 def test_server_refuses_a_bind_address_other_than_ipv4_loopback(host):
     with pytest.raises(ValueError, match="binds only to 127.0.0.1"):
-        server.McpServer(host, 0, "fixture-token", None, {})
+        server.McpServer(host, 0, None, {})
 
 
 @pytest.mark.parametrize("idle", [0, -1, float("inf"), float("nan"), True, "60", None])
 def test_idle_timeout_must_be_a_positive_finite_number(idle):
     with pytest.raises(ValueError, match="idle_timeout"):
-        server.McpServer("127.0.0.1", 0, "fixture-token", None, {}, idle_timeout=idle)
+        server.McpServer("127.0.0.1", 0, None, {}, idle_timeout=idle)
 
 
 def test_idle_timeout_defaults_to_sixty_seconds_on_every_connection():
-    owner = server.McpServer("127.0.0.1", 0, "fixture-token", None, {})
+    owner = server.McpServer("127.0.0.1", 0, None, {})
     assert owner.idle_timeout == server.IDLE_TIMEOUT == 60.0
     assert server._make_handler(owner).timeout == 60.0
-    short = server.McpServer("127.0.0.1", 0, "fixture-token", None, {}, idle_timeout=0.25)
+    short = server.McpServer("127.0.0.1", 0, None, {}, idle_timeout=0.25)
     assert server._make_handler(short).timeout == 0.25
 
 
 def test_tool_execution_is_marked_only_while_a_handler_runs():
-    owner = server.McpServer("127.0.0.1", 0, "fixture-token", None, {}, timeout=5)
+    owner = server.McpServer("127.0.0.1", 0, None, {}, timeout=5)
     seen = []
 
     def handler(arguments):
@@ -193,7 +172,7 @@ def test_start_skips_the_reverse_dns_lookup_of_the_bind_address(monkeypatch):
         raise AssertionError(f"start() resolved {host!r}; slow reverse DNS blocks the main thread")
 
     monkeypatch.setattr(socket, "getfqdn", lookup)
-    owner = server.McpServer("127.0.0.1", 0, "fixture-token", None, {})
+    owner = server.McpServer("127.0.0.1", 0, None, {})
     owner.start()
     try:
         assert owner._httpd.server_name == "127.0.0.1"
@@ -215,3 +194,17 @@ def test_no_insecure_temporary_path_calls():
             ):
                 offenders.append(str(path.relative_to(root)))
     assert offenders == []
+
+
+def test_a_busy_port_fails_with_its_number_instead_of_moving_to_another():
+    holder = server.McpServer("127.0.0.1", 0, None, {})
+    holder.start()
+    try:
+        busy = holder.port
+        assert busy > 0 and holder.url.endswith(f":{busy}/mcp")
+        second = server.McpServer("127.0.0.1", busy, None, {})
+        with pytest.raises(OSError, match=f"Port {busy} on 127.0.0.1 is in use"):
+            second.start()
+        assert not second.running and second.port == busy
+    finally:
+        holder.stop()

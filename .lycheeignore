@@ -3,6 +3,8 @@
 ^https://api\.cloud\.scenario\.com/
 # The attribution destination requires a browser challenge for automated GETs.
 ^https://projects\.blender\.org/
+# GNU.org licence pages time out from GitHub-hosted runners, even with slow pacing.
+^https://www\.gnu\.org/licenses/(license-list|gpl-faq)\.html(#.*)?$
 # Reserved placeholder hosts used in examples (RFC 2606).
 ^https?://[^/]*\.example(/|$)
 (?i)^https?://(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*example\.(?:com|org|net)\.?(?::[0-9]+)?(?:[/?#]|$)

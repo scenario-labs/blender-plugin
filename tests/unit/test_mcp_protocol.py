@@ -197,6 +197,48 @@ def test_missing_required_arguments_are_refused_before_the_handler_runs():
     assert calls == [complete]
 
 
+def test_null_arguments_are_omitted_arguments():
+    """Strict function calling sends every declared property, with null for the options left out."""
+    reg, calls = protocol.Registry(), []
+    reg.add(
+        protocol.ToolSpec(
+            "wait",
+            "One required and two optional arguments",
+            {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string"},
+                    "timeout": {"type": "number"},
+                    "waypoints": {"type": "array"},
+                },
+                "required": ["job_id"],
+            },
+            calls.append,
+        )
+    )
+
+    def call(arguments):
+        return protocol.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": {"name": "wait", "arguments": arguments},
+            },
+            reg,
+            INFO,
+        )
+
+    reply = call({"job_id": "job_example", "timeout": None, "waypoints": [{"hold": None}]})
+    assert "isError" not in reply["result"]
+    # Only top-level nulls are dropped; values inside an argument reach the tool unchanged.
+    assert calls == [{"job_id": "job_example", "waypoints": [{"hold": None}]}]
+    reply = call({"job_id": None, "timeout": 30})
+    assert reply["result"]["isError"] is True
+    assert reply["result"]["content"][0]["text"] == "ValueError: Missing required argument: job_id"
+    assert len(calls) == 1
+
+
 def test_image_results_and_executor_hook():
     reg = registry()
     shot = protocol.handle_message(

@@ -5,6 +5,13 @@
 # cap in tools/smoke_ci.py; it still waits for a required reviewer. Every run's
 # cap must also fit the monthly budget left after this month's earlier runs.
 name: smoke
+# The title shows the requested plan and cap; the paid job's name shows the
+# values admission froze, which are what the reviewer approves.
+run-name: >-
+  ${{ github.event_name == 'schedule'
+  && 'Paid smoke: monthly plan, 40 CU cap, scheduled'
+  || format('Paid smoke: {0} plan, {1} CU cap, dispatched by @{2}',
+  inputs.plan, inputs.max_cu, github.actor) }}
 
 on:
   workflow_dispatch:

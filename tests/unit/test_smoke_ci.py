@@ -459,6 +459,7 @@ def test_workflow_never_spends_on_pr_or_uploads_plaintext():
     assert 'smoke_ci gate --recheck-cu "$MAX_TOTAL_CU"' in workflow
     assert workflow.count('cron: "0 6 1 * *"') == 1
     assert 'default: "40"' in workflow and "default: monthly" in workflow
+    assert f"monthly plan, {ci.MONTHLY_MAX_CU} CU cap, scheduled" in workflow
     # Only an explicitly selected private plan receives the private plan secret.
     assert workflow.count("secrets.SMOKE_PLAN_JSON") == 1
     assert (

@@ -1150,6 +1150,28 @@ class SCENARIO_OT_mcp_stop(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_mcp_connect(bpy.types.Operator):
+    bl_idname = "scenario.mcp_connect"
+    bl_label = "Connect"
+    bl_description = (
+        "Add the scenario-blender server, with this Blender's URL, to this client's "
+        "configuration file. Other servers are kept and the previous file is copied beside it first"
+    )
+    client: StringProperty(default="claude_code")
+
+    def execute(self, context):
+        from ..mcp import client_setup
+        from . import mcp_service
+
+        try:
+            lines = mcp_service.connect(self.client)
+        except (client_setup.SetupError, OSError, ValueError) as error:
+            self.report({"ERROR"}, f"Not changed: {error}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, lines[0])
+        return {"FINISHED"}
+
+
 class SCENARIO_OT_mcp_copy(bpy.types.Operator):
     bl_idname = "scenario.mcp_copy"
     bl_label = "Copy MCP setup"
@@ -1205,6 +1227,7 @@ CLASSES = (
     SCENARIO_OT_import_mesh_file,
     SCENARIO_OT_mcp_start,
     SCENARIO_OT_mcp_stop,
+    SCENARIO_OT_mcp_connect,
     SCENARIO_OT_mcp_copy,
     SCENARIO_OT_clear_first_frame,
     SCENARIO_OT_select_result_objects,

@@ -409,11 +409,10 @@ class OfflineRuntimeTests(unittest.TestCase):
         for _ in range(count):
             self.pump._process()
 
-    def assert_serving(self, token):
+    def assert_serving(self):
         status = self.service.status()
         self.assertTrue(status["running"])
         self.assertEqual(status["error"], "")
-        self.assertEqual(status["token"], token)
         with socket.create_connection(("127.0.0.1", self.runtime.state.mcp.port), timeout=2):
             pass
 
@@ -431,29 +430,24 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertEqual(self.service.status()["error"], self.service.OFFLINE)
         with online_access(True):
             self.gui_ticks()
-            token = self.runtime.state.mcp_token
-            self.assertTrue(token)
-            self.assert_serving(token)
+            self.assert_serving()
 
     def test_switching_online_access_off_stops_the_server_and_on_restarts_it(self):
         self.free_mcp_port()
         with online_access(True):
             server = self.service.start_with_extension()
-            token = self.runtime.state.mcp_token
-            self.assert_serving(token)
+            self.assert_serving()
         self.gui_ticks()
         self.assertFalse(server.running)
         self.assert_stopped(server.port, self.service.OFFLINE)
         with online_access(True):
             self.gui_ticks()
-            # The per-session token survives, so connected agents keep their setup.
-            self.assert_serving(token)
+            self.assert_serving()
 
     def test_a_server_stopped_by_hand_stays_stopped_when_online_access_returns(self):
         self.free_mcp_port()
         with online_access(True):
             server = self.service.start_with_extension()
-            token = self.runtime.state.mcp_token
             self.assertEqual(bpy.ops.scenario.mcp_stop(), {"FINISHED"})
             self.assert_stopped(server.port, "")
         self.gui_ticks()
@@ -461,13 +455,13 @@ class OfflineRuntimeTests(unittest.TestCase):
             self.gui_ticks()
             self.assert_stopped(server.port, "")
             self.assertEqual(bpy.ops.scenario.mcp_start(), {"FINISHED"})
-            self.assert_serving(token)
+            self.assert_serving()
         # Start MCP server ends the hand stop: the next switch follows online access again.
         self.gui_ticks()
         self.assertFalse(self.service.status()["running"])
         with online_access(True):
             self.gui_ticks()
-            self.assert_serving(token)
+            self.assert_serving()
 
     def test_nothing_starts_while_online_access_is_off_or_in_background_sessions(self):
         self.free_mcp_port()

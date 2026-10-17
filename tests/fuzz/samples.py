@@ -160,7 +160,7 @@ def requests():
     ]
 
 
-GUARDED = (b"localhost:8080", b"[::1]", b"http://127.0.0.1:9", b"Bearer fuzz-token")
+GUARDED = (b"localhost:8080", b"[::1]", b"http://127.0.0.1:9")
 
 
 def seeds():

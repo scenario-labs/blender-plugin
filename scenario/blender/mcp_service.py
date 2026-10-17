@@ -5,14 +5,13 @@
 import json
 import logging
 import os
-import secrets
 import sys
 
 import bpy
 
 from .. import __version__
-from ..mcp import protocol
-from ..mcp.cli import CLI_COMMAND, cli_banner, resolve_cli_token
+from ..mcp import client_setup, protocol
+from ..mcp.cli import CLI_COMMAND, cli_banner
 from ..mcp.server import McpServer
 from . import runtime
 
@@ -35,7 +34,6 @@ def status():
     return {
         "running": bool(server and server.running),
         "url": server.url if server else "",
-        "token": runtime.state.mcp_token,
         "error": runtime.state.mcp_error,
         "calls": server.calls_served if server else 0,
     }
@@ -51,13 +49,10 @@ def start(*, by_user=False):
         return None
     prefs = runtime.prefs()
     port = prefs.mcp_port if prefs else 9876
-    if not runtime.state.mcp_token:
-        runtime.state.mcp_token = secrets.token_urlsafe(24)
     try:
         server = McpServer(
             "127.0.0.1",
             port,
-            runtime.state.mcp_token,
             build_registry(),
             SERVER_INFO,
             blender_version=bpy.app.version_string,
@@ -94,8 +89,8 @@ def follow_online_access():
     The GUI pump calls this every tick. Only start_with_extension arms it, so
     background Blender keeps the explicit scenario_blender command. After Stop
     MCP server the server stays stopped; a failed start waits for the next switch
-    or Start MCP server instead of retrying every tick. The session token is
-    kept. Returns True when the status the panel draws changed.
+    or Start MCP server instead of retrying every tick. Returns True when the
+    status the panel draws changed.
     """
     previous = runtime.state.mcp_online
     online = runtime.online()
@@ -119,11 +114,6 @@ def process_pending():
         server.process_pending()
 
 
-def masked_token():
-    token = runtime.state.mcp_token or ""
-    return (token[:4] + "...") if len(token) > 8 else token
-
-
 def _blender_python():
     candidates = [
         os.path.join(sys.prefix, "bin", f"python{sys.version_info.major}.{sys.version_info.minor}"),
@@ -141,63 +131,78 @@ def shim_path():
     )
 
 
+def server_url():
+    """The running server's URL, else the one the MCP Port preference will serve."""
+    server = runtime.state.mcp
+    if server is not None and server.running:
+        return server.url
+    prefs = runtime.prefs()
+    return f"http://127.0.0.1:{prefs.mcp_port if prefs else 9876}/mcp"
+
+
+# What the last Connect wrote, as panel lines. Main thread only.
+connect_report = []
+
+
+def connect_clients(home=None, environ=None):
+    """The clients Connect can configure, in panel order, with whether each was found."""
+    return client_setup.clients(home or os.path.expanduser("~"), environ)
+
+
+def connect(key, home=None, environ=None):
+    """Write the scenario-blender entry into one client's configuration; returns the report lines."""
+    client = next((c for c in connect_clients(home, environ) if c.key == key), None)
+    if client is None:
+        raise ValueError(f"Unknown client {key!r}")
+    url = server_url()
+    entry = client_setup.entry(key, url, _blender_python(), shim_path())
+    try:
+        written = client_setup.write(client, entry, url)
+    except (client_setup.SetupError, OSError) as error:
+        connect_report[:] = [f"{client.label}: not changed, {error}"]
+        raise
+    lines = [f"{client.label}: wrote {client_setup.SERVER_NAME} to {written.path}", f"URL {url}"]
+    if written.backup is not None:
+        lines.append(f"Previous file kept as {written.backup.name}")
+    lines.append(f"Then {client.reload_hint}")
+    connect_report[:] = lines
+    return lines
+
+
 def client_configs():
-    st = status()
-    url, token = st["url"] or "http://127.0.0.1:9876/mcp", st["token"] or "<token>"
-    stdio = {
-        "mcpServers": {
-            "scenario-blender": {
-                "command": _blender_python(),
-                "args": [shim_path(), "--url", url, "--token", token],
-            }
-        }
-    }
+    url = server_url()
+
+    def servers(key):
+        entry = client_setup.entry(key, url, _blender_python(), shim_path())
+        return json.dumps({"mcpServers": {client_setup.SERVER_NAME: entry}}, indent=2)
+
     return {
-        "claude_code": f'claude mcp add --transport http scenario-blender {url} --header "Authorization: Bearer {token}"',
-        "cursor": json.dumps(
-            {
-                "mcpServers": {
-                    "scenario-blender": {
-                        "url": url,
-                        "headers": {"Authorization": f"Bearer {token}"},
-                    }
-                }
-            },
-            indent=2,
-        ),
-        "claude_desktop": json.dumps(stdio, indent=2),
-        "codex": f"codex mcp add scenario-blender --url {url} --bearer-token-env-var SCENARIO_BLENDER_TOKEN\n# then: export SCENARIO_BLENDER_TOKEN={token}",
-        "curl": f'curl -s -X POST {url} -H "Authorization: Bearer {token}" -H "Content-Type: application/json" -d \'{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}\'',
+        "claude_code": f"claude mcp add --transport http scenario-blender {url}",
+        "cursor": servers("cursor"),
+        "claude_desktop": servers("claude_desktop"),
+        "codex": f"codex mcp add scenario-blender --url {url}",
+        "curl": f'curl -s -X POST {url} -H "Content-Type: application/json" -d \'{{"jsonrpc":"2.0","id":1,"method":"tools/list"}}\'',
     }
 
 
 def cli(argv):
-    """blender --background file.blend --command scenario_blender [--port N] [--token T]"""
+    """blender --background file.blend --command scenario_blender [--port N]"""
     import argparse
     import signal
     import threading
 
     parser = argparse.ArgumentParser(prog=CLI_COMMAND)
     parser.add_argument("--port", type=int, default=9876)
-    parser.add_argument(
-        "--token",
-        default=None,
-        help="Local MCP token; otherwise SCENARIO_BLENDER_TOKEN or a new token",
-    )
+    # Accepted so existing scripts keep working; the server needs no token.
+    parser.add_argument("--token", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
     if not runtime.online():
         parser.error("Allow Online Access is off; enable it before starting local MCP")
-    try:
-        token, generated = resolve_cli_token(args.token)
-    except ValueError as error:
-        parser.error(str(error))
-    runtime.state.mcp_token = token
     server = McpServer(
         "127.0.0.1",
         args.port,
-        token,
         build_registry(),
         SERVER_INFO,
         blender_version=bpy.app.version_string,
@@ -211,7 +216,7 @@ def cli(argv):
             server.start()
         except OSError as error:
             parser.error(f"Unable to start local MCP: {error}")
-        print(cli_banner(server.url, token, generated), flush=True)
+        print(cli_banner(server.url), flush=True)
         server.serve_blocking(stop_event, before_process=runtime.sync_catalog_context)
     except KeyboardInterrupt:
         stop_event.set()

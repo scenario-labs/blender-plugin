@@ -94,7 +94,6 @@ class RuntimeState:
         self.history_cursors = set()
         self.history_saved_ids = None
         self.mcp = None
-        self.mcp_token = ""
         self.mcp_error = ""
         # Online access the window session's server last followed; None until it starts
         # with the extension, so background Blender starts only its explicit command.
@@ -109,7 +108,6 @@ class RuntimeState:
 
     SESSION_ATTRS = (
         "mcp",
-        "mcp_token",
         "mcp_error",
         "mcp_online",
         "mcp_stopped_by_user",

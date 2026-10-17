@@ -949,14 +949,15 @@ can read your scene and request paid work. See
   first, or press **Start MCP server** in the Agents (MCP) panel if you allowed
   Online Access after Blender started. Then reconnect the agent: run `/mcp` in
   Claude Code, start a new Codex session, or restart Cursor or Claude Desktop.
-- **An agent is refused as unauthorized after Blender restarts**: each Blender
-  session makes a new token. Copy the client setup again; for Codex, export the
-  new token before starting it.
-- **The panel shows a port other than 9876**: another program, often another
-  Blender MCP add-on, holds that port, so the server took the next free one. The
-  copied setup carries the actual port: copy it again. To use another port, set
-  **MCP Port** in the extension's preferences, press **Stop MCP server** then
-  **Start MCP server**, and copy the setup again.
+- **An agent is refused as unauthorized**: the token is saved and kept across
+  restarts, so this follows **New token** or a setup copied from another
+  computer. Copy the client setup again; for Codex, export the new token before
+  starting it.
+- **The panel says the port is in use**: another program, often another Blender
+  or Blender MCP add-on, holds the MCP Port, and the server does not move to
+  another one, so saved agent setups keep pointing at this Blender. Close the
+  other one, or set **MCP Port** in the extension's preferences, press **Start
+  MCP server**, and copy the setup again.
 - **An agent's call times out**: some clients stop waiting after 60 seconds,
   Codex by default (`tool_timeout_sec`). The outcome is unknown: Blender may
   never have started the call, or may still finish it. Ask the agent to check

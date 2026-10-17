@@ -209,18 +209,19 @@ class McpServer:
         return f"http://{self.host}:{self.port}/mcp"
 
     def start(self):
-        last_error = None
-        for candidate in range(self.port, self.port + 4):
-            try:
-                httpd = _HTTPServer((self.host, candidate), _make_handler(self))
-                httpd.daemon_threads = True
-                self.port = candidate
-                self._httpd = httpd
-                break
-            except OSError as err:
-                last_error = err
-        if self._httpd is None:
-            raise OSError(f"no free port from {self.port}: {last_error}")
+        # Only the configured port: a saved client setup names it, and another port
+        # could leave clients failing or talking to a different Blender.
+        try:
+            httpd = _HTTPServer((self.host, self.port), _make_handler(self))
+        except OSError as err:
+            raise OSError(
+                f"Port {self.port} on {self.host} is in use, perhaps by another Blender. "
+                "Stop that server or choose another MCP Port, then update agent setups "
+                f"({err.strerror or err})"
+            ) from None
+        httpd.daemon_threads = True
+        self.port = httpd.server_address[1]  # the bound port when 0 asked for any
+        self._httpd = httpd
         with self._admission:
             self._stopped = False
         self._thread = threading.Thread(

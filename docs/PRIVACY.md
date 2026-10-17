@@ -145,6 +145,9 @@ separate scope in that storage. The same database keeps any per-lane default you
 save for trained or private models: their model IDs and optional strengths, per
 credential and project scope, without prompts or model details.
 
+The local MCP token is saved in `state/mcp-token`, readable by your user only.
+It authorizes local agents, not Scenario; **New token** replaces it.
+
 Verified result files live under `state/shared-results`; upload intents and
 private source copies live under `state/shared-uploads`, including
 `uploads.sqlite3` and `sources`. Requested
@@ -226,7 +229,7 @@ not delete cloud jobs or assets.
 Extension logs go to Blender's console; it does not configure its own log file.
 A terminal or host application may retain that output. Diagnostics can include
 file paths, job identifiers and service errors; review them before sharing.
-Agent setup snippets contain the local session token. Do not assume logs,
+Agent setup snippets contain the local MCP token. Do not assume logs,
 clipboard history or screenshots are safe to publish without inspection.
 
 The clipboard is written by Copy buttons (asset IDs, errors and MCP setup) and by
@@ -246,8 +249,9 @@ and refuses any other address, using the port selected in Preferences (default
 rebinds its own domain to this computer from reading even the server's version
 status, and the server closes a connection that sends nothing for 60 seconds while
 it waits to read a request. Calls
-require the local session token. Blender normally generates it for the session;
-an explicitly supplied token must be changed by its owner. This is a local
+require the local token. Blender generates it once and saves it in the
+extension's user data folder, readable by your user only, until you choose **New
+token**; an explicitly supplied token must be changed by its owner. This is a local
 connection, not Scenario's API credential, and programs holding it can read the
 scene, take captures and request generation that spends your Scenario credits.
 An agent can send a local file to your Scenario account only when the extension

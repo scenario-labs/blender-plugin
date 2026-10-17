@@ -1150,6 +1150,29 @@ class SCENARIO_OT_mcp_stop(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_mcp_new_token(bpy.types.Operator):
+    bl_idname = "scenario.mcp_new_token"
+    bl_label = "New token"
+    bl_description = (
+        "Replace the saved local MCP token. Agents set up with the old one are refused "
+        "until you copy their setup again"
+    )
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_confirm(self, event)
+
+    def execute(self, context):
+        from . import mcp_service
+
+        try:
+            mcp_service.new_token()
+        except OSError as err:
+            self.report({"ERROR"}, f"Could not save a new token: {err}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, "New MCP token saved; copy the agent setup again")
+        return {"FINISHED"}
+
+
 class SCENARIO_OT_mcp_copy(bpy.types.Operator):
     bl_idname = "scenario.mcp_copy"
     bl_label = "Copy MCP setup"
@@ -1205,6 +1228,7 @@ CLASSES = (
     SCENARIO_OT_import_mesh_file,
     SCENARIO_OT_mcp_start,
     SCENARIO_OT_mcp_stop,
+    SCENARIO_OT_mcp_new_token,
     SCENARIO_OT_mcp_copy,
     SCENARIO_OT_clear_first_frame,
     SCENARIO_OT_select_result_objects,

@@ -13,9 +13,10 @@ or both according to the task; they have separate authentication and capabilitie
 
 The local server accepts MCP JSON-RPC over HTTP at
 `http://127.0.0.1:9876/mcp` by default. It starts with the extension in a GUI
-session when Blender's **Allow Online Access** is on. The **MCP Port** preference
-sets the first port; if busy, the server tries the next three. Copy the actual
-URL from **Scenario > Agents (MCP)**. An authenticated GET on `/mcp` returns 405:
+session when Blender's **Allow Online Access** is on. It uses only the **MCP
+Port** preference; if another program holds that port, the server stays stopped
+and the panel names the port. Copy the URL from **Scenario > Agents (MCP)**. An
+authenticated GET on `/mcp` returns 405:
 use POST for tool calls; the server does not provide an SSE stream.
 
 The extension is experimental. The [runtime map](architecture/runtime.md)
@@ -255,11 +256,14 @@ remains separate.
 
 ## Token lifecycle
 
-GUI startup generates a bearer token the first time the server starts in a
-Blender session. The extension holds it in memory and does not save it to disk.
-The panel masks it; Copy buttons include the full token in setup snippets.
-Restarting Blender changes a generated token, so copy the setup again. A token
-explicitly supplied to the headless command remains the caller's responsibility.
+The first GUI start generates a bearer token and saves it in the extension's
+user data folder (`state/mcp-token`, readable by your user only). Later starts,
+including after a Blender restart, reuse it, so a client set up once keeps
+working. **New token** (the refresh button next to the masked token) saves a
+replacement; the running server refuses the old token at once, so copy the setup
+again. The panel masks the token; Copy buttons include it in setup snippets. A
+token explicitly supplied to the headless command remains the caller's
+responsibility; that command neither reads nor writes the saved file.
 
 The local token is different from your Scenario API key and secret. Client
 configuration, shell history, clipboard managers and process listings may retain
@@ -738,8 +742,9 @@ No credentials, service requests or registry writes are needed for cold reads.
   button, the first-frame field or a workflow input's **File** field) and call it
   again, or capture the scene with `capture_reference`; see
   [agent file uploads](#agent-file-uploads).
-- **No free port from 9876:** all four candidate ports are busy. Choose a different
-  MCP Port and copy the newly displayed URL.
+- **Port 9876 is in use:** another program, often another Blender, holds the
+  MCP Port. Stop its server, or choose a different MCP Port, press **Start MCP
+  server** and copy the setup again.
 - **Allow Online Access is off:** enable it in Blender's System preferences before
   starting the server; this permission also allows Scenario network operations.
 - **Capture fails in background mode:** open a GUI session with a 3D viewport.

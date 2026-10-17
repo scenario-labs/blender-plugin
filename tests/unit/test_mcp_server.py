@@ -215,3 +215,17 @@ def test_no_insecure_temporary_path_calls():
             ):
                 offenders.append(str(path.relative_to(root)))
     assert offenders == []
+
+
+def test_a_busy_port_fails_with_its_number_instead_of_moving_to_another():
+    holder = server.McpServer("127.0.0.1", 0, "fixture-token", None, {})
+    holder.start()
+    try:
+        busy = holder.port
+        assert busy > 0 and holder.url.endswith(f":{busy}/mcp")
+        second = server.McpServer("127.0.0.1", busy, "fixture-token", None, {})
+        with pytest.raises(OSError, match=f"Port {busy} on 127.0.0.1 is in use"):
+            second.start()
+        assert not second.running and second.port == busy
+    finally:
+        holder.stop()

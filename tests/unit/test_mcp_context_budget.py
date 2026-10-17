@@ -10,8 +10,8 @@ rather than drift.
 Sizes are characters of each entry serialized as the server sends it
 (json.dumps with default separators), rebuilt from source with the same AST
 parser as `make mcp-docs`, without importing Blender. A schema value computed
-at import time, such as an enum built from a constant, counts as its source
-text; that is a few dozen characters per such field.
+at import time, such as an enum built from a constant, is resolved from the
+literal it names in source, so it counts at its real size.
 
 To change a budget deliberately, update TOTAL_BUDGET or TOOL_BUDGETS below in
 the PR that grows or trims the definitions, and state the old and new sizes in
@@ -19,10 +19,12 @@ the PR description. Prefer moving edge-case detail out of a description into
 the tool's result or the reference docs.
 """
 
+import ast
 import importlib.util
 import json
 import math
 from pathlib import Path
+from unittest.mock import patch
 
 from scenario.mcp import protocol
 
@@ -30,8 +32,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("gen_mcp_docs", ROOT / "tools/gen_mcp_docs.py")
 generator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(generator)
+TOOL_SOURCES = [ROOT / relative for _, relative in generator.GROUPS]
 
-# Measured on main for 87 tools: 122,632 characters in total, about 30,700 tokens
+# Measured on main for 87 tools: 122,950 characters in total, about 30,700 tokens
 # at four characters per token.
 TOTAL_BUDGET = 124_000
 # A budget that the total undercuts by more than this fraction is lowered, so a
@@ -47,6 +50,7 @@ TOOL_BUDGETS = {
     "decide_workflow_step": 3_000,
     "list_models": 2_800,
     "apply_result_application": 2_800,
+    "estimate_cost": 2_600,
 }
 HOW_TO_UPDATE = (
     "Local MCP tool definitions are loaded into every agent session. Shorten the "
@@ -56,11 +60,80 @@ HOW_TO_UPDATE = (
 )
 
 
+def _module_constants(path):
+    """Module-level names in `path` bound to literals, including those imported by name."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names = {}
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and node.level and node.module:
+            source = (
+                path.parents[node.level - 1].joinpath(*node.module.split(".")).with_suffix(".py")
+            )
+            wanted = {alias.name: alias.asname or alias.name for alias in node.names}
+            if source.is_file() and wanted:
+                found = _module_constants(source)
+                names.update({wanted[n]: found[n] for n in wanted if n in found})
+        elif isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            try:
+                value = ast.literal_eval(node.value)
+            except (ValueError, TypeError, SyntaxError):
+                keys = getattr(node.value, "keys", None)
+                if not isinstance(node.value, ast.Dict) or not all(
+                    isinstance(k, ast.Constant) for k in keys
+                ):
+                    continue
+                # A dispatch table of literal keys: list(NAME) in a schema reads its keys.
+                value = tuple(k.value for k in keys)
+            if isinstance(target, ast.Name):
+                names[target.id] = value
+            elif isinstance(target, ast.Tuple) and all(
+                isinstance(e, ast.Name) for e in target.elts
+            ):
+                names.update(zip((e.id for e in target.elts), value, strict=True))
+    return names
+
+
+def _computed_value(node, names):
+    """A schema value as the server computes it: constants by name, list(NAME), dicts."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name) and node.id in names:
+        return names[node.id]
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "list"
+        and len(node.args) == 1
+        and not node.keywords
+    ):
+        return list(_computed_value(node.args[0], names))
+    if isinstance(node, ast.Dict) and None not in node.keys:
+        return {
+            _computed_value(k, names): _computed_value(v, names)
+            for k, v in zip(node.keys, node.values, strict=True)
+        }
+    raise AssertionError(
+        f"Cannot size the computed schema value {ast.unparse(node)}; extend "
+        "_computed_value in tests/unit/test_mcp_context_budget.py"
+    )
+
+
 def registry():
     """The tools/list registry rebuilt from source, in the server's registration order."""
     built = protocol.Registry()
-    for _, relative in generator.GROUPS:
-        for tool in generator.parse_specs(ROOT / relative):
+    for path in TOOL_SOURCES:
+        names = _module_constants(path)
+
+        def value(node, names=names):
+            try:
+                return ast.literal_eval(node)
+            except (ValueError, TypeError):
+                return _computed_value(node, names)
+
+        with patch.object(generator, "_value", value):
+            tools = generator.parse_specs(path)
+        for tool in tools:
             schema = {
                 "type": "object",
                 "properties": tool["properties"],

@@ -493,7 +493,8 @@ def _image_output(render):
     """Uncompressed Targa tiles; restored like capture.RenderSettings restores its output."""
     settings = render.image_settings
     media = getattr(settings, "media_type", "")
-    previous = (media, settings.file_format, settings.color_mode)
+    # Targa forces 8-bit depth, which the user's output format keeps unless restored.
+    previous = (media, settings.file_format, settings.color_mode, settings.color_depth)
     try:
         if media:
             settings.media_type = "IMAGE"
@@ -501,13 +502,15 @@ def _image_output(render):
         settings.color_mode = "RGB"
         yield
     finally:
-        media, file_format, color_mode = previous
+        media, file_format, color_mode, color_depth = previous
         if media:
             settings.media_type = media
         if media != "VIDEO":
             settings.file_format = file_format
         with contextlib.suppress(TypeError):
             settings.color_mode = color_mode
+        with contextlib.suppress(TypeError):
+            settings.color_depth = color_depth
 
 
 def _render_tile(scene, path):

@@ -159,10 +159,13 @@ class Sheet:
 
     def label(self, x, y, text, scale, max_width):
         """Draw text on a dark band at (x, y), clipped to max_width pixels; returns the band height."""
-        glyphs = [_FONT.get(ch, _FONT[" "]) for ch in text.upper()]
         advance, pad = 6 * scale, 2 * scale
         fit = max(0, (max_width - 2 * pad) // advance)
-        glyphs = glyphs[:fit]
+        # Too wide, a label keeps its last words: FRAME 1001 must not read FRAME 100.
+        words = text.upper().split(" ")
+        while len(words) > 1 and len(" ".join(words)) > fit:
+            words.pop(0)
+        glyphs = [_FONT.get(ch, _FONT[" "]) for ch in " ".join(words)][:fit]
         band_height = 7 * scale + 2 * pad
         if not glyphs:
             return 0

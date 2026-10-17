@@ -69,6 +69,7 @@ class CaptureViewsTests(unittest.TestCase):
                 render.pixel_aspect_y,
                 settings.file_format,
                 settings.color_mode,
+                settings.color_depth,
                 getattr(settings, "media_type", ""),
             ),
             "shading": (
@@ -118,6 +119,8 @@ class CaptureViewsTests(unittest.TestCase):
         return seen, unittest.mock.patch.object(self.tb, "_render_tile", render)
 
     def test_angles_frame_the_scene_from_a_temporary_camera_and_restore_everything(self):
+        settings = self.scene.render.image_settings
+        settings.file_format, settings.color_depth = "PNG", "16"  # Targa tiles force 8-bit
         before = self.state()
         seen, patch = self.fake_tiles()
         with patch:

@@ -127,3 +127,16 @@ def test_labels_clip_to_the_tile_and_skip_unknown_characters():
     height = canvas.label(0, 0, "FRAME 1234567 é", 2, 40)
     assert height == 7 * 2 + 2 * 4
     assert canvas.label(0, 0, "X", 2, 4) == 0
+
+
+def test_a_label_too_wide_keeps_its_last_words():
+    canvas = sheet.Sheet(122, 30)
+    canvas.label(0, 0, "FRAME 1001", 2, 122)  # nine glyphs fit: draws 1001, not FRAME 100
+
+    def pixel(x, y):
+        offset = (y * canvas.width + x) * 3
+        return bytes(canvas.pixels[offset : offset + 3])
+
+    band = 4 * 12 - 2 + 2 * 4
+    assert pixel(band - 1, 1) == bytes(sheet.LABEL_BACK)
+    assert pixel(band + 2, 1) != bytes(sheet.LABEL_BACK)

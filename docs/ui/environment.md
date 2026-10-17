@@ -70,8 +70,8 @@ No screenshot is committed.
 identifies the selected scene and current World. A **Selected** line states the
 saved media type's declared format in the same wording as MCP `format`.
 Invoke computes that text; drawing only displays it. Explain the
-2:1/equirectangular requirement, packed image, preserved original World, LDR/HDR
-distinction and session-local restore limit. The
+2:1/equirectangular requirement, new World beside the current one, LDR/HDR
+distinction, unchanged-World restore limit and that Rendered shading shows it. The
 [World guide](../WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) defines
 which results offer the action and how N counts them. Drawing reads only the
 saved-job projection's candidate list, never a file, a size or the job store;

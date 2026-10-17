@@ -137,10 +137,11 @@ maintainer listened through **Play audio** on the 0.10.0 candidate ZIP, when it
 opened the system player (see the
 [human checks](../maintenance/release-acceptance.md#human-checks)). These passes
 predate the in-extension **Play audio**, **Stop audio** and **Open in system
-player** rows. Clicking them, listening through them, the waveform's Cancel,
-Retry and close on the desktop, clicking **Play video** or **Play in Blender**
-at UI scale 2.0, Studio at UI scale 2.0, viewport interaction and other
-platforms are not yet recorded; they continue in #440.
+player** rows; on a 0.11.0 candidate ZIP the maintainer played, stopped and
+listened through **Play audio** and **Stop audio**. **Open in system player**,
+the waveform's Cancel, Retry and close on the desktop, clicking **Play video** or
+**Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
+interaction and other platforms are not yet recorded; they continue in #440.
 
 ## Saved result previews
 
@@ -259,9 +260,9 @@ Studio request, around the job box Studio draws, not in Studio's popup itself.
 Measured in its screenshots, the earlier arrows were 1.21 and 1.23 steps wide
 at UI scale 2.0 and 329 units, and 1.05 and 1.08 at UI scale 1.0 and 960 units;
 the new ones were exactly one step in both, as tall as before. A row sized for
-the default sidebar drew about one step before and after. The physical recheck
-of the arrows' width in Studio and the sidebar at UI scales 1.0, 1.5 and 2.0 is
-pending.
+the default sidebar drew about one step before and after. On the 0.11.0
+candidate, Studio's Jobs page at UI scale 2.0 showed one-step arrows that page;
+the other UI scales are not recorded.
 
 Two private physical desktop passes on Blender 5.1.2 macOS arm64 at UI scale
 1.0, with system mouse and wheel events and ZIPs built before the measured

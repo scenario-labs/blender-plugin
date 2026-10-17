@@ -564,6 +564,5 @@ recording layouts, and local MCP inspection, all with synthetic media. They do
 not cover provider audio files, child start-up time, antivirus behavior, real
 players and sound output on Windows and Linux desktops, macOS x64 or sandboxed
 Blender packages, and the timing figures above are macOS arm64 measurements.
-Human listening through Play audio and the open desktop preview checks,
-including of the review previews, are in
+The open desktop preview checks, including of the review previews, are in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).

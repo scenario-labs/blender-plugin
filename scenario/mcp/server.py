@@ -4,7 +4,6 @@
 main thread through process_pending(), called by the pump (GUI) or serve_blocking() (headless)."""
 
 import contextlib
-import hmac
 import http.server
 import json
 import logging
@@ -99,15 +98,6 @@ def origin_allowed(origin):
         return False
 
 
-def token_matches(header, token):
-    """Compare only explicit nonempty bearer credentials without timing leaks."""
-    if not isinstance(header, str) or not isinstance(token, str) or not token:
-        return False
-    if not header.startswith("Bearer "):
-        return False
-    return hmac.compare_digest(header[7:].strip().encode("utf-8"), token.encode("utf-8"))
-
-
 class _Pending:
     def __init__(self, handler, arguments, timeout):
         self.handler, self.arguments = handler, arguments
@@ -176,7 +166,6 @@ class McpServer:
         self,
         host,
         port,
-        token,
         registry,
         server_info,
         timeout=120.0,
@@ -185,11 +174,9 @@ class McpServer:
     ):
         if host != BIND_HOST:
             raise ValueError(f"The local MCP server binds only to {BIND_HOST}")
-        if not isinstance(token, str) or not token.strip():
-            raise ValueError("A nonempty local MCP bearer token is required")
         if type(idle_timeout) not in (int, float) or not 0 < idle_timeout < math.inf:
             raise ValueError("idle_timeout must be a positive number of seconds")
-        self.host, self.port, self.token = host, int(port), token
+        self.host, self.port = host, int(port)
         self.registry, self.server_info, self.timeout = registry, server_info, timeout
         self.idle_timeout = idle_timeout
         self.blender_version = blender_version
@@ -209,18 +196,19 @@ class McpServer:
         return f"http://{self.host}:{self.port}/mcp"
 
     def start(self):
-        last_error = None
-        for candidate in range(self.port, self.port + 4):
-            try:
-                httpd = _HTTPServer((self.host, candidate), _make_handler(self))
-                httpd.daemon_threads = True
-                self.port = candidate
-                self._httpd = httpd
-                break
-            except OSError as err:
-                last_error = err
-        if self._httpd is None:
-            raise OSError(f"no free port from {self.port}: {last_error}")
+        # Only the configured port: a saved client setup names it, and another port
+        # could leave clients failing or talking to a different Blender.
+        try:
+            httpd = _HTTPServer((self.host, self.port), _make_handler(self))
+        except OSError as err:
+            raise OSError(
+                f"Port {self.port} on {self.host} is in use, perhaps by another Blender. "
+                "Stop that server or choose another MCP Port, then update agent setups "
+                f"({err.strerror or err})"
+            ) from None
+        httpd.daemon_threads = True
+        self.port = httpd.server_address[1]  # the bound port when 0 asked for any
+        self._httpd = httpd
         with self._admission:
             self._stopped = False
         self._thread = threading.Thread(
@@ -321,10 +309,6 @@ def _make_handler(server):
             if raw:
                 self.wfile.write(raw)
 
-        def _authorized(self):
-            headers = self.headers.get_all("Authorization", [])
-            return len(headers) == 1 and token_matches(headers[0], server.token)
-
         def _content_length(self):
             lengths = self.headers.get_all("Content-Length", [])
             if self.headers.get_all("Transfer-Encoding") or len(lengths) > 1:
@@ -363,7 +347,7 @@ def _make_handler(server):
                 pass
 
         def _admitted(self):
-            """Check Host, then Origin, before any routing, authentication or body read."""
+            """Check Host, then Origin, before any routing or body read."""
             hosts = self.headers.get_all("Host", [])
             if len(hosts) != 1:
                 # RFC 9112 section 3.2: a request without exactly one Host gets 400.
@@ -390,8 +374,6 @@ def _make_handler(server):
                     200,
                     {"ok": True, "blender": server.blender_version, "server": server.server_info},
                 )
-            if not self._authorized():
-                return self._send(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
             self._send(
                 405, {"error": "SSE streams are not offered; use POST"}, {"Allow": "POST, DELETE"}
             )
@@ -399,15 +381,13 @@ def _make_handler(server):
         def do_DELETE(self):
             if not self._admitted():
                 return
-            self._send(200 if self._authorized() else 401, {})
+            self._send(200, {})
 
         def do_POST(self):
             if not self._admitted():
                 return
             if self.path.rstrip("/") != "/mcp":
                 return self._reject(404, {"error": "not found"})
-            if not self._authorized():
-                return self._reject(401, {"error": "unauthorized"}, {"WWW-Authenticate": "Bearer"})
             length = self._content_length()
             if length is None:
                 return self._reject(400, {"error": "invalid request framing"})

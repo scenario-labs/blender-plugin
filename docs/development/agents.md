@@ -28,9 +28,9 @@ and `upload` commands and the paid local MCP tools. Rules match the usual
 command text and are not a security boundary; the branch ruleset, CI and
 spending approval still apply. Keep personal allow rules in ignored
 `.claude/settings.local.json`. Root `.mcp.json` registers the local
-`scenario-blender` server for Claude Code, as described in
-[client setup](../MCP.md#claude-code). `tests/unit/test_agent_settings.py`
-checks both files.
+`scenario-blender` server for Claude Code, and `.codex/config.toml` the same
+server for Codex, disabled, as described in [client setup](../MCP.md#client-setup).
+`tests/unit/test_agent_settings.py` checks `.claude/settings.json` and `.mcp.json`.
 
 ## Shared skills and command validation
 

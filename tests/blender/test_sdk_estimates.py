@@ -599,9 +599,7 @@ class SDKEstimateTests(unittest.TestCase):
         )
         self.assertFalse(self.runtime.state.estimates)
         registry = submodule("blender.mcp_service").build_registry()
-        server = submodule("mcp.server").McpServer(
-            "127.0.0.1", 0, "fixture-token", registry, {}, timeout=5
-        )
+        server = submodule("mcp.server").McpServer("127.0.0.1", 0, registry, {}, timeout=5)
 
         def mcp_refusal(parameters):
             message = {

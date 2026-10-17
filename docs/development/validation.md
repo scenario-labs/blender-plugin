@@ -405,6 +405,5 @@ availability.
   Do not run them as part of a documentation command.
 
 Use `blender --background scene.blend --command scenario_blender` for local MCP.
-Set `SCENARIO_BLENDER_TOKEN` for an explicit token, or use the generated session
-token shown at startup. Online access must be enabled; SIGINT/SIGTERM stop the
+Online access must be enabled; SIGINT/SIGTERM stop the
 server cleanly. Run it only in the isolated development profile described above.

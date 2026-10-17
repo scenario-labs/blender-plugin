@@ -1,9 +1,10 @@
 # Runtime map and integration status
 
-The extension package is [scenario/](../../scenario/). It uses the scoped SDK runtime for generation and recovery, alongside retained
-local helpers and separately tested application components.
-The supported minimum in the [manifest](../../scenario/blender_manifest.toml)
-is Blender 5.0; dependency and runtime acceptance have separate gates.
+The extension package is [scenario/](../../scenario/). It uses the scoped SDK
+runtime for generation and recovery, alongside retained local helpers and
+separately tested application components. The supported minimum in the
+[manifest](../../scenario/blender_manifest.toml) is Blender 5.0; dependency and
+runtime acceptance have separate gates.
 
 ## Active entry points
 

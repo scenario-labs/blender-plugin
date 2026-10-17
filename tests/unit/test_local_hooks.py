@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+# The house-rules hook requires first-party headers; split so REUSE ignores the data.
+HEADER_TAGS = ("FileCopyrightText: 2026 Scenario Inc.", "License-Identifier: " + "GPL-3.0-or-later")
 
 
 @pytest.fixture
@@ -56,7 +58,8 @@ def test_installed_hooks_reject_invalid_message_and_accept_changed_files(hook_re
     assert result.returncode == 0, result.stdout + result.stderr
     assert "pre_commit" in (repo / ".git/hooks/pre-commit").read_text()
     assert "pre_commit" in (repo / ".git/hooks/commit-msg").read_text()
-    (repo / "example.py").write_text('VALUE = "example"\n')
+    header = "".join(f"# SPDX-{tag}\n" for tag in HEADER_TAGS)
+    (repo / "example.py").write_text(header + 'VALUE = "example"\n')
     assert run("git", "add", "example.py").returncode == 0
     invalid = run("git", "commit", "-m", "update stuff")
     assert invalid.returncode != 0

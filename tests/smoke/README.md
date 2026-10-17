@@ -40,9 +40,10 @@ uv run --locked --env-file .env.local python -m tools.smoke_model quote \
 `quote` performs model retrieval and a `dryRun=true` estimate, never generation or
 IP detection. It creates a new private run directory, prints the exact decimal CU
 cost and the SHA-256 of `quote.json`, and saves the selected credential scope,
-model, inputs, expected result kind, normalized payload hash and exact price there. Existing run
-directories are rejected. Review the private quote file and intended test scope;
-the printed hash binds subsequent approval to those exact bytes.
+model, inputs, expected result kind, normalized payload hash and exact price
+there. Existing run directories are rejected. Review the private quote file and
+intended test scope; the printed hash binds subsequent approval to those exact
+bytes.
 
 After explicit approval, replace `QUOTE_SHA256`, `EXACT_COST` and `APPROVED_CAP`
 below with the reviewed values. There is no default spending cap. Both decimal
@@ -105,13 +106,14 @@ own timeouts. A polling deadline preserves the job and never cancels or resubmit
 | 4 | Saved state needs review or polling deadline expired; no generation replay |
 
 Stdout contains only costs, an approval hash, known state names and file counts.
-`report.json` contains result kind, state, cost, payload hash and result byte counts/hashes; it
-omits credentials, raw responses, request inputs, project/job/asset IDs and signed
-URLs. Review even that summary before sharing. The rest of the run directory is
-private and must never be committed or uploaded as a public artifact. The directory
-is retained deliberately for recovery; remove it only after the job's outcome is
-resolved and required evidence has been reviewed. The directory and its ancestors
-must remain privately owned; this is not protection against a local attacker.
+`report.json` contains result kind, state, cost, payload hash and result byte
+counts/hashes; it omits credentials, raw responses, request inputs,
+project/job/asset IDs and signed URLs. Review even that summary before sharing.
+The rest of the run directory is private and must never be committed or uploaded
+as a public artifact. The directory is retained deliberately for recovery;
+remove it only after the job's outcome is resolved and required evidence has
+been reviewed. The directory and its ancestors must remain privately owned; this
+is not protection against a local attacker.
 
 ## Result kinds and entry points
 
@@ -180,9 +182,11 @@ them; their original digest, attempt marker and durable state still apply.
 For Video and image-to-3D, prepare/upload references explicitly through the shared
 native or MCP upload commands and put the resulting authorized asset IDs in the
 input JSON. These smoke commands do not upload a path argument, perform captures,
-or run extra multi-view estimates. The [explicit reference plan](#prepare-reference-inputs) below also automates
-shared upload commands; live upload acceptance remains separate. Material receipts retain the shared runtime's documented texture
-roles; this tool does not construct or apply Blender materials.
+or run extra multi-view estimates. The
+[explicit reference plan](#prepare-reference-inputs) below also automates shared
+upload commands; live upload acceptance remains separate. Material receipts
+retain the shared runtime's documented texture roles; this tool does not
+construct or apply Blender materials.
 
 Omit `--env-file` and use `--no-env-file` when the shell supplies credentials.
 Keep the spending flag out of dotenv files. Offline tests use synthetic SDK
@@ -536,13 +540,14 @@ Luminance uses Rec.709 weights on the values Blender decodes. For OpenEXR these
 are floats after Blender's color space conversion, which turns an ACES2065-1
 file into its scene-linear Rec.709 space; `decoded.colorspace` records Blender's
 choice, which can be wrong: Blender labels an OpenEXR without declared
-chromaticities sRGB while keeping its float values. PNG and JPEG values keep their stored sRGB encoding, so their seam and
-pole values describe luma and no dynamic range is reported. Across a seamless
-wrap the edge differs like adjacent columns do, so `edge_to_neighbor` stays
-around 1 or below and `edge_to_quarter_turn` well below 1; a visible seam raises
-both. Uniform poles score near 0. These are advisory evidence, not thresholds:
-the report never accepts or rejects a panorama, and seams, poles and lighting
-still need review in Blender.
+chromaticities sRGB while keeping its float values. PNG and JPEG values keep
+their stored sRGB encoding, so their seam and pole values describe luma and no
+dynamic range is reported. Across a seamless wrap the edge differs like adjacent
+columns do, so `edge_to_neighbor` stays around 1 or below and
+`edge_to_quarter_turn` well below 1; a visible seam raises both. Uniform poles
+score near 0. These are advisory evidence, not thresholds: the report never
+accepts or rejects a panorama, and seams, poles and lighting still need review
+in Blender.
 
 The JSON names run and result positions, the contract model ID, media type,
 source, receipt size and SHA-256 and Blender's version. It omits credentials,

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
 name: Bug report
 description: The plugin, a generation, or an MCP tool behaves wrong
 type: Bug

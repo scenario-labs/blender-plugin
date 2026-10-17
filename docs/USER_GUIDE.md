@@ -19,7 +19,8 @@ From one tab in Blender's 3D viewport, you can:
 
 - generate images, videos, 3D models, PBR materials, audio and 360 environments;
 - render your scene as a finished still or clip;
-- edit meshes you already have: remesh, retexture, UV unwrap, rig, animate or split into parts.
+- edit meshes you already have: remesh, retexture, UV unwrap, rig, animate or
+  split into parts.
 
 Inputs come from your scene: a viewport capture, the scene camera, a playblast of
 your animation or the selected mesh. Results come back where you work: images as
@@ -43,11 +44,19 @@ For ideas, browse the [explorations made in Blender](#explorations-made-in-blend
 Install Scenario from its official extension repository so that Blender can offer
 you its updates:
 
-1. Turn on **Allow Online Access** under Edit > Preferences > System > Network. Blender needs it to reach the repository, and Scenario's network actions don't run without it.
-2. Open Edit > Preferences > Get Extensions > Repositories, choose **Add Remote Repository** and enter `https://blender.scenario.com/repo/index.json`.
+1. Turn on **Allow Online Access** under Edit > Preferences > System > Network.
+   Blender needs it to reach the repository, and Scenario's network actions
+   don't run without it.
+2. Open Edit > Preferences > Get Extensions > Repositories, choose **Add Remote
+   Repository** and enter `https://blender.scenario.com/repo/index.json`.
 3. Find Scenario in Get Extensions and install it. Blender installs and enables it.
-4. In Scenario, open Organization settings > API Keys > Add API Key and copy the key and its secret. The [API-key quick start](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key) lists the account requirements.
-5. In Edit > Preferences > Add-ons > Scenario, leave **Credentials** on **Saved in Blender**, paste the key and secret, and press **Test connection**. Pick an **Output Folder** (default `~/Downloads/Scenario`).
+4. In Scenario, open Organization settings > API Keys > Add API Key and copy the
+   key and its secret. The
+   [API-key quick start](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key)
+   lists the account requirements.
+5. In Edit > Preferences > Add-ons > Scenario, leave **Credentials** on **Saved
+   in Blender**, paste the key and secret, and press **Test connection**. Pick
+   an **Output Folder** (default `~/Downloads/Scenario`).
 
 Then press `N` in the 3D viewport and open the **Scenario** tab.
 
@@ -64,8 +73,10 @@ guide; follow the instructions attached to them.
 
 ### Credentials and project
 
-- **Saved in Blender** keeps the key and secret in Blender's preferences, masked on screen but not in an OS keychain.
-- **Environment** reads `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` from the environment that launched Blender, which suits automation. Both are required.
+- **Saved in Blender** keeps the key and secret in Blender's preferences, masked
+  on screen but not in an OS keychain.
+- **Environment** reads `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` from the
+  environment that launched Blender, which suits automation. Both are required.
 
 The two sources never mix: environment values are ignored while **Saved in
 Blender** is selected, and a missing value is never borrowed from the other source.
@@ -98,14 +109,18 @@ project, so switch back to inspect or recover them.
 Edit > Preferences > Add-ons > Scenario > **Updates** shows your version and whether
 the official repository is set up. With **Allow Online Access** on:
 
-- **Set up official repository** shows while the repository is missing or turned off. It adds it, or turns the existing one back on, never a second copy.
-- **Check for updates** takes its place once the repository is set up. It refreshes the listing and installs nothing.
-- **Open Get Extensions** opens Blender's extension manager, where you install or update. It lists only releases for your Blender version and platform, and shows download errors.
+- **Set up official repository** shows while the repository is missing or turned
+  off. It adds it, or turns the existing one back on, never a second copy.
+- **Check for updates** takes its place once the repository is set up. It
+  refreshes the listing and installs nothing.
+- **Open Get Extensions** opens Blender's extension manager, where you install
+  or update. It lists only releases for your Blender version and platform, and
+  shows download errors.
 
 If no compatible release appears, keep your version and read the release notes. A
 listing left over from a failed check doesn't prove you're up to date; retry once
-online. Restart Blender when asked. A repository copy updates in place and keeps its
-preferences and jobs; save Blender's preferences yourself if they don't save
+online. Restart Blender when asked. A repository copy updates in place and keeps
+its preferences and jobs; save Blender's preferences yourself if they don't save
 automatically.
 
 A ZIP copy never updates from the repository, even after **Set up official
@@ -114,8 +129,9 @@ with **Install from Disk** into the same local repository, or
 [switch to the repository](#switch-from-a-zip-to-the-repository).
 
 If Scenario disappears, Updates controls included, after you disabled its repository,
-enable that repository again under Get Extensions > **Repositories** (Scenario can't do it
-while unloaded). Don't remove it or install a second copy to recover.
+enable that repository again under Get Extensions > **Repositories** (Scenario
+can't do it while unloaded). Don't remove it or install a second copy to
+recover.
 
 This handbook lives at [blender.scenario.com](https://blender.scenario.com/), which
 the **Website** link in Get Extensions opens; its
@@ -130,14 +146,15 @@ preferences and stored jobs don't move between them.
 
 Uninstalling a copy makes Blender delete its storage, including the media behind
 the video, sound and Film review strips Scenario added to your scenes. Images and
-models in a saved `.blend` file and your Output Folder are untouched. If you rely on
-such strips, keep the ZIP copy, or relink each strip afterwards to its original in
-your Output Folder: the file name contains the asset ID stored in the strip's
-`scenario_asset` property.
+models in a saved `.blend` file and your Output Folder are untouched. If you
+rely on such strips, keep the ZIP copy, or relink each strip afterwards to its
+original in your Output Folder: the file name contains the asset ID stored in
+the strip's `scenario_asset` property.
 
 1. Let running generations finish: the new copy won't track them.
 2. Uninstall the ZIP copy from Get Extensions and restart Blender.
-3. Follow [Install](#install), steps 1 to 3. Skip adding the repository if it's already listed.
+3. Follow [Install](#install), steps 1 to 3. Skip adding the repository if it's
+   already listed.
 4. Enter your key, secret, Project ID and Output Folder again.
 
 Your past generations stay in your Scenario project: turn on
@@ -158,16 +175,22 @@ and, with the GitHub CLI,
 
 ## Find your way around
 
-- The **Scenario tab** in the 3D viewport sidebar (press `N`, or click **Scenario** in the viewport header) holds four panels, described below.
-- The **floating composer** at the bottom of every 3D viewport is the quick way to type a prompt and generate; see [The floating composer](#the-floating-composer).
+- The **Scenario tab** in the 3D viewport sidebar (press `N`, or click
+  **Scenario** in the viewport header) holds four panels, described below.
+- The **floating composer** at the bottom of every 3D viewport is the quick way
+  to type a prompt and generate; see
+  [The floating composer](#the-floating-composer).
 - **Studio**, next to **Scenario** in the header, opens [expanded controls](#expanded-studio-view).
 
 The four panels:
 
-- **Scenario**: what to generate. Choose a lane (Image, Video, 3D, Audio, Materials, Environment, Render Image, Render Video, Blockout), then fill in its [form](#the-form).
+- **Scenario**: what to generate. Choose a lane (Image, Video, 3D, Audio,
+  Materials, Environment, Render Image, Render Video, Blockout), then fill in
+  its [form](#the-form).
 - **Jobs**: what's running; see [Jobs](#jobs).
 - **Generations**: what came back, then your project's cloud history; see [Generations](#generations).
-- **Agents (MCP)**: the local MCP server, its token, client setups and the Python permission; see [Agents (MCP)](#agents-mcp).
+- **Agents (MCP)**: the local MCP server, its token, client setups and the
+  Python permission; see [Agents (MCP)](#agents-mcp).
 
 ![The Jobs, Generations and Agents (MCP) panels below the lane form](images/panel-sections.png)
 
@@ -175,12 +198,27 @@ The four panels:
 
 From top to bottom:
 
-- **Account strip**: connection status, a button to reload models and a shortcut to the preferences.
-- **Model**: opens the [model picker](#the-model-picker). Picking a model of another type switches to its lane.
-- **Prompt**: drag the size control to make the box taller. Below it, Prompt Spark's **New** (writes a prompt for the model), **Rewrite** (improves yours) and **Translate** (into English) each show their price first; click **Approve...** to run it once. The result replaces the prompt only if you haven't changed the prompt, model, scene or credentials in the meantime. The trash button clears the prompt after asking.
-- **References**: one box per file input (image, video, audio or 3D). Add a file with **Upload**, a still with **Render**, **Viewport** or **Camera**, or a clip with **Viewport clip** or **Camera clip**; then **Upload reference** sends it. For 3D, **Upload selected mesh** exports your selection. Generate never captures or uploads anything by itself.
-- **Parameters**: built from the model's own settings. Tick an optional parameter to send it; unticked, Scenario uses its default. On/off settings are always sent. `(cost)` marks parameters that change the price.
-- **Generate (N CU)**: the exact price for the form as it stands, refreshed as you edit (checking is free). Generate spends that price once. Pending uploads and captures must finish first.
+- **Account strip**: connection status, a button to reload models and a shortcut
+  to the preferences.
+- **Model**: opens the [model picker](#the-model-picker). Picking a model of
+  another type switches to its lane.
+- **Prompt**: drag the size control to make the box taller. Below it, Prompt
+  Spark's **New** (writes a prompt for the model), **Rewrite** (improves yours)
+  and **Translate** (into English) each show their price first; click
+  **Approve...** to run it once. The result replaces the prompt only if you
+  haven't changed the prompt, model, scene or credentials in the meantime. The
+  trash button clears the prompt after asking.
+- **References**: one box per file input (image, video, audio or 3D). Add a file
+  with **Upload**, a still with **Render**, **Viewport** or **Camera**, or a
+  clip with **Viewport clip** or **Camera clip**; then **Upload reference**
+  sends it. For 3D, **Upload selected mesh** exports your selection. Generate
+  never captures or uploads anything by itself.
+- **Parameters**: built from the model's own settings. Tick an optional
+  parameter to send it; unticked, Scenario uses its default. On/off settings are
+  always sent. `(cost)` marks parameters that change the price.
+- **Generate (N CU)**: the exact price for the form as it stands, refreshed as
+  you edit (checking is free). Generate spends that price once. Pending uploads
+  and captures must finish first.
 
 Prices show up to three decimals, and in compact form from 10,000 CU (`12.3K CU`).
 The approval always uses Scenario's exact price.
@@ -223,15 +261,17 @@ Click the pill to expand it. The card has lane tabs (Audio and Blockout stay in 
 sidebar), the prompt, a model chip that opens the picker, a **Settings** chip that
 opens the lane's full form in a dialog, and **Generate** with its price.
 
-- **Environment** uses its Generate mode. When the sidebar shows another Environment mode, Audio or Blockout, the composer drives Image.
-- **3D Edit**: open **Settings** and select **Edit**; choose the task in the sidebar or Settings, and select the mesh in the viewport.
+- **Environment** uses its Generate mode. When the sidebar shows another
+  Environment mode, Audio or Blockout, the composer drives Image.
+- **3D Edit**: open **Settings** and select **Edit**; choose the task in the
+  sidebar or Settings, and select the mesh in the viewport.
 - When a model takes no prompt, the field says *This model takes no prompt*.
 
 **Moving and resizing.** Drag the pill or the card to move it; it stays inside the
 viewport and clear of open toolbars and sidebars. Resize the card from its
 bottom-right corner, and double-click its background to put it back in place. Only
-the minus button collapses it. Narrow cards shorten the tab labels. When there's no
-room for the card, the pill opens the Settings dialog instead.
+the minus button collapses it. Narrow cards shorten the tab labels. When there's
+no room for the card, the pill opens the Settings dialog instead.
 
 **Editing the prompt.** Text editing works as usual (selection, double-click,
 Home/End, Ctrl/Cmd+A, C, X, V). Enter generates and Esc leaves. Clicking outside
@@ -271,10 +311,19 @@ Choose a model and describe the result. To use a reference, add it to the form,
 click **Upload reference** and wait for it to finish; the form then shows a fresh
 price. Uploading never generates.
 
-- While an upload runs, keep the model and slot unchanged, and for a viewport, camera or Render Result snapshot, the scene too; otherwise the late upload won't replace your new choice. A local file keeps uploading while you work.
-- **Inspect uploads** shows progress, cancels an upload that hasn't started sending and cleans up finished ones; your original file is never touched. An interrupted upload can't resume: choose **Upload again**, then **Use this reference**.
-- To reuse an earlier upload, choose **Use saved upload** or **Saved uploads**, then **Use this reference**, and confirm. Uploads belong to the credentials that made them; editing the original file later doesn't change them.
-- The same controls work for audio, video and 3D inputs. Still captures fill image inputs, viewport and camera clips fill video inputs, and **Upload selected mesh** fills a 3D input.
+- While an upload runs, keep the model and slot unchanged, and for a viewport,
+  camera or Render Result snapshot, the scene too; otherwise the late upload
+  won't replace your new choice. A local file keeps uploading while you work.
+- **Inspect uploads** shows progress, cancels an upload that hasn't started
+  sending and cleans up finished ones; your original file is never touched. An
+  interrupted upload can't resume: choose **Upload again**, then **Use this
+  reference**.
+- To reuse an earlier upload, choose **Use saved upload** or **Saved uploads**,
+  then **Use this reference**, and confirm. Uploads belong to the credentials
+  that made them; editing the original file later doesn't change them.
+- The same controls work for audio, video and 3D inputs. Still captures fill
+  image inputs, viewport and camera clips fill video inputs, and **Upload
+  selected mesh** fills a 3D input.
 
 Supported PNG and OpenEXR results import as packed images, which you can find in
 Blender's Image Editor.
@@ -294,8 +343,9 @@ Highlight a LoRA, choose its base under **Run with** when several can run it, se
 its **Strength** and click OK; if you just typed the strength, the first click only
 confirms the value, so click OK again. The form switches to that base and adds the
 LoRA. Strength starts at the LoRA's own value, or 0.75, within the range the base
-allows. Add more LoRAs the same way to stack them. A composition already combines its LoRAs, so it replaces the form's
-choice; the picker tells you before OK.
+allows. Add more LoRAs the same way to stack them. A composition already
+combines its LoRAs, so it replaces the form's choice; the picker tells you
+before OK.
 
 Your choice appears in the **Trained models** box under **Model** (in the sidebar,
 Studio and Render Image). Adjust each LoRA's **Strength** there, remove one, or
@@ -306,15 +356,15 @@ became inaccessible are refused before pricing. Choices belong to the credential
 and project that made them; choose again after switching.
 
 **Reload parameters** restores a generation's LoRAs or composition when they are
-still available, and says how many it couldn't restore. The **Model** button and the
-composer's model chip show the choice as **FLUX.1 Dev · Studio LoRA (+1)**.
+still available, and says how many it couldn't restore. The **Model** button and
+the composer's model chip show the choice as **FLUX.1 Dev · Studio LoRA (+1)**.
 
 #### Project defaults for LoRAs
 
 At the end of the **Trained models** box, **Save** makes the current choice this
 form's default for your credentials and Project ID, **Use** brings it back, and
-**Clear** forgets it. A form without a chosen model, such as in a new file, picks up
-the default by itself. If the default can no longer run, the form says
+**Clear** forgets it. A form without a chosen model, such as in a new file,
+picks up the default by itself. If the default can no longer run, the form says
 **Project default ... is unavailable** and won't price until you choose a model or
 clear it; it never falls back to the base model alone. Defaults of other
 credentials or projects are never used.
@@ -326,22 +376,23 @@ stays in Scenario's web app.
 
 ### Video
 
-Text, images or your Blender scene to video, with Seedance, Kling, Veo, Wan, LTX and
-other video models, including audio-to-video.
+Text, images or your Blender scene to video, with Seedance, Kling, Veo, Wan, LTX
+and other video models, including audio-to-video.
 
 ![Video lane with Seedance parameters, frame references, Match timeline and Generate controls](images/panel-video.png)
 
 **Using your scene.** Add a **Viewport clip** or **Camera clip** reference and
 choose **Upload reference**. Blender records a silent 1280x720 MP4 over the preview
 range, or the scene range, and restores your settings afterwards. **Grey clay
-capture** replaces viewport shading. The uploaded clip is fixed: it isn't trimmed or
-padded, and later timeline changes don't affect it, so set the range first.
-**Match timeline** helps set the model's duration, but check the model's own limits.
+capture** replaces viewport shading. The uploaded clip is fixed: it isn't
+trimmed or padded, and later timeline changes don't affect it, so set the range
+first. **Match timeline** helps set the model's duration, but check the model's
+own limits.
 
 **Playing a result.** **Play video (N)** opens a private copy in your system player,
-and **Play in Blender (N)** opens one in Blender's animation player (at most two at
-a time; whether it plays the soundtrack hasn't been verified). Neither player gets
-your credentials, and both work offline.
+and **Play in Blender (N)** opens one in Blender's animation player (at most two
+at a time; whether it plays the soundtrack hasn't been verified). Neither player
+gets your credentials, and both work offline.
 
 **Adding it to the sequencer.** **Add video strip (N)** asks you to confirm the
 scene and current frame, then places the video (MP4 or WebM, up to 512 MiB) on a
@@ -365,16 +416,21 @@ TripoSplat.
 **Importing a model.** Choose **Import <format> model (N)**, such as
 **Import GLB model (1)**, for the main model, or **Import alternate: <format> (N)**
 for another file the provider returned. The review shows the scene, cursor position
-and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives as a
-new group at the cursor with its materials and textures packed; your objects and
-selection are untouched. Importing one result uses up the job's import: the other
-files stay saved for [Reuse saved results](#reuse-saved-results). If the cursor or
-scene changes first, confirm again.
+and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
+as a new group at the cursor with its materials and textures packed; your
+objects and selection are untouched. Importing one result uses up the job's
+import: the other files stay saved for
+[Reuse saved results](#reuse-saved-results). If the cursor or scene changes
+first, confirm again.
 
-- Supported: GLB, glTF, FBX, OBJ and mesh PLY, up to 256 MiB per file. Large files may pause Blender briefly.
-- Rigs, skin weights, shape keys and animation clips are kept. Your timeline range doesn't change, so extend it to play a full clip.
-- If a file changed or isn't supported, the job says **Nothing was imported** and nothing changes.
-- With Global Undo on, one Undo removes the import and Redo restores it. Neither changes the job or refunds it. Save the blend file yourself.
+- Supported: GLB, glTF, FBX, OBJ and mesh PLY, up to 256 MiB per file. Large
+  files may pause Blender briefly.
+- Rigs, skin weights, shape keys and animation clips are kept. Your timeline
+  range doesn't change, so extend it to play a full clip.
+- If a file changed or isn't supported, the job says **Nothing was imported**
+  and nothing changes.
+- With Global Undo on, one Undo removes the import and Redo restores it. Neither
+  changes the job or refunds it. Save the blend file yourself.
 
 See [model import](MESH_APPLICATION.md#saved-model-package-import) for format
 details and limits.
@@ -394,8 +450,12 @@ again once it finishes. See
 **Edit mode:**
 
 1. Select the mesh in the viewport.
-2. Pick the task: **Remesh**, **Retexture**, **UV Unwrap**, **Rigging**, **Animate** or **Parts**.
-3. Choose **Upload selected mesh** to send a snapshot of it (modifiers applied, materials embedded), then review the price and choose **Generate**. Later edits don't change the snapshot; remove the reference and upload again to replace it.
+2. Pick the task: **Remesh**, **Retexture**, **UV Unwrap**, **Rigging**,
+   **Animate** or **Parts**.
+3. Choose **Upload selected mesh** to send a snapshot of it (modifiers applied,
+   materials embedded), then review the price and choose **Generate**. Later
+   edits don't change the snapshot; remove the reference and upload again to
+   replace it.
 
 To put the result back on your mesh, see
 [Apply a saved mesh edit](#apply-a-saved-mesh-edit).
@@ -416,9 +476,10 @@ saved without touching your scene.
 
 To apply it, select a mesh with UVs and choose **Apply saved material** on the job.
 Confirm the mesh, material slot and maps. Only that slot changes; nothing is
-regenerated or spent. Height is wired as bump, and AO and edge maps are kept for you
-to connect by hand. Undo doesn't cover this, so keep any material you want to
-restore and save the blend file yourself. See [material application](MATERIAL_APPLICATION.md) for details.
+regenerated or spent. Height is wired as bump, and AO and edge maps are kept for
+you to connect by hand. Undo doesn't cover this, so keep any material you want
+to restore and save the blend file yourself. See
+[material application](MATERIAL_APPLICATION.md) for details.
 
 ![Saved material confirmation identifies the approved mesh slot and albedo texture role](images/saved-material-approval.png)
 
@@ -451,10 +512,15 @@ common audio formats up to ten minutes; see
 Your view, rendered as a finished still by an image-editing model. The
 **Rendering Style** section holds everything that shapes the look.
 
-- **Scene to render**: choose Viewport or Scene camera (optionally with Grey clay capture), then **Capture and upload scene**.
+- **Scene to render**: choose Viewport or Scene camera (optionally with Grey
+  clay capture), then **Capture and upload scene**.
 - **Model**: GPT Image 2 by default, or any other image-to-image model.
-- **Look**: describe the result, for example "weathered steampunk copper, overcast light". Left empty, **Prepare look with Prompt Spark** (on by default) writes one, with its own price and approval before the render's; turn it off for a photoreal default.
-- **Style images**: optional references for palette, materials and lighting. The capture is always image 1.
+- **Look**: describe the result, for example "weathered steampunk copper,
+  overcast light". Left empty, **Prepare look with Prompt Spark** (on by
+  default) writes one, with its own price and approval before the render's; turn
+  it off for a photoreal default.
+- **Style images**: optional references for palette, materials and lighting. The
+  capture is always image 1.
 
 The model is told to keep your scene exactly (objects, positions, camera and
 framing) and to use style images only for their look. Results are saved for you to
@@ -471,9 +537,15 @@ A playblast of your timeline, rendered as a finished clip by a video model that
 takes a reference video. The look, reference frames and first frame are in the
 **Rendering Style** section.
 
-- **Clip to render**: choose Viewport or Scene camera, build a [camera path](#camera-path) if you want one, then **Capture and upload scene**. The silent 1280x720 clip covers the range shown, without padding or trimming. **Match timeline** sets the model's duration; it doesn't change a clip already uploaded.
-- **Model**: Seedance, Minimax, Runway Aleph, Gemini, Grok and other video-to-video models.
-- **Look** and **Reference frames**: as the look and style images in Render Image. Prompt Spark needs a [first frame](#first-frame).
+- **Clip to render**: choose Viewport or Scene camera, build a
+  [camera path](#camera-path) if you want one, then **Capture and upload
+  scene**. The silent 1280x720 clip covers the range shown, without padding or
+  trimming. **Match timeline** sets the model's duration; it doesn't change a
+  clip already uploaded.
+- **Model**: Seedance, Minimax, Runway Aleph, Gemini, Grok and other
+  video-to-video models.
+- **Look** and **Reference frames**: as the look and style images in Render
+  Image. Prompt Spark needs a [first frame](#first-frame).
 
 ![Render Video lane: Clip to render, the Camera path planner with an orbit built, Seedance 2.0, the Look field with Prompt Spark, the first frame row and style images](images/panel-render-video.png)
 
@@ -492,9 +564,9 @@ exactly that move.
 #### First frame
 
 Choose an image and **Upload first frame**. To use a generated image instead,
-choose **Use as video first frame (N)** on a PNG, JPEG or WebP result: it reuses the
-image on Scenario without uploading or generating, and the slot shows
-**From a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and
+choose **Use as video first frame (N)** on a PNG, JPEG or WebP result: it reuses
+the image on Scenario without uploading or generating, and the slot shows **From
+a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and
 2.0 Mini, Minimax H3 and Wan 3.0) can't take a first frame together with the clip;
 for them, the image guides the opening look instead, and the form says so.
 
@@ -502,13 +574,17 @@ for them, the image guides the opening look instead, and the form says so.
 
 ![Blockout tab with Scene, Type and Scale controls above a stored example layout and Rebuild, Clear and Refine actions](images/panel-blockout.png)
 
-Turn a scene description into a greybox layout of coloured primitives, grouped in a
-`Blockout` collection.
+Turn a scene description into a greybox layout of coloured primitives, grouped
+in a `Blockout` collection.
 
-1. Describe the scene, choose its **Type** and **Scale**, and press **Get design price**.
-2. Review the price and choose **Generate plan**. Changing the fields, scene or credentials first cancels the approval.
-3. Choose **Build plan** to create the geometry. To refine, describe the change, choose **Get refinement price**, approve it, then build again.
-4. **Clear** removes the collection and plan after asking. Build and Clear support Undo.
+1. Describe the scene, choose its **Type** and **Scale**, and press **Get design
+   price**.
+2. Review the price and choose **Generate plan**. Changing the fields, scene or
+   credentials first cancels the approval.
+3. Choose **Build plan** to create the geometry. To refine, describe the change,
+   choose **Get refinement price**, approve it, then build again.
+4. **Clear** removes the collection and plan after asking. Build and Clear
+   support Undo.
 
 Colours mark categories such as Floor, Wall, Prop, Furniture and Vegetation. Swap
 blocks for generated 3D assets as your scene develops. Rebuilding replaces only this
@@ -528,7 +604,9 @@ Generate a 360 panorama for the scene World. Modes:
 - **Generate**: from a prompt, with Scenario Skybox Flux or GPT.
 - **From image**: from one image of a place, with HY World.
 - **HDRI**: convert a saved panorama or a local 2:1 image into an HDR OpenEXR environment.
-- **Upscale**: upscale a saved panorama or a local 2:1 image. To stay within the 32-megapixel World limit, a saved panorama upscales 2x at most, and an upscaled one can't be upscaled again.
+- **Upscale**: upscale a saved panorama or a local 2:1 image. To stay within the
+  32-megapixel World limit, a saved panorama upscales 2x at most, and an
+  upscaled one can't be upscaled again.
 
 Panorama inputs take a **Saved panorama** (a downloaded result Scenario marks as
 360) or a local 2:1 PNG or JPEG, which **Upload reference** checks before sending.
@@ -549,17 +627,27 @@ the saved job first.
 ### Jobs
 
 The **Jobs** panel lists what's running, with statuses such as "queued",
-"generating", "finished on Scenario", "downloading results" and "results saved". A
-job stays here until you apply its results.
+"generating", "finished on Scenario", "downloading results" and "results saved".
+A job stays here until you apply its results.
 
 - A progress bar appears when Scenario reports progress; some models don't.
 - With Online Access off, checking and downloading pause; the job continues on Scenario.
-- If Scenario can't be reached for a moment, the job shows "Status not refreshed; retrying" and keeps checking, waiting a little longer each time. After about four minutes without an answer it stops and asks you to choose **Resume download** once Scenario is reachable again.
-- If a cancel request doesn't go through, the job says so and keeps checking its status. The cancel is never sent twice.
-- After a restart, choose **Inspect saved jobs**, then **Refresh status** or **Resume download**.
-- **Cancel prepared job** drops an approved request that hasn't been sent yet; nothing reaches Scenario. A canceled Film task keeps its name, so use a new take name to retry.
-- **Cancel generation** appears only for jobs Scenario can cancel. Other running jobs finish or fail on Scenario and stay recoverable.
-- While a request's outcome is unconfirmed, the same request is refused so you aren't charged twice. Check your Scenario history, then choose **Mark reviewed** on that job; this lasts until you restart Blender.
+- If Scenario can't be reached for a moment, the job shows "Status not
+  refreshed; retrying" and keeps checking, waiting a little longer each time.
+  After about four minutes without an answer it stops and asks you to choose
+  **Resume download** once Scenario is reachable again.
+- If a cancel request doesn't go through, the job says so and keeps checking its
+  status. The cancel is never sent twice.
+- After a restart, choose **Inspect saved jobs**, then **Refresh status** or
+  **Resume download**.
+- **Cancel prepared job** drops an approved request that hasn't been sent yet;
+  nothing reaches Scenario. A canceled Film task keeps its name, so use a new
+  take name to retry.
+- **Cancel generation** appears only for jobs Scenario can cancel. Other running
+  jobs finish or fail on Scenario and stay recoverable.
+- While a request's outcome is unconfirmed, the same request is refused so you
+  aren't charged twice. Check your Scenario history, then choose **Mark
+  reviewed** on that job; this lasts until you restart Blender.
 
 ### Generations
 
@@ -577,7 +665,8 @@ and the actions for its kind:
 | Video | Play, Play in Blender, Add video strip |
 | Audio | Play audio, Waveform, Open in system player, Add strip |
 
-- **Reload parameters** puts the lane, model, prompt, settings and references back into the form.
+- **Reload parameters** puts the lane, model, prompt, settings and references
+  back into the form.
 - **Details** shows everything that was sent and returned.
 - **Select** and **Delete** find the objects a generation created, even after renames.
 
@@ -594,11 +683,11 @@ don't add them up again.
 even after a restart. Opening a saved job never generates again or imports by
 itself.
 
-**Recovering a cloud job.** **Save for recovery** brings a completed cloud model job
-into your saved history without downloading or changing anything; a failed read
-never causes another paid generation. Then use **Inspect saved jobs** to download
-and apply it. This can't restore the target mesh of an edit made in another
-session.
+**Recovering a cloud job.** **Save for recovery** brings a completed cloud model
+job into your saved history without downloading or changing anything; a failed
+read never causes another paid generation. Then use **Inspect saved jobs** to
+download and apply it. This can't restore the target mesh of an edit made in
+another session.
 
 ![An earlier Generations panel layout listing past generation prompts and their credit amounts](images/panel-generations.png)
 
@@ -615,10 +704,10 @@ MCP [`inspect_result_previews`](MCP.md#saved-result-previews) tool.
 **Reuse saved results** on a completed job applies its saved files again, for
 example as another import, a material or a World, without generating or spending.
 Each reuse asks you to confirm its destination. Undo reverts the scene change but
-not the job's own controls: after undoing a World, its **Restore** button is gone. If
-Blender can't tell whether a reuse finished, check the scene: the job blocks further
-reuse until you choose **Save import receipt**. A job allows up to 128 reuse
-attempts.
+not the job's own controls: after undoing a World, its **Restore** button is
+gone. If Blender can't tell whether a reuse finished, check the scene: the job
+blocks further reuse until you choose **Save import receipt**. A job allows up
+to 128 reuse attempts.
 
 ![Reuse confirmation names the selected mesh and explains no new generation is submitted](images/saved-result-reuse-approval.png)
 
@@ -648,9 +737,13 @@ Select your mesh, then choose **Apply mesh edit (N)** on the saved job and pick 
 to apply it:
 
 - **Replace geometry**: geometry, UVs and materials.
-- **Replace active UVs** or **Replace textures**: only when the result's topology matches your mesh exactly.
-- **Replace with parts**: replaces the mesh with the result's named parts, under an empty parent.
-- **Attach rig**: adds the returned armature and weights to your unrigged mesh, when its geometry matches exactly. Move the new rig group with the mesh afterwards.
+- **Replace active UVs** or **Replace textures**: only when the result's
+  topology matches your mesh exactly.
+- **Replace with parts**: replaces the mesh with the result's named parts, under
+  an empty parent.
+- **Attach rig**: adds the returned armature and weights to your unrigged mesh,
+  when its geometry matches exactly. Move the new rig group with the mesh
+  afterwards.
 
 Choose **Scene coordinates** or **Object local coordinates** for the result's
 positions; the extension doesn't realign it. **Keep original** (on by default)
@@ -663,14 +756,17 @@ it rather than applying again. See
 
 **Studio**, next to **Scenario** in the viewport header, opens larger pages:
 **Create** (the same form as the sidebar), **Film**, **Workflows**, **Library**,
-**Jobs**, **Results** and **Connection**. Switching pages keeps your work; press Esc
-or click outside to go back to Blender while jobs keep running.
+**Jobs**, **Results** and **Connection**. Switching pages keeps your work; press
+Esc or click outside to go back to Blender while jobs keep running.
 
 ### Run a workflow
 
-1. Open **Studio > Workflows**, choose **Private** or **Public**, and pick a workflow, or enter its ID and choose **Load workflow inputs**.
+1. Open **Studio > Workflows**, choose **Private** or **Public**, and pick a
+   workflow, or enter its ID and choose **Load workflow inputs**.
 2. Confirm to load its inputs.
-3. Fill in the inputs. Tick an input to send it; unticked inputs use the workflow's default, if it has one. File inputs accept an upload, a Library asset or an asset ID; the input shows which it takes.
+3. Fill in the inputs. Tick an input to send it; unticked inputs use the
+   workflow's default, if it has one. File inputs accept an upload, a Library
+   asset or an asset ID; the input shows which it takes.
 4. Choose **Request workflow price**, then **Generate**, and confirm.
 
 The form saves with the scene, but prices and approvals don't survive a restart.
@@ -706,8 +802,8 @@ In **Studio > Library**, choose **Refresh** to list your assets, or public ones 
 **Refresh** again. **Use as reference** adds an asset
 to a model form or, with **Reference destination** set to **Workflow**, to a
 workflow input, after you confirm. Existing references are kept, so remove one
-first to replace it; in a workflow, **Clear reference** empties the whole input. Changing credentials, the Project ID or the open file clears
-the Library.
+first to replace it; in a workflow, **Clear reference** empties the whole input.
+Changing credentials, the Project ID or the open file clears the Library.
 
 ### Organize Library assets
 
@@ -726,23 +822,40 @@ master, a review scene, an exported video and a shareable case study. Every step
 asks for its own confirmation, and paid steps show their exact price first. See the
 [Film reference](FILM_PLAN.md) for the full recipe format and MCP equivalents.
 
-1. **Recipe and tasks**: expand **Film** in the sidebar, load your recipe, then price and generate each model task. Save the blend file to keep the recipe.
-2. **Shots**: **Prepare shot** checks a shot's saved models, and **Build shot** creates its scene.
-3. **Timeline**: **Build timeline** assembles completed shot scenes into an editable sequence.
-4. **Capture**: **Render capture** renders a still or silent clip of a shot; **Upload capture** sends it to Scenario. Video needs ffmpeg and ffprobe (see [Troubleshooting](#troubleshooting)).
-5. **Composition**: **Prepare composition**, then **Request price** and **Generate**, makes a final or previs master.
-6. **Review**: **Prepare review**, then **Build review scene**, assembles your media into a new scene to watch.
-7. **Export**: **Export video...**, then **Render video**, renders a review scene to a new MP4 without spending anything.
-8. **Case study**: **Export case study...**, then **Save case study**, bundles a review with its media, recipe and costs into a ZIP. It leaves out credentials, IDs and local paths, but review it before sharing.
+1. **Recipe and tasks**: expand **Film** in the sidebar, load your recipe, then
+   price and generate each model task. Save the blend file to keep the recipe.
+2. **Shots**: **Prepare shot** checks a shot's saved models, and **Build shot**
+   creates its scene.
+3. **Timeline**: **Build timeline** assembles completed shot scenes into an
+   editable sequence.
+4. **Capture**: **Render capture** renders a still or silent clip of a shot;
+   **Upload capture** sends it to Scenario. Video needs ffmpeg and ffprobe (see
+   [Troubleshooting](#troubleshooting)).
+5. **Composition**: **Prepare composition**, then **Request price** and
+   **Generate**, makes a final or previs master.
+6. **Review**: **Prepare review**, then **Build review scene**, assembles your
+   media into a new scene to watch.
+7. **Export**: **Export video...**, then **Render video**, renders a review
+   scene to a new MP4 without spending anything.
+8. **Case study**: **Export case study...**, then **Save case study**, bundles a
+   review with its media, recipe and costs into a ZIP. It leaves out
+   credentials, IDs and local paths, but review it before sharing.
 
 Good to know:
 
-- Your working scene stays selected and unchanged. Changing it between preparing and building a review, or between choosing an export file and rendering, discards that preparation; prepare again.
-- Reloading a recipe keeps its production, so a new take needs a new task name. **New production** starts a separate one.
-- Capture files expire when the Blender session ends: upload or copy what you need first.
-- If a build or upload is uncertain, inspect saved jobs and save the offered receipt; never build or send it again.
-- One export or case study runs at a time. Exports never overwrite a file, and agents can export only inside the Output Folder.
-- A `.blend` file can keep fragments of earlier settings, so review a case study before publishing it widely.
+- Your working scene stays selected and unchanged. Changing it between preparing
+  and building a review, or between choosing an export file and rendering,
+  discards that preparation; prepare again.
+- Reloading a recipe keeps its production, so a new take needs a new task name.
+  **New production** starts a separate one.
+- Capture files expire when the Blender session ends: upload or copy what you
+  need first.
+- If a build or upload is uncertain, inspect saved jobs and save the offered
+  receipt; never build or send it again.
+- One export or case study runs at a time. Exports never overwrite a file, and
+  agents can export only inside the Output Folder.
+- A `.blend` file can keep fragments of earlier settings, so review a case study
+  before publishing it widely.
 
 ## Agents (MCP)
 
@@ -771,12 +884,17 @@ save the file yourself.
 Prices are in Creative Units (CU) and depend on the model, settings and references.
 
 - **Generate (N CU)** is the price of the form as it stands.
-- After you generate, the button keeps its price and comes back a moment later, once Scenario confirms the job. Change anything to price a different request.
-- **from N CU** means the final price may be higher: some references aren't uploaded yet, or a workflow loops or can't be checked for loops.
+- After you generate, the button keeps its price and comes back a moment later,
+  once Scenario confirms the job. Change anything to price a different request.
+- **from N CU** means the final price may be higher: some references aren't
+  uploaded yet, or a workflow loops or can't be checked for loops.
 - **Price shown after the upload** means a required mesh or capture is still missing.
 - Prompt helpers and Blockout designs are paid separately.
-- If a price check ever starts a job on Scenario, prices stop until you restart Blender and nothing is sent again.
-- With an empty Render Image or Render Video look and automatic Spark on, the look has its own price before the render's. Turn Spark off to use the photoreal default instead.
+- If a price check ever starts a job on Scenario, prices stop until you restart
+  Blender and nothing is sent again.
+- With an empty Render Image or Render Video look and automatic Spark on, the
+  look has its own price before the render's. Turn Spark off to use the
+  photoreal default instead.
 
 See the [known limitations](KNOWN_LIMITATIONS.md) for current spending limits.
 
@@ -793,27 +911,59 @@ can read your scene and request paid work. See
 ## Files and folders
 
 - **Results**: your Output Folder (`~/Downloads/Scenario` by default), under `<kind>/<YYYYMMDD>/`.
-- **Film videos**: the `.mp4` file you choose, by default in the Output Folder's `Film` subfolder.
-- **Caches, jobs and strip media**: the extension's own folder under Blender's extensions directory. Uninstalling Scenario deletes it.
-- **Your key**: stored as plain text in Blender's `userpref.blend` preferences file, unless you use Environment credentials (switching doesn't erase saved values). To remove it, clear both fields and save preferences; rotate the key if it leaks.
+- **Film videos**: the `.mp4` file you choose, by default in the Output Folder's
+  `Film` subfolder.
+- **Caches, jobs and strip media**: the extension's own folder under Blender's
+  extensions directory. Uninstalling Scenario deletes it.
+- **Your key**: stored as plain text in Blender's `userpref.blend` preferences
+  file, unless you use Environment credentials (switching doesn't erase saved
+  values). To remove it, clear both fields and save preferences; rotate the key
+  if it leaks.
 
 ## Troubleshooting
 
-- **"Loading models..." doesn't end**: check your key and secret (Test connection) and Allow Online Access. A Retry button appears if the request failed.
-- **HTTP 401 or 403**: check the key and secret. If a 403 mentions the Project ID, check that the project belongs to the key, or clear it.
-- **"Prompt is required" / "Add a reference to see the cost"**: fill in the prompt or add the required reference.
+- **"Loading models..." doesn't end**: check your key and secret (Test
+  connection) and Allow Online Access. A Retry button appears if the request
+  failed.
+- **HTTP 401 or 403**: check the key and secret. If a 403 mentions the Project
+  ID, check that the project belongs to the key, or clear it.
+- **"Prompt is required" / "Add a reference to see the cost"**: fill in the
+  prompt or add the required reference.
 - **"Select the mesh to edit"**: the 3D tab's Edit mode needs a selected mesh.
-- **"This model takes no image/video input"**: choose another model in the Render lane.
-- **The result doesn't appear**: check Generations for an error. Use **Inspect saved jobs** and **Resume download** instead of generating again. After an update, restart Blender.
+- **"This model takes no image/video input"**: choose another model in the
+  Render lane.
+- **The result doesn't appear**: check Generations for an error. Use **Inspect
+  saved jobs** and **Resume download** instead of generating again. After an
+  update, restart Blender.
 - **A 3D model looks untextured**: switch the viewport to Material Preview.
-- **The render moved things around**: use a cleaner capture (Grey clay, camera view), fewer style images, and describe materials and light rather than content.
-- **The sidebar doesn't look like the composer**: the sidebar follows your Blender theme.
-- **Film can't find ffmpeg or ffprobe**: Film checks Blender's PATH and the usual Homebrew, MacPorts and Linux folders. Elsewhere, or on Windows, add the tool's folder to the PATH Blender starts with.
-- **An agent can't connect to Blender (connection refused)**: the local server runs only while Blender is open with Allow Online Access on. Open Blender first, or press **Start MCP server** in the Agents (MCP) panel if you stopped it. Then reconnect the agent: run `/mcp` in Claude Code, start a new Codex session, or restart Cursor or Claude Desktop.
-- **An agent is refused as unauthorized after Blender restarts**: each Blender session makes a new token. Copy the client setup again; for Codex, export the new token before starting it.
-- **The panel shows a port other than 9876**: another program, often another Blender MCP add-on, holds that port, so the server took the next free one. The copied setup carries the actual port: copy it again. To use another port, set **MCP Port** in the extension's preferences, press **Stop MCP server** then **Start MCP server**, and copy the setup again.
-- **An agent's call times out**: some clients stop waiting after 60 seconds, Codex by default (`tool_timeout_sec`). The outcome is unknown: Blender may never have started the call, or may still finish it. Ask the agent to check the scene or the job's status before trying again, and never to generate again blindly.
-- **Where are the logs?** In Blender's system console (Window > Toggle System Console on Windows, the terminal on macOS and Linux), prefixed `scenario`.
+- **The render moved things around**: use a cleaner capture (Grey clay, camera
+  view), fewer style images, and describe materials and light rather than
+  content.
+- **The sidebar doesn't look like the composer**: the sidebar follows your
+  Blender theme.
+- **Film can't find ffmpeg or ffprobe**: Film checks Blender's PATH and the
+  usual Homebrew, MacPorts and Linux folders. Elsewhere, or on Windows, add the
+  tool's folder to the PATH Blender starts with.
+- **An agent can't connect to Blender (connection refused)**: the local server
+  runs only while Blender is open with Allow Online Access on. Open Blender
+  first, or press **Start MCP server** in the Agents (MCP) panel if you stopped
+  it. Then reconnect the agent: run `/mcp` in Claude Code, start a new Codex
+  session, or restart Cursor or Claude Desktop.
+- **An agent is refused as unauthorized after Blender restarts**: each Blender
+  session makes a new token. Copy the client setup again; for Codex, export the
+  new token before starting it.
+- **The panel shows a port other than 9876**: another program, often another
+  Blender MCP add-on, holds that port, so the server took the next free one. The
+  copied setup carries the actual port: copy it again. To use another port, set
+  **MCP Port** in the extension's preferences, press **Stop MCP server** then
+  **Start MCP server**, and copy the setup again.
+- **An agent's call times out**: some clients stop waiting after 60 seconds,
+  Codex by default (`tool_timeout_sec`). The outcome is unknown: Blender may
+  never have started the call, or may still finish it. Ask the agent to check
+  the scene or the job's status before trying again, and never to generate again
+  blindly.
+- **Where are the logs?** In Blender's system console (Window > Toggle System
+  Console on Windows, the terminal on macOS and Linux), prefixed `scenario`.
 - **Still stuck?** See [Support](https://github.com/scenario-labs/blender-plugin/blob/main/SUPPORT.md).
 
 ## Explorations made in Blender

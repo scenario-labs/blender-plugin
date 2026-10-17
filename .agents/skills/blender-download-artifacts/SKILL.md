@@ -7,7 +7,8 @@ metadata:
   claude-command: "download-artifacts"
 ---
 
-Arguments: `<prnumber>`. In Codex, use the arguments supplied with the skill invocation for `$ARGUMENTS` and positional placeholders.
+Arguments: `<prnumber>`. In Codex, use the arguments supplied with the skill
+invocation for `$ARGUMENTS` and positional placeholders.
 
 Download CI artifacts for PR **$ARGUMENTS** into this repository's ignored
 `workdir/`, so the user can review everything locally. Read `AGENTS.md`

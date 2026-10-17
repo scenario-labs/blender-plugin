@@ -1,15 +1,16 @@
 # Saved media, previews and image handoff
 
-Interaction rules and desktop evidence for approving and reusing saved media. The shared rules are in the [UI style guide](../UI_STYLE.md).
+Interaction rules and desktop evidence for approving and reusing saved media.
+The shared rules are in the [UI style guide](../UI_STYLE.md).
 
 ## Prompt approval interaction evidence
 
 These earlier offline Blender 5.1.2 macOS arm64 captures show the price before
 approval and the delivered text afterward. The model, price and transport are
 synthetic; they are not current service pricing or live generation evidence.
-They predate the shorter [CU labels](../UI_STYLE.md#wording). The price request made no
-submission; the separate approval produced exactly one.
-Native field editing, focus transfer and viewport selection/zoom were exercised.
+They predate the shorter [CU labels](../UI_STYLE.md#wording). The price request
+made no submission; the separate approval produced exactly one. Native field
+editing, focus transfer and viewport selection/zoom were exercised.
 Computer-control focus guards interrupted some typing attempts; this does not
 establish exhaustive keyboard or clipboard acceptance. The isolated run exited
 cleanly and left the normal profile unchanged. A disposable Blender copy used a
@@ -202,8 +203,8 @@ Status lines wrap like the waveform box's, by the width Blender's interface
 font measures less the sidebar's panel, job box and icon space, and a caption
 such as **Model (2)** stays whole on one line. Drawing
 reads only the controller's precomputed tiles and pages: no file, store or
-session access, decode, request or property write. Requests, image decoding and icons happen in
-the controller's timer, outside drawing.
+session access, decode, request or property write. Requests, image decoding and
+icons happen in the controller's timer, outside drawing.
 
 Installed exact-ZIP tests on Blender 5.0.1, 5.1.2 and 5.2.1 macOS arm64 draw
 tiles through recording layouts with file and store reads refused, and through

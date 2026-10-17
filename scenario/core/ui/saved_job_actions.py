@@ -36,6 +36,8 @@ import textwrap
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 
+from .costs import format_cu
+
 RECOVER_OPERATOR = "scenario.recover_job"
 REVIEW_OPERATOR = "scenario.review_workflow_step"
 
@@ -45,12 +47,16 @@ LABELS = {
     "cancel": "Cancel generation",
     "cancel_prepared": "Cancel prepared job",
     "recover_download": "Check interrupted download",
+    "stop_download": "Stop download",
     "retry_receipt": "Save import receipt",
     "import_images": "Import saved images",
     "restore_world": "Restore previous World",
     "apply_material": "Apply saved material",
     "recover_blockout": "Read saved Blockout plan",
     "mark_reviewed": "Mark reviewed",
+    "find_cloud_job": "Find in cloud history",
+    "link_cloud_job": "Choose cloud job...",
+    "read_prompt_text": "Read prompt text",
 }
 
 # Actions the native recovery operator dispatches, with their groups, in its
@@ -62,13 +68,23 @@ RECOVERY_GROUPS = {
     "cancel": "cancel",
     "cancel_prepared": "cancel",
     "recover_download": "recover",
+    "stop_download": "cancel",
     "retry_receipt": "receipt",
     "mark_reviewed": "recover",
+    "find_cloud_job": "recover",
+    "read_prompt_text": "recover",
 }
 RECOVERY_ACTIONS = tuple(RECOVERY_GROUPS)
 # Recovery actions only the user takes in Blender. Marking an unconfirmed request
-# reviewed lets an identical one through, so MCP neither lists nor accepts it.
-NATIVE_ONLY = frozenset({"mark_reviewed"})
+# reviewed lets an identical one through, and linking a cloud job to it settles
+# which job it created, so MCP neither lists nor accepts either.
+# MCP reads saved prompt text with its own read_prompt_result tool instead.
+NATIVE_ONLY = frozenset({"mark_reviewed", "link_cloud_job", "read_prompt_text"})
+COPY_OPERATOR = "scenario.copy_text"
+# Characters of a read prompt text shown above its Copy control.
+PROMPT_PREVIEW = 160
+# Opens the native candidate choice for an unconfirmed submission.
+LINK_OPERATOR = "scenario.link_cloud_job"
 # Status rows offered as ModelJobs actions; their decisions use their own commands.
 STATUS_ACTIONS = {
     "review_step": ("Workflow waits for your decision", "INFO"),
@@ -174,6 +190,53 @@ class SavedJobAction:
     operator: str | None = None
     properties: tuple = ()
     row: str = ""
+
+
+STATUS_WORDS = {
+    "pending": "queued",
+    "queued": "queued",
+    "warming-up": "starting",
+    "in-progress": "generating",
+    "finalizing": "finalizing",
+    "success": "finished",
+    "failure": "failed",
+    "canceled": "canceled",
+}
+
+
+def _duration(seconds):
+    magnitude = abs(seconds)
+    if magnitude < 60:
+        text = f"{magnitude:.1f} s".replace(".0 s", " s")
+    elif magnitude < 3600:
+        text = f"{round(magnitude / 60)} min"
+    else:
+        text = f"{magnitude / 3600:.1f} h"
+    return f"{text} after sending" if seconds >= 0 else f"{text} before sending"
+
+
+def candidate_text(candidate):
+    """The (title, detail) lines describing one listed cloud job; display only.
+
+    `candidate` is a `reconcile.CloudCandidate` as a dict, as `ModelJobs`
+    projects it. Nothing here suggests the job is this request's.
+    """
+    seconds = candidate.get("seconds_after_claim")
+    if seconds is not None:
+        when = "Created " + _duration(seconds)
+    elif candidate.get("created_at"):
+        when = "Created " + candidate["created_at"][:16].replace("T", " ") + " UTC"
+    else:
+        when = "Creation time unknown"
+    parts = [when, STATUS_WORDS.get(candidate.get("status"), "unknown state")]
+    if candidate.get("cost") is not None:
+        try:
+            parts.append(f"{format_cu(candidate['cost'])} CU")
+        except (ArithmeticError, ValueError):
+            # An unreadable cost is named as such, never shown as 0.
+            parts.append("cost unavailable")
+    prompt = candidate.get("prompt") or "No prompt text"
+    return ", ".join(parts), prompt
 
 
 def _status(key, action, label, icon):
@@ -312,6 +375,12 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
         return (row, *_review_steps(workflow.steps, job))
     if action in STATUS_ACTIONS:
         return (_status(action, action, *STATUS_ACTIONS[action]),)
+    if action == "link_cloud_job":
+        return (
+            SavedJobAction(
+                action, action, "recover", LABELS[action], operator=LINK_OPERATOR, properties=job
+            ),
+        )
     if action in SINGLE_APPLY:
         operator = SINGLE_APPLY[action]
         return (
@@ -395,6 +464,30 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
             properties=(*job, ("action", action)),
         ),
     )
+
+
+def _prompt_texts(view):
+    """A finished prompt job's text read into memory: a preview and a Copy control each."""
+    texts = view.meta.get("prompt_texts", ())
+    items = []
+    for index, text in enumerate(texts, 1):
+        preview = " ".join(text.split())
+        if len(preview) > PROMPT_PREVIEW:
+            preview = preview[: PROMPT_PREVIEW - 3] + "..."
+        items.extend(_note(f"prompt_text:{index}", preview or "(empty text)", "TEXT"))
+        label = "Copy prompt text" if len(texts) == 1 else f"Copy prompt text ({index})"
+        items.append(
+            SavedJobAction(
+                f"copy_prompt:{index}",
+                "",
+                "recover",
+                label,
+                "COPYDOWN",
+                operator=COPY_OPERATOR,
+                properties=(("text", text), ("what", "prompt text")),
+            )
+        )
+    return items
 
 
 def _panorama_label(view):
@@ -548,9 +641,15 @@ def describe(
     if workflow is not None and workflow.error:
         items.extend(_note("decision_error", workflow.error, "ERROR"))
     items.extend(_panorama_label(view))
+    if meta.get("cloud_lookup"):
+        # Unconfirmed submissions: the read-only cloud lookup's progress or outcome.
+        items.extend(
+            _note("cloud_lookup", meta["cloud_lookup"], meta.get("cloud_lookup_icon", "INFO"))
+        )
     for action in actions:
         items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
     items.extend(_hdri_prefills(view, job))
+    items.extend(_prompt_texts(view))
     if state in PLAYBACK_STATES:
         items.extend(_playback(view, job, result_types, listening))
     # Session-local notes about the last import, such as splat thinning.

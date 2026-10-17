@@ -413,6 +413,8 @@ def legacy_store(path, version):
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
+            if version < 12:
+                del value["claimed_at"]
             if version < 8 and "film_task" in value["intent"]:
                 del value["intent"]["film_task"]
             if version < 6:
@@ -439,7 +441,7 @@ def legacy_store(path, version):
         connection.execute(f"PRAGMA user_version={version}")
 
 
-@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8, 9, 10])
+@pytest.mark.parametrize("version", [2, 3, 4, 5, 6, 7, 8, 9, 10, 11])
 def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path, intent, version):
     path = tmp_path / "jobs.sqlite3"
     expected = {}
@@ -471,7 +473,7 @@ def test_shared_store_upgrade_preserves_all_scopes_states_and_receipts(tmp_path,
     for scope, records in expected.items():
         assert JobStore(path, scope).records() == records
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 11
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 12
 
 
 @pytest.mark.parametrize("damage", ["commit", "scope", "revision", "record", "foreign", "v1"])

@@ -31,6 +31,7 @@ establishes native Blender compatibility.
 
 import base64
 import copy
+import inspect
 import json
 import socket
 import typing
@@ -579,6 +580,49 @@ def test_job_list_serializes_multiple_types_as_csv(client_factory):
     assert dict(requests[0].url.params) == {"projectId": PROJECT, "types": "custom,workflow,upload"}
     assert page.jobs == []
     assert not page.has_next_page()
+
+
+# No paid submission can be matched to its job after a lost response: the API
+# documents no idempotency key or client reference, the client sends no key and
+# job listing has no request filter. Uncertain submissions therefore stay
+# uncertain until the user links a verified job (scenario-labs/blender-plugin#494).
+SUBMISSION_GAP = "https://github.com/scenario-labs/scenario-sdk-python-staging/issues/11"
+
+
+@pytest.mark.parametrize("operation", ["model", "workflow", "prompt", "translate"])
+def test_paid_submissions_carry_no_idempotency_key_or_client_reference(client_factory, operation):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(200, json={"job": {"jobId": "fixture-job"}, "prompts": ["x"]})
+
+    sdk = client_factory(respond)
+    method = {
+        "model": sdk.generate.run_model,
+        "workflow": sdk.workflows.run,
+        "prompt": sdk.generate.prompt,
+        "translate": sdk.generate.translate,
+    }[operation]
+    if operation in {"model", "workflow"}:
+        method("fixture-target", body={"prompt": "fixture"}, project_id=PROJECT)
+    elif operation == "prompt":
+        method(mode="completion", prompt="fixture", project_id=PROJECT)
+    else:
+        method(prompt="fixture", project_id=PROJECT)
+    assert len(requests) == 1, SUBMISSION_GAP
+    assert sdk._idempotency_header is None, SUBMISSION_GAP
+    assert not any(
+        "idempot" in name.lower() or "request-id" in name.lower() for name in requests[0].headers
+    ), SUBMISSION_GAP
+    parameters = set(inspect.signature(method).parameters)
+    assert not {
+        name
+        for name in parameters
+        if any(word in name for word in ("idempot", "reference", "client", "tag", "metadata"))
+    }, SUBMISSION_GAP
+    filters = set(inspect.signature(sdk.jobs.list).parameters)
+    assert filters & {"client_reference", "request_id", "idempotency_key"} == set(), SUBMISSION_GAP
 
 
 @pytest.mark.parametrize("status", ["in-progress", "canceled", "success"])

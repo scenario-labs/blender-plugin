@@ -273,7 +273,8 @@ def test_read_failure_cleans_up_and_redacts_ordinary_errors(failure, tmp_path, s
         else transfers.TransferError
     )
     with pytest.raises(expected) as caught:
-        downloader().download(URL, root=tmp_path, name="x")
+        # A read timeout is waited out up to the inactivity limit, kept short here.
+        downloader(timeout=0.5).download(URL, root=tmp_path, name="x")
     assert "private-fixture" not in str(caught.value)
     assert not list(tmp_path.iterdir())
     storage[0].close.assert_called_once()
@@ -744,3 +745,472 @@ def test_legacy_size_policy_cannot_bypass_byte_cap_or_digest(tmp_path, storage, 
             **options,
         )
     assert not list(tmp_path.iterdir())
+
+
+# Resumable attempts, retry classification and size-scaled deadlines (#453).
+
+ETAG = '"strong-fixture"'
+LARGE = bytes(range(256)) * 64  # 16 KiB
+
+
+class Broken(Response):
+    """A body that resets the connection after `fail_after` bytes."""
+
+    def __init__(self, data=LARGE, *, fail_after, **kwargs):
+        super().__init__(data, **kwargs)
+        self.fail_after = fail_after
+
+    def read1(self, size=-1):
+        if self.tell() >= self.fail_after:
+            raise ConnectionResetError("private-fixture reset")
+        return super().read1(min(size, 1024, self.fail_after - self.tell()))
+
+
+def connections(storage, *responses):
+    """Serve one fresh connection per attempt, in order."""
+    made = []
+    for response in responses:
+        connection = Mock()
+        connection.getresponse.return_value = response
+        made.append(connection)
+    storage[1].side_effect = made
+    return made
+
+
+def sent_headers(connection):
+    return connection.request.call_args.kwargs["headers"]
+
+
+def test_size_scaled_deadline_has_a_floor_and_a_ceiling():
+    policy = transfers.StoragePolicy(frozenset({"storage.example.invalid"}))
+    assert policy.deadline(None) == policy.total_timeout == 300.0
+    assert policy.deadline(1024) == 300.0
+    assert policy.deadline(128 * 1024 * 1024) == 512.0
+    assert policy.deadline(256 * 1024 * 1024) == 1024.0
+    assert policy.deadline(2**40) == policy.max_total_timeout == 1800.0
+    with pytest.raises(ValueError):
+        transfers.StoragePolicy(
+            frozenset({"storage.example.invalid"}), total_timeout=600, max_total_timeout=300
+        )
+    with pytest.raises(ValueError):
+        transfers.StoragePolicy(frozenset({"storage.example.invalid"}), min_rate=0)
+
+
+def test_large_download_gets_more_than_the_floor(tmp_path, storage, monkeypatch):
+    # 4 KiB/s floor rate: a 16 KiB body may take 4 s where the floor is 1 s.
+    clock = 0.0
+    monkeypatch.setattr(transfers.time, "monotonic", lambda: clock)
+    response = Response(LARGE)
+    original_read = response.read1
+
+    def read(size):
+        nonlocal clock
+        clock += 0.2
+        return original_read(min(size, 1024))
+
+    response.read1 = read
+    storage[0].getresponse.return_value = response
+    receipt = downloader(total_timeout=1, min_rate=4096).download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE)
+    )
+    assert receipt.size == len(LARGE) and clock > 1
+
+
+def test_unknown_size_deadline_follows_declared_length(tmp_path, storage, monkeypatch):
+    clock = 0.0
+    monkeypatch.setattr(transfers.time, "monotonic", lambda: clock)
+    response = Response(LARGE)
+    original_read = response.read1
+
+    def read(size):
+        nonlocal clock
+        clock += 0.2
+        return original_read(min(size, 1024))
+
+    response.read1 = read
+    storage[0].getresponse.return_value = response
+    receipt = downloader(total_timeout=1, min_rate=4096).download(URL, root=tmp_path, name="x")
+    assert receipt.size == len(LARGE)
+
+
+def test_deadline_and_transport_failures_are_retryable_but_policy_failures_are_not(
+    tmp_path, storage, monkeypatch
+):
+    storage[0].connect.side_effect = OSError(URL)
+    with pytest.raises(transfers.TransferError) as caught:
+        downloader().download(URL, root=tmp_path, name="x")
+    assert caught.value.retryable
+    storage[0].connect.side_effect = None
+    for status in (403, 500, 503):
+        storage[0].getresponse.return_value = Response(status=status)
+        with pytest.raises(transfers.TransferError) as caught:
+            downloader().download(URL, root=tmp_path, name="x")
+        assert caught.value.retryable
+    storage[0].getresponse.return_value = Response(headers={"Content-Encoding": "gzip"})
+    with pytest.raises(transfers.TransferError) as caught:
+        downloader().download(URL, root=tmp_path, name="x")
+    assert not caught.value.retryable
+    storage[0].getresponse.return_value = Response()
+    with pytest.raises(transfers.TransferError) as caught:
+        downloader().download(URL, root=tmp_path, name="x", expected_sha256="a" * 64)
+    assert not caught.value.retryable
+    with pytest.raises(transfers.TransferError) as caught:
+        downloader().download("https://other.example.invalid/x", root=tmp_path, name="x")
+    assert not caught.value.retryable
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(transfers.TransferError) as caught:
+        downloader().download(URL, root=tmp_path, name="x", cancel=cancel)
+    assert not caught.value.retryable
+    assert not list(tmp_path.iterdir())
+
+
+def test_strong_etag_resumes_with_range_and_if_range(tmp_path, storage):
+    first, second = connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+        Response(
+            LARGE[5000:],
+            status=206,
+            headers={
+                "Content-Length": str(len(LARGE) - 5000),
+                "Content-Range": f"bytes 5000-{len(LARGE) - 1}/{len(LARGE)}",
+                "ETag": ETAG,
+            },
+        ),
+    )
+    client = downloader()
+    partial = transfers.PartialDownload()
+    with pytest.raises(transfers.TransferError) as caught:
+        client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    assert caught.value.retryable and partial.size == 5000
+    assert "Range" not in sent_headers(first)
+    # Partial bytes stay private: nothing is published under the result name.
+    assert not (tmp_path / "x").exists()
+    receipt = client.download(
+        "https://storage.example.invalid/result?signature=fresh",
+        root=tmp_path,
+        name="x",
+        expected_size=len(LARGE),
+        expected_sha256=hashlib.sha256(LARGE).hexdigest(),
+        partial=partial,
+    )
+    headers = sent_headers(second)
+    assert headers["Range"] == "bytes=5000-" and headers["If-Range"] == ETAG
+    assert (receipt.size, receipt.sha256) == (len(LARGE), hashlib.sha256(LARGE).hexdigest())
+    assert (tmp_path / "x").read_bytes() == LARGE
+    assert list(tmp_path.iterdir()) == [tmp_path / "x"]
+    assert partial.size == 0
+
+
+@pytest.mark.parametrize("etag", [None, 'W/"weak-fixture"', "unquoted", '""'])
+def test_missing_or_weak_etag_restarts_from_zero(etag, tmp_path, storage):
+    headers = {"Content-Length": str(len(LARGE))}
+    if etag is not None:
+        headers["ETag"] = etag
+    _, second = connections(
+        storage, Broken(fail_after=5000, headers=dict(headers)), Response(LARGE)
+    )
+    partial = transfers.PartialDownload()
+    client = downloader()
+    with pytest.raises(transfers.TransferError):
+        client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    assert partial.size == 0
+    receipt = client.download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+    )
+    assert "Range" not in sent_headers(second) and "If-Range" not in sent_headers(second)
+    assert receipt.sha256 == hashlib.sha256(LARGE).hexdigest()
+
+
+def test_full_reply_to_a_ranged_request_restarts_cleanly(tmp_path, storage):
+    changed = bytes(reversed(LARGE))
+    _, second = connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+        # If-Range did not match: the server sends the whole (new) object.
+        Response(changed, headers={"Content-Length": str(len(changed)), "ETag": '"new"'}),
+    )
+    partial = transfers.PartialDownload()
+    client = downloader()
+    with pytest.raises(transfers.TransferError):
+        client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    receipt = client.download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+    )
+    assert sent_headers(second)["Range"] == "bytes=5000-"
+    assert receipt.sha256 == hashlib.sha256(changed).hexdigest()
+    assert (tmp_path / "x").read_bytes() == changed
+    assert list(tmp_path.iterdir()) == [tmp_path / "x"]
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Content-Range": "bytes 4000-16383/16384", "ETag": ETAG},
+        {"Content-Range": "bytes 5000-16383/20000", "ETag": ETAG},
+        {"Content-Range": "bytes 5000-16000/16384", "ETag": ETAG},
+        {"Content-Range": "bytes */16384", "ETag": ETAG},
+        {"Content-Range": "bytes 5000-16383/16384", "ETag": '"other"'},
+        {"Content-Range": "bytes 5000-16383/16384"},
+        {"ETag": ETAG},
+    ],
+)
+def test_inconsistent_partial_reply_is_retryable_and_restarts_next_time(headers, tmp_path, storage):
+    third = Response(LARGE)
+    _, _, last = connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+        Response(LARGE[5000:], status=206, headers=headers),
+        third,
+    )
+    partial = transfers.PartialDownload()
+    client = downloader()
+    for _ in range(2):
+        with pytest.raises(transfers.TransferError) as caught:
+            client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+        assert caught.value.retryable
+    assert partial.size == 0
+    receipt = client.download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+    )
+    assert "Range" not in sent_headers(last)
+    assert receipt.sha256 == hashlib.sha256(LARGE).hexdigest()
+
+
+def test_unsolicited_partial_reply_is_rejected(tmp_path, storage):
+    storage[0].getresponse.return_value = Response(
+        LARGE[:100],
+        status=206,
+        headers={"Content-Range": "bytes 0-99/16384", "ETag": ETAG, "Content-Length": "100"},
+    )
+    with pytest.raises(transfers.TransferError):
+        downloader().download(URL, root=tmp_path, name="x", partial=transfers.PartialDownload())
+    assert not (tmp_path / "x").exists()
+
+
+def test_cancel_discards_partial_bytes_and_publishes_nothing(tmp_path, storage):
+    cancel = threading.Event()
+    response = Response(LARGE, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG})
+    original_read = response.read1
+
+    def read(size):
+        if response.tell() >= 4096:
+            cancel.set()
+        return original_read(min(size, 1024))
+
+    response.read1 = read
+    storage[0].getresponse.return_value = response
+    partial = transfers.PartialDownload()
+    with pytest.raises(transfers.TransferError) as caught:
+        downloader().download(
+            URL, root=tmp_path, name="x", expected_size=len(LARGE), cancel=cancel, partial=partial
+        )
+    assert not caught.value.retryable
+    assert partial.size == 0
+    assert not list(tmp_path.iterdir())
+
+
+def test_partial_belongs_to_one_result(tmp_path, storage):
+    connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+    )
+    partial = transfers.PartialDownload()
+    with pytest.raises(transfers.TransferError):
+        downloader().download(
+            URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+        )
+    with pytest.raises(transfers.TransferError, match="another result"):
+        downloader().download(
+            URL, root=tmp_path, name="y", expected_size=len(LARGE), partial=partial
+        )
+    partial.discard()
+    assert not list(tmp_path.iterdir())
+
+
+def test_shortened_staging_file_restarts_instead_of_resuming(tmp_path, storage):
+    _, second = connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+        Response(LARGE),
+    )
+    partial = transfers.PartialDownload()
+    client = downloader()
+    with pytest.raises(transfers.TransferError):
+        client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    (staged,) = [path for path in tmp_path.rglob("*") if path.is_file()]
+    with staged.open("r+b") as output:
+        output.truncate(100)
+    receipt = client.download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+    )
+    assert "Range" not in sent_headers(second)
+    assert receipt.sha256 == hashlib.sha256(LARGE).hexdigest()
+
+
+class Silent(Response):
+    """Headers arrive, then each read waits on a real socket that may stay silent."""
+
+    def __init__(self, sock):
+        super().__init__(LARGE, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG})
+        self.sock, self.received = sock, 0
+
+    def read1(self, size=-1):
+        # Like http.client, stop at the declared length instead of waiting for more.
+        if self.received >= len(LARGE):
+            return b""
+        chunk = self.sock.recv(min(size, 1024, len(LARGE) - self.received))
+        self.received += len(chunk)
+        return chunk
+
+
+@pytest.fixture
+def socket_pair(storage):
+    import socket
+
+    client_end, server_end = socket.socketpair()
+    storage[0].sock = client_end
+    storage[0].getresponse.return_value = Silent(client_end)
+    yield client_end, server_end
+    client_end.close()
+    server_end.close()
+
+
+def test_cancel_stops_a_read_waiting_on_a_silent_server_within_the_poll(tmp_path, socket_pair):
+    import time
+
+    client_end, server_end = socket_pair
+    server_end.sendall(LARGE[:2048])
+    cancel = threading.Event()
+    threading.Timer(0.3, cancel.set).start()
+    partial = transfers.PartialDownload()
+    started = time.monotonic()
+    with pytest.raises(transfers.TransferError, match="interrupted") as caught:
+        downloader().download(
+            URL, root=tmp_path, name="x", expected_size=len(LARGE), cancel=cancel, partial=partial
+        )
+    # The 30-second inactivity limit never applies, and cancellation is final.
+    assert time.monotonic() - started < 0.3 + transfers.POLL_INTERVAL + 1
+    assert not caught.value.retryable
+    assert partial.size == 0 and not list(tmp_path.iterdir())
+    assert client_end.gettimeout() <= transfers.POLL_INTERVAL
+
+
+def test_a_pause_shorter_than_the_inactivity_limit_is_waited_out(tmp_path, socket_pair):
+    _, server_end = socket_pair
+    server_end.sendall(LARGE[:4096])
+    # Three poll intervals of silence, then the rest of the body.
+    threading.Timer(3 * transfers.POLL_INTERVAL, server_end.sendall, (LARGE[4096:],)).start()
+    receipt = downloader(timeout=5).download(
+        URL,
+        root=tmp_path,
+        name="x",
+        expected_size=len(LARGE),
+        expected_sha256=hashlib.sha256(LARGE).hexdigest(),
+    )
+    assert receipt.size == len(LARGE)
+
+
+def test_silence_past_the_inactivity_limit_is_a_retryable_stall(tmp_path, socket_pair):
+    _, server_end = socket_pair
+    server_end.sendall(LARGE[:4096])
+    partial = transfers.PartialDownload()
+    with pytest.raises(transfers.TransferError, match="stalled") as caught:
+        downloader(timeout=1).download(
+            URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+        )
+    assert caught.value.retryable
+    # With a strong ETag the next attempt resumes the bytes already received.
+    assert partial.size == 4096 and partial.resumable
+    partial.discard()
+
+
+def test_real_http_body_reads_can_time_out_and_continue(tmp_path, storage, monkeypatch):
+    """Through http.client: a timed-out body read is retried, never refused."""
+    import http.client
+    import socket
+
+    client_end, server_end = socket.socketpair()
+    try:
+        head = (
+            f"HTTP/1.1 200 OK\r\nContent-Length: {len(LARGE)}\r\nETag: {ETAG}\r\n"
+            "Connection: close\r\n\r\n"
+        ).encode()
+        server_end.sendall(head + LARGE[:3000])
+        threading.Timer(2 * transfers.POLL_INTERVAL, server_end.sendall, (LARGE[3000:],)).start()
+
+        class Connection(http.client.HTTPConnection):
+            def connect(self):
+                self.sock = client_end
+
+        connection = Connection("storage.example.invalid")
+        storage[1].return_value = connection
+        storage[1].side_effect = None
+        monkeypatch.setattr(connection, "request", lambda *args, **kwargs: None)
+        monkeypatch.setattr(connection, "_HTTPConnection__state", "Request-sent", raising=False)
+        receipt = downloader(timeout=5).download(
+            URL,
+            root=tmp_path,
+            name="x",
+            expected_size=len(LARGE),
+            expected_sha256=hashlib.sha256(LARGE).hexdigest(),
+        )
+        assert receipt.size == len(LARGE)
+        assert isinstance(connection.response_class, type)
+        assert issubclass(connection.response_class, http.client.HTTPResponse)
+    finally:
+        client_end.close()
+        server_end.close()
+
+
+@pytest.mark.parametrize("failure", ["status", "connect"])
+def test_a_resume_attempt_that_fails_before_its_body_keeps_the_staged_bytes(
+    failure, tmp_path, storage
+):
+    first = Mock()
+    first.getresponse.return_value = Broken(
+        fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}
+    )
+    second = Mock()
+    if failure == "status":
+        second.getresponse.return_value = Response(status=503)
+    else:
+        second.connect.side_effect = OSError("private-fixture connect failure")
+    third = Mock()
+    third.getresponse.return_value = Response(
+        LARGE[5000:],
+        status=206,
+        headers={
+            "Content-Length": str(len(LARGE) - 5000),
+            "Content-Range": f"bytes 5000-{len(LARGE) - 1}/{len(LARGE)}",
+            "ETag": ETAG,
+        },
+    )
+    storage[1].side_effect = [first, second, third]
+    client, partial = downloader(), transfers.PartialDownload()
+    for _ in range(2):
+        with pytest.raises(transfers.TransferError) as caught:
+            client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+        assert caught.value.retryable and partial.size == 5000 and partial.resumable
+    receipt = client.download(
+        URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial
+    )
+    assert sent_headers(third)["Range"] == "bytes=5000-"
+    assert receipt.sha256 == hashlib.sha256(LARGE).hexdigest()
+
+
+def test_a_range_the_server_cannot_satisfy_starts_again_from_zero(tmp_path, storage):
+    first, second, third = connections(
+        storage,
+        Broken(fail_after=5000, headers={"Content-Length": str(len(LARGE)), "ETag": ETAG}),
+        Response(status=416),
+        Response(LARGE),
+    )
+    client, partial = downloader(), transfers.PartialDownload()
+    for _ in range(2):
+        with pytest.raises(transfers.TransferError):
+            client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    assert partial.size == 0
+    client.download(URL, root=tmp_path, name="x", expected_size=len(LARGE), partial=partial)
+    assert "Range" not in sent_headers(third)

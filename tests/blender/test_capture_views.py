@@ -181,6 +181,18 @@ class CaptureViewsTests(unittest.TestCase):
         self.assertAlmostEqual(selected["center"][0], 102.0, places=3)
         self.assertGreater(selected["radius"], 2.0)
 
+    def test_a_selected_armature_is_framed_by_its_bones(self):
+        _, patch = self.fake_tiles()
+        bpy.ops.object.armature_add(location=(10, 0, 0))  # one bone, 1 m up from its origin
+        rig = bpy.context.active_object
+        for obj in self.scene.objects:
+            obj.select_set(obj is rig)
+        with patch:
+            _, caption = self.capture({"angles": ["front"]})
+        self.assertEqual((caption["framed"], caption["objects"]), ("selection", [rig.name]))
+        self.assertAlmostEqual(caption["center"][2], 0.5, places=1)
+        self.assertGreater(caption["radius"], 0.4)
+
     def test_pixel_aspect_is_square_while_rendering_and_restored(self):
         render = self.scene.render
         render.pixel_aspect_x = 2.0

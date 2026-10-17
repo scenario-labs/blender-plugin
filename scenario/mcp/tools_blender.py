@@ -428,7 +428,8 @@ def _object_points(obj, matrix, depth=0):
             for point in _object_points(child, base @ child.matrix_world, depth + 1)
         ]
         return points or [matrix.translation.copy()]
-    if obj.type in _CAPTURE_BOUNDED:
+    # An armature's box spans its bones, so a selected rig frames its character.
+    if obj.type in _CAPTURE_BOUNDED or obj.type == "ARMATURE":
         return [matrix @ Vector(corner) for corner in obj.bound_box]
     return [matrix.translation.copy()]
 

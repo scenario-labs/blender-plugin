@@ -577,7 +577,17 @@ def draw_mcp_lane(layout, context):
     if prefs is not None:
         box.prop(prefs, "mcp_allow_python")
     box = layout.box()
-    box.label(text="Connect a client (copies the setup)", icon="COPYDOWN")
+    box.label(text="Connect a client (writes its config)", icon="LINKED")
+    found = [client for client in mcp_service.connect_clients() if client.detected]
+    col = box.column(align=True)
+    for client in found:
+        col.operator("scenario.mcp_connect", text=client.label, icon="LINKED").client = client.key
+    if not found:
+        box.label(text="No supported client found; copy a setup below", icon="INFO")
+    for line in mcp_service.connect_report:
+        box.label(text=line)
+    box = layout.box()
+    box.label(text="Or copy the setup", icon="COPYDOWN")
     col = box.column(align=True)
     for kind, label in (
         ("claude_code", "Claude Code"),

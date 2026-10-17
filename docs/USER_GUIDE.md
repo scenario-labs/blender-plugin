@@ -867,10 +867,13 @@ The local server starts on its own while **Allow Online Access** is on and accep
 connections only from this computer, and an agent can upload only files Scenario
 saved or files you chose in Blender during this session.
 
-Copy a client setup for Claude Code, Codex, Cursor or Claude Desktop from the
-**Agents (MCP)** panel. It contains a live token, so keep it out of screenshots,
-logs and source control. **Allow connected agents to
-run Python** is off by default. For headless use, run
+In the **Agents (MCP)** panel, **Connect a client** has a button for each of
+Claude Code, Codex, Cursor and Claude Desktop found on this computer: it adds the
+`scenario-blender` server to that client's configuration file, keeps the other
+servers, copies the previous file beside it and shows what it wrote. Then reload
+the client. You can also copy a setup instead. Either way the setup contains a
+live token, so keep it out of screenshots, logs and source control. **Allow
+connected agents to run Python** is off by default. For headless use, run
 `blender --background scene.blend --command scenario_blender`. The
 [MCP reference](MCP.md) covers tools, setup and security.
 

@@ -22,6 +22,10 @@ summary and no trailing period. For example,
 | ci                     | Workflows and automation                                  |
 | style / chore / revert | Formatting, maintenance or a revert                       |
 
+Pull requests merge through the merge queue: choose **Merge when ready** or run
+`gh pr merge`. The queue squash-merges a PR only after CI passes on it combined with
+the current `main` and any PRs queued ahead of it.
+
 Squash merges use the PR title as the commit header. Keep branch commits
 conventional too: current CI checks them. Branch commit bodies are optional;
 keep them to a sentence or two. A missing scope is a warning; when a

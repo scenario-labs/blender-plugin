@@ -318,7 +318,8 @@ directory. The import must still check the images it creates.
 Schema 12 stores each result's in-job parent as `parent_id`
 ([result parents](JOB_STORAGE.md#result-parents)), but the classifier does not read it
 yet. Its lineage rules expect an OBJ's MTL and maps under the OBJ; live Meshy results
-put them beside it, under the GLB. Until binding by parent lands, every stored
+put them beside it, under the GLB. Until binding by parent lands
+([#609](https://github.com/scenario-labs/blender-plugin/issues/609)), every stored
 manifest uses the stricter rules without lineage;
 `members_from_results` accepts lineage only as an explicit mapping, so parent
 binding and generated-output ordering apply only when a caller supplies it.

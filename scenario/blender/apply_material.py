@@ -7,7 +7,7 @@ import logging
 import bpy
 
 from ..core.scene import material_plan as mp
-from . import apply_image, runtime
+from . import apply_image, runtime, selection
 
 log = logging.getLogger("scenario.material")
 
@@ -115,7 +115,7 @@ def on_material_result(rec):
     names = rec.meta.get("target_objects") or []
     targets = [bpy.data.objects.get(n) for n in names if bpy.data.objects.get(n) is not None]
     if not targets:
-        targets = [o for o in bpy.context.selected_objects if o.type == "MESH"]
+        targets = [o for o in selection.selected_objects(bpy.context) if o.type == "MESH"]
     assign_to_objects(mat, targets)
     for window in bpy.context.window_manager.windows:
         for area in window.screen.areas:

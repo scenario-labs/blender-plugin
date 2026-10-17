@@ -27,7 +27,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
-from . import model_jobs, params_ui, props, runtime, trained_models
+from . import model_jobs, params_ui, props, runtime, selection, trained_models
 from .job_session import OriginUnavailable
 
 log = logging.getLogger("scenario.generation")
@@ -1082,7 +1082,9 @@ def request_meta(context, lane, request=None):
         meta["model_name"] = trained_models.selection_label(lane_state, meta["model_name"])
         meta["trained_models"] = trained_models.selection_meta(lane_state)
     if lane == "material":
-        meta["target_objects"] = [o.name for o in context.selected_objects if o.type == "MESH"]
+        meta["target_objects"] = [
+            o.name for o in selection.selected_objects(context) if o.type == "MESH"
+        ]
     if request is not None:
         # the local files that went into the job, so Generations can show what was used (like the web app)
         inputs = []

@@ -9,7 +9,7 @@ import tempfile
 
 import bpy
 
-from ..blender import file_state
+from ..blender import file_state, selection
 from . import sandbox
 from .protocol import ToolSpec
 
@@ -97,7 +97,7 @@ def scene_summary(args):
     objects = [
         {"name": obj.name, **{field: OBJECT_FIELDS[field](obj) for field in fields}} for obj in page
     ]
-    selected = [o.name for o in bpy.context.selected_objects]
+    selected = [o.name for o in selection.selected_objects(bpy.context)]
     cameras = [o.name for o in scene.objects if o.type == "CAMERA"]
     active = bpy.context.view_layer.objects.active
     summary = {
@@ -512,7 +512,7 @@ SPECS = (
             "Run arbitrary Python with bpy on Blender's main thread, only when explicitly enabled in preferences.\n"
             "Args:\n"
             "  - code: required string, Python source; bpy and a result dict are preloaded.\n"
-            "Returns: result, stdout and stderr; failures also include error. Disabled by default unless the user enables Allow connected agents to run Python. Common quit, factory-reset, preference-reload and file-deletion call spellings are blocked; this is not a security sandbox.\n"
+            "Returns: result, stdout and stderr; failures also include error. A result over 50,000 characters of JSON comes back as its size and a preview; stdout and stderr keep their last 20,000 characters. Disabled by default unless the user enables Allow connected agents to run Python. Common quit, factory-reset, preference-reload and file-deletion call spellings are blocked; this is not a security sandbox.\n"
             'Example: {"code": "result[\'objects\'] = len(bpy.data.objects)"}.\n'
             "Check blender_api_help first and prefer specific tools instead of arbitrary code.\n"
             "No platform equivalent."

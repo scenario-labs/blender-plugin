@@ -12,11 +12,11 @@ connection before sending them. Connect either
 or both according to the task; they have separate authentication and capabilities.
 
 The local server accepts MCP JSON-RPC over HTTP at
-`http://127.0.0.1:9876/mcp` by default. It runs in a GUI session whenever
-Blender's **Allow Online Access** is on, starting or stopping when that setting
-changes, unless **Stop MCP server** was pressed. It uses only the **MCP Port**
-preference; if another program holds that port, the server stays stopped and
-the panel names the port. Copy the URL from **Scenario > Agents (MCP)**. An
+`http://127.0.0.1:9876/mcp` by default. In a GUI session it starts when Blender's
+**Allow Online Access** is switched on, unless **Stop MCP server** was pressed,
+and stops when it is switched off. It uses only the **MCP Port** preference; if
+another program holds that port, the server stays stopped and the panel names
+the port. Copy the URL from **Scenario > Agents (MCP)**. An
 authenticated GET on `/mcp` returns 405:
 use POST for tool calls; the server does not provide an SSE stream.
 

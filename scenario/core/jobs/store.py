@@ -522,6 +522,8 @@ class ResultAsset:
     original (an EXR environment behind a JPEG preview, or a model's WAV behind
     Scenario's MP3 copy). `projection` is semantic
     metadata from the server, never a decoder guarantee or a filename inference.
+    `parent_id` is another result of the same job that this one was generated from,
+    such as the GLB behind a model's OBJ and maps; it is recorded, never inferred.
     """
 
     asset_id: str
@@ -532,9 +534,12 @@ class ResultAsset:
     texture_role: str | None = None
     source: str = "asset"
     projection: str | None = None
+    parent_id: str | None = None
 
     def __post_init__(self):
         _identity(self.asset_id)
+        if self.parent_id is not None and _identity(self.parent_id) == self.asset_id:
+            raise ValueError("A result cannot be its own parent")
         try:
             validate_result_name(self.name)
         except TransferError:
@@ -600,6 +605,13 @@ def _validate_results(results):
         {item.asset.name.casefold() for item in results}
     ) != len(results):
         raise ValueError("Result asset identities and filenames must be unique")
+    parents = {item.asset.asset_id: item.asset.parent_id for item in results}
+    for asset_id in parents:
+        seen = {asset_id}
+        while (asset_id := parents[asset_id]) is not None:
+            if asset_id not in parents or asset_id in seen:
+                raise ValueError("A result parent must be another result, without a cycle")
+            seen.add(asset_id)
 
 
 class LocalApplicationState(StrEnum):
@@ -768,6 +780,8 @@ def _decode(raw, scope, *, version=_VERSION):
         absent = {}
         if version < 10:
             absent.update(source="asset", projection=None)
+        if version < 12:
+            absent["parent_id"] = None
         if version in {2, 3}:
             absent["texture_role"] = None
         for item in raw_results:

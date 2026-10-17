@@ -411,17 +411,15 @@ model jobs and show the quoted target model. Saved `.blend` properties added by
 later interface work are separate from this database, and the upload database
 keeps its own version.
 
-Three open maintainer decisions would add persisted fields if adopted, each in a
-new schema version with its own upgrade rather than a new reading of existing rows:
+Three fields deferred here were decided before schema 12 shipped
+([#494](https://github.com/scenario-labs/blender-plugin/issues/494)):
 
-- An intent-level panorama purpose, needed only if live skybox assets lack the
-  `metadata.type` that projection depends on
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
-- A `first_frame` local-application purpose, if handing a saved image to Render
-  Video should become a durable application claim instead of a form binding
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
-- Each result's parent asset and file name, for exact binding of multi-file 3D
-  packages ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+- No intent-level panorama purpose: live skybox results declare the
+  `metadata.type` that projection depends on.
+- No `first_frame` local-application purpose: handing a saved image to Render
+  Video stays a form binding.
+- Each result's parent, but no file name, which no result carries:
+  schema 12 stores [`parent_id`](#result-parents).
 
 Live skybox results must also confirm `metadata.type`, `originalMimeType`, an
 `originalFileUrl` host inside the storage policy and a `Content-Length` on the
@@ -604,10 +602,20 @@ cloud records, and saves `remote`. The coordinator verifies the job first.
 already saved are left out without decoding history.
 
 Opening a schema 11 store upgrades it in one immediate transaction like earlier
-schemas: every row is decoded and rewritten with `claimed_at: null`, an unknown
-time that is never guessed, and Film upload associations and lane defaults are
-rechecked and preserved byte for byte. A row that already names a claim time, one
+schemas: every row is decoded and rewritten with `claimed_at: null` and each result's
+`parent_id: null`, unknown values that are never guessed, and Film upload associations
+and lane defaults are rechecked and preserved byte for byte. A row that already names a claim time, one
 invalid row or a failed commit leaves the schema 11 file unchanged. A schema 11
 build refuses the upgraded store as an unsupported format. The unit and installed tests
 rebuild `tests/fixtures/synthetic/jobs-schema11.sql`, a store written by the schema 11
 release's storage code, and check the upgrade, its rollback and refusal by a schema 11 reader.
+
+### Result parents
+
+Each result also records `parent_id`: the asset ID of another result of the same job
+that it was generated from, read from `metadata.parentId` in the same `assets.retrieve`
+response that describes it, such as the GLB behind a model's OBJ, MTL and maps. A
+parent outside the job, such as an input asset, or an unusable value is stored as
+`null`. The store refuses a parent outside the manifest, the result itself or a
+cycle. A later retrieval keeps the saved value, so lineage never refuses a download.
+Nothing reads it yet; 3D import does not bind files by parent.

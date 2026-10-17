@@ -37,22 +37,23 @@ def block(text, key, indent=0):
     return "\n".join(lines)
 
 
+def workflow_events(path):
+    events = []
+    for line in block(path.read_text(), "on").splitlines():
+        if (
+            line.strip()
+            and not line.lstrip().startswith("#")
+            and len(line) - len(line.lstrip()) == 2
+        ):
+            event = re.match(r"^  ([\w-]+):", line)
+            assert event, "Use plain, block-style workflow event keys"
+            events.append(event[1])
+    return events
+
+
 def pr_sources(root, workflows):
     """Follow checked-in reusable workflows and composite actions from PR callers."""
-    pending = []
-    for path in workflows:
-        events = []
-        for line in block(path.read_text(), "on").splitlines():
-            if (
-                line.strip()
-                and not line.lstrip().startswith("#")
-                and len(line) - len(line.lstrip()) == 2
-            ):
-                event = re.match(r"^  ([\w-]+):", line)
-                assert event, "Use plain, block-style workflow event keys"
-                events.append(event[1])
-        if "pull_request" in events:
-            pending.append(path)
+    pending = [path for path in workflows if "pull_request" in workflow_events(path)]
     assert pending, "Expected at least one pull_request workflow"
     found = set()
     while pending:
@@ -150,6 +151,13 @@ def test_unsupported_trigger_is_not_silently_skipped(tmp_path, trigger):
     workflow.write_text(trigger)
     with pytest.raises(AssertionError, match="block-style"):
         pr_sources(tmp_path, [workflow])
+
+
+@pytest.mark.parametrize("name", ["ci.yml", "pr-name.yml", "commitlint.yml"])
+def test_required_check_workflows_also_run_in_the_merge_queue(name):
+    # They report ci-ok, pr-title and commits, which the main rulesets require.
+    events = workflow_events(ROOT / ".github/workflows" / name)
+    assert {"pull_request", "merge_group"} <= set(events)
 
 
 def test_explicit_job_contexts_are_unique():
@@ -362,8 +370,9 @@ def test_any_other_pull_request_change_runs_native_checks(tmp_path, files):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The CI classifier executes on hosted Ubuntu bash")
-def test_pushes_always_run_native_checks(tmp_path):
-    assert classify(tmp_path, {"AGENTS.md": "# Changed\n"}, event="push") == "true"
+@pytest.mark.parametrize("event", ["push", "merge_group"])
+def test_pushes_and_merge_queue_groups_always_run_native_checks(tmp_path, event):
+    assert classify(tmp_path, {"AGENTS.md": "# Changed\n"}, event=event) == "true"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="The CI classifier executes on hosted Ubuntu bash")

@@ -240,10 +240,9 @@ full render-lane desktop acceptance.
   input. Recognized exclusivity wording ("mutually exclusive with", "can't be
   combined with") that involves a setting is listed at `MED`; other wording,
   such as Kling V3 Omni's 4K mode and reference-image count, is not reported.
-- Reversible mesh and panoramic World application exist as explicit synchronous
-  primitives. Full generation/history integration of in-place mesh edits remains
-  [#99](https://github.com/scenario-labs/blender-plugin/issues/99); panoramas
-  reach World through the Environment lane and saved-result approval.
+- Saved Edit 3D results apply in place only through the reviewed saved-result
+  command ([mesh application](MESH_APPLICATION.md)); panoramas reach World
+  through the Environment lane and saved-result approval.
 - In-place UV, retexture and rig application keeps the source's faces, so a
   result whose UV seam crosses a source face (for example a quad's diagonal)
   is refused, as is a color-only retexture without UV layers. A fit only scales
@@ -283,13 +282,14 @@ full render-lane desktop acceptance.
 - Several selected meshes upload as one combined file. Its result applies back
   to all of them only as **Replace active UVs**, **Replace textures** or
   **Attach rig**; replacing geometry, parts or animation needs one mesh per
-  upload (#99).
+  upload.
 - Attach rig can replace the skin of a mesh already skinned to an armature, but
   only one vertex-group Armature modifier is supported; armature-deform or bone
   parenting, other modifiers and shape keys are rejected. Apply animation copies
   returned clips only onto a rig with the same bone names and parents and a rest
   pose within 15 degrees per bone, correcting the keys for that difference;
-  retargeting clips across different skeletons is not available yet (#99).
+  retargeting clips across different skeletons is not available yet
+  (roadmap#674 G14).
 - Automatic Image-lane import and saved image and material application
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.

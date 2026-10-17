@@ -424,7 +424,7 @@ manifest uses the stricter rules without lineage;
 binding and generated-output ordering apply only when a caller supplies it.
 Undocumented provider file names are never used. Provider package shapes, SPZ
 versions and glTF delivery need live evidence, and this primary/alternate
-ordering is not a #99 edit policy.
+ordering labels results but never chooses an edit policy.
 
 ## Saved model package import
 
@@ -693,8 +693,8 @@ Several captured sources claim their scene instead; the job's saved mesh-source
 binding lists those objects in order. `retry_model_receipt` records only known
 success, never another replacement. See [session
 ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement). The command
-makes no service request. Retargeting across different skeletons stays open
-under #99.
+makes no service request. Retargeting across different skeletons is roadmap#674
+G14 work.
 
 ## Saved mesh edit approval
 
@@ -1030,8 +1030,10 @@ retained original together. Receipt-only recovery records success without
 attaching again. UI **Attach rig** and MCP `mesh_policy: RIG` use the same
 captured target and optional original-export target guards. Session status
 exposes `mesh_edit.rig`; history invalidation retires that status before
-dereferencing stale Blender data. Existing-rig retargeting and animation
-transfer remain under #99.
+dereferencing stale Blender data.
+[Apply returned animation](#apply-returned-animation) copies clips onto a
+matching existing rig; retargeting across different skeletons is roadmap#674 G14
+work.
 
 ### Replace an existing skin
 
@@ -1169,5 +1171,5 @@ pose by up to N°** in the job row until undo history changes.
 
 Bones are matched by name only. Clips from a different skeleton, such as another
 provider's or a rig whose rest pose differs by more than 15 degrees, are
-rejected; retargeting them stays open under #99. UI **Apply animation** and MCP
-`mesh_policy: ANIMATE` use the same captured target guards.
+rejected; retargeting them is roadmap#674 G14 work. UI **Apply animation** and
+MCP `mesh_policy: ANIMATE` use the same captured target guards.

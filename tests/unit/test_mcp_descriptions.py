@@ -100,6 +100,7 @@ EXPECTED = {
         "screenshot_viewport",
         "camera_path",
         "render_still",
+        "capture_views",
         "blender_api_help",
         "datablocks_summary",
     },

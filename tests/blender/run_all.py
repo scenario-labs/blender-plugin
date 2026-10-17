@@ -70,6 +70,7 @@ BASELINE = (
     "test_mcp_trained_models",
     "test_result_transfers",
     "test_local_capture",
+    "test_capture_views",
     "test_job_session",
     "test_preview_decode",
     # The file-modified mark itself; its other paths need the full suite's fixtures.

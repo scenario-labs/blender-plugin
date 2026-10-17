@@ -67,3 +67,13 @@ class McpConnectTests(unittest.TestCase):
             bpy.ops.scenario.mcp_connect(client="claude_code")
         self.assertEqual(claude.read_text(), "{ not json")
         self.assertEqual(sorted(p.name for p in self.home.iterdir()), [".claude.json"])
+
+    def test_a_failed_write_replaces_the_previous_report(self):
+        (self.home / ".claude.json").write_text("{}")
+        self.assertEqual(bpy.ops.scenario.mcp_connect(client="claude_code"), {"FINISHED"})
+        denied = PermissionError(13, "Permission denied")
+        with patch.object(submodule("mcp.client_setup"), "write", side_effect=denied):
+            with self.assertRaises(RuntimeError):
+                bpy.ops.scenario.mcp_connect(client="claude_code")
+        self.assertEqual(len(self.service.connect_report), 1)
+        self.assertIn("Claude Code: not changed", self.service.connect_report[0])

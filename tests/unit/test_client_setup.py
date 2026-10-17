@@ -143,6 +143,7 @@ def test_codex_file_without_the_table_gets_it_appended(tmp_path):
         ("cursor", ".cursor/mcp.json", "[]", "not a JSON object"),
         ("cursor", ".cursor/mcp.json", '{"mcpServers": []}', "mcpServers value"),
         ("codex", ".codex/config.toml", "model = ", "not valid TOML"),
+        ("codex", ".codex/config.toml", "mcp_servers = 1\n", "mcp_servers value"),
         (
             "codex",
             ".codex/config.toml",

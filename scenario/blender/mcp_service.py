@@ -122,7 +122,7 @@ def connect(key, home=None, environ=None):
     entry = client_setup.entry(key, url, _blender_python(), shim_path())
     try:
         written = client_setup.write(client, entry, url)
-    except client_setup.SetupError as error:
+    except (client_setup.SetupError, OSError) as error:
         connect_report[:] = [f"{client.label}: not changed, {error}"]
         raise
     lines = [f"{client.label}: wrote {client_setup.SERVER_NAME} to {written.path}", f"URL {url}"]

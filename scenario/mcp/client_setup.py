@@ -142,6 +142,9 @@ def merge_toml(text, server):
         before = tomllib.loads(text)
     except tomllib.TOMLDecodeError as error:
         raise SetupError(f"not valid TOML ({error}); fix or edit it by hand") from None
+    servers = before.get("mcp_servers", {})
+    if not isinstance(servers, dict):
+        raise SetupError("its mcp_servers value is not a table")
     ours = ("mcp_servers", SERVER_NAME)
     kept, skipping = [], False
     for line in text.splitlines(keepends=True):
@@ -158,7 +161,7 @@ def merge_toml(text, server):
     except tomllib.TOMLDecodeError:
         after = None
     expected = dict(before)
-    expected["mcp_servers"] = dict(before.get("mcp_servers", {}), **{SERVER_NAME: server})
+    expected["mcp_servers"] = dict(servers, **{SERVER_NAME: server})
     if after != expected:
         raise SetupError(
             f"its {SERVER_NAME} entry is not a plain [mcp_servers.{SERVER_NAME}] table; "

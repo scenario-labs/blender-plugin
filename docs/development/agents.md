@@ -18,6 +18,20 @@ They point to the same maintained guides and do not override root policy.
 
 Private notes belong in ignored `.claude/CLAUDE.local.md` or `CLAUDE.local.md`.
 
+## Project settings and MCP client
+
+`.claude/settings.json` holds only deny and ask rules, which apply without
+folder trust. It denies reading or printing `.env` and `.env*.local` files and
+any push that names `main` as its destination, including force updates and
+deletion. It asks before `make smoke`, the smoke tools' `submit`, `budget-run`
+and `upload` commands and the paid local MCP tools. Rules match the usual
+command text and are not a security boundary; the branch ruleset, CI and
+spending approval still apply. Keep personal allow rules in ignored
+`.claude/settings.local.json`. Root `.mcp.json` registers the local
+`scenario-blender` server for Claude Code, and `.codex/config.toml` the same
+server for Codex, disabled, as described in [client setup](../MCP.md#client-setup).
+`tests/unit/test_agent_settings.py` checks `.claude/settings.json` and `.mcp.json`.
+
 ## Shared skills and command validation
 
 Keep canonical skills in regular `.agents/skills/<name>/SKILL.md` files, with valid

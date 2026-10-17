@@ -103,10 +103,11 @@ def run_python(code):
     if not isinstance(result, dict):
         result = {"value": repr(result)}
     try:
-        text = json.dumps(result)
+        json.dumps(result)
     except (TypeError, ValueError):
         result = {str(key): repr(value) for key, value in result.items()}
-        text = json.dumps(result)
+    # Measured indented, as protocol.to_content sends it to the agent.
+    text = json.dumps(result, indent=1)
     if len(text) > RESULT_LIMIT:
         result = {
             "truncated": True,

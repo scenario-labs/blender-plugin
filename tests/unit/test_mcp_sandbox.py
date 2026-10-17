@@ -70,16 +70,18 @@ def test_large_result_is_reported_by_size_with_a_preview(fake_bpy):
     result = payload["result"]
     assert result["truncated"] is True
     assert result["result_chars"] > sandbox.RESULT_LIMIT
-    assert result["preview"].startswith('{"rows": ["xxx')
+    assert result["preview"].startswith('{\n "rows": [\n  "xxx')
     assert len(result["preview"]) == sandbox.RESULT_PREVIEW
     assert "The code ran" in result["note"] and "50,000" in result["note"]
     assert payload["stdout"] == "done\n" and "error" not in payload
 
 
 def test_result_at_the_limit_is_returned_whole(fake_bpy):
-    padding = sandbox.RESULT_LIMIT - len('{"v": ""}')
+    padding = sandbox.RESULT_LIMIT - len('{\n "v": ""\n}')
     result = sandbox.run_python(f"result['v'] = 'x' * {padding}")["result"]
     assert result == {"v": "x" * padding}
+    over = sandbox.run_python(f"result['v'] = 'x' * {padding + 1}")["result"]
+    assert over["truncated"] is True
 
 
 def test_unserializable_result_with_non_string_keys_is_repr_text(fake_bpy):

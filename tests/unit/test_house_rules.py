@@ -278,6 +278,69 @@ def test_em_dash_reports_each_line_and_skips_licence_texts_and_binaries(tmp_path
     assert found("em-dash", tmp_path, text, licence, binary) == [("docs/a.md", 2), ("docs/a.md", 3)]
 
 
+def test_markdown_wrap_reports_prose_that_can_break_after_column_80(tmp_path):
+    prose = " ".join(["word"] * 20)
+    lines = [
+        "---",
+        f"description: {prose}",
+        "---",
+        prose,
+        f"- {prose}",
+        f"> {prose}",
+        "a" * 80,
+        "a" * 78 + " " + "b" * 10,
+        "a" * 79 + "  ",
+        "a" * 70 + " https://example.com/" + "p" * 30,
+        "Run `" + "uv run pytest " * 8 + "`.",
+        "See [" + "link text " * 8 + "](https://example.com/page).",
+        "a" * 76 + ' <img src="badge.png" alt="build status badge">',
+        f"| {prose} |",
+        f"## {prose}",
+        f"#31 {prose}",
+        f"<p>{prose}</p>",
+        f"[ref]: https://example.com/{'x' * 80} title",
+        f"![{prose}](image.png)",
+        "```",
+        prose,
+        "```",
+        "<!-- tools:start -->",
+        prose,
+        "<!-- tools:end -->",
+        prose,
+    ]
+    doc = write(tmp_path, "docs/a.md", "\n".join(lines) + "\n")
+    text = write(tmp_path, "docs/a.txt", prose + "\n")
+    assert found("markdown-wrap", tmp_path, doc, text) == [
+        ("docs/a.md", 4),
+        ("docs/a.md", 5),
+        ("docs/a.md", 6),
+        ("docs/a.md", 26),
+    ]
+
+
+def test_markdown_wrap_skips_generated_rendered_and_vendored_markdown(tmp_path):
+    prose = " ".join(["word"] * 20) + "\n"
+    write(
+        tmp_path,
+        "skills-lock.json",
+        json.dumps({"skills": {"shared": {"skillPath": ".agents/skills/shared/SKILL.md"}}}),
+    )
+    skipped = [
+        write(tmp_path, name, prose)
+        for name in (
+            "CHANGELOG.md",
+            ".github/pull_request_template.md",
+            "tests/fixtures/README.md",
+            "docs/knowledge/a.md",
+            ".agents/skills/shared/SKILL.md",
+        )
+    ]
+    local = write(tmp_path, ".agents/skills/local/SKILL.md", prose)
+    assert found("markdown-wrap", tmp_path, *skipped, local) == [
+        (".agents/skills/local/SKILL.md", 1)
+    ]
+
+
 def test_bpy_boundary_covers_core_and_non_blender_mcp_modules(tmp_path):
     nested = write(tmp_path, "scenario/core/x.py", "def f():\n    import bpy\n")
     dotted = write(tmp_path, "scenario/core/jobs/y.py", "from mathutils.geometry import x\n")

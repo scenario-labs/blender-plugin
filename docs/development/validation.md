@@ -398,8 +398,9 @@ availability.
   license content. Keep root `LICENSE` and `scenario/LICENSE` identical.
 - For UI changes, exercise native behavior and inspect captured screenshots.
   Report actual Blender/OS versions and limitations.
-- For instruction or documentation changes, check links, symlinks, commands and
-  the diff. Do not run the full Blender suite just to populate a test count.
+- For instruction or documentation changes, check links, symlinks, commands,
+  `make check-rules` and the diff. Do not run the full Blender suite just to
+  populate a test count.
 - Smoke tests, generation, prompt helpers and scene design can spend credits.
   Do not run them as part of a documentation command.
 

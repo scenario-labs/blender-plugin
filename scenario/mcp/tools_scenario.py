@@ -11,7 +11,7 @@ from pathlib import Path
 
 import bpy
 
-from ..blender import file_state, generation, runtime, trained_defaults, trained_models
+from ..blender import file_state, generation, runtime, selection, trained_defaults, trained_models
 from ..blender import result_previews as preview_tiles
 from ..blender.props import GENERATION_LANES as NATIVE_LANES
 from ..core import audio_waveform
@@ -1754,7 +1754,9 @@ def generate(args):
         "prompt": str(body.get("prompt") or ""),
         "model_name": record.name,
         "source": "mcp",
-        "target_objects": [o.name for o in bpy.context.selected_objects if o.type == "MESH"],
+        "target_objects": [
+            o.name for o in selection.selected_objects(bpy.context) if o.type == "MESH"
+        ],
     }
     if render_request is not None:
         meta.update(generation.request_meta(bpy.context, lane, render_request))

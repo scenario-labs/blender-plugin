@@ -95,6 +95,10 @@ class RuntimeState:
         self.history_saved_ids = None
         self.mcp = None
         self.mcp_error = ""
+        # Online access the window session's server last followed; None until it starts
+        # with the extension, so background Blender starts only its explicit command.
+        self.mcp_online = None
+        self.mcp_stopped_by_user = False  # Stop MCP server: online access changes keep it off.
         # Files the user chose in the extension's file fields this session; local MCP may
         # upload them (reference_uploads.agent_upload_path). Main thread only.
         self.chosen_files = ChosenFiles()
@@ -105,6 +109,8 @@ class RuntimeState:
     SESSION_ATTRS = (
         "mcp",
         "mcp_error",
+        "mcp_online",
+        "mcp_stopped_by_user",
         "cli_handle",
         "composer",
         "composer_modal_running",

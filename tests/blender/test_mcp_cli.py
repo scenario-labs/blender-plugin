@@ -10,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import time
+import types
 import unittest
 import urllib.error
 import urllib.request
@@ -18,7 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bpy
-from helpers import submodule
+from helpers import addon_name, submodule
 
 
 class McpCliTests(unittest.TestCase):
@@ -79,7 +80,121 @@ class McpCliTests(unittest.TestCase):
             with self.subTest(signal=stop_signal):
                 self._exercise_cli(stop_signal)
 
-    def _exercise_cli(self, stop_signal):
+    @unittest.skipIf(os.name == "nt", "POSIX signal shutdown; Windows acceptance is separate")
+    def test_cli_reads_the_selection_of_a_loaded_file(self):
+        # A saved file read with --background gives the command a context without
+        # selected_objects or active_object; the summary reads them from the view layer.
+        with tempfile.TemporaryDirectory() as folder:
+            path = str(Path(folder) / "selection.blend")
+            script = (
+                "import bpy, sys\n"
+                "for obj in bpy.context.view_layer.objects:\n"
+                "    obj.select_set(obj.type in {'MESH', 'CAMERA'})\n"
+                "bpy.context.view_layer.objects.active = bpy.data.objects['Camera']\n"
+                "bpy.ops.wm.save_as_mainfile(filepath=sys.argv[-1])\n"
+            )
+            subprocess.run(
+                [
+                    bpy.app.binary_path,
+                    "--background",
+                    "--factory-startup",
+                    "--python-expr",
+                    script,
+                    "--",
+                    path,
+                ],
+                env=self.child_environment(),
+                capture_output=True,
+                check=True,
+                timeout=60,
+            )
+            summary = json.loads(
+                self._exercise_cli(signal.SIGTERM, blend=path)["result"]["content"][0]["text"]
+            )
+        self.assertEqual(summary["file"], path)
+        self.assertEqual(sorted(summary["selected"]), ["Camera", "Cube"])
+        self.assertEqual(summary["selected_count"], 2)
+        self.assertEqual(summary["active"], "Camera")
+
+    def test_mesh_export_runs_in_a_command_on_a_loaded_file(self):
+        # Blender's glTF exporter reads context.active_object itself, which a
+        # command on a file loaded with --background lacks.
+        script = (
+            "import bpy, importlib\n"
+            "def probe(argv):\n"
+            f"    mesh_export = importlib.import_module({addon_name() + '.blender.mesh_export'!r})\n"
+            "    mesh_export.export_glb(bpy.context, [bpy.data.objects['Cube']], path=argv[0])\n"
+            "    return 0\n"
+            "bpy.utils.register_cli_command('scenario_test_export', probe)\n"
+        )
+        with tempfile.TemporaryDirectory() as folder:
+            blend, glb = str(Path(folder) / "export.blend"), Path(folder) / "export.glb"
+            subprocess.run(
+                [
+                    bpy.app.binary_path,
+                    "--background",
+                    "--factory-startup",
+                    "--python-expr",
+                    "import bpy, sys; bpy.ops.wm.save_as_mainfile(filepath=sys.argv[-1])",
+                    "--",
+                    blend,
+                ],
+                env=self.child_environment(),
+                capture_output=True,
+                check=True,
+                timeout=60,
+            )
+            run = subprocess.run(
+                [
+                    bpy.app.binary_path,
+                    "--background",
+                    blend,
+                    "--python-expr",
+                    script,
+                    "--command",
+                    "scenario_test_export",
+                    str(glb),
+                ],
+                env=self.child_environment(),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertGreater(glb.stat().st_size, 0)
+
+    def test_selection_reads_the_view_layer_without_screen_members(self):
+        selection = submodule("blender.selection")
+        layer = bpy.context.view_layer
+        mesh = bpy.data.meshes.new("Selection probe")
+        objects = [bpy.data.objects.new(f"Selection probe {i}", mesh) for i in range(3)]
+        selected = [obj for obj in layer.objects if obj.select_get()]
+        active = layer.objects.active
+        try:
+            for obj in objects:
+                layer.id_data.collection.objects.link(obj)
+            layer.update()  # a base can be selected once the view layer has evaluated it
+            for obj in layer.objects:
+                obj.select_set(obj in objects[:2])
+            layer.objects.active = objects[1]
+            headless = types.SimpleNamespace(view_layer=layer)
+            self.assertEqual(selection.selected_objects(headless), objects[:2])
+            self.assertIs(selection.active_object(headless), objects[1])
+            # On the desktop the context's own members win.
+            desktop = types.SimpleNamespace(
+                view_layer=layer, selected_objects=[objects[2]], active_object=None
+            )
+            self.assertEqual(selection.selected_objects(desktop), [objects[2]])
+            self.assertIsNone(selection.active_object(desktop))
+        finally:
+            for obj in objects:
+                bpy.data.objects.remove(obj)
+            bpy.data.meshes.remove(mesh)
+            for obj in selected:
+                obj.select_set(True)
+            layer.objects.active = active
+
+    def _exercise_cli(self, stop_signal, blend=None):
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
@@ -89,6 +204,7 @@ class McpCliTests(unittest.TestCase):
                 [
                     bpy.app.binary_path,
                     "--background",
+                    *([blend] if blend else []),
                     "--online-mode",
                     "--command",
                     "scenario_blender",
@@ -145,6 +261,7 @@ class McpCliTests(unittest.TestCase):
                 with socket.socket() as closed:
                     closed.settimeout(1)
                     self.assertNotEqual(closed.connect_ex(("127.0.0.1", port)), 0)
+                return scene
             finally:
                 if process.poll() is None:
                     process.kill()

@@ -222,8 +222,8 @@ uv run --locked --no-env-file python tools/prepare_site_release.py --output work
 Use a fresh output directory. Then pass its `inventory.json` to `make site`.
 Offline orchestration tests cover publication races and retry byte preservation.
 0.10.0 recorded HTTPS delivery and positive release attestations (see its
-[publication record](maintenance/release-acceptance.md#publication)); an HTTPS
-update between two published releases, with state preservation, is in #440.
+[publication record](maintenance/release-acceptance.md#publication)); the next
+release was the first delivered as an HTTPS update from a published one (#440).
 
 ### Select retained releases offline
 

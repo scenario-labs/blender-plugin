@@ -663,14 +663,27 @@ explicitly request them with `False`. This option stays unchanged on every page.
 Job IDs use the same validation as retrieval, so malformed or padded IDs fail
 the listing. Unknown response fields/statuses are preserved. Listings are not
 server snapshots; retrieve a known remote ID again before acting on its state.
+`jobs` also takes a `job_types` list (1 to 8 types SDK 2.2.0 accepts, sent
+comma-separated). For recovery candidates,
+`SDKAdapter.recent_jobs(job_types=..., workflow_id=...)` reads two pages of 100
+by default and at most 5, with the same checks, and returns the rows with
+`complete` false when it stops at its limit instead of failing.
 
-The inspected SDK has no dedicated lookup by client request identity or explicit
-idempotency parameter for model/workflow submission. Generic extension parameters
-do not establish server support for either. A listing of similar inputs is only
-a set of candidates, not proof of which job belongs to an uncertain submission.
-Persist scope and request identity before dispatch; poll a known remote ID, but
-keep a lost-ID submission uncertain unless authoritative correlation is available.
-Never resolve an empty or ambiguous listing by automatically submitting again.
+The inspected SDK 2.2.0 and 2.3.0 have no lookup by client request identity and
+no idempotency parameter for `generate.run_model`, `workflows.run`,
+`generate.prompt` or `generate.translate`, and the client sends no idempotency
+header; the API reference documents none either. Generic extension parameters do
+not establish server support for either, so there is no raw fallback to add. A
+listing of similar inputs is only a set of candidates, not proof of which job
+belongs to an uncertain submission. Persist scope and request identity before
+dispatch; poll a known remote ID, and keep a lost-ID submission uncertain until a
+person links the job it created: a confirmed choice that a fresh `jobs.retrieve`
+verifies (exact ID, job type, model or workflow, project and creation time, not
+already saved in the scope) is the only correlation
+([candidates and links](JOB_COORDINATOR.md#unconfirmed-submission-candidates-and-links)).
+Never resolve an empty or ambiguous listing by picking a job or submitting again.
+An SDK contract test records this gap and fails when the SDK starts sending an
+idempotency header or exposes a reference parameter.
 
 The job action documentation limits cancellation to inference jobs ("Today only
 cancel on inference jobs is supported", in both the public API reference and the

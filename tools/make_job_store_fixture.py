@@ -1,13 +1,14 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Write the schema 9 job-store fixture with the predecessor's own storage code.
+"""Write a schema 9 or schema 11 job-store fixture with the predecessor's own storage code.
 
 The committed `tests/fixtures/synthetic/jobs-schema9.sql` was produced by
 extracting `scenario/` from commit b57c398f (a schema 9 main revision) and
-running this script against it. It uses only that code's public store API, so
-the upgrade tests rebuild a database the previous release candidate really wrote.
-The fixture is the SQL dump of that database plus its two header pragmas, because
-the repository does not commit database files:
+running this script against it; `jobs-schema11.sql` came the same way from
+commit 861d554e (the schema 11 release). It uses only that code's public
+store API, so the upgrade tests rebuild a database the previous release really
+wrote. Each fixture is the SQL dump of that database plus its two header pragmas,
+because the repository does not commit database files:
 
     git archive b57c398f scenario | tar -x -C <empty directory>
     uv run --locked --no-env-file python tools/make_job_store_fixture.py \
@@ -30,14 +31,18 @@ from dataclasses import replace
 from pathlib import Path
 
 SERVICE = "https://service.example.invalid/v1"
-# REUSE-IgnoreStart: the fixture header below is data, not this file's licence.
-HEADER = (
-    "-- SPDX-FileCopyrightText: 2026 Scenario Inc.\n"
-    "-- SPDX-License-Identifier: GPL-3.0-or-later\n"
-    # REUSE-IgnoreEnd
-    "-- Schema 9 job store written by tools/make_job_store_fixture.py with the\n"
-    "-- predecessor's storage code; see tests/fixtures/README.md. Synthetic data only.\n"
-)
+SCHEMAS = frozenset({9, 11})
+
+
+def header(version):
+    return (
+        # REUSE-IgnoreStart: the fixture header below is data, not this file's licence.
+        "-- SPDX-FileCopyrightText: 2026 Scenario Inc.\n"
+        "-- SPDX-License-Identifier: GPL-3.0-or-later\n"
+        # REUSE-IgnoreEnd
+        f"-- Schema {version} job store written by tools/make_job_store_fixture.py with the\n"
+        "-- predecessor's storage code; see tests/fixtures/README.md. Synthetic data only.\n"
+    )
 
 
 def digest(value):
@@ -57,8 +62,8 @@ def load(source):
     for module in modules.values():
         if not Path(module.__file__).resolve().is_relative_to(source):
             raise ValueError("Storage was imported from outside the selected source")
-    if modules["store"]._VERSION != 9:
-        raise ValueError("This fixture records schema 9 only")
+    if modules["store"]._VERSION not in SCHEMAS:
+        raise ValueError("This fixture records schema 9 or schema 11 only")
     return modules
 
 
@@ -252,6 +257,32 @@ def write(modules, output):
     advance(store, deliver(store, jobs, transfers, cloud, (jpeg,)), state.READY)
     elsewhere = jobs.JobStore(output, other)
     elsewhere.create(replace(template, request_id="a-prepared", scope=other))
+    if jobs._VERSION >= 11:
+        # Schema 10 lane defaults and declared originals; schema 11 WAV originals.
+        store.set_trained_default(
+            jobs.TrainedModelDefault(
+                "image", "stack", "model_base", (jobs.TrainedModelPick("model_lora", 0.75),)
+            ),
+            expected_revision=0,
+        )
+        wav = jobs.ResultAsset("asset-wav", "000-wav.wav", "audio/wav", source="original")
+        panorama = jobs.ResultAsset(
+            "asset-pano",
+            "001-pano.exr",
+            "image/x-exr",
+            source="original",
+            projection="equirectangular",
+        )
+        originals = advance(
+            store,
+            create("o-originals"),
+            state.SUBMITTING,
+            state.REMOTE,
+            state.SUCCEEDED,
+            remote_job_id="remote-o",
+        )
+        advance(store, deliver(store, jobs, transfers, originals, (wav, panorama)), state.READY)
+        advance(store, create("p-uncertain-model"), state.SUBMITTING, state.UNCERTAIN)
 
 
 def dump(database):
@@ -261,7 +292,7 @@ def dump(database):
         application = connection.execute("PRAGMA application_id").fetchone()[0]
         statements = list(connection.iterdump())
     return (
-        HEADER
+        header(version)
         + "".join(statement + "\n" for statement in statements)
         + f"PRAGMA application_id={application};\nPRAGMA user_version={version};\n"
     )

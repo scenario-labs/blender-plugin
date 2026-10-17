@@ -3290,7 +3290,6 @@ class ModelGenerationTests(unittest.TestCase):
                         def call(name, arguments):
                             response = connection.post(
                                 url,
-                                headers={"Authorization": "Bearer synthetic-cli-token"},
                                 json={
                                     "jsonrpc": "2.0",
                                     "id": 1,
@@ -3326,7 +3325,7 @@ class ModelGenerationTests(unittest.TestCase):
             patch.object(server_type, "serve_blocking", serve_once),
             patch.object(service, "McpServer", side_effect=ephemeral_server),
         ):
-            self.assertEqual(service.cli(["--token", "synthetic-cli-token"]), 0)
+            self.assertEqual(service.cli([]), 0)
         self.assertEqual((bpy.context.window, bpy.context.scene, bpy.context.view_layer), context)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         self.assertEqual(len(completed), 1)

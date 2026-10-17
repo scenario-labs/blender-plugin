@@ -226,12 +226,12 @@ not delete cloud jobs or assets.
 Extension logs go to Blender's console; it does not configure its own log file.
 A terminal or host application may retain that output. Diagnostics can include
 file paths, job identifiers and service errors; review them before sharing.
-Agent setup snippets contain the local session token. Do not assume logs,
-clipboard history or screenshots are safe to publish without inspection.
+Do not assume logs, clipboard history or screenshots are safe to publish without
+inspection.
 
 The clipboard is written by Copy buttons (asset IDs, errors and MCP setup) and by
 copy/cut in the composer; it is read when you paste into the composer. Clipboard
-managers may retain copied tokens or text.
+managers may retain copied text.
 
 ## The local MCP server
 
@@ -245,11 +245,9 @@ and refuses any other address, using the port selected in Preferences (default
 `127.0.0.1`, `localhost` or `[::1]` as its `Host`, which stops a web page that
 rebinds its own domain to this computer from reading even the server's version
 status, and the server closes a connection that sends nothing for 60 seconds while
-it waits to read a request. Calls
-require the local session token. Blender normally generates it for the session;
-an explicitly supplied token must be changed by its owner. This is a local
-connection, not Scenario's API credential, and programs holding it can read the
-scene, take captures and request generation that spends your Scenario credits.
+it waits to read a request. Calls need no credential: any program on this computer,
+under any account, can read the scene, take captures and request generation that
+spends your Scenario credits.
 An agent can send a local file to your Scenario account only when the extension
 saved it in its own folders or you chose it in Blender during this session, in a
 reference **Upload** file browser, the Render Video first-frame field or a workflow

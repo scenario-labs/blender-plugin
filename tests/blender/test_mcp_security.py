@@ -268,7 +268,7 @@ class McpUploadPolicyTests(unittest.TestCase):
             return {"ok": True}
 
         registry.add(protocol.ToolSpec("set_first_frame", "Fixture", {}, set_first_frame))
-        server = self.server_module.McpServer("127.0.0.1", 0, "fixture-token", registry, {})
+        server = self.server_module.McpServer("127.0.0.1", 0, registry, {})
         message = {
             "id": 1,
             "method": "tools/call",

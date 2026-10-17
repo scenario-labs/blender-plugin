@@ -14,11 +14,8 @@ sandbox_mode = "workspace-write"
 network_access = true
 
 # Enable after starting the extension's MCP server in an isolated Blender profile.
-# The helper reads the session token from SCENARIO_BLENDER_TOKEN in .env.local;
-# start Codex from the checkout root. Never put the token in this file.
-# See docs/MCP.md#repository-checkouts and AGENTS.md for paid-action authorization.
+# See AGENTS.md for paid-action authorization.
 [mcp_servers.scenario-blender]
 url = "http://127.0.0.1:9876/mcp"
-http_headers_helper = "uv run --locked --env-file .env.local python -m tools.mcp_token_header"
 enabled = false
 required = false

@@ -10,7 +10,6 @@ import fnmatch
 import importlib.util
 import json
 import re
-import tomllib
 from pathlib import Path
 
 import pytest
@@ -225,15 +224,10 @@ def test_every_paid_local_mcp_tool_asks_first():
     assert asked == paid
 
 
-def test_mcp_template_matches_documented_client_setup_without_a_token():
+def test_mcp_template_matches_documented_client_setup():
     assert set(MCP) == {"mcpServers"}
     assert set(MCP["mcpServers"]) == {SERVER}
-    server = MCP["mcpServers"][SERVER]
     doc = (ROOT / "docs/MCP.md").read_text(encoding="utf-8")
     documented = re.search(r"claude mcp add --transport (\S+) (\S+) (\S+)", doc)
     assert documented[2] == SERVER
-    codex = tomllib.loads((ROOT / ".codex/config.toml").read_text(encoding="utf-8"))
-    helper = codex["mcp_servers"][SERVER]["http_headers_helper"]
-    # Only the helper sets Authorization, so Claude Code reruns it on authentication errors.
-    assert server == {"type": documented[1], "url": documented[3], "headersHelper": helper}
-    assert helper in doc
+    assert MCP["mcpServers"][SERVER] == {"type": documented[1], "url": documented[3]}

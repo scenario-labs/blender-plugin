@@ -15,7 +15,7 @@ through [Support](SUPPORT.md); report vulnerabilities through
 belong in the [Scenario documentation](https://docs.scenario.com).
 
 This repository is public and permanent. Keep issue text, PR text, commits and
-artifacts publicly shareable: no credentials or MCP bearer tokens, signed asset
+artifacts publicly shareable: no credentials, signed asset
 URLs, private account/project/workspace identifiers, internal repositories or
 hostnames, personal paths, agent session IDs or spend anecdotes. Review generated
 fixtures, screenshots and logs before sharing them.
@@ -215,16 +215,6 @@ the default unit-test collection and are not added to PR workflows.
 | `SCENARIO_SHOT_SOURCE` | `tests/blender/test_shot_planner.py` | `=1` loads the shot planner from source rather than the installed extension; unsuitable as evidence of ZIP acceptance | Test tools |
 | `SCHEMA_CACHE` | `tools/audit_payloads.py` | Optional private persistent schema-cache root; otherwise each run uses a new temporary cache. Live subdirectories are partitioned by credentials, project and API base URL | Developer |
 
-`SCENARIO_BLENDER_TOKEN` supplies the local MCP bearer token to the headless
-`scenario_blender` command and the generated Codex client snippet. In
-`.env.local`, it feeds `tools/mcp_token_header.py`, the
-[headers helper](docs/MCP.md#repository-checkouts) of the repository's Claude
-Code and Codex entries. An explicit
-`--token` wins over this environment value. With neither configured, the command
-generates and displays a session token; supplied tokens are hidden in its startup
-banner. This is separate from Scenario API authentication. Empty or malformed
-explicit tokens are rejected rather than silently replaced.
-
 A project ID is **not required for API-key authentication**. Leave the optional
 project variable blank to use the API key’s default scope, or supply a project ID
 to select the intended project explicitly. Project-selection tests may require
@@ -353,7 +343,7 @@ or reuses a shell-selected profile.
 
 The default **baseline** covers registration defaults and paths,
 fixture-driven generation events, image/material/GLB import, installed core/MCP
-dependency imports, offline generation gating and authenticated MCP. A scene-tool
+dependency imports, offline generation gating and loopback MCP. A scene-tool
 request also checks that Blender work runs on the main thread. The runner then
 checks disable/re-enable. External socket connections are forbidden and recorded
 as failures even if application code catches the exception; loopback is allowed

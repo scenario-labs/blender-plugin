@@ -2,8 +2,7 @@
   "mcpServers": {
     "scenario-blender": {
       "type": "http",
-      "url": "http://127.0.0.1:9876/mcp",
-      "headersHelper": "uv run --locked --env-file .env.local python -m tools.mcp_token_header"
+      "url": "http://127.0.0.1:9876/mcp"
     }
   }
 }

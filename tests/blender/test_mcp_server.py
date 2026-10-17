@@ -14,11 +14,9 @@ from unittest.mock import patch
 from helpers import submodule
 
 
-def post(url, token, payload, method="POST", extra_headers=None):
+def post(url, payload, method="POST", extra_headers=None):
     data = json.dumps(payload).encode() if payload is not None else None
     headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
     headers.update(extra_headers or {})
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
@@ -46,7 +44,7 @@ class McpServerTests(unittest.TestCase):
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
         self.server = server_mod.McpServer(
-            "127.0.0.1", port, "tok", reg, {"name": "test", "version": "0"}, timeout=5.0
+            "127.0.0.1", port, reg, {"name": "test", "version": "0"}, timeout=5.0
         )
         host, port = self.server.start()
         self.url = f"http://{host}:{port}/mcp"
@@ -67,7 +65,6 @@ class McpServerTests(unittest.TestCase):
     def test_initialize_list_and_call_over_http(self):
         status, body = post(
             self.url,
-            "tok",
             {
                 "jsonrpc": "2.0",
                 "id": 1,
@@ -77,13 +74,10 @@ class McpServerTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(body["result"]["serverInfo"]["name"], "test")
-        status, body = post(
-            self.url, "tok", {"jsonrpc": "2.0", "method": "notifications/initialized"}
-        )
+        status, body = post(self.url, {"jsonrpc": "2.0", "method": "notifications/initialized"})
         self.assertEqual(status, 202)
         status, body = post(
             self.url,
-            "tok",
             {
                 "jsonrpc": "2.0",
                 "id": 2,
@@ -93,15 +87,13 @@ class McpServerTests(unittest.TestCase):
         )
         self.assertEqual(json.loads(body["result"]["content"][0]["text"]), {"echo": "hi"})
 
-    def test_auth_and_methods(self):
-        self.assertEqual(
-            post(self.url, None, {"jsonrpc": "2.0", "id": 1, "method": "ping"})[0], 401
-        )
-        self.assertEqual(
-            post(self.url, "wrong", {"jsonrpc": "2.0", "id": 1, "method": "ping"})[0], 401
-        )
-        self.assertEqual(post(self.url, "tok", None, method="GET")[0], 405)
-        status, body = post(self.url.replace("/mcp", "/health"), None, None, method="GET")
+    def test_methods_need_no_authorization(self):
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        self.assertEqual(post(self.url, ping)[0], 200)
+        older_setup = {"Authorization": "Bearer from-an-older-setup"}
+        self.assertEqual(post(self.url, ping, extra_headers=older_setup)[0], 200)
+        self.assertEqual(post(self.url, None, method="GET")[0], 405)
+        status, body = post(self.url.replace("/mcp", "/health"), None, method="GET")
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
 
@@ -113,7 +105,6 @@ class McpServerTests(unittest.TestCase):
         self.server.timeout = 0.3
         status, body = post(
             self.url,
-            "tok",
             {
                 "jsonrpc": "2.0",
                 "id": 3,
@@ -134,7 +125,7 @@ class McpServerTests(unittest.TestCase):
         self.server.registry.get("echo").handler = lambda args: mutations.append("executed")
         message = {"id": 1, "method": "tools/call", "params": {"name": "echo"}}
         with ThreadPoolExecutor(max_workers=1) as worker:
-            response = worker.submit(post, self.url, "tok", message)
+            response = worker.submit(post, self.url, message)
             deadline = time.monotonic() + 5
             while self.server._queue.empty() and time.monotonic() < deadline:
                 time.sleep(0.001)
@@ -155,7 +146,6 @@ class McpServerTests(unittest.TestCase):
                     self.assertEqual(
                         post(
                             self.url,
-                            "tok",
                             ping if method == "POST" else None,
                             method=method,
                             extra_headers={"Origin": origin},
@@ -163,21 +153,19 @@ class McpServerTests(unittest.TestCase):
                         403,
                     )
         self.assertEqual(
-            post(self.url, "tok", ping, extra_headers={"Origin": "http://127.0.0.1:39876"})[0], 200
+            post(self.url, ping, extra_headers={"Origin": "http://127.0.0.1:39876"})[0], 200
         )
-        self.assertEqual(post(self.url, "tok", ping)[0], 200)
-        self.assertEqual(post(self.url, "tök", ping)[0], 401)
+        self.assertEqual(post(self.url, ping)[0], 200)
         self.assertEqual(
             post(
                 self.url.replace("/mcp", "/health"),
-                None,
                 None,
                 method="GET",
                 extra_headers={"Origin": "https://evil.example"},
             )[0],
             403,
         )
-        self.assertEqual(post(self.url, "tok", None, method="OPTIONS")[0], 403)
+        self.assertEqual(post(self.url, None, method="OPTIONS")[0], 403)
 
     def test_origin_rejection_sends_response_before_draining_delayed_body(self):
         finished = threading.Event()
@@ -197,7 +185,7 @@ class McpServerTests(unittest.TestCase):
         ):
             client.sendall(
                 b"POST /mcp HTTP/1.1\r\nHost: localhost\r\n"
-                b"Authorization: Bearer tok\r\nOrigin: https://evil.example\r\n"
+                b"Origin: https://evil.example\r\n"
                 b"Content-Length: 5\r\n\r\n"
             )
             response = http.client.HTTPResponse(client)
@@ -218,7 +206,6 @@ class McpServerTests(unittest.TestCase):
         address = urlsplit(self.url)
         for headers, status in [
             ([("Origin", "http://localhost"), ("Origin", "https://evil.example")], 403),
-            ([("Authorization", "Bearer tok"), ("Authorization", "Bearer wrong")], 401),
         ]:
             connection = http.client.HTTPConnection(address.hostname, address.port, timeout=5)
             try:
@@ -234,15 +221,13 @@ class McpServerTests(unittest.TestCase):
             finally:
                 connection.close()
 
-    def host_request(self, method, path, hosts, *, token="tok", port=None):
+    def host_request(self, method, path, hosts, *, port=None):
         """Send one request with exactly these Host headers; return (status, JSON body)."""
         connection = http.client.HTTPConnection("127.0.0.1", port or self.server.port, timeout=5)
         try:
             connection.putrequest(method, path, skip_host=True, skip_accept_encoding=True)
             for host in hosts:
                 connection.putheader("Host", host)
-            if token:
-                connection.putheader("Authorization", f"Bearer {token}")
             body = b"" if method != "POST" else json.dumps({"id": 1, "method": "ping"}).encode()
             connection.putheader("Content-Length", str(len(body)))
             connection.endheaders(body)
@@ -276,7 +261,7 @@ class McpServerTests(unittest.TestCase):
         port = self.server.port
         for host in ("localhost", f"localhost:{port}", "127.0.0.1", f"[::1]:{port}", "[::1]"):
             with self.subTest(host=host):
-                status, body = self.host_request("GET", "/health", [host], token=None)
+                status, body = self.host_request("GET", "/health", [host])
                 self.assertEqual(status, 200)
                 self.assertTrue(body["ok"])
                 status, body = self.host_request("POST", "/mcp", [host])
@@ -286,7 +271,7 @@ class McpServerTests(unittest.TestCase):
         server_mod = submodule("mcp.server")
         self.assertEqual(server_mod.IDLE_TIMEOUT, 60.0)
         idle = server_mod.McpServer(
-            "127.0.0.1", 0, "tok", self.server.registry, {}, timeout=5.0, idle_timeout=0.2
+            "127.0.0.1", 0, self.server.registry, {}, timeout=5.0, idle_timeout=0.2
         )
         idle.start()
         try:
@@ -303,4 +288,4 @@ class McpServerTests(unittest.TestCase):
         server_mod = submodule("mcp.server")
         for host in ("0.0.0.0", "192.168.1.20", "::", "localhost"):
             with self.subTest(host=host), self.assertRaisesRegex(ValueError, "binds only"):
-                server_mod.McpServer(host, 0, "tok", self.server.registry, {})
+                server_mod.McpServer(host, 0, self.server.registry, {})

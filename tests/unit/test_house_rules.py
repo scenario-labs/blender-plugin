@@ -318,6 +318,14 @@ def test_markdown_wrap_reports_prose_that_can_break_after_column_80(tmp_path):
     ]
 
 
+def test_markdown_wrap_closes_a_fence_only_with_its_own_marker(tmp_path):
+    prose = " ".join(["word"] * 20)
+    lines = ["````markdown", "```", prose, "````", prose, "~~~", "```", prose, "~~~"]
+    lines += ["```inline``` code", prose]
+    doc = write(tmp_path, "docs/a.md", "\n".join(lines) + "\n")
+    assert found("markdown-wrap", tmp_path, doc) == [("docs/a.md", 5), ("docs/a.md", 11)]
+
+
 def test_markdown_wrap_skips_generated_rendered_and_vendored_markdown(tmp_path):
     prose = " ".join(["word"] * 20) + "\n"
     write(

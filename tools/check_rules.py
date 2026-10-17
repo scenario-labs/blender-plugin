@@ -226,7 +226,7 @@ MARKDOWN_WIDTH = 80
 # release-please writes the changelog, GitHub renders line breaks in PR and issue
 # bodies, a test parses the fixture README and evidence records stay unedited.
 MARKDOWN_UNWRAPPED = ("CHANGELOG.md", ".github/", "tests/fixtures/", "docs/knowledge/")
-_FENCE = re.compile(r"^\s*(?:`{3,}|~{3,})")
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 _GENERATED = re.compile(r"^<!-- [\w-]+:(start|end) -->")
 # Table rows, lines starting with # (Python-Markdown reads "#31" as a heading),
 # link definitions, HTML and image-only lines cannot wrap.
@@ -389,14 +389,17 @@ def markdown_wrap(files, root):
         if not shown.endswith(".md") or (name or "").startswith(skipped):
             continue
         front = bool(lines) and lines[0].strip() == "---"
-        fence = generated = False
+        fence, generated = None, False
         for number, line in enumerate(lines, 1):
+            fenced = _FENCE.match(line)
             if front:
                 front = number == 1 or line.strip() != "---"
-            elif _FENCE.match(line):
-                fence = not fence
             elif fence:
-                continue
+                # Only the opening character, at least as many times, closes a fence.
+                if fenced and fenced[1].startswith(fence) and not fenced[2].strip():
+                    fence = None
+            elif fenced and not (fenced[1][0] == "`" and "`" in fenced[2]):
+                fence = fenced[1]
             elif marker := _GENERATED.match(line):
                 generated = marker[1] == "start"
             elif not (generated or _UNWRAPPABLE.match(line)) and (

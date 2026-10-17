@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
 ifdef BLENDER
 export BLENDER
 endif
@@ -11,9 +13,11 @@ UV ?= uv
 LINT_PATHS ?= .
 SMOKE_ARGS ?= --help
 
-.PHONY: sync test smoke test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules docs site hooks images images-check
+.PHONY: sync test smoke test-blender build repo install install-isolated gui-check lint format knowledge mcp-docs check-rules lint-licence docs site hooks images images-check
 check-rules:
 	$(UV) run --locked --no-env-file python tools/check_rules.py
+lint-licence:
+	$(UV) run --locked --no-env-file reuse lint
 knowledge:
 	$(UV) run --locked --no-env-file python tools/check_knowledge.py
 sync:

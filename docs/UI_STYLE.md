@@ -1,6 +1,10 @@
 # Scenario for Blender: UI style guide
 
-The N-panel is drawn with Blender's `UILayout`, so it wears the user's Blender theme (colours, corner radius, fonts). We cannot change those; what we control is structure, spacing, wording and icons. This guide keeps the whole plugin coherent. The floating composer is custom gpu/blf drawing and mirrors the same language.
+The N-panel is drawn with Blender's `UILayout`, so it wears the user's Blender
+theme (colours, corner radius, fonts). We cannot change those; what we control
+is structure, spacing, wording and icons. This guide keeps the whole plugin
+coherent. The floating composer is custom gpu/blf drawing and mirrors the same
+language.
 
 ## Project scope in Preferences
 
@@ -45,22 +49,45 @@ other platforms continue in #440.
 
 ## Tabs and segmented choices
 
-A row of mutually exclusive choices (lane tabs, picker modality tabs and category chips, Edit 3D tasks, Environment modes) is a **continuous segmented control**: cells touch (no gaps), each takes an equal share of the full width, and the icon sits next to its label with the pair centred in the cell.
+A row of mutually exclusive choices (lane tabs, picker modality tabs and
+category chips, Edit 3D tasks, Environment modes) is a **continuous segmented
+control**: cells touch (no gaps), each takes an equal share of the full width,
+and the icon sits next to its label with the pair centred in the cell.
 
-- Use `panels.equal_segments(row, struct, prop, values)` (or `panels.draw_enum_tabs(layout, struct, prop, rows)` for multiple rows). It draws each value with `prop_enum` inside an `align=True` row (Blender merges the borders) and forces equal widths with a chain of even `split()`s.
-- Never use `prop(..., expand=True)` for these (it pins the icon to the left edge) or `grid_flow` (it leaves gaps).
+- Use `panels.equal_segments(row, struct, prop, values)` (or
+  `panels.draw_enum_tabs(layout, struct, prop, rows)` for multiple rows). It
+  draws each value with `prop_enum` inside an `align=True` row (Blender merges
+  the borders) and forces equal widths with a chain of even `split()`s.
+- Never use `prop(..., expand=True)` for these (it pins the icon to the left
+  edge) or `grid_flow` (it leaves gaps).
 
 ## Sections
 
-Each group of controls is a `layout.box()` with a one-line header: `box.label(text="Title", icon=...)`. Order inside a lane: Model, Prompt, References, Settings, then the Generate button. Put `layout.separator(factor=0.5)` between the tabs and the form, and above the Generate button.
+Each group of controls is a `layout.box()` with a one-line header:
+`box.label(text="Title", icon=...)`. Order inside a lane: Model, Prompt,
+References, Settings, then the Generate button. Put
+`layout.separator(factor=0.5)` between the tabs and the form, and above the
+Generate button.
 
-Every section header carries an icon so the panel reads as a stack of peers: `Model` (`NODE_MATERIAL`), `Clip to render` (`RENDER_ANIMATION`), `Camera path` (`CAMERA_DATA`), `Rendering Style` (`BRUSH_DATA`), `Settings` (`PREFERENCES`). Sections do not collapse (no chevron): a header is a static label, not a toggle, so the form is always visible.
+Every section header carries an icon so the panel reads as a stack of peers:
+`Model` (`NODE_MATERIAL`), `Clip to render` (`RENDER_ANIMATION`), `Camera path`
+(`CAMERA_DATA`), `Rendering Style` (`BRUSH_DATA`), `Settings` (`PREFERENCES`).
+Sections do not collapse (no chevron): a header is a static label, not a toggle,
+so the form is always visible.
 
 ## Buttons
 
-- The **Generate** button is the one primary action: `row.scale_y = 1.5`, icon `PLAY`, and it always shows the live price (`Generate (15 CU)` / `Generate (from N CU)` / `Generate (estimating...)`).
-- After Generate, an unchanged form keeps showing its price, and Generate stays disabled until Scenario has confirmed the job and `generation.REPEAT_DELAY` (2 s) has passed. Meanwhile it fetches a fresh free quote, because each send consumes its own; a different price replaces the old one before Generate re-enables. Any edit prices the form normally instead.
-- Icon-only buttons keep Blender's fixed size; a button that must fill a row carries a short label (Blender never stretches an icon-only button). The three prompt tools are `New`, `Rewrite`, `Translate`.
+- The **Generate** button is the one primary action: `row.scale_y = 1.5`, icon
+  `PLAY`, and it always shows the live price (`Generate (15 CU)` /
+  `Generate (from N CU)` / `Generate (estimating...)`).
+- After Generate, an unchanged form keeps showing its price, and Generate stays
+  disabled until Scenario has confirmed the job and `generation.REPEAT_DELAY` (2
+  s) has passed. Meanwhile it fetches a fresh free quote, because each send
+  consumes its own; a different price replaces the old one before Generate
+  re-enables. Any edit prices the form normally instead.
+- Icon-only buttons keep Blender's fixed size; a button that must fill a row
+  carries a short label (Blender never stretches an icon-only button). The three
+  prompt tools are `New`, `Rewrite`, `Translate`.
 - Destructive actions (`Delete`, `Clear path`) ask for confirmation (`invoke_confirm`).
 
 When Blender online access is disabled, the composer shows **Offline** on its
@@ -110,23 +137,29 @@ no-prompt rules above. The lane tab, double-click and model-change rules came
 after the GUI check below; their installed tests fail on the composer code that
 check ran. An offline GUI check ran the exact ZIP
 `89c07a5b0642ca02b53d5c1fcb57968f03fde32b3ae942ac7f048690f9272011`
-on macOS 27.0.1 arm64 with Blender 5.0.1, 5.1.2 and 5.2.1. It drove the composer through
-Blender's own event queue (`--enable-event-simulate`, a window opened without
-focus, no OS input injected). The steps were: typing into the Text form, Settings
-with a switch to Edit and Done, typing into the Edit form, a replacement while
-focused, Enter, Generate, the model chip dialog, then a click outside, wheel zoom
-and the front-view shortcut. Each prompt kept its own text, the key after Settings
-reached the viewport's Scale transform, and screenshots show the note and
-warnings. Offline, no price was ready and the dialog showed its loading state, so
-the mode switch was a property change while it was open. Blender treats the blur
-click as handled, so it does not also select in the viewport; the next click does.
-This path is unchanged; the [Studio view](ui/studio-and-library.md#explicit-studio-view) records its
+on macOS 27.0.1 arm64 with Blender 5.0.1, 5.1.2 and 5.2.1. It drove the composer
+through Blender's own event queue (`--enable-event-simulate`, a window opened
+without focus, no OS input injected). The steps were: typing into the Text form,
+Settings with a switch to Edit and Done, typing into the Edit form, a
+replacement while focused, Enter, Generate, the model chip dialog, then a click
+outside, wheel zoom and the front-view shortcut. Each prompt kept its own text,
+the key after Settings reached the viewport's Scale transform, and screenshots
+show the note and warnings. Offline, no price was ready and the dialog showed
+its loading state, so the mode switch was a property change while it was open.
+Blender treats the blur click as handled, so it does not also select in the
+viewport; the next click does. This path is unchanged; the
+[Studio view](ui/studio-and-library.md#explicit-studio-view) records its
 first-click header evidence. Focus after switching to another application and
 back, and the IME candidate window, continue in #440.
 
 ## The model chooser
 
-A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a wide button (icon + model name) that opens the picker, with the native dropdown as a small fallback on the right. A form with a trained choice names it on that button as the composer's chip does (**FLUX.1 Dev · Studio LoRA (+1)**, see [trained models section](#trained-models-section-and-project-defaults)). Its one-line description belongs in the picker, not the panel.
+A `Model` section (a box with a `NODE_MATERIAL` header, like the others) holds a
+wide button (icon + model name) that opens the picker, with the native dropdown
+as a small fallback on the right. A form with a trained choice names it on that
+button as the composer's chip does (**FLUX.1 Dev · Studio LoRA (+1)**, see
+[trained models section](#trained-models-section-and-project-defaults)). Its
+one-line description belongs in the picker, not the panel.
 
 A form is described as loading its model only while that description read is
 pending. A failed read shows its sanitized reason in the form and composer note,
@@ -135,9 +168,10 @@ success, another model or changed credentials clear it; drawing never retries.
 Online, a form with neither a pending read nor a failure recorded this session,
 such as one in a reopened file, offers the same retry instead of a saved error.
 A model-load error saved with the file is not drawn in the form, below Generate
-or in the composer note unless this session recorded it. With online access disabled, the form says so and offers no retry. An MCP call
-needing the description, such as `model_schema`, starts the next read, or joins the
-pending one, and waits for it off the main thread
+or in the composer note unless this session recorded it. With online access
+disabled, the form says so and offers no retry. An MCP call needing the
+description, such as `model_schema`, starts the next read, or joins the pending
+one, and waits for it off the main thread
 ([MCP quote contract](MCP.md#model-quote-and-submission-contract)); a read that
 fails again returns its new reason.
 
@@ -184,14 +218,15 @@ Reset to Default Value returns the field to that start. A base's declared defaul
 does not move the start. The chosen base and strength stay while base
 descriptions keep arriving and the rows are rebuilt; another row or a new dialog
 starts again from the form, and a new dialog highlights the form's first trained
-model. A composition shows how many LoRAs it combines with their own strengths. One line
-states the effect on the form: adding to the LoRAs already chosen, changing this
-LoRA's strength, or replacing the form's trained models. Choosing through another
-base, choosing a composition, or choosing a LoRA over a composition replaces the
-form's choice; that line says so before OK. The whole new choice is checked against
-the base's current schema before the form changes, and then the price is
-invalidated. The box ends with **Experimental: LoRAs and compositions in testing** (see
-[experimental status](#experimental-status)). Drawing reads this state only.
+model. A composition shows how many LoRAs it combines with their own strengths.
+One line states the effect on the form: adding to the LoRAs already chosen,
+changing this LoRA's strength, or replacing the form's trained models. Choosing
+through another base, choosing a composition, or choosing a LoRA over a
+composition replaces the form's choice; that line says so before OK. The whole
+new choice is checked against the base's current schema before the form changes,
+and then the price is invalidated. The box ends with **Experimental: LoRAs and
+compositions in testing** (see [experimental status](#experimental-status)).
+Drawing reads this state only.
 
 The base's LoRA inputs are never drawn as text fields. Every request writes the
 form's choice into the base's declared inputs with the same route function local
@@ -232,12 +267,13 @@ removing one never shifts another's strength. When the base's description
 changes its range, the fields take the new range and the form is priced again,
 even after a background catalog refresh, but a strength outside the range is
 kept and the price is blocked with the range until the user edits it; nothing
-changes silently. On a base that declares no range, including after the form switches to
-one, each LoRA loses its field, as a LoRA chosen there gets none, and the form is
-priced again with what that base sends, described below. Both apply as well to a
-LoRA that **Reload parameters** restored before the trained list named it. A
-refreshed description that changes anything else in the base's LoRA inputs, such
-as its declared default or the LoRA types it accepts, also prices the form again.
+changes silently. On a base that declares no range, including after the form
+switches to one, each LoRA loses its field, as a LoRA chosen there gets none,
+and the form is priced again with what that base sends, described below. Both
+apply as well to a LoRA that **Reload parameters** restored before the trained
+list named it. A refreshed description that changes anything else in the base's
+LoRA inputs, such as its declared default or the LoRA types it accepts, also
+prices the form again.
 
 A LoRA without a strength, such as an ID adopted from an earlier text field, gets
 a **Set strength** button when the base declares a range: the strength then starts
@@ -245,12 +281,12 @@ at that same start and the price is requested again. A base that declares a
 default shows **Strength: the base model's default (N)** and sends that default
 until a strength is set, with **Set strength** below it when the base also
 declares a range. A request never adds a strength the user did not see. A
-composition row reads **Name (composition)** with its LoRAs and their own strengths listed
-read-only below it. The reason a choice cannot run is drawn in the box with
-`ERROR` (or `TIME` while trained models load), and **Add LoRA or composition**
-opens the picker on the Trained chip. The box ends with the short experimental line
-**Experimental: in testing**: its title already names trained models, and the
-picker's full line was clipped at the default sidebar width.
+composition row reads **Name (composition)** with its LoRAs and their own
+strengths listed read-only below it. The reason a choice cannot run is drawn in
+the box with `ERROR` (or `TIME` while trained models load), and **Add LoRA or
+composition** opens the picker on the Trained chip. The box ends with the short
+experimental line **Experimental: in testing**: its title already names trained
+models, and the picker's full line was clipped at the default sidebar width.
 
 The project-default row stores one explicit choice per form for the selected
 credentials and optional Project ID, through the
@@ -282,12 +318,11 @@ start is tried again by the pump. Choosing a model or a trained model makes the
 choice explicit, and the default no longer changes that form. Applying a default
 in another scene reprices only that scene's form. Local MCP render inspection and
 quotes apply the same step first, and so does `render_form` `configure` without a
-`model_id`, which changes nothing and returns the reason while the default waits or
-cannot run; a failure writing the default is logged and the form keeps waiting.
-Naming `model_id` in `configure` is an explicit choice, even for the model already
-shown, and the default is not applied first.
-Drawing reads cached defaults only; the owner is opened by the pump, requests and
-operators.
+`model_id`, which changes nothing and returns the reason while the default waits
+or cannot run; a failure writing the default is logged and the form keeps
+waiting. Naming `model_id` in `configure` is an explicit choice, even for the
+model already shown, and the default is not applied first. Drawing reads cached
+defaults only; the owner is opened by the pump, requests and operators.
 
 The compact composer's model chip names the choice as **Base · LoRA (+n)**. A
 long LoRA name is shortened before the count, so the number of further LoRAs
@@ -312,7 +347,12 @@ duration follows the scene frame range through `generation.apply_match_timeline`
 
 ## Reference inputs
 
-A file input's add options match its kind (`props.addable_sources_for`): a **3D** input offers a model file and **Upload selected mesh** when a mesh is selected; an **image** input offers Upload plus the viewport/camera stills and the render result; a **video** input offers Upload plus the clip captures. Never offer a source that produces the wrong asset type (no image capture on a 3D character input).
+A file input's add options match its kind (`props.addable_sources_for`): a
+**3D** input offers a model file and **Upload selected mesh** when a mesh is
+selected; an **image** input offers Upload plus the viewport/camera stills and
+the render result; a **video** input offers Upload plus the clip captures. Never
+offer a source that produces the wrong asset type (no image capture on a 3D
+character input).
 
 A selected mesh appears as a candidate for each empty **3D** input. **Upload
 selected mesh** explicitly exports the selection as one GLB and uploads that
@@ -337,34 +377,36 @@ validation rejected before task admission permits correcting and retrying the in
 uncertain admitted work retains its duplicate-upload guard.
 
 **Inspect uploads** offers explicit known-status refresh, unclaimed preparation
-cancellation, **Upload again** for an unfinished upload whose suggested recovery is
-a restart, and finished staging cleanup; cancellation, restart and cleanup require
-confirmation. When a transfer stops or a recovery finishes while the view is shown,
-the maintenance pump refreshes those suggestions. Drawing reads them and records
-only an in-memory time of its last draw. Popups report no close, so a view not
-drawn for two seconds stops that store read until it draws again.
-A restarted upload never attaches itself to the slot.
-**Use saved upload** and an input's **Saved uploads** open the same paginated
-view. Offer attachment only for imported uploads matching the input kind
-(image, audio, video or 3D). Attaching one needs a separate confirmation of its
-scene, lane, model, input and reference destination. A changed destination must
-be reviewed again. Pending or uncertain marked uploads block generation so the
-prototype path cannot upload the same file a second time. Recheck that destination
-on confirmation, keep drawing read-only and invalidate the prior generation price after attachment.
+cancellation, **Upload again** for an unfinished upload whose suggested recovery
+is a restart, and finished staging cleanup; cancellation, restart and cleanup
+require confirmation. When a transfer stops or a recovery finishes while the
+view is shown, the maintenance pump refreshes those suggestions. Drawing reads
+them and records only an in-memory time of its last draw. Popups report no
+close, so a view not drawn for two seconds stops that store read until it draws
+again. A restarted upload never attaches itself to the slot. **Use saved
+upload** and an input's **Saved uploads** open the same paginated view. Offer
+attachment only for imported uploads matching the input kind (image, audio,
+video or 3D). Attaching one needs a separate confirmation of its scene, lane,
+model, input and reference destination. A changed destination must be reviewed
+again. Pending or uncertain marked uploads block generation so the prototype
+path cannot upload the same file a second time. Recheck that destination on
+confirmation, keep drawing read-only and invalidate the prior generation price
+after attachment.
 
 Render forms show **Capture and upload scene** in their scene/clip section, with
 that slot's progress, inspection and removal controls. Render Video's optional
 first frame always exposes a file field and native folder picker, followed by a
-separate **Upload first frame** action after choosing an image. Do not draw these slots
-again as style references. The scene snapshot precedes styles; a first frame
-precedes other images in the same array. Disabled first frames are omitted without
-canceling or deleting their upload. Changed first-frame paths require explicit
-replacement. Result reuse must not silently replace a role-tagged single-file
-scene or first-frame slot; require explicit removal first. A saved image reaches
-the first frame only through its own reviewed
-[first-frame handoff](ui/saved-media.md#saved-image-first-frame-handoff), never through
-**Use as reference**. Changing the path or automatic Spark option invalidates the price.
-An empty look with automatic Spark enabled blocks the render quote until its
+separate **Upload first frame** action after choosing an image. Do not draw
+these slots again as style references. The scene snapshot precedes styles; a
+first frame precedes other images in the same array. Disabled first frames are
+omitted without canceling or deleting their upload. Changed first-frame paths
+require explicit replacement. Result reuse must not silently replace a
+role-tagged single-file scene or first-frame slot; require explicit removal
+first. A saved image reaches the first frame only through its own reviewed
+[first-frame handoff](ui/saved-media.md#saved-image-first-frame-handoff), never
+through **Use as reference**. Changing the path or automatic Spark option
+invalidates the price. An empty look with automatic Spark enabled blocks the
+render quote until its
 [separate Prompt Spark price](BLENDER_JOB_CONTEXT.md#render-look-preparation)
 is approved, a look is entered or Spark is turned off. Drawing remains read-only.
 
@@ -389,7 +431,27 @@ message tells users to upload the reference, review the price and choose
 form; reset the old prompt/settings/references and invalidate the previous quote.
 Existing jobs and admitted uploads keep their own lifetime and origin guards.
 
-Each result collapses on its own; the panel header has a **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose tooltip is the whole message (with the Error ID) and which opens the full text with a Copy button on click (a `description()`-driven operator, since Blender labels have no per-instance tooltip). Never truncate an error to a single clipped line as the only way to read it. Below the model row, a failed result also draws `Failed: ` and its whole error in red, the first line with the `ERROR` icon and the next ones aligned after it, wrapped by the width Blender's interface font measures (`label_wrap`, with the preview status lines' inset). For a shared job that error is the [reason Scenario gave](BLENDER_JOB_CONTEXT.md#failure-reasons) when it is plain text, otherwise a fixed sentence, at most 400 characters with its support error id kept. **Generation details** draws the whole error the same way in a box with **Copy error**; the composer's job card declares its requested popup width, so its first draw wraps like Studio's. Drawing reads only the view's error; the maintenance poll sets it. Installed tests on Blender 5.1.2 macOS arm64 draw a failed shared job's reason through the real Generations panel, **Generation details**, the composer strip and the job card with store reads refused; a desktop screenshot of the wrapped reason belongs to the live failed-job reason check in #440. The prompt box carries a trash button that deletes its text, greyed out when empty.
+Each result collapses on its own; the panel header has a **Collapse all / Expand
+all** toggle. A failed result shows a red error control in its header whose
+tooltip is the whole message (with the Error ID) and which opens the full text
+with a Copy button on click (a `description()`-driven operator, since Blender
+labels have no per-instance tooltip). Never truncate an error to a single
+clipped line as the only way to read it. Below the model row, a failed result
+also draws `Failed: ` and its whole error in red, the first line with the
+`ERROR` icon and the next ones aligned after it, wrapped by the width Blender's
+interface font measures (`label_wrap`, with the preview status lines' inset).
+For a shared job that error is the
+[reason Scenario gave](BLENDER_JOB_CONTEXT.md#failure-reasons) when it is plain
+text, otherwise a fixed sentence, at most 400 characters with its support error
+id kept. **Generation details** draws the whole error the same way in a box with
+**Copy error**; the composer's job card declares its requested popup width, so
+its first draw wraps like Studio's. Drawing reads only the view's error; the
+maintenance poll sets it. Installed tests on Blender 5.1.2 macOS arm64 draw a
+failed shared job's reason through the real Generations panel, **Generation
+details**, the composer strip and the job card with store reads refused; a
+desktop screenshot of the wrapped reason belongs to the live failed-job reason
+check in #440. The prompt box carries a trash button that deletes its text,
+greyed out when empty.
 
 ## Jobs status and remote progress
 
@@ -417,11 +479,12 @@ not a reading exists yet. Otherwise, when the reading is not being kept current,
 add one information line: `Status is not updating`. A refresh being retried
 after a failure, or a cancel request that failed, draws its own information line
 instead (`Status not refreshed; retrying`, `Cancel not sent; the job keeps
-running` or `Cancel not confirmed yet; checking the job's status`). Drawing reads only the
-projected view; it performs no I/O, store read, session creation or property
-write. The pump redraws when the drawn rows or online access change, so the bar
-moves without hovering, but it does not redraw for the brief in-flight refresh
-that hides saved-job controls. Studio Jobs reuses the same draw.
+running` or `Cancel not confirmed yet; checking the job's status`). Drawing
+reads only the projected view; it performs no I/O, store read, session creation
+or property write. The pump redraws when the drawn rows or online access change,
+so the bar moves without hovering, but it does not redraw for the brief
+in-flight refresh that hides saved-job controls. Studio Jobs reuses the same
+draw.
 
 Installed tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the drawn
 label, bar factor and text, the offline and stale lines, a finished generation
@@ -434,9 +497,14 @@ yet; that check is in #440.
 
 ## Wording
 
-- Verbs on buttons say exactly what happens: `Generate`, `Add to scene`, `Use as reference`, `Refresh cloud`, `Save for recovery`.
+- Verbs on buttons say exactly what happens: `Generate`, `Add to scene`,
+  `Use as reference`, `Refresh cloud`, `Save for recovery`.
 - Singular/plural is correct: `1 Job` / `3 Jobs`, `1 marker` / `3 markers`.
-- Prompt helpers request a free exact server price first. Show the formatted CU amount below the tools with a separate action-labelled approval button. Do not use a fixed price or a tooltip as spending authorization. Keep pending/error text readable; an uncertain job offers inspection, never automatic resubmission.
+- Prompt helpers request a free exact server price first. Show the formatted CU
+  amount below the tools with a separate action-labelled approval button. Do not
+  use a fixed price or a tooltip as spending authorization. Keep pending/error
+  text readable; an uncertain job offers inspection, never automatic
+  resubmission.
 - CU labels follow the web generation indicator: up to three decimal places,
   no trailing zeros, and thousands separators below 10,000; at or above 10,000,
   use K/M/B/T with three significant digits (`0.123 CU`, `1,234.568 CU`,
@@ -446,15 +514,20 @@ yet; that check is in #440.
 
 ## Tooltips
 
-Every operator sets `bl_description`: one sentence, action first, the cost when it spends credits. Blender adds the trailing period.
+Every operator sets `bl_description`: one sentence, action first, the cost when
+it spends credits. Blender adds the trailing period.
 
 ## Icons
 
-Modality icons (image, video, audio, 3d) are Scenario's own PNGs (`scenario/icons/`, loaded by `blender/icons.py`, `icons.kwargs(name)` with a built-in fallback for headless). Section and action icons are Blender built-ins chosen to read at a glance.
+Modality icons (image, video, audio, 3d) are Scenario's own PNGs
+(`scenario/icons/`, loaded by `blender/icons.py`, `icons.kwargs(name)` with a
+built-in fallback for headless). Section and action icons are Blender built-ins
+chosen to read at a glance.
 
 ## Status messages
 
-`runtime.set_message(...)` lines are transient: `runtime.message_visible()` hides them after 8 s so a stale line never reads as current.
+`runtime.set_message(...)` lines are transient: `runtime.message_visible()`
+hides them after 8 s so a stale line never reads as current.
 
 ## Experimental status
 
@@ -670,11 +743,12 @@ rests on the resize corner; when a session end restores the cursor only after a
 drag, both of its cases fail with the resize cursor still set. The tests call
 the operator's handlers directly in background Blender, which cannot start the
 modal itself: there, an `INVOKE_DEFAULT` call of a modal operator is refused
-before `invoke` runs, even with a window, area and region override. No event-simulated GUI check (`--enable-event-simulate`) has run for
-this change, because it was prepared without opening a Blender window. Blender's
-window manager has therefore not yet been seen dropping the handler after an
-error, calling cancel on a file load or a closed window, or keeping the load
-handler across File > Revert in an interface session. The
+before `invoke` runs, even with a window, area and region override. No
+event-simulated GUI check (`--enable-event-simulate`) has run for this change,
+because it was prepared without opening a Blender window. Blender's window
+manager has therefore not yet been seen dropping the handler after an error,
+calling cancel on a file load or a closed window, or keeping the load handler
+across File > Revert in an interface session. The
 [session-ending checklist](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
 lists those event-simulated checks and the physical rechecks, with their
 expected results; #440 tracks them.
@@ -850,9 +924,13 @@ UI scale 2.0 continues in #440.
 ## What Blender cannot do (so we do not fake it)
 
 - Text is left, centre or right aligned, never justified.
-- A panel text field is single line; a taller prompt box grows the field, it does not wrap for editing.
-- Dialogs and the sidebar cannot take the composer's custom colours; their layout follows this guide, their palette is the Blender theme's.
-- Input-method composition happens only in Blender's own text fields; the composer opens one rather than faking a pre-edit (see [Composer text input](#composer-text-input)).
+- A panel text field is single line; a taller prompt box grows the field, it
+  does not wrap for editing.
+- Dialogs and the sidebar cannot take the composer's custom colours; their
+  layout follows this guide, their palette is the Blender theme's.
+- Input-method composition happens only in Blender's own text fields; the
+  composer opens one rather than faking a pre-edit (see
+  [Composer text input](#composer-text-input)).
 
 ## Feature interaction guides
 

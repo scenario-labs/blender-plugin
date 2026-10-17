@@ -80,11 +80,11 @@ Blender's undo stack.
 The push tags no data-block and runs no dependency-graph, undo or redo handler,
 so origins, quotes and approvals captured before it stay current. Catalog
 seeding, restored model choices, project defaults, estimate state and upload
-progress links stay unmarked: marking them would flag every opened file as modified (see
-[catalog delivery](sdk-runtime.md#active-sdk-catalog)). Local MCP has no save tool,
-and nothing saves the file for the user. Blender 5.0 reports every background
-file as modified, even right after reading it; from 5.1 a file read in the
-background starts unmarked, as on the desktop.
+progress links stay unmarked: marking them would flag every opened file as
+modified (see [catalog delivery](sdk-runtime.md#active-sdk-catalog)). Local MCP
+has no save tool, and nothing saves the file for the user. Blender 5.0 reports
+every background file as modified, even right after reading it; from 5.1 a file
+read in the background starts unmarked, as on the desktop.
 
 ## Temporary preview decoding
 
@@ -100,8 +100,9 @@ neither the path nor Blender's own error.
 
 Decode display-only images this way, never by loading them into `bpy.data` and
 removing them again. Removing a main-data image makes the next dependency-graph
-evaluation report updates for the scene, its objects and its collections. The JobSession dependency handler then
-invalidates every origin captured in that scene (see
+evaluation report updates for the scene, its objects and its collections. The
+JobSession dependency handler then invalidates every origin captured in that
+scene (see
 [origin lifetime](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime)): quotes
 bound to them can no longer be prepared or spent, and completed results wait
 for review instead of automatic application. The temporary block reports no

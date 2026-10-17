@@ -10,7 +10,8 @@ Report privately through any of these channels:
 
 - [Open a private vulnerability report](https://github.com/scenario-labs/blender-plugin/security/advisories/new)
   from this repository's Security tab.
-- Email [support@scenario.com](mailto:support@scenario.com) with "security" in the subject.
+- Email [support@scenario.com](mailto:support@scenario.com) with "security" in
+  the subject.
 - Use in-app support at [app.scenario.com](https://app.scenario.com).
 
 Include the affected surface (Blender extension, local MCP server or Scenario

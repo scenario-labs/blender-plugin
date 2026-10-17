@@ -1,14 +1,17 @@
 # Studio, workflows and Library
 
-Interaction rules and desktop evidence for the explicit Studio view, workflows and the native Library. The shared rules are in the [UI style guide](../UI_STYLE.md).
+Interaction rules and desktop evidence for the explicit Studio view, workflows
+and the native Library. The shared rules are in the
+[UI style guide](../UI_STYLE.md).
 
 ## Explicit Studio view
 
 The viewport header has a separate **Studio** button. It opens a native popup
 with Create, Film, Workflows, Library, Jobs, Results and Connection pages.
 Opening, closing or switching pages does not start a job or select another
-account/project. No startup or file-load handler opens it. The existing **Scenario** button still
-opens the sidebar; the compact composer remains the default creation surface.
+account/project. No startup or file-load handler opens it. The existing
+**Scenario** button still opens the sidebar; the compact composer remains the
+default creation surface.
 
 Studio reuses the actual native panel controls and their operators. Create keeps
 the same scene form, model, prompt, references and parameters. Film separates
@@ -29,9 +32,9 @@ an identical old prompt.
 The requested popup width is bounded by the invoking area, window and UI scale;
 narrow requests use rows of at most three equal navigation segments. Clicking
 outside a focused composer commits its text and passes that same click to Blender,
-so the Studio header button opens on the first click. Installed tests cover this handoff,
-registration, shared drawing, quote preservation, pending-text ownership and
-continued admitted work.
+so the Studio header button opens on the first click. Installed tests cover this
+handoff, registration, shared drawing, quote preservation, pending-text
+ownership and continued admitted work.
 
 An isolated offline desktop check on macOS 27.0.1 arm64, Blender 5.1.2, used exact
 ZIP SHA-256 `32d81f8cbbc59023dcac10d71c1e87fc70a04265c8791e373639cef53c97c253`.
@@ -71,8 +74,9 @@ These checks supersede the window-attachment and populated-form evidence gaps.
 Alternate-DPI interaction and IME composition remain unverified: Preferences
 opened, but the attempted scale edit did not change the observed UI scale, and
 Unicode paste is not IME composition. UI scales 1.25 and 1.5 and the IME
-candidate window continue in #440 as acceptance follow-ups. The paid desktop pass of 2026-10-13 later ran a
-capture, quote, generation, inspection and application journey (see the
+candidate window continue in #440 as acceptance follow-ups. The paid desktop
+pass of 2026-10-13 later ran a capture, quote, generation, inspection and
+application journey (see the
 [release evidence](../maintenance/release-acceptance.md#3d-generation-and-imports));
 other-platform desktop interaction continues in #440.
 
@@ -175,17 +179,18 @@ and either the result asset IDs an approval reviews or a selection's candidates
 in listed order. Asset candidates are checkboxes named by asset ID; text
 candidates are numbered checkboxes followed by the text, wrapped, up to 12 lines
 each. A line counts the selected items against the bounds. The decision is one
-[segmented choice](../UI_STYLE.md#tabs-and-segmented-choices) of two equal cells, **Approve**
-(or **Select**) and **Stop workflow**. Stop is never the default, so rejecting
-always needs that explicit choice; a blocked selection disables Select and
-explains why, including a selection whose step links could not be read in a
-workflow with a loop. When an approval's step links could not all be read, the
-dialog warns above its result list that results to review may be missing and
-should be checked in Scenario. The dialog states the consequence of
-the chosen decision: continuing runs the remaining steps, which spend credits,
-and their charge is not verified against the approved price; stopping rejects
-the step and cancels the workflow, completed steps stay charged, and inside a
-loop Scenario may stop only that loop, so the refreshed status is authoritative.
+[segmented choice](../UI_STYLE.md#tabs-and-segmented-choices) of two equal
+cells, **Approve** (or **Select**) and **Stop workflow**. Stop is never the
+default, so rejecting always needs that explicit choice; a blocked selection
+disables Select and explains why, including a selection whose step links could
+not be read in a workflow with a loop. When an approval's step links could not
+all be read, the dialog warns above its result list that results to review may
+be missing and should be checked in Scenario. The dialog states the consequence
+of the chosen decision: continuing runs the remaining steps, which spend
+credits, and their charge is not verified against the approved price; stopping
+rejects the step and cancels the workflow, completed steps stay charged, and
+inside a loop Scenario may stop only that loop, so the refreshed status is
+authoritative.
 
 **Send decision** is single use. It sends the choice through the same
 `runtime.decide_workflow_step` entry as local MCP `decide_workflow_step`, which
@@ -215,17 +220,18 @@ asset's still. Once requested, the step shows up to eight loaded icons, four to 
 row, and **Previews: R of N ready** with any loading, waiting for Online Access
 or unavailable count; **Retry previews** appears while some are unavailable and
 sends only those through the preview lane again, which fetches a still again when
-it failed, is missing or lost its cached file. The review dialog shows an approval's loaded previews
-as a grid of icons named by asset ID, and a candidate's loaded preview beside
-its checkbox; an asset without one keeps its ID and a short status line, and a
-step with nothing loaded says to load previews from the Jobs row or Studio
-Workflows. While its previews load, the dialog is refreshed by the pump like
-Studio. Icons are decoded by the pump from the verified cached still, at most
-two per tick and at most 256 pixels per side, never while drawing or while a
-render job runs; drawing reads memory only. Decoding uses temporary Blender
-data, so the open file gains no image and origins captured in it stay current.
-A cached still lost before decoding is fetched again once by itself. A step that is decided or changes
-releases its icons, and so does a connection change.
+it failed, is missing or lost its cached file. The review dialog shows an
+approval's loaded previews as a grid of icons named by asset ID, and a
+candidate's loaded preview beside its checkbox; an asset without one keeps its
+ID and a short status line, and a step with nothing loaded says to load previews
+from the Jobs row or Studio Workflows. While its previews load, the dialog is
+refreshed by the pump like Studio. Icons are decoded by the pump from the
+verified cached still, at most two per tick and at most 256 pixels per side,
+never while drawing or while a render job runs; drawing reads memory only.
+Decoding uses temporary Blender data, so the open file gains no image and
+origins captured in it stay current. A cached still lost before decoding is
+fetched again once by itself. A step that is decided or changes releases its
+icons, and so does a connection change.
 
 Installed tests on macOS arm64 Blender 5.1.2 cover the descriptors drawn in the
 sidebar, Studio Jobs and Studio Workflows with storage reads refused, the dialog
@@ -252,10 +258,11 @@ focus, DPI, IME and screenshots) is pending.
 ## Native Library controls
 
 Studio's explicit **Library** page has Search, Public assets and Collection ID
-filters, Refresh, and separate Previous/Next actions. Filter edits do not start a read or tag
-the scene; changed filters require Refresh before page continuation. Reads use
-the shared session and application pump, so unrelated scene edits and closing the
-view do not discard the requested page. Connection retirement clears the view.
+filters, Refresh, and separate Previous/Next actions. Filter edits do not start
+a read or tag the scene; changed filters require Refresh before page
+continuation. Reads use the shared session and application pump, so unrelated
+scene edits and closing the view do not discard the requested page. Connection
+retirement clears the view.
 
 Each asset shows its name and MIME type. **Use as reference** opens a separate
 confirmation for the selected scene, generation form, model and compatible input.
@@ -266,11 +273,12 @@ unchanged destination, adds a scoped asset reference and invalidates its price.
 The dialog displays a captured scene name, so deleting the scene while it is
 open cannot break redraw; confirmation still rejects the unavailable destination.
 Drawing never starts requests or mutates RNA. Collection and tag changes use the
-separate reviewed [Organize](#library-organization) dialog. Dynamic input choices are retained by the live dialog and resolved through
-its RNA properties; Blender passes `OperatorProperties` to the enum callback,
-not the Python operator carrying the prepared approvals. Installed tests exercise
-that registered callback as well as state and command boundaries. The desktop
-checks below record native browsing and reference confirmation for their named
+separate reviewed [Organize](#library-organization) dialog. Dynamic input
+choices are retained by the live dialog and resolved through its RNA properties;
+Blender passes `OperatorProperties` to the enum callback, not the Python
+operator carrying the prepared approvals. Installed tests exercise that
+registered callback as well as state and command boundaries. The desktop checks
+below record native browsing and reference confirmation for their named
 candidate. Open Library desktop checks are in #440.
 
 ### Library organization
@@ -303,9 +311,9 @@ choices are retained by the live dialog and resolved through its RNA properties,
 like the reference input menu. Tags are one comma-separated field; surrounding
 spaces are removed and text is otherwise kept exactly, so tags cannot contain
 commas. The dialog states that changes are immediate account metadata, use no
-credits and are not reversed by Blender Undo, and explains invalid text before OK. OK only prepares a review:
-the shared session owner reads the asset's current tags and memberships, and
-nothing is sent. Cancel prepares nothing.
+credits and are not reversed by Blender Undo, and explains invalid text before
+OK. OK only prepares a review: the shared session owner reads the asset's
+current tags and memberships, and nothing is sent. Cancel prepares nothing.
 
 The Library page then shows one review card under the organized asset's row.
 The rows above it keep their place, so the card opens next to the Organize
@@ -313,25 +321,26 @@ button that was chosen, even far down a scrolled page; Blender's popup scrolling
 cannot be moved from Python. A line under Previous and Next names the asset and
 points down to the card, for example after Studio is reopened at the top. On a
 page without that asset, such as another page or a browsed collection, the card
-is drawn in that line's place instead. The status bar confirmation is often hidden behind
-Studio, so it only repeats where the card is. While preparing it says nothing has
-been sent. A ready card lists the asset's current and resulting state, the number
-of requests Apply sends and the 10-minute expiry, with **Apply** and **Discard**.
-Apply is accepted only for that ready card, once; it sends each write once with
-no retry, then the card shows the read-back result: Verified, Refused with the
-HTTP status, Unconfirmed, Not sent or Not verified. When another client added the
-asset first, the service refuses the add as a whole; the read-back shows the
-asset as a member, so nothing more is sent and the card shows Verified with a
-note that it was already in the collection. An unconfirmed card says to
-refresh and inspect; nothing is resent automatically. A finished, refused,
-unchanged, unsent or expired card offers **Dismiss**. Rows take the tags and memberships Scenario
-read back. A row that left the browsed collection stays marked "No longer in this
-collection; refresh" until the next Refresh rather than disappearing. A verified
-new collection joins the loaded collections, even when 200 are already loaded,
-so **Browse** and the dropdown offer it. A page or collection read that was
-already running when the read-back arrived may have listed the state before the
-write, so its rows keep the read-back and the new collection stays listed; the
-next read shows what Scenario lists.
+is drawn in that line's place instead. The status bar confirmation is often
+hidden behind Studio, so it only repeats where the card is. While preparing it
+says nothing has been sent. A ready card lists the asset's current and resulting
+state, the number of requests Apply sends and the 10-minute expiry, with
+**Apply** and **Discard**. Apply is accepted only for that ready card, once; it
+sends each write once with no retry, then the card shows the read-back result:
+Verified, Refused with the HTTP status, Unconfirmed, Not sent or Not verified.
+When another client added the asset first, the service refuses the add as a
+whole; the read-back shows the asset as a member, so nothing more is sent and
+the card shows Verified with a note that it was already in the collection. An
+unconfirmed card says to refresh and inspect; nothing is resent automatically. A
+finished, refused, unchanged, unsent or expired card offers **Dismiss**. Rows
+take the tags and memberships Scenario read back. A row that left the browsed
+collection stays marked "No longer in this collection; refresh" until the next
+Refresh rather than disappearing. A verified new collection joins the loaded
+collections, even when 200 are already loaded, so **Browse** and the dropdown
+offer it. A page or collection read that was already running when the read-back
+arrived may have listed the state before the write, so its rows keep the
+read-back and the new collection stays listed; the next read shows what Scenario
+lists.
 
 Organize is disabled for pages loaded with Public assets, while a Library page is
 loading and while a change applies. Preparing another review discards a card that
@@ -489,10 +498,11 @@ files, failed staging, a revoked origin after staging on an array that already h
 a value, a chosen file that still attaches through frame changes, unrelated object
 moves and render-thread updates, cancellation of a waiting, undo-restored or
 retired-connection marker, **Stop waiting** after an upload stopped mid-transfer
-or that **Upload again** abandoned, undo around an upload and a background **Render result** upload, plus shared MCP
-pricing of an uploaded asset ID and selected-mesh provenance at quote time. The
-paid desktop pass at UI scale 1.0 uploaded a local image file and viewport and
-camera captures into workflow inputs, each after its own confirmation (see the
+or that **Upload again** abandoned, undo around an upload and a background
+**Render result** upload, plus shared MCP pricing of an uploaded asset ID and
+selected-mesh provenance at quote time. The paid desktop pass at UI scale 1.0
+uploaded a local image file and viewport and camera captures into workflow
+inputs, each after its own confirmation (see the
 [release evidence](../maintenance/release-acceptance.md#workflows)). A **Render
 result** upload after F12, audio, video and 3D files and UI scale 2.0 continue
 in #440; IME in these controls is not recorded.

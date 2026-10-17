@@ -1,0 +1,71 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Licence metadata for files that cannot carry an SPDX header. Validate with
+# `make lint-licence`. When an annotation matches several files, the last
+# matching table wins, so third-party overrides stay at the end.
+version = 1
+
+# First-party documentation, repository metadata, generated locks and the
+# Blender manifest, whose header awaits native extension validation.
+[[annotations]]
+path = [
+  "**/*.md",
+  "**/*.json",
+  "uv.lock",
+  "pnpm-lock.yaml",
+  "scenario/blender_manifest.toml",
+  ".env.example",
+  ".gitignore",
+  ".lycheeignore",
+  ".nvmrc",
+  ".python-version",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Scenario Inc."
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# First-party images and media. scenario/icons/README.md records the icon
+# origin; the social preview notice records how its artwork was generated.
+[[annotations]]
+path = [
+  "docs/images/**",
+  "scenario/icons/**",
+  "tools/assets/**",
+  "tools/blank.blend",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Scenario Inc."
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Recorded and synthetic test fixtures; tests/fixtures/README.md documents them.
+[[annotations]]
+path = "tests/fixtures/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Scenario Inc."
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Shared Scenario agent skills, vendored unchanged and pinned in skills-lock.json.
+[[annotations]]
+path = [
+  ".agents/skills/pr-handle-comments/**",
+  ".agents/skills/pr-squash-message/**",
+  ".agents/skills/pr-summary/**",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Scenario Inc."
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Third party: the Scenario logo keeps its source repository's MIT licence
+# (docs/images/scenario-logo.LICENSE).
+[[annotations]]
+path = ["docs/images/scenario-logo.png", "docs/images/scenario-logo.LICENSE"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Scenario"
+SPDX-License-Identifier = "MIT"
+
+# Third party: adapted from the Contributor Covenant 2.1, published under CC BY 4.0.
+[[annotations]]
+path = "CODE_OF_CONDUCT.md"
+precedence = "override"
+SPDX-FileCopyrightText = ["Contributor Covenant contributors", "2026 Scenario Inc."]
+SPDX-License-Identifier = "CC-BY-4.0"

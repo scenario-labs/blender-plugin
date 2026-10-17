@@ -2,8 +2,8 @@
 
 `scenario.blender.mesh_application.apply_mesh` is a synchronous Blender main-thread
 primitive for applying one already imported mesh to one explicit source object.
-It has no network, import, job, UI or MCP side effects and never reads selection to
-choose a target.
+It has no network, import, job, UI or MCP side effects and never reads selection
+to choose a target.
 
 ```python
 receipt = apply_mesh(
@@ -23,9 +23,10 @@ The caller must validate its captured file/scene/object revision immediately bef
 this call. It must also select the primary imported mesh and establish the mapping
 from result mesh coordinates into source-local coordinates. Reflection and singular
 mappings are rejected; there is no handedness/normal-flip policy. The primitive
-does not infer that mapping from object placement, names or current selection. It does not
-prove cloud provenance, safe download/import, or that a late result still matches
-its original inputs. The [verified saved-mesh command](#captured-source-and-verified-saved-mesh-command)
+does not infer that mapping from object placement, names or current selection.
+It does not prove cloud provenance, safe download/import, or that a late result
+still matches its original inputs. The
+[verified saved-mesh command](#captured-source-and-verified-saved-mesh-command)
 adds receipt-bound import, shared-session bookkeeping and UI/MCP review.
 
 ## Supported policies
@@ -77,11 +78,12 @@ the caller finalizes the receipt. `accept()` releases that holder and removes th
 original mesh only if it has no remaining users and is unchanged. Shared meshes,
 fake-user ownership, renamed meshes, new metadata and other edits are retained.
 `rollback()` restores the original mesh and then releases the holder. A linked,
-renamed, configured or otherwise adopted holder is retained for user review. There is no destructor that
-accesses Blender. Callers must finalize their receipts; this is an in-memory
-transaction boundary, not persisted recovery or integration with Blender's global
-undo stack. File loading, undo that removes datablocks and source deletion can make
-a receipt unusable; it never re-finds targets by name.
+renamed, configured or otherwise adopted holder is retained for user review.
+There is no destructor that accesses Blender. Callers must finalize their
+receipts; this is an in-memory transaction boundary, not persisted recovery or
+integration with Blender's global undo stack. File loading, undo that removes
+datablocks and source deletion can make a receipt unusable; it never re-finds
+targets by name.
 
 Rollback rechecks the supported object structure as well as source/scene membership,
 the applied mesh pointer, active material selection and fingerprints of both original
@@ -90,11 +92,12 @@ animation, incompatible parenting, object material overrides or mesh custom prop
 requires explicit review before rollback. These guards protect topology-dependent
 data and metadata outside the fingerprint. A refusal leaves the receipt open;
 removing the added structure allows retry if the remaining guards still pass.
-The fingerprints cover geometry, supported generic attributes, UV layer roles and material slot
-bindings, so editing the applied mesh in place cannot silently lose user work.
-Shader node graph edits are outside that fingerprint and are never reverted.
-Rollback removes its unchanged staged mesh only when no other user owns it; it
-never removes the imported result or a mesh adopted by another object.
+The fingerprints cover geometry, supported generic attributes, UV layer roles
+and material slot bindings, so editing the applied mesh in place cannot silently
+lose user work. Shader node graph edits are outside that fingerprint and are
+never reverted. Rollback removes its unchanged staged mesh only when no other
+user owns it; it never removes the imported result or a mesh adopted by another
+object.
 
 Fingerprinting is linear and runs on the main thread. A limit of 2,000,000 combined
 vertices, edges, loops, polygons and generic-attribute entries bounds each pass;
@@ -105,12 +108,13 @@ require another application path.
 
 The shared saved-job path can import one explicitly selected GLB result
 (`model/gltf-binary`, or its `model/glb` alias) into a new **Scenario Model**
-collection and parent group. It places the model's world-space bottom center at the approved 3D cursor,
-retains the imported hierarchy and materials, packs embedded images, and leaves
-existing objects, selection, active object and viewport shading unchanged. It
-does not replace an existing source mesh or implement the edit policies above.
-Alternate result files and maps remain saved; only the selected GLB is imported.
-One import consumes the job's application claim.
+collection and parent group. It places the model's world-space bottom center at
+the approved 3D cursor, retains the imported hierarchy and materials, packs
+embedded images, and leaves existing objects, selection, active object and
+viewport shading unchanged. It does not replace an existing source mesh or
+implement the edit policies above. Alternate result files and maps remain saved;
+only the selected GLB is imported. One import consumes the job's application
+claim.
 
 [`glb.inspect_glb`](../scenario/core/scene/glb.py) checks the
 [GLB 2.0 container](https://github.com/KhronosGroup/glTF/blob/98015344c6a5f5a3a96686cbd77960a8b09f6276/specification/2.0/Specification.adoc)
@@ -124,9 +128,10 @@ input; Blender validates geometry and textures. JSON glTF, FBX, OBJ and mesh PLY
 results import through the [saved package path](#saved-model-package-import), and
 SPZ, `.splat` and Gaussian splat PLY results through
 [saved Gaussian splat import](#saved-gaussian-splat-import). Multiple scenes,
-external files and pointer-based animation remain unsupported. Unsupported downloads remain available. REMESH, UV, RETEXTURE and
-PARTS keep the default static-only preflight; RIG uses the bounded skin policy
-below. In-place edits and Film shots still accept only `model/gltf-binary`.
+external files and pointer-based animation remain unsupported. Unsupported
+downloads remain available. REMESH, UV, RETEXTURE and PARTS keep the default
+static-only preflight; RIG uses the bounded skin policy below. In-place edits
+and Film shots still accept only `model/gltf-binary`.
 
 [`model_application.apply_model`](../scenario/blender/model_application.py),
 which Film shots use, rehashes the exact local receipt, writes a private snapshot
@@ -248,24 +253,25 @@ leading bytes match the declared format (binary FBX, gzip or `NGSP` SPZ, whole
 
 With lineage, an OBJ binds its single MTL child and one map per slot (albedo or
 base, normal, roughness, metallic) among the OBJ's or that MTL's children, so
-several OBJ packages in one job stay separate. A model file among those children is
-its own unit, never a companion. Without lineage, an OBJ or glTF binds companions
-only when it is the job's only file of that format, oversized ones included. Several
-MTLs, several maps for one slot, maps without a material, unsupported formats and
-oversized files remain saved and are reported with stable reason codes; nothing is
-guessed. Once a job holds any model file (a `model/*` type, an MTL included, an FBX
-`application/*` type or `application/x-ply`), every saved file is in exactly one
-place: one unit's files, one glTF unit's candidate resources, which are bound later
-by reference, or one finding. A file with a finding is never also a companion or a
-candidate resource. Without lineage, an MTL or slot map beside several OBJs, or a
-buffer or image beside several glTFs, is reported as `ambiguous-package`. Any other
-leftover is `unbound`, such as a map whose stored role (smoothness, height, ao or
-edge) has no MTL slot, a map beside a sole OBJ that is too large or, with lineage, a
-file under a skipped or unsupported model, whose own finding gives the cause. A job
-without a model file gives an empty plan.
-With lineage, generated root outputs sort first: a `metadata.type` of `img23d`,
-`txt23d`, `3d23d`, `video23d` or `img2splat` whose parent is not in the job. Then
-GLB, glTF, FBX, OBJ, mesh PLY, SPZ, splat or unclassified PLY and `.splat` follow.
+several OBJ packages in one job stay separate. A model file among those children
+is its own unit, never a companion. Without lineage, an OBJ or glTF binds
+companions only when it is the job's only file of that format, oversized ones
+included. Several MTLs, several maps for one slot, maps without a material,
+unsupported formats and oversized files remain saved and are reported with
+stable reason codes; nothing is guessed. Once a job holds any model file (a
+`model/*` type, an MTL included, an FBX `application/*` type or
+`application/x-ply`), every saved file is in exactly one place: one unit's
+files, one glTF unit's candidate resources, which are bound later by reference,
+or one finding. A file with a finding is never also a companion or a candidate
+resource. Without lineage, an MTL or slot map beside several OBJs, or a buffer
+or image beside several glTFs, is reported as `ambiguous-package`. Any other
+leftover is `unbound`, such as a map whose stored role (smoothness, height, ao
+or edge) has no MTL slot, a map beside a sole OBJ that is too large or, with
+lineage, a file under a skipped or unsupported model, whose own finding gives
+the cause. A job without a model file gives an empty plan. With lineage,
+generated root outputs sort first: a `metadata.type` of `img23d`, `txt23d`,
+`3d23d`, `video23d` or `img2splat` whose parent is not in the job. Then GLB,
+glTF, FBX, OBJ, mesh PLY, SPZ, splat or unclassified PLY and `.splat` follow.
 Ties prefer more bound companions, then the larger file, then manifest order. The
 first unit is primary and the others are alternates for explicit selection.
 `inspect_ply_header` treats a binary little-endian PLY with float `x`, `y`, `z`,
@@ -277,20 +283,21 @@ per package, 4 MiB per MTL, 8 MiB of glTF JSON and 64 KiB of PLY header.
 
 [`model_references`](../scenario/core/scene/model_references.py) plans the private
 snapshot. Each unit lists canonical file names such as `model.obj`, `material.mtl`
-and `texture-albedo.png`. `rewrite_obj` streams an OBJ, points its first `mtllib` at
-the bound material and removes other libraries and file-reading statements.
-`rewrite_mtl` points `map_Kd`, `map_Pm`, `map_Pr` and `map_Bump`/`bump`/`norm` at
-bound textures, keeps only `-o`, `-s` and `-bm` options whose values are plain ASCII
-decimal numbers and drops every other map, `refl`, `disp` and `decal` statement,
-including maps whose files are not part of the saved package. Blender reads a value
-such as `1_0` as part of the file name, so any other value ends option parsing and
-the option is dropped. A bound normal statement without a kept `-bm` gets `-bm 1`:
-Blender's OBJ importer sets its Normal Map node's Strength from `-bm` and uses 0
-without one. A slot whose materials name different files is dropped rather
-than shared. Original names, absolute paths, traversal and URLs never reach the
-output. Reports keep the line, a fixed keyword and the reason, never the reference:
-an unknown keyword reports only its matched prefix, such as `map_`, because a
-reference can be glued to it.
+and `texture-albedo.png`. `rewrite_obj` streams an OBJ, points its first
+`mtllib` at the bound material and removes other libraries and file-reading
+statements. `rewrite_mtl` points `map_Kd`, `map_Pm`, `map_Pr` and
+`map_Bump`/`bump`/`norm` at bound textures, keeps only `-o`, `-s` and `-bm`
+options whose values are plain ASCII decimal numbers and drops every other map,
+`refl`, `disp` and `decal` statement, including maps whose files are not part of
+the saved package. Blender reads a value such as `1_0` as part of the file name,
+so any other value ends option parsing and the option is dropped. A bound normal
+statement without a kept `-bm` gets `-bm 1`: Blender's OBJ importer sets its
+Normal Map node's Strength from `-bm` and uses 0 without one. A slot whose
+materials name different files is dropped rather than shared. Original names,
+absolute paths, traversal and URLs never reach the output. Reports keep the
+line, a fixed keyword and the reason, never the reference: an unknown keyword
+reports only its matched prefix, such as `map_`, because a reference can be
+glued to it.
 
 Text must use LF or CRLF endings without NUL bytes, and every physical line is
 classified on its own. Blender's MTL reader has no line continuation, so a trailing
@@ -302,15 +309,16 @@ read-buffer boundary. OBJ streaming checks cancellation every 65,536 lines and e
 4 MiB read. `inspect_gltf_json` applies the GLB document bounds and keeps base64
 data URIs with a supported media type, also when RFC 2397 `attribute=value`
 parameters precede `;base64`; a unit test keeps its duplicated document checks
-aligned with `inspect_glb`. It binds an external buffer by asset-ID file stem or by a unique
-exact size, and an external image only by asset-ID stem; any other URI, including
-one inside an extension, fails closed. Buffers and images bind separately, and every
-buffer's saved size must equal its own `byteLength`, also when several entries share
-a URI. All functions take bytes or streams, so integration can prepare snapshots on
-a worker from verified copies. The importer's own file search stays inside the
-snapshot only if every canonical name passed to these functions is written into the
-snapshot before import: Blender looks for a missing file elsewhere, including the
-process working directory. The import must still check the images it creates.
+aligned with `inspect_glb`. It binds an external buffer by asset-ID file stem or
+by a unique exact size, and an external image only by asset-ID stem; any other
+URI, including one inside an extension, fails closed. Buffers and images bind
+separately, and every buffer's saved size must equal its own `byteLength`, also
+when several entries share a URI. All functions take bytes or streams, so
+integration can prepare snapshots on a worker from verified copies. The
+importer's own file search stays inside the snapshot only if every canonical
+name passed to these functions is written into the snapshot before import:
+Blender looks for a missing file elsewhere, including the process working
+directory. The import must still check the images it creates.
 
 The store does not persist lineage, and no planned store migration includes it.
 Persisting it would need two optional `ResultAsset` fields captured from the same
@@ -368,30 +376,30 @@ per file and 512 MiB per package.
 
 The claim follows, as for GLB: a ready job's claim covers the whole job, and a
 completed job's reuse claim names every member read, unit key first. Then
-`import_snapshot` imports into a disposable staging scene. glTF and GLB use the importer and timing
-above. FBX uses the bundled `import_scene.fbx` without image search, OBJ uses
-`wm.obj_import` with mesh validation and both make imported material names unique.
-PLY uses `wm.ply_import`. Selection made by these importers stays in staging.
-Every new image must be packed by the importer (embedded FBX or glTF data) or load
-from the snapshot directory itself; anything else, including an FBX texture at an
-absolute path or an OBJ placeholder, fails the import and rolls back. Blender's
-OBJ importer reads every MTL map as sRGB, so the unit's saved texture roles decide:
-bound normal, roughness and metallic maps become Non-Color data while albedo stays
-sRGB, and a normal map that does not already reach the shader through a Normal Map
-node gets one. The importer's node takes its Strength from the rewritten `-bm`, so a
-saved MTL without one gets full strength, as in the GLB. Accepted images are packed
-and their file paths cleared. The FBX
-importer sets the file's frame rate on the staging scene: clips keep that timing
-and the destination scene keeps its own, and `model_import.frame_rate_mismatch`
-reports when they differ. Publication matches the GLB group and records
-`scenario_assets` with the member list on the root. Failure removes only new
-objects, meshes, materials, images, curves, textures, actions and the staging
-scene, then verifies the datablock sets.
-Receipt-only retry, reuse claims and session cleanup are shared with the GLB path.
-MCP status keeps a session-local `model_import` summary (unit, format, members,
-dropped references and frame-rate mismatch) until undo history changes. Newly
-downloaded `model/glb`, Autodesk FBX `application/*` and `model/mtl` results keep
-`.glb`, `.fbx` and `.mtl` local name extensions instead of `.bin`; saved names never
+`import_snapshot` imports into a disposable staging scene. glTF and GLB use the
+importer and timing above. FBX uses the bundled `import_scene.fbx` without image
+search, OBJ uses `wm.obj_import` with mesh validation and both make imported
+material names unique. PLY uses `wm.ply_import`. Selection made by these
+importers stays in staging. Every new image must be packed by the importer
+(embedded FBX or glTF data) or load from the snapshot directory itself; anything
+else, including an FBX texture at an absolute path or an OBJ placeholder, fails
+the import and rolls back. Blender's OBJ importer reads every MTL map as sRGB,
+so the unit's saved texture roles decide: bound normal, roughness and metallic
+maps become Non-Color data while albedo stays sRGB, and a normal map that does
+not already reach the shader through a Normal Map node gets one. The importer's
+node takes its Strength from the rewritten `-bm`, so a saved MTL without one
+gets full strength, as in the GLB. Accepted images are packed and their file
+paths cleared. The FBX importer sets the file's frame rate on the staging scene:
+clips keep that timing and the destination scene keeps its own, and
+`model_import.frame_rate_mismatch` reports when they differ. Publication matches
+the GLB group and records `scenario_assets` with the member list on the root.
+Failure removes only new objects, meshes, materials, images, curves, textures,
+actions and the staging scene, then verifies the datablock sets. Receipt-only
+retry, reuse claims and session cleanup are shared with the GLB path. MCP status
+keeps a session-local `model_import` summary (unit, format, members, dropped
+references and frame-rate mismatch) until undo history changes. Newly downloaded
+`model/glb`, Autodesk FBX `application/*` and `model/mtl` results keep `.glb`,
+`.fbx` and `.mtl` local name extensions instead of `.bin`; saved names never
 change, and import uses canonical snapshot names, not local ones.
 
 ## Saved Gaussian splat import
@@ -435,23 +443,24 @@ whose vertices are the kept splat centres, with `splat_color` (display-referred
 RGB and opacity), `splat_opacity` and `splat_radius` point attributes written from
 the decoded buffers. A new Geometry Nodes group, **Scenario Splat Points**, turns
 the vertices into points with Mesh to Points: the radius is `splat_radius`
-times a **Point scale** input (1.0), capped by a **Max radius** input that starts at
-the 99th percentile of an even sample of at most 10,000 radii, so rare huge splats
-cannot hide the cloud. Both inputs stay editable on the modifier. A new unlit
-material shows the colour through an Emission shader, after a 2.2 gamma that
-approximates the sRGB to linear conversion, mixed with Transparent by opacity.
-Mesh plus Geometry Nodes is used because `PointCloud.resize` is missing in
-Blender 5.0. Every datablock is new: an existing material named **Scenario Splat**
-or node group named **Scenario Splat Points** is never reused or changed.
-Publication reuses the model group: a new **Scenario Model** collection and root
-with the bottom center of the decoded bounds at the cursor, `scenario_asset` and
-`scenario_assets`, and `scenario_splat_points` and `scenario_splat_kept` counts.
-An MCP `target_size_m` fits the longest side of those decoded centre bounds, so
-the reported size, which includes point radii, can be slightly larger.
-Selection, the active object and the timeline stay unchanged. A failure removes
-only new objects, collections, meshes, materials and node groups, then verifies
-those sets; incomplete cleanup is reported as uncertain, and receipt-only retry
-never builds the points again. In desktop Blender the import records the
+times a **Point scale** input (1.0), capped by a **Max radius** input that
+starts at the 99th percentile of an even sample of at most 10,000 radii, so rare
+huge splats cannot hide the cloud. Both inputs stay editable on the modifier. A
+new unlit material shows the colour through an Emission shader, after a 2.2
+gamma that approximates the sRGB to linear conversion, mixed with Transparent by
+opacity. Mesh plus Geometry Nodes is used because `PointCloud.resize` is missing
+in Blender 5.0. Every datablock is new: an existing material named **Scenario
+Splat** or node group named **Scenario Splat Points** is never reused or
+changed. Publication reuses the model group: a new **Scenario Model** collection
+and root with the bottom center of the decoded bounds at the cursor,
+`scenario_asset` and `scenario_assets`, and `scenario_splat_points` and
+`scenario_splat_kept` counts. An MCP `target_size_m` fits the longest side of
+those decoded centre bounds, so the reported size, which includes point radii,
+can be slightly larger. Selection, the active object and the timeline stay
+unchanged. A failure removes only new objects, collections, meshes, materials
+and node groups, then verifies those sets; incomplete cleanup is reported as
+uncertain, and receipt-only retry never builds the points again. In desktop
+Blender the import records the
 [native Undo steps](#native-undo-for-saved-model-imports) of a model import, so
 one Undo removes only the new group.
 
@@ -475,8 +484,9 @@ Object Mode and retains the primitive's unsupported-data checks. It does not inf
 selection. Capture evaluates the current view layer so pending parent transforms
 cannot hide behind a stale world matrix. `validate_target` rejects intervening
 edits, replacement, deletion or membership in another scene. Capture the mesh
-snapshot first, then the `JobSession` origin, before asynchronous work; a target captured afterward cannot establish the old
-input's identity. Restart/file load requires a fresh explicit destination review.
+snapshot first, then the `JobSession` origin, before asynchronous work; a target
+captured afterward cannot establish the old input's identity. Restart/file load
+requires a fresh explicit destination review.
 
 `mesh_result_application.apply_saved_mesh(target, item, path, policy=...,
 result_to_source=..., keep_original=...)` connects the existing primitive to one
@@ -564,7 +574,8 @@ Blender history is enabled; see [native history](#native-undo-for-saved-mesh-edi
 
 The generic action reviews a destination selected now. The captured-source action
 below uses the original exported object. Neither establishes provider alignment,
-provider retexture/rig contracts, semantic parts classification or end-to-end Edit 3D acceptance.
+provider retexture/rig contracts, semantic parts classification or end-to-end
+Edit 3D acceptance.
 
 
 ## Applying to the captured mesh source
@@ -637,10 +648,11 @@ when geometry replacement is intended.
 
 The shared saved-mesh command records Blender history immediately before import
 and after successful replacement, staging cleanup and rollback-handle finalization.
-This covers REMESH, UV, RETEXTURE, PARTS and RIG from both native review and local MCP. The
-pre-state includes the latest user edits; neither checkpoint contains temporary
-import scenes or private rollback holders. Undo restores the source data and
-removes any Keep original copy; Redo restores the applied data and that copy.
+This covers REMESH, UV, RETEXTURE, PARTS and RIG from both native review and
+local MCP. The pre-state includes the latest user edits; neither checkpoint
+contains temporary import scenes or private rollback holders. Undo restores the
+source data and removes any Keep original copy; Redo restores the applied data
+and that copy.
 
 Automatic checkpoints require a desktop window, Global Undo enabled and at least
 two undo steps. The extension does not change preferences. Blender's history size
@@ -660,11 +672,11 @@ still follows the ordinary history-invalidation rules.
 Undo/Redo changes Blender scene data only. Durable jobs, local application claims,
 download receipts and spending records remain unchanged; Redo does not submit,
 download or run application again. Existing history handlers discard live origin
-and captured-source ownership. The transient `mesh_edit` status is cleared before touching potentially retired
-RNA references and is not rebound by name after Redo. Pending approvals cannot
-survive history changes;
-reuse requires a fresh explicit destination review. Saving/reopening a blend file
-does not restore undo history or source authority from stored names. See
+and captured-source ownership. The transient `mesh_edit` status is cleared
+before touching potentially retired RNA references and is not rebound by name
+after Redo. Pending approvals cannot survive history changes; reuse requires a
+fresh explicit destination review. Saving/reopening a blend file does not
+restore undo history or source authority from stored names. See
 [undo interaction](ui/saved-3d.md#saved-mesh-undo-interaction).
 
 ## Apply static parts
@@ -730,14 +742,15 @@ mutation. Existing source rig/animation data remains outside the capture policy.
 Source materials are deliberately retained; RIG does not adopt returned textures.
 Invalid results remain downloaded for inspection or a separate new-group import.
 
-[`rig_application.py`](../scenario/blender/rig_application.py) stages weights on a
-private source-mesh copy, then uses the existing mesh replacement/Keep original
-boundary. A synchronous internal receipt checks the owned modifier and weights
-before rollback. The saved-result command verifies source restoration and exact
-new-data cleanup before reporting a known failure; uncertainty never authorizes
-another attachment. Native undo/redo restores the rig, weights and retained
-original together. Receipt-only recovery records success without attaching again.
-UI **Attach rig** and MCP `mesh_policy: RIG` use the same captured target and
-optional original-export target guards. Session status exposes `mesh_edit.rig`;
-history invalidation retires that status before dereferencing stale Blender data.
-Provider coordinate, vertex-order and returned-skin contracts remain under #99.
+[`rig_application.py`](../scenario/blender/rig_application.py) stages weights on
+a private source-mesh copy, then uses the existing mesh replacement/Keep
+original boundary. A synchronous internal receipt checks the owned modifier and
+weights before rollback. The saved-result command verifies source restoration
+and exact new-data cleanup before reporting a known failure; uncertainty never
+authorizes another attachment. Native undo/redo restores the rig, weights and
+retained original together. Receipt-only recovery records success without
+attaching again. UI **Attach rig** and MCP `mesh_policy: RIG` use the same
+captured target and optional original-export target guards. Session status
+exposes `mesh_edit.rig`; history invalidation retires that status before
+dereferencing stale Blender data. Provider coordinate, vertex-order and
+returned-skin contracts remain under #99.

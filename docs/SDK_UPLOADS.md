@@ -326,10 +326,11 @@ and the open upload checks are in
 
 `discard_upload_source(request_id, expected_revision=...)` runs through the existing
 worker queue and accepts only CANCELED, FAILED, IMPORTED or ABANDONED records in
-the active selected scope. An abandoned upload's replacement has its own copy. It needs no current Blender origin or online access. PREPARED,
-in-flight and uncertain uploads retain their sources. Cleanup never cancels an
-upload, calls a service, deletes a remote asset or changes its saved history.
-It returns the same immutable record, including all source hashes and receipts.
+the active selected scope. An abandoned upload's replacement has its own copy.
+It needs no current Blender origin or online access. PREPARED, in-flight and
+uncertain uploads retain their sources. Cleanup never cancels an upload, calls a
+service, deletes a remote asset or changes its saved history. It returns the
+same immutable record, including all source hashes and receipts.
 
 The command derives one private staging directory from the saved scope and request
 identity. It accepts only `source.bin` there, verifies its saved whole-file and
@@ -405,29 +406,32 @@ the saved state is `imported`, then pass its `asset_id` to the intended model or
 workflow file input in a fresh estimate. Uploading does not submit generation or
 approve its cost. Generation forms use the same
 owner through **Upload reference** for image, audio, video and 3D files; loaded
-workflow forms use it through [workflow input attachment](#workflow-input-attachment). Image
-inputs also support explicit still captures; video inputs support explicit clips.
-**Upload selected mesh** creates one GLB reference for an empty 3D input. Preparation
+workflow forms use it through
+[workflow input attachment](#workflow-input-attachment). Image inputs also
+support explicit still captures; video inputs support explicit clips. **Upload
+selected mesh** creates one GLB reference for an empty 3D input. Preparation
 runs on the main thread in private temporary storage retained until asynchronous
-staging finishes or the session retires. Clips use the preview range when enabled,
-otherwise the scene range, at 1280x720 with no audio or implicit duration padding.
-Capture settings/current frame and mesh selection are restored. Restoration writes
-the preview-range toggle only when it changed, and a clip keeps an enabled preview
-range that already equals its span. In the GUI, Blender answers any write to that
-toggle, even an unchanged one, with a same-frame update after the capture returns.
-Its frame hook would invalidate the upload origin captured right after the snapshot.
-Real frame changes still invalidate it; see
+staging finishes or the session retires. Clips use the preview range when
+enabled, otherwise the scene range, at 1280x720 with no audio or implicit
+duration padding. Capture settings/current frame and mesh selection are
+restored. Restoration writes the preview-range toggle only when it changed, and
+a clip keeps an enabled preview range that already equals its span. In the GUI,
+Blender answers any write to that toggle, even an unchanged one, with a
+same-frame update after the capture returns. Its frame hook would invalidate the
+upload origin captured right after the snapshot. Real frame changes still
+invalidate it; see
 [origin and quote lifetime](BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime).
 Stills/clips need an interactive viewport; mesh export also works headlessly.
-Uploaded snapshots do not track later source edits. It never uploads while drawing or pricing.
-Render forms use the same lifecycle for explicit scene captures and first frames.
-Their role is part of asynchronous attachment and saved-confirmation guards.
-A disabled first-frame slot is omitted from generation while its upload retains
-its independent lifetime; changing the chosen path requires a new preparation.
-Requests require one uploaded scene slot in the current model input and place it
-before style references. A Render Video first frame goes to the model's
-first-frame input, or first in its reference-image array when the model has no
-such input or says its first frame can't be combined with the scene clip. A Render Video first frame
+Uploaded snapshots do not track later source edits. It never uploads while
+drawing or pricing. Render forms use the same lifecycle for explicit scene
+captures and first frames. Their role is part of asynchronous attachment and
+saved-confirmation guards. A disabled first-frame slot is omitted from
+generation while its upload retains its independent lifetime; changing the
+chosen path requires a new preparation. Requests require one uploaded scene slot
+in the current model input and place it before style references. A Render Video
+first frame goes to the model's first-frame input, or first in its
+reference-image array when the model has no such input or says its first frame
+can't be combined with the scene clip. A Render Video first frame
 [handed from a saved image result](BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame)
 needs no upload: it reuses that result's existing asset ID under the same scope,
 asset and kind markers, with no upload marker or local file path.
@@ -482,9 +486,10 @@ task as this safe case. Explicit refresh that confirms `processing` re-enables
 status reads, while uncertain initialization/part/finalization cannot be replayed.
 The facade owns recovery tasks and drains their outcomes even after the dialog
 closes or the MCP caller disconnects. Recovery suspends automatic admission for
-its record until the saved outcome has been observed; a successful local cancellation cannot schedule
-initialization from a stale in-memory projection. Completed task projections are
-also refreshed from durable storage before selecting their next command.
+its record until the saved outcome has been observed; a successful local
+cancellation cannot schedule initialization from a stale in-memory projection.
+Completed task projections are also refreshed from durable storage before
+selecting their next command.
 
 The [Scenario upload guide](https://docs.scenario.com/get-started/content/uploading-assets)
 documents multipart uploads and signed S3 destinations. The active `S3UploadPolicy`
@@ -568,10 +573,10 @@ confirmation also requires loaded inputs and a fresh review after loading.
 
 Uploaded references retain their credential-scope fingerprint. Reopening under
 another connection, changing the input kind or manually changing that asset ID
-blocks pricing rather than silently using it in another account/project. These local markers are not server
-permission checks and contain no credentials. A scene/model/slot change prevents
-late attachment; it does not abort already authorized remote work. No upload
-operation grants generation approval.
+blocks pricing rather than silently using it in another account/project. These
+local markers are not server permission checks and contain no credentials. A
+scene/model/slot change prevents late attachment; it does not abort already
+authorized remote work. No upload operation grants generation approval.
 
 **Inspect uploads** snapshots this connection's durable metadata without sending
 bytes. Its paginated view shows errors, state and request IDs. Explicit actions
@@ -589,12 +594,13 @@ matching imported media from the selected scope. **Use this reference** opens a
 separate confirmation naming the scene, lane, model, input, reference and file.
 The inspection view captures the destination before opening; a scene, model or
 reference-list change requires reopening it. Confirmation consumes a single-use
-approval and rechecks the stored record, current scope, scene revision and entire reference
-form before adding or replacing a slot. Changed selections require a fresh review.
-Attaching invalidates the previous price and never submits generation. Native
-tests save/reopen an actual blend before explicitly approving the recovered
-reference; they do not establish physical GUI interaction or live-service acceptance.
-Never remove and re-add a reference as a substitute for reconciling an uncertain upload.
+approval and rechecks the stored record, current scope, scene revision and
+entire reference form before adding or replacing a slot. Changed selections
+require a fresh review. Attaching invalidates the previous price and never
+submits generation. Native tests save/reopen an actual blend before explicitly
+approving the recovered reference; they do not establish physical GUI
+interaction or live-service acceptance. Never remove and re-add a reference as a
+substitute for reconciling an uncertain upload.
 
 ### Workflow input attachment
 
@@ -622,20 +628,20 @@ prevents a second upload. Local validation or rejected queue admission removes i
 JobSession refuses the next initialization, part or completion admission once the
 captured origin is revoked, and the ticket then stops for good: for a snapshot, by
 a scene edit, frame change, render or undo; for a chosen file, only by undo, redo,
-removing its scene or loading a file. `ReferenceUpload.sent_nothing` identifies a stopped
-ticket that never reached Scenario: staging failed before a saved record was
-observed, an admission was refused while the record was still `prepared` (it
-reaches `initializing` before the first service request), or the record was
-canceled. Delivery then removes only its own marker, keeps existing input values
-and leaves a note on the input. Each input keeps only its latest note, stored by
-the scene's session UID and input name, and shown only while the loaded workflow,
-its schema and the input's values match those it was recorded with. It survives
-undo and redo, notes on other inputs never evict it, and another upload admitted
-into the input retires it, as do a Library or saved-upload attachment to it and
-**Clear reference**; a retry refused before admission keeps it. Notes live
-only on the facade, so replacing it, as for its handles above, also drops them.
-The upload operator returns `FINISHED`
-whenever a new marker remains after a start failure, so its undo step is recorded.
+removing its scene or loading a file. `ReferenceUpload.sent_nothing` identifies
+a stopped ticket that never reached Scenario: staging failed before a saved
+record was observed, an admission was refused while the record was still
+`prepared` (it reaches `initializing` before the first service request), or the
+record was canceled. Delivery then removes only its own marker, keeps existing
+input values and leaves a note on the input. Each input keeps only its latest
+note, stored by the scene's session UID and input name, and shown only while the
+loaded workflow, its schema and the input's values match those it was recorded
+with. It survives undo and redo, notes on other inputs never evict it, and
+another upload admitted into the input retires it, as do a Library or
+saved-upload attachment to it and **Clear reference**; a retry refused before
+admission keeps it. Notes live only on the facade, so replacing it, as for its
+handles above, also drops them. The upload operator returns `FINISHED` whenever
+a new marker remains after a start failure, so its undo step is recorded.
 
 The maintenance pump attaches only after an imported observation and a fresh
 origin check, and only while the workflow ID, schema digest, input kind, marker
@@ -643,23 +649,24 @@ token and input value are unchanged. Once it observes the saved record for an
 unchanged input, it records the request in `_scenario_workflow_upload_request`,
 even if the upload later stops; an upload released as having sent nothing records
 none. Attachment uses the same checked append and scope digest/canonical value
-binding as Library workflow references and removes the marker. Explicit **Cancel preparation** of a `prepared` record frees every input
-still marked for it, matched through the facade's marker-to-ticket ledger, which
-survives undo, or through that recorded request after reopening or a connection
-change. A blend file saved before the first observation has no request link.
-A failed, canceled or abandoned record ends delivery with an error and keeps the
-marker; the new upload that **Upload again** sends is not bound to the input.
-**Stop waiting** releases any marked input without a running delivery: it removes
-the marker and request link, keeps values and leaves the saved record untouched.
-Saved uploads use the shared inspection view with a workflow destination:
-attaching needs a separate single-use confirmation that rechecks the stored record,
-scene origin, scope and complete form signature, and supersedes an in-flight
-upload into that input. Undo/redo, blend reopening and connection retirement
-discard in-memory bindings without resending bytes. The upload operator records
-its own undo step, so among history changes only undoing that step removes the
-marker. Selected-mesh uploads keep their captured source, so workflow quotes bind
-them as described below. Local MCP exposes the equivalent sequence for
-file, viewport, camera, clip and selected-mesh sources: `upload_reference` or
+binding as Library workflow references and removes the marker. Explicit **Cancel
+preparation** of a `prepared` record frees every input still marked for it,
+matched through the facade's marker-to-ticket ledger, which survives undo, or
+through that recorded request after reopening or a connection change. A blend
+file saved before the first observation has no request link. A failed, canceled
+or abandoned record ends delivery with an error and keeps the marker; the new
+upload that **Upload again** sends is not bound to the input. **Stop waiting**
+releases any marked input without a running delivery: it removes the marker and
+request link, keeps values and leaves the saved record untouched. Saved uploads
+use the shared inspection view with a workflow destination: attaching needs a
+separate single-use confirmation that rechecks the stored record, scene origin,
+scope and complete form signature, and supersedes an in-flight upload into that
+input. Undo/redo, blend reopening and connection retirement discard in-memory
+bindings without resending bytes. The upload operator records its own undo step,
+so among history changes only undoing that step removes the marker.
+Selected-mesh uploads keep their captured source, so workflow quotes bind them
+as described below. Local MCP exposes the equivalent sequence for file,
+viewport, camera, clip and selected-mesh sources: `upload_reference` or
 `capture_reference`, then the imported asset ID in `estimate_workflow` parameters.
 The native **Render result** snapshot has no `capture_reference` source.
 

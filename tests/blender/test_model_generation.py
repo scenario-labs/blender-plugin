@@ -2761,7 +2761,10 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(status["status"], "ready", status)
                 self.assertIsNone(status["error"])
                 self.assertEqual(status["images"], [])
-                self.assertEqual(status["files"], [])
+                # job_status lists every verified download (#523); listing applies nothing.
+                self.assertEqual(status["files"], [status["results"][0]["file"]])
+                with open(status["files"][0], "rb") as handle:
+                    self.assertEqual(handle.read(), self.result_bytes)
                 with self.assertRaisesRegex(ValueError, "prepare_result_application"):
                     self.tools.import_result({"job_id": reference})
                 self.assertEqual(status["results"][0]["media_type"], media_type)

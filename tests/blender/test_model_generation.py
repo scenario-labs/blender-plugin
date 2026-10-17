@@ -2751,7 +2751,8 @@ class ModelGenerationTests(unittest.TestCase):
         ):
             with self.subTest(lane=lane):
                 self.result_media_type = media_type
-                self.result_bytes = b"synthetic saved output, never passed to a decoder"
+                # Bytes differ per lane, so another lane's file cannot pass for this one.
+                self.result_bytes = f"synthetic {lane} output, never passed to a decoder".encode()
                 self.remote_status = "success"
                 result = self.mcp_submit(self.mcp_quote(lane))
                 reference = result["local_id"]
@@ -2762,9 +2763,12 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertIsNone(status["error"])
                 self.assertEqual(status["images"], [])
                 # job_status lists every verified download (#523); listing applies nothing.
+                self.assertFalse(status["file_check_pending"])
+                self.assertEqual(status["results"][0]["file_state"], "verified")
                 self.assertEqual(status["files"], [status["results"][0]["file"]])
-                with open(status["files"][0], "rb") as handle:
-                    self.assertEqual(handle.read(), self.result_bytes)
+                listed = Path(status["files"][0])
+                self.assertTrue(listed.is_relative_to(self.runtime.paths().state_dir), listed)
+                self.assertEqual(listed.read_bytes(), self.result_bytes)
                 with self.assertRaisesRegex(ValueError, "prepare_result_application"):
                     self.tools.import_result({"job_id": reference})
                 self.assertEqual(status["results"][0]["media_type"], media_type)

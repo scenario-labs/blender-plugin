@@ -114,6 +114,8 @@ BASELINE = (
     "test_model_generation.ModelGenerationTests.test_refresh_failure_ceiling_pauses_delivery_for_review",
     "test_model_generation.ModelGenerationTests.test_lost_cancel_request_keeps_the_job_polled_without_sending_it_again",
     "test_model_generation.ModelGenerationTests.test_cancel_not_sent_after_a_failed_read_keeps_the_job_polled",
+    # Saved non-image results list their verified files and apply nothing (#588).
+    "test_model_generation.ModelGenerationTests.test_non_image_downloads_remain_saved_without_scene_application",
 )
 
 

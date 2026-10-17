@@ -244,6 +244,10 @@ full render-lane desktop acceptance.
   primitives. Full generation/history integration of in-place mesh edits remains
   [#99](https://github.com/scenario-labs/blender-plugin/issues/99); panoramas
   reach World through the Environment lane and saved-result approval.
+- In-place UV, retexture and rig application keeps the source's faces, so a
+  result whose UV seam crosses a source face (for example a quad's diagonal)
+  is refused, as is a color-only retexture without UV layers. A fit only scales
+  and moves the result; a rotated result is refused.
 - The Environment lane (sidebar, Studio, the composer's Generate mode and local
   MCP) generates 360 panoramas, HDRIs and upscales only through verified model
   contracts, and its results wait for explicit World approval. Paid runs

@@ -15,7 +15,15 @@ _log = logging.getLogger("scenario.jobs")
 
 
 class MeshResultApplicationError(RuntimeError):
-    """Rejected before mutation, or all scene changes were verifiably rolled back."""
+    """Rejected before mutation, or all scene changes were verifiably rolled back.
+
+    `reason` repeats a mesh policy's own fixed rejection text, such as which
+    result geometry failed to match the source; it never carries file data.
+    """
+
+    def __init__(self, message, reason=None):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -30,6 +38,10 @@ class MeshEditApplication:
     clips: tuple = field(default=(), repr=False)
     # ANIMATE's largest rest correction in degrees; None for the other policies.
     rest_correction_deg: float | None = None
+    # The verified scene-to-source-local mapping, and the FIT base it came from;
+    # empty for ANIMATE, which uses no mapping.
+    mapping: tuple = ()
+    fitted_from: str | None = None
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
@@ -58,6 +70,14 @@ def validate_request(target, *, policy, result_to_source, keep_original):
         raise MeshResultApplicationError(
             "Choose a source with surface geometry, not a parts anchor"
         )
+    if isinstance(result_to_source, mesh_application.FitRequest):
+        if policy not in mesh_application.FIT_POLICIES or not result_to_source.bases:
+            raise MeshResultApplicationError(
+                "Fitted coordinates apply to UV, retexture and rig only"
+            )
+        for _, rows in result_to_source.bases:
+            mesh_application._matrix(rows)
+        return result_to_source
     return mesh_application._matrix(result_to_source)
 
 
@@ -137,7 +157,12 @@ def _publish_parts(target, parts):
 
 
 def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_original):
-    """Use an explicit GLB-scene-to-source-local mapping; never fit/guess alignment."""
+    """Use an explicit GLB-scene-to-source-local mapping or an approved verified fit.
+
+    UV, RETEXTURE and RIG treat every returned result mesh as one surface;
+    display helpers (`_helpers`) are never result meshes. Alignment is never guessed: a `FitRequest`
+    is used only when the full correspondence verifies it.
+    """
     mapping = validate_request(
         target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
     )
@@ -169,13 +194,15 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                 objects = (*objects, primary)
                 local_mapping = Matrix.Identity(4)
             elif policy != "ANIMATE":
-                if len(meshes) != 1:
+                if not meshes or (policy == "REMESH" and len(meshes) != 1):
                     raise MeshResultApplicationError("Choose one primary mesh without variants")
                 primary = meshes[0]
                 # Blender has already converted GLB axes. Preserve imported node
                 # transforms; never infer alignment or move the source object.
-                local_mapping = mapping @ primary.matrix_world
-                target.scene.collection.objects.link(primary)
+                if policy == "REMESH":
+                    local_mapping = mapping @ primary.matrix_world
+                for obj in meshes:
+                    target.scene.collection.objects.link(obj)
             imported = {
                 name: set(getattr(bpy.data, name)) - previous for name, previous in before.items()
             }
@@ -191,10 +218,19 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             elif policy == "RIG":
                 skin = tuple(obj for obj in objects if obj not in helpers)
                 receipt = rig_application.apply_skin(
-                    target, primary, skin, mapping, keep_original=keep_original
+                    target, tuple(meshes), skin, mapping, keep_original=keep_original
                 )
                 rig = receipt.rig
                 objects = tuple(obj for obj in objects if obj not in receipt.objects)
+            elif policy in {"UV", "RETEXTURE"}:
+                receipt = mesh_application.apply_surface(
+                    target.scene,
+                    target.obj,
+                    tuple(meshes),
+                    policy=policy,
+                    result_to_source=mapping,
+                    keep_original=keep_original,
+                )
             else:
                 receipt = mesh_application.apply_mesh(
                     target.scene,
@@ -219,10 +255,21 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                     # application and must never authorize another replacement.
                     undo = False
                     _log.warning("Mesh applied, but Blender undo could not be recorded")
+            surface = getattr(receipt, "surface", None)
+            used = () if policy == "ANIMATE" else (surface.mapping if surface else mapping)
             return MeshEditApplication(
-                target.obj, receipt.original, policy, undo, parts, rig, clips, correction
+                target.obj,
+                receipt.original,
+                policy,
+                undo,
+                parts,
+                rig,
+                clips,
+                correction,
+                tuple(tuple(row) for row in used),
+                surface.fitted_from if surface else None,
             )
-    except Exception:
+    except Exception as error:
         if receipt is not None:
             try:
                 receipt.rollback()
@@ -236,6 +283,9 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
         model_application._remove_new_data(before)
         if model_application._snapshot() != before:
             raise RuntimeError("Mesh cleanup is incomplete; do not apply again") from None
+        reason = str(error) if isinstance(error, mesh_application.MeshApplicationError) else None
         raise MeshResultApplicationError(
             "Could not apply the verified mesh; source and saved files remain"
+            + (f": {reason}" if reason else ""),
+            reason,
         ) from None

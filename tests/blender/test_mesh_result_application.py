@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import math
 import struct
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
+import bmesh
 import bpy
 from helpers import FIXTURES, animated_glb, parts_glb, submodule
 from mathutils import Matrix
@@ -1926,3 +1928,561 @@ class AnimateResultTests(unittest.TestCase):
             result = self.session.retry_model_receipt(caught.exception)
         self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
         self.assertEqual((_animation(self.rig), set(bpy.data.actions)), (state, actions))
+
+
+def _rounded(vector):
+    return tuple(round(component, 4) for component in vector)
+
+
+def _corner_keys(mesh):
+    """Stable (face centre, corner position) keys, independent of vertex order."""
+    keys = []
+    for polygon in mesh.polygons:
+        centre = _rounded(polygon.center)
+        keys.extend(
+            (centre, _rounded(mesh.vertices[mesh.loops[loop].vertex_index].co))
+            for loop in polygon.loop_indices
+        )
+    return keys
+
+
+def _uvs(mesh, layer):
+    return {key: tuple(item.uv) for key, item in zip(_corner_keys(mesh), layer.data, strict=True)}
+
+
+class MatchedResultTests(unittest.TestCase):
+    """Exported results that come back triangulated, seam-split or reordered."""
+
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+
+    def setUp(self):
+        MeshResultTests.setUp(self)
+        self.export = submodule("blender.mesh_export")
+        data = self.source.data
+        data.clear_geometry()
+        mesh = bmesh.new()
+        bmesh.ops.create_cube(mesh, size=2.0)
+        ring = [
+            mesh.verts.new((3 + math.cos(step * math.tau / 5), math.sin(step * math.tau / 5), 0))
+            for step in range(5)
+        ]
+        mesh.faces.new(ring)
+        mesh.to_mesh(data)
+        mesh.free()
+        for polygon in data.polygons:
+            polygon.use_smooth = polygon.index % 2 == 0
+            polygon.material_index = polygon.index % 2
+        layer = data.uv_layers.new(name="Source UV")
+        for index, item in enumerate(layer.data):
+            item.uv = (index / 40, 0.5)
+        for name in ("Source A", "Source B"):
+            data.materials.append(bpy.data.materials.new(name))
+        data.update()
+        # Far from the scene origin, with rotation and nonuniform scale on both levels.
+        parent = bpy.data.objects.new("Matched parent", None)
+        self.scene.collection.objects.link(parent)
+        parent.location = (400, -250, 120)
+        parent.rotation_euler = (0.3, 0.1, 0.7)
+        parent.scale = (1.5, 1.5, 1.5)
+        self.source.parent = parent
+        self.source.location = (2, 3, 4)
+        self.source.rotation_euler = (0.2, 0.3, 0.4)
+        self.source.scale = (2, 3, 4)
+        bpy.context.view_layer.update()
+        self.recapture()
+
+    def recapture(self):
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        self.mapping = self.source.matrix_world.inverted()
+        self.geometry = [tuple(vertex.co) for vertex in self.source.data.vertices]
+
+    def result(self, change):
+        """Export an edited copy of the source with the plugin's Edit 3D exporter."""
+        copy = self.source.copy()
+        copy.data = self.source.data.copy()
+        self.scene.collection.objects.link(copy)
+        objects = change(copy) or [copy]
+        bpy.context.view_layer.update()
+        # Other fixture scenes stay out: the export uses only the active scene.
+        self.export.export_glb(bpy.context, objects, str(self.path))
+        for obj in objects:
+            data, kind = obj.data, obj.type
+            bpy.data.objects.remove(obj)
+            (bpy.data.meshes if kind == "MESH" else bpy.data.armatures).remove(data)
+        # Flush these scene edits now, so a later capture sees a settled scene.
+        bpy.context.view_layer.update()
+        self.body = self.path.read_bytes()
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("mesh", self.path.name, "model/gltf-binary", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+
+    @staticmethod
+    def islands(copy, layer=None):
+        """Give every face its own UV island, so the exporter splits each seam."""
+        layer = layer or copy.data.uv_layers.active
+        for polygon in copy.data.polygons:
+            for corner, loop in enumerate(polygon.loop_indices):
+                layer.data[loop].uv = (0.1 * polygon.index + 0.01 * corner, 0.2 + 0.05 * corner)
+        return _uvs(copy.data, layer)
+
+    def assert_unchanged(self, before, reason, **kwargs):
+        with self.assertRaises(self.module.MeshResultApplicationError) as raised:
+            self.apply(**{"result_to_source": self.mapping, **kwargs})
+        self.assertIn(reason, raised.exception.reason)
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
+        self.assertEqual(self.path.read_bytes(), self.body)
+
+    def assert_geometry_kept(self):
+        self.assertEqual([tuple(vertex.co) for vertex in self.source.data.vertices], self.geometry)
+        self.assertEqual(len(self.source.data.polygons), 7)
+
+    def assert_uvs(self, layer, expected):
+        actual = _uvs(self.source.data, layer)
+        self.assertEqual(actual.keys(), expected.keys())
+        for key, value in expected.items():
+            for a, b in zip(actual[key], value, strict=True):
+                self.assertAlmostEqual(a, b, places=5)
+
+    def test_uv_applies_triangulated_seam_split_result_to_transformed_source(self):
+        expected = {}
+        self.result(lambda copy: expected.update(self.islands(copy)))
+        materials = list(self.source.data.materials)
+        indices = [polygon.material_index for polygon in self.source.data.polygons]
+        result = self.apply(policy="UV", result_to_source=self.mapping)
+        self.assertEqual(result.policy, "UV")
+        self.assert_geometry_kept()
+        self.assertEqual(list(self.source.data.materials), materials)
+        self.assertEqual([p.material_index for p in self.source.data.polygons], indices)
+        self.assertEqual(self.source.data.uv_layers.active.name, "Source UV")
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+
+    def test_uv_applies_reordered_vertices_and_faces(self):
+        expected = {}
+
+        def reorder(copy):
+            mesh = bmesh.new()
+            mesh.from_mesh(copy.data)
+            mesh.verts.sort(key=lambda vertex: -vertex.index)
+            mesh.faces.sort(key=lambda face: -face.index)
+            mesh.to_mesh(copy.data)
+            mesh.free()
+            expected.update(self.islands(copy))
+
+        self.result(reorder)
+        self.apply(policy="UV", result_to_source=self.mapping)
+        self.assert_geometry_kept()
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+
+    def test_uv_resolves_a_seam_split_source_by_face(self):
+        mesh = bmesh.new()
+        mesh.from_mesh(self.source.data)
+        mesh.edges.ensure_lookup_table()
+        bmesh.ops.split_edges(mesh, edges=[mesh.edges[0]])
+        mesh.to_mesh(self.source.data)
+        mesh.free()
+        self.source.data.update()
+        self.recapture()
+        expected = {}
+        self.result(lambda copy: expected.update(self.islands(copy)))
+        self.apply(policy="UV", result_to_source=self.mapping)
+        self.assert_geometry_kept()
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+
+    def test_retexture_adopts_split_result_materials_and_uv_layers(self):
+        expected = {}
+        faces = {}
+
+        def retexture(copy):
+            copy.data.materials.clear()
+            for name in ("Result A", "Result B"):
+                copy.data.materials.append(bpy.data.materials.new(name))
+            for polygon in copy.data.polygons:
+                polygon.material_index = 1 if polygon.index < 3 else 0
+                faces[_rounded(polygon.center)] = ("Result A", "Result B")[polygon.material_index]
+            expected["Source UV"] = self.islands(copy)
+            detail = copy.data.uv_layers.new(name="Detail UV")
+            for index, item in enumerate(detail.data):
+                item.uv = (0.75, index / 30)
+            expected["Detail UV"] = _uvs(copy.data, detail)
+
+        self.result(retexture)
+        result = self.apply(policy="RETEXTURE", result_to_source=self.mapping)
+        self.assertEqual(result.policy, "RETEXTURE")
+        self.assert_geometry_kept()
+        data = self.source.data
+        for polygon in data.polygons:
+            name = data.materials[polygon.material_index].name
+            self.assertTrue(name.startswith(faces[_rounded(polygon.center)]), name)
+        self.assertEqual(len(data.uv_layers), 2)
+        # glTF does not keep UV names; match each imported layer by its values.
+        for layer in data.uv_layers:
+            values = _uvs(data, layer)
+            name = min(
+                expected,
+                key=lambda name, values=values: sum(
+                    abs(a - b)
+                    for key, uv in expected[name].items()
+                    for a, b in zip(values[key], uv, strict=True)
+                ),
+            )
+            self.assert_uvs(layer, expected.pop(name))
+        self.assertFalse(expected)
+
+    def fit(self):
+        rows = [tuple(tuple(row) for row in matrix) for matrix in (self.mapping, Matrix())]
+        return self.mesh.FitRequest((("WORLD", rows[0]), ("LOCAL", rows[1])))
+
+    @staticmethod
+    def regime(copy, *, bake, normalize):
+        """Mimic provider coordinates: baked or dropped node transform, then normalized."""
+        if bake:
+            copy.data.transform(copy.matrix_world)
+        copy.parent = None
+        copy.matrix_world = Matrix()
+        if normalize:
+            low = [min(v.co[axis] for v in copy.data.vertices) for axis in range(3)]
+            high = [max(v.co[axis] for v in copy.data.vertices) for axis in range(3)]
+            scale = normalize / max(b - a for a, b in zip(low, high, strict=True))
+            centre = [(a + b) / 2 for a, b in zip(low, high, strict=True)]
+            copy.data.transform(Matrix.Scale(scale, 4) @ Matrix.Translation([-c for c in centre]))
+
+    def test_fit_verifies_normalized_and_rescaled_provider_coordinates(self):
+        for bake, normalize, base in (
+            (True, 1.0, "WORLD"),
+            (True, None, "WORLD"),
+            (False, 2.0, "LOCAL"),
+        ):
+            with self.subTest(bake=bake, normalize=normalize):
+                expected = {}
+
+                def change(copy, bake=bake, normalize=normalize, expected=expected):
+                    expected.update(self.islands(copy))
+                    self.regime(copy, bake=bake, normalize=normalize)
+                    if normalize is None:
+                        # World coordinates in centimetres.
+                        copy.data.transform(Matrix.Scale(100, 4))
+
+                self.result(change)
+                strict = self.mapping if base == "WORLD" else Matrix()
+                self.assert_unchanged(self.model._snapshot(), "differs", policy="UV")
+                result = self.apply(policy="UV", result_to_source=self.fit())
+                self.assertEqual(result.fitted_from, base)
+                self.assert_geometry_kept()
+                self.assert_uvs(self.source.data.uv_layers.active, expected)
+                self.assertNotEqual(Matrix(result.mapping), strict)
+                self.recapture()
+
+    def test_strict_world_accepts_baked_world_vertices(self):
+        expected = {}
+
+        def change(copy):
+            expected.update(self.islands(copy))
+            self.regime(copy, bake=True, normalize=None)
+
+        self.result(change)
+        result = self.apply(policy="UV", result_to_source=self.mapping)
+        self.assertIsNone(result.fitted_from)
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+
+    def test_fit_fails_closed_when_both_bases_fit_differently(self):
+        self.source.parent = None
+        self.source.matrix_basis = Matrix.Rotation(math.pi / 2, 4, "Z")
+        mesh = bmesh.new()
+        mesh.from_mesh(self.source.data)
+        mesh.faces.ensure_lookup_table()
+        bmesh.ops.delete(mesh, geom=list(mesh.faces[6].verts), context="VERTS")
+        mesh.to_mesh(self.source.data)
+        mesh.free()
+        bpy.context.view_layer.update()
+        self.recapture()
+        self.result(lambda copy: self.regime(copy, bake=True, normalize=1.0))
+        # A cube rotated a quarter turn fits both bases with different corners.
+        self.assert_unchanged(
+            self.model._snapshot(), "several ways", policy="UV", result_to_source=self.fit()
+        )
+        self.apply(policy="UV", result_to_source=self.mapping @ Matrix.Scale(2, 4))
+
+    def test_fit_is_refused_for_remesh_and_parts(self):
+        for policy in ("REMESH", "PARTS"):
+            with self.subTest(policy=policy):
+                with self.assertRaises(self.module.MeshResultApplicationError):
+                    self.apply(policy=policy, result_to_source=self.fit())
+                self.mesh.validate_target(self.target)
+
+    def split(self, copy, materials=None):
+        """Return the copy as two result meshes, one per source material."""
+        other = copy.copy()
+        other.data = copy.data.copy()
+        self.scene.collection.objects.link(other)
+        for obj, keep in ((copy, 0), (other, 1)):
+            mesh = bmesh.new()
+            mesh.from_mesh(obj.data)
+            bmesh.ops.delete(
+                mesh, geom=[f for f in mesh.faces if f.material_index != keep], context="FACES"
+            )
+            mesh.to_mesh(obj.data)
+            mesh.free()
+        if materials:
+            # Each mesh's faces use its first slot; shared slots must merge once.
+            for obj, names in zip((copy, other), materials, strict=True):
+                obj.data.materials.clear()
+                for name in names:
+                    material = bpy.data.materials.get(name) or bpy.data.materials.new(name)
+                    obj.data.materials.append(material)
+                for polygon in obj.data.polygons:
+                    polygon.material_index = 0
+        return [copy, other]
+
+    def test_several_result_meshes_form_one_surface(self):
+        expected = {}
+
+        def change(copy):
+            expected.update(self.islands(copy))
+            return self.split(copy)
+
+        self.result(change)
+        self.apply(policy="UV", result_to_source=self.fit())
+        self.assert_geometry_kept()
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+
+    def test_retexture_merges_materials_from_several_result_meshes(self):
+        def change(copy):
+            self.islands(copy)
+            return self.split(copy, materials=(("Result A",), ("Result B", "Result A")))
+
+        self.result(change)
+        self.apply(policy="RETEXTURE", result_to_source=self.mapping)
+        data = self.source.data
+        names = [material.name.split(".")[0] for material in data.materials]
+        self.assertEqual(names, ["Result A", "Result B"])
+        for polygon in data.polygons:
+            # Source faces with material 0 went to the first mesh, 1 to the second.
+            self.assertEqual(polygon.material_index, polygon.index % 2)
+
+    def test_session_applies_a_matched_uv_result_once(self):
+        expected = {}
+        self.result(lambda copy: expected.update(self.islands(copy)))
+        record = self.ready_session()
+        applied = self.deliver(self.verify(record), policy="UV", result_to_source=self.mapping)
+        self.assertEqual(applied.record.state, self.storage.JobState.APPLIED)
+        self.assert_uvs(self.source.data.uv_layers.active, expected)
+
+    ready_session = MeshResultTests.ready_session
+    verify = MeshResultTests.verify
+    deliver = MeshResultTests.deliver
+
+    def test_changed_geometry_fails_closed_with_a_reason(self):
+        def moved(copy):
+            copy.data.vertices[0].co.x += 0.01
+
+        def extra(copy):
+            mesh = bmesh.new()
+            mesh.from_mesh(copy.data)
+            corners = {_rounded(vertex.co): vertex for vertex in mesh.verts}
+            mesh.faces.new([corners[(-1, -1, -1)], corners[(1, 1, -1)], corners[(1, 1, 1)]])
+            mesh.to_mesh(copy.data)
+            mesh.free()
+
+        def missing(copy):
+            mesh = bmesh.new()
+            mesh.from_mesh(copy.data)
+            mesh.faces.ensure_lookup_table()
+            bmesh.ops.delete(mesh, geom=[mesh.faces[0]], context="FACES_ONLY")
+            mesh.to_mesh(copy.data)
+            mesh.free()
+
+        def triangulated(copy):
+            mesh = bmesh.new()
+            mesh.from_mesh(copy.data)
+            mesh.faces.ensure_lookup_table()
+            bmesh.ops.triangulate(mesh, faces=[mesh.faces[0]])
+            mesh.to_mesh(copy.data)
+            mesh.free()
+            return copy
+
+        def inner_seam(copy):
+            triangulated(copy)
+            self.islands(copy)
+
+        def inner_material(copy):
+            triangulated(copy)
+            first = next(p for p in copy.data.polygons if len(p.vertices) == 3)
+            first.material_index = 1 - first.material_index
+
+        cases = (
+            ("UV", moved, "differs from the source at"),
+            ("RETEXTURE", moved, "differs from the source at"),
+            ("UV", extra, "1 face outside any single source face"),
+            ("UV", missing, "missing 1 source face"),
+            ("UV", inner_seam, "splits UV coordinates"),
+            ("RETEXTURE", inner_material, "several materials inside 1 source face"),
+        )
+        for policy, change, reason in cases:
+            with self.subTest(policy=policy, change=change.__name__):
+                self.result(change)
+                self.assert_unchanged(self.model._snapshot(), reason, policy=policy)
+
+    def test_coincident_duplicate_source_faces_are_ambiguous(self):
+        mesh = bmesh.new()
+        mesh.from_mesh(self.source.data)
+        mesh.faces.ensure_lookup_table()
+        bmesh.ops.duplicate(mesh, geom=[mesh.faces[6]])
+        mesh.to_mesh(self.source.data)
+        mesh.free()
+        self.source.data.update()
+        self.recapture()
+        self.result(lambda copy: None)
+        self.assert_unchanged(self.model._snapshot(), "ambiguous", policy="UV")
+
+
+class MatchedRigTests(unittest.TestCase):
+    """A returned skin on an exported, triangulated copy of a transformed source."""
+
+    setUp = MatchedResultTests.setUp
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+    recapture = MatchedResultTests.recapture
+    result = MatchedResultTests.result
+    assert_unchanged = MatchedResultTests.assert_unchanged
+    assert_geometry_kept = MatchedResultTests.assert_geometry_kept
+
+    def rig(self, copy, weights, move=None):
+        world = self.source.matrix_world.copy()
+        copy.parent = None
+        copy.matrix_world = world
+        armature = bpy.data.objects.new("Returned rig", bpy.data.armatures.new("Returned rig"))
+        self.scene.collection.objects.link(armature)
+        armature.location = world.translation
+        with bpy.context.temp_override(active_object=armature, object=armature):
+            bpy.context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode="EDIT")
+            root = armature.data.edit_bones.new("Root")
+            root.head, root.tail = (0, 0, 0), (0, 0, 1)
+            tip = armature.data.edit_bones.new("Tip")
+            tip.head, tip.tail, tip.parent = (0, 0, 1), (0, 0, 2), root
+            bpy.ops.object.mode_set(mode="OBJECT")
+        bpy.context.view_layer.update()
+        copy.parent = armature
+        copy.matrix_world = world
+        groups = [copy.vertex_groups.new(name=name) for name in ("Root", "Tip")]
+        for vertex in copy.data.vertices:
+            share = (vertex.co.x + 1) / 5
+            groups[0].add([vertex.index], 1 - share, "REPLACE")
+            groups[1].add([vertex.index], share, "REPLACE")
+            # Files omit zero weights.
+            weights[_rounded(vertex.co)] = {
+                name: weight for name, weight in (("Root", 1 - share), ("Tip", share)) if weight > 0
+            }
+        copy.modifiers.new("Armature", "ARMATURE").object = armature
+        if move:
+            move(copy)
+        return [copy, armature]
+
+    def test_rig_attaches_triangulated_split_result_weights(self):
+        weights = {}
+        self.result(lambda copy: self.rig(copy, weights))
+        material = list(self.source.data.materials)
+        result = self.apply(policy="RIG", result_to_source=self.mapping)
+        self.assertEqual(result.policy, "RIG")
+        self.assert_geometry_kept()
+        self.assertEqual(list(self.source.data.materials), material)
+        self.assert_rest_pose()
+        self.assertEqual(self.source.modifiers[0].object, result.rig)
+        names = [group.name for group in self.source.vertex_groups]
+        for vertex in self.source.data.vertices:
+            actual = {names[group.group]: group.weight for group in vertex.groups}
+            expected = weights[_rounded(vertex.co)]
+            self.assertEqual(actual.keys(), expected.keys())
+            for name, weight in expected.items():
+                self.assertAlmostEqual(actual[name], weight, places=4)
+
+    def test_rig_with_changed_geometry_fails_closed(self):
+        def move(copy):
+            copy.data.vertices[2].co.z += 0.05
+
+        self.result(lambda copy: self.rig(copy, {}, move))
+        self.assert_unchanged(self.model._snapshot(), "differs from the source at", policy="RIG")
+        self.assertFalse(self.source.modifiers)
+        self.assertFalse(self.source.vertex_groups)
+
+    fit = MatchedResultTests.fit
+
+    def assert_rest_pose(self):
+        """At rest, the attached rig must leave every source vertex where it was."""
+        self.scene.frame_set(0)
+        bpy.context.view_layer.update()
+        evaluated = self.source.evaluated_get(bpy.context.evaluated_depsgraph_get()).data
+        for vertex, position in zip(evaluated.vertices, self.geometry, strict=True):
+            for a, b in zip(vertex.co, position, strict=True):
+                self.assertAlmostEqual(a, b, places=3)
+
+    def test_rig_fit_scales_the_rig_group_onto_a_normalized_skin(self):
+        weights = {}
+
+        def normalized(copy):
+            objects = self.rig(copy, weights)
+            # A provider-style rig: the whole skinned character at half size, moved.
+            armature = objects[1]
+            armature.matrix_world = (
+                Matrix.Translation((5, 0, -2)) @ Matrix.Scale(0.5, 4) @ armature.matrix_world
+            )
+            return objects
+
+        self.result(normalized)
+        self.assert_unchanged(self.model._snapshot(), "differs", policy="RIG")
+        result = self.apply(policy="RIG", result_to_source=self.fit())
+        self.assertEqual(result.fitted_from, "WORLD")
+        fit = Matrix(result.mapping) @ self.mapping.inverted()
+        self.assertAlmostEqual(fit.to_scale().x, 2, places=4)
+        self.assert_geometry_kept()
+        self.assert_rest_pose()
+
+    def test_rig_refuses_an_unskinned_mesh_beside_the_skin_with_a_reason(self):
+        weights = {}
+
+        def helper(copy):
+            objects = self.rig(copy, weights)
+            extra = bpy.data.objects.new("Accessory", bpy.data.meshes.new("Accessory"))
+            extra.data.from_pydata([(0, 0, 0), (0.1, 0, 0), (0, 0.1, 0)], [], [(0, 1, 2)])
+            self.scene.collection.objects.link(extra)
+            extra.parent = objects[1]
+            return [*objects, extra]
+
+        self.result(helper)
+        self.assert_unchanged(self.model._snapshot(), "does not skin", policy="RIG")
+        self.assertFalse(self.source.modifiers)
+
+    def test_rig_replaces_an_existing_skin_from_a_normalized_triangulated_result(self):
+        from helpers import skin_to_new_rig
+
+        old_rig = skin_to_new_rig(self.scene, self.source, parent=False)
+        old_state = _rig_state(old_rig)
+        self.recapture()
+        self.assertIsNotNone(self.target.skin)
+        weights = {}
+
+        def normalized(copy):
+            # The upload carries no old skin; the provider returns its own at half size.
+            copy.modifiers.clear()
+            copy.vertex_groups.clear()
+            objects = self.rig(copy, weights)
+            armature = objects[1]
+            armature.matrix_world = (
+                Matrix.Translation((5, 0, -2)) @ Matrix.Scale(0.5, 4) @ armature.matrix_world
+            )
+            return objects
+
+        self.result(normalized)
+        result = self.apply(policy="RIG", result_to_source=self.fit())
+        self.assertEqual(result.fitted_from, "WORLD")
+        self.assert_geometry_kept()
+        self.assertEqual([m.object for m in self.source.modifiers], [result.rig])
+        self.assertEqual({g.name for g in self.source.vertex_groups}, {"Root", "Tip"})
+        self.assertEqual(_rig_state(old_rig), old_state)
+        self.assertEqual(result.original.modifiers[0].object, old_rig)
+        self.assert_rest_pose()

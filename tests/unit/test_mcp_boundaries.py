@@ -13,7 +13,6 @@ import pytest
 
 from scenario.mcp import protocol, server
 
-TOKEN = "fixture-token"
 CALL = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -38,7 +37,6 @@ def owner(request, monkeypatch):
     mcp = server.McpServer(
         "127.0.0.1",
         0,
-        TOKEN,
         registry,
         {"name": "fixture", "version": "0"},
         timeout=5,
@@ -66,12 +64,10 @@ def owner(request, monkeypatch):
         mcp.stop()
 
 
-def send(owner, method, path, *, hosts=("localhost",), token=TOKEN, body=None, extra=()):
+def send(owner, method, path, *, hosts=("localhost",), body=None, extra=()):
     raw = json.dumps(body).encode() if body is not None else b""
     lines = [f"{method} {path} HTTP/1.1"]
     lines += [f"Host: {host}" for host in hosts]
-    if token:
-        lines.append(f"Authorization: Bearer {token}")
     lines += [f"{name}: {value}" for name, value in extra]
     lines.append(f"Content-Length: {len(raw)}")
     with socket.create_connection(("127.0.0.1", owner.bound), timeout=5) as client:
@@ -124,11 +120,11 @@ def test_missing_or_repeated_host_is_a_bad_request(owner, method, path, body, ho
     owner.handle.assert_not_called()
 
 
-def test_host_is_checked_before_origin_and_token(owner):
-    for token, origin in [(None, "https://evil.example"), ("wrong", None), (TOKEN, "null")]:
+def test_host_is_checked_before_origin(owner):
+    for origin in ("https://evil.example", None, "null"):
         extra = [("Origin", origin)] if origin else []
         response, payload = send(
-            owner, "POST", "/mcp", hosts=["evil.example"], token=token, body=CALL, extra=extra
+            owner, "POST", "/mcp", hosts=["evil.example"], body=CALL, extra=extra
         )
         assert (response.status, payload) == (403, {"error": "forbidden host"})
     response, payload = send(owner, "POST", "/mcp", body=CALL, extra=[("Origin", "null")])
@@ -150,7 +146,7 @@ def test_host_is_checked_before_origin_and_token(owner):
 )
 def test_loopback_host_reaches_health_and_tools(owner, host):
     host = host.format(port=owner.bound)
-    response, payload = send(owner, "GET", "/health", hosts=[host], token=None)
+    response, payload = send(owner, "GET", "/health", hosts=[host])
     assert response.status == 200
     assert payload == {
         "ok": True,
@@ -161,6 +157,14 @@ def test_loopback_host_reaches_health_and_tools(owner, host):
     assert response.status == 200
     assert json.loads(payload["result"]["content"][0]["text"]) == {"ok": True}
     assert owner.calls == [{}]
+
+
+def test_tools_need_no_authorization_and_ignore_a_supplied_one(owner):
+    for extra in ([], [("Authorization", "Bearer from-an-older-setup")]):
+        response, payload = send(owner, "POST", "/mcp", body=CALL, extra=extra)
+        assert response.status == 200
+        assert json.loads(payload["result"]["content"][0]["text"]) == {"ok": True}
+    assert owner.calls == [{}, {}]
 
 
 @pytest.mark.parametrize("owner", [{"idle": 0.2}], indirect=True)
@@ -175,9 +179,7 @@ def test_idle_connection_is_closed_after_the_idle_timeout(owner):
 def test_stalled_headers_and_body_are_closed_without_dispatch(owner):
     for partial in (
         b"GET /health HTTP/1.1\r\nHost: localhost\r\n",
-        b"POST /mcp HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer "
-        + TOKEN.encode()
-        + b'\r\nContent-Length: 100\r\n\r\n{"jsonrpc"',
+        b'POST /mcp HTTP/1.1\r\nHost: localhost\r\nContent-Length: 100\r\n\r\n{"jsonrpc"',
     ):
         with socket.create_connection(("127.0.0.1", owner.bound), timeout=5) as client:
             client.sendall(partial)

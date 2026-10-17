@@ -60,7 +60,7 @@ class InstalledContractTests(unittest.TestCase):
         finally:
             prefs.api_key, prefs.api_secret = saved
 
-    def test_authenticated_mcp_scene_tool_runs_on_blender_main_thread(self):
+    def test_mcp_scene_tool_runs_on_blender_main_thread(self):
         reset_scene()
         bpy.ops.mesh.primitive_cube_add()
         bpy.context.object.name = "RunnerCube"
@@ -81,7 +81,6 @@ class InstalledContractTests(unittest.TestCase):
         server = server_module.McpServer(
             "127.0.0.1",
             port,
-            "fixture-token",
             registry,
             {"name": "test", "version": "0"},
             timeout=5,
@@ -95,7 +94,7 @@ class InstalledContractTests(unittest.TestCase):
             "params": {"name": "scene_summary", "arguments": {}},
         }
         worker = threading.Thread(
-            target=lambda: result.append(post(server.url, "fixture-token", request)), daemon=True
+            target=lambda: result.append(post(server.url, request)), daemon=True
         )
         try:
             worker.start()

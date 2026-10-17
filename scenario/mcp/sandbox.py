@@ -32,6 +32,9 @@ BLOCKED_TOKENS = (
     "os.unlink",
 )
 _TOKEN_RE = re.compile("|".join(re.escape(t) for t in BLOCKED_TOKENS))
+# One answer stays near a scene_summary page of 100 objects; a larger result is
+# reported by size instead of filling the agent's context.
+RESULT_LIMIT, RESULT_PREVIEW, OUTPUT_LIMIT = 50_000, 2_000, 20_000
 
 
 def _blocked_exit(*args, **kwargs):
@@ -100,13 +103,23 @@ def run_python(code):
     if not isinstance(result, dict):
         result = {"value": repr(result)}
     try:
-        json.dumps(result)
+        text = json.dumps(result)
     except (TypeError, ValueError):
-        result = {key: repr(value) for key, value in result.items()}
+        result = {str(key): repr(value) for key, value in result.items()}
+        text = json.dumps(result)
+    if len(text) > RESULT_LIMIT:
+        result = {
+            "truncated": True,
+            "result_chars": len(text),
+            "preview": text[:RESULT_PREVIEW],
+            "note": f"The code ran, but its result is {len(text):,} characters of JSON, over the "
+            f"{RESULT_LIMIT:,} limit, so only its start is shown. Return less: counts, a filtered "
+            "list or fewer fields, or split the work over several calls.",
+        }
     payload = {
         "result": result,
-        "stdout": out.getvalue()[-20000:],
-        "stderr": err.getvalue()[-20000:],
+        "stdout": out.getvalue()[-OUTPUT_LIMIT:],
+        "stderr": err.getvalue()[-OUTPUT_LIMIT:],
     }
     if error:
         payload["error"] = error

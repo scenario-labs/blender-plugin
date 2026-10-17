@@ -599,11 +599,11 @@ count as zero. A run exceeding the remainder fails before any Scenario request.
 
 Reserved caps bound spending from above: a run that quotes or spends less still
 reserves its whole cap for the month. Workflow concurrency runs one smoke at a
-time, and the post-approval recheck makes the later of two overlapping runs count
-the other. An unreadable run history fails closed. Local runs are outside this
-ledger. As a server-side backstop, a Scenario Enterprise administrator can set a
-per-key usage limit (`maxConsumption`) on the test key in the Scenario portal;
-the workflow neither configures nor reads one.
+time, and the post-approval recheck makes the later of two overlapping runs
+count the other. An unreadable run history fails closed. Local runs are outside
+this ledger. As a server-side backstop, a Scenario Enterprise administrator can
+set a per-key usage limit (`maxConsumption`) on the test key in the Scenario
+portal; the workflow neither configures nor reads one.
 
 ### Monthly plan
 

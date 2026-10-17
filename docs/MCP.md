@@ -349,8 +349,10 @@ for configuration and token-environment behavior.
 
 In a repository checkout, the committed `.codex/config.toml` entry uses the
 [repository headers helper](#repository-checkouts) and is disabled; start Codex
-with `codex -c mcp_servers.scenario-blender.enabled=true`. A
-`bearer_token_env_var` on that entry would take precedence over the helper.
+with `codex -c mcp_servers.scenario-blender.enabled=true`. Codex merges it with a
+user-level `scenario-blender` entry, such as the one added above, and then also
+requires `SCENARIO_BLENDER_TOKEN` in its environment; run
+`codex mcp remove scenario-blender` first.
 
 ### Repository checkouts
 

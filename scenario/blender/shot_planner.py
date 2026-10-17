@@ -20,6 +20,7 @@ from bpy.props import (
 from mathutils import Euler, Vector
 
 from ..core.scene import shot_plan
+from . import selection
 
 SHOTS_COLLECTION = "Scenario Shots"
 CAMERA_NAME = "Scenario Shot Camera"
@@ -132,7 +133,9 @@ def subject_bbox(context, use_selection=False):
     candidates = []
     if use_selection:
         candidates = [
-            o for o in context.selected_objects if o.type == "MESH" and o.name not in excluded
+            o
+            for o in selection.selected_objects(context)
+            if o.type == "MESH" and o.name not in excluded
         ]
     if not candidates:
         candidates = [

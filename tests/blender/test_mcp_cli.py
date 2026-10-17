@@ -168,6 +168,8 @@ class McpCliTests(unittest.TestCase):
         layer = bpy.context.view_layer
         mesh = bpy.data.meshes.new("Selection probe")
         objects = [bpy.data.objects.new(f"Selection probe {i}", mesh) for i in range(3)]
+        selected = [obj for obj in layer.objects if obj.select_get()]
+        active = layer.objects.active
         try:
             for obj in objects:
                 layer.id_data.collection.objects.link(obj)
@@ -188,6 +190,9 @@ class McpCliTests(unittest.TestCase):
             for obj in objects:
                 bpy.data.objects.remove(obj)
             bpy.data.meshes.remove(mesh)
+            for obj in selected:
+                obj.select_set(True)
+            layer.objects.active = active
 
     def _exercise_cli(self, stop_signal, blend=None):
         with socket.socket() as reservation:

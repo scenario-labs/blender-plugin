@@ -49,7 +49,12 @@ def export_glb(context, objects, path=None):
         # command or timer on a file loaded with --background has neither.
         overrides = {"active_object": objects[0], "selected_objects": list(objects)}
         if context.window is None and context.window_manager.windows:
-            overrides["window"] = context.window_manager.windows[0]
+            # A window brings its own scene and view layer; keep the ones selected above.
+            overrides.update(
+                window=context.window_manager.windows[0],
+                scene=context.scene,
+                view_layer=view_layer,
+            )
         with context.temp_override(**overrides):
             bpy.ops.export_scene.gltf(
                 filepath=path,

@@ -189,8 +189,8 @@ The four panels:
   its [form](#the-form).
 - **Jobs**: what's running; see [Jobs](#jobs).
 - **Generations**: what came back, then your project's cloud history; see [Generations](#generations).
-- **Agents (MCP)**: the local MCP server, its token, client setups and the
-  Python permission; see [Agents (MCP)](#agents-mcp).
+- **Agents (MCP)**: the local MCP server, client setups and the Python
+  permission; see [Agents (MCP)](#agents-mcp).
 
 ![The Jobs, Generations and Agents (MCP) panels below the lane form](images/panel-sections.png)
 
@@ -868,9 +868,8 @@ connections only from this computer, and an agent can upload only files Scenario
 saved or files you chose in Blender during this session.
 
 Copy a client setup for Claude Code, Codex, Cursor or Claude Desktop from the
-**Agents (MCP)** panel. It contains a live token, so keep it out of screenshots,
-logs and source control. **Allow connected agents to
-run Python** is off by default. For headless use, run
+**Agents (MCP)** panel. The server needs no token, so any program on this computer
+can connect. **Allow connected agents to run Python** is off by default. For headless use, run
 `blender --background scene.blend --command scenario_blender`. The
 [MCP reference](MCP.md) covers tools, setup and security.
 
@@ -949,9 +948,9 @@ can read your scene and request paid work. See
   first, or press **Start MCP server** in the Agents (MCP) panel if you allowed
   Online Access after Blender started. Then reconnect the agent: run `/mcp` in
   Claude Code, start a new Codex session, or restart Cursor or Claude Desktop.
-- **An agent is refused as unauthorized after Blender restarts**: each Blender
-  session makes a new token. Copy the client setup again; for Codex, export the
-  new token before starting it.
+- **Codex reports that `SCENARIO_BLENDER_TOKEN` is not set**: its setup still
+  names a token variable. Run `codex mcp remove scenario-blender`, then copy the
+  Codex setup from the panel again.
 - **The panel shows a port other than 9876**: another program, often another
   Blender MCP add-on, holds that port, so the server took the next free one. The
   copied setup carries the actual port: copy it again. To use another port, set

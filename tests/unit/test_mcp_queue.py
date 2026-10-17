@@ -15,7 +15,7 @@ from scenario.mcp.protocol import Registry, ToolSpec, ToolTimeout
 def server(handler, timeout=0.03):
     registry = Registry()
     registry.add(ToolSpec("mutate", "Fixture mutation", {}, handler))
-    return mcp_server.McpServer("127.0.0.1", 0, "fixture-token", registry, {}, timeout=timeout)
+    return mcp_server.McpServer("127.0.0.1", 0, registry, {}, timeout=timeout)
 
 
 def message():

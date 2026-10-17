@@ -8,7 +8,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        This issue is public and permanent. Before you submit, remove your API key and secret, the MCP bearer token from the Agents (MCP) panel, signed asset URLs, e-mail addresses, local paths with your username, and any prompt or artwork you do not want published. Team and project ids identify your account: leave them out.
+        This issue is public and permanent. Before you submit, remove your API key and secret, signed asset URLs, e-mail addresses, local paths with your username, and any prompt or artwork you do not want published. Team and project ids identify your account: leave them out.
 
         Would rather not post in public? Send the same fields to support@scenario.com. Account, billing, credit and security problems always go there or to in-app support at https://app.scenario.com.
   - type: textarea

@@ -566,7 +566,7 @@ def draw_mcp_lane(layout, context):
     box.label(text="Let agents build in this Blender", icon="PLUGIN")
     if st["running"]:
         box.label(text=f"Running on {st['url']}", icon="CHECKMARK")
-        box.label(text=f"Token {mcp_service.masked_token()}  ({st['calls']} tool calls served)")
+        box.label(text=f"{st['calls']} tool calls served")
         box.operator("scenario.mcp_stop", icon="PAUSE")
     else:
         box.label(text=st["error"] or "Stopped", icon="ERROR" if st["error"] else "INFO")

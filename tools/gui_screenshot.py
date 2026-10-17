@@ -254,8 +254,6 @@ def _prepare():
                     "POST",
                     st["url"],
                     "-H",
-                    f"Authorization: Bearer {st['token']}",
-                    "-H",
                     "Content-Type: application/json",
                     "-d",
                     json.dumps(payload),

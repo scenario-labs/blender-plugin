@@ -13,9 +13,10 @@ or both according to the task; they have separate authentication and capabilitie
 
 The local server accepts MCP JSON-RPC over HTTP at
 `http://127.0.0.1:9876/mcp` by default. It starts with the extension in a GUI
-session when Blender's **Allow Online Access** is on. The **MCP Port** preference
-sets the first port; if busy, the server tries the next three. Copy the actual
-URL from **Scenario > Agents (MCP)**. An authenticated GET on `/mcp` returns 405:
+session when Blender's **Allow Online Access** is on. It uses only the **MCP
+Port** preference; if another program holds that port, the server stays stopped
+and the panel names the port. Copy the URL from **Scenario > Agents (MCP)**. An
+authenticated GET on `/mcp` returns 405:
 use POST for tool calls; the server does not provide an SSE stream.
 
 The extension is experimental. The [runtime map](architecture/runtime.md)
@@ -253,31 +254,38 @@ scene/first-frame slots. Its `prepare` action requires a GUI for scene captures;
 first-frame file uploads also work headlessly. Result-specific application
 remains separate.
 
-## Token lifecycle
-
-GUI startup generates a bearer token the first time the server starts in a
-Blender session. The extension holds it in memory and does not save it to disk.
-The panel masks it; Copy buttons include the full token in setup snippets.
-Restarting Blender changes a generated token, so copy the setup again. A token
-explicitly supplied to the headless command remains the caller's responsibility.
-
-The local token is different from your Scenario API key and secret. Client
-configuration, shell history, clipboard managers and process listings may retain
-copied tokens; keep them out of source control, screenshots and shared logs.
-
 ## Client setup
 
-Use the panel's Copy buttons for the actual port and platform paths. Examples
-below use placeholders, never real credentials. These clients must run where
-`127.0.0.1` reaches the same machine as Blender; a hosted agent cannot reach your
-computer's loopback address directly.
+**Connect a client** in the panel writes the entry for you, with the URL of the
+MCP Port. It offers only clients whose folder exists and changes only their user
+configuration:
+
+| Client | File | Entry |
+| --- | --- | --- |
+| Claude Code | `~/.claude.json` | `mcpServers.scenario-blender`, HTTP |
+| Codex | `$CODEX_HOME/config.toml`, default `~/.codex/config.toml` | `[mcp_servers.scenario-blender]` with `url` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.scenario-blender`, URL |
+| Claude Desktop | `claude_desktop_config.json` in Claude's folder | `mcpServers.scenario-blender`, the stdio shim below |
+
+The whole `scenario-blender` entry is replaced; other servers and settings are
+kept. The previous file is copied beside it as `<file>.scenario-backup-<time>`
+with the same permissions, and the new file replaces it in one step. A file that
+is not valid JSON or TOML, or a Codex entry that is not a plain table, is left
+untouched and the panel says so. Reload the client afterwards.
+
+Otherwise use the panel's Copy buttons for the actual port and platform paths. These clients
+must run where `127.0.0.1` reaches the same machine as Blender; a hosted agent cannot reach your
+computer's loopback address directly. The server needs no credential; see the
+[security model](#security-model).
 
 ### Claude Code
 
 ```sh
-claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp \
-  --header "Authorization: Bearer <token>"
+claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp
 ```
+
+In a repository checkout, the committed `.mcp.json` registers the same server. Approve the project
+server when asked.
 
 ### Cursor
 
@@ -287,8 +295,7 @@ Add the copied entry to your client MCP configuration:
 {
   "mcpServers": {
     "scenario-blender": {
-      "url": "http://127.0.0.1:9876/mcp",
-      "headers": {"Authorization": "Bearer <token>"}
+      "url": "http://127.0.0.1:9876/mcp"
     }
   }
 }
@@ -309,26 +316,19 @@ absolute working interpreter path there. Replace both path placeholders:
       "command": "<absolute path to Blender Python>",
       "args": [
         "<installed extension>/mcp/stdio_shim.py",
-        "--url", "http://127.0.0.1:9876/mcp",
-        "--token", "<token>"
+        "--url", "http://127.0.0.1:9876/mcp"
       ]
     }
   }
 }
 ```
 
-The bridge token is a process argument. It does not start Blender or grant
-Scenario API access by itself.
+The bridge does not start Blender or grant Scenario API access by itself.
 
 ### Codex
 
-The installed CLI supports `--url` and `--bearer-token-env-var`. Export the token
-in the environment that launches Codex, then add the server:
-
 ```sh
-export SCENARIO_BLENDER_TOKEN='<token>'
-codex mcp add scenario-blender --url http://127.0.0.1:9876/mcp \
-  --bearer-token-env-var SCENARIO_BLENDER_TOKEN
+codex mcp add scenario-blender --url http://127.0.0.1:9876/mcp
 ```
 
 The equivalent `config.toml` entry is:
@@ -336,12 +336,11 @@ The equivalent `config.toml` entry is:
 ```toml
 [mcp_servers.scenario-blender]
 url = "http://127.0.0.1:9876/mcp"
-bearer_token_env_var = "SCENARIO_BLENDER_TOKEN"
 ```
 
-Restart a client launched before the environment variable was set. See the
-[official Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
-for configuration and token-environment behavior.
+See the [official Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+for other settings. In a repository checkout, the committed `.codex/config.toml` entry is disabled;
+start Codex with `codex -c mcp_servers.scenario-blender.enabled=true`.
 
 ### Connection check
 
@@ -349,7 +348,6 @@ This request lists tool metadata; it does not call a generation tool:
 
 ```sh
 curl -sS -X POST http://127.0.0.1:9876/mcp \
-  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
@@ -359,16 +357,12 @@ curl -sS -X POST http://127.0.0.1:9876/mcp \
 With the extension enabled, use the registered underscore command:
 
 ```sh
-export SCENARIO_BLENDER_TOKEN='<token>'
 blender --background scene.blend --command scenario_blender --port 9876
 ```
 
-Blender must allow online access; `--online-mode` explicitly enables it for the
-invocation. `--token '<token>'` overrides the environment but exposes the token
-in process arguments. Supplied tokens are hidden in the startup banner. If
-neither source is present, the command generates a token and displays it once
-in that banner. Stop with Ctrl+C. Scene captures need the GUI; other scene tools
-use the headless main-thread request loop. Development builds and tests use the
+Blender must allow online access; `--online-mode` explicitly enables it for the invocation. Stop
+with Ctrl+C. Scene captures need the GUI; other scene tools use the headless main-thread request
+loop. Development builds and tests use the
 [isolated native runner](../CONTRIBUTING.md#native-blender-test-loop).
 
 ## Tools
@@ -504,13 +498,13 @@ No tool saves the file: ask the user to save it. See
 
 ## Security model
 
-The Blender integration binds only to `127.0.0.1`. MCP operations require the
-bearer token, checked with a constant-time comparison. `/health` is unauthenticated
-and reports availability, Blender version and server name/version. Native clients
-may omit Origin; a supplied Origin must be an HTTP(S) loopback origin. Other
-origins and browser CORS preflights are refused. Every request first passes the
-[Host check](#request-boundaries). This is local access control,
-not a promise that a token-holding program is safe.
+The Blender integration binds only to `127.0.0.1` and asks for no credential: any program on this
+computer that can reach the port, under any account, can call every tool. Clients that send an
+`Authorization` header are served the same way. `/health` reports availability, Blender version
+and server name/version. Native clients may omit Origin; a supplied Origin must be an HTTP(S)
+loopback origin. Other origins and browser CORS preflights are refused. Every request first passes
+the [Host check](#request-boundaries), so pages from other sites cannot call the server; a page
+served from this computer, such as `http://localhost:3000`, can.
 
 Early POST and Origin rejections send the complete HTTP error with
 `Connection: close`, then close the socket's write side before discarding a
@@ -521,7 +515,7 @@ risk of a TCP reset hiding the error from clients still sending their body;
 malformed, chunked or oversized requests close without reading their declared body.
 
 **Allow connected agents to run Python** is off by default and fails closed if
-preferences are unavailable. With it off, an authorized agent can still read
+preferences are unavailable. With it off, a connected agent can still read
 and change the scene, capture/upload a reference and request paid generation.
 Require an estimate and explicit spending approval. If a generation call times
 out, inspect job status; do not submit it again blindly. Client timeouts do not
@@ -558,9 +552,8 @@ remain.
 
 With Python enabled, a connected agent can run arbitrary Python with your user's
 permissions. The blocklist in `scenario/mcp/sandbox.py` is a guard rail, not a
-security boundary. The token can be copied into client configuration files and,
-for the stdio bridge, command arguments. Do not expose the port through a public
-proxy or share setup snippets.
+security boundary. Do not expose or forward the port beyond this computer, for example
+through a public proxy.
 
 Film video and case-study exports let an agent write new MP4 or ZIP files only
 inside the configured Output Folder. The destination's folder is resolved,
@@ -572,7 +565,7 @@ overwritten, and Blender, extension and staging storage stay refused even when
 the Output Folder points there. Render and copy approvals must repeat the exact
 resolved destination and recheck the Output Folder, so an agent cannot approve a
 file chosen elsewhere in Blender's file browser. This is a policy check before a
-long render, not a sandbox: with Python execution enabled, a token holder can
+long render, not a sandbox: with Python execution enabled, a connected agent can
 still write elsewhere. Report vulnerabilities through
 [SECURITY.md](../SECURITY.md); see [privacy and local data](PRIVACY.md) for uploads,
 credential storage and data handling.
@@ -639,8 +632,8 @@ permissions.
 Agent uploads use the allowlist above rather than a native confirmation that
 names each file: the extension uploads its own captures directly, so
 `upload_reference` mostly serves files the user chose. Local MCP starts
-automatically in GUI sessions when **Allow Online Access** is on, protected by its
-token and the Origin, Host, idle-timeout and loopback-bind checks above. **Stop MCP
+automatically in GUI sessions when **Allow Online Access** is on, protected by the
+Origin, Host, idle-timeout and loopback-bind checks above. **Stop MCP
 server** in **Scenario > Agents (MCP)** closes it for the rest of the session. The
 extension's network permission text and [PRIVACY.md](PRIVACY.md#the-local-mcp-server)
 disclose the loopback listener. The headless `scenario_blender` command stays an
@@ -725,8 +718,9 @@ No credentials, service requests or registry writes are needed for cold reads.
 
 ## Troubleshooting
 
-- **401:** the token is missing or differs from the server's current token. Copy
-  the setup again; check the actual port and the client's launch environment.
+- **Codex: `Environment variable SCENARIO_BLENDER_TOKEN for MCP server 'scenario-blender' is not
+  set`:** your Codex entry still names a token variable. Run `codex mcp remove scenario-blender`,
+  then add the server again with the [Codex setup](#codex).
 - **403 `forbidden host` or 400:** the client named the server other than
   `127.0.0.1`, `localhost` or `[::1]`, or sent no `Host`; use the copied URL. See
   [request boundaries](#request-boundaries).
@@ -734,14 +728,14 @@ No credentials, service requests or registry writes are needed for cold reads.
   button, the first-frame field or a workflow input's **File** field) and call it
   again, or capture the scene with `capture_reference`; see
   [agent file uploads](#agent-file-uploads).
-- **No free port from 9876:** all four candidate ports are busy. Choose a different
-  MCP Port and copy the newly displayed URL.
+- **Port 9876 is in use:** another program, often another Blender, holds the
+  MCP Port. Stop its server, or choose a different MCP Port, press **Start MCP
+  server** and copy the setup again.
 - **Allow Online Access is off:** enable it in Blender's System preferences before
   starting the server; this permission also allows Scenario network operations.
 - **Capture fails in background mode:** open a GUI session with a 3D viewport.
 - **Catalog is still loading:** retry after loading completes and inspect the
-  extension's status for credential or service errors. This is separate from the
-  local MCP bearer token.
+  extension's status for credential or service errors.
 - **Model description is still loading:** the read took longer than the
   [30-second wait](#model-quote-and-submission-contract); nothing was quoted,
   submitted or changed. Call again; the call joins the same read.

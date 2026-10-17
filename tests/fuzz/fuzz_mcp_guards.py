@@ -1,15 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Fuzz the local MCP request guards: ``host_allowed``, ``origin_allowed``, ``token_matches``.
+"""Fuzz the local MCP request guards: ``host_allowed`` and ``origin_allowed``.
 
 ``host_allowed`` accepts exactly 127.0.0.1, localhost or [::1] in any letter case,
 with an optional port from 1 to 65535, inside optional spaces and tabs. An accepted
 Origin is an HTTP(S) loopback origin with nothing after the host and port, and a
 browser-serialized origin passes only for a loopback host. A bare "?" or "#" after the
-port is tolerated, since it names no query or fragment. A token matches only after
-"Bearer ", exactly, apart from surrounding whitespace. Header values are Latin-1 text,
-as ``http.server`` decodes them; tokens are printable ASCII, as the CLI requires.
-Generated values are mostly valid with one hostile part, the boundary that matters.
+port is tolerated, since it names no query or fragment. Header values are Latin-1 text,
+as ``http.server`` decodes them. Generated values are mostly valid with one hostile part, the boundary that matters.
 """
 
 import re
@@ -71,7 +69,6 @@ SCHEMES = (["http", "https", "HTTP", "hTTps"], ["ftp", "ws", "file", "javascript
 SEPARATORS = (["://"], [":", ":/", ":///", "//", "://user@", "://user:pw@", "://@", ":\\\\"])
 SUFFIXES = ([""], ["/", "/path", "?q", "#f", "\\", "%2f", ";x", "@evil.com", ".evil.com"])
 ORIGIN_PADDING = ([""], [" ", "\t", "\x00", "\x1f", "\xa0", "\r\n"])
-BEARERS = (["Bearer "], ["bearer ", "BEARER ", "Bearer", "Bearer  ", "Bearer\t", "Basic ", ""])
 _HOST = re.compile(r"(127\.0\.0\.1|localhost|\[::1\])(?::([0-9]{1,5}))?", re.ASCII | re.IGNORECASE)
 _ORIGIN = re.compile(
     r"[\x00-\x1f]*https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::[0-9]*)?\??#?",
@@ -95,11 +92,6 @@ def check_origin(value):
         assert _ORIGIN.fullmatch(value), f"Origin {value!r} is not a loopback origin"
 
 
-def check_token(header, token):
-    if server.token_matches(header, token):
-        assert header.startswith("Bearer ") and header[7:].strip() == token, f"{header!r}"
-
-
 def text(fdp, limit=24):
     return fdp.ConsumeBytes(fdp.ConsumeIntInRange(0, limit)).decode("latin-1")
 
@@ -113,68 +105,34 @@ def part(fdp, choices):
     return fdp.PickValueInList(hostile) if pick < 7 else text(fdp, 4)
 
 
-def token(fdp):
-    raw = fdp.ConsumeBytes(fdp.ConsumeIntInRange(1, 40)) or b"t"
-    return "".join(chr(33 + byte % 94) for byte in raw)
-
-
-def changed(fdp, value):
-    """The token itself or a near miss: a prefix, suffix, case change or edit."""
-    choice = fdp.ConsumeIntInRange(0, 7)
-    if choice == 0:
-        return value[: fdp.ConsumeIntInRange(0, len(value))]
-    if choice == 1:
-        return value[fdp.ConsumeIntInRange(0, len(value)) :]
-    if choice == 2:
-        return value + text(fdp, 4)
-    if choice == 3:
-        return value.swapcase()
-    if choice == 4:
-        index = fdp.ConsumeIntInRange(0, len(value) - 1)
-        return value[:index] + text(fdp, 2) + value[index + 1 :]
-    if choice == 5:
-        return text(fdp)
-    return value
-
-
 def TestOneInput(data):
     mode, rest = split(data)
     fdp = PROVIDER(rest)
-    mode %= 4
+    mode %= 3
     if mode == 0:
         value = rest.decode("latin-1")
         check_host(value)
         check_origin(value)
-        check_token(value, "fuzz-token")
         return
     if mode == 1:
         value = part(fdp, HOST_PADDING) + part(fdp, HOSTS) + part(fdp, PORTS)
         check_host(value + part(fdp, HOST_PADDING))
         assert not server.host_allowed(None) and not server.host_allowed(b"localhost")
         return
-    if mode == 2:
-        host = part(fdp, HOSTS)
-        if fdp.ConsumeBool():
-            # A browser serializes an origin as scheme://host[:port] with a lowercase host.
-            port = fdp.ConsumeIntInRange(0, 65535)
-            if host in LOOPBACK or re.fullmatch(r"[a-z0-9.-]+", host):
-                scheme = fdp.PickValueInList(["http", "https"])
-                origin = f"{scheme}://{host}" + (f":{port}" if port else "")
-                expected = host in LOOPBACK
-                assert server.origin_allowed(origin) == expected, f"Origin {origin!r}"
-            return
-        origin = part(fdp, ORIGIN_PADDING) + part(fdp, SCHEMES) + part(fdp, SEPARATORS)
-        origin += host + part(fdp, PORTS) + part(fdp, SUFFIXES) + part(fdp, ORIGIN_PADDING)
-        check_origin(origin)
-        assert server.origin_allowed(None) and not server.origin_allowed(b"http://localhost")
+    host = part(fdp, HOSTS)
+    if fdp.ConsumeBool():
+        # A browser serializes an origin as scheme://host[:port] with a lowercase host.
+        port = fdp.ConsumeIntInRange(0, 65535)
+        if host in LOOPBACK or re.fullmatch(r"[a-z0-9.-]+", host):
+            scheme = fdp.PickValueInList(["http", "https"])
+            origin = f"{scheme}://{host}" + (f":{port}" if port else "")
+            expected = host in LOOPBACK
+            assert server.origin_allowed(origin) == expected, f"Origin {origin!r}"
         return
-    secret = token(fdp)
-    header = part(fdp, BEARERS) + part(fdp, HOST_PADDING)
-    header += changed(fdp, secret) + part(fdp, HOST_PADDING)
-    check_token(header, secret)
-    assert server.token_matches("Bearer " + secret, secret), "the exact token matches"
-    assert not server.token_matches(header, "") and not server.token_matches(None, secret)
-    assert not server.token_matches(header.encode("latin-1"), secret)
+    origin = part(fdp, ORIGIN_PADDING) + part(fdp, SCHEMES) + part(fdp, SEPARATORS)
+    origin += host + part(fdp, PORTS) + part(fdp, SUFFIXES) + part(fdp, ORIGIN_PADDING)
+    check_origin(origin)
+    assert server.origin_allowed(None) and not server.origin_allowed(b"http://localhost")
 
 
 if __name__ == "__main__":

@@ -40,7 +40,7 @@ GitHub merging this list into the checklist. -->
 ## Public content
 
 - [ ] No private account, customer, workspace, project or internal infrastructure records are exposed.
-- [ ] No credentials, MCP bearer tokens, signed URL query strings or private job/asset IDs are included.
+- [ ] No credentials, signed URL query strings or private job/asset IDs are included.
 - [ ] No personal paths, agent session IDs, private research exports or spend anecdotes are included.
 
 ## Coding rules

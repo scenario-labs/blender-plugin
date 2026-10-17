@@ -55,18 +55,18 @@ class McpCliTests(unittest.TestCase):
         error_output = io.StringIO()
         with (
             patch.object(service.runtime, "online", return_value=True),
-            patch.object(service.runtime.state, "mcp_token", service.runtime.state.mcp_token),
             patch.object(service, "McpServer") as constructor,
             patch.object(signal, "signal", return_value=signal.SIG_DFL) as handlers,
             redirect_stderr(error_output),
         ):
             server = constructor.return_value
-            server.start.side_effect = OSError("no free port from 9876")
+            server.start.side_effect = OSError("Port 9876 on 127.0.0.1 is in use")
             with self.assertRaises(SystemExit) as error:
-                service.cli(["--token", "synthetic-cli-token"])
+                service.cli([])
             self.assertEqual(error.exception.code, 2)
             self.assertIn(
-                "Unable to start local MCP: no free port from 9876", error_output.getvalue()
+                "Unable to start local MCP: Port 9876 on 127.0.0.1 is in use",
+                error_output.getvalue(),
             )
             self.assertNotIn("Traceback", error_output.getvalue())
             server.stop.assert_called_once()
@@ -193,9 +193,7 @@ class McpCliTests(unittest.TestCase):
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             port = reservation.getsockname()[1]
-        token = "synthetic-cli-token"
         env = self.child_environment()
-        env["SCENARIO_BLENDER_TOKEN"] = token
         with tempfile.TemporaryFile(mode="w+") as log:
             process = subprocess.Popen(
                 [
@@ -207,6 +205,9 @@ class McpCliTests(unittest.TestCase):
                     "scenario_blender",
                     "--port",
                     str(port),
+                    # An existing script may still pass --token; the command ignores it.
+                    "--token",
+                    "from-an-older-setup",
                 ],
                 env=env,
                 stdout=log,
@@ -223,10 +224,7 @@ class McpCliTests(unittest.TestCase):
                     req = urllib.request.Request(
                         url,
                         data=data,
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Content-Type": "application/json",
-                        },
+                        headers={"Content-Type": "application/json"},
                     )
                     with urllib.request.urlopen(req, timeout=5) as response:
                         return json.loads(response.read())
@@ -252,8 +250,8 @@ class McpCliTests(unittest.TestCase):
                 log.seek(0)
                 output = log.read()
                 self.assertEqual(returncode, 0, output)
-                self.assertIn("token provided; hidden", output)
-                self.assertNotIn(token, output)
+                self.assertIn(f"scenario-blender MCP server on {url}", output)
+                self.assertNotIn("from-an-older-setup", output)
                 self.assertNotIn("not registered", output)
                 with socket.socket() as closed:
                     closed.settimeout(1)

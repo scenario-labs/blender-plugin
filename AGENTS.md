@@ -111,8 +111,9 @@ exception in the PR. Documentation-only work does not need an API coverage audit
   in the query, not the JSON body; use the selected SDK's documented parameter.
 - Respect `bpy.app.online_access` before network activity. Store state under
   `bpy.utils.extension_path_user`, never inside the installed extension.
-- Keep local MCP authenticated, Python execution opt-in and disabled by default.
-  Use private temporary directories and guaranteed cleanup for captures.
+- Keep local MCP on loopback behind its Host and Origin checks, and Python execution
+  opt-in and disabled by default. Use private temporary directories and guaranteed
+  cleanup for captures.
 - Explicitly configure SDK credentials. Test that ambient API-key environment
   variables cannot override the selected OAuth account. Never distribute a
   privileged server secret or assume an OAuth token is accepted by REST.
@@ -138,10 +139,11 @@ This repository is public. Do not add session/resume IDs, personal paths, accoun
 records, workspace identifiers, spend anecdotes or private research exports.
 Preserve GPL text and first-party SPDX notices; preserve the original licenses
 and attribution of third-party code, fonts, icons and SDK dependencies.
-`make check-rules` enforces SPDX headers, no em dashes, the `bpy` boundary,
-approved dependencies, SDK adapter imports, the public-content denylist, version
-literals and no snapshot directories; the unit suite runs it. Files that cannot
-carry a header are covered by `REUSE.toml`; `make lint-licence` validates it.
+`make check-rules` enforces SPDX headers, no em dashes, Markdown prose wrapped at
+100 columns, the `bpy` boundary, approved dependencies, SDK adapter imports, the
+public-content denylist, version literals and no snapshot directories; the unit
+suite runs it. Files that cannot carry a header are covered by `REUSE.toml`;
+`make lint-licence` validates it.
 
 Useful prototype lessons to retain while changing implementations:
 

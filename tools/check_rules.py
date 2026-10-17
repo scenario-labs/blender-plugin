@@ -222,6 +222,21 @@ VERSION_FILES = {
 }
 # Tests use sample release versions, which every release eventually matches.
 VERSION_PREFIXES = ("docs/maintenance/", "tests/")
+# The skills repository wraps Markdown at the same width.
+MARKDOWN_WIDTH = 100
+# release-please writes the changelog, GitHub renders line breaks in PR and issue
+# bodies, a test parses the fixture README and evidence records stay unedited.
+MARKDOWN_UNWRAPPED = ("CHANGELOG.md", ".github/", "tests/fixtures/", "docs/knowledge/")
+WRAP_MESSAGE = f"prose past {MARKDOWN_WIDTH} columns: wrap it"
+_FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
+_GENERATED = re.compile(r"^<!-- [\w-]+:(start|end) -->")
+# Table rows, lines starting with # (Python-Markdown reads "#31" as a heading),
+# link definitions, HTML and image-only lines cannot wrap.
+_UNWRAPPABLE = re.compile(r"^\s*(?:\||#|\[[^\]]+\]:\s|<|!\[[^\]]*\]\([^)]*\)\s*$)")
+_BLOCK_PREFIX = re.compile(r"[ \t]*(?:>[ \t]?)*(?:(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)?")
+_CODE_SPAN = re.compile(r"(`+)(?!`).*?(?<!`)\1(?!`)")
+_TICKS = re.compile(r"`+")
+_INLINE_HTML = re.compile(r"<[^<>\n]*>")
 
 
 def relative(path, root):
@@ -310,6 +325,90 @@ def em_dash(files, root):
         for number, line in enumerate(lines, 1)
         if EM_DASH in line
     ]
+
+
+def _closing(text, start, pair):
+    """Return the index of the bracket closing text[start], or -1."""
+    depth, index = 0, start
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 2
+            continue
+        if char == "`" and (span := _CODE_SPAN.match(text, index)):
+            index = span.end()
+            continue
+        if char == pair[0]:
+            depth += 1
+        elif char == pair[1]:
+            depth -= 1
+            if not depth:
+                return index
+        index += 1
+    return -1
+
+
+def _unbreakable_end(line, index):
+    """Return the end of the code span, inline HTML or link at index, or None."""
+    if line[index] == "`":
+        span = _CODE_SPAN.match(line, index) or _TICKS.match(line, index)
+        return span.end()
+    if line[index] == "<":
+        tag = _INLINE_HTML.match(line, index)
+        return tag.end() if tag else None
+    bracket = index + (line[index] == "!")
+    if line.startswith("[", bracket):
+        close = _closing(line, bracket, "[]")
+        if close != -1 and line.startswith("(", close + 1):
+            paren = _closing(line, close + 1, "()")
+            if paren != -1:
+                return paren + 1
+    return None
+
+
+def breaks_after(line, width):
+    """Whether a space after column width, outside code spans, links and HTML, precedes text."""
+    index = _BLOCK_PREFIX.match(line).end()
+    while index < len(line):
+        end = _unbreakable_end(line, index) if line[index] in "`<[!" else None
+        if end is not None:
+            index = end
+        elif line[index] == " ":
+            after = len(line) - len(line[index:].lstrip(" "))
+            if index >= width and after < len(line):
+                return True
+            index = after
+        else:
+            index += 1
+    return False
+
+
+def markdown_wrap(files, root):
+    """Markdown prose wraps at MARKDOWN_WIDTH columns wherever a line can break."""
+    skipped = MARKDOWN_UNWRAPPED + vendored_directories(root)
+    violations = []
+    for shown, name, lines in text_files(files, root):
+        if not shown.endswith(".md") or (name or "").startswith(skipped):
+            continue
+        front = bool(lines) and lines[0].strip() == "---"
+        fence, generated = None, False
+        for number, line in enumerate(lines, 1):
+            fenced = _FENCE.match(line)
+            if front:
+                front = number == 1 or line.strip() != "---"
+            elif fence:
+                # Only the opening character, at least as many times, closes a fence.
+                if fenced and fenced[1].startswith(fence) and not fenced[2].strip():
+                    fence = None
+            elif fenced and not (fenced[1][0] == "`" and "`" in fenced[2]):
+                fence = fenced[1]
+            elif marker := _GENERATED.match(line):
+                generated = marker[1] == "start"
+            elif not (generated or _UNWRAPPABLE.match(line)) and (
+                len(line) > MARKDOWN_WIDTH and breaks_after(line, MARKDOWN_WIDTH)
+            ):
+                violations.append(Violation(shown, number, "markdown-wrap", WRAP_MESSAGE))
+    return violations
 
 
 def python_imports(path):
@@ -502,6 +601,7 @@ RULES: dict[str, Callable[[list[Path], Path], list[Violation]]] = {
     "approved-dependencies": approved_dependencies,
     "bpy-boundary": bpy_boundary,
     "em-dash": em_dash,
+    "markdown-wrap": markdown_wrap,
     "no-snapshot-dirs": no_snapshot_dirs,
     "public-content": public_content,
     "sdk-adapter": sdk_adapter,

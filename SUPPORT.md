@@ -37,9 +37,9 @@ Before filing a bug, collect:
   contain `scenario`, for example `INFO:scenario.jobs:...`.
 
 Public issues and attachments are visible to everyone. Review logs and screenshots
-before posting. Never include an API key, API secret, MCP bearer token, signed
-upload/download URL or confidential scene data. Reduce the example to information
-that you can share publicly; send sensitive account details through private support.
+before posting. Never include an API key, API secret, signed upload/download URL or
+confidential scene data. Reduce the example to information that you can share publicly;
+send sensitive account details through private support.
 
 ## Account, billing, credits, API keys and security
 

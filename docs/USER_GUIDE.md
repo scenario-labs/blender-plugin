@@ -189,8 +189,8 @@ The four panels:
   its [form](#the-form).
 - **Jobs**: what's running; see [Jobs](#jobs).
 - **Generations**: what came back, then your project's cloud history; see [Generations](#generations).
-- **Agents (MCP)**: the local MCP server, its token, client setups and the
-  Python permission; see [Agents (MCP)](#agents-mcp).
+- **Agents (MCP)**: the local MCP server, client setups and the Python
+  permission; see [Agents (MCP)](#agents-mcp).
 
 ![The Jobs, Generations and Agents (MCP) panels below the lane form](images/panel-sections.png)
 
@@ -867,10 +867,13 @@ The local server starts on its own while **Allow Online Access** is on and accep
 connections only from this computer, and an agent can upload only files Scenario
 saved or files you chose in Blender during this session.
 
-Copy a client setup for Claude Code, Codex, Cursor or Claude Desktop from the
-**Agents (MCP)** panel. It contains a live token, so keep it out of screenshots,
-logs and source control. **Allow connected agents to
-run Python** is off by default. For headless use, run
+In the **Agents (MCP)** panel, **Connect a client** has a button for each of
+Claude Code, Codex, Cursor and Claude Desktop found on this computer: it adds the
+`scenario-blender` server to that client's configuration file, keeps the other
+servers, copies the previous file beside it and shows what it wrote. Then reload
+the client. You can also copy a setup instead. The server needs no token, so any
+program on this computer can connect. **Allow connected agents to run Python** is
+off by default. For headless use, run
 `blender --background scene.blend --command scenario_blender`. The
 [MCP reference](MCP.md) covers tools, setup and security.
 
@@ -949,14 +952,14 @@ can read your scene and request paid work. See
   first, or press **Start MCP server** in the Agents (MCP) panel if you allowed
   Online Access after Blender started. Then reconnect the agent: run `/mcp` in
   Claude Code, start a new Codex session, or restart Cursor or Claude Desktop.
-- **An agent is refused as unauthorized after Blender restarts**: each Blender
-  session makes a new token. Copy the client setup again; for Codex, export the
-  new token before starting it.
-- **The panel shows a port other than 9876**: another program, often another
-  Blender MCP add-on, holds that port, so the server took the next free one. The
-  copied setup carries the actual port: copy it again. To use another port, set
-  **MCP Port** in the extension's preferences, press **Stop MCP server** then
-  **Start MCP server**, and copy the setup again.
+- **Codex reports that `SCENARIO_BLENDER_TOKEN` is not set**: its setup still
+  names a token variable. Press **Connect a client > Codex**, or run
+  `codex mcp remove scenario-blender` and copy the Codex setup from the panel again.
+- **The panel says the port is in use**: another program, often another Blender
+  or Blender MCP add-on, holds the MCP Port, and the server does not move to
+  another one, so saved agent setups keep pointing at this Blender. Close the
+  other one, or set **MCP Port** in the extension's preferences, press **Start
+  MCP server**, and copy the setup again.
 - **An agent's call times out**: some clients stop waiting after 60 seconds,
   Codex by default (`tool_timeout_sec`). The outcome is unknown: Blender may
   never have started the call, or may still finish it. Ask the agent to check

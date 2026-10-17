@@ -271,6 +271,23 @@ copied tokens; keep them out of source control, screenshots and shared logs.
 
 ## Client setup
 
+**Connect a client** in the panel writes the entry for you, with the URL of the
+MCP Port and the saved token. It offers only clients whose folder exists and
+changes only their user configuration:
+
+| Client | File | Entry |
+| --- | --- | --- |
+| Claude Code | `~/.claude.json` | `mcpServers.scenario-blender`, HTTP with a bearer header |
+| Codex | `$CODEX_HOME/config.toml`, default `~/.codex/config.toml` | `[mcp_servers.scenario-blender]` with `url` and `http_headers` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.scenario-blender`, URL with a bearer header |
+| Claude Desktop | `claude_desktop_config.json` in Claude's folder | `mcpServers.scenario-blender`, the stdio shim below |
+
+The whole `scenario-blender` entry is replaced; other servers and settings are
+kept. The previous file is copied beside it as `<file>.scenario-backup-<time>`
+with the same permissions, and the new file replaces it in one step. A file that
+is not valid JSON or TOML, or a Codex entry that is not a plain table, is left
+untouched and the panel says so. Reload the client afterwards.
+
 Use the panel's Copy buttons for the actual port and platform paths. Examples
 below use placeholders, never real credentials. These clients must run where
 `127.0.0.1` reaches the same machine as Blender; a hosted agent cannot reach your

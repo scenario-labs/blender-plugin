@@ -10,7 +10,7 @@ import sys
 import bpy
 
 from .. import __version__
-from ..mcp import local_token, protocol
+from ..mcp import client_setup, local_token, protocol
 from ..mcp.cli import CLI_COMMAND, cli_banner, resolve_cli_token
 from ..mcp.server import McpServer
 from . import runtime
@@ -121,6 +121,46 @@ def shim_path():
     return os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "mcp", "stdio_shim.py"
     )
+
+
+# What the last Connect wrote, as panel lines with the token masked. Main thread only.
+connect_report = []
+
+
+def connect_clients(home=None, environ=None):
+    """The clients Connect can configure, in panel order, with whether each was found."""
+    return client_setup.clients(home or os.path.expanduser("~"), environ)
+
+
+def connect(key, home=None, environ=None):
+    """Write the scenario-blender entry into one client's configuration; returns the report lines."""
+    client = next((c for c in connect_clients(home, environ) if c.key == key), None)
+    if client is None:
+        raise ValueError(f"Unknown client {key!r}")
+    if not runtime.state.mcp_token:
+        runtime.state.mcp_token = local_token.load_or_create(token_dir())
+    token = runtime.state.mcp_token
+    server = runtime.state.mcp
+    if server is not None and server.running:
+        url = server.url
+    else:
+        prefs = runtime.prefs()
+        url = f"http://127.0.0.1:{prefs.mcp_port if prefs else 9876}/mcp"
+    entry = client_setup.entry(key, url, token, _blender_python(), shim_path())
+    try:
+        written = client_setup.write(client, entry, url)
+    except client_setup.SetupError as error:
+        connect_report[:] = [f"{client.label}: not changed, {error}"]
+        raise
+    lines = [
+        f"{client.label}: wrote {client_setup.SERVER_NAME} to {written.path}",
+        f"URL {url}, token {masked_token()}",
+    ]
+    if written.backup is not None:
+        lines.append(f"Previous file kept as {written.backup.name}")
+    lines.append(f"Then {client.reload_hint}")
+    connect_report[:] = lines
+    return lines
 
 
 def client_configs():

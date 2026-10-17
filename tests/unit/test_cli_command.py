@@ -41,7 +41,7 @@ def test_repository_codex_entry_loads_the_token_through_the_helper_and_stays_dis
     # A bearer_token_env_var would take precedence over the helper's Authorization header.
     assert "bearer_token_env_var" not in server
     helper = server["http_headers_helper"]
-    assert helper == "uv run --locked --env-file .env.local python -m tools.codex_mcp_auth"
+    assert helper == "uv run --locked --env-file .env.local python -m tools.mcp_token_header"
     assert helper in (ROOT / "docs/MCP.md").read_text()
 
 

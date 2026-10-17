@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Codex headers helper for the local Blender MCP server; see docs/MCP.md#codex.
+"""Headers helper for the repository's Claude Code and Codex MCP entries; see docs/MCP.md.
 
-uv loads .env.local. The header goes to stdout for Codex only; --check never prints the token.
+uv loads .env.local. The header goes to stdout for the client only; --check never prints the token.
 """
 
 import argparse

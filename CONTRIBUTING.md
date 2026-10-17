@@ -217,8 +217,9 @@ the default unit-test collection and are not added to PR workflows.
 
 `SCENARIO_BLENDER_TOKEN` supplies the local MCP bearer token to the headless
 `scenario_blender` command and the generated Codex client snippet. In
-`.env.local`, it feeds the repository Codex entry's
-[headers helper](docs/MCP.md#codex), `tools/codex_mcp_auth.py`. An explicit
+`.env.local`, it feeds `tools/mcp_token_header.py`, the
+[headers helper](docs/MCP.md#repository-checkouts) of the repository's Claude
+Code and Codex entries. An explicit
 `--token` wins over this environment value. With neither configured, the command
 generates and displays a session token; supplied tokens are hidden in its startup
 banner. This is separate from Scenario API authentication. Empty or malformed

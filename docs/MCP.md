@@ -280,8 +280,8 @@ claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp \
 ```
 
 In a repository checkout, the committed `.mcp.json` registers the same server
-and reads the token from `SCENARIO_BLENDER_TOKEN`. Export it before starting
-Claude Code and approve the project server when asked.
+with the [repository headers helper](#repository-checkouts). Trust the folder and
+approve the project server when asked.
 
 ### Cursor
 
@@ -347,27 +347,33 @@ Restart a client launched before the environment variable was set. See the
 [official Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
 for configuration and token-environment behavior.
 
-In a repository checkout, the committed `.codex/config.toml` entry is disabled
-and gets the token from a headers helper instead:
+In a repository checkout, the committed `.codex/config.toml` entry uses the
+[repository headers helper](#repository-checkouts) and is disabled; start Codex
+with `codex -c mcp_servers.scenario-blender.enabled=true`. A
+`bearer_token_env_var` on that entry would take precedence over the helper.
 
-```toml
-http_headers_helper = "uv run --locked --env-file .env.local python -m tools.codex_mcp_auth"
+### Repository checkouts
+
+The committed `.mcp.json` (`headersHelper`) and `.codex/config.toml`
+(`http_headers_helper`) get the token from the same command:
+
+```sh
+uv run --locked --env-file .env.local python -m tools.mcp_token_header
 ```
 
 Set `SCENARIO_BLENDER_TOKEN` in `.env.local` to the token in the panel's Codex
-setup, then start Codex from the checkout root with
-`codex -c mcp_servers.scenario-blender.enabled=true`. Codex runs the helper with a
-minimal environment, so an exported token does not reach it, and a
-`bearer_token_env_var` on the same entry would take precedence. uv loads all of
-`.env.local` into the helper, which prints only the `Authorization` header for
-Codex; the token stays out of command arguments, configuration and the model's
+setup and start the client from the checkout root, where the helper runs. Neither
+client passes an exported token to the helper, so `.env.local` is its only source.
+uv loads all of `.env.local` into the helper, which prints only the `Authorization`
+header. The token stays out of command arguments, configuration and the model's
 context, but an agent that can read `.env.local` can still read it.
 
-After a Blender restart, update `.env.local`. The next request gets a 401, Codex
-runs the helper again and retries once with the new token; a session that
-started with a stale token needs a new Codex session. Codex hides the helper's
-errors: add `--check` to the helper command to report a missing or malformed
-token without printing it.
+After a Blender restart, update `.env.local`. Claude Code runs the helper on each
+new connection; reconnect from `/mcp`. Codex runs it again after the next 401 and
+retries once; a Codex session that started with a stale token needs a new
+session. Neither client shows the helper's errors, and Claude Code then reports a
+failed OAuth client registration: add `--check` to the command to report a
+missing or malformed token without printing it.
 
 ### Connection check
 

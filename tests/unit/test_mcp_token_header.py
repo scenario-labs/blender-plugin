@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Codex headers helper: only the local MCP token, from uv dotenv loading, with dummy values."""
+"""MCP headers helper: only the local MCP token, from uv dotenv loading, with dummy values."""
 
 import http.client
 import json
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from scenario.mcp import protocol, server
-from tools import codex_mcp_auth
+from tools import mcp_token_header
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,7 +31,7 @@ def run_helper(dotenv, env, *args):
     # uv exports UV, its own path, to the commands it runs; keep the pinned uv.
     command = [os.environ.get("UV", "uv"), "run", "--locked", "--offline"]
     command += ["--python", sys.executable, "--env-file", str(dotenv)]
-    command += ["python", "-m", "tools.codex_mcp_auth", *args]
+    command += ["python", "-m", "tools.mcp_token_header", *args]
     return subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
 
 
@@ -43,7 +43,7 @@ def header(result):
 
 def test_header_carries_only_the_local_mcp_token(capsys):
     environ = {"SCENARIO_BLENDER_TOKEN": " dummy-token ", "SCENARIO_TEST_API_KEY": "unrelated"}
-    codex_mcp_auth.main([], environ)
+    mcp_token_header.main([], environ)
     out, err = capsys.readouterr()
     assert json.loads(out) == {"Authorization": "Bearer dummy-token"}
     assert err == ""
@@ -54,7 +54,7 @@ def test_header_carries_only_the_local_mcp_token(capsys):
 )
 def test_missing_or_empty_token_prints_no_header(environ, capsys):
     with pytest.raises(SystemExit, match="^no local MCP token: set SCENARIO_BLENDER_TOKEN"):
-        codex_mcp_auth.main([], environ)
+        mcp_token_header.main([], environ)
     assert capsys.readouterr().out == ""
 
 
@@ -63,14 +63,14 @@ def test_missing_or_empty_token_prints_no_header(environ, capsys):
 )
 def test_malformed_token_is_refused_without_echoing_it(token, capsys):
     with pytest.raises(SystemExit) as error:
-        codex_mcp_auth.main([], {"SCENARIO_BLENDER_TOKEN": token})
+        mcp_token_header.main([], {"SCENARIO_BLENDER_TOKEN": token})
     assert str(error.value).startswith("malformed local MCP token:")
     assert "dummy" not in str(error.value) and "dümmy" not in str(error.value)
     assert capsys.readouterr().out == ""
 
 
 def test_check_validates_without_printing_the_token(capsys):
-    codex_mcp_auth.main(["--check"], {"SCENARIO_BLENDER_TOKEN": "dummy-token"})
+    mcp_token_header.main(["--check"], {"SCENARIO_BLENDER_TOKEN": "dummy-token"})
     assert "dummy-token" not in capsys.readouterr().out
 
 
@@ -92,7 +92,7 @@ def test_dotenv_supplies_the_token_and_exported_values_take_precedence(tmp_path)
 
 
 def test_stale_token_is_refused_until_dotenv_holds_the_restarted_session(tmp_path):
-    """Codex reruns the helper after a 401 and retries only when the header changed."""
+    """Clients rerun the helper for a new connection or after a 401; the file supplies the token."""
     dotenv = tmp_path / ".env.local"
     dotenv.write_text("SCENARIO_BLENDER_TOKEN=first-session\n")
     stale = header(run_helper(dotenv, helper_env()))

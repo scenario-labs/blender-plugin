@@ -3,9 +3,7 @@
     "scenario-blender": {
       "type": "http",
       "url": "http://127.0.0.1:9876/mcp",
-      "headers": {
-        "Authorization": "Bearer ${SCENARIO_BLENDER_TOKEN}"
-      }
+      "headersHelper": "uv run --locked --env-file .env.local python -m tools.mcp_token_header"
     }
   }
 }

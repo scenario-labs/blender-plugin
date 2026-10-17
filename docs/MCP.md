@@ -759,6 +759,8 @@ No credentials, service requests or registry writes are needed for cold reads.
 
 Maintainers: run `make mcp-docs` after changing tool definitions and
 `uv run --locked --no-env-file python tools/gen_mcp_docs.py --check` to detect drift.
+Every session loads all tool definitions, so `tests/unit/test_mcp_context_budget.py`
+caps their total and per-tool size; raise a budget there only on purpose.
 
 ## Model quote and submission contract
 

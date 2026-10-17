@@ -566,7 +566,9 @@ level for unexpected failures and at debug level for the others.
 `execute_python` errors keep a traceback of the agent's code but omit the
 frames of the extension's own sandbox module, which would show its installed
 path. Frames of code that the agent's code called, such as Blender's modules,
-remain.
+remain. A `result` whose JSON exceeds 50,000 characters is replaced by its size,
+its first 2,000 characters and a note asking for less; the code has still run.
+`stdout` and `stderr` keep their last 20,000 characters.
 
 With Python enabled, a connected agent can run arbitrary Python with your user's
 permissions. The blocklist in `scenario/mcp/sandbox.py` is a guard rail, not a

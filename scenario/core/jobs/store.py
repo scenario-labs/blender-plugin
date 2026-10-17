@@ -606,12 +606,13 @@ def _validate_results(results):
     ) != len(results):
         raise ValueError("Result asset identities and filenames must be unique")
     parents = {item.asset.asset_id: item.asset.parent_id for item in results}
-    for asset_id in parents:
+    for asset_id, parent in parents.items():
         seen = {asset_id}
-        while (asset_id := parents[asset_id]) is not None:
-            if asset_id not in parents or asset_id in seen:
+        while parent is not None:
+            if parent not in parents or parent in seen:
                 raise ValueError("A result parent must be another result, without a cycle")
-            seen.add(asset_id)
+            seen.add(parent)
+            parent = parents[parent]
 
 
 class LocalApplicationState(StrEnum):

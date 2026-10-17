@@ -1598,8 +1598,8 @@ reversible scene edits.
 
 `apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
 policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with
-an explicit REMESH, UV, RETEXTURE, PARTS or RIG policy to an explicitly captured
-source mesh. The target snapshot must match the resolved
+an explicit REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE policy to an explicitly
+captured source mesh. The target snapshot must match the resolved
 scene/object origin and its geometry/context must still match before claiming
 application. A caller captures this source before asynchronous work and binds its
 policy, mapping and Keep original choice to the approved operation; the command
@@ -1607,14 +1607,15 @@ does not derive provider semantics or infer targets from selection.
 
 The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
 rehashes the actual bytes, imports in isolation and uses the existing mesh
-primitive, or the skin primitive for RIG. Confirmed rollback permits a failed
-local outcome; incomplete scene cleanup retains uncertainty. A successful mesh
-change followed by a failed store write retains an owner-issued
-`ModelResultUncertain` handle for the existing `retry_model_receipt`. That retry
-never imports or replaces again. Shutdown drops receipt authority; restart does
-not authorize replay of an unfinished claim. Completed jobs can use a separate
-`mesh_edit` local claim without changing their original generation outcome. Its
-target identifies the explicitly selected source.
+primitive, the skin primitive for RIG or the clip primitive for ANIMATE.
+Confirmed rollback permits a failed local outcome; incomplete scene cleanup
+retains uncertainty. A successful mesh change followed by a failed store write
+retains an owner-issued `ModelResultUncertain` handle for the existing
+`retry_model_receipt`. That retry never imports or replaces again. Shutdown
+drops receipt authority; restart does not authorize replay of an unfinished
+claim. Completed jobs can use a separate `mesh_edit` local claim without
+changing their original generation outcome. Its target identifies the explicitly
+selected source.
 
 Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The

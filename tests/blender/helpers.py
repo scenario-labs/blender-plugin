@@ -403,6 +403,114 @@ def skin_to_new_rig(scene, source, *, parent=True):
     return rig
 
 
+# A three-bone chain: (name, parent, head, tail) in armature units.
+CHAIN = (
+    ("Hips", None, (0, 0, 1), (0, 0, 1.2)),
+    ("Spine", "Hips", (0, 0, 1.2), (0, 0, 1.6)),
+    ("Head", "Spine", (0, 0, 1.6), (0, 0.1, 1.9)),
+)
+
+
+def chain_rig(scene, name, bones=CHAIN, *, unit=1.0):
+    """A new armature in `scene`, the window's scene, with bones scaled by `unit`."""
+    rig = bpy.data.objects.new(name, bpy.data.armatures.new(name))
+    scene.collection.objects.link(rig)
+    view_layer = bpy.context.view_layer
+    active = view_layer.objects.active
+    view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    try:
+        for bone, parent, head, tail in bones:
+            edit = rig.data.edit_bones.new(bone)
+            edit.head = [value * unit for value in head]
+            edit.tail = [value * unit for value in tail]
+            if parent:
+                edit.parent = rig.data.edit_bones[parent]
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+    view_layer.objects.active = active
+    return rig
+
+
+def skin_to_chain_rig(scene, source):
+    """Skin source vertex N to chain bone N (the last bone takes any others)."""
+    rig = chain_rig(scene, "Chain rig")
+    for index, (name, *_) in enumerate(CHAIN):
+        group = source.vertex_groups.new(name=name)
+        count = len(source.data.vertices)
+        group.add([i for i in range(count) if min(i, len(CHAIN) - 1) == index], 1.0, "REPLACE")
+    source.modifiers.new("Chain skin", "ARMATURE").object = rig
+    bpy.context.view_layer.update()
+    return rig
+
+
+def clip_glb(bones=CHAIN, *, unit=100.0, scale=0.01, clips=(1.0, 2.0), location=True):
+    """Export a returned animated character with Blender's glTF exporter.
+
+    The armature has `unit` armature-space units per world unit under object scale
+    `scale`, like a centimetre rig at 0.01. Clip N (one NLA track, `Clip N`) turns
+    every bone about its X axis by half its amount in radians and, with `location`,
+    raises the root bone by its amount in world units, over 24 frames. A triangle
+    skinned to the root bone is included. All scratch data is removed.
+    """
+    import math
+
+    names = ("objects", "meshes", "armatures", "scenes", "actions", "collections")
+    before = {name: set(getattr(bpy.data, name)) for name in names}
+    window = bpy.context.window
+    previous = window.scene, window.view_layer
+    scene = bpy.data.scenes.new("Clip export fixture")
+    scene.render.fps, scene.render.fps_base = 24, 1.0
+    directory = tempfile.TemporaryDirectory()
+    try:
+        window.scene, window.view_layer = scene, scene.view_layers[0]
+        rig = chain_rig(scene, "Armature", bones, unit=unit)
+        rig.scale = (scale,) * 3
+        mesh = bpy.data.meshes.new("Body")
+        root = [value * unit for value in bones[0][2]]
+        mesh.from_pydata([root, (root[0] + unit, root[1], root[2]), (0, 0, 0)], [], [(0, 1, 2)])
+        body = bpy.data.objects.new("Body", mesh)
+        scene.collection.objects.link(body)
+        body.parent = rig
+        body.vertex_groups.new(name=bones[0][0]).add([0, 1, 2], 1.0, "REPLACE")
+        body.modifiers.new("Armature", "ARMATURE").object = rig
+        data = rig.animation_data_create()
+        for index, amount in enumerate(clips, 1):
+            action = bpy.data.actions.new(f"Clip {index}")
+            data.action = action
+            for frame, factor in ((1, 0.0), (25, amount)):
+                for number, (name, *_) in enumerate(bones):
+                    pose = rig.pose.bones[name]
+                    pose.rotation_quaternion = (math.cos(factor / 4), math.sin(factor / 4), 0, 0)
+                    pose.keyframe_insert("rotation_quaternion", frame=frame)
+                    if location and number == 0:
+                        pose.location = (0, factor * unit, 0)
+                        pose.keyframe_insert("location", frame=frame)
+            data.action = None
+            track = data.nla_tracks.new()
+            track.name = action.name
+            track.strips.new(action.name, 1, action)
+        for pose in rig.pose.bones:
+            pose.location, pose.rotation_quaternion = (0, 0, 0), (1, 0, 0, 0)
+        path = pathlib.Path(directory.name) / "clip.glb"
+        # As above, only the window shows the scratch scene during export.
+        bpy.ops.export_scene.gltf(
+            filepath=str(path),
+            use_active_scene=True,
+            export_animations=bool(clips),
+            export_animation_mode="NLA_TRACKS",
+        )
+        return path.read_bytes()
+    finally:
+        window.scene, window.view_layer = previous
+        bpy.data.scenes.remove(scene)
+        directory.cleanup()
+        for name in names:
+            values = getattr(bpy.data, name)
+            for value in set(values) - before[name]:
+                values.remove(value, do_unlink=True)
+
+
 def textured_model_exports(directory, *, fps=24):
     """Export one textured, animated cube with Blender's own exporters.
 

@@ -746,8 +746,10 @@ action spends anything. Save the blend file yourself.
 Select your mesh, then choose **Apply mesh edit (N)** on the saved job and pick how
 to apply it. The choice starts on the edit the job ran, such as **Replace
 textures** for a Retexture job, or on **Attach rig** when your mesh already has
-a rig; when the dialog says the edit is not from this job's task, pick it
-yourself. A job's other results show as **Apply alternate mesh edit: GLB (N)**.
+a rig. An Animate job starts on **Apply animation** when your mesh has a rig and
+on **Attach rig** when it doesn't; when the dialog says the edit is not from
+this job's task, pick it yourself. A job's other results show as **Apply
+alternate mesh edit: GLB (N)**.
 
 - **Replace geometry**: geometry, UVs and materials.
 - **Replace active UVs** or **Replace textures**: only when the result's
@@ -757,8 +759,15 @@ yourself. A job's other results show as **Apply alternate mesh edit: GLB (N)**.
 - **Attach rig**: adds the returned armature and weights to your mesh, when its
   geometry matches exactly. If the mesh already has a rig, its weights are
   replaced and the old rig is left as it was; **Keep original** keeps a copy
-  that still follows the old rig. A mesh with a rig can only use Attach rig.
-  Move the new rig group with the mesh afterwards.
+  that still follows the old rig. A mesh with a rig can only use Attach rig or
+  Apply animation. Move the new rig group with the mesh afterwards.
+- **Apply animation**: for a mesh that already has a rig, adds the returned
+  animation to that rig and keeps your mesh, weights and rig as they are. The
+  bones must have the same names, parents and rest pose as the returned
+  character, for example a rig you attached earlier from the same service;
+  animation made for a different skeleton is refused. The first clip plays, and
+  the others and your previous animation stay in muted NLA tracks. Your timeline
+  doesn't change.
 
 Choose **Scene coordinates** or **Object local coordinates** for the result's
 positions; the extension doesn't realign it. **Keep original** (on by default)

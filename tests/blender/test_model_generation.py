@@ -5831,8 +5831,9 @@ class ModelGenerationTests(unittest.TestCase):
             ("model_meshy-uv-unwrap", "UV", "edit3d_task", "UV", "UV Unwrap"),
             ("model_meshy-rigging", "RIG", "edit3d_task", "RIG", "Rigging"),
             ("model_tripo-segmentation-v2", "PARTS", "edit3d_task", "PARTS", "Parts"),
-            # No in-place Animate policy, and a model in two tasks names neither.
-            ("model_meshy-animation", "REMESH", "default", "ANIMATE", None),
+            # Animate attaches the returned rig to an unskinned mesh; a model in
+            # two tasks names neither.
+            ("model_meshy-animation", "RIG", "edit3d_task", "ANIMATE", "Animate"),
             ("model_rodin-hyper3d-bang", "REMESH", "default", None, None),
         )
         for model_id, policy, source, task, label in cases:
@@ -5856,12 +5857,13 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(
                     (op.policy, ticket.policy, ticket.policy_source), (policy, policy, source)
                 )
-                self.assertEqual(
-                    op.policy_note,
-                    f"Default edit follows this job's {label} task."
-                    if label
-                    else "Default edit is not from this job's task; check it.",
-                )
+                if task == "ANIMATE":
+                    note = "This mesh has no rig, so the Animate result starts on Attach rig."
+                elif label:
+                    note = f"Default edit follows this job's {label} task."
+                else:
+                    note = "Default edit is not from this job's task; check it."
+                self.assertEqual(op.policy_note, note)
                 self.assertEqual(op.result_role, "primary")
                 op, ticket = self.mesh_dialog(request_id, policy="RETEXTURE")
                 self.assertEqual((op.policy, ticket.policy_source), ("RETEXTURE", "requested"))
@@ -6854,7 +6856,7 @@ class ModelGenerationTests(unittest.TestCase):
         op.policy = "REMESH"
         self.assertTrue(operator.check(op, None))
         self.assertEqual(
-            op.review_error, "This mesh has a rig: choose Attach rig to replace its skin"
+            op.review_error, "This mesh has a rig: choose Attach rig or Apply animation"
         )
         op.policy = "RIG"
         operator.check(op, None)
@@ -6876,6 +6878,136 @@ class ModelGenerationTests(unittest.TestCase):
             (approval["mesh_policy"], approval["mesh_policy_source"], approval["edit3d_task"]),
             ("RIG", "edit3d_task", "RIG"),
         )
+
+    def captured_clip_result(self):
+        from helpers import clip_glb
+
+        # One rotating clip for the one-bone rig that skin_to_new_rig builds.
+        body = clip_glb((("Old bone", None, (0, 0, 0), (0, 0, 1)),), clips=(1.0,), location=False)
+        return self.captured_source_result(
+            body, source_geometry=[(0, 0, 0), (1, 0, 0), (0, 0, 1)], rigged=True
+        )
+
+    def test_captured_rigged_source_applies_clips_with_native_history(self):
+        request_id, source = self.captured_clip_result()
+        source_name, rig = source.name, source.modifiers[0].object
+        rig_name, objects = rig.name, set(bpy.data.objects)
+        calls = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")
+        self.assertEqual((approval["target"], approval["mesh_policy"]), (source_name, "ANIMATE"))
+        module = submodule("blender.mesh_result_application")
+        prefs = bpy.context.preferences.edit
+        settings = prefs.use_global_undo, prefs.undo_steps
+        prefs.use_global_undo, prefs.undo_steps = True, 32
+        try:
+            with patch.object(module, "_undo_enabled", return_value=True):
+                status = self.finish_application(approval)
+            self.assertEqual(status["status"], "applied", status)
+            edit = status["mesh_edit"]
+            self.assertEqual(
+                (edit["policy"], edit["rig"], edit["original"]), ("ANIMATE", rig_name, None)
+            )
+            clip = edit["clips"][0]
+            self.assertEqual(rig.animation_data.action.name, clip)
+            self.assertEqual(set(bpy.data.objects), objects)
+            self.assertEqual(source.modifiers[0].object, rig)
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            rig = bpy.data.objects[rig_name]
+            self.assertIsNone(rig.animation_data)
+            self.assertNotIn(clip, bpy.data.actions)
+            self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            rig = bpy.data.objects[rig_name]
+            self.assertEqual(rig.animation_data.action.name, clip)
+            self.assertEqual(bpy.data.objects[source_name].modifiers[0].object, rig)
+            self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+            self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
+        finally:
+            prefs.use_global_undo, prefs.undo_steps = settings
+
+    def test_native_animate_review_shares_the_guarded_command(self):
+        request_id, source = self.captured_clip_result()
+        rig, before = source.modifiers[0].object, self.store.get(request_id)
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        # A requested ANIMATE review stays on ANIMATE for a skinned source.
+        op, ticket = self.mesh_dialog(request_id, original_source=True, policy="ANIMATE")
+        self.assertEqual(
+            (op.policy, ticket.policy, ticket.policy_source), ("ANIMATE",) * 2 + ("requested",)
+        )
+        op._sync_options = lambda: operator._sync_options(op)
+        op.policy = "UV"
+        operator.check(op, None)
+        self.assertEqual(
+            op.review_error, "This mesh has a rig: choose Attach rig or Apply animation"
+        )
+        op.policy = "ANIMATE"
+        operator.check(op, None)
+        self.assertEqual(op.review_error, "")
+        op.layout = Mock()
+        operator.draw(op, None)
+        texts = [call.kwargs.get("text") for call in op.layout.label.call_args_list]
+        self.assertIn("Add the returned clips to this mesh's rig; keep its mesh and skin.", texts)
+        props = [call.args[1] for call in op.layout.prop.call_args_list]
+        self.assertEqual(props, ["policy"])
+        operator.cancel(op, None)
+        self.assertEqual(self.store.get(request_id), before)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+            original_source=True,
+            policy="ANIMATE",
+        )
+        calls = len(self.calls), len(self.paid)
+        self.assertEqual(bpy.ops.scenario.apply_saved_mesh(**args), {"FINISHED"})
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        self.assertTrue(rig.animation_data.action.name.startswith(rig.name))
+        self.assertEqual((len(self.calls), len(self.paid)), calls)
+
+    def test_animate_job_review_starts_on_animate_for_a_skinned_source(self):
+        self.model["id"] = "model_meshy-animation"
+        request_id, source = self.captured_clip_result()
+        before = self.store.get(request_id)
+        for purpose in ("mesh_source", "mesh_edit"):
+            approval = self.prepare_mesh_edit(request_id, purpose=purpose)
+            self.assertEqual(
+                (approval["mesh_policy"], approval["mesh_policy_source"], approval["edit3d_task"]),
+                ("ANIMATE", "edit3d_task", "ANIMATE"),
+            )
+        op, ticket = self.mesh_dialog(request_id, original_source=True)
+        self.assertEqual((op.policy, ticket.policy_source), ("ANIMATE", "edit3d_task"))
+        self.assertEqual(op.policy_note, "Default edit follows this job's Animate task.")
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertIsNone(source.modifiers[0].object.animation_data)
+
+    def test_animate_ignores_coordinates_for_a_mirrored_source(self):
+        # Clips are pose data: a mirrored source needs no result-to-source mapping.
+        request_id, source = self.captured_clip_result()
+        source.scale.x = -1
+        bpy.context.view_layer.objects.active = source
+        bpy.context.view_layer.update()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_edit", mesh_policy="ANIMATE")
+        self.assertEqual(approval["mesh_policy"], "ANIMATE")
+        self.assertEqual(approval["target"], source.name)
+
+    def test_animate_on_unskinned_source_is_rejected_by_mcp_and_native_review(self):
+        request_id, source = self.captured_source_result()
+        before = self.store.get(request_id)
+        errors = (submodule("blender.mesh_result_application").MeshResultApplicationError,)
+        for purpose in ("mesh_source", "mesh_edit"):
+            with self.subTest(purpose=purpose), self.assertRaises(errors):
+                self.prepare_mesh_edit(request_id, purpose=purpose, mesh_policy="ANIMATE")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        op, _ = self.mesh_dialog(request_id, original_source=True)
+        op._sync_options = lambda: operator._sync_options(op)
+        op.policy = "ANIMATE"
+        operator.check(op, None)
+        self.assertEqual(op.review_error, "Apply animation needs a mesh skinned to an armature")
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertFalse(source.modifiers)
 
     def test_captured_parts_apply_preserves_other_selection_and_records_no_new_spending(self):
         from helpers import parts_glb

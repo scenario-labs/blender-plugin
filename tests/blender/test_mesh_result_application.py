@@ -1359,3 +1359,273 @@ class RiggedSourceTests(unittest.TestCase):
         for got, want in zip(exported, expected, strict=True):
             for a, b in zip(got, want, strict=True):
                 self.assertAlmostEqual(a, b, places=6)
+
+
+def _animation(rig):
+    """The rig's assigned action and slot, and its NLA tracks with their strips."""
+    data = rig.animation_data
+    if data is None:
+        return None
+    return (
+        data.action,
+        data.action_slot,
+        tuple(
+            (track, track.name, track.mute, tuple((s.action, s.action_slot) for s in track.strips))
+            for track in data.nla_tracks
+        ),
+    )
+
+
+def _rest(rig):
+    return (
+        rig.name,
+        rig.data,
+        tuple(tuple(row) for row in rig.matrix_world),
+        tuple((bone.name, tuple(map(tuple, bone.matrix_local))) for bone in rig.data.bones),
+        tuple(bone.rotation_mode for bone in rig.pose.bones),
+    )
+
+
+class AnimateResultTests(unittest.TestCase):
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+    ready_session = MeshResultTests.ready_session
+    verify = MeshResultTests.verify
+    deliver = MeshResultTests.deliver
+
+    def setUp(self):
+        from helpers import skin_to_chain_rig
+
+        MeshResultTests.setUp(self)
+        self.animation = submodule("blender.animation_application")
+        self.rig = skin_to_chain_rig(self.scene, self.source)
+        self.use_clips()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        self.skin = _skin(self.source, self.mesh)
+        self.timeline = self.timing()
+
+    def use_clips(self, **options):
+        from helpers import clip_glb
+
+        self.body = clip_glb(**options)
+        self.path.write_bytes(self.body)
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("mesh", self.path.name, "model/gltf-binary", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+
+    def timing(self):
+        scene = self.scene
+        render = scene.render
+        return (
+            scene.frame_start,
+            scene.frame_end,
+            scene.frame_current,
+            render.fps,
+            render.fps_base,
+        )
+
+    def assert_unchanged_source(self, objects):
+        self.assertEqual(set(bpy.data.objects), objects)
+        self.assertEqual(_skin(self.source, self.mesh), self.skin)
+        self.assertIs(self.source.modifiers[0].object, self.rig)
+        self.assertEqual(self.timing(), self.timeline)
+        self.mesh.validate_target(self.target)
+
+    def head_rise(self, clip):
+        """Hips head rise and Spine rotation, in rig space, over one clip's frame range."""
+        start, end = (round(frame) for frame in clip.frame_range)
+        heads = []
+        for frame in (start, end):
+            self.scene.frame_set(frame)
+            heads.append(self.rig.pose.bones["Hips"].head.copy())
+        rotation = tuple(self.rig.pose.bones["Spine"].rotation_quaternion)
+        self.scene.frame_set(self.timeline[2])
+        return heads[1] - heads[0], rotation
+
+    def test_clips_play_on_the_existing_rig_keeping_mesh_skin_and_timeline(self):
+        import math
+
+        objects, mesh, rest = set(bpy.data.objects), self.source.data, _rest(self.rig)
+        armatures = set(bpy.data.armatures)
+        result = self.apply(policy="ANIMATE")
+        self.assertIs(result.source, self.source)
+        self.assertIs(result.rig, self.rig)
+        self.assertIsNone(result.original)
+        self.assertIs(self.source.data, mesh)
+        self.assertEqual(_rest(self.rig), rest)
+        self.assertEqual(set(bpy.data.armatures), armatures)
+        # Only the copied clips stay; the returned character is never added.
+        self.assertEqual(set(bpy.data.actions) - self.before["actions"], set(result.clips))
+        self.assert_unchanged_source(objects)
+        first, second = result.clips
+        self.assertEqual(first.name, "Chain rig Clip 1")
+        data = self.rig.animation_data
+        self.assertEqual((data.action, data.action_slot.identifier), (first, "OBChain rig"))
+        tracks = [(track.name, track.mute, track.strips[0].action) for track in data.nla_tracks]
+        self.assertEqual(tracks, [(first.name, True, first), (second.name, True, second)])
+        self.assertEqual(data.nla_tracks[1].strips[0].action_slot, second.slots[0])
+        # A 0.01 centimetre rig's root motion lands in this rig's metre units.
+        rise, rotation = self.head_rise(first)
+        self.assertAlmostEqual(rise.z, 1, places=3)
+        self.assertAlmostEqual(rise.x, 0, places=3)
+        expected = (math.cos(0.25), math.sin(0.25), 0, 0)
+        for got, want in zip(rotation, expected, strict=True):
+            self.assertAlmostEqual(got, want, places=3)
+        self.assertEqual(self.timing(), self.timeline)
+
+    def test_previous_action_is_kept_in_nla_and_restored_after_failure(self):
+        # The rig's animation may change after review: application keeps what is there.
+        data = self.rig.animation_data_create()
+        kept = data.nla_tracks.new()
+        kept.name = "User track"
+        hips = self.rig.pose.bones["Hips"]
+        hips.keyframe_insert("location", frame=1)
+        previous = data.action
+        previous.name = "User walk"
+        hips.location = (0, 0, 0)
+        self.mesh.validate_target(self.target)
+        before = _animation(self.rig)
+        track = self.animation._track
+        failures = {
+            "cleanup": (self.module, "_release_import", RuntimeError("synthetic")),
+            "receipt": (self.animation, "AnimationApplication", RuntimeError("synthetic")),
+            # A clip track that fails after Blender created it.
+            "track": (
+                self.animation,
+                "_track",
+                lambda data, name, action, slot: track(data, name, object(), slot),
+            ),
+        }
+        for kind, (owner, name, effect) in failures.items():
+            with self.subTest(failure=kind):
+                snapshot = self.model._snapshot()
+                with (
+                    patch.object(owner, name, side_effect=effect),
+                    self.assertRaises(self.module.MeshResultApplicationError),
+                ):
+                    self.apply(policy="ANIMATE")
+                self.assertEqual(self.model._snapshot(), snapshot)
+                self.assertEqual(_animation(self.rig), before)
+                self.assertTrue(self.path.exists())
+        result = self.apply(policy="ANIMATE")
+        first = result.clips[0]
+        self.assertEqual((data.action, data.action_slot.identifier), (first, "OBChain rig"))
+        names = [(track.name, track.mute) for track in data.nla_tracks]
+        self.assertEqual(
+            names,
+            [("User track", False), ("User walk", True)]
+            + [(clip.name, True) for clip in result.clips],
+        )
+        self.assertIs(data.nla_tracks[1].strips[0].action, previous)
+        self.assertEqual(data.nla_tracks[1].strips[0].action_slot.identifier, "OBChain rig")
+
+    def test_clips_apply_again_keeping_the_earlier_clip(self):
+        first = self.apply(policy="ANIMATE")
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        second = self.apply(policy="ANIMATE")
+        data = self.rig.animation_data
+        self.assertIs(data.action, second.clips[0])
+        self.assertNotEqual(second.clips[0], first.clips[0])
+        # The earlier active clip is kept twice: its own track and the previous-action one.
+        actions = [track.strips[0].action for track in data.nla_tracks]
+        self.assertEqual(actions.count(first.clips[0]), 2)
+        self.assertEqual(len(actions), 5)
+
+    def test_smaller_rest_differences_and_another_scale_are_accepted(self):
+        from helpers import CHAIN
+
+        # Spine leans about 5.7 degrees; a two-unit rig at object scale 1 halves its keys.
+        bones = (CHAIN[0], ("Spine", "Hips", (0, 0, 1.2), (0, 0.04, 1.6)), CHAIN[2])
+        self.use_clips(bones=bones, unit=2.0, scale=1.0, clips=(1.0,))
+        result = self.apply(policy="ANIMATE")
+        rise, _ = self.head_rise(result.clips[0])
+        self.assertAlmostEqual(rise.z, 1, places=3)
+
+    def test_incompatible_rigs_and_results_fail_without_mutation(self):
+        from helpers import CHAIN
+
+        hips, spine, head = CHAIN
+        cases = {
+            "missing bone": dict(bones=(hips, spine, ("Skull", *head[1:]))),
+            "hierarchy": dict(bones=(hips, spine, (head[0], "Hips", *head[2:]))),
+            "rest": dict(bones=(hips, ("Spine", "Hips", (0, 0, 1.2), (0, 0.3, 1.6)), head)),
+            "no clips": dict(clips=()),
+            "rotation mode": dict(),
+        }
+        for kind, options in cases.items():
+            with self.subTest(kind=kind):
+                try:
+                    self.use_clips(**options)
+                    if kind == "rotation mode":
+                        self.rig.pose.bones["Spine"].rotation_mode = "XYZ"
+                    objects, before = set(bpy.data.objects), self.model._snapshot()
+                    with self.assertRaises(self.module.MeshResultApplicationError):
+                        self.apply(policy="ANIMATE")
+                    self.assertEqual(self.model._snapshot(), before)
+                    self.assertIsNone(_animation(self.rig))
+                    self.assert_unchanged_source(objects)
+                    self.assertTrue(self.path.exists())
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_changed_rig_is_stale_before_import(self):
+        self.rig.location.x += 1
+        bpy.context.view_layer.update()
+        before = self.model._snapshot()
+        with (
+            patch.object(self.model, "_import") as importer,
+            self.assertRaises(self.mesh.MeshApplicationError),
+        ):
+            self.apply(policy="ANIMATE")
+        importer.assert_not_called()
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertIsNone(_animation(self.rig))
+
+    def test_policy_guards_hold_before_import(self):
+        before = self.model._snapshot()
+        with (
+            patch.object(self.model, "_import") as importer,
+            self.assertRaisesRegex(self.module.MeshResultApplicationError, "ANIMATE"),
+        ):
+            self.apply(policy="REMESH")
+        # An unskinned mesh has no rig to animate.
+        data = bpy.data.meshes.new("Plain mesh")
+        data.from_pydata([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [], [(0, 1, 2)])
+        plain = bpy.data.objects.new("Plain", data)
+        self.scene.collection.objects.link(plain)
+        self.target = self.mesh.capture_target(self.scene, plain)
+        with (
+            patch.object(self.model, "_import") as unskinned,
+            self.assertRaisesRegex(self.module.MeshResultApplicationError, "RIG"),
+        ):
+            self.apply(policy="ANIMATE")
+        importer.assert_not_called()
+        unskinned.assert_not_called()
+        bpy.data.objects.remove(plain)
+        bpy.data.meshes.remove(data)
+        self.assertLessEqual(self.model._snapshot()["actions"], before["actions"])
+        self.assertIsNone(_animation(self.rig))
+
+    def test_session_receipt_retry_never_applies_clips_again(self):
+        record = self.ready_session()
+        original = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise OSError("fixture receipt error")
+            return original(*args, **kwargs)
+
+        with patch.object(self.store, "transition", side_effect=fail_receipt):
+            with self.assertRaises(self.session_module.ModelResultUncertain) as caught:
+                self.deliver(self.verify(record), policy="ANIMATE")
+        state, actions = _animation(self.rig), set(bpy.data.actions)
+        with patch.object(
+            self.session_module, "apply_saved_mesh", side_effect=AssertionError("replayed")
+        ):
+            result = self.session.retry_model_receipt(caught.exception)
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual((_animation(self.rig), set(bpy.data.actions)), (state, actions))

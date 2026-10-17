@@ -335,11 +335,12 @@ SPZ, `.splat` and Gaussian splat PLY results are decoded by a worker in the
 local-operation slot with reviewed point limits and axes, then built on the main
 thread as a new point cloud (mesh plus Geometry Nodes and a new material) under
 the same claim and receipt rules; it approximates splats and is not a splat
-renderer. In-place rig/animation transfer remains open. Saved PNG, JPEG and
-OpenEXR results, including `image/aces`, also offer explicit World replacement
-unless a texture role or a declared header size other than 2:1 rules it out,
-with a separate guarded restore in the current session. Application refuses a
-file whose container differs from its saved media type;
+renderer. In-place clip application needs a matching skeleton; retargeting
+across skeletons remains open. Saved PNG, JPEG and OpenEXR results, including
+`image/aces`, also offer explicit World replacement unless a texture role or a
+declared header size other than 2:1 rules it out, with a separate guarded
+restore in the current session. Application refuses a file whose container
+differs from its saved media type;
 [World application](../WORLD_APPLICATION.md#accepted-local-files) lists the
 accepted variants. Completed jobs can reuse saved results through fresh UI/MCP
 approval and a separate durable local claim, preserving the original generation

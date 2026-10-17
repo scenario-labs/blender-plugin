@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Connect writes the scenario-blender entry, with the saved token, into a temporary home."""
+"""Connect writes the scenario-blender entry, with the configured port, into a temporary home."""
 
 import json
 import os
@@ -31,39 +31,27 @@ class McpConnectTests(unittest.TestCase):
         prefs = self.runtime.prefs()
         self.addCleanup(setattr, prefs, "mcp_port", prefs.mcp_port)
         prefs.mcp_port = 9911
-        self.addCleanup(setattr, self.runtime.state, "mcp_token", self.runtime.state.mcp_token)
-        self.runtime.state.mcp_token = ""
         self.addCleanup(self.service.connect_report.clear)
 
-    def test_connect_writes_claude_code_and_codex_entries_with_the_saved_token(self):
+    def test_connect_writes_claude_code_and_codex_entries_with_the_configured_port(self):
         claude = self.home / ".claude.json"
         claude.write_text(json.dumps({"mcpServers": {"other": {"command": "keep"}}}))
         (self.home / ".codex").mkdir()
         found = {client.key for client in self.service.connect_clients() if client.detected}
         self.assertEqual(found, {"claude_code", "codex"})
         self.assertEqual(bpy.ops.scenario.mcp_connect(client="claude_code"), {"FINISHED"})
-        token = self.runtime.state.mcp_token
-        saved = Path(self.service.token_dir(), "mcp-token").read_text().strip()
-        self.assertEqual(token, saved)  # the entry carries the token that survives restarts
         servers = json.loads(claude.read_text())["mcpServers"]
         self.assertEqual(servers["other"], {"command": "keep"})
         self.assertEqual(
-            servers["scenario-blender"],
-            {
-                "type": "http",
-                "url": "http://127.0.0.1:9911/mcp",
-                "headers": {"Authorization": f"Bearer {token}"},
-            },
+            servers["scenario-blender"], {"type": "http", "url": "http://127.0.0.1:9911/mcp"}
         )
         report = list(self.service.connect_report)
         self.assertTrue(report[0].startswith("Claude Code: wrote scenario-blender to "))
         self.assertTrue(any(line.startswith("Previous file kept as ") for line in report))
-        self.assertFalse(any(token in line for line in report))
         self.assertEqual(bpy.ops.scenario.mcp_connect(client="codex"), {"FINISHED"})
         codex = tomllib.loads((self.home / ".codex" / "config.toml").read_text())
         self.assertEqual(
-            codex["mcp_servers"]["scenario-blender"]["http_headers"],
-            {"Authorization": f"Bearer {token}"},
+            codex["mcp_servers"]["scenario-blender"], {"url": "http://127.0.0.1:9911/mcp"}
         )
 
     def test_a_client_that_was_never_run_is_not_configured(self):

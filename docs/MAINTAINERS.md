@@ -40,7 +40,7 @@ repository ref patterns.
 
 | Ruleset | ID / target | Inspected rules | Bypass |
 | --- | --- | --- | --- |
-| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
+| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. Merge queue: squash, up to 5 groups built and 5 PRs merged at once, minimum group size 1 with no wait, 60-minute check timeout, every queued PR must pass (`ALLGREEN`). | `RepositoryRole` `5` (repository admin), `pull_request` |
 | main - review | `22257776`; branch `refs/heads/main` | Pull request with squash only; one approval, dismiss stale reviews, resolve review threads, extra approval for unattributed changes. | `RepositoryRole` `5` (repository admin), `always` |
 | versioning | `22257778`; tags `refs/tags/v*` and `refs/tags/blender-plugin-v*` | Restrict creation, updates, deletion and non-fast-forward updates. | Release App integration `4751046`, `always`. The repository-admin bypass was removed on 2026-10-13 after 0.10.0 was published (#36). |
 | Default security | `3247630`; inherited organization repository policy | Restrict repository creation, deletion and transfer. | `OrganizationAdmin`, `always` |
@@ -48,10 +48,17 @@ repository ref patterns.
 Both branch pull-request rules have code-owner approval and last-push approval
 off, no specific required reviewers, and dismissal restrictions disabled. The
 integrity rule also has stale-review dismissal and thread-resolution requirements
-off; the review rule supplies those requirements. Admin review bypass does not
-bypass integrity: direct pushes, force pushes and deletion of `main` remain
-prohibited. Other contributors need the configured review approval; unattributed
-changes require an additional approval. Tag restrictions have their own bypasses.
+off; the review rule supplies those requirements. Repository admins can bypass
+integrity only when merging a pull request, which skips the merge queue; direct
+pushes, force pushes and deletion of `main` remain prohibited. Other contributors
+need the configured review approval; unattributed changes require an additional
+approval. Tag restrictions have their own bypasses.
+
+On 2026-10-17, the merge queue was added to the integrity ruleset after #592 made
+`ci-ok`, `pr-title` and `commits` report on merge queue groups (#587). API readback
+confirms the integrity ruleset's other rules are unchanged. Because the review rule's
+approval cannot come from a PR's own author, the queue blocked admins' own pull
+requests, so the repository admin bypass in `pull_request` mode was added the same day.
 
 On 2026-10-09, `ci-ok` from [CI](../.github/workflows/ci.yml) was added to
 required status checks after its successful GitHub Actions check identity

@@ -14,13 +14,14 @@ capturing logs, and distinguish passed checks from checks that were not run.
 
 [CI](../../.github/workflows/ci.yml) runs Python lint, unit tests, SDK contracts,
 the Linux/Windows Blender baseline, knowledge checks, agent-skill validation and
-the site script tests as reusable workflows on pull requests and pushes to `main`.
+the site script tests as reusable workflows on pull requests, merge queue groups
+and pushes to `main`.
 Its `changes` job skips the Blender baseline on a pull request when every changed
 file is a root Markdown file, the PR template, `.nvmrc`, `package.json`,
 `pnpm-lock.yaml`, `vitest.config.mts`, or under `docs/`, `.agents/`,
 `.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `.clusterfuzzlite/`,
-`tools/site_proxy/`, `tests/site/` or `tests/fuzz/`. Any other path, a push or an
-unreadable diff runs the baseline.
+`tools/site_proxy/`, `tests/site/` or `tests/fuzz/`. Any other path, a push, a merge queue
+group or an unreadable diff runs the baseline.
 Changes to that list need matching cases in `tests/unit/test_workflows.py`.
 The `ci-ok` job waits for that classification and all seven workloads and passes
 only when each succeeds. It accepts a skipped
@@ -31,7 +32,8 @@ reusable workflows cannot cancel their parent run.
 
 Individual job names can include their caller prefix; artifact names and native
 matrix coverage are unchanged. The separate `pr-title` and `commits` checks
-remain independent. The [current repository rules](../MAINTAINERS.md#rulesets)
+remain independent; in a merge queue group, `pr-title` lints the squash commit headers that will
+land and `commits` is skipped. The [current repository rules](../MAINTAINERS.md#rulesets)
 require `ci-ok`, `pr-title` and `commits`; the workflow itself does not change
 those settings. Keep their reported names synchronized with the ruleset.
 
@@ -405,6 +407,5 @@ availability.
   Do not run them as part of a documentation command.
 
 Use `blender --background scene.blend --command scenario_blender` for local MCP.
-Set `SCENARIO_BLENDER_TOKEN` for an explicit token, or use the generated session
-token shown at startup. Online access must be enabled; SIGINT/SIGTERM stop the
+Online access must be enabled; SIGINT/SIGTERM stop the
 server cleanly. Run it only in the isolated development profile described above.

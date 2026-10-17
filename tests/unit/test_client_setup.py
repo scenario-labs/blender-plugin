@@ -12,7 +12,7 @@ import pytest
 
 from scenario.mcp import client_setup as setup
 
-URL, TOKEN = "http://127.0.0.1:9876/mcp", "fixture-token-0123456789"
+URL = "http://127.0.0.1:9876/mcp"
 NOW = dt.datetime(2026, 10, 17, 9, 30, 0)
 POSIX = os.name == "posix"
 
@@ -24,7 +24,7 @@ def by_key(home, **kwargs):
 
 
 def connect(client, key=None):
-    server = setup.entry(key or client.key, URL, TOKEN, "/blender/python3", "/ext/stdio_shim.py")
+    server = setup.entry(key or client.key, URL, "/blender/python3", "/ext/stdio_shim.py")
     return setup.write(client, server, URL, now=NOW)
 
 
@@ -71,11 +71,7 @@ def test_claude_code_entry_is_added_beside_other_servers_and_settings(tmp_path):
     data = json.loads(path.read_text())
     assert data["numStartups"] == 3
     assert data["mcpServers"]["other"] == previous["mcpServers"]["other"]
-    assert data["mcpServers"]["scenario-blender"] == {
-        "type": "http",
-        "url": URL,
-        "headers": {"Authorization": f"Bearer {TOKEN}"},
-    }
+    assert data["mcpServers"]["scenario-blender"] == {"type": "http", "url": URL}
     assert written.backup == tmp_path / ".claude.json.scenario-backup-20261017-093000"
     assert json.loads(written.backup.read_text()) == previous
     if POSIX:
@@ -89,11 +85,7 @@ def test_connecting_again_replaces_the_entry_and_keeps_a_distinct_backup(tmp_pat
     first = connect(cursor)
     assert first.backup is None  # nothing to keep: the file is new
     data = json.loads(cursor.path.read_text())
-    assert data == {
-        "mcpServers": {
-            "scenario-blender": {"url": URL, "headers": {"Authorization": f"Bearer {TOKEN}"}}
-        }
-    }
+    assert data == {"mcpServers": {"scenario-blender": {"url": URL}}}
     second = connect(cursor)
     third = connect(cursor)
     assert second.backup != third.backup and second.backup.exists() and third.backup.exists()
@@ -109,7 +101,7 @@ def test_claude_desktop_entry_runs_the_stdio_shim(tmp_path):
     ]
     assert entry == {
         "command": "/blender/python3",
-        "args": ["/ext/stdio_shim.py", "--url", URL, "--token", TOKEN],
+        "args": ["/ext/stdio_shim.py", "--url", URL],
     }
 
 
@@ -129,10 +121,8 @@ def test_codex_table_is_replaced_and_the_rest_of_the_file_kept_verbatim(tmp_path
     data = tomllib.loads(text)
     assert data["model"] == "gpt-x"
     assert data["mcp_servers"]["other"] == {"command": "other"}
-    assert data["mcp_servers"]["scenario-blender"] == {
-        "url": URL,
-        "http_headers": {"Authorization": f"Bearer {TOKEN}"},
-    }
+    # A setup from before the token was removed keeps nothing that would still ask for it.
+    assert data["mcp_servers"]["scenario-blender"] == {"url": URL}
     assert text.startswith('# my settings\nmodel = "gpt-x"\n')
     assert 'command = "other"  # keep me' in text
     assert written.backup.read_text() == original

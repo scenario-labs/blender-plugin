@@ -52,7 +52,7 @@ BASELINE = (
     "test_mcp_wait",
     "test_mcp_security",
     "test_mcp_cli",
-    "test_mcp_token",
+    "test_mcp_port",
     "test_mcp_connect",
     "test_installed_contract",
     "test_helpers",

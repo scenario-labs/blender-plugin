@@ -88,18 +88,15 @@ def clients(home, environ=None, platform=None):
     )
 
 
-def entry(key, url, token, python=None, shim=None):
+def entry(key, url, python=None, shim=None):
     """The server entry in the client's own format."""
-    header = {"Authorization": f"Bearer {token}"}
     if key == "claude_code":
-        return {"type": "http", "url": url, "headers": header}
-    if key == "cursor":
-        return {"url": url, "headers": header}
-    if key == "codex":
-        return {"url": url, "http_headers": header}
+        return {"type": "http", "url": url}
+    if key in ("cursor", "codex"):
+        return {"url": url}
     if key == "claude_desktop":
         # Claude Desktop starts local servers over stdio; the bundled shim relays to HTTP.
-        return {"command": python, "args": [shim, "--url", url, "--token", token]}
+        return {"command": python, "args": [shim, "--url", url]}
     raise ValueError(f"Unknown client {key!r}")
 
 
@@ -154,13 +151,7 @@ def merge_toml(text, server):
         if not skipping:
             kept.append(line)
     body = "".join(kept).rstrip("\n")
-    headers = ", ".join(
-        f"{_toml_string(k)} = {_toml_string(v)}" for k, v in server["http_headers"].items()
-    )
-    block = (
-        f"[mcp_servers.{SERVER_NAME}]\nurl = {_toml_string(server['url'])}\n"
-        f"http_headers = {{ {headers} }}\n"
-    )
+    block = f"[mcp_servers.{SERVER_NAME}]\nurl = {_toml_string(server['url'])}\n"
     result = (body + "\n\n" if body else "") + block
     try:
         after = tomllib.loads(result)

@@ -485,7 +485,8 @@ computer that can reach the port, under any account, can call every tool. Client
 `Authorization` header are served the same way. `/health` reports availability, Blender version
 and server name/version. Native clients may omit Origin; a supplied Origin must be an HTTP(S)
 loopback origin. Other origins and browser CORS preflights are refused. Every request first passes
-the [Host check](#request-boundaries), so web pages cannot call the server.
+the [Host check](#request-boundaries), so pages from other sites cannot call the server; a page
+served from this computer, such as `http://localhost:3000`, can.
 
 Early POST and Origin rejections send the complete HTTP error with
 `Connection: close`, then close the socket's write side before discarding a

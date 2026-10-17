@@ -12,11 +12,9 @@ from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.ui import saved_job_actions
 from . import render_lanes, result_media, review_previews, runtime
 from .media_application import MEDIA_TYPES
-from .model_application import MODEL_MEDIA_TYPE
 
 # Saved media types offered per application; describe() owns no media policy.
 RESULT_TYPES = saved_job_actions.ResultTypes(
-    model=MODEL_MEDIA_TYPE,
     media={media_type: value[0] for media_type, value in MEDIA_TYPES.items()},
     world=WORLD_MEDIA_TYPES,
     playback={media_type: value[0] for media_type, value in PLAYBACK_TYPES.items()},
@@ -751,8 +749,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     local_placement_required: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
-    # Where the starting policy came from, and whether the GLB is an alternate.
+    # Where the starting policy came from, the result's format and whether it is an alternate.
     policy_note: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    result_format: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     result_role: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     source_rigged: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
@@ -768,7 +767,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             (
                 "PARTS",
                 "Replace with parts",
-                "Keep the source as an empty mesh parent; adopt every mesh in the selected GLB as a part",
+                "Keep the source as an empty mesh parent; adopt every mesh in the selected result as a part",
             ),
             (
                 "RIG",
@@ -831,6 +830,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             self.policy, self.placement = approval.policy, approval.placement
             self.policy_note = _policy_note(approval)
             self.result_role = {True: "primary", False: "alternate"}.get(approval.primary, "")
+            self.result_format = saved_job_actions.MODEL_FORMATS.get(approval.format, "")
             self.source_rigged = approval.target.skin is not None
             self.local_placement_required = approval.target.obj.matrix_world.determinant() <= 0
             self.scene_name, self.target_name = approval.scene_name, approval.target_name
@@ -842,7 +842,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 (
                     "Captured source changed or is unavailable; review a destination with Apply mesh edit"
                     if self.original_source
-                    else "Choose one local mesh in Object Mode and inspect the saved GLB"
+                    else "Choose one local mesh in Object Mode and inspect the saved result"
                 ),
             )
             return {"CANCELLED"}
@@ -877,8 +877,12 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout = self.layout
         layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
         layout.label(text=f"Mesh: {self.target_name}", icon="MESH_DATA")
-        role = f" ({self.result_role} result)" if self.result_role else ""
-        layout.label(text=f"Saved result: {self.asset_id}{role}")
+        role = ", ".join(
+            part
+            for part in (self.result_format, self.result_role and f"{self.result_role} result")
+            if part
+        )
+        layout.label(text=f"Saved result: {self.asset_id}" + (f" ({role})" if role else ""))
         if self.original_source:
             layout.label(text="Use the unchanged source captured for this generation.", icon="INFO")
         if self.is_reuse:
@@ -907,7 +911,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             )
         elif self.policy == "PARTS":
             layout.label(text="Replace source geometry with an empty mesh parent and named parts.")
-            layout.label(text="Treat every mesh in this GLB as a part, not an alternate variant.")
+            layout.label(
+                text="Treat every mesh in this result as a part, not an alternate variant."
+            )
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
             layout.label(text="The result must match this surface; triangles and seams are fine.")
@@ -915,9 +921,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="Replace active UVs only; the result must match this surface.")
         layout.label(text="Keep the source object's name, transforms, parenting and collections.")
         layout.label(
-            text="One static GLB, 2 to 128 parts. No automatic fitting or scale adjustment."
+            text="One static result, 2 to 128 parts. No automatic fitting or scale adjustment."
             if self.policy == "PARTS"
-            else "One static GLB mesh only. No automatic fitting or scale adjustment."
+            else "One static result mesh only. No automatic fitting or scale adjustment."
             if self.policy == "REMESH"
             else "Fit and verify scales uniformly, never rotates, and stops on any mismatch."
             if self.placement == "FIT"

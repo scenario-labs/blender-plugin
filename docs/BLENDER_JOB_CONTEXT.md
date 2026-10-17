@@ -973,7 +973,8 @@ asset, purpose, action, or workflow node and step review ID). Each job-action de
 keeps its `ModelJobs.actions` name, which MCP `job_status` reports except
 `mark_reviewed`, `link_cloud_job` and `read_prompt_text`. `import_model`
 draws one control per importable unit that `ModelJobs` projected into the view,
-in classified order, instead of one per GLB media type. The sidebar
+in classified order, instead of one per GLB media type; `apply_mesh` and
+`apply_mesh_source` draw one control per GLB, glTF, FBX or OBJ unit. The sidebar
 Jobs and Generations panels, and the Studio Jobs and Results pages that reuse
 them, draw through `job_recovery.draw_controls`; the compact composer's
 [job strip](UI_STYLE.md#compact-job-strip) dispatches the same descriptors'
@@ -1597,16 +1598,18 @@ reversible scene edits.
 ## Verified saved-mesh replacement
 
 `apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
-policy=..., result_to_source=..., keep_original=...)` applies one saved GLB with
-an explicit REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE policy to an explicitly
-captured source mesh. The target snapshot must match the resolved
-scene/object origin and its geometry/context must still match before claiming
-application. A caller captures this source before asynchronous work and binds its
-policy, mapping and Keep original choice to the approved operation; the command
-does not derive provider semantics or infer targets from selection.
+policy=..., result_to_source=..., keep_original=...)` applies one saved GLB,
+JSON glTF, FBX or OBJ import unit, keyed like a model import, with an explicit
+REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE policy to an explicitly captured
+source mesh. The target snapshot must match the resolved scene/object origin and
+its geometry/context must still match before claiming application. A caller
+captures this source before asynchronous work and binds its policy, mapping and
+Keep original choice to the approved operation; the command does not derive
+provider semantics or infer targets from selection.
 
 The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
-rehashes the actual bytes, imports in isolation and uses the existing mesh
+rehashes every member into a private snapshot before the claim (a rejection
+leaves the job unclaimed), imports in isolation and uses the existing mesh
 primitive, the skin primitive for RIG or the clip primitive for ANIMATE.
 Confirmed rollback permits a failed local outcome; incomplete scene cleanup
 retains uncertainty. A successful mesh change followed by a failed store write
@@ -1615,7 +1618,7 @@ retains an owner-issued `ModelResultUncertain` handle for the existing
 drops receipt authority; restart does not authorize replay of an unfinished
 claim. Completed jobs can use a separate `mesh_edit` local claim without
 changing their original generation outcome. Its target identifies the explicitly
-selected source.
+selected source, and it names every member read, unit key first.
 
 Native **Apply mesh edit** and MCP `prepare_result_application` with
 `purpose: mesh_edit` share this command and its captured target. The

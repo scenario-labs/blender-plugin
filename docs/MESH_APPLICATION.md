@@ -172,8 +172,10 @@ SPZ, `.splat` and Gaussian splat PLY results through
 [saved Gaussian splat import](#saved-gaussian-splat-import). Multiple scenes,
 external files and pointer-based animation remain unsupported. Unsupported
 downloads remain available. REMESH, UV, RETEXTURE and PARTS keep the default
-static-only preflight; RIG and ANIMATE use the bounded skin policy below.
-In-place edits and Film shots still accept only `model/gltf-binary`.
+static-only preflight; RIG and ANIMATE use the bounded skin policy below. Film
+shots still accept only `model/gltf-binary`; in-place edits stage a GLB, JSON
+glTF, FBX or OBJ
+[import unit](#captured-source-and-verified-saved-mesh-command).
 
 [`model_application.apply_model`](../scenario/blender/model_application.py),
 which Film shots use, rehashes the exact local receipt, writes a private snapshot
@@ -280,8 +282,9 @@ import. See [animated import interaction](ui/saved-3d.md#animated-model-import-i
 [`model_formats.classify_packages`](../scenario/core/scene/model_formats.py)
 groups a saved job's results into ordered import units without Blender, files or
 network access. The [saved package import](#saved-model-package-import) offers and
-claims these units. In-place mesh edits use them only to name a GLB primary or
-alternate; the Film path does not use them.
+claims these units. In-place mesh edits apply a GLB, JSON glTF, FBX or OBJ unit
+by the same key and name it primary or alternate; the Film path does not use
+them.
 
 Inputs are URL-free manifest facts typed by the pinned SDK 2.2.0
 [asset response](https://docs.scenario.com/api/python/resources/assets/methods/retrieve):
@@ -536,30 +539,46 @@ first, then the `JobSession` origin, before asynchronous work; a target captured
 afterward cannot establish the old input's identity. Restart/file load requires
 a fresh explicit destination review.
 
-`mesh_result_application.apply_saved_mesh(target, item, path, policy=...,
-result_to_source=..., keep_original=...)` connects the existing primitive to one
-verified GLB. It shares the new-object importer's receipt/hash preflight,
-private byte snapshot, isolated staging scene and image packing. `REMESH`
-requires exactly one mesh with optional Empty parents. `UV` and `RETEXTURE`
-match every static mesh in the GLB together as one surface, since providers
-split results by connectivity or color region; RETEXTURE merges their material
-slots, once per material. The explicit `PARTS` policy accepts 2 to 128 static
-surface meshes in that one GLB; other object types fail for these static
-policies. RIG requires one armature, optional Empty parents and skinned meshes,
-matched together as one surface. A mesh an imported armature uses as a bone
-custom shape is a display helper: it is not counted as a result mesh and is
-removed with the other imported objects (the importer is told not to create
-these). Every other mesh counts, so an unskinned mesh beside the skin, which may
-be an accessory, makes RIG refuse the result instead of discarding it. A
-clips-only result, whose rig drives no mesh, fails the skin checks. A skinned
-bone-display mesh cannot be told from a character and fails the surface match.
-ANIMATE requires one armature with clips; returned meshes, helpers and Empties
-are allowed but never kept. The caller chooses the policy and Keep original.
-Multiple result assets are never combined or ranked automatically.
+`mesh_result_application.prepare_saved_mesh(target, unit, files, policy=...,
+result_to_source=..., keep_original=...)` and
+`apply_saved_mesh(target, snapshot, ...)` connect the existing primitive to one
+verified [import unit](#saved-3d-package-classification) of the saved job,
+chosen by its key: a GLB, JSON glTF, FBX, or OBJ with its MTL and maps. The
+preparation checks the request, then runs the
+[package snapshot](#saved-model-package-import) preflight before any claim:
+receipt rehash, private snapshot with rewritten references, format checks and
+the window requirement of the FBX and OBJ importers and of rigged glTF. A
+changed or unsupported result raises `ModelPreflightError` with the saved job
+and the scene unchanged, and the Jobs row says **Nothing was applied** with the
+reason. Splat units are never applicable, and PLY units are left out because
+only the worker import path reads whether their bytes hold a mesh. Application
+stages the snapshot with the package importers, texture roles and image packing
+in an isolated staging scene. For static policies FBX clips are not read; RIG
+and ANIMATE read them. `REMESH` requires exactly one mesh with optional Empty
+parents. `UV` and `RETEXTURE` match every static mesh in the result together as
+one surface, since providers split results by connectivity or color region;
+RETEXTURE merges their material slots, once per material. The explicit `PARTS`
+policy accepts 2 to 128 static surface meshes in that one result; other object
+types fail for these static policies. RIG requires one armature, optional Empty
+parents and skinned meshes, matched together as one surface. A mesh an imported
+armature uses as a bone custom shape is a display helper: it is not counted as a
+result mesh and is removed with the other imported objects (the importer is told
+not to create these). Every other mesh counts, so an unskinned mesh beside the
+skin, which may be an accessory, makes RIG refuse the result instead of
+discarding it. A clips-only result, whose rig drives no mesh, fails the skin
+checks. A skinned bone-display mesh cannot be told from a character and fails
+the surface match. ANIMATE requires one armature with clips; returned meshes,
+helpers and Empties are allowed but never kept. The caller chooses the policy
+and Keep original. Multiple result assets are never combined or ranked
+automatically.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
-GLB scene coordinates** into **source-local coordinates**. Imported node transforms
-are composed into it after Blender's glTF axis conversion. A strict mapping is
+result scene coordinates** into **source-local coordinates**. Imported node
+transforms are composed into it after the importer's axis and unit conversion:
+glTF Y-up becomes Blender Z-up, an OBJ is read Y-up with -Z forward (the same
+convention, so an OBJ and a GLB of the same coordinates land in the same place),
+and an FBX uses the axes and unit scale it declares, which stay on the imported
+objects (a centimetre file imports at 0.01 scale). A strict mapping is
 used as given, and the source object never moves. UV, RETEXTURE and RIG also
 require [surface matching](#surface-matching) after mapping; UV needs one UV
 layer on each result mesh.
@@ -592,7 +611,8 @@ rollback handle. See [native history](#native-undo-for-saved-mesh-edits).
 Successful cleanup sweeps unused imported datablocks across the shared importer's
 categories, including helper actions, while retaining existing data, live
 dependencies and fake-user ownership. Groups are released before their images.
-Animated GLBs are rejected by preflight before import. Morph targets can decode,
+Animated or skinned GLB and glTF results are rejected by preflight before the
+claim for static policies. Morph targets can decode,
 but the mesh policy rejects their shape keys; removing the imported mesh also
 removes its keys. A confirmed failure permits a newly reviewed local attempt only
 after exact datablock restoration.
@@ -605,23 +625,26 @@ when removing it could destroy a possibly applied result. A temporary-file clean
 warning does not undo a completed packed result.
 
 `JobSession.apply_recovered_mesh` supplies owner-issued verification, exact
-scene/object origin resolution and a durable claim before mutation. Original
-ready/confirmed-failed jobs use their recovered claim; completed jobs use a
-separate `mesh_edit` local claim whose destination identifies the source object.
-`retry_model_receipt` records only known success, never another replacement.
-See [session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement).
-The command makes no service request. Retargeting across different skeletons
-stays open under #99.
+scene/object origin resolution, the snapshot preflight and a durable claim
+before mutation. Original ready/confirmed-failed jobs use their recovered claim;
+completed jobs use a separate `mesh_edit` local claim whose destination
+identifies the source object and that names every member read, unit key first.
+`retry_model_receipt` records only known success, never another replacement. See
+[session ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement). The
+command makes no service request. Retargeting across different skeletons stays
+open under #99.
 
 ## Saved mesh edit approval
 
 **Apply mesh edit (N)** and MCP `prepare_result_application` with
-`purpose: mesh_edit` review one saved GLB against the currently active
-mesh. The review names the scene, source and selected asset, and whether that
-GLB is the job's primary or an alternate result, as
-[classified](#saved-3d-package-classification); an alternate GLB's control reads
-**Apply alternate mesh edit: GLB (N)**, and MCP returns `primary`. `REMESH`
-replaces geometry, UVs and mesh materials; `UV` replaces only active UVs of the
+`purpose: mesh_edit` review one saved GLB, glTF, FBX or OBJ import unit against
+the currently active mesh. The review names the scene, source and selected
+asset, its format and whether it is the job's primary or an alternate result, as
+[classified](#saved-3d-package-classification). A primary GLB's control reads
+**Apply mesh edit (N)**, another primary format names it, as in **Apply mesh
+edit: FBX (N)**, and an alternate reads, for example, **Apply alternate mesh
+edit: OBJ (N)**. MCP returns `format` and `primary`. `REMESH` replaces geometry,
+UVs and mesh materials; `UV` replaces only active UVs of the
 [same surface](#surface-matching); `RETEXTURE`, `PARTS`, `RIG` and `ANIMATE` are
 described below. **Keep original** defaults to enabled.
 
@@ -689,13 +712,14 @@ Edit 3D acceptance.
 
 ## Applying to the captured mesh source
 
-**Apply to captured source (N)**, or **Apply alternate to captured source: GLB
-(N)** for an alternate GLB, and MCP `prepare_result_application` with
-`purpose: mesh_source` use the original object exported for the generation's
-single captured 3D input. Current selection is ignored. The confirmation still
-names the target, selected result, edit policy, coordinates and Keep original
-choice before any mutation. More than one input binding or source object is
-ambiguous and cannot select an original target automatically.
+**Apply to captured source (N)** (with the format for a primary that is not a
+GLB), or **Apply alternate to captured source: OBJ (N)** for an alternate, and
+MCP `prepare_result_application` with `purpose: mesh_source` use the original
+object exported for the generation's single captured 3D input. Current selection
+is ignored. The confirmation still names the target, selected result, edit
+policy, coordinates and Keep original choice before any mutation. More than one
+input binding or source object is ambiguous and cannot select an original target
+automatically.
 
 Single-mesh export, static or [skinned](#replace-an-existing-skin), retains a
 live `MeshTarget` before exporting, rechecks it afterwards and keys it by the
@@ -805,7 +829,7 @@ to Blender's name limits. Material slots, UVs and packed image dependencies stay
 with the copied part meshes. Source name, transforms, parenting, collections and
 existing children remain unchanged. The prior selection remains active.
 
-The policy deliberately treats **every mesh in the selected GLB as a part**.
+The policy deliberately treats **every mesh in the selected result as a part**.
 Choose the actual segmented artifact, not a variant collection, exploded view or
 helper/bounds artifact. The command cannot infer those provider semantics. It
 rejects rigs, animation, external dependencies, empty parts, fewer than two or
@@ -823,7 +847,7 @@ permits blind replay. Native Undo/Redo restores the source or the complete parts
 group without changing durable job state or issuing service requests.
 
 Known mesh validation or application failures pause delivery with a message to
-inspect the saved GLB, source and edit policy. Uncertain outcomes keep their
+inspect the saved result, source and edit policy. Uncertain outcomes keep their
 receipt-recovery warning and never authorize another application automatically.
 See [parts interaction](ui/saved-3d.md#parts-application-interaction). Provider
 alignment and semantic part classification remain separate work.
@@ -831,14 +855,14 @@ alignment and semantic part classification remain separate work.
 
 ## Attach a returned rig
 
-The explicit `RIG` policy attaches a saved GLB's skin to one captured source,
+The explicit `RIG` policy attaches a saved result's skin to one captured source,
 unrigged or [already skinned](#replace-an-existing-skin). It requires one
 armature, optional Empty parents and skinned meshes that together are the
 [same surface](#surface-matching) at rest under the selected or fitted mapping,
 and normalized bone weights for every vertex. Bone group names must match the
 rig and the rig may contain at most 1,024 bones; at most 2,000,000 weight
-entries are inspected. The usual GLB and mesh component bounds still apply. This
-is a compatible skin transfer by verified vertex correspondence, not
+entries are inspected. The usual file and mesh component bounds still apply.
+This is a compatible skin transfer by verified vertex correspondence, not
 existing-rig retargeting.
 
 The source receives a private copy of its own mesh with the returned weights,
@@ -962,6 +986,14 @@ rest heads stay, so the mesh bends about its own joints. A corrected bone must
 key the components of each location and quaternion channel together, with
 constant, linear or Bezier interpolation, scale uniformly to within 0.01% and
 use quaternion rotation, as glTF clips do; otherwise the result is rejected.
+
+An FBX result gets the same checks: Blender's FBX importer restores the rest
+orientation of a rig Blender exported, while an FBX rig built with other bone
+axes than the destination fails with "The destination rig's rest pose does not
+match"; bones are never re-oriented to fit. The importer also connects every
+bone whose head sits on its parent's tail, so an FBX's clips fit a rig attached
+from the same kind of file, while an unconnected destination rig with those
+bones fails with "Animated bones must keep the same hierarchy".
 
 Location keys are armature-space distances. When any location key leaves its
 bone's rest head, every location key and handle is scaled by the ratio of the

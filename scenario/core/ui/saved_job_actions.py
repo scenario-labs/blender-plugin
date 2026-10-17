@@ -119,6 +119,8 @@ MODEL_FORMATS = {
 }
 # Formats that are always Gaussian splats; a PLY can hold a mesh or splats.
 SPLAT_FORMATS = frozenset({"spz", "splat"})
+# Unit formats a saved mesh edit can apply in place (mesh_result_application.FORMATS).
+MESH_EDIT_FORMATS = frozenset({"glb", "gltf", "fbx", "obj"})
 # Saved 360 results by range ("ldr" or "hdr"); LDR is never called HDR.
 PANORAMA_LABELS = {
     frozenset({"ldr"}): "360 panorama (LDR)",
@@ -142,12 +144,10 @@ STOP_AUDIO_OPERATOR = "scenario.stop_saved_audio"
 class ResultTypes:
     """Saved media types each application accepts; owned by the Blender modules.
 
-    `model` is the GLB type that saved mesh edits accept. New-group model
-    imports come from the view's classified import units instead. It holds a
-    mapping, so it compares and hashes by identity.
+    Model imports and saved mesh edits come from the view's classified import
+    units instead. It holds a mapping, so it compares and hashes by identity.
     """
 
-    model: str
     media: Mapping[str, str]  # media type -> "video" or "audio" strip kind
     world: Collection[str]
     # media type -> "video" or "audio" for a private player copy and waveform.
@@ -362,10 +362,39 @@ def _import_units(view, action, job):
     return tuple(items)
 
 
-def _describe_action(action, view, job, result_types, review, workflow=None):
-    def is_model(media_type):
-        return media_type == result_types.model
+def _mesh_edits(view, action, job):
+    """One in-place control per GLB, glTF, FBX or OBJ unit, in classified order.
 
+    A primary GLB keeps the plain wording; another primary names its format, and
+    an alternate is named like its import. Numbering counts every saved asset.
+    """
+    source = action == "apply_mesh_source"
+    text = "Apply to captured source" if source else "Apply mesh edit"
+    alternate = "Apply alternate to captured source" if source else "Apply alternate mesh edit"
+    numbers = {asset_id: index for index, asset_id in enumerate(view.asset_ids, 1)}
+    items = []
+    for key, fmt, primary in view.meta.get("import_units", ()):
+        if key not in numbers or fmt not in MESH_EDIT_FORMATS:
+            continue
+        name = MODEL_FORMATS[fmt]
+        if not primary:
+            label = f"{alternate}: {name}"
+        else:
+            label = text if fmt == "glb" else f"{text}: {name}"
+        items.append(
+            SavedJobAction(
+                f"{action}:{key}",
+                action,
+                "apply",
+                f"{label} ({numbers[key]})",
+                operator="scenario.apply_saved_mesh",
+                properties=(*job, ("asset_id", key), ("original_source", source)),
+            )
+        )
+    return tuple(items)
+
+
+def _describe_action(action, view, job, result_types, review, workflow=None):
     if action == "recover_blockout":
         return _blockout(review, job)
     if action == "review_step":
@@ -414,26 +443,7 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
             if asset_id in candidates and view.asset_types.get(asset_id) in result_types.world
         )
     if action in {"apply_mesh", "apply_mesh_source"}:
-        source = action == "apply_mesh_source"
-        text = "Apply to captured source" if source else "Apply mesh edit"
-        alternate = "Apply alternate to captured source" if source else "Apply alternate mesh edit"
-        # Only GLBs apply in place; an alternate unit is named like its import.
-        alternates = {
-            index
-            for index, asset_id in enumerate(view.asset_ids, 1)
-            if (asset_id, "glb", False) in view.meta.get("import_units", ())
-        }
-        return _per_asset(
-            view,
-            action,
-            "scenario.apply_saved_mesh",
-            lambda index, _: (
-                f"{alternate}: GLB ({index})" if index in alternates else f"{text} ({index})"
-            ),
-            is_model,
-            job,
-            (("original_source", source),),
-        )
+        return _mesh_edits(view, action, job)
     if action == "import_model":
         return _import_units(view, action, job)
     if action == "import_media":

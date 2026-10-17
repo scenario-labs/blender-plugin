@@ -748,8 +748,9 @@ to apply it. The choice starts on the edit the job ran, such as **Replace
 textures** for a Retexture job, or on **Attach rig** when your mesh already has
 a rig. An Animate job starts on **Apply animation** when your mesh has a rig and
 on **Attach rig** when it doesn't; when the dialog says the edit is not from
-this job's task, pick it yourself. A job's other results show as **Apply
-alternate mesh edit: GLB (N)**.
+this job's task, pick it yourself. GLB, glTF, FBX and OBJ results can be
+applied: a main result in another format shows it, as in **Apply mesh edit: FBX
+(N)**, and a job's other results show as **Apply alternate mesh edit: OBJ (N)**.
 
 - **Replace geometry**: geometry, UVs and materials.
 - **Replace active UVs** or **Replace textures**: only when the result is the

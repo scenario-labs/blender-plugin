@@ -62,9 +62,9 @@ from .mesh_application import FIT_POLICIES, FitRequest, MeshApplicationError
 from .mesh_application import capture_target as capture_mesh_target
 from .mesh_application import validate_target as validate_mesh_target
 from .mesh_result_application import MeshEditApplication, MeshResultApplicationError
+from .mesh_result_application import applicable as mesh_applicable
 from .mesh_result_application import validate_request as validate_mesh_request
 from .model_application import (
-    MODEL_MEDIA_TYPE,
     ModelApplication,
     ModelPreflightError,
     import_plan,
@@ -418,8 +418,9 @@ class MeshApplicationApproval:
     # or the REMESH fallback ("default"); see mesh_edit_policy.
     policy_source: str = "requested"
     edit3d_task: str | None = None
-    # Whether the GLB is the job's primary result or an alternate; None when unclassified.
+    # Whether the unit is the job's primary result or an alternate, and its format.
     primary: bool | None = None
+    format: str = "glb"
 
 
 class ModelJobs:
@@ -875,12 +876,13 @@ class ModelJobs:
                 reason = getattr(error, "reason", None)
                 self._pause(
                     request_id,
-                    "Mesh application stopped; inspect the saved GLB, source and edit policy"
+                    "Mesh application stopped; inspect the saved result, source and edit policy"
                     + (f". {reason}" if reason else ""),
                 )
             except ModelPreflightError as error:
                 # Rejected before the claim: the saved job and the scene are unchanged.
-                self._pause(request_id, f"Nothing was imported: {error}")
+                verb = "applied" if command == "verify_mesh_edit" else "imported"
+                self._pause(request_id, f"Nothing was {verb}: {error}")
             except MediaResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -1730,8 +1732,8 @@ class ModelJobs:
             actions.append("cancel")
         if reusable and any(importable(unit) for unit in self._units(record)):
             actions.append("import_model")
-        # In-place mesh edits stay on the GLB media type they were accepted for.
-        if reusable and any(item.asset.media_type == MODEL_MEDIA_TYPE for item in record.results):
+        # In-place mesh edits stage a classified GLB, glTF, FBX or OBJ unit.
+        if reusable and any(mesh_applicable(unit) for unit in self._units(record)):
             actions.append("apply_mesh")
             if (
                 len(record.intent.mesh_sources) == 1
@@ -2327,11 +2329,9 @@ class ModelJobs:
             or len(self._application_approvals) >= 128
         ):
             raise ScenarioError(0, "Inspect the saved mesh and finish existing reviews first")
-        if not any(
-            item.asset.asset_id == asset_id and item.asset.media_type == MODEL_MEDIA_TYPE
-            for item in record.results
-        ):
-            raise ScenarioError(0, "Choose one saved static GLB result")
+        unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
+        if unit is None or not mesh_applicable(unit):
+            raise ScenarioError(0, "Choose one saved GLB, glTF, FBX or OBJ mesh result")
         if type(original_source) is not bool:
             raise ScenarioError(0, "Choose whether to use the captured source")
         if original_source:
@@ -2366,7 +2366,6 @@ class ModelJobs:
         if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
             placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
-        unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2382,7 +2381,8 @@ class ModelJobs:
             original_source,
             policy_source=source,
             edit3d_task=start.task,
-            primary=None if unit is None else unit.primary,
+            primary=unit.primary,
+            format=unit.format.value,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket

@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Apply an explicitly chosen GLB mesh, skin, clips or parts policy to a captured source."""
+"""Apply an explicitly chosen mesh, skin, clips or parts policy to a captured source.
+
+The result is one classified import unit of the saved job: a GLB, JSON glTF,
+FBX, or OBJ with its MTL and maps. It is rehashed into the same private snapshot
+as a package import before any claim, then staged in a disposable scene.
+"""
 
 import logging
 from dataclasses import dataclass, field
@@ -8,6 +13,7 @@ from dataclasses import dataclass, field
 import bpy
 from mathutils import Matrix
 
+from ..core.scene.model_formats import ModelFormat, UnitKind
 from . import animation_application, mesh_application, model_application, rig_application
 from .model_application import _undo_enabled, _undo_push
 
@@ -45,8 +51,16 @@ class MeshEditApplication:
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
-# Policies that import a returned rig and its clips; the others require a static GLB.
+# Policies that import a returned rig and its clips; the others require a static result.
 _RIGGED = frozenset({"RIG", "ANIMATE"})
+# Import formats a mesh edit can stage. A PLY's bytes decide between a mesh and
+# splats, which only the worker import path reads, and splats never edit a mesh.
+FORMATS = frozenset({ModelFormat.GLB, ModelFormat.GLTF, ModelFormat.FBX, ModelFormat.OBJ})
+
+
+def applicable(unit):
+    """Whether a classified import unit can be applied to a source in place."""
+    return unit.kind is UnitKind.MESH and unit.format in FORMATS
 
 
 def validate_request(target, *, policy, result_to_source, keep_original):
@@ -81,13 +95,32 @@ def validate_request(target, *, policy, result_to_source, keep_original):
     return mesh_application._matrix(result_to_source)
 
 
+def prepare_saved_mesh(target, unit, files, *, policy, result_to_source, keep_original):
+    """Check the request, then rehash the unit into a private snapshot before any claim.
+
+    `files` maps the verified job's asset IDs to (StoredResult, path). Static
+    policies refuse a GLB or glTF with skins or animations here. Raises
+    ModelPreflightError with the scene and saved job unchanged; the caller owns
+    the returned snapshot's cleanup.
+    """
+    validate_request(
+        target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
+    )
+    if not applicable(unit):
+        raise model_application.ModelPreflightError(
+            "Choose a GLB, glTF, FBX or OBJ mesh result; splats and PLY files cannot "
+            "edit a mesh in place"
+        )
+    return model_application.prepare_snapshot(unit, files, static_only=policy not in _RIGGED)
+
+
 def _release_import(imported, objects, staging):
     # Remove only imported objects, never the source or its Keep original copy.
     for obj in objects:
         bpy.data.objects.remove(obj, do_unlink=True)
     bpy.data.scenes.remove(staging)
     # The replacement mesh retains any material/image dependencies it needs.
-    for name in model_application._DATA:
+    for name in model_application._PACKAGE_DATA:
         if name in {"objects", "scenes"}:
             continue
         values = getattr(bpy.data, name)
@@ -115,7 +148,7 @@ def _helpers(objects):
 def _stage_parts(target, meshes, mapping):
     """Copy static part geometry into source-local coordinates before replacement."""
     if not 2 <= len(meshes) <= 128:
-        raise MeshResultApplicationError("Choose a static GLB containing 2 to 128 mesh parts")
+        raise MeshResultApplicationError("Choose a static result containing 2 to 128 mesh parts")
     components = 0
     for obj in meshes:
         mesh_application._validate_object(obj.users_scene[0], obj)
@@ -156,16 +189,18 @@ def _publish_parts(target, parts):
     bpy.context.view_layer.update()
 
 
-def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_original):
-    """Use an explicit GLB-scene-to-source-local mapping or an approved verified fit.
+def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_original):
+    """Use an explicit imported-scene-to-source-local mapping or an approved verified fit.
 
-    UV, RETEXTURE and RIG treat every returned result mesh as one surface;
-    display helpers (`_helpers`) are never result meshes. Alignment is never guessed: a `FitRequest`
-    is used only when the full correspondence verifies it.
+    `snapshot` comes from `prepare_saved_mesh` and is consumed here. UV,
+    RETEXTURE and RIG treat every returned result mesh as one surface; display
+    helpers (`_helpers`) are never result meshes. Alignment is never guessed: a
+    `FitRequest` is used only when the full correspondence verifies it.
     """
     mapping = validate_request(
         target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
     )
+    model_application.use_snapshot(snapshot)
     undo = _undo_enabled()
     if undo:
         # Capture the latest user state before importing temporary datablocks.
@@ -176,12 +211,15 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             raise MeshResultApplicationError(
                 "Could not prepare Blender undo; source is unchanged"
             ) from None
-    before = model_application._snapshot()
+    # FBX and OBJ importers can also create curves and legacy textures.
+    before = model_application._snapshot(model_application._PACKAGE_TRACKED)
     receipt = None
     try:
-        with model_application.staged_model(
-            item, path, before, static_only=policy not in _RIGGED
-        ) as (staging, objects):
+        # Static policies keep FBX clips out; GLB and glTF ones were refused unless static.
+        with model_application.staged_snapshot(snapshot, before, animation=policy in _RIGGED) as (
+            staging,
+            objects,
+        ):
             # Display helpers are not results; they go with the other imported data.
             helpers = _helpers(objects)
             meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
@@ -197,8 +235,8 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                 if not meshes or (policy == "REMESH" and len(meshes) != 1):
                     raise MeshResultApplicationError("Choose one primary mesh without variants")
                 primary = meshes[0]
-                # Blender has already converted GLB axes. Preserve imported node
-                # transforms; never infer alignment or move the source object.
+                # Blender has already converted the file's axes and units. Preserve
+                # imported node transforms; never infer alignment or move the source.
                 if policy == "REMESH":
                     local_mapping = mapping @ primary.matrix_world
                 for obj in meshes:
@@ -280,8 +318,8 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             mesh_application.validate_target(target)
         except Exception:
             raise RuntimeError("Mesh source changed during application; inspect it") from None
-        model_application._remove_new_data(before)
-        if model_application._snapshot() != before:
+        model_application._remove_new_data(before, model_application._PACKAGE_DATA)
+        if model_application._snapshot(model_application._PACKAGE_TRACKED) != before:
             raise RuntimeError("Mesh cleanup is incomplete; do not apply again") from None
         reason = str(error) if isinstance(error, mesh_application.MeshApplicationError) else None
         raise MeshResultApplicationError(

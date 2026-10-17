@@ -1956,6 +1956,7 @@ def prepare_result_application(args):
             # source starts on RIG) or default (REMESH fallback).
             "mesh_policy_source": approval.policy_source,
             "edit3d_task": approval.edit3d_task,
+            "format": approval.format,
             "primary": approval.primary,
             "mesh_placement": approval.placement,
             "keep_original": approval.keep_original,
@@ -1966,19 +1967,21 @@ def prepare_result_application(args):
             "fit_bases": [label for label, _ in approval.mapping.bases]
             if approval.placement == "FIT"
             else None,
-            "note": "Approve applying one saved GLB to this captured mesh. "
+            "note": "Approve applying one saved mesh result (format: glb, gltf, fbx or obj, "
+            "with an OBJ's saved MTL and maps) to this captured mesh. "
             "Without mesh_policy the review starts from the job's Edit 3D task (an Animate job: "
             "ANIMATE for a source already skinned to an armature, else RIG), or from RIG for "
             "another skinned source (mesh_policy_source rigged_source); mesh_policy_source "
             "default means REMESH was not chosen from the job, so confirm the edit with the user. "
-            "primary false means the GLB is an alternate result, not the job's primary one. "
+            "primary false means the result is an alternate, not the job's primary one. "
+            "FBX and OBJ need a Blender window; FBX clips are read only for RIG and ANIMATE. "
             "REMESH replaces geometry, UVs and mesh materials; UV replaces only active UVs. "
             "RETEXTURE preserves geometry and non-UV attributes, replacing all UV layers and "
             "mesh materials. UV, RETEXTURE and RIG require the source surface: every returned "
             "result mesh together may be triangulated, split at seams or reordered, but must "
             "match the source positions and faces, or fail with the reason. "
             "PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts; "
-            "every mesh in the selected GLB is treated as a part, not an alternate variant. "
+            "every mesh in the selected result is treated as a part, not an alternate variant. "
             "RIG preserves source geometry, UVs and materials, attaching compatible bone weights "
             "and one returned rig with its clips. Morphs and mesh "
             "animation are unsupported. A source already skinned to an armature accepts only RIG, "
@@ -3485,8 +3488,8 @@ SPECS = (
             "  - target_size_m: optional length in Blender units (metres at the default unit scale) from 0.01 to 1000 for a model import unit; the new group is scaled uniformly so its longest side has this length, with its bottom center still at the cursor. The longest side does not depend on how the provider oriented the model; read the height from dimensions_m after the import. Omit to keep the saved size.\n"
             "  - mesh_policy: REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE; omit to start from the job's Edit 3D task (Animate: ANIMATE for a source skinned to an armature, else RIG), or RIG for another skinned source, which accepts only RIG or ANIMATE (mesh_policy_source says which). ANIMATE copies the returned clips onto that existing rig and ignores mesh_placement and keep_original. The approval note explains the chosen edit.\n"
             "  - mesh_placement: WORLD, LOCAL or FIT; FIT (UV, RETEXTURE, RIG) applies a uniform scale and offset only when the whole result matches the source surface. Default: FIT for those policies, else WORLD.\n"
-            "  - keep_original: boolean, default true; keep an unselected copy of the original mesh. mesh_edit and mesh_source need asset_id; mesh_source uses the unchanged source exported for the single captured input, ignores selection and ends with undo, load or restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, primary (null when the GLB is unclassified), mesh_placement, keep_original, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
+            "  - keep_original: boolean, default true; keep an unselected copy of the original mesh. mesh_edit and mesh_source need the asset_id of a GLB, glTF, FBX or OBJ unit; mesh_source uses the unchanged source exported for the single captured input, ignores selection and ends with undo, load or restart.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, format, primary, mesh_placement, keep_original, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
             "Show the destination, selected assets and media frame, model format, files, cursor, target size and splat options, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. Splats are shown as a coloured point cloud, not rendered as Gaussian splats; to change splat options or the target size, prepare again and show the new approval. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."

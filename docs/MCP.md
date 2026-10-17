@@ -1189,11 +1189,13 @@ or authorize finding/replacing an object after restart. See
 ## Applying to an original mesh source
 
 Use `prepare_result_application` with `purpose: mesh_source`, the observed job
-revision and one saved GLB `asset_id`. It resolves the job's single captured mesh
-input against the same session's unchanged live export, ignoring active selection.
-Show the returned target, asset, policy, coordinate placement and Keep original
-choice before calling `apply_result_application`. The generic `mesh_edit` purpose
-continues to review the active mesh as an explicit destination.
+revision and the `asset_id` key of one GLB, glTF, FBX or OBJ unit from
+`job_status` `import_units`; the approval returns its `format`. It resolves the
+job's single captured mesh input against the same session's unchanged live
+export, ignoring active selection. Show the returned target, asset, policy,
+coordinate placement and Keep original choice before calling
+`apply_result_application`. The generic `mesh_edit` purpose continues to review
+the active mesh as an explicit destination.
 
 Multiple captured inputs/sources, changed sources and missing live guards fail
 before mutation. Undo/load, credential retirement and restart cannot restore a
@@ -1216,9 +1218,9 @@ starts on ANIMATE for a source already skinned to an armature and on RIG
 otherwise, both with `edit3d_task`. For any other task a skinned source starts
 on RIG, with `rigged_source` (or `edit3d_task` when the task is Rigging); an
 explicit static `mesh_policy` on it, or ANIMATE on an unskinned source, is
-rejected. Show `default` to the user as an unconfirmed choice. `primary: false`
-means the selected GLB is an alternate result of the job, as in `job_status`
-`import_units`. See
+rejected. Show `default` to the user as an unconfirmed
+choice. `primary: false` means the selected unit is an
+alternate result of the job, as in `job_status` `import_units`. See
 [the approval contract](MESH_APPLICATION.md#saved-mesh-edit-approval).
 
 
@@ -1255,7 +1257,7 @@ so another local application requires fresh destination review. See the
 ### Saved parts application
 
 Use `mesh_policy: PARTS` with `purpose: mesh_edit` or `mesh_source` and one
-explicit saved GLB asset. Review that every mesh in this artifact is intended as
+explicit saved mesh unit. Review that every mesh in this artifact is intended as
 a part. The source retains its object identity and becomes an empty mesh parent
 with 2 to 128 named static children; Keep original defaults to true. The same
 explicit coordinate mapping, target checks, durable claims and undo limits apply.

@@ -248,6 +248,13 @@ full render-lane desktop acceptance.
   result whose UV seam crosses a source face (for example a quad's diagonal)
   is refused, as is a color-only retexture without UV layers. A fit only scales
   and moves the result; a rotated result is refused.
+- In-place mesh edits accept GLB, JSON glTF, FBX and OBJ results, not PLY or
+  splats. FBX and OBJ need a Blender window, like their import. Static edits
+  ignore FBX clips. Blender's FBX importer connects bones whose head sits on the
+  parent's tail, so Apply animation from an FBX refuses a rig with those bones
+  unconnected. Provider FBX and OBJ results have been applied only in
+  offline tests built with Blender's own exporters; live provider packages still
+  need evidence (#440).
 - The Environment lane (sidebar, Studio, the composer's Generate mode and local
   MCP) generates 360 panoramas, HDRIs and upscales only through verified model
   contracts, and its results wait for explicit World approval. Paid runs

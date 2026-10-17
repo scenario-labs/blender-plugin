@@ -358,10 +358,9 @@ none of the configured secret values, saved job/asset identities or signed queri
 This version-1 plan exercises generation, polling, download and completed-result
 recovery. It does not establish version-2 reference uploads, uncertain remote-job
 recovery, Blender application, physical interaction or media-quality acceptance.
-No provider-side monthly budget was configured. The 40 CU monthly allowance
-above came later and has no scheduled run yet; the first approved monthly run is
-separate acceptance. Keep those remaining #40 and #440 scopes separate from the
-completed hosted check.
+No provider-side monthly budget was configured. The first approved monthly run,
+on 2026-10-17, uploaded the version-2 reference and completed all three cases
+within its 40 CU cap.
 
 ## Project and labels
 
@@ -409,8 +408,8 @@ to perform it.
 - [x] Configure the protected smoke environment and private secrets, then verify
       the authorized five-lane hosted run and decrypted completed-result
       recovery: #40. Scheduled runs use the committed monthly plan with a fixed
-      40 CU cap. Reference-upload acceptance, the first approved monthly run and
-      any provider-side budget remain separate.
+      40 CU cap; the first approved monthly run passed on 2026-10-17. No
+      provider-side budget is configured.
 - [x] Add and read back the `ci-ok` required check with its verified GitHub
       Actions identity; preserve existing `pr-title`, `commits`, CodeQL,
       code-quality and review rules: #45. The hosted negative title check is

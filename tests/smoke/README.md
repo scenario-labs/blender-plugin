@@ -6,8 +6,7 @@ Video and image-to-3D entry points now share one quote/submit/resume implementat
 The generic entry point also supports audio. No smoke runs in ordinary tests or
 PR CI. The aggregate suite and protected workflow below implement the shared
 budget path for [#40](https://github.com/scenario-labs/blender-plugin/issues/40),
-including a [monthly plan](#monthly-plan) with a fixed total cap. Live
-reference-upload and monthly-run acceptance remain pending.
+including a [monthly plan](#monthly-plan) with a fixed total cap.
 
 These commands verify service round-trips and saved result receipts. They do not
 establish native UI/MCP interaction, scene application, playback quality, Film

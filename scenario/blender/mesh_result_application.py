@@ -60,6 +60,22 @@ def _release_import(imported, objects, staging):
                 values.remove(value)
 
 
+def _helpers(objects):
+    """Imported meshes that only display a returned rig: pose bones' custom shapes.
+
+    Any other mesh, such as an unskinned accessory beside the skin, stays a
+    result mesh, so the policy's mesh checks refuse it instead of discarding it.
+    """
+    helpers = set()
+    for rig in (obj for obj in objects if obj.type == "ARMATURE"):
+        for bone in rig.pose.bones:
+            if bone.custom_shape is not None:
+                helpers.add(bone.custom_shape)
+                # A retained rig keeps no pointer to a helper removed with the import.
+                bone.custom_shape = None
+    return tuple(obj for obj in objects if obj in helpers)
+
+
 def _stage_parts(target, meshes, mapping):
     """Copy static part geometry into source-local coordinates before replacement."""
     if not 2 <= len(meshes) <= 128:
@@ -126,7 +142,9 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             staging,
             objects,
         ):
-            meshes = [obj for obj in objects if obj.type == "MESH"]
+            # Display helpers are not results; they go with the other imported data.
+            helpers = _helpers(objects)
+            meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
             if policy != "RIG" and any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
                 raise MeshResultApplicationError("Choose static meshes with optional Empty parents")
             parts = ()
@@ -148,8 +166,9 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             }
             mesh_application.validate_target(target)
             if policy == "RIG":
+                skin = tuple(obj for obj in objects if obj not in helpers)
                 receipt = rig_application.apply_skin(
-                    target, primary, objects, mapping, keep_original=keep_original
+                    target, primary, skin, mapping, keep_original=keep_original
                 )
                 rig = receipt.rig
                 objects = tuple(obj for obj in objects if obj not in receipt.objects)

@@ -40,6 +40,7 @@ from ..core.jobs.store import (
 )
 from ..core.jobs.workers import WorkerError
 from ..core.scene import panorama_contract, placement
+from ..core.scene.mesh_edit_policy import default_policy
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
@@ -412,6 +413,12 @@ class MeshApplicationApproval:
     keep_original: bool
     original_source: bool = False
     kind: str = "mesh_edit"
+    # Where the policy came from: "requested", the job's Edit 3D task
+    # ("edit3d_task") or the REMESH fallback ("default"); see mesh_edit_policy.
+    policy_source: str = "requested"
+    edit3d_task: str | None = None
+    # Whether the GLB is the job's primary result or an alternate; None when unclassified.
+    primary: bool | None = None
 
 
 class ModelJobs:
@@ -2275,12 +2282,18 @@ class ModelJobs:
         obj,
         asset_id,
         *,
-        policy="REMESH",
+        policy=None,
         placement="WORLD",
         keep_original=True,
         original_source=False,
         review_placement=False,
     ):
+        """Capture one reviewed mesh destination; return its single-use approval.
+
+        Without an explicit policy the review starts from the job's Edit 3D
+        task: the task this session submitted it with, else its model's only
+        task. Other jobs start from REMESH, reported as not derived.
+        """
         record = self.store.get(request_id)
         if (
             type(expected_revision) is not int
@@ -2308,7 +2321,16 @@ class ModelJobs:
         # which can differ from the selected object. Explicit MCP options stay strict.
         if review_placement and placement == "WORLD" and target.obj.matrix_world.determinant() <= 0:
             placement = "LOCAL"
+        view = self.views.get(request_id)
+        start = default_policy(
+            record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
+        )
+        source = "requested"
+        if policy is None:
+            policy = start.policy
+            source = "edit3d_task" if start.derived else "default"
         mapping = self._mesh_options(target, policy, placement, keep_original)
+        unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2322,6 +2344,9 @@ class ModelJobs:
             mapping,
             keep_original,
             original_source,
+            policy_source=source,
+            edit3d_task=start.task,
+            primary=None if unit is None else unit.primary,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
@@ -2348,6 +2373,7 @@ class ModelJobs:
             placement=placement,
             mapping=mapping,
             keep_original=keep_original,
+            policy_source=ticket.policy_source if policy == ticket.policy else "requested",
         )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised

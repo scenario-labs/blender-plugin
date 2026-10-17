@@ -416,11 +416,20 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
     if action in {"apply_mesh", "apply_mesh_source"}:
         source = action == "apply_mesh_source"
         text = "Apply to captured source" if source else "Apply mesh edit"
+        alternate = "Apply alternate to captured source" if source else "Apply alternate mesh edit"
+        # Only GLBs apply in place; an alternate unit is named like its import.
+        alternates = {
+            index
+            for index, asset_id in enumerate(view.asset_ids, 1)
+            if (asset_id, "glb", False) in view.meta.get("import_units", ())
+        }
         return _per_asset(
             view,
             action,
             "scenario.apply_saved_mesh",
-            lambda index, _: f"{text} ({index})",
+            lambda index, _: (
+                f"{alternate}: GLB ({index})" if index in alternates else f"{text} ({index})"
+            ),
             is_model,
             job,
             (("original_source", source),),

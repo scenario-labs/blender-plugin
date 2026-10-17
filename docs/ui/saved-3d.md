@@ -80,18 +80,25 @@ DPI, the post-import status lines, and viewport navigation after a
 ## Saved mesh edit review
 
 **Apply mesh edit (N)** names the captured scene, source mesh and selected saved
-GLB. The dialog shows the replacement policy, scene/local coordinate placement
-and Keep original choice before confirmation. Explain geometry/UV/material
-replacement, exact-topology UV/retexture restrictions, no automatic fitting, preserved
-object context and the dependence of undo on Blender settings. Defaults keep an
-original copy. Explain that history changes affect the scene only, not saved jobs
-or spending. After confirmation, the temporary message acknowledges approval
-rather than describing verification that may already have finished.
+GLB, followed by **(primary result)** or **(alternate result)**. A GLB that is
+not the job's primary result is drawn as **Apply alternate mesh edit: GLB (N)**
+or **Apply alternate to captured source: GLB (N)**, mirroring its import label.
+The dialog shows the replacement policy, scene/local coordinate placement and
+Keep original choice before confirmation. Invoke starts the policy from the
+prepared approval, and a line under it reads **Default edit follows this job's
+Retexture task.** (with the job's task) or **Default edit is not from this job's
+task; check it.** Explain geometry/UV/material replacement, exact-topology
+UV/retexture restrictions, no automatic fitting, preserved object context and
+the dependence of undo on Blender settings. Defaults keep an original copy.
+Explain that history changes affect the scene only, not saved jobs or spending.
+After confirmation, the temporary message acknowledges approval rather than
+describing verification that may already have finished.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
-approval instead of selecting a new target. A stale target or scene requires
-cancellation and fresh review. `draw()` only reads the prepared labels and
-operator properties. Completed-result reviews retain the reuse notice.
+approval instead of selecting a new target. Physical desktop evidence of the
+default-edit line and the alternate labels is pending. A stale target or scene
+requires cancellation and fresh review. `draw()` only reads the prepared labels
+and operator properties. Completed-result reviews retain the reuse notice.
 
 Mirrored or zero-scale source transforms cannot use scene-coordinate mapping.
 The native dialog opens with **Object local coordinates** and a visible

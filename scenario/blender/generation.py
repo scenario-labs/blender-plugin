@@ -1085,6 +1085,9 @@ def request_meta(context, lane, request=None):
         meta["target_objects"] = [
             o.name for o in selection.selected_objects(context) if o.type == "MESH"
         ]
+    if lane == "edit3d":
+        # Session only: a saved mesh-edit review of this job starts from the task's policy.
+        meta["edit3d_task"] = context.scene.scenario.edit3d_task
     if request is not None:
         # the local files that went into the job, so Generations can show what was used (like the web app)
         inputs = []

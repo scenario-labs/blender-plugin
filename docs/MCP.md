@@ -1199,6 +1199,21 @@ guard from saved provenance. This shares the native
 including verification, durable claims and no generation or automatic retry.
 
 
+## Saved mesh edit defaults
+
+Without `mesh_policy`, `prepare_result_application` for `mesh_edit` and
+`mesh_source` starts from the job's Edit 3D task: the task chosen in the native
+Edit 3D form when this session submitted the job, if that task lists the model,
+otherwise the model's only task. MCP `generate` takes no task, so its jobs use
+the model's only task.
+`mesh_policy_source` is `edit3d_task` (with `edit3d_task` naming it), `default`
+when the job gives no applicable task and REMESH is only the fallback, or
+`requested` for an explicit `mesh_policy`, which always wins. Show `default` to
+the user as an unconfirmed choice. `primary: false` means the selected GLB is an
+alternate result of the job, as in `job_status` `import_units`. See
+[the approval contract](MESH_APPLICATION.md#saved-mesh-edit-approval).
+
+
 ## Saved mesh undo status
 
 `mesh_edit.undo_available` reports whether a desktop Blender history checkpoint

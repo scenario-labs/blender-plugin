@@ -80,6 +80,7 @@ BASELINE = (
     "test_organization_session",
     "test_asset_organization",
     "test_session_results",
+    "test_transfer_lane",
     "test_result_previews",
     "test_waveform_worker",
     "test_audio_player",
@@ -116,6 +117,17 @@ BASELINE = (
     "test_model_generation.ModelGenerationTests.test_cancel_not_sent_after_a_failed_read_keeps_the_job_polled",
     # Saved non-image results list their verified files and apply nothing (#588).
     "test_model_generation.ModelGenerationTests.test_non_image_downloads_remain_saved_without_scene_application",
+    # Unconfirmed submissions: cloud candidates, the native link and its review (#494).
+    "test_model_generation.ModelGenerationTests"
+    ".test_an_unconfirmed_request_refuses_an_identical_one_until_the_user_reviews_it",
+    "test_model_generation.ModelGenerationTests"
+    ".test_an_uncertain_submission_lists_candidates_and_links_only_the_users_choice",
+    "test_model_generation.ModelGenerationTests"
+    ".test_a_link_the_fresh_retrieval_refuses_saves_nothing_and_says_why",
+    "test_model_generation.ModelGenerationTests"
+    ".test_a_restarted_uncertain_job_looks_up_once_and_offline_sends_nothing",
+    "test_model_generation.ModelGenerationTests"
+    ".test_uncertain_submission_has_no_recovery_dispatch_action",
 )
 
 

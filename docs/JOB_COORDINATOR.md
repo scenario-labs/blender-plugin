@@ -36,8 +36,10 @@ approval before the render quote.
    the prepared request. UI callers must invalidate/rebuild the current request
    when fields, account/project, scene or target revision change.
 5. Inside the adapter's required `before_send` callback, the coordinator commits
-   `prepared → submitting` using the current stored revision. A failed write,
-   stale record, inactive coordinator or expired/mismatched quote stops dispatch.
+   `prepared → submitting` using the current stored revision, with the wall-clock
+   claim time (`claimed_at`, see [schema 12](JOB_STORAGE.md#schema-12-submission-claim-time)).
+   A failed write, stale record, inactive coordinator or expired/mismatched quote
+   stops dispatch.
 6. The adapter consumes the issued quote once and calls the operation's public
    `with_raw_response` method (`generate.run_model`, `workflows.run`,
    `generate.prompt` or `generate.translate`), with `max_retries=0`.
@@ -70,8 +72,10 @@ selected scene or object. A worker owner must wait for active calls before closi
 their HTTP clients. View closure alone must not deactivate application jobs.
 
 Restart recovery must not recreate a `PreparedJob` from stored fingerprints.
-Stored `submitting`/`uncertain` requests require reconciliation; similar inputs in
-job listings are not authoritative correlation.
+Stored `submitting`/`uncertain` requests require reconciliation. Similar inputs in
+job listings are not authoritative correlation: only a person's confirmed choice,
+verified by a fresh retrieval, links one to its cloud job
+([candidates and links](#unconfirmed-submission-candidates-and-links)).
 
 The low-level adapter hook orders persistence but cannot enforce correct
 behavior by arbitrary callers; product code must use the shared coordinator.
@@ -91,9 +95,10 @@ never blocks: repeating a generation is a deliberate new request. The store's
 `unconfirmed()` lookup filters these rows in SQLite, so quoting never decodes
 unrelated history.
 
-There is deliberately no command that resolves an uncertain record. The user
-checks Scenario history (and can save a completed job with **Save for
-recovery**), then marks the record reviewed through
+No command resolves an uncertain record by itself. The user can
+[link the cloud job](#unconfirmed-submission-candidates-and-links) the request
+created, which makes it an ordinary `remote` job, or check Scenario history (and
+save a completed job with **Save for recovery**) and mark the record reviewed through
 `mark_unconfirmed_reviewed(request_id, expected_revision=...)`. The mark is kept
 in memory by the coordinator only: nothing is sent or saved, and a new
 coordinator, after a restart or context change, refuses again. `ModelJobs`
@@ -108,6 +113,44 @@ superseded or discarded unread. `ModelJobs.finish_quote` turns a delivered error
 into `AutomaticEstimatesStopped`, naming the job. Nothing is resubmitted. Cloud
 adoption accepts only completed jobs, so the user saves that job from history
 once it finishes.
+
+## Unconfirmed submission candidates and links
+
+Scenario documents no idempotency key, client reference or request filter for
+`generate.run_model`, `workflows.run`, `generate.prompt` or `generate.translate`,
+and the pinned SDK sends none (tracked as an SDK gap, linked from
+[`reconcile.py`](../scenario/core/jobs/reconcile.py)). A lost response therefore
+cannot be matched to its job automatically. Two commands let a person do it,
+without ever submitting again:
+
+- `unconfirmed_candidates(request_id, expected_revision=...)` requires the current
+  `submitting` or `uncertain` record, refusing one this coordinator is still
+  sending. It reads one bounded window through `SDKAdapter.recent_jobs` (SDK
+  `jobs.list`, at most 2 pages of 100, selected project): `types=custom,inference`
+  for a model, `generate-prompt,image-prompt-editing` for Prompt Spark, `translate`
+  for Translate, and `workflowId` for a workflow. Rows must have that job type, a
+  known status, the model ID or workflow ID (a workflow step with a
+  `workflowJobId` is not a run), and, with a Project ID override, no other
+  `ownerId`; jobs already saved in the scope are left out. With a known claim
+  time, only jobs created from 10 minutes before to 1 hour after it are kept,
+  ordered by distance from it; otherwise newest first. At most 20 are returned in
+  a `CandidateLookup`, whose `complete` is false when the window stopped early.
+  Nothing is saved and nothing is picked.
+- `link_unconfirmed(request_id, expected_revision=..., remote_job_id=...)` saves a
+  person's choice. It retrieves that exact job through `SDKAdapter.job`, applies
+  the same checks plus a creation time no earlier than 10 minutes before the
+  claim, and raises `LinkRefused` with the reason, or `RecoveryError` when the
+  selected project cannot read it. The store's `link_remote` then saves `remote`
+  with that ID in one transaction that refuses an ID already saved in the scope.
+  It also clears this session's review mark. The job is then polled, downloaded and
+  applied like any other; nothing is applied without the usual review.
+
+Both run on the shared worker pool. Offline access, an inactive context, a stale
+revision or a request still being sent change nothing. A `submitting` record left
+by an earlier session can be linked; stop other Blender processes that might
+still be sending it first, since a later receipt would then conflict with the
+link. When Scenario offers an idempotency key or client reference, an exact
+lookup should replace the candidate list.
 
 ## Local capture queue
 
@@ -246,8 +289,9 @@ commits nothing and keeps the saved revision; Blender's owner derives a validate
 in-memory [progress reading](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding)
 from the snapshot's `status` and `progress` with the bpy-free
 [`progress.observe`](../scenario/core/jobs/progress.py). The saved remote ID
-allows result metadata to be fetched again. There is deliberately no command to
-attach a guessed remote ID or regenerate an unknown submission.
+allows result metadata to be fetched again. No command attaches a guessed remote
+ID or regenerates an unknown submission; `link_unconfirmed` saves only a person's
+choice that a fresh retrieval verifies.
 
 `cancel_prepared(request_id, expected_revision=...)` durably cancels only an
 unclaimed local intent and sends no request. A queued submit will subsequently
@@ -261,7 +305,9 @@ It starts a fixed number of non-daemon threads, bounds the pending queue, and
 rejects excess commands before dispatch. `submit` copies the current JSON
 payload at admission; the coordinator checks the original quote, origin and
 expiry again when the worker reaches the spend boundary. `refresh_remote` uses
-the same pool. There is no generic callable execution or Blender access.
+the same pool; storage transfers use the
+[transfer lane](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume). There is no
+generic callable execution or Blender access.
 
 Each command returns a `JobTask` with `done()` and `result(timeout=...)`. A GUI
 owner polls from its main-thread pump; a headless owner can block explicitly.
@@ -279,7 +325,9 @@ One more non-daemon thread, `ScenarioPreview`, runs only the
 [preview commands](#saved-result-preview-commands) from its own bounded queue
 (eight tasks by default) with per-task cancellation. It never runs job commands,
 and job workers never run preview commands, so a slow preview poll or download
-cannot delay remote refresh, result downloads or submission. Preview admission
+cannot delay remote refresh, result downloads or submission. Two
+`ScenarioTransfer` threads with their own queue of 16 likewise run only result
+downloads and upload parts, so a large transfer never holds a job worker. Preview admission
 is also independent of the single local media slot. `deactivate()` cancels
 queued previews and signals the running one; a running SDK read can still take
 until its client timeout. `previews_idle` reports when no preview command is
@@ -502,6 +550,7 @@ uses the same configured byte cap. Each receipt commits before advancing to
 another asset. Existing receipts are rehash-verified instead of redownloaded.
 All receipts must exist before `ready`.
 
+A transfer fails only after its [bounded retries](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume).
 A transfer, metadata or verification failure saves `download_failed` and reports
 a sanitized error. A persistence failure propagates and can leave `downloading`
 for explicit recovery inspection; it never claims an uncommitted state was saved.
@@ -517,9 +566,11 @@ application authorization: the Blender owner must recheck origin/target and
 atomically claim application before changing the scene. Interrupted `applying`
 is deliberately rejected; a prior scene mutation may already have occurred.
 
-All three methods are available through `JobWorkers` using the same bounded pool,
-SDK lifetime and main-thread polling interface. Deactivation stops subsequent
-asset work; a transfer already in flight can save its receipt to the old scope.
+All three methods are available through `JobWorkers` with the same SDK lifetime
+and main-thread polling interface; downloads run on the transfer lane, the others
+on the job workers. Deactivation stops subsequent asset work and cancels an
+in-flight transfer at its next chunk; an asset whose bytes were already complete
+can still save its receipt to the old scope.
 Closing a view must not deactivate these application-owned workers. The runtime
 configures the CDN storage policy, and ModelJobs drives downloads and recovery for
 every model lane; recovered results apply only after fresh destination approval

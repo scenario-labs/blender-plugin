@@ -661,3 +661,151 @@ def test_queued_organization_change_is_cancelled_unsent_by_deactivation(tmp_path
         release.set()
         owner.shutdown()
     assert service.writes == []
+
+
+# Storage transfers run on their own bounded lane (#453).
+
+
+def test_transfers_run_on_their_own_lane_beside_blocked_job_workers(setup, monkeypatch):
+    owner, coordinator, _, prepare, entered, release, calls, _ = setup()
+    threads = []
+
+    def download(request_id, *, expected_revision, cancel):
+        threads.append(threading.current_thread())
+        return (request_id, expected_revision, cancel.is_set())
+
+    def upload(request_id, *, expected_revision):
+        threads.append(threading.current_thread())
+        return request_id
+
+    monkeypatch.setattr(coordinator, "download_results", download)
+    monkeypatch.setattr(coordinator, "transfer_upload_part", upload)
+    running = submit(owner, prepare())
+    assert entered.wait(2)
+    # The only job worker is busy, yet both transfers complete.
+    assert owner.download_results("request", expected_revision=3).result(2) == (
+        "request",
+        3,
+        False,
+    )
+    assert owner.transfer_upload_part("upload", expected_revision=1).result(2) == "upload"
+    assert all(thread.name.startswith("ScenarioTransfer") for thread in threads)
+    assert all(thread in owner._threads for thread in threads) and not running.done()
+    release.set()
+    assert running.result(2).state == JobState.REMOTE
+
+
+def test_saturated_transfer_lane_never_delays_polls_cancels_or_submissions(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup(workers=1, pending_limit=4)
+    started, release = threading.Semaphore(0), threading.Event()
+
+    def download(request_id, *, expected_revision, cancel):
+        started.release()
+        assert release.wait(5), "Test did not release the transfer lane"
+        return request_id
+
+    monkeypatch.setattr(coordinator, "download_results", download)
+    monkeypatch.setattr(
+        coordinator, "refresh_remote", lambda request_id, *, expected_revision: "polled"
+    )
+    monkeypatch.setattr(
+        coordinator, "cancel_remote", lambda request_id, *, expected_revision: "cancel sent"
+    )
+    monkeypatch.setattr(coordinator, "submit", lambda *args, **kwargs: "submitted")
+    # Fill every transfer thread and the transfer queue.
+    running = [owner.download_results(f"r{n}", expected_revision=1) for n in range(2)]
+    for _ in running:
+        assert started.acquire(timeout=2)
+    queued = [owner.download_results(f"q{n}", expected_revision=1) for n in range(16)]
+    with pytest.raises(WorkerError, match="Transfer queue is full"):
+        owner.download_results("overflow", expected_revision=1)
+    assert owner.refresh_remote("other", expected_revision=1).result(2) == "polled"
+    assert owner.cancel_remote("other", expected_revision=1).result(2) == "cancel sent"
+    assert (
+        owner.submit(None, origin=ORIGIN, operation="model", target_id="m", payload={}).result(2)
+        == "submitted"
+    )
+    assert not any(task.done() for task in running + queued)
+    release.set()
+    assert [task.result(5) for task in running + queued] == [f"r{n}" for n in range(2)] + [
+        f"q{n}" for n in range(16)
+    ]
+
+
+def test_transfer_cancellation_targets_one_download(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    started, events = threading.Semaphore(0), {}
+
+    def download(request_id, *, expected_revision, cancel):
+        events[request_id] = cancel
+        started.release()
+        assert cancel.wait(5) if request_id == "stop" else not cancel.wait(0.2)
+        return request_id
+
+    monkeypatch.setattr(coordinator, "download_results", download)
+    stop = owner.download_results("stop", expected_revision=1)
+    keep = owner.download_results("keep", expected_revision=1)
+    for _ in range(2):
+        assert started.acquire(timeout=2)
+    owner.cancel_transfer(stop)
+    assert stop.result(2) == "stop" and keep.result(2) == "keep"
+    assert events["stop"].is_set() and not events["keep"].is_set()
+    assert not owner._transfer_cancels
+
+
+def test_retirement_cancels_running_and_queued_transfers(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, calls, _ = setup()
+    owner.shutdown()
+    owner = JobWorkers(coordinator, transfers=1, transfer_limit=1)
+    started, signals = threading.Event(), []
+
+    def download(request_id, *, expected_revision, cancel):
+        signals.append(cancel)
+        started.set()
+        assert cancel.wait(5), "Retirement did not cancel the running download"
+        raise RuntimeError("canceled download")
+
+    monkeypatch.setattr(coordinator, "download_results", download)
+    running = owner.download_results("first", expected_revision=1)
+    assert started.wait(2)
+    queued = owner.download_results("second", expected_revision=1)
+    with pytest.raises(WorkerError, match="Transfer queue is full"):
+        owner.download_results("third", expected_revision=1)
+    owner.deactivate()
+    with pytest.raises(RuntimeError, match="canceled download"):
+        running.result(2)
+    with pytest.raises(CancelledError):
+        queued.result(2)
+    with pytest.raises(WorkerError, match="inactive"):
+        owner.download_results("late", expected_revision=1)
+    owner.shutdown()
+    assert owner.stopped and not owner._transfer_cancels and len(signals) == 1 and not calls
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"transfers": 0}, {"transfers": True}, {"transfer_limit": 0}, {"transfer_limit": 1.5}],
+)
+def test_invalid_transfer_lane_limits_do_not_start_workers(setup, options):
+    _, coordinator, _, _, _, _, _, _ = setup()
+    with pytest.raises(ValueError):
+        JobWorkers(coordinator, **options)
+
+
+def test_transfer_control_exception_retires_the_owner(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    reported = threading.Event()
+    monkeypatch.setattr(threading, "excepthook", lambda args: reported.set())
+
+    def interrupt(*args, **kwargs):
+        raise KeyboardInterrupt("fixture transfer interruption")
+
+    monkeypatch.setattr(coordinator, "download_results", interrupt)
+    task = owner.download_results("request", expected_revision=1)
+    with pytest.raises(KeyboardInterrupt):
+        task.result(2)
+    assert reported.wait(2)
+    with pytest.raises(WorkerError, match="inactive"):
+        owner.refresh_remote("request", expected_revision=1)
+    owner.shutdown()
+    assert owner.stopped

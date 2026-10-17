@@ -123,9 +123,18 @@ def shim_path():
     )
 
 
+def server_url():
+    """The running server's URL, else the one the MCP Port preference will serve."""
+    server = runtime.state.mcp
+    if server is not None and server.running:
+        return server.url
+    prefs = runtime.prefs()
+    return f"http://127.0.0.1:{prefs.mcp_port if prefs else 9876}/mcp"
+
+
 def client_configs():
     st = status()
-    url, token = st["url"] or "http://127.0.0.1:9876/mcp", st["token"] or "<token>"
+    url, token = server_url(), st["token"] or "<token>"
     stdio = {
         "mcpServers": {
             "scenario-blender": {

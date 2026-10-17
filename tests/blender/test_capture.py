@@ -106,6 +106,16 @@ class CaptureTests(unittest.TestCase):
                 bpy.context, str(self.tmp / "x.png"), source="CAMERA", runner=self.fake_runner
             )
 
+    def test_still_restores_an_output_bit_depth_that_png_lacks(self):
+        bpy.ops.object.camera_add()
+        settings = bpy.context.scene.render.image_settings
+        settings.file_format, settings.color_depth = "DPX", "10"  # PNG offers 8 or 16
+        self.capture.capture_still(
+            bpy.context, str(self.tmp / "still.png"), source="CAMERA", runner=self.fake_runner
+        )
+        self.assertEqual(self.calls[0]["fmt"], "PNG")
+        self.assertEqual((settings.file_format, settings.color_depth), ("DPX", "10"))
+
     def test_captures_send_no_frame_notifier_when_nothing_changes(self):
         # In the GUI, even a same-value write to these properties makes Blender run
         # frame_change_pre after the capture returns, invalidating upload origins.

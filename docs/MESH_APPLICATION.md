@@ -33,7 +33,7 @@ adds receipt-bound import, shared-session bookkeeping and UI/MCP review.
 
 | Policy | Geometry and attributes | UVs | Materials |
 | --- | --- | --- | --- |
-| `REMESH` | Copy result mesh and bake the explicit local mapping | Adopt result UV layers | Adopt result mesh material slots and polygon assignments |
+| `REMESH` | Copy result mesh and bake the explicit local mapping, or a [verified bounds fit](#bounds-fit-for-remeshes-and-copied-parts) | Adopt result UV layers | Adopt result mesh material slots and polygon assignments |
 | `RETEXTURE` | Copy source geometry and non-UV attributes; require the [same surface](#surface-matching) | Replace all layers with result names, coordinates and active/render/clone roles | Adopt nonempty result slots and valid face assignments; preserve existing shader datablocks |
 | `UV` | Copy source mesh; require the [same surface](#surface-matching) | Copy coordinates from exactly one result UV layer to the source's active layer; preserve its name and other layers; create a layer if absent | Preserve source slots and polygon assignments |
 | `ANIMATE` (saved command only) | Unchanged, with its skin; [returned clips](#apply-returned-animation) are copied onto the rig that skins it | Unchanged | Unchanged |
@@ -47,9 +47,10 @@ and imported-result mesh datablocks are never edited in place.
 
 ## Surface matching
 
-UV, RETEXTURE and [RIG](#attach-a-returned-rig) keep the source geometry and
-read values from a result that must be the same surface. Identical indexed
-topology with exactly equal mapped positions is the fast path. Otherwise
+UV, RETEXTURE, [RIG](#attach-a-returned-rig) and [PARTS split from the source's
+faces](#apply-static-parts) keep the source geometry and read values from a
+result that must be the same surface. Identical indexed topology
+with exactly equal mapped positions is the fast path. Otherwise
 [`mesh_correspondence.py`](../scenario/core/scene/mesh_correspondence.py) proves
 the correspondence, which accepts what Blender's glTF export and providers do to
 an unchanged surface: triangulation, vertices split at UV seams or sharp edges,
@@ -95,6 +96,30 @@ A failure names its counted reason, for example **UV result does not match the
 source mesh: the result splits UV coordinates at 53 source face corners**. The
 saved command reports it with the stopped application. Matching runs
 synchronously on the main thread, within the mesh component limit.
+
+### Bounds fit for remeshes and copied parts
+
+A remesh, or parts that are not the source's own faces, is a different mesh of
+the same surface, so faces cannot be matched. `mesh_application.fit_bounds`
+verifies a fit by surface distance instead. For each base it estimates one
+uniform scale and offset from the axis-aligned bounding boxes, never a rotation,
+then measures, in source-local units, how far evenly sampled vertices lie from
+the other surface, both ways: result vertices from the source surface, and
+source vertices from the fitted result's surface. At most 20,000 vertices per
+side are sampled, and only vertices that faces use count. Distances are
+fractions of the source's bounding-box diagonal:
+
+- at most 5% of either side's sampled vertices may lie farther than 2%;
+- none may lie farther than 10%.
+
+Provider remeshes measured within 0.7% of a source (1.8% for one delivered in
+object-local coordinates), and remeshed parts with interior caps had 2.2% of
+their vertices beyond 2% and none beyond 7.5%; a different object, or a result
+fitted from the wrong base, had most of its vertices beyond 2%. The verified
+worst distance and fraction beyond 2% are reported as `fit_residual`. If both
+bases verify, they must place every result point within 2% of each other;
+otherwise application stops. Surface queries use Blender's BVH tree on the main
+thread, within the mesh component limit.
 
 The source's active material index may be clamped by Blender when a remesh has
 fewer slots. Rollback restores the original index only if the applied index is
@@ -571,22 +596,26 @@ stages the snapshot with the package importers, texture roles and image packing
 in an isolated staging scene. For static policies FBX clips are not read; RIG
 and ANIMATE read them at the file's frame rate, never retimed, and
 `mesh_edit.frame_rate_mismatch` and the same job row report a different scene
-rate. `REMESH` requires exactly one mesh with optional Empty
-parents. `UV` and `RETEXTURE` match every static mesh in the result together as
-one surface, since providers split results by connectivity or color region;
-RETEXTURE merges their material slots, once per material. The explicit `PARTS`
-policy accepts 2 to 128 static surface meshes in that one result; other object
-types fail for these static policies. RIG requires one armature, optional Empty
-parents and skinned meshes, matched together as one surface. A mesh an imported
-armature uses as a bone custom shape is a display helper: it is not counted as a
-result mesh and is removed with the other imported objects (the importer is told
-not to create these). Every other mesh counts, so an unskinned mesh beside the
-skin, which may be an accessory, makes RIG refuse the result instead of
-discarding it. A clips-only result, whose rig drives no mesh, fails the skin
-checks. A skinned bone-display mesh cannot be told from a character and fails
-the surface match. ANIMATE requires one armature with clips; returned meshes,
-helpers and Empties are allowed but never kept. The caller chooses the policy
-and Keep original. Multiple result assets are never combined or ranked
+rate. `REMESH` requires static meshes with optional Empty parents. Several
+meshes, as some providers return a remesh split into pieces, are joined into
+one: each object's world matrix is applied and material slots are merged once
+per material (`joined_meshes` counts them). Choose the result that contains one
+remeshed object; a result of alternate variants would be joined too, and a fit
+then fails to verify. `UV` and `RETEXTURE` match every static mesh in the result
+together as one surface, since providers split results by connectivity or color
+region; RETEXTURE merges their material slots, once per material. The explicit
+`PARTS` policy accepts 2 to 128 static surface meshes in that one result; other
+object types fail for these static policies. RIG requires one armature, optional
+Empty parents and skinned meshes, matched together as one surface. A mesh an
+imported armature uses as a bone custom shape is a display helper: it is not
+counted as a result mesh and is removed with the other imported objects (the
+importer is told not to create these). Every other mesh counts, so an unskinned
+mesh beside the skin, which may be an accessory, makes RIG refuse the result
+instead of discarding it. A clips-only result, whose rig drives no mesh, fails
+the skin checks. A skinned bone-display mesh cannot be told from a character and
+fails the surface match. ANIMATE requires one armature with clips; returned
+meshes, helpers and Empties are allowed but never kept. The caller chooses the
+policy and Keep original. Multiple result assets are never combined or ranked
 automatically.
 
 The required finite, orientation-preserving mapping converts **Blender-imported
@@ -600,20 +629,24 @@ used as given, and the source object never moves. UV, RETEXTURE and RIG also
 require [surface matching](#surface-matching) after mapping; UV needs one UV
 layer on each result mesh.
 
-For those three policies the caller may instead pass an approved
+For every policy except ANIMATE the caller may instead pass an approved
 `mesh_application.FitRequest` of base mappings, normally scene (`WORLD`) and
 object-local (`LOCAL`). A base under which the result has identical indexed
 topology and equal positions, unfitted or then fitted, is used at once. For each
 base, the command estimates one uniform scale and offset that take the result's
-axis-aligned bounding box onto the source's, with rotation fixed, then runs the
-full surface match with the usual tolerance. Rotation is never searched: a fit
-changes only size and position. A base fitted to within a tenth of the tolerance
-of an earlier one reuses its match. One verified base is used; two are used
-only if they assign every result corner and face identically. Otherwise
-application stops before mutation, naming each base's reason. The returned
-application and `mesh_edit` status report the verified mapping
-(`result_to_source`) and the base it was fitted from (`fitted_from`, null for a
-strict mapping).
+axis-aligned bounding box onto the source's, with rotation fixed. UV, RETEXTURE,
+RIG and parts split from the source's faces then run the full surface match with
+the usual tolerance. A base fitted to within a tenth of the tolerance of an
+earlier one reuses its match. One verified base is used; two are used only if
+they assign every result corner and face identically. REMESH and copied parts
+use the [bounds fit](#bounds-fit-for-remeshes-and-copied-parts). Rotation is
+never searched: a fit changes only size and position. Otherwise application
+stops before mutation, naming each base's reason. The returned application and
+`mesh_edit` status report the verified mapping (`result_to_source`), the base it
+was fitted from (`fitted_from`, null for a strict mapping) and, for a bounds
+fit, `fit_residual` (`max_distance` and `beyond_tolerance`, fractions of the
+source size; null otherwise). PARTS also reports `parts_from` and REMESH
+`joined_meshes`.
 
 The source is revalidated immediately before replacement. Temporary imported
 objects are removed; RIG retains its armature/parent hierarchy and ANIMATE only
@@ -691,24 +724,25 @@ rejected.
 **Scene coordinates** (`WORLD`) maps imported positions through the captured
 source's inverse world transform. **Object local coordinates** (`LOCAL`) treats
 those imported positions as source-local. Neither fits, centers or rescales a
-provider result. **Fit and verify** (`FIT`), offered for `UV`, `RETEXTURE` and
-`RIG`, binds both bases as a `FitRequest`: a mirrored or zero-scale source
+provider result. **Fit and verify** (`FIT`), offered for every policy except
+`ANIMATE`, binds both bases as a `FitRequest`: a mirrored or zero-scale source
 offers only the object-local base. An explicitly requested placement wins;
-otherwise the review starts on `FIT` when the requested or derived policy is one
-of those three, and on scene coordinates (object-local where required) for the
-others. Choosing one of those policies in the dialog selects it; choosing
-another policy returns to scene coordinates. MCP `mesh_placement` follows the
-same order, and explicit `WORLD` or `LOCAL` stay strict; ANIMATE reports a
-requested `FIT` as scene coordinates, which it does not use. Singular or
-orientation-reversing mappings are rejected. The review binds the chosen
-mapping, policy and original-copy choice. For mirrored or zero-scale sources,
-the native dialog starts with object-local coordinates and explains that
-requirement. It still requires confirmation; explicit MCP `WORLD` requests
-remain rejected rather than changing their mapping. For captured-source review,
-the default and explanation use the retained captured target's transform,
-independently of whichever object is currently selected. Editing options
-replaces that approval handle without recapturing the target; changed source or
-scene context requires cancellation and fresh review.
+otherwise the review starts on `FIT`, except for ANIMATE and for a `REMESH` the
+job did not choose (`mesh_policy_source: default`), whose result need not be the
+source surface; those start on scene coordinates (object-local where required).
+Choosing a policy in the dialog selects `FIT`, and choosing ANIMATE returns to
+scene coordinates. MCP `mesh_placement` follows the same order, and explicit
+`WORLD` or `LOCAL` stay strict; ANIMATE reports a requested `FIT` as scene
+coordinates, which it does not use. Singular or orientation-reversing mappings
+are rejected. The review binds the chosen mapping, policy and original-copy
+choice. For mirrored or zero-scale sources, the native dialog starts with
+object-local coordinates and explains that requirement. It still requires
+confirmation; explicit MCP `WORLD` requests remain rejected rather than changing
+their mapping. For captured-source review, the default and explanation use the
+retained captured target's transform, independently of whichever object is
+currently selected. Editing options replaces that approval handle without
+recapturing the target; changed source or scene context requires cancellation
+and fresh review.
 
 Confirmation consumes the handle and verifies saved files on the existing worker.
 Main-thread application revalidates the captured source and calls the shared
@@ -716,12 +750,13 @@ session command above. Completed jobs persist separate `mesh_edit` local claims,
 distinct from `model` imports even after restart. Existing claims keep their
 recorded purpose; older `model` entries are not reclassified. Status exposes
 the latest session-local `mesh_edit` target, original-copy name, policy,
-verified `result_to_source` mapping and `fitted_from` base; deleted objects have
-null names. A stopped application's status names the mesh policy's reason. A
-failed outcome receipt can be saved without replacing the mesh again. An
-uncertain scene outcome never authorizes replay. There is no automatic blend
-save. Desktop application records native undo when Blender history is enabled;
-see [native history](#native-undo-for-saved-mesh-edits).
+verified `result_to_source` mapping, `fitted_from` base, `fit_residual`,
+`parts_from` and `joined_meshes`; deleted objects have null names. A stopped
+application's status names the mesh policy's reason. A failed outcome receipt
+can be saved without replacing the mesh again. An uncertain scene outcome never
+authorizes replay. There is no automatic blend save. Desktop application records
+native undo when Blender history is enabled; see
+[native history](#native-undo-for-saved-mesh-edits).
 
 The generic action reviews a destination selected now. The captured-source action
 below uses the original exported object. Neither establishes provider alignment,
@@ -887,14 +922,32 @@ restore undo history or source authority from stored names. See
 ## Apply static parts
 
 The saved-result command's `PARTS` policy preserves the captured source object as
-an empty mesh parent. It stages independent copies of every imported mesh, bakes
-imported node transforms through the explicit coordinate mapping, then parents
-the copies directly to the source with identity local transforms. Child names
-combine the source name, a numbered Part prefix and the imported name, subject
-to Blender's name limits. Material slots, UVs and packed image dependencies stay
-with the copied part meshes. Source name, transforms, parenting, collections and
-existing children remain unchanged. The prior selection remains active.
+an empty mesh parent and parents one new mesh per imported mesh directly to the
+source, with identity local transforms. Child names combine the source name, a
+numbered Part prefix and the imported name, subject to Blender's name limits.
+Source name, transforms, parenting, collections and existing children remain
+unchanged. The prior selection remains active. The parts come from one of two
+places, reported as `parts_from`:
 
+- `source_faces`: when the imported meshes together are the
+  [same surface](#surface-matching) as the source under the selected or fitted
+  mapping, the source mesh itself is split along their boundaries. Segmentation
+  providers return the uploaded faces, triangulated, normalized and with UVs and
+  materials stripped; each part instead keeps the source's own positions in
+  source-local coordinates, UV layers, material slots and face assignments,
+  attributes, seams, sharp edges and smooth flags. Custom normals are set again
+  per corner, since a part boundary changes the corner fans Blender stores them
+  against; without custom normals, smooth shading at a part boundary is computed
+  per part. All result faces on one source face must come from one part, and the
+  source must have no loose vertices or edges; otherwise application stops with
+  the reason, such as **the result splits 4 source faces between parts**.
+- `result_meshes`: otherwise, such as for remeshed parts, independent copies of
+  the imported meshes are staged with their node transforms baked through the
+  explicit mapping or a verified
+  [bounds fit](#bounds-fit-for-remeshes-and-copied-parts). Material slots, UVs
+  and packed image dependencies stay with the copies.
+
+Which applies is known only after import, so the review describes both.
 The policy deliberately treats **every mesh in the selected result as a part**.
 Choose the actual segmented artifact, not a variant collection, exploded view or
 helper/bounds artifact. The command cannot infer those provider semantics. It
@@ -915,8 +968,8 @@ group without changing durable job state or issuing service requests.
 Known mesh validation or application failures pause delivery with a message to
 inspect the saved result, source and edit policy. Uncertain outcomes keep their
 receipt-recovery warning and never authorize another application automatically.
-See [parts interaction](ui/saved-3d.md#parts-application-interaction). Provider
-alignment and semantic part classification remain separate work.
+See [parts interaction](ui/saved-3d.md#parts-application-interaction). Semantic
+part classification remains separate work.
 
 
 ## Attach a returned rig

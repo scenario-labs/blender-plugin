@@ -295,6 +295,43 @@ def parts_glb(count=2):
     )
 
 
+def cube_result_glb(*, parts=1, subdivide=0, scale=0.5, location=(0, 0, 3)):
+    """A provider-style edit of a 2-unit cube, exported with the Edit 3D exporter.
+
+    The cube's quads are split into `parts` meshes without UVs or materials, or
+    subdivided as a remesh, then scaled and moved like a normalized result.
+    """
+    import bmesh
+
+    objects = []
+    for part in range(parts):
+        mesh = bmesh.new()
+        bmesh.ops.create_cube(mesh, size=2.0)
+        if subdivide:
+            bmesh.ops.subdivide_edges(mesh, edges=mesh.edges[:], cuts=subdivide, use_grid_fill=True)
+        mesh.faces.ensure_lookup_table()
+        others = [face for face in mesh.faces if face.index * parts // len(mesh.faces) != part]
+        bmesh.ops.delete(mesh, geom=others, context="FACES")
+        bmesh.ops.scale(mesh, vec=(scale, scale, scale), verts=mesh.verts)
+        data = bpy.data.meshes.new("Cube result")
+        mesh.to_mesh(data)
+        mesh.free()
+        obj = bpy.data.objects.new("Cube result", data)
+        bpy.context.scene.collection.objects.link(obj)
+        obj.location = location
+        objects.append(obj)
+    bpy.context.view_layer.update()
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "result.glb"
+        submodule("blender.mesh_export").export_glb(bpy.context, objects, str(path))
+        body = path.read_bytes()
+    for obj in objects:
+        data = obj.data
+        bpy.data.objects.remove(obj)
+        bpy.data.meshes.remove(data)
+    return body
+
+
 def animated_glb(*, clips=2, morph=True, node_transform=False):
     """Add a two-bone skin, morph target and node clips to our first-party triangle."""
     original = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field, replace
 
 import bpy
 from mathutils import Matrix, Vector
+from mathutils.bvhtree import BVHTree
 
 from ..core.scene import mesh_correspondence
 
@@ -383,7 +384,7 @@ def _transfer(policy, call, *args):
         ) from None
 
 
-FIT_POLICIES = frozenset({"UV", "RETEXTURE", "RIG"})
+FIT_POLICIES = frozenset({"UV", "RETEXTURE", "RIG", "REMESH", "PARTS"})
 
 
 @dataclass(frozen=True)
@@ -526,7 +527,7 @@ def _verify(src, results, result_to_source, policy, *, scene, tolerance, exact, 
             sources,
         )
     if policy not in FIT_POLICIES:
-        raise MeshApplicationError("Fitted coordinates apply to UV, retexture and rig only")
+        raise MeshApplicationError("Fitted coordinates do not apply to this policy")
     bases, reasons = [], []
     for label, rows in result_to_source.bases:
         try:
@@ -626,6 +627,123 @@ def match_sources(sources, results, result_to_source, policy):
         exact=None,
         sources=offsets,
     )
+
+
+@dataclass(frozen=True)
+class BoundsFit:
+    """A scene-to-source-local mapping for a result that is not the source's own faces.
+
+    `residual` is (worst distance, fraction beyond tolerance), both relative to
+    the source's bounding-box diagonal, for a verified fit; empty for a strict
+    mapping, which is used as given.
+    """
+
+    mapping: object
+    fitted_from: str | None = None
+    residual: tuple = ()
+
+
+def _tree(mesh):
+    co = mesh.co
+    vertices = [(co[index], co[index + 1], co[index + 2]) for index in range(0, len(co), 3)]
+    polygons = [
+        mesh.loop_vertices[start : start + total]
+        for start, total in zip(mesh.polygon_starts, mesh.polygon_totals, strict=True)
+    ]
+    return BVHTree.FromPolygons(vertices, polygons)
+
+
+def _distances(tree, mesh):
+    """Nearest-surface distances of evenly sampled vertices that `mesh` faces use."""
+    co = mesh.co
+    out = []
+    for vertex in mesh_correspondence.evenly(sorted(set(mesh.loop_vertices))):
+        hit = tree.find_nearest(Vector(co[3 * vertex : 3 * vertex + 3]))
+        out.append(hit[3] if hit[0] is not None else math.inf)
+    return out
+
+
+def _scene_bounds(pieces, results):
+    """Axis-aligned scene-space bounds of result meshes, from their local boxes."""
+    points = []
+    for piece, obj in zip(pieces, results, strict=True):
+        co = piece.co
+        if not len(co):
+            continue
+        low = [min(co[axis::3]) for axis in range(3)]
+        high = [max(co[axis::3]) for axis in range(3)]
+        for corner in range(8):
+            local = [high[axis] if corner >> axis & 1 else low[axis] for axis in range(3)]
+            points.append(obj.matrix_world @ Vector(local))
+    return (
+        [min(point[axis] for point in points) for axis in range(3)],
+        [max(point[axis] for point in points) for axis in range(3)],
+    )
+
+
+def fit_bounds(source, results, result_to_source, policy):
+    """Place REMESH or copied PARTS results, verifying a fit by surface distance.
+
+    A strict mapping is returned unchanged. For a `FitRequest`, each base gets
+    one uniform scale and offset from the axis-aligned bounds, never a rotation,
+    and is kept only if sampled vertices of the source and the fitted result lie
+    near each other's surface both ways (`mesh_correspondence.surface_residual`).
+    Two verified bases must place the result alike; otherwise this fails closed.
+    """
+    if not isinstance(result_to_source, FitRequest):
+        return BoundsFit(result_to_source)
+    if policy not in FIT_POLICIES:
+        raise MeshApplicationError("Fitted coordinates do not apply to this policy")
+    if sum(_components(obj.data) for obj in results) > MAX_COMPONENTS:
+        raise MeshApplicationError("Result meshes exceed the synchronous component limit")
+    src = _arrays(source.data)
+    size = mesh_correspondence.diagonal(src)
+    source_tree = _tree(src)
+    pieces = [_arrays(obj.data) for obj in results]
+    verified, reasons = [], []
+    for label, rows in result_to_source.bases:
+        base = _matrix(rows)
+        parts = [
+            replace(
+                piece,
+                co=mesh_correspondence.transformed(
+                    piece.co, tuple(tuple(row) for row in base @ obj.matrix_world)
+                ),
+            )
+            for piece, obj in zip(pieces, results, strict=True)
+        ]
+        result, _ = mesh_correspondence.concatenate(parts)
+        try:
+            scale, offset = mesh_correspondence.similarity_fit(src, result)
+            result = replace(result, co=mesh_correspondence.scaled(result.co, scale, offset))
+            residual = mesh_correspondence.surface_residual(
+                _distances(source_tree, result), _distances(_tree(result), src), size
+            )
+        except mesh_correspondence.CorrespondenceError as exc:
+            reasons.append(f"{label}: {exc}")
+            continue
+        mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
+        verified.append(BoundsFit(mapping, label, residual))
+    if not verified:
+        raise MeshApplicationError(
+            f"{policy} result does not match the source surface after fitting "
+            f"({'; '.join(reasons)})"
+        )
+    first = verified[0]
+    if len(verified) > 1:
+        # Two verified bases must place every result point within the tolerance.
+        low, high = _scene_bounds(pieces, results)
+        tolerance = mesh_correspondence.SURFACE_TOLERANCE * size
+        rows = [tuple(tuple(row) for row in fit.mapping) for fit in verified]
+        if any(
+            mesh_correspondence.mapping_gap(rows[0], other, low, high) > tolerance
+            for other in rows[1:]
+        ):
+            raise MeshApplicationError(
+                f"{policy} result fits the source in several ways; choose scene or "
+                "object local coordinates"
+            )
+    return first
 
 
 def _corner_values(surface, layers, width, count, policy, label):

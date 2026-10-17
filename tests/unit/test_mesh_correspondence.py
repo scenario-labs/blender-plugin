@@ -331,3 +331,68 @@ def test_same_winding_coincident_faces_stay_ambiguous():
     source = arrays(CARD, [(0, 1, 2, 3), (4, 5, 6, 7)])
     with pytest.raises(mc.CorrespondenceError, match="2 faces on ambiguous coincident"):
         run(CARD, [(0, 1, 2, 3), (4, 5, 6, 7)], source=source)
+
+
+def test_owners_assign_each_source_face_to_the_part_covering_it():
+    source = arrays(SOURCE_POSITIONS, SOURCE_FACES)
+    # Part 0 is the pentagon, triangulated; part 1 holds both quads.
+    first = compact(SOURCE_POSITIONS, triangulated([SOURCE_FACES[2]]))
+    second = compact(SOURCE_POSITIONS, triangulated(SOURCE_FACES[:2]))
+    result, offsets = mc.concatenate([arrays(*first), arrays(*second)])
+    found = mc.match(source, result, mc.position_tolerance(source.co))
+    assert list(mc.owners(source, found.polygons, offsets)) == [1, 1, 0]
+
+
+def test_owners_refuse_a_source_face_split_between_parts_and_loose_source_geometry():
+    source = arrays(SOURCE_POSITIONS, SOURCE_FACES)
+    # The first quad's two triangles land in different parts.
+    triangles = triangulated(SOURCE_FACES)
+    first = compact(SOURCE_POSITIONS, triangles[:1])
+    second = compact(SOURCE_POSITIONS, triangles[1:])
+    result, offsets = mc.concatenate([arrays(*first), arrays(*second)])
+    found = mc.match(source, result, mc.position_tolerance(source.co))
+    with pytest.raises(mc.CorrespondenceError, match="splits 1 source face between parts"):
+        mc.owners(source, found.polygons, offsets)
+    loose = arrays([*SOURCE_POSITIONS, (9, 9, 9)], SOURCE_FACES)
+    whole, single = mc.concatenate([arrays(SOURCE_POSITIONS, SOURCE_FACES)])
+    found = mc.match(loose, whole, mc.position_tolerance(loose.co))
+    with pytest.raises(mc.CorrespondenceError, match="1 loose vertex or edge that no part"):
+        mc.owners(loose, found.polygons, single)
+
+
+def test_evenly_bounds_samples_and_keeps_small_sequences():
+    assert mc.evenly(range(5), limit=10) == (0, 1, 2, 3, 4)
+    picked = mc.evenly(range(1000), limit=10)
+    assert picked == (0, 100, 200, 300, 400, 500, 600, 700, 800, 900)
+
+
+def test_surface_residual_accepts_close_surfaces_and_names_the_failing_side():
+    size = 10.0
+    assert mc.surface_residual([0.0, 0.05], [0.1], size) == pytest.approx((0.01, 0.0))
+    # 5% of samples beyond 2% is allowed; more is not.
+    near = [0.0] * 95 + [0.3] * 5
+    assert mc.surface_residual(near, [0.0], size) == pytest.approx((0.03, 0.05))
+    with pytest.raises(mc.CorrespondenceError, match="6.0% of sampled result vertices"):
+        mc.surface_residual([0.0] * 94 + [0.3] * 6, [0.0], size)
+    with pytest.raises(mc.CorrespondenceError, match="source vertices lie more than 10%"):
+        mc.surface_residual([0.0], [0.0] * 999 + [1.5], size)
+    with pytest.raises(mc.CorrespondenceError, match="more than 10%"):
+        mc.surface_residual([math.inf], [0.0], size)
+    with pytest.raises(mc.CorrespondenceError, match="no surface vertices"):
+        mc.surface_residual([], [0.0], size)
+    with pytest.raises(mc.CorrespondenceError, match="no extent"):
+        mc.surface_residual([0.0], [0.0], 0.0)
+
+
+def test_mapping_gap_measures_affine_differences_at_box_corners():
+    identity = ((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))
+    moved = ((1, 0, 0, 0.5), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))
+    turned = ((0, -1, 0, 0), (1, 0, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1))
+    assert mc.mapping_gap(identity, identity, (0, 0, 0), (1, 1, 1)) == 0
+    assert mc.mapping_gap(identity, moved, (0, 0, 0), (1, 1, 1)) == pytest.approx(0.5)
+    assert mc.mapping_gap(identity, turned, (-1, -1, 0), (1, 1, 0)) == pytest.approx(2.0)
+
+
+def test_diagonal_measures_only_vertices_faces_use():
+    source = arrays([*SOURCE_POSITIONS, (90, 90, 90)], SOURCE_FACES)
+    assert mc.diagonal(source) == pytest.approx(math.hypot(5.5, 2))

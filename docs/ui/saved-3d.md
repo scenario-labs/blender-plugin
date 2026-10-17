@@ -93,24 +93,26 @@ Retexture task.** (with the job's task), **This mesh has no rig, so the Animate
 result starts on Attach rig.** (an Animate job and an unskinned mesh), **This
 mesh already has a rig, so the edit starts on Attach rig.** (a skinned source)
 or **Default edit is not from this job's task; check it.** Invoke also starts
-the coordinates from the approval: **Fit and verify** for UV, textures and rig,
-else scene coordinates. Explain geometry/UV/material replacement, the
-same-surface UV/retexture/rig requirement, whether the chosen coordinates fit
-(uniform scale and offset, never rotation, stopping on any mismatch), preserved
-object context and the dependence of undo on Blender settings. Defaults keep an
-original copy. Explain that history changes affect the scene only, not saved
-jobs or spending. After confirmation, the temporary message acknowledges
-approval rather than describing verification that may already have finished.
+the coordinates from the approval: **Fit and verify**, except scene coordinates
+for **Apply animation** and for a geometry replacement that is not from the
+job's task. Explain geometry/UV/material replacement and that several meshes are
+joined for it, the same-surface UV/retexture/rig requirement, whether the chosen
+coordinates fit (uniform scale and offset, never rotation, stopping on any
+mismatch), preserved object context and the dependence of undo on Blender
+settings. Defaults keep an original copy. Explain that history changes affect
+the scene only, not saved jobs or spending. After confirmation, the temporary
+message acknowledges approval rather than describing verification that may
+already have finished.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
-approval instead of selecting a new target. Choosing **Replace active UVs**,
-**Replace textures** or **Attach rig** selects **Fit and verify** in a property
-update; choosing another policy returns to scene (or, when required,
-object-local) coordinates. The new placement stays visible and editable before
-confirmation. Physical desktop evidence of the default-edit line, the alternate
-and format labels and the fitted coordinates is pending. A stale target or scene
-requires cancellation and fresh review. `draw()` only reads the prepared labels
-and operator properties. Completed-result reviews retain the reuse notice.
+approval instead of selecting a new target. Choosing any policy but **Apply
+animation** selects **Fit and verify** in a property update; choosing **Apply
+animation** returns to scene (or, when required, object-local) coordinates. The
+new placement stays visible and editable before confirmation. Physical desktop
+evidence of the default-edit line, the alternate and format labels and the
+fitted coordinates is pending. A stale target or scene requires cancellation and
+fresh review. `draw()` only reads the prepared labels and operator properties.
+Completed-result reviews retain the reuse notice.
 
 Mirrored or zero-scale source transforms cannot use scene-coordinate mapping.
 The native dialog opens with **Object local coordinates** and a visible
@@ -249,9 +251,12 @@ keyboard input worked after Redo.
 The saved-mesh review offers **Replace with parts** as an explicit policy. Its
 read-only explanation identifies the source, empty mesh parent, named children,
 2-to-128 part limit, unchanged source context and Keep original behavior. It
-states that every mesh in the chosen result is treated as a part. It does not
-infer variants or automatically fit the result. The shared UI/MCP command
-applies the [parts contract](../MESH_APPLICATION.md#apply-static-parts).
+states that every mesh in the chosen result is treated as a part, and, since
+which applies is known only after import, that parts made of this surface split
+it and keep its UVs and materials while other parts, such as remeshed ones, are
+copied from the result. It does not infer variants; **Fit and verify** is the
+default placement. The shared UI/MCP command applies the
+[parts contract](../MESH_APPLICATION.md#apply-static-parts).
 
 Native clicks and keyboard input selected the policy, cancelled without mutation,
 then confirmed application to the captured source while another mesh remained
@@ -267,9 +272,10 @@ remained usable.
 
 ![Parts approval names the target and explains grouping](../images/saved-mesh-parts-approval.png)
 
-Confirming single-mesh replacement with a two-mesh fixture failed without
-changing either source or selection. **Job needs review** opened the full message
-identifying the saved GLB, source and edit policy. Escape closed it and
+In an earlier pass, when geometry replacement still refused several meshes,
+confirming it with a two-mesh fixture failed without changing either source or
+selection; such meshes are now joined. **Job needs review** opened the full
+message identifying the saved GLB, source and edit policy. Escape closed it and
 front-view keyboard input worked in the viewport, with no mock submission,
 request, download or network attempt.
 

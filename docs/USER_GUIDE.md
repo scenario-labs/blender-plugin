@@ -752,12 +752,15 @@ this job's task, pick it yourself. GLB, glTF, FBX and OBJ results can be
 applied: a main result in another format shows it, as in **Apply mesh edit: FBX
 (N)**, and a job's other results show as **Apply alternate mesh edit: OBJ (N)**.
 
-- **Replace geometry**: geometry, UVs and materials.
+- **Replace geometry**: geometry, UVs and materials. A result that comes back in
+  several pieces is joined into one mesh.
 - **Replace active UVs** or **Replace textures**: only when the result is the
   same surface as your mesh. Triangulated, split or reordered results are fine;
   changed shapes are refused.
 - **Replace with parts**: replaces the mesh with the result's named parts, under
-  an empty parent.
+  an empty parent. When the parts are cut from your mesh's own surface, your
+  mesh is split along them and every part keeps your UVs and materials;
+  otherwise the returned parts are used.
 - **Attach rig**: adds the returned armature and weights to your mesh, when its
   skin is the same surface. If the mesh already has a rig, its weights are
   replaced and the old rig is left as it was; **Keep original** keeps a copy
@@ -772,9 +775,12 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   doesn't change.
 
 Choose **Scene coordinates** or **Object local coordinates** for the result's
-positions. For UVs, textures and rigs, **Fit and verify** (their default) also
-accepts a result that the service resized or moved, but only when it then lines
-up with your mesh everywhere. If a result doesn't match, the job says why and
+positions. **Fit and verify**, the default for every edit but **Apply
+animation**, also accepts a result that the service resized or moved, but only
+when it then lines up with your mesh: exactly for UVs, textures, rigs and parts
+cut from your mesh, and within a small margin for new geometry and other parts.
+When the dialog says the edit is not from this job's task, **Replace geometry**
+starts on **Scene coordinates**. If a result doesn't match, the job says why and
 your mesh is unchanged. **Keep original** (on by default) leaves an unselected
 copy. With Global Undo on, Undo and Redo restore the scene before and after the
 edit, but don't refund it. If the outcome is uncertain, inspect it rather than

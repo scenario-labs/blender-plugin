@@ -399,6 +399,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `screenshot_viewport` | Capture the largest visible 3D viewport as a PNG image, including its UI overlays. | `max_size`: integer | read-only annotation; GUI required |
 | `camera_path` | Build an animated scene camera from a preset, description or explicit waypoints for Render Video. | `preset`: string<br>`duration`: number; seconds<br>`focal`: number; mm<br>`aim_at_subject`: boolean<br>`description`: string; e.g. 'slow orbit, 8 s, 35mm'<br>`waypoints`: array | - |
 | `render_still` | Capture a quick OpenGL camera or viewport still as a PNG at the requested size. | `source`: string (['CAMERA', 'VIEWPORT'])<br>`width`: integer<br>`height`: integer | read-only annotation; GUI required |
+| `capture_views` | Render several views of the scene offscreen onto one labelled contact sheet, to check a model, a placement or a camera move in one image. | `mode`: string (['angles', 'frames'])<br>`angles`: array<br>`objects`: array<br>`frames`: array<br>`frame_count`: integer<br>`max_size`: integer | read-only annotation |
 | `blender_api_help` | Inspect Blender's running Python API before writing a script. | `path`*: string; e.g. bpy.ops.mesh.primitive_cube_add, bpy.types.Object, bpy.data.objects | read-only annotation |
 | `datablocks_summary` | Summarize the datablocks in the open Blender file. | none | read-only annotation |
 
@@ -682,7 +683,7 @@ behavior interchangeable. Remote names follow the
 | Saved result previews | `inspect_result_previews(context_id, request_id, expected_revision, asset_id)`, read-only states, still metadata and waveform envelopes | `asset_get` and `asset_display` for Scenario's preview images; local stills and envelopes have no platform equivalent |
 | Inspect scene | `scene_summary`, `object_detail`, `datablocks_summary`, `blender_api_help` | Local only |
 | Change scene | `select_objects`, `set_frame`, `camera_path`, `execute_python` | Local only |
-| Capture scene | `screenshot_viewport`, `render_still` | Local only |
+| Capture scene | `screenshot_viewport`, `render_still`, `capture_views` | Local only |
 | Workflow discovery | `list_workflows`, `workflow_schema` | `workflows_list`, `workflow_get` |
 | Asset library metadata | `list_assets`, `search_assets` | SDK `assets.list` and `search.asset_search`; no hosted tool-name equivalence asserted here |
 | Collections | `list_collections(page_size, pagination_token)` | `collections_list` |
@@ -743,6 +744,8 @@ No credentials, service requests or registry writes are needed for cold reads.
 - **Allow Online Access is off:** enable it in Blender's System preferences before
   starting the server; this permission also allows Scenario network operations.
 - **Capture fails in background mode:** open a GUI session with a 3D viewport.
+  `capture_views` needs no viewport, only a GPU context for Workbench, which some
+  background sessions lack.
 - **Catalog is still loading:** retry after loading completes and inspect the
   extension's status for credential or service errors. This is separate from the
   local MCP bearer token.

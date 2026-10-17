@@ -4,6 +4,8 @@
 
 import base64
 import contextlib
+import json
+import math
 import os
 import tempfile
 
@@ -303,6 +305,317 @@ def render_still(args):
             height=height,
         )
         return _png_content(path)
+
+
+# capture_views: several views rendered offscreen with Workbench onto one labelled sheet.
+CAPTURE_SIZE, CAPTURE_MIN_SIZE, CAPTURE_MAX_SIZE = 1280, 256, 2048
+CAPTURE_MAX_FRAMES, CAPTURE_FRAME_COUNT = 12, 4
+# Direction from the framed target to the camera, tile label, orthographic.
+CAPTURE_ANGLES = {
+    "front": ((0.0, -1.0, 0.0), "FRONT", True),
+    "back": ((0.0, 1.0, 0.0), "BACK", True),
+    "left": ((-1.0, 0.0, 0.0), "LEFT", True),
+    "right": ((1.0, 0.0, 0.0), "RIGHT", True),
+    "top": ((0.0, 0.0, 1.0), "TOP", True),
+    "three_quarter": ((1.0, -1.0, 0.8), "3/4", False),
+}
+CAPTURE_DEFAULT_ANGLES = ("front", "right", "top", "three_quarter")
+# Object types whose bounding box frames what Workbench draws.
+_CAPTURE_BOUNDED = {
+    "MESH",
+    "CURVE",
+    "SURFACE",
+    "META",
+    "FONT",
+    "CURVES",
+    "POINTCLOUD",
+    "VOLUME",
+    "GREASEPENCIL",
+}
+_CAPTURE_FOV = 0.698  # 40 degrees for the perspective three-quarter view
+
+
+def _capture_request(args):
+    """Validate every argument before the scene is touched."""
+    scene = bpy.context.scene
+    mode = args.get("mode", "angles")
+    if mode not in ("angles", "frames"):
+        raise ValueError("mode must be angles or frames")
+    max_size = args.get("max_size", CAPTURE_SIZE)
+    if type(max_size) is not int or not CAPTURE_MIN_SIZE <= max_size <= CAPTURE_MAX_SIZE:
+        raise ValueError(
+            f"max_size must be an integer from {CAPTURE_MIN_SIZE} to {CAPTURE_MAX_SIZE} pixels"
+        )
+    if mode == "angles":
+        if args.get("frames") is not None or args.get("frame_count") is not None:
+            raise ValueError("frames and frame_count apply to mode frames only")
+        angles = _text_list(args, "angles", tuple(CAPTURE_ANGLES))
+        angles = list(dict.fromkeys(angles if angles is not None else CAPTURE_DEFAULT_ANGLES))
+        if not angles:
+            raise ValueError("angles must name at least one view")
+        return mode, max_size, angles, _capture_targets(args, scene)
+    if args.get("angles") is not None or args.get("objects") is not None:
+        raise ValueError("angles and objects apply to mode angles only")
+    if scene.camera is None:
+        raise ValueError("mode frames renders the scene camera; set one with camera_path first")
+    frames = args.get("frames")
+    if frames is not None:
+        if args.get("frame_count") is not None:
+            raise ValueError("Give frames or frame_count, not both")
+        if (
+            not isinstance(frames, list)
+            or not 1 <= len(frames) <= CAPTURE_MAX_FRAMES
+            or not all(type(frame) is int for frame in frames)
+        ):
+            raise ValueError(f"frames must be an array of 1 to {CAPTURE_MAX_FRAMES} integers")
+        return mode, max_size, list(dict.fromkeys(frames)), None
+    count = args.get("frame_count", CAPTURE_FRAME_COUNT)
+    if type(count) is not int or not 1 <= count <= CAPTURE_MAX_FRAMES:
+        raise ValueError(f"frame_count must be an integer from 1 to {CAPTURE_MAX_FRAMES}")
+    start, end = scene.frame_start, scene.frame_end
+    if count == 1 or end <= start:
+        frames = [start]
+    else:
+        frames = [round(start + (end - start) * i / (count - 1)) for i in range(count)]
+    return mode, max_size, list(dict.fromkeys(frames)), None
+
+
+def _collection_instance(obj):
+    return obj.type == "EMPTY" and obj.instance_type == "COLLECTION" and obj.instance_collection
+
+
+def _frameable(obj):
+    """Something Workbench draws: geometry, a collection instance or an armature."""
+    return obj.type in _CAPTURE_BOUNDED or obj.type == "ARMATURE" or bool(_collection_instance(obj))
+
+
+def _capture_targets(args, scene):
+    names = args.get("objects")
+    if names is not None:
+        if not isinstance(names, list) or not names or not all(isinstance(n, str) for n in names):
+            raise ValueError("objects must be a nonempty array of object names")
+        members = {obj.name: obj for obj in scene.objects}
+        missing = sorted(set(names) - set(members))
+        if missing:
+            raise ValueError(f"Not in this scene: {', '.join(missing)}")
+        return "objects", [members[name] for name in dict.fromkeys(names)]
+    # A selected camera or light, common after camera_path, would frame empty space.
+    selected = [
+        obj for obj in bpy.context.view_layer.objects if obj.select_get() and _frameable(obj)
+    ]
+    if selected:
+        return "selection", selected
+    visible = [
+        obj
+        for obj in scene.objects
+        if (obj.type in _CAPTURE_BOUNDED or _collection_instance(obj)) and not obj.hide_render
+    ]
+    if not visible:
+        raise ValueError("The scene has no renderable object to frame")
+    return "scene", visible
+
+
+def _object_points(obj, matrix, depth=0):
+    """World-space points that bound what obj draws, through nested collection instances."""
+    from mathutils import Matrix, Vector
+
+    collection = _collection_instance(obj)
+    if collection and depth < 8:
+        base = matrix @ Matrix.Translation(-collection.instance_offset)
+        points = [
+            point
+            for child in collection.all_objects
+            for point in _object_points(child, base @ child.matrix_world, depth + 1)
+        ]
+        return points or [matrix.translation.copy()]
+    if obj.type in _CAPTURE_BOUNDED:
+        return [matrix @ Vector(corner) for corner in obj.bound_box]
+    return [matrix.translation.copy()]
+
+
+def _capture_bounds(objects):
+    from mathutils import Vector
+
+    points = [point for obj in objects for point in _object_points(obj, obj.matrix_world)]
+    low = Vector(tuple(min(p[i] for p in points) for i in range(3)))
+    high = Vector(tuple(max(p[i] for p in points) for i in range(3)))
+    center = (low + high) / 2
+    radius = max((p - center).length for p in points)
+    return center, max(radius, 0.05), points
+
+
+class _Saved:
+    """Set attributes for the capture and put every one back, in reverse order, on exit."""
+
+    def __init__(self):
+        self.values = []
+
+    def set(self, owner, name, value):
+        self.values.append((owner, name, getattr(owner, name)))
+        setattr(owner, name, value)
+
+    def restore(self):
+        for owner, name, value in reversed(self.values):
+            try:
+                setattr(owner, name, value)
+            except (AttributeError, TypeError, ValueError):
+                pass
+
+
+def _capture_settings(scene, saved, width, height):
+    render = scene.render
+    for name, value in (
+        ("engine", "BLENDER_WORKBENCH"),
+        ("resolution_x", width),
+        ("resolution_y", height),
+        ("resolution_percentage", 100),
+        # Frames tiles already carry the camera's pixel aspect in their shape.
+        ("pixel_aspect_x", 1.0),
+        ("pixel_aspect_y", 1.0),
+        ("use_compositing", False),
+        ("use_sequencer", False),
+        ("use_border", False),
+        ("use_stamp", False),
+        ("use_multiview", False),
+        ("film_transparent", False),
+    ):
+        saved.set(render, name, value)
+    shading = scene.display.shading
+    saved.set(shading, "light", "STUDIO")
+    saved.set(shading, "color_type", "MATERIAL")
+    saved.set(shading, "show_object_outline", True)  # faces of one shade stay apart
+    saved.set(scene.view_settings, "look", scene.view_settings.look)
+    saved.set(scene.view_settings, "view_transform", "Standard")
+
+
+@contextlib.contextmanager
+def _image_output(render):
+    """Uncompressed Targa tiles; restored like capture.RenderSettings restores its output."""
+    settings = render.image_settings
+    media = getattr(settings, "media_type", "")
+    previous = (media, settings.file_format, settings.color_mode)
+    try:
+        if media:
+            settings.media_type = "IMAGE"
+        settings.file_format = "TARGA_RAW"
+        settings.color_mode = "RGB"
+        yield
+    finally:
+        media, file_format, color_mode = previous
+        if media:
+            settings.media_type = media
+        if media != "VIDEO":
+            settings.file_format = file_format
+        with contextlib.suppress(TypeError):
+            settings.color_mode = color_mode
+
+
+def _render_tile(scene, path):
+    scene.render.filepath = path
+    try:
+        result = bpy.ops.render.render(write_still=True, scene=scene.name)
+    except RuntimeError as error:
+        raise RuntimeError(f"Workbench could not render this view: {error}") from None
+    if "FINISHED" not in result or not os.path.isfile(path):
+        raise RuntimeError(
+            "Workbench rendered no image; capture_views needs a GPU context, which some "
+            "background sessions lack"
+        )
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def capture_views(args):
+    from mathutils import Quaternion, Vector
+
+    from ..core.scene import contact_sheet
+
+    mode, max_size, views, targets = _capture_request(args)
+    scene = bpy.context.scene
+    bpy.context.view_layer.update()  # world matrices of objects moved since the last redraw
+    render = scene.render
+    if mode == "angles":
+        aspect = 1.0
+    else:
+        aspect = (render.resolution_x * render.pixel_aspect_x) / (
+            render.resolution_y * render.pixel_aspect_y
+        )
+    grid = contact_sheet.layout(len(views), max_size, aspect)
+    frame, subframe = scene.frame_current, scene.frame_subframe
+    had_result = bpy.data.images.get("Render Result") is not None
+    saved, tiles, labels, camera, caption = _Saved(), [], [], None, {}
+    with tempfile.TemporaryDirectory(prefix="scenario-mcp-") as directory:
+        try:
+            _capture_settings(scene, saved, grid.tile_width, grid.tile_height)
+            saved.set(render, "filepath", render.filepath)
+            with _image_output(render):
+                if mode == "angles":
+                    source, objects = targets
+                    center, radius, points = _capture_bounds(objects)
+                    data = bpy.data.cameras.new("Scenario capture camera")
+                    camera = bpy.data.objects.new("Scenario capture camera", data)
+                    scene.collection.objects.link(camera)
+                    saved.set(scene, "camera", camera)
+                    for index, name in enumerate(views):
+                        direction, label, ortho = CAPTURE_ANGLES[name]
+                        direction = Vector(direction).normalized()
+                        # Straight down, the identity keeps +X right and +Y up as in Top view.
+                        rotation = (
+                            Quaternion() if name == "top" else (-direction).to_track_quat("-Z", "Y")
+                        )
+                        if ortho:
+                            # Fit the target's extent across this view, not its bounding sphere.
+                            axes = (rotation @ Vector((1, 0, 0)), rotation @ Vector((0, 1, 0)))
+                            extent = max(abs((p - center).dot(a)) for p in points for a in axes)
+                            data.type = "ORTHO"
+                            data.ortho_scale = max(extent * 2.2, radius * 0.2)
+                            distance = radius * 3.0
+                        else:
+                            data.type, data.angle = "PERSP", _CAPTURE_FOV
+                            distance = radius / math.sin(_CAPTURE_FOV / 2) * 1.05
+                        data.clip_start = max(distance - radius * 1.5, radius * 0.001)
+                        data.clip_end = distance + radius * 1.5
+                        camera.location = center + direction * distance
+                        camera.rotation_euler = rotation.to_euler()
+                        tiles.append(_render_tile(scene, os.path.join(directory, f"{index}.tga")))
+                        labels.append(label)
+                    caption = {
+                        "mode": "angles",
+                        "framed": source,
+                        "objects": [obj.name for obj in objects[:SUMMARY_NAME_LIMIT]],
+                        "object_count": len(objects),
+                        "center": _vec(center),
+                        "radius": round(radius, 4),
+                    }
+                else:
+                    for index, number in enumerate(views):
+                        scene.frame_set(number)
+                        tiles.append(_render_tile(scene, os.path.join(directory, f"{index}.tga")))
+                        labels.append(f"FRAME {number}")
+                    caption = {"mode": "frames", "camera": scene.camera.name, "frames": views}
+        finally:
+            saved.restore()
+            if camera is not None:
+                data = camera.data
+                bpy.data.objects.remove(camera, do_unlink=True)
+                bpy.data.cameras.remove(data)
+            if (scene.frame_current, scene.frame_subframe) != (frame, subframe):
+                scene.frame_set(frame, subframe=subframe)
+            result_image = bpy.data.images.get("Render Result")
+            if not had_result and result_image is not None:
+                bpy.data.images.remove(result_image)
+        png = contact_sheet.compose(grid, tiles, labels)
+    caption.update(
+        {
+            "tiles": labels,
+            "layout": f"{grid.columns}x{grid.rows}, reading order",
+            "size": [grid.width, grid.height],
+        }
+    )
+    return [
+        {"type": "image", "data": base64.b64encode(png).decode("ascii"), "mimeType": "image/png"},
+        {"type": "text", "text": json.dumps(caption)},
+    ]
 
 
 def camera_path(args):
@@ -632,6 +945,46 @@ SPECS = (
             }
         ),
         render_still,
+        {"readOnlyHint": True},
+    ),
+    ToolSpec(
+        "capture_views",
+        (
+            "Render several views of the scene offscreen onto one labelled contact sheet, to check a model, a placement or a camera move in one image.\n"
+            "Args:\n"
+            "  - mode: optional string, angles (default) or frames.\n"
+            "  - angles: optional array for mode angles from front, back, left, right, top and three_quarter (default front, right, top, three_quarter); three_quarter is perspective, the others orthographic.\n"
+            "  - objects: optional array of object names to frame in mode angles; default the selected geometry or collection instances, else every renderable object.\n"
+            "  - frames: optional array of 1 to 12 frame numbers for mode frames, rendered through the scene camera.\n"
+            "  - frame_count: optional integer from 1 to 12 for mode frames instead of frames, spread over the frame range (default 4).\n"
+            "  - max_size: optional integer from 256 to 2048, the sheet's longest side in pixels (default 1280).\n"
+            "Returns: one PNG image of the tiles in reading order, each labelled, and a JSON text caption with mode, tiles, layout, size and, for angles, framed (objects, selection or scene), objects, object_count, center and radius, or for frames, camera and frames.\n"
+            'Example: {"angles": ["front", "right", "top", "three_quarter"], "max_size": 1280}.\n'
+            "Renders with Workbench solid shading (material colours, studio light, object outlines) from a temporary camera; the viewport, scene camera, current frame, render settings and saved state are left as they were. Like render_still it may invalidate a pending generation estimate. Prefer screenshot_viewport to see the viewport as the user sees it.\n"
+            "No platform equivalent."
+        ),
+        _schema(
+            {
+                "mode": {"type": "string", "enum": ["angles", "frames"]},
+                "angles": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": list(CAPTURE_ANGLES)},
+                },
+                "objects": {"type": "array", "items": {"type": "string"}},
+                "frames": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "maxItems": CAPTURE_MAX_FRAMES,
+                },
+                "frame_count": {"type": "integer", "minimum": 1, "maximum": CAPTURE_MAX_FRAMES},
+                "max_size": {
+                    "type": "integer",
+                    "minimum": CAPTURE_MIN_SIZE,
+                    "maximum": CAPTURE_MAX_SIZE,
+                },
+            }
+        ),
+        capture_views,
         {"readOnlyHint": True},
     ),
     ToolSpec(

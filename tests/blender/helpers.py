@@ -404,6 +404,156 @@ def skin_to_new_rig(scene, source, *, parent=True):
     return rig
 
 
+def several_sources(scene):
+    """Three meshes for one export: different shapes, transforms, parents and collections.
+
+    A cube with two materials under a rotated, scaled Empty; a quad strip with a
+    pentagon in its own collection; an icosphere parented to the cube. Each has
+    a "Source UV" layer. Returned in export order.
+    """
+    import math
+
+    import bmesh
+
+    def mesh(name, build):
+        data = bpy.data.meshes.new(name)
+        shape = bmesh.new()
+        build(shape)
+        shape.to_mesh(data)
+        shape.free()
+        layer = data.uv_layers.new(name="Source UV")
+        for index, item in enumerate(layer.data):
+            item.uv = (index / 100, 0.5)
+        for suffix in ("A", "B"):
+            data.materials.append(bpy.data.materials.new(f"{name} {suffix}"))
+        for polygon in data.polygons:
+            polygon.material_index = polygon.index % 2
+        data.update()
+        return data
+
+    def strip(shape):
+        row = [shape.verts.new((x, y, 0)) for y in (0, 1) for x in range(4)]
+        for x in range(3):
+            shape.faces.new((row[x], row[x + 1], row[x + 5], row[x + 4]))
+        ring = [
+            shape.verts.new((6 + math.cos(step * math.tau / 5), math.sin(step * math.tau / 5), 0))
+            for step in range(5)
+        ]
+        shape.faces.new(ring)
+
+    parent = bpy.data.objects.new("Several parent", None)
+    scene.collection.objects.link(parent)
+    parent.location, parent.rotation_euler, parent.scale = (40, -25, 12), (0.3, 0.1, 0.7), (2,) * 3
+    cube = bpy.data.objects.new(
+        "Several cube", mesh("Several cube", lambda shape: bmesh.ops.create_cube(shape, size=2))
+    )
+    scene.collection.objects.link(cube)
+    cube.parent = parent
+    cube.location, cube.rotation_euler, cube.scale = (2, 3, 4), (0.2, 0.3, 0.4), (1, 2, 3)
+    collection = bpy.data.collections.new("Several collection")
+    scene.collection.children.link(collection)
+    flat = bpy.data.objects.new("Several strip", mesh("Several strip", strip))
+    collection.objects.link(flat)
+    flat.location, flat.rotation_euler, flat.scale = (-30, 8, -6), (0, 0.8, 0.2), (1, 2, 0.5)
+    sphere = bpy.data.objects.new(
+        "Several sphere",
+        mesh(
+            "Several sphere",
+            lambda shape: bmesh.ops.create_icosphere(shape, subdivisions=1, radius=1.5),
+        ),
+    )
+    scene.collection.objects.link(sphere)
+    sphere.parent = cube
+    sphere.location = (0, 0, 6)
+    bpy.context.view_layer.update()
+    return cube, flat, sphere
+
+
+def several_source_result(scene, sources, path, change, *, merge=False, finish=None, fmt="glb"):
+    """Write edited copies of `sources` as one result file, a GLB by default.
+
+    Each copy keeps its source's world placement without a parent; `change(index,
+    copy)` edits it and may return extra objects to export, such as a rig. Copies
+    are made in reverse order, so the result lists them shuffled. `merge` joins
+    them into one mesh, as a provider may; `finish(objects)` then moves them all.
+    A GLB uses the Edit 3D exporter; `fmt` "obj" or "fbx" uses Blender's own
+    exporter, writing an OBJ's MTL beside it. Returns the main file's bytes.
+    """
+    export = submodule("blender.mesh_export")
+    bpy.context.view_layer.update()
+    copies, extra = [], []
+    for index in reversed(range(len(sources))):
+        source = sources[index]
+        copy = source.copy()
+        copy.data = source.data.copy()
+        copy.name = f"Result {len(sources) - index}"
+        scene.collection.objects.link(copy)
+        copy.parent = None
+        copy.matrix_world = source.matrix_world.copy()
+        extra.extend(change(index, copy) or ())
+        copies.append(copy)
+    bpy.context.view_layer.update()
+    if merge:
+        bpy.context.view_layer.objects.active = copies[0]
+        for copy in copies:
+            copy.select_set(True)
+        with bpy.context.temp_override(
+            active_object=copies[0],
+            object=copies[0],
+            selected_objects=copies,
+            selected_editable_objects=copies,
+        ):
+            bpy.ops.object.join()
+        copies = copies[:1]
+    objects = [*copies, *(obj for obj in dict.fromkeys(extra))]
+    if finish is not None:
+        finish(objects)
+    bpy.context.view_layer.update()
+    if fmt == "glb":
+        export.export_glb(bpy.context, objects, str(path))
+    else:
+        layer = bpy.context.view_layer
+        selected, active = list(bpy.context.selected_objects), layer.objects.active
+        for obj in scene.objects:
+            obj.select_set(obj in objects)
+        layer.objects.active = objects[0]
+        if fmt == "obj":
+            bpy.ops.wm.obj_export(filepath=str(path), export_selected_objects=True)
+        else:
+            bpy.ops.export_scene.fbx(
+                filepath=str(path),
+                use_selection=True,
+                add_leaf_bones=False,
+                path_mode="COPY",
+                embed_textures=True,
+                bake_anim=False,
+            )
+        for obj in scene.objects:
+            obj.select_set(obj in selected)
+        layer.objects.active = active
+    for obj in objects:
+        data, kind = obj.data, obj.type
+        bpy.data.objects.remove(obj)
+        (bpy.data.meshes if kind == "MESH" else bpy.data.armatures).remove(data)
+    bpy.context.view_layer.update()
+    return pathlib.Path(path).read_bytes()
+
+
+def normalize_objects(objects, size=1.0):
+    """Bake world positions into the meshes, then fit them all to `size`, centred at the origin."""
+    from mathutils import Matrix, Vector
+
+    for obj in objects:
+        obj.data.transform(obj.matrix_world)
+        obj.matrix_world = Matrix()
+    points = [vertex.co for obj in objects for vertex in obj.data.vertices]
+    low = Vector([min(point[axis] for point in points) for axis in range(3)])
+    high = Vector([max(point[axis] for point in points) for axis in range(3)])
+    scale = size / max(high - low)
+    for obj in objects:
+        obj.data.transform(Matrix.Scale(scale, 4) @ Matrix.Translation(-(low + high) / 2))
+
+
 # A three-bone chain: (name, parent, head, tail) in armature units, with an
 # optional roll in radians as a fifth item.
 CHAIN = (

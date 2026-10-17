@@ -470,6 +470,35 @@ def test_mesh_edits_name_fbx_obj_and_gltf_units_and_skip_splats_and_ply():
     ]
 
 
+def test_captured_source_controls_count_several_exported_objects():
+    assets = (("mesh", "model/gltf-binary"), ("variant", "model/gltf-binary"))
+    actions = ("apply_mesh", "apply_mesh_source")
+    labels = [
+        item.label
+        for item in sja.describe(
+            view(actions, "ready", assets, mesh_source_objects=3), CONTEXT, TYPES
+        )
+    ]
+    # The generic edit still reviews one active mesh.
+    assert labels[:4] == [
+        "Apply mesh edit (1)",
+        "Apply alternate mesh edit: GLB (2)",
+        "Apply to 3 captured sources (1)",
+        "Apply alternate to 3 captured sources: GLB (2)",
+    ]
+    single = view(actions, "ready", assets, mesh_source_objects=1)
+    assert [item.label for item in sja.describe(single, CONTEXT, TYPES)][2] == (
+        "Apply to captured source (1)"
+    )
+    # Another primary format is named after the count, as for one source.
+    units = (("mesh", "fbx", True), ("variant", "obj", False))
+    other = view(("apply_mesh_source",), "ready", assets, import_units=units, mesh_source_objects=3)
+    assert [item.label for item in sja.describe(other, CONTEXT, TYPES)][:2] == [
+        "Apply to 3 captured sources: FBX (1)",
+        "Apply alternate to 3 captured sources: OBJ (2)",
+    ]
+
+
 def test_model_imports_follow_the_projected_units_in_classified_order():
     assets = (
         ("texture", "image/png"),

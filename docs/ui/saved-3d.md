@@ -182,6 +182,20 @@ This covers local source selection, cancellation and confirmation, not provider
 alignment. See
 [the source contract](../MESH_APPLICATION.md#applying-to-the-captured-mesh-source).
 
+For an input exported from several objects, the action reads **Apply to N
+captured sources (M)**, with the format after the count as for one source, for
+example **Apply to N captured sources: FBX (M)** or **Apply alternate to N
+captured sources: OBJ (M)**. The review's **Meshes (N):** line names the first
+four objects and how many more, and an extra line says every captured object is
+edited, or none. A job with no Edit 3D task starts on **Replace active UVs**
+with **Fit and verify**. Choosing another replacement policy or **Object local
+coordinates** shows **Several objects: choose Replace active UVs, Replace
+textures or Attach rig** or **Several objects use scene coordinates or Fit and
+verify** from `check()`, and confirmation cannot start. A job whose task
+replaces geometry is refused on invoke with the command's reason. Desktop
+evidence of this review is pending; see [several captured
+objects](../MESH_APPLICATION.md#several-captured-objects).
+
 
 ## Retexture review
 

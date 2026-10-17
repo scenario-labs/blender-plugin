@@ -1605,7 +1605,11 @@ source mesh. The target snapshot must match the resolved scene/object origin and
 its geometry/context must still match before claiming application. A caller
 captures this source before asynchronous work and binds its policy, mapping and
 Keep original choice to the approved operation; the command does not derive
-provider semantics or infer targets from selection.
+provider semantics or infer targets from selection. A tuple of targets, from one
+export of [several captured
+objects](MESH_APPLICATION.md#several-captured-objects), binds a scene
+destination instead and applies UV, RETEXTURE or RIG to all of them under one
+claim.
 
 The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
 rehashes every member into a private snapshot before the claim (a rejection
@@ -1700,12 +1704,13 @@ is unchanged from the uploaded snapshot.
 
 ## Live captured-source application
 
-`mesh_provenance.export_with_source` retains an eligible static source guard in
-the selected `JobSession`. `mesh_source_target` resolves the exact stored input
-binding against that live export and validates the frozen object before the
-shared UI/MCP mesh approval. It ignores active selection and rejects absent,
-changed or retired authority. File/scene/object identities must still match;
-undo/load/credential retirement clears guards rather than reconstructing them.
+`mesh_provenance.export_with_source` retains an eligible source guard in the
+selected `JobSession`, one per exported object when every object is eligible.
+`mesh_source_targets` resolves the exact stored input binding against that live
+export and validates every frozen object before the shared UI/MCP mesh approval.
+It ignores active selection and rejects absent, changed or retired authority.
+File/scene/object identities must still match; undo/load/credential retirement
+clears guards rather than reconstructing them.
 
 The approval reuses the same post-verification destination checks, durable claim,
 Keep original and persistence-only recovery as generic saved-mesh application.

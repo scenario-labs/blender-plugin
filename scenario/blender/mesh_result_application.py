@@ -45,11 +45,15 @@ class MeshEditApplication:
     # ANIMATE's largest rest correction in degrees; None for the other policies.
     rest_correction_deg: float | None = None
     # The verified scene-to-source-local mapping, and the FIT base it came from;
-    # empty for ANIMATE, which uses no mapping.
+    # empty for ANIMATE, which uses no mapping. For several sources the mapping
+    # takes result scene coordinates to scene coordinates.
     mapping: tuple = ()
     fitted_from: str | None = None
     # RIG or ANIMATE clips keyed at an FBX file's other frame rate; never retimed.
     frame_rate_mismatch: bool = False
+    # Every edited source and its Keep original copy (or None), in capture order.
+    sources: tuple = field(default=(), repr=False)
+    originals: tuple = field(default=(), repr=False)
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
@@ -65,24 +69,66 @@ def applicable(unit):
     return unit.kind is UnitKind.MESH and unit.format in FORMATS
 
 
+# Several captured sources keep their geometry: one surface, one mapping, one rig.
+SEVERAL_SOURCE_POLICIES = frozenset({"UV", "RETEXTURE", "RIG"})
+
+
+def targets(target):
+    """The captured targets of a request: one `MeshTarget`, or a tuple of several."""
+    return target if isinstance(target, tuple) else (target,)
+
+
+def _validate_sources(sources, policy, result_to_source):
+    """Several captured sources: one scene, a surface policy and scene coordinates."""
+    if not 2 <= len(sources) <= 64 or len({item.obj for item in sources}) != len(sources):
+        raise MeshResultApplicationError("Choose between two and 64 distinct captured sources")
+    if len({item.scene for item in sources}) != 1:
+        raise MeshResultApplicationError("Use captured sources in one scene")
+    if policy not in SEVERAL_SOURCE_POLICIES:
+        raise MeshResultApplicationError(
+            "Several captured objects accept only UV, RETEXTURE or RIG; replacing geometry, "
+            "parts or animation needs one object"
+        )
+    bases = (
+        result_to_source.bases
+        if isinstance(result_to_source, mesh_application.FitRequest)
+        else (("WORLD", result_to_source),)
+    )
+    # Every source is placed by its own transform: only scene coordinates are shared.
+    if [label for label, _ in bases] != ["WORLD"] or any(
+        mesh_application._matrix(rows) != Matrix.Identity(4) for _, rows in bases
+    ):
+        raise MeshResultApplicationError(
+            "Several captured objects use scene coordinates or Fit and verify"
+        )
+
+
 def validate_request(target, *, policy, result_to_source, keep_original):
-    """Validate the captured source and explicit policy without decoding files."""
-    mesh_application.validate_target(target)
+    """Validate the captured source(s) and explicit policy without decoding files.
+
+    A tuple of targets is several captured sources edited together: UV,
+    RETEXTURE or RIG, with result scene coordinates (identity) or its FIT.
+    """
+    sources = targets(target)
+    for item in sources:
+        mesh_application.validate_target(item)
     if policy not in POLICIES or type(keep_original) is not bool:
         raise MeshResultApplicationError(
             "Choose REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE and an explicit Keep original value"
         )
-    if target.skin is not None and policy not in _RIGGED:
+    if isinstance(target, tuple):
+        _validate_sources(sources, policy, result_to_source)
+    if any(item.skin is not None for item in sources) and policy not in _RIGGED:
         # Static policies would silently drop the source's skin and rig binding.
         raise MeshResultApplicationError(
             "This source is skinned to an armature; choose RIG to replace its skin "
             "or ANIMATE to apply returned clips to its rig"
         )
-    if target.skin is None and policy == "ANIMATE":
+    if sources[0].skin is None and policy == "ANIMATE":
         raise MeshResultApplicationError(
             "ANIMATE needs a mesh skinned to an armature; choose RIG to attach the returned rig"
         )
-    if policy == "PARTS" and (not target.mesh.vertices or not target.mesh.polygons):
+    if policy == "PARTS" and (not sources[0].mesh.vertices or not sources[0].mesh.polygons):
         raise MeshResultApplicationError(
             "Choose a source with surface geometry, not a parts anchor"
         )
@@ -191,18 +237,26 @@ def _publish_parts(target, parts):
     bpy.context.view_layer.update()
 
 
+def _validate_targets(target):
+    for item in targets(target):
+        mesh_application.validate_target(item)
+
+
 def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_original):
     """Use an explicit imported-scene-to-source-local mapping or an approved verified fit.
 
     `snapshot` comes from `prepare_saved_mesh` and is consumed here. UV,
     RETEXTURE and RIG treat every returned result mesh as one surface; display
     helpers (`_helpers`) are never result meshes. Alignment is never guessed: a
-    `FitRequest` is used only when the full correspondence verifies it.
+    `FitRequest` is used only when the full correspondence verifies it. A tuple
+    of targets applies UV, RETEXTURE or RIG to all of them at once, or to none.
     """
     mapping = validate_request(
         target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
     )
     model_application.use_snapshot(snapshot)
+    several = isinstance(target, tuple)
+    first = targets(target)[0]
     undo = _undo_enabled()
     if undo:
         # Capture the latest user state before importing temporary datablocks.
@@ -223,7 +277,7 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
             objects,
         ):
             mismatch = policy in _RIGGED and model_application.frame_rate_mismatch(
-                snapshot, staging, before, target.scene
+                snapshot, staging, before, first.scene
             )
             # Display helpers are not results; they go with the other imported data.
             helpers = _helpers(objects)
@@ -233,7 +287,7 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
             parts = clips = ()
             rig = correction = None
             if policy == "PARTS":
-                parts, primary = _stage_parts(target, meshes, mapping)
+                parts, primary = _stage_parts(first, meshes, mapping)
                 objects = (*objects, primary)
                 local_mapping = Matrix.Identity(4)
             elif policy != "ANIMATE":
@@ -245,11 +299,11 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 if policy == "REMESH":
                     local_mapping = mapping @ primary.matrix_world
                 for obj in meshes:
-                    target.scene.collection.objects.link(obj)
+                    first.scene.collection.objects.link(obj)
             imported = {
                 name: set(getattr(bpy.data, name)) - previous for name, previous in before.items()
             }
-            mesh_application.validate_target(target)
+            _validate_targets(target)
             if policy == "ANIMATE":
                 # Clips are pose data on the source's own rig: no mapping and no
                 # returned object is kept.
@@ -265,6 +319,15 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 )
                 rig = receipt.rig
                 objects = tuple(obj for obj in objects if obj not in receipt.objects)
+            elif policy in {"UV", "RETEXTURE"} and several:
+                receipt = mesh_application.apply_surfaces(
+                    first.scene,
+                    tuple(source.obj for source in target),
+                    tuple(meshes),
+                    policy=policy,
+                    result_to_source=mapping,
+                    keep_original=keep_original,
+                )
             elif policy in {"UV", "RETEXTURE"}:
                 receipt = mesh_application.apply_surface(
                     target.scene,
@@ -285,8 +348,11 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 )
             if parts:
                 _publish_parts(target, parts)
-            if receipt.original is not None:
-                receipt.original.select_set(False)
+            # ANIMATE makes no copy; every other receipt lists one entry per source.
+            originals = receipt.originals or (None,) * len(targets(target))
+            for original in originals:
+                if original is not None:
+                    original.select_set(False)
             _release_import(imported, objects, staging)
             receipt.accept()
             if undo:
@@ -301,7 +367,7 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
             surface = getattr(receipt, "surface", None)
             used = () if policy == "ANIMATE" else (surface.mapping if surface else mapping)
             return MeshEditApplication(
-                target.obj,
+                first.obj,
                 receipt.original,
                 policy,
                 undo,
@@ -312,6 +378,8 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 tuple(tuple(row) for row in used),
                 surface.fitted_from if surface else None,
                 mismatch,
+                tuple(source.obj for source in targets(target)),
+                originals,
             )
     except Exception as error:
         if receipt is not None:
@@ -319,9 +387,9 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 receipt.rollback()
             except Exception:
                 raise RuntimeError("Mesh replacement is uncertain; inspect the source") from None
-        # Never remove new data while the source may still point at it.
+        # Never remove new data while a source may still point at it.
         try:
-            mesh_application.validate_target(target)
+            _validate_targets(target)
         except Exception:
             raise RuntimeError("Mesh source changed during application; inspect it") from None
         model_application._remove_new_data(before, model_application._PACKAGE_DATA)

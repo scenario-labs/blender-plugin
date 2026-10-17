@@ -459,31 +459,49 @@ class JobSession:
         return self._identity(self._scenes, scene)
 
     def retain_mesh_source(self, origin, source, target):
-        """Retain a bounded live export guard; saved metadata cannot recreate it."""
+        """Retain a bounded live export guard; saved metadata cannot recreate it.
+
+        `target` is one `MeshTarget`, or a tuple of them in export order for a
+        several-object export, whose origin is the scene's rather than an object's.
+        """
+        from dataclasses import replace
+
         from .mesh_application import validate_target
         from .mesh_export_fingerprint import fingerprints
 
         _main_thread()
-        validate_target(target)
-        if self.capture(target.scene, target.obj) != origin or len(source.objects) != 1:
-            raise OriginUnavailable("The captured mesh context changed during export")
-        item = source.objects[0]
-        # Export provenance and edit guards use distinct fingerprint formats.
-        # Compare like formats while retaining the stricter validated edit guard.
+        targets = target if isinstance(target, tuple) else (target,)
+        for item in targets:
+            validate_target(item)
+        several = isinstance(target, tuple)
         if (
-            item.target_id != origin.target_id
-            or item.geometry_sha256 != fingerprints((target.mesh,))[0].hex()
-            or item.matrix_world != tuple(tuple(row) for row in target.obj.matrix_world)
+            len(source.objects) != len(targets)
+            or several != (len(targets) > 1)
+            or (several and self.capture(targets[0].scene) != origin)
         ):
-            raise OriginUnavailable("The exported mesh does not match its live source")
+            raise OriginUnavailable("The captured mesh context changed during export")
+        hashes = fingerprints(item.mesh for item in targets)
+        for item, exported, digest in zip(targets, source.objects, hashes, strict=True):
+            if self.capture(item.scene, item.obj) != replace(origin, target_id=exported.target_id):
+                raise OriginUnavailable("The captured mesh context changed during export")
+            # Export provenance and edit guards use distinct fingerprint formats.
+            # Compare like formats while retaining the stricter validated edit guard.
+            if exported.geometry_sha256 != digest.hex() or exported.matrix_world != tuple(
+                tuple(row) for row in item.obj.matrix_world
+            ):
+                raise OriginUnavailable("The exported mesh does not match its live source")
         key = (origin, source)
         # Never evict an older export's authority to admit another snapshot.
         # Further uploads remain valid references, without original-source apply.
         if key in self._mesh_sources or len(self._mesh_sources) < 128:
             self._mesh_sources[key] = target
 
-    def mesh_source_target(self, binding):
-        """Resolve only a retained export; current selection and names are irrelevant."""
+    def mesh_source_targets(self, binding):
+        """Resolve only a retained export, every object in export order.
+
+        Current selection and names are irrelevant. Every target must still be
+        unchanged, or the whole retained export is refused.
+        """
         from .mesh_application import validate_target
 
         _main_thread()
@@ -492,19 +510,28 @@ class JobSession:
             raise OriginUnavailable(
                 "The live captured source is unavailable; review another destination"
             )
-        validate_target(target)
-        current = self.capture(target.scene, target.obj)
+        targets = target if isinstance(target, tuple) else (target,)
         original = binding.origin
-        # Unrelated scene changes may advance its revision. The frozen source
-        # guard proves this object unchanged, while file/scene/object IDs must
-        # still belong to this exact session. Undo/load retire that authority.
-        if (current.file_id, current.scene_id, current.target_id) != (
-            original.file_id,
-            original.scene_id,
-            original.target_id,
-        ):
-            raise OriginUnavailable("The captured source context was replaced")
-        return target
+        for item, exported in zip(targets, binding.mesh_source.objects, strict=True):
+            validate_target(item)
+            current = self.capture(item.scene, item.obj)
+            # Unrelated scene changes may advance its revision. The frozen source
+            # guard proves this object unchanged, while file/scene/object IDs must
+            # still belong to this exact session. Undo/load retire that authority.
+            if (current.file_id, current.scene_id, current.target_id) != (
+                original.file_id,
+                original.scene_id,
+                exported.target_id,
+            ):
+                raise OriginUnavailable("The captured source context was replaced")
+        return targets
+
+    def mesh_source_target(self, binding):
+        """Resolve a retained single-object export; see `mesh_source_targets`."""
+        targets = self.mesh_source_targets(binding)
+        if len(targets) != 1:
+            raise OriginUnavailable("The captured source has several objects")
+        return targets[0]
 
     def quote_model(self, identifier, parameters, *, origin):
         return self._quote("model", identifier, parameters, origin)
@@ -1696,6 +1723,9 @@ class JobSession:
         a private snapshot before the claim, so a changed or unsupported result
         raises ModelPreflightError with the saved job and the scene unchanged. The
         claim names every member read, unit key first.
+
+        `target` may be a tuple of captured sources edited together; the claim's
+        destination is then their scene, and the job's mesh source lists them.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1706,7 +1736,11 @@ class JobSession:
         if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
             raise OriginUnavailable("Verify the mesh and approve its captured destination")
         scene, obj = self._resolve(destination)
-        if target.scene != scene or target.obj != obj:
+        # Several captured sources bind their scene; one source binds its object.
+        if isinstance(target, tuple):
+            if obj is not None or any(item.scene != scene for item in target):
+                raise OriginUnavailable("Use the exact captured mesh targets")
+        elif target.scene != scene or target.obj != obj:
             raise OriginUnavailable("Use the exact captured mesh target")
         validate_mesh_request(
             target, policy=policy, result_to_source=result_to_source, keep_original=keep_original

@@ -508,6 +508,7 @@ class AnimationApplication:
     _closed: bool = field(default=False, repr=False)
     # ANIMATE leaves mesh data alone, so there is no Keep original copy.
     original = None
+    originals = ()
 
     def accept(self):
         if self._closed:

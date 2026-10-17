@@ -3145,3 +3145,443 @@ class FbxAnimateTests(unittest.TestCase):
         self.assertEqual((set(bpy.data.objects), set(bpy.data.actions)), (objects, actions))
         self.assertEqual(_skin(self.source, self.mesh), self.skin)
         self.mesh.validate_target(self.target)
+
+
+class SeveralSourcesTests(unittest.TestCase):
+    """One result applied in place to several sources exported together."""
+
+    tearDown = MeshResultTests.tearDown
+    ready_session = MeshResultTests.ready_session
+    verify = MeshResultTests.verify
+
+    def setUp(self):
+        from helpers import several_sources
+
+        MeshResultTests.setUp(self)
+        self.rig_module = submodule("blender.rig_application")
+        self.sources = several_sources(self.scene)
+        self.items = []
+        self.capture()
+
+    def capture(self):
+        self.targets = tuple(self.mesh.capture_target(self.scene, obj) for obj in self.sources)
+        self.geometry = [[tuple(v.co) for v in obj.data.vertices] for obj in self.sources]
+        self.data = [obj.data for obj in self.sources]
+
+    def result(self, change, path=None, **options):
+        from helpers import several_source_result
+
+        path = path or self.path
+        self.body = several_source_result(self.scene, self.sources, path, change, **options)
+        if path != self.path:
+            return
+        self.item = self.storage.StoredResult(
+            self.storage.ResultAsset("mesh", self.path.name, "model/gltf-binary", len(self.body)),
+            self.transfers.DownloadedResult(
+                self.path.name, len(self.body), hashlib.sha256(self.body).hexdigest()
+            ),
+        )
+
+    @staticmethod
+    def islands(expected):
+        """Give each copy's faces their own UV islands, distinct per source."""
+
+        def change(index, copy):
+            layer = copy.data.uv_layers.active
+            for polygon in copy.data.polygons:
+                for corner, loop in enumerate(polygon.loop_indices):
+                    layer.data[loop].uv = (
+                        index + 0.04 * polygon.index + 0.01 * corner,
+                        0.2 + 0.05 * corner,
+                    )
+            expected[index] = _uvs(copy.data, layer)
+
+        return change
+
+    unit = MeshResultTests.unit
+    save = FormatResultTests.save
+
+    def apply(self, **kwargs):
+        """Prepare the snapshot as the session does before its claim, then apply it."""
+        options = dict(policy="UV", result_to_source=Matrix.Identity(4), keep_original=True)
+        options.update(kwargs)
+        snapshot = self.module.prepare_saved_mesh(self.targets, *self.unit(), **options)
+        try:
+            return self.module.apply_saved_mesh(self.targets, snapshot, **options)
+        finally:
+            snapshot.cleanup()
+
+    def fit(self, label="WORLD", matrix=None):
+        rows = tuple(tuple(row) for row in (matrix or Matrix()))
+        return self.mesh.FitRequest(((label, rows),))
+
+    def assert_unchanged(self, before, reason, error=None, **kwargs):
+        with self.assertRaises(error or self.module.MeshResultApplicationError) as raised:
+            self.apply(**kwargs)
+        self.assertIn(reason, str(raised.exception))
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertEqual([obj.data for obj in self.sources], self.data)
+        for target in self.targets:
+            self.mesh.validate_target(target)
+        self.assertTrue(all(not obj.modifiers and not obj.vertex_groups for obj in self.sources))
+        self.assertEqual(self.path.read_bytes(), self.body)
+
+    def assert_geometry_kept(self):
+        for obj, geometry in zip(self.sources, self.geometry, strict=True):
+            self.assertEqual([tuple(v.co) for v in obj.data.vertices], geometry)
+
+    def assert_uvs(self, expected):
+        for index, obj in enumerate(self.sources):
+            actual = _uvs(obj.data, obj.data.uv_layers.active)
+            self.assertEqual(actual.keys(), expected[index].keys())
+            for key, value in expected[index].items():
+                for a, b in zip(actual[key], value, strict=True):
+                    self.assertAlmostEqual(a, b, places=5)
+
+    def assert_applied(self, result, policy):
+        self.assertEqual(result.policy, policy)
+        self.assertEqual(result.sources, self.sources)
+        self.assertEqual(len(result.originals), 3)
+        for obj, original, data in zip(self.sources, result.originals, self.data, strict=True):
+            self.assertIsNot(obj.data, data)
+            self.assertIs(original.data, data)
+            # A second application's copies take Blender's numbered names.
+            self.assertTrue(original.name.startswith(f"{obj.name} Original"), original.name)
+            self.assertEqual(set(original.users_collection), set(obj.users_collection))
+            self.assertFalse(original.select_get())
+        self.assert_geometry_kept()
+
+    def test_uv_applies_to_every_source_from_shuffled_separate_meshes(self):
+        expected = {}
+        self.result(self.islands(expected))
+        materials = [list(obj.data.materials) for obj in self.sources]
+        parents = [obj.parent for obj in self.sources]
+        result = self.apply()
+        self.assert_applied(result, "UV")
+        self.assert_uvs(expected)
+        self.assertEqual([list(obj.data.materials) for obj in self.sources], materials)
+        self.assertEqual([obj.parent for obj in self.sources], parents)
+        self.assertEqual(Matrix(result.mapping), Matrix.Identity(4))
+        self.assertIsNone(result.fitted_from)
+
+    def test_uv_applies_from_one_merged_result_mesh(self):
+        expected = {}
+        self.result(self.islands(expected), merge=True)
+        self.assert_applied(self.apply(keep_original=True), "UV")
+        self.assert_uvs(expected)
+
+    def test_fit_verifies_a_normalized_merged_result(self):
+        from helpers import normalize_objects
+
+        expected = {}
+        self.result(self.islands(expected), merge=True, finish=normalize_objects)
+        self.assert_unchanged(self.model._snapshot(), "differs from the source")
+        result = self.apply(result_to_source=self.fit())
+        self.assertEqual(result.fitted_from, "WORLD")
+        self.assertNotEqual(Matrix(result.mapping), Matrix.Identity(4))
+        self.assert_applied(result, "UV")
+        self.assert_uvs(expected)
+
+    def test_retexture_adopts_materials_and_uvs_per_source(self):
+        expected, faces = {}, {}
+        islands = self.islands(expected)
+
+        def retexture(index, copy):
+            copy.data.materials.clear()
+            for suffix in ("A", "B"):
+                name = f"Result {index} {suffix}"
+                copy.data.materials.append(bpy.data.materials.new(name))
+            for polygon in copy.data.polygons:
+                polygon.material_index = 1 if polygon.index < 2 else 0
+                faces[index, _rounded(polygon.center)] = (
+                    f"Result {index} " + "AB"[polygon.material_index]
+                )
+            islands(index, copy)
+
+        self.result(retexture)
+        names = [data.name for data in self.data]
+        result = self.apply(policy="RETEXTURE", keep_original=False)
+        self.assertEqual(result.originals, (None, None, None))
+        self.assert_geometry_kept()
+        self.assert_uvs(expected)
+        for index, obj in enumerate(self.sources):
+            for polygon in obj.data.polygons:
+                name = obj.data.materials[polygon.material_index].name
+                self.assertTrue(name.startswith(faces[index, _rounded(polygon.center)]), name)
+        # Without Keep original, the unchanged previous meshes are released.
+        self.assertFalse(any(name in bpy.data.meshes for name in names))
+
+    def rig(self, weights):
+        """One returned rig skinning every copy; weights differ per source and vertex."""
+        armature = bpy.data.objects.new("Returned rig", bpy.data.armatures.new("Returned rig"))
+        self.scene.collection.objects.link(armature)
+        with bpy.context.temp_override(active_object=armature, object=armature):
+            bpy.context.view_layer.objects.active = armature
+            bpy.ops.object.mode_set(mode="EDIT")
+            root = armature.data.edit_bones.new("Root")
+            root.head, root.tail = (0, 0, 0), (0, 0, 1)
+            tip = armature.data.edit_bones.new("Tip")
+            tip.head, tip.tail, tip.parent = (0, 0, 1), (0, 0, 2), root
+            bpy.ops.object.mode_set(mode="OBJECT")
+
+        def change(index, copy):
+            # The upload carries no old skin; the provider returns its own.
+            copy.modifiers.clear()
+            copy.vertex_groups.clear()
+            world = copy.matrix_world.copy()
+            copy.parent = armature
+            copy.matrix_world = world
+            groups = [copy.vertex_groups.new(name=name) for name in ("Root", "Tip")]
+            for vertex in copy.data.vertices:
+                share = 0.2 + 0.2 * index + 0.01 * (vertex.index % 5)
+                groups[0].add([vertex.index], 1 - share, "REPLACE")
+                groups[1].add([vertex.index], share, "REPLACE")
+                weights[index, _rounded(vertex.co)] = {"Root": 1 - share, "Tip": share}
+            copy.modifiers.new("Armature", "ARMATURE").object = armature
+            return [armature]
+
+        return change
+
+    def assert_weights(self, weights, rig):
+        for index, obj in enumerate(self.sources):
+            self.assertEqual([(m.name, m.object) for m in obj.modifiers], [("Scenario Rig", rig)])
+            names = [group.name for group in obj.vertex_groups]
+            for vertex in obj.data.vertices:
+                actual = {names[group.group]: group.weight for group in vertex.groups}
+                expected = weights[index, _rounded(vertex.co)]
+                self.assertEqual(actual.keys(), expected.keys())
+                for name, weight in expected.items():
+                    self.assertAlmostEqual(actual[name], weight, places=4)
+
+    def test_rig_skins_every_source_with_one_returned_rig(self):
+        weights = {}
+
+        def normalized(objects):
+            # A provider-style rig: the whole skinned scene at half size, moved.
+            armature = next(obj for obj in objects if obj.type == "ARMATURE")
+            armature.matrix_world = Matrix.Translation((5, 0, -2)) @ Matrix.Scale(0.5, 4)
+
+        self.result(self.rig(weights), finish=normalized)
+        self.assert_unchanged(self.model._snapshot(), "differs from the source", policy="RIG")
+        result = self.apply(policy="RIG", result_to_source=self.fit())
+        self.assert_applied(result, "RIG")
+        self.assertEqual(result.fitted_from, "WORLD")
+        self.assertAlmostEqual(Matrix(result.mapping).to_scale().x, 2, places=4)
+        self.assert_weights(weights, result.rig)
+        # One rig group for all sources, placed in the scene, in the first source's collections.
+        group = result.rig.parent
+        self.assertIsNone(group.parent)
+        self.assertEqual(group.name, f"{self.sources[0].name} Rig")
+        self.assertEqual(set(group.users_collection), set(self.sources[0].users_collection))
+        self.scene.frame_set(0)
+        bpy.context.view_layer.update()
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        for obj, geometry in zip(self.sources, self.geometry, strict=True):
+            evaluated = obj.evaluated_get(depsgraph).data
+            for vertex, position in zip(evaluated.vertices, geometry, strict=True):
+                for a, b in zip(vertex.co, position, strict=True):
+                    self.assertAlmostEqual(a, b, places=3)
+
+    def test_rig_from_one_merged_skin(self):
+        weights = {}
+        self.result(self.rig(weights), merge=True)
+        result = self.apply(policy="RIG", keep_original=False)
+        self.assertEqual(result.originals, (None, None, None))
+        self.assert_geometry_kept()
+        self.assert_weights(weights, result.rig)
+
+    def test_uv_applies_to_every_source_from_obj_and_fbx_units(self):
+        for fmt, files in (
+            ("obj", (("result-obj", "model/obj"), ("result-mtl", "model/mtl"))),
+            ("fbx", (("result-fbx", "model/x-fbx"),)),
+        ):
+            with self.subTest(format=fmt):
+                expected = {}
+                directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
+                self.result(self.islands(expected), path=directory / f"result.{fmt}", fmt=fmt)
+                names = {"model/obj": "result.obj", "model/mtl": "result.mtl"}
+                self.save(
+                    directory,
+                    [
+                        (asset_id, names.get(media_type, f"result.{fmt}"), media_type, None)
+                        for asset_id, media_type in files
+                    ],
+                )
+                self.assertEqual(self.unit()[0].format.value, fmt)
+                result = self.apply(result_to_source=self.fit())
+                self.assert_applied(result, "UV")
+                self.assert_uvs(expected)
+                self.capture()
+
+    def test_rig_replaces_one_sources_existing_skin_and_skins_the_others(self):
+        from helpers import skin_to_new_rig
+
+        old_rig = skin_to_new_rig(self.scene, self.sources[1], parent=False)
+        old_state = _rig_state(old_rig)
+        self.capture()
+        self.assertIsNotNone(self.targets[1].skin)
+        weights = {}
+        self.result(self.rig(weights))
+        # A static policy would drop that skin.
+        self.assert_unchanged_skin("skinned to an armature", policy="UV")
+        result = self.apply(policy="RIG")
+        self.assert_applied(result, "RIG")
+        self.assert_weights(weights, result.rig)
+        self.assertNotIn("Old bone", self.sources[1].vertex_groups)
+        self.assertEqual(_rig_state(old_rig), old_state)
+        # Keep original's copy of the rigged source still follows the old rig.
+        self.assertEqual(result.originals[1].modifiers[0].object, old_rig)
+        self.assertFalse(result.originals[0].modifiers)
+
+    def assert_unchanged_skin(self, reason, **kwargs):
+        before = self.model._snapshot()
+        with self.assertRaises(self.module.MeshResultApplicationError) as raised:
+            self.apply(**kwargs)
+        self.assertIn(reason, str(raised.exception))
+        self.assertEqual(self.model._snapshot(), before)
+        for target in self.targets:
+            self.mesh.validate_target(target)
+
+    def test_result_changed_on_one_source_fails_closed(self):
+        def change(index, copy):
+            if index == 1:
+                copy.data.vertices[2].co.z += 0.05
+
+        self.result(change)
+        before = self.model._snapshot()
+        for policy in ("UV", "RETEXTURE"):
+            with self.subTest(policy=policy):
+                self.assert_unchanged(before, "differs from the source at", policy=policy)
+
+    def test_source_changed_after_review_is_refused_before_import(self):
+        self.result(self.islands({}))
+        self.sources[1].location.x += 1
+        bpy.context.view_layer.update()
+        with patch.object(self.model, "_import") as importer:
+            with self.assertRaises(self.mesh.MeshApplicationError):
+                self.apply()
+        importer.assert_not_called()
+        self.assertEqual([obj.data for obj in self.sources], self.data)
+
+    def test_failed_second_publication_restores_every_source(self):
+        publish = self.mesh._publish
+        for policy, change in (("UV", self.islands({})), ("RIG", None)):
+            for keep_original in (False, True):
+                with self.subTest(policy=policy, keep_original=keep_original):
+                    self.result(change or self.rig({}))
+                    calls = []
+
+                    def fail_second(source, staged, calls=calls):
+                        calls.append(source)
+                        if len(calls) == 2:
+                            raise RuntimeError("synthetic publication failure")
+                        publish(source, staged)
+
+                    before = self.model._snapshot()
+                    with patch.object(self.mesh, "_publish", side_effect=fail_second):
+                        self.assert_unchanged(
+                            before,
+                            "source and saved files remain",
+                            policy=policy,
+                            keep_original=keep_original,
+                        )
+                    self.assertEqual(calls, list(self.sources[:2]))
+
+    def test_failed_rig_binding_restores_every_source(self):
+        self.result(self.rig({}))
+        before = self.model._snapshot()
+        with patch.object(self.rig_module, "_bind", side_effect=[None, RuntimeError("bind")]):
+            with self.assertRaises(self.module.MeshResultApplicationError):
+                self.apply(policy="RIG")
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertEqual([obj.data for obj in self.sources], self.data)
+        self.assertTrue(all(not obj.modifiers and not obj.vertex_groups for obj in self.sources))
+
+    def test_geometry_policies_and_object_local_coordinates_are_refused(self):
+        self.result(self.islands({}))
+        before = self.model._snapshot()
+        for policy in ("REMESH", "PARTS", "ANIMATE"):
+            with self.subTest(policy=policy), patch.object(self.model, "_import") as importer:
+                self.assert_unchanged(before, "accept only UV, RETEXTURE or RIG", policy=policy)
+                importer.assert_not_called()
+        for mapping in (self.fit("LOCAL"), Matrix.Scale(2, 4), self.fit(matrix=Matrix.Scale(2, 4))):
+            with self.subTest(mapping=mapping):
+                self.assert_unchanged(before, "scene coordinates", result_to_source=mapping)
+        with self.assertRaises(self.module.MeshResultApplicationError):
+            self.module.prepare_saved_mesh(
+                self.targets[:1],
+                *self.unit(),
+                policy="UV",
+                result_to_source=Matrix(),
+                keep_original=True,
+            )
+
+    def test_session_applies_every_source_under_one_scene_claim_once(self):
+        expected = {}
+        self.result(self.islands(expected))
+        record = self.ready_session()
+        destination = self.session.capture(self.scene)
+        original = self.store.transition
+
+        def fail_receipt(*args, **kwargs):
+            if kwargs.get("state") == self.storage.JobState.APPLIED:
+                raise OSError("fixture receipt error")
+            return original(*args, **kwargs)
+
+        options = dict(
+            destination=destination,
+            asset_id="mesh",
+            policy="UV",
+            result_to_source=Matrix.Identity(4),
+            keep_original=True,
+        )
+        # A single target cannot claim a scene destination.
+        with self.assertRaises(self.session_module.OriginUnavailable):
+            self.session.apply_recovered_mesh(
+                self.verify(record), target=self.targets[0], **options
+            )
+        with patch.object(self.store, "transition", side_effect=fail_receipt):
+            with self.assertRaises(self.session_module.ModelResultUncertain) as caught:
+                self.session.apply_recovered_mesh(
+                    self.verify(record), target=self.targets, **options
+                )
+        self.assert_uvs(expected)
+        meshes = [obj.data for obj in self.sources]
+        with patch.object(
+            self.session_module, "apply_saved_mesh", side_effect=AssertionError("replayed")
+        ):
+            result = self.session.retry_model_receipt(caught.exception)
+        self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(result.record.application_origin, destination)
+        self.assertIsNone(result.record.application_origin.target_id)
+        self.assertEqual(result.application.sources, self.sources)
+        self.assertEqual([obj.data for obj in self.sources], meshes)
+
+    def test_export_retains_every_source_only_when_all_are_capturable(self):
+        self.ready_session()
+        provenance = submodule("blender.mesh_provenance")
+        path = self.root / "source.glb"
+        origin, source = provenance.export_with_source(
+            bpy.context, self.sources, path, self.session
+        )
+        self.assertIsNone(origin.target_id)
+        self.assertEqual(len(source.objects), 3)
+        binding = self.storage.JobMeshSource("mesh", None, "asset", "upload", 0, origin, source)
+        targets = self.session.mesh_source_targets(binding)
+        self.assertEqual(tuple(target.obj for target in targets), self.sources)
+        with self.assertRaises(self.session_module.OriginUnavailable):
+            self.session.mesh_source_target(binding)
+        # Any changed source refuses the whole retained export.
+        self.sources[2].name = "Renamed sphere"
+        with self.assertRaises(self.mesh.MeshApplicationError):
+            self.session.mesh_source_targets(binding)
+        self.sources[2].name = "Several sphere"
+        self.assertEqual(len(self.session.mesh_source_targets(binding)), 3)
+        # One unsupported source keeps the upload without any in-place authority.
+        self.sources[1].modifiers.new("Keep bevel", "BEVEL")
+        retained = dict(self.session._mesh_sources)
+        origin, source = provenance.export_with_source(
+            bpy.context, self.sources, self.root / "other.glb", self.session
+        )
+        self.assertEqual(len(source.objects), 3)
+        self.assertEqual(self.session._mesh_sources, retained)

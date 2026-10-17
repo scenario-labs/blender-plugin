@@ -6657,7 +6657,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(reloaded.data.vertices), 3)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), requests)
 
-    def captured_mesh_upload(self, *, live=False):
+    def captured_mesh_upload(self, *, live=False, objects=None):
         session = self.runtime.ensure_job_session()
         origin = session.capture(bpy.context.scene, bpy.context.object)
         source_types = submodule("core.jobs.mesh_source")
@@ -6677,7 +6677,7 @@ class ModelGenerationTests(unittest.TestCase):
             with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
                 path = Path(directory) / "source.glb"
                 origin, source = submodule("blender.mesh_provenance").export_with_source(
-                    bpy.context, (bpy.context.object,), path, session
+                    bpy.context, objects or (bpy.context.object,), path, session
                 )
                 size, digest = path.stat().st_size, source.file_sha256
         store = session._coordinator._uploads._store
@@ -7336,6 +7336,180 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(self.origin_error):
             jobs.session.mesh_source_target(forged)
         self.assertIsNotNone(jobs.session.mesh_source_target(binding))
+
+    def captured_sources_result(self):
+        """A job whose one captured input was exported from three objects; returns UVs to expect."""
+        from helpers import several_source_result, several_sources
+
+        self.configure_ui_lane("edit3d")
+        sources = several_sources(bpy.context.scene)
+        self.captured_mesh_upload(live=True, objects=sources)
+        expected = {}
+
+        def islands(index, copy):
+            layer = copy.data.uv_layers.active
+            for polygon in copy.data.polygons:
+                for corner, loop in enumerate(polygon.loop_indices):
+                    layer.data[loop].uv = (index + 0.04 * polygon.index + 0.01 * corner, 0.3)
+            expected[index] = [tuple(item.uv) for item in layer.data]
+
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            self.result_bytes = several_source_result(
+                bpy.context.scene, sources, Path(directory) / "result.glb", islands
+            )
+        self.result_media_type, self.remote_status = "model/gltf-binary", "success"
+        self.ui_quote("edit3d")
+        result = self.generation.submit_generation(bpy.context, "edit3d")
+        self.deliver_results()
+        self.assertEqual(self.store.get(result.local_id).state, self.storemod.JobState.READY)
+        return result.local_id, sources, expected
+
+    def assert_source_uvs(self, sources, expected):
+        for index, source in enumerate(sources):
+            actual = [tuple(item.uv) for item in source.data.uv_layers.active.data]
+            for got, want in zip(actual, expected[index], strict=True):
+                for a, b in zip(got, want, strict=True):
+                    self.assertAlmostEqual(a, b, places=5)
+
+    def test_several_captured_sources_apply_together_through_mcp(self):
+        request_id, sources, expected = self.captured_sources_result()
+        names = [source.name for source in sources]
+        jobs = self.runtime.state.model_jobs
+        record = self.store.get(request_id)
+        self.assertIn("apply_mesh_source", jobs.actions(record))
+        self.assertEqual(jobs._view(record).meta["mesh_source_objects"], 3)
+        selected = bpy.context.object
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        self.assertIsNone(approval["target"])
+        self.assertEqual(approval["targets"], names)
+        # The fixture model has no Edit 3D task: several sources start on UV, fitted.
+        self.assertEqual(
+            (approval["mesh_policy"], approval["mesh_policy_source"]), ("UV", "default")
+        )
+        self.assertEqual((approval["mesh_placement"], approval["fit_bases"]), ("FIT", ["WORLD"]))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        edit = status["mesh_edit"]
+        self.assertEqual((edit["target"], edit["targets"]), (None, names))
+        self.assertIsNone(edit["original"])
+        self.assertEqual(edit["originals"], [f"{name} Original" for name in names])
+        self.assertEqual(edit["fitted_from"], "WORLD")
+        self.assert_source_uvs(sources, expected)
+        self.assertIs(bpy.context.object, selected)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        local = self.store.get(request_id).application_origin
+        self.assertIsNone(local.target_id)
+        # The applied UVs changed every captured source: authority needs a new capture.
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+
+    def test_several_captured_sources_refuse_other_edits_without_change(self):
+        request_id, sources, _ = self.captured_sources_result()
+        before, meshes = self.store.get(request_id), [source.data for source in sources]
+        refused = (
+            submodule("blender.mesh_result_application").MeshResultApplicationError,
+            self.request_error,
+        )
+        for options in (
+            {"mesh_policy": "REMESH"},
+            {"mesh_policy": "PARTS"},
+            {"mesh_policy": "ANIMATE"},
+            {"mesh_policy": "UV", "mesh_placement": "LOCAL"},
+        ):
+            with self.subTest(**options), self.assertRaises(refused):
+                self.prepare_mesh_edit(request_id, purpose="mesh_source", **options)
+        rig = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="RIG")
+        self.assertEqual(rig["targets"], [source.name for source in sources])
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual([source.data for source in sources], meshes)
+        # One changed source refuses the whole captured review.
+        sources[1].location.x += 1
+        with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+
+    def test_several_captured_sources_changed_during_verification_stay_unchanged(self):
+        request_id, sources, _ = self.captured_sources_result()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        before, meshes = self.store.get(request_id), [source.data for source in sources]
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        verified = deferred.run()
+        sources[2].location.z += 1
+        status = deferred.finish(verified)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertEqual(self.store.get(request_id), before)
+        self.assertEqual([source.data for source in sources], meshes)
+
+    def test_several_captured_sources_native_review_names_every_target(self):
+        request_id, sources, _ = self.captured_sources_result()
+        op, ticket = self.mesh_dialog(request_id, original_source=True)
+        self.assertEqual(tuple(target.obj for target in ticket.target), sources)
+        self.assertEqual(op.source_count, 3)
+        self.assertEqual(op.target_name, ", ".join(source.name for source in sources))
+        self.assertEqual((op.policy, op.placement), ("UV", "FIT"))
+        self.assertFalse(op.local_placement_required)
+        op.layout = Mock()
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        operator.draw(op, None)
+        texts = [call.kwargs.get("text") for call in op.layout.label.call_args_list]
+        self.assertIn(f"Meshes (3): {op.target_name}", texts)
+        self.assertIn("Edit every object captured for this generation, or none.", texts)
+        op._sync_options = lambda: operator._sync_options(op)
+        for policy, placement, error in (
+            ("REMESH", "WORLD", "Several objects: choose Replace active UVs, Replace textures"),
+            ("RETEXTURE", "LOCAL", "Several objects use scene coordinates or Fit and verify"),
+            ("RETEXTURE", "WORLD", ""),
+        ):
+            op.policy, op.placement = policy, placement
+            self.assertTrue(operator.check(op, None))
+            self.assertTrue(op.review_error.startswith(error), op.review_error)
+        self.assertEqual(
+            submodule("blender.job_recovery")._source_names([f"Mesh {i}" for i in range(6)]),
+            "Mesh 0, Mesh 1, Mesh 2, Mesh 3 and 2 more",
+        )
+
+    def test_several_captured_sources_undo_together_and_history_retires_authority(self):
+        request_id, sources, expected = self.captured_sources_result()
+        names = [source.name for source in sources]
+        original_uvs = [
+            [tuple(item.uv) for item in source.data.uv_layers.active.data] for source in sources
+        ]
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        module = submodule("blender.mesh_result_application")
+        prefs = bpy.context.preferences.edit
+        settings = prefs.use_global_undo, prefs.undo_steps
+        prefs.use_global_undo, prefs.undo_steps = True, 32
+        try:
+            with patch.object(module, "_undo_enabled", return_value=True):
+                status = self.finish_application(approval)
+            self.assertEqual(status["status"], "applied", status)
+            self.assertTrue(status["mesh_edit"]["undo_available"])
+            self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+            sources = [bpy.data.objects[name] for name in names]
+            for source, uvs in zip(sources, original_uvs, strict=True):
+                self.assertEqual([tuple(i.uv) for i in source.data.uv_layers.active.data], uvs)
+            self.assertFalse(any(f"{name} Original" in bpy.data.objects for name in names))
+            self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
+            self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+            self.assert_source_uvs([bpy.data.objects[name] for name in names], expected)
+        finally:
+            prefs.use_global_undo, prefs.undo_steps = settings
+        # Undo/redo retired the live capture of every source.
+        with self.assertRaises(self.origin_error):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+
+    def test_restart_retires_several_captured_sources(self):
+        request_id, sources, _ = self.captured_sources_result()
+        self.assertEqual(
+            len(self.prepare_mesh_edit(request_id, purpose="mesh_source")["targets"]), 3
+        )
+        self.runtime.state.reset()
+        self.runtime.inspect_model_jobs()
+        with self.assertRaises(self.origin_error):
+            self.prepare_mesh_edit(request_id, purpose="mesh_source")
+        # The generic edit still reviews only the active mesh.
+        bpy.context.view_layer.objects.active = sources[0]
+        self.assertEqual(self.prepare_mesh_edit(request_id)["targets"], [sources[0].name])
 
     def test_source_authority_rejects_edit_fingerprint_as_export_provenance(self):
         request_id, _ = self.captured_source_result()

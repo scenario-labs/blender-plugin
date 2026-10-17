@@ -12,6 +12,7 @@ from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.ui import saved_job_actions
 from . import render_lanes, result_media, review_previews, runtime
 from .media_application import MEDIA_TYPES
+from .mesh_result_application import MeshResultApplicationError
 
 # Saved media types offered per application; describe() owns no media policy.
 RESULT_TYPES = saved_job_actions.ResultTypes(
@@ -723,6 +724,16 @@ def _draw_animate(layout, review_error):
 
 
 _FIT_POLICIES = {"UV", "RETEXTURE", "RIG"}
+# Several captured sources edited together; the review names this many of them.
+_SEVERAL_POLICIES = _FIT_POLICIES
+_NAMED_SOURCES = 4
+
+
+def _source_names(names):
+    """A bounded list of target names for one dialog line."""
+    shown = ", ".join(names[:_NAMED_SOURCES])
+    hidden = len(names) - _NAMED_SOURCES
+    return f"{shown} and {hidden} more" if hidden > 0 else shown
 
 
 def _mesh_policy_changed(self, _context):
@@ -754,6 +765,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     result_format: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     result_role: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     source_rigged: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    # How many captured objects the edit applies to together.
+    source_count: IntProperty(default=1, options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
         name="Edit",
         items=(
@@ -831,11 +844,22 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             self.policy_note = _policy_note(approval)
             self.result_role = {True: "primary", False: "alternate"}.get(approval.primary, "")
             self.result_format = saved_job_actions.MODEL_FORMATS.get(approval.format, "")
-            self.source_rigged = approval.target.skin is not None
-            self.local_placement_required = approval.target.obj.matrix_world.determinant() <= 0
-            self.scene_name, self.target_name = approval.scene_name, approval.target_name
+            targets = approval.targets
+            self.source_count = len(targets)
+            self.source_rigged = any(target.skin is not None for target in targets)
+            # Several sources are each placed by their own transform.
+            self.local_placement_required = (
+                len(targets) == 1 and targets[0].obj.matrix_world.determinant() <= 0
+            )
+            self.scene_name = approval.scene_name
+            self.target_name = _source_names(approval.target_names)
             self.is_reuse = approval.record.state.value == "applied"
             self.review_error = ""
+        except MeshResultApplicationError as error:
+            # A policy the captured sources cannot take, such as Replace geometry
+            # for several objects, names its own reason.
+            self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
         except Exception:
             self.report(
                 {"ERROR"},
@@ -865,7 +889,14 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         try:
             self._sync_options()
         except Exception:
-            if self.source_rigged and self.policy not in {"RIG", "ANIMATE"}:
+            several = self.source_count > 1
+            if several and self.policy not in _SEVERAL_POLICIES:
+                self.review_error = (
+                    "Several objects: choose Replace active UVs, Replace textures or Attach rig"
+                )
+            elif several and self.placement == "LOCAL":
+                self.review_error = "Several objects use scene coordinates or Fit and verify"
+            elif self.source_rigged and self.policy not in {"RIG", "ANIMATE"}:
                 self.review_error = "This mesh has a rig: choose Attach rig or Apply animation"
             elif not self.source_rigged and self.policy == "ANIMATE":
                 self.review_error = "Apply animation needs a mesh skinned to an armature"
@@ -875,15 +906,23 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
 
     def draw(self, context):
         layout = self.layout
+        several = self.source_count > 1
         layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
-        layout.label(text=f"Mesh: {self.target_name}", icon="MESH_DATA")
+        if several:
+            layout.label(text=f"Meshes ({self.source_count}): {self.target_name}", icon="MESH_DATA")
+        else:
+            layout.label(text=f"Mesh: {self.target_name}", icon="MESH_DATA")
         role = ", ".join(
             part
             for part in (self.result_format, self.result_role and f"{self.result_role} result")
             if part
         )
         layout.label(text=f"Saved result: {self.asset_id}" + (f" ({role})" if role else ""))
-        if self.original_source:
+        if several:
+            layout.label(
+                text="Edit every object captured for this generation, or none.", icon="INFO"
+            )
+        elif self.original_source:
             layout.label(text="Use the unchanged source captured for this generation.", icon="INFO")
         if self.is_reuse:
             layout.label(text="Use saved results again; no new generation.", icon="INFO")
@@ -909,6 +948,8 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(
                 text="Keep rig clips. Move the source and new rig group together afterward."
             )
+            if several:
+                layout.label(text="One returned rig skins every object; its group is in the scene.")
         elif self.policy == "PARTS":
             layout.label(text="Replace source geometry with an empty mesh parent and named parts.")
             layout.label(
@@ -919,7 +960,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(text="The result must match this surface; triangles and seams are fine.")
         else:
             layout.label(text="Replace active UVs only; the result must match this surface.")
-        layout.label(text="Keep the source object's name, transforms, parenting and collections.")
+        layout.label(
+            text="Keep each object's name, transforms, parenting and collections."
+            if several
+            else "Keep the source object's name, transforms, parenting and collections."
+        )
         layout.label(
             text="One static result, 2 to 128 parts. No automatic fitting or scale adjustment."
             if self.policy == "PARTS"
@@ -929,7 +974,11 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             if self.placement == "FIT"
             else "All result meshes form one surface. No fitting or scale adjustment."
         )
-        layout.label(text="Keep original makes an unselected copy. Undo follows Blender settings.")
+        layout.label(
+            text="Keep original copies each object, unselected. Undo follows Blender settings."
+            if several
+            else "Keep original makes an unselected copy. Undo follows Blender settings."
+        )
         layout.label(
             text="Undo/redo changes the scene only; saved jobs and spending stay recorded."
         )

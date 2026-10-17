@@ -200,10 +200,10 @@ full render-lane desktop acceptance.
   the review assets of other node types and UI scale 2.0 are unverified
   ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)). See
   [waiting workflow steps](ui/studio-and-library.md#waiting-workflow-steps).
-- Installing 0.10.0 from the official extension repository was verified on macOS
-  with Blender 5.0.1, 5.1.2 and 5.2.1. 0.10.0 is the first release the repository
-  offers, so an update from one published release to the next, keeping
-  preferences and stored jobs, will be verified with the next release (see the
+- Installing 0.10.0 from the official extension repository, and its update to
+  the next release through Blender, were verified on macOS with Blender 5.0.1,
+  5.1.2 and 5.2.1. A loopback copy of that update checked that stored jobs, the
+  saved scene and an offline restart survive it (see the
   [user guide](USER_GUIDE.md#updates)).
 
 ## Creation and scene application
@@ -330,9 +330,8 @@ full render-lane desktop acceptance.
 - The model picker is rebuilt when the trained list, base descriptions or new
   thumbnails arrive, and Blender drops a click on **OK** that lands on such a
   rebuild without a message: click again. It is no longer rebuilt on every
-  maintenance tick, which made **OK** need two or three clicks, but a physical
-  check of the single click is pending in
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440). As in any
+  maintenance tick, which made **OK** need two or three clicks; on the #440
+  candidate a single click closed the picker on a desktop. As in any
   Blender dialog, a click outside a field being edited only ends the edit.
 - Input methods (IME) cannot compose in the composer prompt. Blender composes
   only in its own text fields and gives add-ons neither the composition text nor
@@ -389,9 +388,9 @@ full render-lane desktop acceptance.
   waveform status by measured width, before later amendments for Studio's popup
   width and hyphenated words, and kept the duration with its unit. On 2026-10-13
   the maintainer listened to a saved audio result through the system player and
-  drew its waveform on the 0.10.0 candidate ZIP. These passes predate
-  in-extension audio. Play audio and Stop audio on the desktop, listening
-  through them, the waveform's Cancel, Retry and close on the desktop, clicking
+  drew its waveform on the 0.10.0 candidate ZIP. On 2026-10-14 the maintainer
+  played, stopped and listened through Play audio and Stop audio on a #440
+  candidate ZIP. The waveform's Cancel, Retry and close on the desktop, clicking
   Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms have no
   desktop evidence yet, which remains
   [#440](https://github.com/scenario-labs/blender-plugin/issues/440) work. Local
@@ -476,10 +475,10 @@ full render-lane desktop acceptance.
   row's. #432 then sized the arrows to the preview images, and a physical
   recheck on 2026-10-13 found them within 0 to 1 px of the images at UI scales
   1.0 and 2.0, and Studio's arrows about 1.2 steps wide at 2.0, stretched past
-  their one step by the row. The arrows now keep one step at every UI scale;
-  that width awaits a physical desktop recheck. Which result kinds receive a
-  Scenario preview image, how long it takes and where a first-access redirect
-  points are not established by live evidence; a preview missing after about
+  their one step by the row. The arrows now keep one step at every UI scale, as
+  Studio showed at UI scale 2.0 on the #440 candidate. Which result kinds
+  receive a Scenario preview image, how long it takes and where a first-access
+  redirect points are not established by live evidence; a preview missing after about
   five minutes of online polling needs **Retry preview (N)**. Video clips and 3D
   turntables are fetched by the runtime but not displayed, the preview of a
   video is Scenario's image rather than a chosen frame, and MP3 or other audio

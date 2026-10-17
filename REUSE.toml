@@ -55,14 +55,6 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Scenario Inc."
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
-# Third party: the Scenario logo keeps its source repository's MIT licence
-# (docs/images/scenario-logo.LICENSE).
-[[annotations]]
-path = ["docs/images/scenario-logo.png", "docs/images/scenario-logo.LICENSE"]
-precedence = "override"
-SPDX-FileCopyrightText = "2026 Scenario"
-SPDX-License-Identifier = "MIT"
-
 # Third party: adapted from the Contributor Covenant 2.1, published under CC BY 4.0.
 [[annotations]]
 path = "CODE_OF_CONDUCT.md"

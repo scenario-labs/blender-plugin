@@ -30,7 +30,7 @@ def test_deferred_tool_work_runs_between_main_thread_preparation_and_delivery():
 
     registry = Registry()
     registry.add(ToolSpec("estimate", "Price", {}, prepare))
-    server = McpServer("127.0.0.1", 0, "fixture-token", registry, {}, timeout=5)
+    server = McpServer("127.0.0.1", 0, registry, {}, timeout=5)
     message = {"id": 1, "method": "tools/call", "params": {"name": "estimate"}}
     with ThreadPoolExecutor(max_workers=1) as worker:
         result = worker.submit(server.handle, message)
@@ -80,7 +80,7 @@ def test_a_finish_can_hand_more_work_to_the_request_thread():
 
     registry = Registry()
     registry.add(ToolSpec("estimate", "Price", {}, prepare))
-    server = McpServer("127.0.0.1", 0, "fixture-token", registry, {}, timeout=5)
+    server = McpServer("127.0.0.1", 0, registry, {}, timeout=5)
     message = {"id": 1, "method": "tools/call", "params": {"name": "estimate"}}
     with ThreadPoolExecutor(max_workers=1) as worker:
         result = worker.submit(server.handle, message)

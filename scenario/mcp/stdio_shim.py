@@ -6,7 +6,7 @@
 Reads newline-delimited JSON-RPC on stdin, forwards each message to the Scenario for Blender server,
 writes the JSON response on stdout. Standard library only; no bpy.
 
-Usage: python3 stdio_shim.py --url http://127.0.0.1:9876/mcp --token TOKEN
+Usage: python3 stdio_shim.py --url http://127.0.0.1:9876/mcp
 """
 
 import argparse
@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 
 
-def forward(url, token, message, timeout=300):
+def forward(url, message, timeout=300):
     data = json.dumps(message).encode("utf-8")
     req = urllib.request.Request(
         url,
@@ -25,7 +25,6 @@ def forward(url, token, message, timeout=300):
         headers={
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
-            "Authorization": f"Bearer {token}",
         },
     )
     try:
@@ -53,7 +52,8 @@ def forward(url, token, message, timeout=300):
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="scenario-blender-stdio")
     parser.add_argument("--url", default="http://127.0.0.1:9876/mcp")
-    parser.add_argument("--token", required=True)
+    # Accepted so existing client configurations keep working; the server needs no token.
+    parser.add_argument("--token", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     out = sys.stdout
     for line in sys.stdin:
@@ -75,7 +75,7 @@ def main(argv=None):
             )
             out.flush()
             continue
-        response = forward(args.url, args.token, message)
+        response = forward(args.url, message)
         if response is not None and message.get("id") is not None:
             out.write(json.dumps(response) + "\n")
             out.flush()

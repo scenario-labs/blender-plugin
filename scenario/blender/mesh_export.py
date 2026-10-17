@@ -45,19 +45,25 @@ def export_glb(context, objects, path=None):
         for obj in objects:
             obj.select_set(True)
         view_layer.objects.active = objects[0]
-        bpy.ops.export_scene.gltf(
-            filepath=path,
-            export_format="GLB",
-            use_selection=True,
-            # Other scenes' selections would add objects and scenes to the upload.
-            use_active_scene=True,
-            export_apply=True,
-            export_yup=True,
-            export_animations=False,
-            export_texcoords=True,
-            export_normals=True,
-            export_materials="EXPORT",
-        )
+        # The exporter reads context.active_object and sets the window's cursor; a
+        # command or timer on a file loaded with --background has neither.
+        overrides = {"active_object": objects[0], "selected_objects": list(objects)}
+        if context.window is None and context.window_manager.windows:
+            overrides["window"] = context.window_manager.windows[0]
+        with context.temp_override(**overrides):
+            bpy.ops.export_scene.gltf(
+                filepath=path,
+                export_format="GLB",
+                use_selection=True,
+                # Other scenes' selections would add objects and scenes to the upload.
+                use_active_scene=True,
+                export_apply=True,
+                export_yup=True,
+                export_animations=False,
+                export_texcoords=True,
+                export_normals=True,
+                export_materials="EXPORT",
+            )
     finally:
         for obj in objects:
             obj.select_set(False)

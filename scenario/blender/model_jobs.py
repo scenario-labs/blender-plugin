@@ -249,8 +249,12 @@ def _size_summary(application):
     Lengths are Blender units, metres at the default unit scale, rounded like
     scene_summary dimensions so agents compare them directly.
     """
+    try:
+        root = application.root.name
+    except ReferenceError:  # removed, as by an undo before a receipt retry
+        root = None
     return {
-        "root": application.root.name,
+        "root": root,
         "target_size_m": application.target_size,
         "scale": float(f"{application.scale:.6g}"),
         "dimensions_m": [round(value, 4) for value in application.dimensions] or None,

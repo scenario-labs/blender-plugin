@@ -58,7 +58,7 @@ def target_size(value):
     if (
         isinstance(value, bool)
         or not isinstance(value, (int, float))
-        or not math.isfinite(value)
+        # Also refuses NaN, infinities and integers too large for a float.
         or not MIN_TARGET_SIZE_M <= value <= MAX_TARGET_SIZE_M
     ):
         raise ValueError(

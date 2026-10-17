@@ -20,7 +20,7 @@ def test_target_size_accepts_metres_in_range_and_none():
 
 
 @pytest.mark.parametrize(
-    "value", [0, -1, 0.009, 1000.5, math.inf, -math.inf, math.nan, True, "1.0", [1.0]]
+    "value", [0, -1, 0.009, 1000.5, math.inf, -math.inf, math.nan, 10**400, True, "1.0", [1.0]]
 )
 def test_target_size_refuses_values_outside_the_range(value):
     with pytest.raises(ValueError, match="target_size_m must be a number of metres"):

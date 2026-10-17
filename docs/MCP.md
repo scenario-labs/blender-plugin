@@ -183,8 +183,8 @@ bottom center stays at the cursor. The longest side does not depend on how a
 provider oriented the model and is the size usually quoted for an object. The
 approval returns `target_size_m` (null keeps the saved size); to change it,
 prepare again. After the import, `model_import` adds the group's `root`, the
-`scale` applied, and its world `dimensions_m` and `bottom_z_m` after scaling, so
-the agent can compare them with `scene_summary` dimensions without another call.
+`scale` applied, and its world `dimensions_m` and `bottom_z_m` after scaling;
+`scene_summary` dimensions of the imported objects leave out the root's scale.
 Sizes are Blender units, metres at the default unit scale.
 
 SPZ, `.splat` and PLY units also return `splat_options` with the approved

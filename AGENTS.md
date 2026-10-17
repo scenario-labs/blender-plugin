@@ -139,7 +139,7 @@ records, workspace identifiers, spend anecdotes or private research exports.
 Preserve GPL text and first-party SPDX notices; preserve the original licenses
 and attribution of third-party code, fonts, icons and SDK dependencies.
 `make check-rules` enforces SPDX headers, no em dashes, Markdown prose wrapped at
-80 columns, the `bpy` boundary, approved dependencies, SDK adapter imports, the
+100 columns, the `bpy` boundary, approved dependencies, SDK adapter imports, the
 public-content denylist, version literals and no snapshot directories; the unit
 suite runs it. Files that cannot carry a header are covered by `REUSE.toml`;
 `make lint-licence` validates it.

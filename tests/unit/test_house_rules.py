@@ -21,6 +21,9 @@ SHA = "0123456789abcdef" * 2 + "01234567"
 ACTIONS = ["actions-pinned"]
 # Built from the checker's own parts so this file's licence scan sees no second header.
 HEADER = f"# {rules._COPYRIGHT_TAG} 2026 Scenario Inc.\n# {rules._LICENCE_TAG}\n"
+WIDTH = rules.MARKDOWN_WIDTH
+# Words that run past the wrap width, with a space to break at after it.
+PROSE = " ".join(["word"] * (WIDTH // 4))
 
 
 def workflow(root, content, name=".github/workflows/fixture.yml"):
@@ -278,8 +281,8 @@ def test_em_dash_reports_each_line_and_skips_licence_texts_and_binaries(tmp_path
     assert found("em-dash", tmp_path, text, licence, binary) == [("docs/a.md", 2), ("docs/a.md", 3)]
 
 
-def test_markdown_wrap_reports_prose_that_can_break_after_column_80(tmp_path):
-    prose = " ".join(["word"] * 20)
+def test_markdown_wrap_reports_prose_that_can_break_after_the_width(tmp_path):
+    prose = PROSE
     lines = [
         "---",
         f"description: {prose}",
@@ -287,18 +290,18 @@ def test_markdown_wrap_reports_prose_that_can_break_after_column_80(tmp_path):
         prose,
         f"- {prose}",
         f"> {prose}",
-        "a" * 80,
-        "a" * 78 + " " + "b" * 10,
-        "a" * 79 + "  ",
-        "a" * 70 + " https://example.com/" + "p" * 30,
-        "Run `" + "uv run pytest " * 8 + "`.",
-        "See [" + "link text " * 8 + "](https://example.com/page).",
-        "a" * 76 + ' <img src="badge.png" alt="build status badge">',
+        "a" * WIDTH,
+        "a" * (WIDTH - 2) + " " + "b" * 10,
+        "a" * (WIDTH - 1) + "  ",
+        "a" * (WIDTH - 10) + " https://example.com/" + "p" * 30,
+        "Run `" + "uv run pytest " * (WIDTH // 10) + "`.",
+        "See [" + "link text " * (WIDTH // 8) + "](https://example.com/page).",
+        "a" * (WIDTH - 4) + ' <img src="badge.png" alt="build status badge">',
         f"| {prose} |",
         f"## {prose}",
         f"#31 {prose}",
         f"<p>{prose}</p>",
-        f"[ref]: https://example.com/{'x' * 80} title",
+        f"[ref]: https://example.com/{'x' * WIDTH} title",
         f"![{prose}](image.png)",
         "```",
         prose,
@@ -319,7 +322,7 @@ def test_markdown_wrap_reports_prose_that_can_break_after_column_80(tmp_path):
 
 
 def test_markdown_wrap_closes_a_fence_only_with_its_own_marker(tmp_path):
-    prose = " ".join(["word"] * 20)
+    prose = PROSE
     lines = ["````markdown", "```", prose, "````", prose, "~~~", "```", prose, "~~~"]
     lines += ["```inline``` code", prose]
     doc = write(tmp_path, "docs/a.md", "\n".join(lines) + "\n")
@@ -327,7 +330,7 @@ def test_markdown_wrap_closes_a_fence_only_with_its_own_marker(tmp_path):
 
 
 def test_markdown_wrap_skips_generated_rendered_and_vendored_markdown(tmp_path):
-    prose = " ".join(["word"] * 20) + "\n"
+    prose = PROSE + "\n"
     write(
         tmp_path,
         "skills-lock.json",

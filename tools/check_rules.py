@@ -222,10 +222,12 @@ VERSION_FILES = {
 }
 # Tests use sample release versions, which every release eventually matches.
 VERSION_PREFIXES = ("docs/maintenance/", "tests/")
-MARKDOWN_WIDTH = 80
+# The skills repository wraps Markdown at the same width.
+MARKDOWN_WIDTH = 100
 # release-please writes the changelog, GitHub renders line breaks in PR and issue
 # bodies, a test parses the fixture README and evidence records stay unedited.
 MARKDOWN_UNWRAPPED = ("CHANGELOG.md", ".github/", "tests/fixtures/", "docs/knowledge/")
+WRAP_MESSAGE = f"prose past {MARKDOWN_WIDTH} columns: wrap it"
 _FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 _GENERATED = re.compile(r"^<!-- [\w-]+:(start|end) -->")
 # Table rows, lines starting with # (Python-Markdown reads "#31" as a heading),
@@ -382,7 +384,7 @@ def breaks_after(line, width):
 
 
 def markdown_wrap(files, root):
-    """Markdown prose wraps at 80 columns wherever a line can break."""
+    """Markdown prose wraps at MARKDOWN_WIDTH columns wherever a line can break."""
     skipped = MARKDOWN_UNWRAPPED + vendored_directories(root)
     violations = []
     for shown, name, lines in text_files(files, root):
@@ -405,9 +407,7 @@ def markdown_wrap(files, root):
             elif not (generated or _UNWRAPPABLE.match(line)) and (
                 len(line) > MARKDOWN_WIDTH and breaks_after(line, MARKDOWN_WIDTH)
             ):
-                violations.append(
-                    Violation(shown, number, "markdown-wrap", "prose past 80 columns: wrap it")
-                )
+                violations.append(Violation(shown, number, "markdown-wrap", WRAP_MESSAGE))
     return violations
 
 

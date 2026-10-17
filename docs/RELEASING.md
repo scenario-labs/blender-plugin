@@ -19,16 +19,13 @@ PR.
 
 1.0.0 is a deliberate maintainer decision, not an automatic bump: use a
 `Release-As: 1.0.0` footer on the squash commit of an ordinary PR whose description
-explains why the extension is considered stable. Through the merge queue, the footer goes
-in the PR's last branch commit, since the squash body is built from the commit messages.
-This policy documents the mechanism; it does not authorize a stability declaration or
-publication.
+explains why the extension is considered stable. This policy documents the
+mechanism; it does not authorize a stability declaration or publication.
 
 ## Correcting a version or release note
 
 For an intentional version override, the maintainer places a
-`Release-As: X.Y.Z` footer in the ordinary PR's squash body, which through the merge queue
-means its last branch commit. Preserve attribution
+`Release-As: X.Y.Z` footer in the ordinary PR's squash body. Preserve attribution
 and issue references. Review the next generated release PR to confirm the
 requested version; do not edit the manifest, package version or changelog by hand.
 See [release-please's version override](https://github.com/googleapis/release-please#how-do-i-change-the-version-number).

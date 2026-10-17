@@ -65,6 +65,30 @@ def test_runtime_error_reports_agent_frames_without_installed_sandbox_frame(fake
     assert payload["stdout"] == "before\n"
 
 
+def test_large_result_is_reported_by_size_with_a_preview(fake_bpy):
+    payload = sandbox.run_python("result['rows'] = ['x' * 100] * 1000\nprint('done')")
+    result = payload["result"]
+    assert result["truncated"] is True
+    assert result["result_chars"] > sandbox.RESULT_LIMIT
+    assert result["preview"].startswith('{\n "rows": [\n  "xxx')
+    assert len(result["preview"]) == sandbox.RESULT_PREVIEW
+    assert "The code ran" in result["note"] and "50,000" in result["note"]
+    assert payload["stdout"] == "done\n" and "error" not in payload
+
+
+def test_result_at_the_limit_is_returned_whole(fake_bpy):
+    padding = sandbox.RESULT_LIMIT - len('{\n "v": ""\n}')
+    result = sandbox.run_python(f"result['v'] = 'x' * {padding}")["result"]
+    assert result == {"v": "x" * padding}
+    over = sandbox.run_python(f"result['v'] = 'x' * {padding + 1}")["result"]
+    assert over["truncated"] is True
+
+
+def test_unserializable_result_with_non_string_keys_is_repr_text(fake_bpy):
+    result = sandbox.run_python("result[(1, 2)] = object()")["result"]
+    assert list(result) == ["(1, 2)"] and result["(1, 2)"].startswith("<object object")
+
+
 def test_syntax_error_reports_agent_source_without_installed_sandbox_frame(fake_bpy):
     error = sandbox.run_python("def broken(:\n    pass\n")["error"]
     assert error.startswith("SyntaxError: ")

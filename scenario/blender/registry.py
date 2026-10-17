@@ -113,7 +113,7 @@ def register():
 
     pump.start()
     if not bpy.app.background:
-        mcp_service.start()
+        mcp_service.start_with_extension()
     try:
         runtime_module = __import__(__package__ + ".runtime", fromlist=["state"])
         runtime_module.state.cli_handle = bpy.utils.register_cli_command(

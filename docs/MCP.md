@@ -41,11 +41,19 @@ token and revision from inspection. A reset, file load or credential switch
 invalidates that token. Claimed or uncertain submissions require reconciliation,
 never blind retry. An identical request is refused while such a submission is
 unconfirmed; only the user can mark it reviewed in Blender, so `job_status`
-omits `mark_reviewed` and `recover_local_job` refuses it.
+omits `mark_reviewed` and `recover_local_job` refuses it. Blender looks for the
+job such a submission may have created in recent cloud history; `job_status`
+reports that read-only lookup as `cloud_lookup` and `cloud_candidates`, and
+`recover_local_job` action `find_cloud_job` looks again. A candidate is not
+proof: only the user links one, in Blender, so `link_cloud_job` is neither
+listed nor accepted. Show the candidates to the user rather than choosing one.
 
 `recover_local_job` uses that token and the observed revision for explicit refresh,
-resume/download, known model-job cancellation, interrupted-download reconciliation
-or pending import-receipt retry. `cancel` appears in `actions` only after a refresh
+resume/download, known model-job cancellation, interrupted-download reconciliation,
+stopping a running download or pending import-receipt retry. `stop_download`
+appears in `actions` only while this Blender session downloads the job's results;
+it stops the transfer without saving a partial file, the job becomes
+`download_failed` and `resume` downloads it again. `cancel` appears in `actions` only after a refresh
 in the current context reported a running `inference` job, the only type Scenario
 documents as cancellable; for any other job it is refused without a request and
 the job keeps running, matching the native Jobs panel. A running workflow job
@@ -449,7 +457,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
 | `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG'])<br>`mesh_placement`: string (['WORLD', 'LOCAL'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV']) | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
-| `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'retry_receipt']) | destructive annotation |
+| `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'stop_download', 'retry_receipt', 'find_cloud_job']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
 | `estimate_blockout` | Get the exact free estimate for the current scene's Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact. | `action`: string (['DESIGN', 'REFINE']) | read-only annotation |

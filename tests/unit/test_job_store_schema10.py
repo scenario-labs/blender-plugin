@@ -83,11 +83,12 @@ def test_real_schema_nine_store_upgrades_every_row_without_guessing(schema9):
     uploads = _rows(schema9, "film_uploads", "scope, production_id, task_id, record")
     scopes = _scopes(schema9)
     stores = {key: JobStore(schema9, scope) for key, scope in scopes.items()}
-    assert _pragma(schema9, "user_version") == 11
+    assert _pragma(schema9, "user_version") == storage._VERSION
     after = _rows(schema9, "jobs", "scope, request_id, revision, record")
     assert [row[:3] for row in after] == [row[:3] for row in before]
     for (key, request_id, _, raw), (_, _, _, migrated) in zip(before, after, strict=True):
-        expected = json.loads(raw)
+        # Earlier stores never saved a submission claim time (schema 12).
+        expected = json.loads(raw) | {"claimed_at": None}
         for item in expected["results"]:
             # Earlier stores never declared an original or projection.
             item["asset"].update(source="asset", projection=None)
@@ -141,7 +142,7 @@ def test_upgrade_is_idempotent_and_racing_openers_see_one_migration(schema9):
     with ThreadPoolExecutor(max_workers=len(scopes)) as workers:
         first = list(workers.map(open_store, scopes))
     migrated = _dump(schema9)
-    assert _pragma(schema9, "user_version") == 11
+    assert _pragma(schema9, "user_version") == storage._VERSION
     assert [JobStore(schema9, scope).records() for scope in scopes] == first
     assert _dump(schema9) == migrated
 
@@ -196,7 +197,7 @@ def test_schema_ten_is_refused_by_a_schema_nine_reader_and_newer_by_this_one(sch
             JobStore(schema9, scope)
     assert schema9.read_bytes() == upgraded
     with sqlite3.connect(schema9) as connection:
-        connection.execute("PRAGMA user_version=12")
+        connection.execute(f"PRAGMA user_version={storage._VERSION + 1}")
     newer = schema9.read_bytes()
     with pytest.raises(StoreError, match="Unsupported"):
         JobStore(schema9, scope)

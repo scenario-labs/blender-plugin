@@ -130,6 +130,7 @@ def test_recovery_controls_dispatch_the_recovery_operator_with_their_action():
     for action, group in (
         ("cancel_prepared", "cancel"),
         ("recover_download", "recover"),
+        ("stop_download", "cancel"),
         ("retry_receipt", "receipt"),
     ):
         state = "prepared" if action == "cancel_prepared" else "downloading"
@@ -138,6 +139,7 @@ def test_recovery_controls_dispatch_the_recovery_operator_with_their_action():
         ]
     assert sja.LABELS["cancel_prepared"] == "Cancel prepared job"
     assert sja.LABELS["cancel"] == "Cancel generation"
+    assert sja.LABELS["stop_download"] == "Stop download"
 
 
 def test_waiting_workflow_step_is_a_status_row_before_the_recovery_controls():
@@ -602,8 +604,9 @@ def test_native_recovery_actions_match_the_mcp_action_names():
         if action != "cancel_prepared" and action not in sja.NATIVE_ONLY
     ]
     assert schema["action"]["enum"] == control
-    # Marking an unconfirmed request reviewed stays the user's decision in Blender.
-    assert sja.NATIVE_ONLY == {"mark_reviewed"}
+    # Marking an unconfirmed request reviewed and linking a cloud job to it stay the
+    # user's decisions in Blender; MCP reads prompt text with read_prompt_result.
+    assert sja.NATIVE_ONLY == {"mark_reviewed", "link_cloud_job", "read_prompt_text"}
     assert not sja.NATIVE_ONLY & set(schema["action"]["enum"])
     description, _ = _mcp_spec("job_status")
     mapping = re.search(r"actions name explicit follow-ups[^.]*\.", description).group(0)
@@ -651,7 +654,7 @@ def test_core_descriptor_source_stays_free_of_blender():
             modules.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             modules.add((node.module or "").split(".")[0])
-    assert modules == {"collections", "dataclasses", "textwrap"}
+    assert modules == {"collections", "costs", "dataclasses", "textwrap"}
 
 
 def test_first_frame_controls_follow_the_projected_stills_and_number_every_asset():
@@ -942,3 +945,80 @@ def test_playback_needs_owner_media_types_and_a_shared_projection():
     unrevised = view((), "ready", assets)
     del unrevised.meta["saved_revision"]
     assert sja.describe(unrevised, CONTEXT, PLAYABLE) == ()
+
+
+def test_unconfirmed_submission_offers_lookup_link_and_review_with_its_lookup_note():
+    items = sja.describe(
+        view(
+            ("find_cloud_job", "link_cloud_job", "mark_reviewed"),
+            "uncertain",
+            cloud_lookup="2 possible cloud jobs found",
+        ),
+        CONTEXT,
+        TYPES,
+    )
+    assert [(item.key, item.operator, item.label) for item in items] == [
+        ("cloud_lookup", None, "2 possible cloud jobs found"),
+        ("find_cloud_job", sja.RECOVER_OPERATOR, "Find in cloud history"),
+        ("link_cloud_job", sja.LINK_OPERATOR, "Choose cloud job..."),
+        ("mark_reviewed", sja.RECOVER_OPERATOR, "Mark reviewed"),
+    ]
+    assert dict(items[1].properties)["action"] == "find_cloud_job"
+    # The link operator opens its own choice and confirmation; it names no job here.
+    assert items[2].properties == JOB
+    looking = sja.describe(
+        view((), "uncertain", cloud_lookup="Looking in cloud history...", cloud_lookup_icon="TIME"),
+        CONTEXT,
+        TYPES,
+    )
+    assert [(item.label, item.icon, item.operator) for item in looking] == [
+        ("Looking in cloud history...", "TIME", None)
+    ]
+
+
+def test_read_prompt_text_offers_a_preview_and_a_copy_control_for_each_text():
+    long = "word " * 60
+    items = sja.describe(
+        view(("read_prompt_text",), "succeeded", prompt_texts=("A copper kettle", long)),
+        CONTEXT,
+        TYPES,
+    )
+    assert items[0].label == "Read prompt text" and items[0].operator == sja.RECOVER_OPERATOR
+    copies = [item for item in items if item.operator == sja.COPY_OPERATOR]
+    assert [dict(item.properties)["text"] for item in copies] == ["A copper kettle", long]
+    assert [item.label for item in copies] == ["Copy prompt text (1)", "Copy prompt text (2)"]
+    previews = [item.label for item in items if item.key.startswith("prompt_text:")]
+    assert previews[0] == "A copper kettle"
+    assert all(len(line) <= sja.NOTE_WIDTH for line in previews)
+    assert "..." in " ".join(previews)
+
+
+@pytest.mark.parametrize(
+    ("candidate", "title"),
+    [
+        (
+            {"seconds_after_claim": 1.5, "status": "success", "cost": "0.25"},
+            "Created 1.5 s after sending, finished, 0.25 CU",
+        ),
+        (
+            {"seconds_after_claim": -60.0, "status": "in-progress"},
+            "Created 1 min before sending, generating",
+        ),
+        (
+            {"seconds_after_claim": 7200.0, "status": "failure"},
+            "Created 2.0 h after sending, failed",
+        ),
+        (
+            {"created_at": "2026-10-14T21:18:12.500Z", "status": "pending", "cost": "12345"},
+            "Created 2026-10-14 21:18 UTC, queued, 12.3K CU",
+        ),
+        ({"status": "exploded"}, "Creation time unknown, unknown state"),
+        (
+            {"seconds_after_claim": 0.0, "status": "success", "cost": "not a number"},
+            "Created 0 s after sending, finished, cost unavailable",
+        ),
+    ],
+)
+def test_candidate_text_describes_without_suggesting_a_match(candidate, title):
+    assert sja.candidate_text(candidate) == (title, "No prompt text")
+    assert sja.candidate_text({**candidate, "prompt": "a kettle"})[1] == "a kettle"

@@ -184,7 +184,8 @@ from the job database.
 
 The coordinator optionally owns one `UploadStore`, `UploadSources` and
 `PartUploader` with the same scope as its job store. Its existing `JobWorkers`
-queue exposes fixed commands; there is no second SDK client or thread pool.
+queue exposes fixed commands; there is no second SDK client. Part transfers run
+on its [transfer lane](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume).
 It also exposes synchronous local cancellation, which does not wait behind queued
 initialization or consume another queue slot.
 

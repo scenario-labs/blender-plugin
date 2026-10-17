@@ -73,6 +73,8 @@ def seed_film_upload(selected, uploads):
 
 def job_snapshot(record):
     value = asdict(record)
+    # Schema 12 gives earlier rows an unknown submission claim time.
+    value.setdefault("claimed_at", None)
     if value["intent"].get("source") != "cloud":
         value["intent"].setdefault("film_task", None)
     for item in value["results"]:

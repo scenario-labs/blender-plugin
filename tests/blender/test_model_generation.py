@@ -82,6 +82,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.failed_job_reads = 0
         self.lose_cancel = False
         self.lose_response = False
+        self.cloud_jobs = []  # the recent-jobs listing an unconfirmed submission reads
+        self.missing_jobs = set()  # job IDs whose retrieval this project cannot read
         self.dry_run_costs = {}
         self.dry_run_job = None  # a job ID a misbehaving dry run would return
         self.failed_descriptions = 0  # model reads that Scenario answers with HTTP 503
@@ -115,6 +117,9 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertIsNot(threading.current_thread(), threading.main_thread())
             self.calls.append(request)
             if request.method == "GET":
+                if request.url.path.endswith("/v1/jobs"):
+                    # Recent cloud jobs for an unconfirmed submission; read-only.
+                    return httpx.Response(200, json={"jobs": list(self.cloud_jobs)})
                 if "/jobs/" in request.url.path and self.failed_job_reads:
                     self.failed_job_reads -= 1
                     # retry-after-ms keeps the SDK's own read retries quick here.
@@ -122,6 +127,8 @@ class ModelGenerationTests(unittest.TestCase):
                         503, json={"reason": "private outage"}, headers={"retry-after-ms": "1"}
                     )
                 if "/jobs/" in request.url.path:
+                    if request.url.path.rsplit("/", 1)[-1] in self.missing_jobs:
+                        return httpx.Response(404, json={"error": "not found"})
                     if getattr(self, "block_cloud_read", False):
                         self.entered.set()
                         self.assertTrue(self.release.wait(5))
@@ -1870,7 +1877,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(state.estimate_state, "ERROR")
         self.assertIn(request_id[:8], state.estimate_error)
         owner = self.runtime.state.model_jobs
-        self.assertEqual(owner.actions(self.store.get(request_id)), ("mark_reviewed",))
+        self.assertEqual(
+            owner.actions(self.store.get(request_id)), ("find_cloud_job", "mark_reviewed")
+        )
         model_jobs = submodule("blender.model_jobs")
         view = owner.views[request_id]
         # The native note names the next step; the dialog is titled for this state.
@@ -1889,11 +1898,178 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((mark.operator, mark.label), ("scenario.recover_job", "Mark reviewed"))
         result = bpy.ops.scenario.recover_job("EXEC_DEFAULT", **dict(mark.properties))
         self.assertEqual(result, {"FINISHED"})
-        self.assertEqual(owner.actions(self.store.get(request_id)), ())
+        self.assertEqual(owner.actions(self.store.get(request_id)), ("find_cloud_job",))
         self.assertEqual(view.meta["review_note"], model_jobs.UNCONFIRMED_REVIEWED)
         self.assertNotIn("Mark reviewed", self.tools.job_status({"job_id": request_id})["error"])
         self.assertEqual(self.mcp_quote()["model_id"], self.model["id"])
         self.ui_quote()
+        self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+        self.assertEqual(len(self.paid), 1)
+
+    def cloud_job(self, job_id, *, model_id=None, after=1.5):
+        """A listed cloud job created `after` seconds from now, as `jobs.list` returns it."""
+        store = self.storemod
+        return {
+            "jobId": job_id,
+            "jobType": "custom",
+            "status": "in-progress",
+            "createdAt": store.claim_time(time.time() + after),
+            "metadata": {"input": {"modelId": model_id or self.model["id"], "prompt": "a teapot"}},
+            "billing": {"cuCost": 0.25, "cuDiscount": 0},
+        }
+
+    def test_an_uncertain_submission_lists_candidates_and_links_only_the_users_choice(self):
+        self.cloud_jobs = [
+            self.cloud_job("cloud-later", after=40),
+            self.cloud_job("cloud-close"),
+            self.cloud_job("cloud-other-model", model_id="another-model"),
+        ]
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        record = self.store.get(request_id)
+        self.assertEqual(record.state.value, "uncertain")
+        self.assertIsNotNone(record.claimed_at)
+        listings = [r for r in self.calls if r.url.path.endswith("/v1/jobs")]
+        # One automatic, read-only lookup: the model's job types, never a submission.
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(listings[0].method, "GET")
+        self.assertEqual(listings[0].url.params["types"], "custom,inference")
+        owner = self.runtime.state.model_jobs
+        self.assertEqual(
+            owner.actions(record), ("find_cloud_job", "link_cloud_job", "mark_reviewed")
+        )
+        view = owner.views[request_id]
+        self.assertEqual(view.meta["cloud_lookup"], "2 possible cloud jobs found")
+        self.assertEqual(
+            [item["job_id"] for item in view.meta["cloud_candidates"]],
+            ["cloud-close", "cloud-later"],
+        )
+        # MCP sees the same candidates read-only and can neither link nor review.
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(
+            [item["job_id"] for item in status["cloud_candidates"]], ["cloud-close", "cloud-later"]
+        )
+        self.assertEqual(status["cloud_lookup"], "2 possible cloud jobs found")
+        self.assertIn("find_cloud_job", status["actions"])
+        self.assertNotIn("link_cloud_job", status["actions"])
+        with self.assertRaisesRegex(Exception, "Only the user"):
+            self.recover(request_id, "link_cloud_job")
+        self.assertEqual(self.store.get(request_id), record)
+        rows = submodule("blender.job_recovery").result_actions(view)
+        note = next(item for item in rows if item.key == "cloud_lookup")
+        self.assertEqual(note.label, "2 possible cloud jobs found")
+        link = next(item for item in rows if item.action == "link_cloud_job")
+        self.assertEqual(
+            (link.operator, link.label), ("scenario.link_cloud_job", "Choose cloud job...")
+        )
+        properties = dict(link.properties)
+        # Nothing is chosen by default; confirming without a choice links nothing.
+        with self.assertRaisesRegex(RuntimeError, "Choose one cloud job first"):
+            bpy.ops.scenario.link_cloud_job("EXEC_DEFAULT", **properties)
+        self.assertEqual(self.store.get(request_id), record)
+        # The chosen job has already finished on Scenario.
+        self.result_fixture()
+        self.assertEqual(
+            bpy.ops.scenario.link_cloud_job("EXEC_DEFAULT", **properties, job_id="cloud-close"),
+            {"FINISHED"},
+        )
+        self.settle_lookups()
+        linked = self.store.get(request_id)
+        self.assertEqual((linked.state.value, linked.remote_job_id), ("remote", "cloud-close"))
+        self.assertNotIn(request_id, owner._paused)
+        self.assertIsNone(view.meta["cloud_lookup"])
+        # The linked job is polled and downloaded like any other saved job, but even
+        # in the Image session that sent it, its results wait for explicit review.
+        before = set(bpy.data.images)
+        for _ in range(10):
+            if self.store.get(request_id).state == self.storemod.JobState.READY:
+                break
+            owner._next_poll[request_id] = 0  # do not wait out the polling interval
+            self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.paid), 1)
+        retrievals = [r for r in self.calls if r.url.path.endswith("/jobs/cloud-close")]
+        self.assertGreaterEqual(len(retrievals), 2)
+        self.assertEqual({r.method for r in self.calls if "/jobs" in r.url.path}, {"GET"})
+
+    def test_a_link_the_fresh_retrieval_refuses_saves_nothing_and_says_why(self):
+        self.cloud_jobs = [self.cloud_job("cloud-close")]
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        record = self.store.get(request_id)
+        owner = self.runtime.state.model_jobs
+        # Scenario now reports another model for the chosen job.
+        self.job_model_id = "another-model"
+        rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
+        link = next(item for item in rows if item.action == "link_cloud_job")
+        self.assertEqual(
+            bpy.ops.scenario.link_cloud_job(
+                "EXEC_DEFAULT", **dict(link.properties), job_id="cloud-close"
+            ),
+            {"FINISHED"},
+        )
+        self.settle_lookups()
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(
+            owner.views[request_id].meta["cloud_lookup"],
+            "This cloud job used another model; nothing was saved",
+        )
+        self.assertEqual(owner.views[request_id].meta["cloud_lookup_icon"], "ERROR")
+        # A job the selected project cannot read is refused with that reason too.
+        self.job_model_id = self.model["id"]
+        self.missing_jobs.add("cloud-close")
+        rows = submodule("blender.job_recovery").result_actions(owner.views[request_id])
+        link = next(item for item in rows if item.action == "link_cloud_job")
+        self.assertEqual(
+            bpy.ops.scenario.link_cloud_job(
+                "EXEC_DEFAULT", **dict(link.properties), job_id="cloud-close"
+            ),
+            {"FINISHED"},
+        )
+        self.settle_lookups()
+        self.assertEqual(self.store.get(request_id), record)
+        self.assertEqual(
+            owner.views[request_id].meta["cloud_lookup"],
+            "Scenario did not return the selected job in this project; nothing was saved",
+        )
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_restarted_uncertain_job_looks_up_once_and_offline_sends_nothing(self):
+        self.lose_response = True
+        request_id = self.mcp_submit(self.mcp_quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        self.runtime.state.reset()
+        with online_access(False):
+            calls = len(self.calls)
+            owner = self.runtime.inspect_model_jobs()
+            owner.poll()
+            self.assertEqual(len(self.calls), calls)
+            record = self.store.get(request_id)
+            with self.assertRaisesRegex(Exception, "Online Access"):
+                owner.control(request_id, record.revision, "find_cloud_job")
+        self.cloud_jobs = [self.cloud_job("cloud-close")]
+        # A poll before the pump refreshes the worker's permission snapshot reads
+        # nothing and looks again on the next poll once access is allowed.
+        owner.poll()
+        self.settle_lookups()
+        self.runtime.sync_catalog_context()
+        self.settle_lookups()
+        listings = [r for r in self.calls[calls:] if r.url.path.endswith("/v1/jobs")]
+        self.assertEqual(len(listings), 1)
+        self.assertEqual(owner.views[request_id].meta["cloud_lookup"], "1 possible cloud job found")
+        owner.poll()
+        self.settle_lookups()
+        # Automatic lookup runs once per session; Find in cloud history looks again.
+        self.assertEqual(len([r for r in self.calls[calls:] if r.url.path.endswith("/v1/jobs")]), 1)
+        self.recover(request_id, "find_cloud_job")
+        self.settle_lookups()
+        self.assertEqual(len([r for r in self.calls[calls:] if r.url.path.endswith("/v1/jobs")]), 2)
         self.assertEqual(self.store.get(request_id).state.value, "uncertain")
         self.assertEqual(len(self.paid), 1)
 
@@ -2288,6 +2464,28 @@ class ModelGenerationTests(unittest.TestCase):
             except Exception:
                 pass  # Stored state and the assertions below establish the outcome.
         self.runtime.sync_catalog_context()
+        # Film and first-frame tests borrow settle without this class's helpers.
+        ModelGenerationTests.settle_lookups(self)
+
+    def settle_lookups(self):
+        """Finish the read-only cloud lookups and links an unconfirmed submission starts."""
+        model_jobs = submodule("blender.model_jobs")
+        owner = self.runtime.state.model_jobs
+        for _ in range(10):
+            pending = [
+                task
+                for command, task in tuple(owner._commands.values())
+                if command in (model_jobs.FIND, model_jobs.LINK)
+            ]
+            if not pending:
+                return
+            for task in pending:
+                try:
+                    task.result(5)
+                except Exception:
+                    pass  # The owner records the outcome when it drains the task.
+            self.runtime.sync_catalog_context()
+        self.fail("Cloud lookup did not settle")
 
     def test_ui_and_mcp_use_same_exact_quote_claim_and_payload_once(self):
         self.ui_quote()

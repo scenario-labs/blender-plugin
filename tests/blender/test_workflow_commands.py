@@ -49,6 +49,7 @@ class WorkflowCommandTests(unittest.TestCase):
             "flow": [{"id": "node-a", "type": "custom-model"}],
         }
         self.lose_response, self.fail_metadata = False, False
+        self.cloud_jobs, self.listings = [], []
         self.project = None
         self.remote_job = {
             "jobId": "workflow-job",
@@ -79,6 +80,10 @@ class WorkflowCommandTests(unittest.TestCase):
                             "nextPaginationToken": "next-page",
                         },
                     )
+                if request.url.path == "/v1/jobs":
+                    # Recent runs for an unconfirmed submission; read-only.
+                    self.listings.append(request)
+                    return httpx.Response(200, json={"jobs": list(self.cloud_jobs)})
                 if "/jobs/" in request.url.path:
                     return httpx.Response(200, json={"job": self.remote_job})
                 self.assertEqual(request.url.path, "/v1/workflows/fixture-workflow")
@@ -263,12 +268,74 @@ class WorkflowCommandTests(unittest.TestCase):
             self.quote()
         owner = self.runtime.state.model_jobs
         record = self.store.get(request_id)
-        self.assertEqual(owner.actions(record), ("mark_reviewed",))
+        self.assertEqual(owner.actions(record), ("find_cloud_job", "mark_reviewed"))
         self.assertIsNone(owner.control(request_id, record.revision, "mark_reviewed"))
         self.approve(self.quote())
         self.settle()
         self.assertEqual(len(self.paid), 2)
         self.assertEqual(self.store.get(request_id).state.value, "uncertain")
+
+    def test_an_uncertain_run_links_the_chosen_cloud_run_and_then_polls_it(self):
+        store = submodule("core.jobs.store")
+        self.cloud_jobs = [
+            {
+                **self.remote_job,
+                "createdAt": store.claim_time(time.time() + 2),
+                "metadata": {"workflowId": self.workflow["id"], "input": {"prompt": "a cup"}},
+            },
+            {
+                "jobId": "workflow-job-step",
+                "jobType": "custom",
+                "status": "success",
+                "metadata": {"workflowId": self.workflow["id"], "workflowJobId": "workflow-job"},
+            },
+        ]
+        self.lose_response = True
+        request_id = self.approve(self.quote())["local_id"]
+        self.settle()
+        self.lose_response = False
+        record = self.store.get(request_id)
+        self.assertEqual(record.state.value, "uncertain")
+        self.assertEqual(len(self.listings), 1)
+        self.assertEqual(self.listings[0].url.params["workflowId"], self.workflow["id"])
+        owner = self.runtime.state.model_jobs
+        view = owner.views[request_id]
+        # The run's step is not a candidate; only the run itself.
+        self.assertEqual(
+            [item["job_id"] for item in view.meta["cloud_candidates"]], ["workflow-job"]
+        )
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertNotIn("link_cloud_job", status["actions"])
+        rows = submodule("blender.job_recovery").result_actions(view)
+        link = next(item for item in rows if item.action == "link_cloud_job")
+        result = bpy.ops.scenario.link_cloud_job(
+            "EXEC_DEFAULT", **dict(link.properties), job_id="workflow-job"
+        )
+        self.assertEqual(result, {"FINISHED"})
+        self.settle()
+        linked = self.store.get(request_id)
+        self.assertEqual((linked.state.value, linked.remote_job_id), ("remote", "workflow-job"))
+        # Polled like any workflow job: a waiting step would now be reviewable.
+        self.settle_commands(owner)
+        polls = self.job_reads()
+        owner._next_poll[request_id] = 0
+        self.settle()
+        self.assertGreater(self.job_reads(), polls)
+        self.settle_commands(owner)
+        self.remote_job["status"] = "failure"
+        owner._next_poll[request_id] = 0
+        self.settle()
+        self.settle_commands(owner)
+        self.assertEqual(self.store.get(request_id).state.value, "failed")
+        self.assertEqual(len(self.paid), 1)
+
+    def settle_commands(self, owner):
+        """Finish every command in flight, so a later poll starts from a quiet owner."""
+        for _ in range(10):
+            if not owner._commands:
+                return
+            self.settle()
+        self.fail("Saved workflow job commands did not settle")
 
     def test_failed_persistence_consumes_approval_without_spending(self):
         quote = self.quote()

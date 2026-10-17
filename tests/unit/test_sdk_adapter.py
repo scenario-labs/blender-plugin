@@ -634,6 +634,118 @@ def test_job_discovery_follows_empty_page_cursor_but_stops_when_exhausted(adapte
     assert len(calls) == 2
 
 
+def test_job_discovery_sends_several_types_comma_separated(adapter):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"jobs": [{"jobId": "one"}]})
+
+    assert adapter(handler).jobs(job_types=["custom", "inference", "custom"]) == [{"jobId": "one"}]
+    assert dict(calls[0].url.params)["types"] == "custom,inference"
+    assert "type" not in dict(calls[0].url.params)
+
+
+@pytest.mark.parametrize("project", [None, "selected-project"])
+def test_recent_jobs_reads_a_bounded_newest_window_without_failing_at_the_limit(adapter, project):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        index = len(calls)
+        return httpx.Response(
+            200, json={"jobs": [{"jobId": f"job-{index}"}], "nextPaginationToken": f"next-{index}"}
+        )
+
+    rows, complete = adapter(handler, project_id=project).recent_jobs(
+        job_types=("generate-prompt", "image-prompt-editing"), page_size=50, max_pages=2
+    )
+    assert (rows, complete) == ([{"jobId": "job-1"}, {"jobId": "job-2"}], False)
+    assert len(calls) == 2
+    query = dict(calls[1].url.params)
+    assert query["types"] == "generate-prompt,image-prompt-editing"
+    assert query["pageSize"] == "50" and query["paginationToken"] == "next-1"
+    assert query.get("projectId") == project
+    assert "type" not in query and "workflowId" not in query
+
+
+def test_recent_jobs_reports_a_complete_window_and_filters_by_workflow(adapter):
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"jobs": [{"jobId": "run"}], "nextPaginationToken": ""})
+
+    assert adapter(handler).recent_jobs(workflow_id="workflow_one") == ([{"jobId": "run"}], True)
+    query = dict(calls[0].url.params)
+    assert query["workflowId"] == "workflow_one" and query["pageSize"] == "100"
+    assert "types" not in query
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"job_types": []},
+        {"job_types": "custom"},
+        {"job_types": ["custom", "made-up"]},
+        {
+            "job_types": [
+                "custom",
+                "inference",
+                "workflow",
+                "translate",
+                "generate-prompt",
+                "image-prompt-editing",
+                "upload",
+                "texture",
+                "splat",
+            ]
+        },
+        {"job_types": ["custom"], "workflow_id": "bad/id"},
+        {"max_pages": 6},
+        {"max_pages": 0},
+        {"page_size": 101},
+        {},
+    ],
+)
+def test_recent_jobs_validates_its_bounded_filters_before_network(adapter, options):
+    def unexpected(request):
+        pytest.fail("Invalid options must not send a request")
+
+    with pytest.raises(ValueError):
+        adapter(unexpected).recent_jobs(**options)
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"job_types": ["custom"], "job_type": "custom"},
+        {"job_types": ["unknown-type"]},
+        {"job_types": []},
+    ],
+)
+def test_job_discovery_validates_type_lists_before_network(adapter, options):
+    def unexpected(request):
+        pytest.fail("Invalid options must not send a request")
+
+    with pytest.raises(ValueError):
+        adapter(unexpected).jobs(**options)
+
+
+def test_recent_jobs_rechecks_online_permission_before_each_page(adapter):
+    online = [True]
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        online[0] = False
+        return httpx.Response(200, json={"jobs": [{"jobId": "one"}], "nextPaginationToken": "next"})
+
+    with pytest.raises(AdapterError, match="Online access"):
+        adapter(handler, online=lambda: online[0]).recent_jobs(job_types=["translate"])
+    assert len(calls) == 1
+
+
 def test_job_discovery_rechecks_online_permission_before_each_page(adapter):
     online = [True]
     calls = []

@@ -5,6 +5,7 @@
 import importlib
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -573,6 +574,12 @@ def test_predecessor_reopen_requires_one_unchanged_store(runner, tmp_path, damag
     assert len(steps) == (0 if damage == "second-store" else 1)
 
 
+def storage_version():
+    from scenario.core.jobs import store
+
+    return store._VERSION
+
+
 def _predecessor_package(path, version):
     """The current storage code relabelled as an older schema, for offline mechanics only."""
     import zipfile
@@ -583,7 +590,7 @@ def _predecessor_package(path, version):
         for source in sorted((ROOT / "scenario/core").rglob("*.py")):
             text = source.read_text()
             if source.name == "store.py" and source.parent.name == "jobs":
-                text = text.replace("\n_VERSION = 11\n", f"\n_VERSION = {version}\n")
+                text = re.sub(r"\n_VERSION = [0-9]+\n", f"\n_VERSION = {version}\n", text)
                 assert f"_VERSION = {version}" in text
             package.writestr(source.relative_to(ROOT / "scenario").as_posix(), text)
     return path
@@ -603,7 +610,7 @@ def test_predecessor_store_probe_refuses_newer_store_without_writing(tmp_path, m
     assert database.read_bytes() == before
     assert sorted(path.name for path in database.parent.iterdir()) == ["jobs.sqlite3"]
     assert not any(name.startswith(probe.PACKAGE) for name in sys.modules)
-    same = _predecessor_package(tmp_path / "same.zip", 11)
+    same = _predecessor_package(tmp_path / "same.zip", storage_version())
     with pytest.raises(RuntimeError, match="opened the upgraded"):
         probe.reopen(same, database)
     empty = tmp_path / "empty.zip"
@@ -672,6 +679,8 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
     old = Record({"request_id": "old"}, [{"asset": {"asset_id": "a"}, "receipt": None}])
     snapshot = package_probe.job_snapshot(old)
     assert snapshot["intent"] == {"request_id": "old", "film_task": None}
+    # Schema 12 upgrades earlier rows with an unknown submission claim time.
+    assert snapshot["claimed_at"] is None
     assert snapshot["results"][0]["asset"] == {
         "asset_id": "a",
         "source": "asset",
@@ -722,7 +731,7 @@ def test_package_probe_seeds_and_detects_lost_schema_ten_state(package_probe, tm
     (state / "shared-jobs").mkdir(parents=True)
     jobs.JobStore(state / "shared-jobs/jobs.sqlite3", scope)
     before = (state / "shared-jobs/jobs.sqlite3").read_bytes()
-    assert package_probe.store_schema(SimpleNamespace(state_dir=state)) == 11
+    assert package_probe.store_schema(SimpleNamespace(state_dir=state)) == storage_version()
     assert (state / "shared-jobs/jobs.sqlite3").read_bytes() == before
     leaked = jobs.TrainedModelDefault("image", "custom", "update-private-model")
     other.set_trained_default(leaked, expected_revision=0)

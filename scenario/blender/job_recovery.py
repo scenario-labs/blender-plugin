@@ -115,8 +115,95 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
             if self.action == "cancel_prepared"
             else "Marked reviewed for this session; an identical request can be sent again"
             if self.action == "mark_reviewed"
+            else "Looking in cloud history; nothing is submitted"
+            if self.action == "find_cloud_job"
+            else "Stopping the download; Resume download starts it again"
+            if self.action == "stop_download"
             else "Recovery requested; no new generation was submitted"
         )
+        return {"FINISHED"}
+
+
+# Shown before linking one listed cloud job to an unconfirmed request.
+LINK_MESSAGES = (
+    "Scenario cannot tell which job this request created.",
+    "Link only a job you recognize as this request.",
+    "Linking cannot be undone and sends no new generation.",
+    "Results still wait for your review before changing the scene.",
+)
+LINK_WIDTH = 520
+# Blender keeps only references to dynamic enum strings; hold them here.
+_LINK_ITEMS = []
+
+
+def link_candidates(request_id):
+    """The cloud candidates ModelJobs projected for this saved job; reads memory only."""
+    owner = runtime.state.model_jobs
+    view = owner.views.get(request_id) if owner is not None else None
+    return tuple(view.meta.get("cloud_candidates", ())) if view is not None else ()
+
+
+def _link_items(self, context):
+    items = [("NONE", "Choose one job", "Nothing is linked until you choose a job")]
+    for candidate in link_candidates(self.request_id):
+        title, detail = saved_job_actions.candidate_text(candidate)
+        items.append((candidate["job_id"], title, detail))
+    _LINK_ITEMS[:] = items
+    return _LINK_ITEMS
+
+
+class SCENARIO_OT_link_cloud_job(bpy.types.Operator):
+    bl_idname = "scenario.link_cloud_job"
+    bl_label = "Choose cloud job"
+    bl_description = (
+        "Link one listed cloud job to this unconfirmed request after review; nothing is submitted"
+    )
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    job_id: EnumProperty(name="Cloud job", items=_link_items, options={"SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        owner = runtime.state.model_jobs
+        view = owner.views.get(self.request_id) if owner is not None else None
+        if (
+            not link_candidates(self.request_id)
+            or self.context_id != runtime.state.job_context_id
+            or view.meta.get("saved_revision") != self.expected_revision
+        ):
+            self.report({"ERROR"}, "The cloud candidates changed; find them again")
+            return {"CANCELLED"}
+        return context.window_manager.invoke_props_dialog(
+            self, width=LINK_WIDTH, title="Link a cloud job?", confirm_text="Link this job"
+        )
+
+    def draw(self, context):
+        layout = self.layout
+        for line in LINK_MESSAGES:
+            layout.label(text=line)
+        column = layout.column(align=True)
+        for candidate in link_candidates(self.request_id):
+            title, detail = saved_job_actions.candidate_text(candidate)
+            box = column.box()
+            box.prop_enum(self, "job_id", candidate["job_id"], text=title)
+            box.label(text=detail)
+
+    def execute(self, context):
+        if self.job_id == "NONE":
+            self.report({"ERROR"}, "Choose one cloud job first; nothing was linked")
+            return {"CANCELLED"}
+        try:
+            runtime.link_cloud_job(
+                self.context_id, self.request_id, self.expected_revision, self.job_id
+            )
+        except ScenarioError as error:
+            self.report({"ERROR"}, error.reason)
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not link the cloud job; inspect the saved job again")
+            return {"CANCELLED"}
+        runtime.set_message("Checking the chosen cloud job; nothing new is submitted")
         return {"FINISHED"}
 
 
@@ -948,6 +1035,7 @@ def draw_controls(layout, record):
 CLASSES = (
     SCENARIO_OT_inspect_saved_jobs,
     SCENARIO_OT_recover_job,
+    SCENARIO_OT_link_cloud_job,
     SCENARIO_OT_read_saved_blockout,
     SCENARIO_OT_use_saved_blockout,
     SCENARIO_OT_import_saved_images,

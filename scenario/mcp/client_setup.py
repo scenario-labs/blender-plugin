@@ -191,7 +191,7 @@ def _write_atomic(path, data, mode):
         try:
             os.unlink(temporary)
         except OSError:
-            pass
+            pass  # best effort: the original failure is the one to report
         raise
 
 

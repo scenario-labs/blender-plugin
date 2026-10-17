@@ -8,7 +8,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
-from unittest import mock
+from unittest.mock import patch
 
 import bpy
 from helpers import submodule
@@ -27,7 +27,7 @@ class McpConnectTests(unittest.TestCase):
             if key not in {"CODEX_HOME", "APPDATA", "XDG_CONFIG_HOME"}
         }
         environ.update(HOME=str(self.home), USERPROFILE=str(self.home))
-        self.enterContext(mock.patch.dict(os.environ, environ, clear=True))
+        self.enterContext(patch.dict(os.environ, environ, clear=True))
         prefs = self.runtime.prefs()
         self.addCleanup(setattr, prefs, "mcp_port", prefs.mcp_port)
         prefs.mcp_port = 9911

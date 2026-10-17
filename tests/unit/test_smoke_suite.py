@@ -31,7 +31,18 @@ class Downloads(ResultDownloader):
     def __init__(self):
         super().__init__(StoragePolicy(frozenset({"cdn.scenario.com"})), online_access=lambda: True)
 
-    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
+    def download(
+        self,
+        url,
+        *,
+        root,
+        name,
+        expected_size,
+        expected_sha256,
+        max_bytes=None,
+        cancel=None,
+        partial=None,
+    ):
         self._policy.destination(url)
         data = FILES.get(url.split("/")[3], DATA)
         assert expected_size == len(data) or (expected_size is None and max_bytes)

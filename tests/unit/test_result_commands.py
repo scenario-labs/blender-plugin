@@ -44,7 +44,9 @@ class OfflineDownloader(ResultDownloader):
         self.fail_at = None
         self.after_download = None
 
-    def download(self, url, *, root, name, expected_size, expected_sha256):
+    def download(
+        self, url, *, root, name, expected_size, expected_sha256, cancel=None, partial=None
+    ):
         self._policy.destination(url)
         active = [record for record in self.store.records() if record.state == JobState.DOWNLOADING]
         assert len(active) == 1 and active[0].results
@@ -858,7 +860,18 @@ class OriginalDownloader(ResultDownloader):
         )
         self.calls = []
 
-    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
+    def download(
+        self,
+        url,
+        *,
+        root,
+        name,
+        expected_size,
+        expected_sha256,
+        max_bytes=None,
+        cancel=None,
+        partial=None,
+    ):
         self._policy.destination(url)
         self.calls.append((url, name, expected_size, max_bytes))
         with (root / name).open("xb") as target:

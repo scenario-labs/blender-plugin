@@ -742,8 +742,18 @@ class JobSession:
         return self._record_command("load_results", request_id, expected_revision)
 
     def download_results(self, request_id, *, expected_revision):
-        """Queue an explicit download using the configured private storage policy."""
+        """Queue an explicit download on the transfer lane under the private storage policy."""
         return self._record_command("download_results", request_id, expected_revision)
+
+    def cancel_download(self, task):
+        """Stop one of this session's downloads at its next chunk, without a receipt.
+
+        The job then reads `download_failed`; its completed receipts stay and a
+        later explicit download resumes the rest. Retirement cancels them all.
+        """
+        _main_thread()
+        if any(pending is task for pending, _ in self._pending):
+            self._workers.cancel_transfer(task)
 
     def verify_results(self, request_id, *, expected_revision):
         """Queue local receipt verification; this does not authorize application."""

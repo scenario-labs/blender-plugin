@@ -29,7 +29,7 @@ from ..core.jobs.coordinator import (
 from ..core.jobs.preview_scheduler import BATCH_LIMIT
 from ..core.jobs.records import JobRecord
 from ..core.jobs.result_files import CHECKING, UNAVAILABLE, VERIFIED, ResultFiles
-from ..core.jobs.results import ResultError
+from ..core.jobs.results import DownloadCanceled, ResultError
 from ..core.jobs.store import (
     JobOrigin,
     JobState,
@@ -80,6 +80,8 @@ CANCEL_UNSUPPORTED = (
     "Scenario documents cancellation only for inference jobs and has not confirmed "
     "this job as one; nothing was sent and the job keeps running"
 )
+# A download the user stopped: nothing partial was saved and Resume starts it again.
+DOWNLOAD_STOPPED = "Download stopped; nothing partial was saved. Resume download starts it again"
 # Shared by the native World operator and MCP prepare_result_application.
 NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
 # Native review notes for a submission Scenario never confirmed; MCP keeps the error.
@@ -418,6 +420,8 @@ class ModelJobs:
         self._step_errors = {}
         self._unreadable_steps = set()
         self._paused = set()
+        # Downloads the user asked to stop; their command reports the outcome.
+        self._stopping = set()
         self._images = {}
         self._receipts = {}
         self._automatic_application = set()
@@ -700,6 +704,8 @@ class ModelJobs:
             if not task.done():
                 continue
             del self._commands[request_id]
+            stopped = request_id in self._stopping
+            self._stopping.discard(request_id)
             if command == DECIDE:
                 self._finish_decision(request_id, task)
                 continue
@@ -863,6 +869,14 @@ class ModelJobs:
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
+                elif (
+                    stopped
+                    and command == "download_results"
+                    and isinstance(error, DownloadCanceled)
+                ):
+                    # Only the cancellation itself reads as a stop; a real
+                    # failure at the same moment keeps the review wording.
+                    self._pause(request_id, DOWNLOAD_STOPPED)
                 elif command in ("refresh_remote", "cancel_remote") and self._refresh_failed(
                     request_id, command, error
                 ):
@@ -1632,6 +1646,8 @@ class ModelJobs:
             # translate submission, can be canceled locally like MCP allows.
             # The shared command rejects it once dispatch claims the revision.
             return ("cancel_prepared",)
+        if self._stoppable(record):
+            return ("stop_download",)
         if request_id in self._commands or request_id in self.submissions:
             return ()
         if request_id in self._receipts:
@@ -1709,6 +1725,22 @@ class ModelJobs:
             actions.append("retry_receipt")
         return tuple(actions)
 
+    def _stoppable(self, record):
+        """Whether this owner's own download of `record` is running and not yet stopped.
+
+        Only a `downloading` record whose download task this owner started can be
+        stopped; a download another session or a restarted owner runs is not offered.
+        """
+        request_id = record.intent.request_id
+        command = self._commands.get(request_id)
+        return (
+            record.state == JobState.DOWNLOADING
+            and command is not None
+            and command[0] == "download_results"
+            and not command[1].done()
+            and request_id not in self._stopping
+        )
+
     def control(self, request_id, expected_revision, action):
         """Explicit recovery never reconstructs a quote or approves another import."""
         record = self.store.get(request_id)
@@ -1757,6 +1789,14 @@ class ModelJobs:
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
+        if action == "stop_download":
+            # Signal the running transfer; its completion saves download_failed
+            # with no receipt for the unfinished asset, and Resume restarts it.
+            self.session.cancel_download(self._commands[request_id][1])
+            self._stopping.add(request_id)
+            self._automatic_application.discard(request_id)
+            view.meta["recovery_actions"] = ()
+            return None
         if action == "mark_reviewed":
             # Local and session-only: nothing is sent, saved or resubmitted.
             self.session.mark_unconfirmed_reviewed(request_id, expected_revision=expected_revision)

@@ -305,7 +305,9 @@ It starts a fixed number of non-daemon threads, bounds the pending queue, and
 rejects excess commands before dispatch. `submit` copies the current JSON
 payload at admission; the coordinator checks the original quote, origin and
 expiry again when the worker reaches the spend boundary. `refresh_remote` uses
-the same pool. There is no generic callable execution or Blender access.
+the same pool; storage transfers use the
+[transfer lane](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume). There is no
+generic callable execution or Blender access.
 
 Each command returns a `JobTask` with `done()` and `result(timeout=...)`. A GUI
 owner polls from its main-thread pump; a headless owner can block explicitly.
@@ -323,7 +325,9 @@ One more non-daemon thread, `ScenarioPreview`, runs only the
 [preview commands](#saved-result-preview-commands) from its own bounded queue
 (eight tasks by default) with per-task cancellation. It never runs job commands,
 and job workers never run preview commands, so a slow preview poll or download
-cannot delay remote refresh, result downloads or submission. Preview admission
+cannot delay remote refresh, result downloads or submission. Two
+`ScenarioTransfer` threads with their own queue of 16 likewise run only result
+downloads and upload parts, so a large transfer never holds a job worker. Preview admission
 is also independent of the single local media slot. `deactivate()` cancels
 queued previews and signals the running one; a running SDK read can still take
 until its client timeout. `previews_idle` reports when no preview command is
@@ -546,6 +550,7 @@ uses the same configured byte cap. Each receipt commits before advancing to
 another asset. Existing receipts are rehash-verified instead of redownloaded.
 All receipts must exist before `ready`.
 
+A transfer fails only after its [bounded retries](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume).
 A transfer, metadata or verification failure saves `download_failed` and reports
 a sanitized error. A persistence failure propagates and can leave `downloading`
 for explicit recovery inspection; it never claims an uncommitted state was saved.
@@ -561,9 +566,11 @@ application authorization: the Blender owner must recheck origin/target and
 atomically claim application before changing the scene. Interrupted `applying`
 is deliberately rejected; a prior scene mutation may already have occurred.
 
-All three methods are available through `JobWorkers` using the same bounded pool,
-SDK lifetime and main-thread polling interface. Deactivation stops subsequent
-asset work; a transfer already in flight can save its receipt to the old scope.
+All three methods are available through `JobWorkers` with the same SDK lifetime
+and main-thread polling interface; downloads run on the transfer lane, the others
+on the job workers. Deactivation stops subsequent asset work and cancels an
+in-flight transfer at its next chunk; an asset whose bytes were already complete
+can still save its receipt to the old scope.
 Closing a view must not deactivate these application-owned workers. The runtime
 configures the CDN storage policy, and ModelJobs drives downloads and recovery for
 every model lane; recovered results apply only after fresh destination approval

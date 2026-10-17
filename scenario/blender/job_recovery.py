@@ -117,6 +117,8 @@ class SCENARIO_OT_recover_job(bpy.types.Operator):
             if self.action == "mark_reviewed"
             else "Looking in cloud history; nothing is submitted"
             if self.action == "find_cloud_job"
+            else "Stopping the download; Resume download starts it again"
+            if self.action == "stop_download"
             else "Recovery requested; no new generation was submitted"
         )
         return {"FINISHED"}

@@ -125,7 +125,18 @@ class Downloads(ResultDownloader):
         super().__init__(StoragePolicy(frozenset({"cdn.scenario.com"})), online_access=lambda: True)
         self.service = service
 
-    def download(self, url, *, root, name, expected_size, expected_sha256, max_bytes=None):
+    def download(
+        self,
+        url,
+        *,
+        root,
+        name,
+        expected_size,
+        expected_sha256,
+        max_bytes=None,
+        cancel=None,
+        partial=None,
+    ):
         self._policy.destination(url)
         data = self.service.files[url]
         # A declared original has no size metadata, so a byte cap must bound it.

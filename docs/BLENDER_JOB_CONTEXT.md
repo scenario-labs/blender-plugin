@@ -911,6 +911,13 @@ revision. Queued commands retain their original scope.
   the offer and pauses delivery with the same message, without a claim.
 - `recover_download` verifies interrupted saved receipts under the existing lock,
   without network access or import.
+- `stop_download` (**Stop download**) is offered only for a `downloading` record
+  whose download command this owner started and is still running; a download
+  another session or a restarted owner runs offers nothing. It signals the
+  command's [transfer-lane cancel](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume)
+  without a confirmation, since nothing is lost: the job becomes
+  `download_failed` with no receipt for the unfinished asset, delivery pauses
+  with a note that nothing partial was saved, and `resume` downloads it again.
 - `retry_receipt` saves an already completed local application's outcome without
   any scene mutation. The exact pending owner-local handle must still exist.
 - `mark_reviewed` is offered for a `submitting` or `uncertain` record with no

@@ -738,8 +738,11 @@ class JobCoordinator:
     def load_results(self, request_id, *, expected_revision):
         return self._results.load_manifest(request_id, expected_revision=expected_revision)
 
-    def download_results(self, request_id, *, expected_revision):
-        return self._results.download(request_id, expected_revision=expected_revision)
+    def download_results(self, request_id, *, expected_revision, cancel=None):
+        """Download a successful job's results; a set ``cancel`` stops the transfer."""
+        return self._results.download(
+            request_id, expected_revision=expected_revision, cancel=cancel
+        )
 
     def recover_downloads(self, request_id, *, expected_revision):
         """Explicitly reconcile an interrupted download without network or scene work."""

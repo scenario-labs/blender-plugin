@@ -12,8 +12,9 @@ connection before sending them. Connect either
 or both according to the task; they have separate authentication and capabilities.
 
 The local server accepts MCP JSON-RPC over HTTP at
-`http://127.0.0.1:9876/mcp` by default. It starts with the extension in a GUI
-session when Blender's **Allow Online Access** is on. The **MCP Port** preference
+`http://127.0.0.1:9876/mcp` by default. It runs in a GUI session whenever
+Blender's **Allow Online Access** is on, starting or stopping when that setting
+changes, unless **Stop MCP server** was pressed. The **MCP Port** preference
 sets the first port; if busy, the server tries the next three. Copy the actual
 URL from **Scenario > Agents (MCP)**. An authenticated GET on `/mcp` returns 405:
 use POST for tool calls; the server does not provide an SSE stream.
@@ -740,8 +741,9 @@ No credentials, service requests or registry writes are needed for cold reads.
   [agent file uploads](#agent-file-uploads).
 - **No free port from 9876:** all four candidate ports are busy. Choose a different
   MCP Port and copy the newly displayed URL.
-- **Allow Online Access is off:** enable it in Blender's System preferences before
-  starting the server; this permission also allows Scenario network operations.
+- **Allow Online Access is off:** enable it in Blender's System preferences; the
+  server then starts unless you stopped it. This permission also allows Scenario
+  network operations.
 - **Capture fails in background mode:** open a GUI session with a 3D viewport.
 - **Catalog is still loading:** retry after loading completes and inspect the
   extension's status for credential or service errors. This is separate from the

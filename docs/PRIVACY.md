@@ -235,18 +235,18 @@ managers may retain copied tokens or text.
 
 ## The local MCP server
 
-In a Blender window, the server starts by itself with the extension whenever
-**Allow Online Access** is on, and listens for local agents until Blender quits or
-you choose **Stop MCP server** in **Scenario > Agents (MCP)**; the extension's
-network permission names this `127.0.0.1` listener. Background Blender starts it
-only with the explicit `scenario_blender` command. The server binds to `127.0.0.1`
-and refuses any other address, using the port selected in Preferences (default
-`9876`), so only programs on this computer can connect. Every request must name
-`127.0.0.1`, `localhost` or `[::1]` as its `Host`, which stops a web page that
-rebinds its own domain to this computer from reading even the server's version
-status, and the server closes a connection that sends nothing for 60 seconds while
-it waits to read a request. Calls
-require the local session token. Blender normally generates it for the session;
+In a Blender window, the server starts by itself whenever **Allow Online
+Access** is on, and listens for local agents until Blender quits, the setting is
+switched off or you choose **Stop MCP server** in **Scenario > Agents (MCP)**;
+the extension's network permission names this `127.0.0.1` listener. Background
+Blender starts it only with the explicit `scenario_blender` command. The server
+binds to `127.0.0.1` and refuses any other address, using the port selected in
+Preferences (default `9876`), so only programs on this computer can connect.
+Every request must name `127.0.0.1`, `localhost` or `[::1]` as its `Host`, which
+stops a web page that rebinds its own domain to this computer from reading even
+the server's version status, and the server closes a connection that sends
+nothing for 60 seconds while it waits to read a request. Calls require the local
+session token. Blender normally generates it for the session;
 an explicitly supplied token must be changed by its owner. This is a local
 connection, not Scenario's API credential, and programs holding it can read the
 scene, take captures and request generation that spends your Scenario credits.

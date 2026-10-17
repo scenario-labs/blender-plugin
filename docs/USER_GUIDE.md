@@ -946,9 +946,9 @@ can read your scene and request paid work. See
   tool's folder to the PATH Blender starts with.
 - **An agent can't connect to Blender (connection refused)**: the local server
   runs only while Blender is open with Allow Online Access on. Open Blender
-  first, or press **Start MCP server** in the Agents (MCP) panel if you allowed
-  Online Access after Blender started. Then reconnect the agent: run `/mcp` in
-  Claude Code, start a new Codex session, or restart Cursor or Claude Desktop.
+  first, or press **Start MCP server** in the Agents (MCP) panel if you stopped
+  it. Then reconnect the agent: run `/mcp` in Claude Code, start a new Codex
+  session, or restart Cursor or Claude Desktop.
 - **An agent is refused as unauthorized after Blender restarts**: each Blender
   session makes a new token. Copy the client setup again; for Codex, export the
   new token before starting it.

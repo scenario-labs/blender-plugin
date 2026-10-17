@@ -18,6 +18,7 @@ from . import runtime
 
 log = logging.getLogger("scenario.mcp")
 SERVER_INFO = {"name": "scenario-blender", "version": __version__}
+OFFLINE = "Allow Online Access is off"
 
 
 def build_registry():
@@ -40,11 +41,13 @@ def status():
     }
 
 
-def start():
+def start(*, by_user=False):
+    if by_user:
+        runtime.state.mcp_stopped_by_user = False
     if runtime.state.mcp is not None and runtime.state.mcp.running:
         return runtime.state.mcp
     if not runtime.online():
-        runtime.state.mcp_error = "Allow Online Access is off"
+        runtime.state.mcp_error = OFFLINE
         return None
     prefs = runtime.prefs()
     port = prefs.mcp_port if prefs else 9876
@@ -69,11 +72,44 @@ def start():
     return server
 
 
-def stop():
+def stop(*, by_user=False):
+    if by_user:
+        runtime.state.mcp_stopped_by_user = True
     server = runtime.state.mcp
     if server is not None:
         server.stop()
     runtime.state.mcp = None
+
+
+def start_with_extension():
+    """Start when the extension registers in a Blender window, then follow online access."""
+    runtime.state.mcp_online = runtime.online()
+    runtime.state.mcp_stopped_by_user = False
+    return start()
+
+
+def follow_online_access():
+    """Start or stop the server when Allow Online Access is switched, without a restart.
+
+    The GUI pump calls this every tick. Only start_with_extension arms it, so
+    background Blender keeps the explicit scenario_blender command. After Stop
+    MCP server the server stays stopped; a failed start waits for the next switch
+    or Start MCP server instead of retrying every tick. The session token is
+    kept. Returns True when the status the panel draws changed.
+    """
+    previous = runtime.state.mcp_online
+    online = runtime.online()
+    if previous is None or online == previous:
+        return False
+    runtime.state.mcp_online = online
+    if not online:
+        stop()
+        runtime.state.mcp_error = OFFLINE
+    elif runtime.state.mcp_stopped_by_user:
+        runtime.state.mcp_error = ""
+    else:
+        start()
+    return True
 
 
 def process_pending():

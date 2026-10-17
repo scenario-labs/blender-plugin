@@ -177,8 +177,10 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertFalse(self.runtime.state.catalog_loaded)
         self.assertIn("HTTP 503", self.runtime.state.catalog_error)
         self.assertIn("Could not load models", self.runtime.state.last_message)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(len(self.private_reads), 1)
+        # Each catalog list read fails after the SDK's own read retries.
+        attempts = 1 + submodule("core.api.sdk_adapter").READ_RETRIES
+        self.assertEqual(len(calls), attempts)
+        self.assertEqual(len(self.private_reads), attempts)
         self.assertIn("HTTP 503", self.runtime.state.trained_error)
         self.assertFalse(self.generation.request_catalog())
 

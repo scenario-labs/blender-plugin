@@ -14,7 +14,13 @@ import pytest
 
 from scenario.core.api import catalog as catalog_module
 from scenario.core.api.errors import ScenarioError
-from scenario.core.api.sdk_adapter import MODEL_BULK_LIMIT, AdapterError, Credentials, SDKAdapter
+from scenario.core.api.sdk_adapter import (
+    MODEL_BULK_LIMIT,
+    READ_RETRIES,
+    AdapterError,
+    Credentials,
+    SDKAdapter,
+)
 from scenario.core.api.sdk_catalog import SDKCatalog
 from scenario.core.jobs.store import JobScope
 
@@ -390,6 +396,8 @@ def test_shared_failed_read_releases_waiters_and_allows_retry(monkeypatch, retir
         if len(requests) == 1:
             entered.set()
             assert release.wait(5)
+        # The SDK retries a model read; the failure outlasts its retries.
+        if len(requests) <= 1 + READ_RETRIES:
             return httpx.Response(503, text="private failure")
         return httpx.Response(200, json={"model": {"id": "fixture"}})
 
@@ -409,13 +417,13 @@ def test_shared_failed_read_releases_waiters_and_allows_retry(monkeypatch, retir
             with pytest.raises(ScenarioError) as error:
                 read.result(5)
             assert "private failure" not in str(error.value)
-    assert len(requests) == 1
+    assert len(requests) == 1 + READ_RETRIES
     assert context._model_reads == {}
     if retire:
         assert context.closed and pools[0]._closed
     else:
         assert context.get("fixture").id == "fixture"
-        assert len(requests) == 2
+        assert len(requests) == 2 + READ_RETRIES
         context.close()
 
 
@@ -522,7 +530,8 @@ def test_shared_list_failure_releases_waiters_without_publishing_partial_data(mo
             with pytest.raises(ScenarioError) as error:
                 read.result(5)
             assert "private service failure" not in str(error.value)
-    expected_calls = 3 if outcome == "invalid-record" else 2
+    # A failed page read is retried by the SDK before the catalog sees it.
+    expected_calls = {"invalid-record": 3, "failure": 2 + READ_RETRIES}.get(outcome, 2)
     assert len(calls) == expected_calls
     assert context._list_reads == {}
     if outcome == "retired":
@@ -798,10 +807,11 @@ def test_failed_bulk_read_releases_waiters_without_caching(monkeypatch, outcome)
         if len(calls) == 1:
             entered.set()
             assert release.wait(5)
-            if outcome == "failure":
-                return httpx.Response(503, text="private service failure")
             if outcome == "invalid-record":
                 return httpx.Response(200, json={"models": [{"id": "a", "capabilities": [None]}]})
+        # The SDK retries a bulk read; the failure outlasts its retries.
+        if outcome == "failure" and len(calls) <= 1 + READ_RETRIES:
+            return httpx.Response(503, text="private service failure")
         return httpx.Response(200, json={"models": [{"id": "a"}]})
 
     context, pools = catalog(respond)
@@ -823,7 +833,8 @@ def test_failed_bulk_read_releases_waiters_without_caching(monkeypatch, outcome)
             with pytest.raises(ScenarioError) as error:
                 read.result(5)
             assert "private service failure" not in str(error.value)
-    assert len(calls) == 1
+    attempts = 1 + READ_RETRIES if outcome == "failure" else 1
+    assert len(calls) == attempts
     assert context._summary_reads == {} and context._summaries == {}
     if outcome == "retired":
         assert context.closed and pools[0]._closed
@@ -832,7 +843,7 @@ def test_failed_bulk_read_releases_waiters_without_caching(monkeypatch, outcome)
     else:
         context.update_online(True)
         assert list(context.get_many(["a"])) == ["a"]
-        assert len(calls) == 2
+        assert len(calls) == attempts + 1
         context.close()
 
 

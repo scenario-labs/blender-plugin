@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# The fuzzed core modules import certifi through the job store. This pin is the
+# uv.lock entry exported with `uv export --format requirements-txt`;
+# tests/fuzz/test_harnesses.py checks that the two agree.
+certifi==2026.7.22 \
+    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
+    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55

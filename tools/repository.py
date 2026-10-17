@@ -3,7 +3,6 @@
 """Generate an offline native repository from an explicit inventory of exact ZIPs."""
 
 import argparse
-import html
 import json
 import re
 import shutil
@@ -15,6 +14,7 @@ from pathlib import Path
 
 from blender_env import find_blender, inspect_zip, sha256
 from build import Session, arguments
+from site_pages import downloads_page
 from wheel_bundle import validate_bundle
 
 _VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -202,36 +202,7 @@ def write_json(path, data):
 
 
 def write_listing(path, index):
-    rows = []
-    for item in index["data"]:
-        blender_range = item["blender_version_min"] + " or newer"
-        if "blender_version_max" in item:
-            blender_range = (
-                item["blender_version_min"] + " to " + item["blender_version_max"] + " (exclusive)"
-            )
-        cells = [
-            '<a href="'
-            + html.escape(item["archive_url"], quote=True)
-            + '">'
-            + html.escape(item["id"] + " " + item["version"])
-            + "</a>",
-            html.escape(blender_range),
-            html.escape(", ".join(item.get("platforms", ["all"]))),
-            str(item["archive_size"]),
-            html.escape(item["archive_hash"]),
-        ]
-        rows.append("<tr>" + "".join("<td>" + value + "</td>" for value in cells) + "</tr>")
-    path.write_text(
-        '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        "<title>Extension repository</title></head><body><h1>Extension repository</h1>"
-        '<p><a href="./index.json">Blender repository index</a></p><table>'
-        "<thead><tr><th>Extension</th><th>Blender versions</th><th>Platforms</th>"
-        "<th>Bytes</th><th>SHA-256</th></tr></thead><tbody>"
-        + "\n".join(rows)
-        + "</tbody></table></body></html>\n",
-        encoding="utf-8",
-    )
+    path.write_text(downloads_page(index), encoding="utf-8")
 
 
 def generate(session, inventory_path, output):

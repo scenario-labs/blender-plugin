@@ -337,3 +337,45 @@ def test_worker_delivers_related_workflow_steps_with_the_page():
         assert payload["related"] == [job("job-step")]
     finally:
         context.close()
+
+
+@pytest.mark.parametrize("failure", ["timeout", 503])
+def test_per_row_reads_make_one_attempt_while_the_page_read_retries(failure):
+    # A History page reads up to WORKFLOW_STEP_READS steps and 30 prompt previews
+    # per load. Each is optional, so during an outage it makes one attempt instead
+    # of the SDK's read retries; only the page read itself is retried.
+    from scenario.core.api.sdk_adapter import READ_RETRIES
+
+    calls = []
+
+    def fail(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private detail", request=request)
+        return httpx.Response(503, json={"message": "private detail"})
+
+    listed = [
+        workflow_row("job-run", ["job-step-a", "job-step-b"]),
+        job("job-prompted", "asset_prompt"),
+    ]
+    pages = []
+
+    def respond(request):
+        calls.append(request)
+        if request.url.path == "/v1/jobs":
+            pages.append(request)
+            if len(pages) == 1:
+                return fail(request)
+            return httpx.Response(200, json={"jobs": listed})
+        return fail(request)
+
+    context, _ = catalog(respond)
+    try:
+        page = context.history_page()
+    finally:
+        context.close()
+    assert len(pages) == 2  # one failed page read, then the SDK's retry succeeded
+    assert READ_RETRIES >= 1
+    rows = [r.url.path for r in calls if r.url.path != "/v1/jobs"]
+    assert sorted(rows) == ["/v1/assets/asset_prompt", "/v1/jobs/job-step-a", "/v1/jobs/job-step-b"]
+    assert page["related_jobs"] == []
+    assert page["jobs"][1]["metadata"]["input"]["prompt"] == "asset_prompt"

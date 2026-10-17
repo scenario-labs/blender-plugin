@@ -100,9 +100,9 @@ full render-lane desktop acceptance.
   recipe and a production ledger into a new ZIP; it shares that thread, refuses
   linked data (including the Essentials brushes a scene links once a sculpt or
   paint mode was used in it), movie clips, packed sound strip audio, image
-  sequences and other unportable data, keeps model IDs in the recipe and output-only path
-  settings such as strip proxy folders, and cannot clear Blender's unused bytes
-  of earlier settings, so review a bundle before
+  sequences and other unportable data, keeps model IDs in the recipe and
+  output-only path settings such as strip proxy folders, and cannot clear
+  Blender's unused bytes of earlier settings, so review a bundle before
   publishing it widely. It notices an edit of its unshown scenes only through the
   review's frames, rate, size and strip count, the scene and media counts and bytes
   and the ledger. It has installed synthetic coverage and the bundle of that
@@ -137,11 +137,6 @@ full render-lane desktop acceptance.
   versions that share a title collide when extracted side by side. A second
   end-to-end run with two versions met all three;
   [#440](https://github.com/scenario-labs/blender-plugin/issues/440) tracks them.
-- Local MCP `job_status` lists `files` only for image results imported
-  automatically in the current session. A ready video, an image not imported
-  automatically, other result kinds and every job after a restart list none;
-  `results` still names each saved asset, its media type and whether it was
-  downloaded, without a local path.
 - Credentials use one explicitly selected pair (saved Blender preferences by
   default, environment only when selected). UI and MCP model jobs use credential-bound
   local storage. Preferences also allow an explicit optional project ID; changing
@@ -176,15 +171,17 @@ full render-lane desktop acceptance.
   continue in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 - Remote job progress is advisory and kept only in memory. Providers may report
   no fraction, or 0 until completion, so a job may show only `generating`; a
-  fraction below 1% shows no bar, and no time estimate is given. Readings and the submitting scene/lane binding are not
-  persisted: after a restart, progress appears only after an explicit refresh or
-  resume, and recovered jobs remain unbound. In paid desktop passes, TripoSplat
-  and Tencent UV Unwrapping reported several intermediate fractions, GPT Image 2
-  only 3%, and no job reported a queued state; other providers are unobserved.
-  At UI scale 1.0 the composer's strip and collapsed pill filled to the reported
-  fraction over a dim track. The composer bar at UI scale 2.0 and the Jobs rows'
-  bars still need desktop evidence
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)). See [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
+  fraction below 1% shows no bar, and no time estimate is given. Readings and
+  the submitting scene/lane binding are not persisted: after a restart, progress
+  appears only after an explicit refresh or resume, and recovered jobs remain
+  unbound. In paid desktop passes, TripoSplat and Tencent UV Unwrapping reported
+  several intermediate fractions, GPT Image 2 only 3%, and no job reported a
+  queued state; other providers are unobserved. At UI scale 1.0 the composer's
+  strip and collapsed pill filled to the reported fraction over a dim track. The
+  composer bar at UI scale 2.0 and the Jobs rows' bars still need desktop
+  evidence ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+  See
+  [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 - Scenario cannot cancel a running workflow step: rejecting a waiting approval
   or selection step (**Stop workflow**, or MCP `decide_workflow_step` `reject`)
   is the only way to stop a workflow, and completed steps stay charged. Steps
@@ -208,10 +205,10 @@ full render-lane desktop acceptance.
   the review assets of other node types and UI scale 2.0 are unverified
   ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)). See
   [waiting workflow steps](ui/studio-and-library.md#waiting-workflow-steps).
-- Installing 0.10.0 from the official extension repository was verified on macOS
-  with Blender 5.0.1, 5.1.2 and 5.2.1. 0.10.0 is the first release the repository
-  offers, so an update from one published release to the next, keeping
-  preferences and stored jobs, will be verified with the next release (see the
+- Installing 0.10.0 from the official extension repository, and its update to
+  the next release through Blender, were verified on macOS with Blender 5.0.1,
+  5.1.2 and 5.2.1. A loopback copy of that update checked that stored jobs, the
+  saved scene and an offline restart survive it (see the
   [user guide](USER_GUIDE.md#updates)).
 
 ## Creation and scene application
@@ -338,9 +335,8 @@ full render-lane desktop acceptance.
 - The model picker is rebuilt when the trained list, base descriptions or new
   thumbnails arrive, and Blender drops a click on **OK** that lands on such a
   rebuild without a message: click again. It is no longer rebuilt on every
-  maintenance tick, which made **OK** need two or three clicks, but a physical
-  check of the single click is pending in
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440). As in any
+  maintenance tick, which made **OK** need two or three clicks; on the #440
+  candidate a single click closed the picker on a desktop. As in any
   Blender dialog, a click outside a field being edited only ends the edit.
 - Input methods (IME) cannot compose in the composer prompt. Blender composes
   only in its own text fields and gives add-ons neither the composition text nor
@@ -397,9 +393,9 @@ full render-lane desktop acceptance.
   waveform status by measured width, before later amendments for Studio's popup
   width and hyphenated words, and kept the duration with its unit. On 2026-10-13
   the maintainer listened to a saved audio result through the system player and
-  drew its waveform on the 0.10.0 candidate ZIP. These passes predate
-  in-extension audio. Play audio and Stop audio on the desktop, listening
-  through them, the waveform's Cancel, Retry and close on the desktop, clicking
+  drew its waveform on the 0.10.0 candidate ZIP. On 2026-10-14 the maintainer
+  played, stopped and listened through Play audio and Stop audio on a #440
+  candidate ZIP. The waveform's Cancel, Retry and close on the desktop, clicking
   Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms have no
   desktop evidence yet, which remains
   [#440](https://github.com/scenario-labs/blender-plugin/issues/440) work. Local
@@ -484,10 +480,10 @@ full render-lane desktop acceptance.
   row's. #432 then sized the arrows to the preview images, and a physical
   recheck on 2026-10-13 found them within 0 to 1 px of the images at UI scales
   1.0 and 2.0, and Studio's arrows about 1.2 steps wide at 2.0, stretched past
-  their one step by the row. The arrows now keep one step at every UI scale;
-  that width awaits a physical desktop recheck. Which result kinds receive a
-  Scenario preview image, how long it takes and where a first-access redirect
-  points are not established by live evidence; a preview missing after about
+  their one step by the row. The arrows now keep one step at every UI scale, as
+  Studio showed at UI scale 2.0 on the #440 candidate. Which result kinds
+  receive a Scenario preview image, how long it takes and where a first-access
+  redirect points are not established by live evidence; a preview missing after about
   five minutes of online polling needs **Retry preview (N)**. Video clips and 3D
   turntables are fetched by the runtime but not displayed, the preview of a
   video is Scenario's image rather than a chosen frame, and MP3 or other audio
@@ -513,27 +509,28 @@ full render-lane desktop acceptance.
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme
   rather than the custom composer drawing.
-- Studio > Library [organization](ui/studio-and-library.md#library-organization) changes one
-  asset per review (local MCP accepts up to 49) and loads at most 200 collections.
-  Applied changes are immediate account metadata that Blender Undo does not
-  reverse. Collection rename and deletion, model collections and tag listing are
-  not available, and pages loaded with Public assets cannot be organized. Reviews
-  and results are session-local: a restart, file load or connection change loses
-  the card, while a sent write keeps its effect. Search results may lag behind
-  tag changes; verification reads the assets back instead. An add of an asset
-  that is already a member is refused as a whole and writes nothing, as the
-  service was observed to behave; the review then reads the asset back as
-  verified without another request. This is not yet checked live from this
-  repository. On 2026-10-10 a free live run from a pre-merge build applied and
-  read back one asset's collection add and removal and tag changes, through local
-  MCP and the native operators in background Blender, so that removal's DELETE
-  body reached the service; name uniqueness, tag normalization and service limits
-  are unverified live. On macOS, Japanese IME composition did not start in the
-  Organize dialog's Tags field, as in Blender's own text fields, where pasting the
-  text worked. A read-only physical pass on macOS arm64 Blender 5.1.2 checked the
-  card placement and read-enabled controls at UI scales 1.0 and 2.0; at 2.0 only
-  the review card's header shows at the bottom of the Studio popup until it is
-  scrolled. Apply on a desktop still needs a physical check
+- Studio > Library [organization](ui/studio-and-library.md#library-organization)
+  changes one asset per review (local MCP accepts up to 49) and loads at most
+  200 collections. Applied changes are immediate account metadata that Blender
+  Undo does not reverse. Collection rename and deletion, model collections and
+  tag listing are not available, and pages loaded with Public assets cannot be
+  organized. Reviews and results are session-local: a restart, file load or
+  connection change loses the card, while a sent write keeps its effect. Search
+  results may lag behind tag changes; verification reads the assets back
+  instead. An add of an asset that is already a member is refused as a whole and
+  writes nothing, as the service was observed to behave; the review then reads
+  the asset back as verified without another request. This is not yet checked
+  live from this repository. On 2026-10-10 a free live run from a pre-merge
+  build applied and read back one asset's collection add and removal and tag
+  changes, through local MCP and the native operators in background Blender, so
+  that removal's DELETE body reached the service; name uniqueness, tag
+  normalization and service limits are unverified live. On macOS, Japanese IME
+  composition did not start in the Organize dialog's Tags field, as in Blender's
+  own text fields, where pasting the text worked. A read-only physical pass on
+  macOS arm64 Blender 5.1.2 checked the card placement and read-enabled controls
+  at UI scales 1.0 and 2.0; at 2.0 only the review card's header shows at the
+  bottom of the Studio popup until it is scrolled. Apply on a desktop still
+  needs a physical check
   ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
 
 ## Verification

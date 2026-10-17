@@ -5,7 +5,7 @@
 The committed `tests/fixtures/synthetic/jobs-schema9.sql` was produced by
 extracting `scenario/` from commit b57c398f (a schema 9 main revision) and
 running this script against it; `jobs-schema11.sql` came the same way from
-commit 861d554e (the 0.11.0 release, schema 11). It uses only that code's public
+commit 861d554e (the schema 11 release). It uses only that code's public
 store API, so the upgrade tests rebuild a database the previous release really
 wrote. Each fixture is the SQL dump of that database plus its two header pragmas,
 because the repository does not commit database files:
@@ -36,8 +36,10 @@ SCHEMAS = frozenset({9, 11})
 
 def header(version):
     return (
+        # REUSE-IgnoreStart: the fixture header below is data, not this file's licence.
         "-- SPDX-FileCopyrightText: 2026 Scenario Inc.\n"
         "-- SPDX-License-Identifier: GPL-3.0-or-later\n"
+        # REUSE-IgnoreEnd
         f"-- Schema {version} job store written by tools/make_job_store_fixture.py with the\n"
         "-- predecessor's storage code; see tests/fixtures/README.md. Synthetic data only.\n"
     )

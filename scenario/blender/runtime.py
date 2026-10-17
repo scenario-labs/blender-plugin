@@ -94,7 +94,6 @@ class RuntimeState:
         self.history_cursors = set()
         self.history_saved_ids = None
         self.mcp = None
-        self.mcp_token = ""
         self.mcp_error = ""
         # Files the user chose in the extension's file fields this session; local MCP may
         # upload them (reference_uploads.agent_upload_path). Main thread only.
@@ -105,7 +104,6 @@ class RuntimeState:
 
     SESSION_ATTRS = (
         "mcp",
-        "mcp_token",
         "mcp_error",
         "cli_handle",
         "composer",

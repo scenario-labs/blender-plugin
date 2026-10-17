@@ -16,13 +16,18 @@ allows a licensor to decline such rights, and Scenario Inc. does so here.
 ## What you may do without asking
 
 - Copy, modify and redistribute the code under the GPL.
-- Say that your work is "based on Scenario for Blender" or "derived from Scenario for Blender", with a link to this repository.
-- Use the name Scenario to refer to the Scenario platform, its API and its models in documentation, articles and talks.
+- Say that your work is "based on Scenario for Blender" or "derived from
+  Scenario for Blender", with a link to this repository.
+- Use the name Scenario to refer to the Scenario platform, its API and its
+  models in documentation, articles and talks.
 
 ## What needs written permission
 
-- Distributing a modified build under the name "Scenario", "Scenario for Blender" or a name that could be confused with them.
-- Distributing a modified build with the extension id `scenario` (the `id` field of `scenario/blender_manifest.toml`). A modified build must use its own id so that users and Blender can tell the two apart.
+- Distributing a modified build under the name "Scenario", "Scenario for
+  Blender" or a name that could be confused with them.
+- Distributing a modified build with the extension id `scenario` (the `id` field
+  of `scenario/blender_manifest.toml`). A modified build must use its own id so
+  that users and Blender can tell the two apart.
 - Using the Scenario logo as the branding of another product.
 - Presenting a modified build as published, sponsored or endorsed by Scenario Inc.
 

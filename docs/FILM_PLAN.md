@@ -392,12 +392,12 @@ rollback retains an error; incomplete cleanup retains uncertainty and blocks
 another build from that recipe scene until explicit inspection acknowledgement.
 Uncertainty takes priority over newer ready reviews in the panel and blocks their
 approval too, even after a recipe reload. Ordinary panel status belongs only to
-the current production and recipe; prior reviews remain explicitly inspectable. A missing shot scene stops the native dialog with a named build
-instruction; a missing selection cannot create a review.
-Discarding a review removes its status from the panel without deleting Blender
-data; explicit MCP inspection retains its discarded phase and prior error.
-There is no remote job to reconcile or receipt to retry for this local
-composition action.
+the current production and recipe; prior reviews remain explicitly inspectable.
+A missing shot scene stops the native dialog with a named build instruction; a
+missing selection cannot create a review. Discarding a review removes its status
+from the panel without deleting Blender data; explicit MCP inspection retains
+its discarded phase and prior error. There is no remote job to reconcile or
+receipt to retry for this local composition action.
 
 MCP follows `film_timeline_sources`, `prepare_film_timeline`, then explicitly
 approved `build_film_timeline`. `film_timeline_review` inspects or discards the
@@ -507,9 +507,9 @@ intent can authorize initialization; replaced bytes cannot be silently uploaded.
 The capture review consumes upload approval once. Failed, canceled and uncertain
 uploads require inspection in **Inspect uploads**, without replaying approval.
 After upload work ends, their local capture review can be discarded while keeping
-the durable upload record and staged copy. Once imported, select a Film upload task and choose
-**Use saved upload** to bind the selected saved upload to that recipe task.
-Neither capture nor upload estimates or submits generation.
+the durable upload record and staged copy. Once imported, select a Film upload
+task and choose **Use saved upload** to bind the selected saved upload to that
+recipe task. Neither capture nor upload estimates or submits generation.
 
 **Open capture files** exposes retained diagnostics/frames. **Discard capture**
 confirms deleting only that review's private snapshot/media/log directory, after
@@ -546,21 +546,21 @@ retains the recipe contract's looping score at volume 0.4, so its task must be
 declared. `required_sources` lists the declared source roles; an undeclared
 source raises `FilmSourceError` naming up to five tasks, plus both remedies for
 an implied score. `recipe_warnings` reports only an undeclared default `score`
-task, conditionally and without failing a load. All final audio needs an `AudioDuration` observation bound to its
-selected asset and exact scope.
-The caller must obtain that observation from verified saved media; supplying a
-value does not prove its duration or validate its bytes. Exact rational seconds
-are converted per track: floor for whole-frame loops, ceil for a finite partial
-last frame. The same source can serve both kinds without using the wrong
-rounding. Duck boundaries preserve loop phase and use absolute gains. The helper
-emits explicit segments, rejects finite-source overrun (a `FilmSourceError`
-naming the track) and more than 50 combined picture/audio layers, and does not
-truncate an excessive mix.
-The recipe's 50-shot limit is separate from this combined composition budget.
-For example, 49 shots plus one unsegmented score fit; 50 shots plus that score
-are rejected before a draft is returned. Fifty shots still fit in previs mode
-or with explicit `audio_tracks: []`. Score loops and duck boundaries each consume
-additional layers, so reserve room for their expanded segments.
+task, conditionally and without failing a load. All final audio needs an
+`AudioDuration` observation bound to its selected asset and exact scope. The
+caller must obtain that observation from verified saved media; supplying a value
+does not prove its duration or validate its bytes. Exact rational seconds are
+converted per track: floor for whole-frame loops, ceil for a finite partial last
+frame. The same source can serve both kinds without using the wrong rounding.
+Duck boundaries preserve loop phase and use absolute gains. The helper emits
+explicit segments, rejects finite-source overrun (a `FilmSourceError` naming the
+track) and more than 50 combined picture/audio layers, and does not truncate an
+excessive mix. The recipe's 50-shot limit is separate from this combined
+composition budget. For example, 49 shots plus one unsegmented score fit; 50
+shots plus that score are rejected before a draft is returned. Fifty shots still
+fit in previs mode or with explicit `audio_tracks: []`. Score loops and duck
+boundaries each consume additional layers, so reserve room for their expanded
+segments.
 
 [`film_finishing.py`](../scenario/core/jobs/film_finishing.py) reads the selected
 job/upload stores to prepare an immutable draft. Each source must be the exact
@@ -573,11 +573,12 @@ A succeeded, downloading or download-failed model result reports that it must
 be downloaded first, without probing files or requesting a download. The draft
 retains each source's request, revision, asset and task digest. Source resolution
 validates the recipe scope and computes all transitive task digests once, reusing
-them for every selected source. `validate_composition_draft` rejects changed inputs or a newly
-reserved master. Neither helper acquires an approval or an atomic generation
-claim. API-key default scope needs no project discovery. A missing, stale or
-mismatched source raises `FilmSourceError` naming its task, as does a missing
-master for a review that includes it. Its text holds only recipe identifiers.
+them for every selected source. `validate_composition_draft` rejects changed
+inputs or a newly reserved master. Neither helper acquires an approval or an
+atomic generation claim. API-key default scope needs no project discovery. A
+missing, stale or mismatched source raises `FilmSourceError` naming its task, as
+does a missing master for a review that includes it. Its text holds only recipe
+identifiers.
 
 The resulting model task resolves through the existing Film task command and
 SDK `generate.with_raw_response.run_model` path. Its eventual estimate must fetch
@@ -680,7 +681,8 @@ editing the recipe, constructing a sequence or automatically importing results.
 Final/Previs selects which review to display and prepare. It is temporary UI state
 for each scene in the current Blender session, not a saved scene edit; switching
 scenes restores that scene's mode without changing another window's scene choice.
-Switching modes preserves each retained review. Recipe and scene changes still invalidate approvals.
+Switching modes preserves each retained review. Recipe and scene changes still
+invalidate approvals.
 
 Local MCP uses `film_recipe` inspection's `context_id` and `production_id` with
 `prepare_film_composition`. Poll `film_composition_review` until `READY`, then
@@ -821,12 +823,13 @@ If preparation or its final admission fails and file deletion also fails, the
 original error is preserved with a cleanup note. The coordinator retains those
 unused directories, counts them toward its 16-review bound and retries removal
 after workers join at shutdown. Failed shutdown cleanup remains owned for another
-shutdown attempt. No failed-preparation directory is a generation or application approval.
-The local log names each retained directory once, without copying transport errors.
-An inactive session stays registered while unused Film media needs cleanup; enabled
-reaping retries at most once every five seconds. Disabling the extension stops its
-timer while retaining in-process ownership; registering again resumes cleanup.
-Process exit or module reload can still require manual inspection of logged files.
+shutdown attempt. No failed-preparation directory is a generation or application
+approval. The local log names each retained directory once, without copying
+transport errors. An inactive session stays registered while unused Film media
+needs cleanup; enabled reaping retries at most once every five seconds.
+Disabling the extension stops its timer while retaining in-process ownership;
+registering again resumes cleanup. Process exit or module reload can still
+require manual inspection of logged files.
 
 The [native/MCP review controls](#native-and-mcp-review-controls) below present
 this command layer with separate preparation and build approvals.
@@ -891,8 +894,8 @@ consumption, for example after a source change, deletes its copies without a cla
 Once consumed, outcomes follow the shared command above. A complete rollback saves
 failed claims. A known receipt-write failure offers **Save review receipt**, which
 never copies media or rebuilds. Uncertainty without a known receipt requires
-**Acknowledge inspection** with its checkbox. Dismissal retires only the review; it
-never clears a saved claim or deletes data. An uncertain review blocks new
+**Acknowledge inspection** with its checkbox. Dismissal retires only the review;
+it never clears a saved claim or deletes data. An uncertain review blocks new
 preparation for its scene until its receipt is saved or it is dismissed. No build
 is retried automatically, and
 **Error details** shows the complete error for copying.
@@ -1061,9 +1064,9 @@ first, the empty placeholder can remain. `drain` returns a
 resolving a scene, only while the session is active.
 `publish_film_export` re-publishes only a staged export issued by the same owner,
 without rendering; it checks the active owner but not the origins its caller
-passes, which the receipt carries as given. `ExportTask.progress()` reports the media, render, verify and
-publish phases. Each successful publish writes one local log line with the
-destination basename and SHA-256.
+passes, which the receipt carries as given. `ExportTask.progress()` reports the
+media, render, verify and publish phases. Each successful publish writes one
+local log line with the destination basename and SHA-256.
 
 Export handles and receipts are session-local; no job store or blend schema
 changes. The caller owns the staging directory and removes it with
@@ -1140,15 +1143,16 @@ review scene that no window shows only when something updates it explicitly, suc
 as the export's own synchronizations. Their evaluation cannot tell tags from
 changes elsewhere apart from an edit, so it does not revoke the origin: an edit
 made to that scene without showing it, for example from a script, is caught only
-by the approval's reread of what preparation showed. Once rendering starts, later edits do not stop it, because the snapshot
-and media stamps bind the bytes. Session retirement (credential or project
-change, file load or extension disable) cancels a running export; shutdown
-removes every handle's private staging once the export thread has stopped.
-`JobSession.film_export` (`FilmExportCommands`) keeps at most eight session-local
-handles, one open export per review scene and one export or copy running at a
-time. A full set retires only finished handles that own no private files.
-Handles add no executor, store, service client or persisted state; restart drops
-them, and the exported file is the durable artifact.
+by the approval's reread of what preparation showed. Once rendering starts,
+later edits do not stop it, because the snapshot and media stamps bind the
+bytes. Session retirement (credential or project change, file load or extension
+disable) cancels a running export; shutdown removes every handle's private
+staging once the export thread has stopped. `JobSession.film_export`
+(`FilmExportCommands`) keeps at most eight session-local handles, one open
+export per review scene and one export or copy running at a time. A full set
+retires only finished handles that own no private files. Handles add no
+executor, store, service client or persisted state; restart drops them, and the
+exported file is the durable artifact.
 
 Local MCP uses `film_export_sources(production_id)` for the context, sources,
 `default_directory` (`<Output Folder>/Film`), encoder availability and expected
@@ -1291,10 +1295,10 @@ the other refuses without consuming it.
 
 Local MCP uses `film_case_study_sources(production_id)` for the context, sources,
 timelines, `default_directory` and `default_name`. `prepare_film_case_study`
-takes that context, the production, a `source_id`, an optional `timeline_id` and an
-absolute new `.zip` `destination_path` inside the Output Folder, under the video
-export's agent folder policy. Show the returned destination and contents, then
-call `export_film_case_study(review_id, approved_destination)` with that
+takes that context, the production, a `source_id`, an optional `timeline_id` and
+an absolute new `.zip` `destination_path` inside the Output Folder, under the
+video export's agent folder policy. Show the returned destination and contents,
+then call `export_film_case_study(review_id, approved_destination)` with that
 destination verbatim. Poll `film_case_study_review`; it also cancels, discards,
 and after a failed save uses `prepare_republish` and `republish`. See
 [MCP case-study commands](MCP.md#film-case-study-commands).

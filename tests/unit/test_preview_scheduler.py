@@ -11,6 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from scenario.core.api.sdk_adapter import READ_RETRIES
 from scenario.core.audio_waveform import EnvelopeBuilder, WaveformCanceled, WaveformError
 from scenario.core.jobs import preview_scheduler, transfers
 from scenario.core.jobs import result_previews as previews
@@ -514,8 +515,9 @@ def test_clip_requested_during_the_still_final_poll_shares_the_new_window(lane, 
     release.set()
     drive(scheduler)
     # The overtaken final poll settles nothing: the still polls again with the
-    # clip at once, with the missing marker it wrote cleared.
-    assert len(service.calls) == 10
+    # clip at once, with the missing marker it wrote cleared. Each of those two
+    # failed metadata reads is a bulk read that the SDK retries first.
+    assert len(service.calls) == 10 + (2 * READ_RETRIES if fault else 0)
     assert state(lane, "asset-video").state == state(lane, "asset-video", CLIP).state
     assert state(lane, "asset-video").state == State.PENDING
     service.status, start, polls = None, clock.now, []

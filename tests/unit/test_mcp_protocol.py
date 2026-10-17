@@ -197,6 +197,48 @@ def test_missing_required_arguments_are_refused_before_the_handler_runs():
     assert calls == [complete]
 
 
+def test_null_arguments_are_omitted_arguments():
+    """Strict function calling sends every declared property, with null for the options left out."""
+    reg, calls = protocol.Registry(), []
+    reg.add(
+        protocol.ToolSpec(
+            "wait",
+            "One required and two optional arguments",
+            {
+                "type": "object",
+                "properties": {
+                    "job_id": {"type": "string"},
+                    "timeout": {"type": "number"},
+                    "waypoints": {"type": "array"},
+                },
+                "required": ["job_id"],
+            },
+            calls.append,
+        )
+    )
+
+    def call(arguments):
+        return protocol.handle_message(
+            {
+                "jsonrpc": "2.0",
+                "id": 15,
+                "method": "tools/call",
+                "params": {"name": "wait", "arguments": arguments},
+            },
+            reg,
+            INFO,
+        )
+
+    reply = call({"job_id": "job_example", "timeout": None, "waypoints": [{"hold": None}]})
+    assert "isError" not in reply["result"]
+    # Only top-level nulls are dropped; values inside an argument reach the tool unchanged.
+    assert calls == [{"job_id": "job_example", "waypoints": [{"hold": None}]}]
+    reply = call({"job_id": None, "timeout": 30})
+    assert reply["result"]["isError"] is True
+    assert reply["result"]["content"][0]["text"] == "ValueError: Missing required argument: job_id"
+    assert len(calls) == 1
+
+
 def test_image_results_and_executor_hook():
     reg = registry()
     shot = protocol.handle_message(
@@ -256,6 +298,37 @@ def test_parse_body_errors():
     message, err = protocol.parse_body(b"{not json")
     assert message is None and err["error"]["code"] == -32700
     assert protocol.parse_body(b'{"jsonrpc":"2.0","id":1,"method":"ping"}')[0]["method"] == "ping"
+
+
+def test_a_deeply_nested_body_is_a_parse_error():
+    message, err = protocol.parse_body(b"[" * 100_000 + b"]" * 100_000)
+    assert message is None and err["error"]["code"] == protocol.PARSE_ERROR
+
+
+@pytest.mark.parametrize("method", ["initialize", "ping", "tools/call"])
+@pytest.mark.parametrize("params", [["echo"], "echo", 3, 1.5, True, [], "", 0, 0.0, False])
+def test_parameters_that_are_not_an_object_are_invalid(method, params):
+    reply = protocol.handle_message(
+        {"jsonrpc": "2.0", "id": 4, "method": method, "params": params}, registry(), INFO
+    )
+    assert reply["id"] == 4 and reply["error"]["code"] == protocol.INVALID_PARAMS
+
+
+def test_null_parameters_are_omitted_parameters():
+    reply = protocol.handle_message(
+        {"jsonrpc": "2.0", "id": 4, "method": "ping", "params": None}, registry(), INFO
+    )
+    assert reply == {"jsonrpc": "2.0", "id": 4, "result": {}}
+
+
+@pytest.mark.parametrize("name", [["echo"], {"echo": 1}, 3])
+def test_a_tool_name_that_is_not_a_string_names_no_tool(name):
+    reply = protocol.handle_message(
+        {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": name}},
+        registry(),
+        INFO,
+    )
+    assert reply["error"]["code"] == protocol.INVALID_PARAMS
 
 
 PRIVATE_PATH = "/fixture-home/blender-profile/extensions/user_default/scenario/private.png"

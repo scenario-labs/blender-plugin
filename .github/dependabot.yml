@@ -15,3 +15,30 @@ updates:
     labels: ["dependencies", "area:ci"]
     commit-message:
       prefix: "ci(deps)"
+  # Node tooling for CI and contributors (commitlint, TypeScript), not the extension.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      node:
+        patterns: ["*"]
+    ignore:
+      # Node's types follow the Node major in .nvmrc; bump both together.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    labels: ["dependencies", "area:tooling"]
+    commit-message:
+      prefix: "chore(deps)"
+  # The ClusterFuzzLite builder image, pinned by digest in .clusterfuzzlite/Dockerfile.
+  - package-ecosystem: "docker"
+    directory: "/.clusterfuzzlite"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    labels: ["dependencies", "area:ci"]
+    commit-message:
+      prefix: "ci(deps)"

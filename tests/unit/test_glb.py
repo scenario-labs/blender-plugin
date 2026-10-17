@@ -83,6 +83,8 @@ def test_new_group_policy_allows_bounded_skins_and_node_animation():
         lambda d: d.update(skins=[{"joints": [True]}]),
         lambda d: d.update(skins=[{"joints": [999]}]),
         lambda d: d.update(animations=[{"channels": [{"target": {"node": 0, "path": "pointer"}}]}]),
+        lambda d: d.update(animations=[{"channels": [{"target": None}]}]),
+        lambda d: d.update(animations=[{"channels": [{"target": ["node"]}]}]),
         lambda d: d["images"][0].update(uri="../external.png"),
     ],
 )

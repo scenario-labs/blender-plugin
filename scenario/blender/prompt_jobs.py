@@ -236,8 +236,10 @@ class PromptJobs:
                 if record.state == JobState.REMOTE:
                     item.phase = "POLLING"
                     if time.monotonic() >= item.next_poll and self._online():
+                        # A periodic poll reads once: SDK read retries would hold
+                        # one of the shared job workers for minutes in an outage.
                         item.task = self.session.refresh_remote(
-                            item.request_id, expected_revision=record.revision
+                            item.request_id, expected_revision=record.revision, automatic=True
                         )
                 elif record.state == JobState.SUCCEEDED:
                     if self._online():

@@ -122,8 +122,8 @@ and 2.0.
 The human checks raised these items for the next release. It was planned as
 0.10.1; #466 and #477 then merged as new features, so release-please proposed
 0.11.0 and the maintainer kept that version on 2026-10-14. Each item below has
-a merged fix (#464, #465, #466 or #471); #440 tracks the desktop checks that
-remain.
+a merged fix (#464, #465, #466 or #471). Their desktop checks passed on the
+0.11.0 candidate except #465's with a real non-2:1 result, which #494 tracks.
 
 - **Play audio** opened the system's default player
   ([#435](https://github.com/scenario-labs/blender-plugin/issues/435)).
@@ -457,10 +457,10 @@ their lanes:
   answered orbit, wheel zoom and keys, and no field took keyboard focus. One
   defect: in the 3D View sidebar at its default width, at both scales, a paged
   row's arrows were about 1.65 times as tall as its tiles, where the
-  [UI contract](../ui/saved-media.md#saved-result-previews) makes them as tall as the
-  icons, and its tiles were about 30% smaller than those of an unpaged row in
-  the same panel. In Studio and in a widened sidebar the arrows matched the
-  tiles. #423 (`3720c9e3`) then merged to fit a paged row.
+  [UI contract](../ui/saved-media.md#saved-result-previews) makes them as tall
+  as the icons, and its tiles were about 30% smaller than those of an unpaged
+  row in the same panel. In Studio and in a widened sidebar the arrows matched
+  the tiles. #423 (`3720c9e3`) then merged to fit a paged row.
 - **Desktop, #423 and #424 recheck:** offline with synthetic saved jobs, at UI
   scales 1.0 and 2.0, a paged row's arrows were as tall as its tiles' icon cells
   in Jobs, Generations and Studio, nothing was clipped, captions kept their
@@ -792,7 +792,8 @@ their documented limitations; this record does not declare those scopes complete
 
 ## Historical candidate identity
 
-Initial candidate reviewed on 2026-10-07; later evidence is identified separately below:
+Initial candidate reviewed on 2026-10-07; later evidence is identified
+separately below:
 
 | Item | Identity |
 | --- | --- |
@@ -852,9 +853,9 @@ restacking; a prior green run cannot certify a later change.
 Non-submitting live metadata/estimate requests succeeded for Image, Materials,
 Video, 3D and Audio using one private suite in the configured test key's default
 scope. All five case reports contain zero saved jobs, and no submission-attempt
-marker exists. No paid generation, live upload/result round trip or project-override permission journey
-is included in this record. Quote values and private service evidence are not
-published here.
+marker exists. No paid generation, live upload/result round trip or
+project-override permission journey is included in this record. Quote values and
+private service evidence are not published here.
 
 ## Later project-scope evidence
 
@@ -999,10 +1000,11 @@ SHA-256 `30b2aa7f7448805beec2910435b9ee9fd33c04982c1ebb0b92731488aaf8d089`.
 All 135 packaged Python sources match that layer. It passes 1,067 installed tests
 on each macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1, with two Windows-specific
 skips per run, and 3,801 offline unit tests with the same known SDK authentication
-expected failure. The sixteen workflow regressions cover catalog paging, absent/null/empty input definitions,
-exact approval, operation isolation, changed price/input/scene/project, failed
-persistence, lost-response uncertainty, discard and read-only restart recovery.
-Service responses are synthetic and no paid requests or live uploads were made.
+expected failure. The sixteen workflow regressions cover catalog paging,
+absent/null/empty input definitions, exact approval, operation isolation,
+changed price/input/scene/project, failed persistence, lost-response
+uncertainty, discard and read-only restart recovery. Service responses are
+synthetic and no paid requests or live uploads were made.
 
 These results validate the new MCP command entry points and shared lifecycle;
 they do not replace the preceding candidate's update evidence or establish a
@@ -1026,9 +1028,10 @@ The isolated application launched, but computer control returned
 `cgWindowNotFound` before input or screenshots. The fixture exited cleanly,
 removed its disposable profile and preserved the normal profile, with no external
 requests. The later Studio checks below provide scoped native interaction proof;
-broader acceptance remains required by the [UI guide](../UI_STYLE.md). Workflow/library forms and complete
-retained-capability acceptance remain open; these tests do not establish a
-release-ready candidate or replace earlier update evidence.
+broader acceptance remains required by the [UI guide](../UI_STYLE.md).
+Workflow/library forms and complete retained-capability acceptance remain open;
+these tests do not establish a release-ready candidate or replace earlier update
+evidence.
 
 The current candidate rebased onto merged #324 adds a regression and fix for
 composer blur consuming the first Studio header click. Its exact ZIP is
@@ -1073,10 +1076,10 @@ do not add physical workflow interaction or live acceptance.
 At that workflow-control boundary, structured fields use JSON and file fields
 accept already uploaded asset IDs. Direct reference upload/Library selection,
 interactive nodes and general cancellation were incomplete. No live request or
-paid generation was performed. Physical input, screenshots, layout, focus and viewport acceptance
-remain pending under #66/#68 as acceptance follow-ups. Review readiness is
-separate from complete product acceptance; the earlier update and release
-artifact limitations still apply.
+paid generation was performed. Physical input, screenshots, layout, focus and
+viewport acceptance remain pending under #66/#68 as acceptance follow-ups.
+Review readiness is separate from complete product acceptance; the earlier
+update and release artifact limitations still apply.
 
 ## Asset library command validation slice
 
@@ -1227,11 +1230,12 @@ tracks the 0.11.0 acceptance and the work that closed issues left open:
 | #189 | Closed on 2026-10-13 as delivered in 0.10.0. Saved shared video and audio results have Play, Play in Blender and Waveform controls on private verified copies and receipt-keyed envelopes from an offline Blender decoder, with installed-ZIP native tests. Partial private desktop passes on macOS arm64 Blender 5.1.2 opened a saved video in the system player and in Blender's animation player at UI scale 1.0, and drew a waveform in the sidebar at UI scales 1.0 and 2.0, the last on a ZIP whose waveform status wrapped by measured width before later amendments to that wrapping; they are not candidate acceptance. Local MCP `inspect_result_previews` reads the same preview states and envelopes, with installed-ZIP native tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 only. On 2026-10-13 the maintainer listened to a saved audio result through **Play audio** and drew its **Waveform** on the candidate ZIP on macOS Blender 5.1.2 (see [human checks](#human-checks)), where Play audio opened the system's default player; it now plays inside Blender (#435). The waveform's Cancel, Retry and close on the desktop, clicking Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms are not yet recorded; they continue in #440. |
 | #263 | Closed on 2026-10-04. Its public record has no documented root cause or verified fix for the historical desktop crash. Preserve the [diagnostic limits](../KNOWN_LIMITATIONS.md). The 0.10.0 build later ran 591 s of Sequencer playback without errors (see [Audio](#audio)); closure alone supplies no new runtime evidence. |
 
-On 2026-10-07, read-only administration checks found no open **CodeQL** alerts. The six open
-code-scanning alerts were from **Scorecard**, which is advisory under the
-[maintainer baseline](../MAINTAINERS.md). Do not treat the aggregate alert count
-as six CodeQL blockers. Preserve required CodeQL/code-quality and review policies
-when adding `ci-ok`; no repository settings were changed by this audit.
+On 2026-10-07, read-only administration checks found no open **CodeQL** alerts.
+The six open code-scanning alerts were from **Scorecard**, which is advisory
+under the [maintainer baseline](../MAINTAINERS.md). Do not treat the aggregate
+alert count as six CodeQL blockers. Preserve required CodeQL/code-quality and
+review policies when adding `ci-ok`; no repository settings were changed by this
+audit.
 
 ## Merge and release decision
 

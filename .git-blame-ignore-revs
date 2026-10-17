@@ -6,3 +6,6 @@
 
 # style: reformat the Python tree with Ruff (mechanical) (#462)
 998e17d31e3ed862eae805e881dd5f97f1614c3f
+
+# style(docs): wrap Markdown prose at 80 columns (mechanical) (#580)
+c2643efdf46590324d36d0093560bbe376266b17

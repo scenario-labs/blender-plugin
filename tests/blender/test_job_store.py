@@ -251,7 +251,7 @@ class JobStoreTests(unittest.TestCase):
         module = submodule("core.jobs.store")
         with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
             path = Path(directory) / "jobs.sqlite3"
-            # SQL dump of a database written by the 0.11.0 (schema 11) storage code.
+            # SQL dump of a database written by the schema 11 release's storage code.
             script = (FIXTURES / "synthetic/jobs-schema11.sql").read_text(encoding="utf-8")
             with closing(sqlite3.connect(path)) as connection:
                 connection.executescript(script)

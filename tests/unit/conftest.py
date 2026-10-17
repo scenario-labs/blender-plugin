@@ -41,3 +41,31 @@ def _no_network(request, monkeypatch):
         return
     monkeypatch.setattr(socket.socket, "connect", _guarded_connect(_REAL_CONNECT))
     monkeypatch.setattr(socket.socket, "connect_ex", _guarded_connect(_REAL_CONNECT_EX))
+
+
+@pytest.fixture(autouse=True)
+def _instant_sdk_retries(monkeypatch):
+    """Skip the SDK's retry waits; the attempts and their order are unchanged.
+
+    SDKAdapter retries allow-listed reads with the SDK's own backoff, which
+    would otherwise sleep for real in every test that fails such a read.
+    Tests that check the waits record them with their own fixture.
+    """
+    import time
+
+    try:
+        import scenario_sdk._base_client as base
+    except ImportError:
+        return
+    monkeypatch.setattr(base, "time", _SleeplessTime(time))
+
+
+class _SleeplessTime:
+    def __init__(self, module):
+        self._module = module
+
+    def sleep(self, seconds):
+        pass
+
+    def __getattr__(self, name):
+        return getattr(self._module, name)

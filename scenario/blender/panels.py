@@ -566,7 +566,7 @@ def draw_mcp_lane(layout, context):
     box.label(text="Let agents build in this Blender", icon="PLUGIN")
     if st["running"]:
         box.label(text=f"Running on {st['url']}", icon="CHECKMARK")
-        box.label(text=f"Token {mcp_service.masked_token()}  ({st['calls']} tool calls served)")
+        box.label(text=f"{st['calls']} tool calls served")
         box.operator("scenario.mcp_stop", icon="PAUSE")
     else:
         box.label(text=st["error"] or "Stopped", icon="ERROR" if st["error"] else "INFO")
@@ -575,7 +575,17 @@ def draw_mcp_lane(layout, context):
     if prefs is not None:
         box.prop(prefs, "mcp_allow_python")
     box = layout.box()
-    box.label(text="Connect a client (copies the setup)", icon="COPYDOWN")
+    box.label(text="Connect a client (writes its config)", icon="LINKED")
+    found = [client for client in mcp_service.connect_clients() if client.detected]
+    col = box.column(align=True)
+    for client in found:
+        col.operator("scenario.mcp_connect", text=client.label, icon="LINKED").client = client.key
+    if not found:
+        box.label(text="No supported client found; copy a setup below", icon="INFO")
+    for line in mcp_service.connect_report:
+        box.label(text=line)
+    box = layout.box()
+    box.label(text="Or copy the setup", icon="COPYDOWN")
     col = box.column(align=True)
     for kind, label in (
         ("claude_code", "Claude Code"),
@@ -975,10 +985,14 @@ def draw_shared_status(layout, rec, model):
     if reading is not None and reading.percent is not None:
         layout.progress(factor=reading.fraction, type="BAR", text=f"{reading.percent}%")
     offline = None if runtime.online() else SHARED_OFFLINE_TEXT.get(state)
+    # A refresh being retried or an unconfirmed cancel says why the status is behind.
+    notes = rec.meta.get("status_notes", ())
     if offline is not None:
         layout.label(text=offline, icon="INFO")
-    elif reading is not None and reading.stale:
+    elif reading is not None and reading.stale and not notes:
         layout.label(text="Status is not updating", icon="INFO")
+    for note in notes:
+        layout.label(text=note, icon="INFO")
 
 
 def draw_active_job(layout, rec):

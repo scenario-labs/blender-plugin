@@ -363,7 +363,7 @@ cmp /path/to/new/jobs-schema9.sql tests/fixtures/synthetic/jobs-schema9.sql
 ## Schema 11 job store
 
 `synthetic/jobs-schema11.sql` is the same kind of first-party GPL-3.0-or-later
-dump, written by the schema 11 storage code of the 0.11.0 release commit
+dump, written by the schema 11 storage code of the schema 11 release commit
 `861d554e`. It holds the schema 9 fixture's rows plus three that schema 10 and 11
 code could write: a saved lane default, a ready job whose results are a declared
 WAV original and an equirectangular EXR original, and an uncertain model request.

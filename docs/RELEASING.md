@@ -14,7 +14,8 @@ The [release configuration](../release-please-config.json) uses semantic version
 Before 1.0, fixes increase the patch version, features increase the minor version,
 and breaking changes increase the minor version. After 1.0, breaking changes
 increase the major version. Mark a breaking change with `!` or a
-`BREAKING CHANGE` footer; review the proposed version before merging the release PR.
+`BREAKING CHANGE` footer; review the proposed version before merging the release
+PR.
 
 1.0.0 is a deliberate maintainer decision, not an automatic bump: use a
 `Release-As: 1.0.0` footer on the squash commit of an ordinary PR whose description
@@ -73,13 +74,15 @@ Blender runtime acceptance remain separate requirements.
 1. Discover an unfinished draft or create a release draft when a release is due.
 2. Check out its exact commit and require the release SHA, triggering workflow
    SHA and checkout SHA to match.
-3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP, render the standalone
-   `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS` for the ZIP and handbook,
-   and attest all three files. Attach them to the draft.
+3. Build with Blender 5.0.1 on Linux, require `LICENSE`, validate the ZIP,
+   render the standalone `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS`
+   for the ZIP and handbook, and attest all three files. Attach them and the
+   attestation's Sigstore bundle, `scenario-X.Y.Z.sigstore.json`, to the draft.
 4. Validate that same ZIP with Blender 5.1.2 and 5.2.1.
 5. Publish only after those jobs succeed. Publication creates the tag through
-   the release App and triggers the separate public-changelog workflow. Successful completion of the release
-   workflow triggers the Pages workflow on `main`.
+   the release App and triggers the separate public-changelog workflow.
+   Successful completion of the release workflow triggers the Pages workflow on
+   `main`.
 6. Generate/update the next release PR after publication, or when no release
    was due.
 
@@ -169,10 +172,18 @@ stale docs build cannot roll the hosted repository back.
 
 [pages.yml](../.github/workflows/pages.yml) publishes the guide at
 `https://blender.scenario.com/` and the native repository at
-`https://blender.scenario.com/repo/index.json`. GitHub Pages hosts the site;
-the custom domain is configured in repository settings with DNS CNAME `blender`
-pointing to `scenario-labs.github.io`. Actions deployments do not need a committed
-CNAME file. Check DNS, certificate issuance and HTTPS enforcement before acceptance.
+`https://blender.scenario.com/repo/index.json`. GitHub Pages hosts the site at
+`https://scenario-labs.github.io/blender-plugin/` without a custom domain; a
+Vercel project serves `blender.scenario.com` by forwarding every request there
+and counts downloads, as described in
+[site hosting](MAINTAINERS.md#site-hosting-and-download-counts). Actions
+deployments do not need a committed CNAME file. Check DNS, certificate issuance
+and HTTPS before acceptance.
+
+After each release's Pages deployment, confirm that the live `index.json` lists
+the new version and that downloads of its ZIP appear on the PostHog downloads
+dashboard as `extension_downloaded` with that version, not `unknown`. The proxy
+rereads the index within a few minutes of the deployment.
 
 The workflow runs on relevant `main` changes, successful release-workflow
 completion and manual dispatch. It always checks out current `main`. The
@@ -208,8 +219,8 @@ uv run --locked --no-env-file python tools/prepare_site_release.py --output work
 Use a fresh output directory. Then pass its `inventory.json` to `make site`.
 Offline orchestration tests cover publication races and retry byte preservation.
 0.10.0 recorded HTTPS delivery and positive release attestations (see its
-[publication record](maintenance/release-acceptance.md#publication)); an HTTPS
-update between two published releases, with state preservation, is in #440.
+[publication record](maintenance/release-acceptance.md#publication)); the next
+release was the first delivered as an HTTPS update from a published one (#440).
 
 ### Select retained releases offline
 

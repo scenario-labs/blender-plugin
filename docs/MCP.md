@@ -13,9 +13,10 @@ or both according to the task; they have separate authentication and capabilitie
 
 The local server accepts MCP JSON-RPC over HTTP at
 `http://127.0.0.1:9876/mcp` by default. It starts with the extension in a GUI
-session when Blender's **Allow Online Access** is on. The **MCP Port** preference
-sets the first port; if busy, the server tries the next three. Copy the actual
-URL from **Scenario > Agents (MCP)**. An authenticated GET on `/mcp` returns 405:
+session when Blender's **Allow Online Access** is on. It uses only the **MCP
+Port** preference; if another program holds that port, the server stays stopped
+and the panel names the port. Copy the URL from **Scenario > Agents (MCP)**. An
+authenticated GET on `/mcp` returns 405:
 use POST for tool calls; the server does not provide an SSE stream.
 
 The extension is experimental. The [runtime map](architecture/runtime.md)
@@ -35,16 +36,16 @@ has `cu_cost_exact: null`, because no local quote exists. `job_status` preserves
 the same distinction. Use `recover_cloud_job` to save a completed cloud model
 job before explicit download and result approval.
 `cancel_prepared_job` cancels only an unsubmitted durable intent, using the context
-token and revision from inspection. A reset, file load or credential switch invalidates that
-token. Claimed or uncertain submissions require reconciliation, never blind retry.
-An identical request is refused while such a submission is unconfirmed; only the
-user can mark it reviewed in Blender, so `job_status` omits `mark_reviewed` and
-`recover_local_job` refuses it. Blender looks for the job such a submission may
-have created in recent cloud history; `job_status` reports that read-only lookup
-as `cloud_lookup` and `cloud_candidates`, and `recover_local_job` action
-`find_cloud_job` looks again. A candidate is not proof: only the user links one,
-in Blender, so `link_cloud_job` is neither listed nor accepted. Show the
-candidates to the user rather than choosing one.
+token and revision from inspection. A reset, file load or credential switch
+invalidates that token. Claimed or uncertain submissions require reconciliation,
+never blind retry. An identical request is refused while such a submission is
+unconfirmed; only the user can mark it reviewed in Blender, so `job_status`
+omits `mark_reviewed` and `recover_local_job` refuses it. Blender looks for the
+job such a submission may have created in recent cloud history; `job_status`
+reports that read-only lookup as `cloud_lookup` and `cloud_candidates`, and
+`recover_local_job` action `find_cloud_job` looks again. A candidate is not
+proof: only the user links one, in Blender, so `link_cloud_job` is neither
+listed nor accepted. Show the candidates to the user rather than choosing one.
 
 `recover_local_job` uses that token and the observed revision for explicit refresh,
 resume/download, known model-job cancellation, interrupted-download reconciliation
@@ -53,11 +54,11 @@ in the current context reported a running `inference` job, the only type Scenari
 documents as cancellable; for any other job it is refused without a request and
 the job keeps running, matching the native Jobs panel. A running workflow job
 cannot be canceled: `cancel` returns that explanation and sends nothing, while an
-unsent prepared one keeps `cancel_prepared_job`. Resuming a restarted job does not import it into
-the current scene. Shared `wait_for_job` waits without blocking Blender's main
-thread and returns when delivery finishes, needs review, is held by disabled
-Online Access, or reaches its timeout.
-See [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
+unsent prepared one keeps `cancel_prepared_job`. Resuming a restarted job does
+not import it into the current scene. Shared `wait_for_job` waits without
+blocking Blender's main thread and returns when delivery finishes, needs review,
+is held by disabled Online Access, or reaches its timeout. See
+[job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
 Shared `job_status` and `wait_for_job` results add the native Jobs projection as
 flat fields. `lane` is the model lane that submitted the job in this Blender
@@ -65,23 +66,33 @@ session, or `null` for workflow, Film, restarted and recovered jobs; it never
 selects a destination. While a known remote job is active, `remote_status` is its
 latest validated Scenario status, `progress` its reported fraction from 0 to 1
 (`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
-`remote_stale` whether automatic polling has stopped keeping it current. They are
-`null` otherwise and are never persisted. Only `in-progress` and `finalizing`
-fractions measure generation; the native Jobs views show a percentage only for
-those statuses from 1%, and name the status in the words of the composer's job
-strip: queued, starting, generating or finalizing. `remote_status` and `progress`
-stay the raw validated values. Providers may keep `progress` at 0 until
-completion, so it is not a time estimate. A restarted job reports progress only after explicit
+`remote_stale` whether automatic polling has stopped keeping it current, also
+while a failed refresh is being retried. They are
+`null` otherwise and are never persisted. `status_notes` lists the information
+lines the Jobs row shows, never errors: `Status not refreshed; retrying` while a
+refresh that timed out, lost its connection or got HTTP 408, 429 or 5xx waits to
+be retried, `Cancel not sent; the job keeps running` and `Cancel not confirmed
+yet; checking the job's status`. Polling continues meanwhile and never sends a
+cancel again; see
+[status refresh failures](BLENDER_JOB_CONTEXT.md#status-refresh-failures). Only
+`in-progress` and `finalizing` fractions measure generation; the native Jobs
+views show a percentage only for those statuses from 1%, and name the status in
+the words of the composer's job strip: queued, starting, generating or
+finalizing. `remote_status` and `progress` stay the raw validated values.
+Providers may keep `progress` at 0 until completion, so it is not a time
+estimate. A restarted job reports progress only after explicit
 `recover_local_job` `refresh` or `resume`; see
 [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 For a `failed` job, `error` is the reason Scenario gave, read from the same
 retrieval that observed the failure: its `metadata.error`, then its
 `metadata.hint`, each shown as one line when it is plain text and otherwise
-replaced by "Scenario reported more details that are not shown here."; when neither is plain text, `error` is "Scenario reported a failure without a readable reason."
-It is at most 400 characters, with its support error id (`error_...`) kept from
-plain text. It is also never persisted, so a job that failed
-before a restart reports `null`. `list_local_jobs` reads only saved records and
-has no error field; see [failure reasons](BLENDER_JOB_CONTEXT.md#failure-reasons).
+replaced by "Scenario reported more details that are not shown here."; when
+neither is plain text, `error` is "Scenario reported a failure without a
+readable reason." It is at most 400 characters, with its support error id
+(`error_...`) kept from plain text. It is also never persisted, so a job that
+failed before a restart reports `null`. `list_local_jobs` reads only saved
+records and has no error field; see
+[failure reasons](BLENDER_JOB_CONTEXT.md#failure-reasons).
 
 `delivery_active` is `true` while this Blender session still advances the job by
 itself: submission, polling, download or an Image lane's automatic import. It is
@@ -111,26 +122,27 @@ is paused or restarted, because its explicit recovery needs Online Access too.
 Workflow jobs add `awaiting_decision`, `pending_steps` and `decision_error`.
 `awaiting_decision` is `true` while the last retrieval in this session showed a
 waiting `user-approval` or `user-selection` step and no decision is being sent.
-The job then does not advance by itself, so `delivery_active` is `false` and `wait_for_job` returns at once;
-status refreshes every 15 seconds meanwhile. Each `pending_steps` entry has its
-node ID and type, loop iteration, dependencies, up to 50 review asset IDs with
-their total, a selection's frozen candidates (`items`: asset IDs or texts, per
-`item_kind`) with `min` and `max`, the decisions that may be sent (`actions`),
-`blocked`, `links_complete` and `review_id`. Signed URLs are never included.
-`blocked` is `loop` when the selection feeds a ForEach loop, a nested workflow
-or a node type the API reference does not list, which the approved price may
-not cover; `unverified` when the links between the workflow's steps could not be
-read and the workflow contains such a node, so the selection may feed it; and
-`unsupported` for unreadable candidates or limits. These three leave only
-`reject`, while `unidentified` leaves no decision. Step links come from the job
-and, while a step waits, from the workflow's definition, read once per waiting
-period; `links_complete` is `false` while some are unknown, so `depends_on` and
-the review assets may be incomplete. Rejecting stops the
-workflow and is the only workflow cancellation. `decision_error` explains the
-last refused, unsent or uncertain decision; never repeat an uncertain one until
-the step is shown again. The `review_step` action marks a waiting step; it is
-not a `recover_local_job` action. Read the steps with `workflow_job_steps` and send
-only the user's explicit choice with `decide_workflow_step`; see
+The job then does not advance by itself, so `delivery_active` is `false` and
+`wait_for_job` returns at once; status refreshes every 15 seconds meanwhile.
+Each `pending_steps` entry has its node ID and type, loop iteration,
+dependencies, up to 50 review asset IDs with their total, a selection's frozen
+candidates (`items`: asset IDs or texts, per `item_kind`) with `min` and `max`,
+the decisions that may be sent (`actions`), `blocked`, `links_complete` and
+`review_id`. Signed URLs are never included. `blocked` is `loop` when the
+selection feeds a ForEach loop, a nested workflow or a node type the API
+reference does not list, which the approved price may not cover; `unverified`
+when the links between the workflow's steps could not be read and the workflow
+contains such a node, so the selection may feed it; and `unsupported` for
+unreadable candidates or limits. These three leave only `reject`, while
+`unidentified` leaves no decision. Step links come from the job and, while a
+step waits, from the workflow's definition, read once per waiting period;
+`links_complete` is `false` while some are unknown, so `depends_on` and the
+review assets may be incomplete. Rejecting stops the workflow and is the only
+workflow cancellation. `decision_error` explains the last refused, unsent or
+uncertain decision; never repeat an uncertain one until the step is shown again.
+The `review_step` action marks a waiting step; it is not a `recover_local_job`
+action. Read the steps with `workflow_job_steps` and send only the user's
+explicit choice with `decide_workflow_step`; see
 [workflow step decisions](#workflow-step-decisions) and
 [waiting workflow steps](BLENDER_JOB_CONTEXT.md#waiting-workflow-steps).
 
@@ -153,15 +165,15 @@ for size, rollback and persistence limits.
 
 For a saved model, pass the `key` of one importable entry in `job_status`
 `import_units` as `asset_id`. The approval returns `kind: model`, the `format`
-(glb, gltf, fbx, obj, ply, spz or splat), whether it is the `primary` result or an alternate,
-its `members` with their roles and media types, glTF candidate `resources` and the
-approved `cursor` instead of a media frame. Show the scene, cursor, format and
-files before approval. Every member is rehashed into a private copy before the
-durable claim; a changed or unsupported package leaves the saved job unchanged
-(ready, or applied for a reuse) with an error that starts with
-`Nothing was imported`. The importer adds one new model group, packs textures
-from the package and leaves current selection intact. The cursor
-is rechecked before the claim, and a reuse claim lists every member. GLB and glTF
+(glb, gltf, fbx, obj, ply, spz or splat), whether it is the `primary` result or
+an alternate, its `members` with their roles and media types, glTF candidate
+`resources` and the approved `cursor` instead of a media frame. Show the scene,
+cursor, format and files before approval. Every member is rehashed into a
+private copy before the durable claim; a changed or unsupported package leaves
+the saved job unchanged (ready, or applied for a reuse) with an error that
+starts with `Nothing was imported`. The importer adds one new model group, packs
+textures from the package and leaves current selection intact. The cursor is
+rechecked before the claim, and a reuse claim lists every member. GLB and glTF
 rigs, weights and node/morph clips stay in the new group with the current scene
 FPS. FBX clips keep the file's frame rate and `model_import.frame_rate_mismatch`
 reports a different scene FPS; `model_import.dropped_references` counts OBJ and MTL
@@ -225,50 +237,60 @@ for single-user/UV restrictions, supported maps, rollback and no-global-undo lim
 (the default), `audio`, `video` or `3d`. The kind must match the filename extension;
 an omitted kind never infers a different media type. For example, a WAV input
 uses `{"path": "/chosen/reference.wav", "kind": "audio"}`. See the
-[format policy and limits](SDK_UPLOADS.md#active-reference-uploads). The file must be
-one the extension saved in its own folders or one the user chose in Blender this
-session; any other path is refused before it is read
+[format policy and limits](SDK_UPLOADS.md#active-reference-uploads). The file
+must be one the extension saved in its own folders or one the user chose in
+Blender this session; any other path is refused before it is read
 ([agent file uploads](#agent-file-uploads)).
 
 Poll `reference_upload_status` until `imported` before using the returned asset ID
-in a model or workflow estimate. Status, `list_reference_uploads` and recovery return saved
-`kind` and `content_type` metadata; initial staging can report null metadata.
-Only the selected file is sent: no conversion, external-buffer or texture-sidecar
-discovery. Upload approval does not approve generation, and a lost response must
-be reconciled using saved progress instead of starting another upload. The same uploads and saved-reference recovery are available in generation
-forms and loaded Studio workflow forms for image, audio, video and 3D inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`, `CAMERA_CLIP` and
-`MESH` snapshots. Clips use the preview/scene range at 1280x720 without audio,
-trimming or padding; mesh export produces one GLB from the selected meshes.
-Only mesh export works in background mode. `render_form` uses the native render
-form and the same upload session for explicit scene/first-frame slots. Its
-`prepare` action requires a GUI for scene captures; first-frame file uploads also
-work headlessly. Result-specific application remains separate.
-
-## Token lifecycle
-
-GUI startup generates a bearer token the first time the server starts in a
-Blender session. The extension holds it in memory and does not save it to disk.
-The panel masks it; Copy buttons include the full token in setup snippets.
-Restarting Blender changes a generated token, so copy the setup again. A token
-explicitly supplied to the headless command remains the caller's responsibility.
-
-The local token is different from your Scenario API key and secret. Client
-configuration, shell history, clipboard managers and process listings may retain
-copied tokens; keep them out of source control, screenshots and shared logs.
+in a model or workflow estimate. Status, `list_reference_uploads` and recovery
+return saved `kind` and `content_type` metadata; initial staging can report null
+metadata. Only the selected file is sent: no conversion, external-buffer or
+texture-sidecar discovery. Upload approval does not approve generation, and a
+lost response must be reconciled using saved progress instead of starting
+another upload. The same uploads and saved-reference recovery are available in
+generation forms and loaded Studio workflow forms for image, audio, video and 3D
+inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`,
+`CAMERA_CLIP` and `MESH` snapshots. Clips use the preview/scene range at
+1280x720 without audio, trimming or padding; mesh export produces one GLB from
+the selected meshes. Only mesh export works in background mode. `render_form`
+uses the native render form and the same upload session for explicit
+scene/first-frame slots. Its `prepare` action requires a GUI for scene captures;
+first-frame file uploads also work headlessly. Result-specific application
+remains separate.
 
 ## Client setup
 
-Use the panel's Copy buttons for the actual port and platform paths. Examples
-below use placeholders, never real credentials. These clients must run where
-`127.0.0.1` reaches the same machine as Blender; a hosted agent cannot reach your
-computer's loopback address directly.
+**Connect a client** in the panel writes the entry for you, with the URL of the
+MCP Port. It offers only clients whose folder exists and changes only their user
+configuration:
+
+| Client | File | Entry |
+| --- | --- | --- |
+| Claude Code | `~/.claude.json` | `mcpServers.scenario-blender`, HTTP |
+| Codex | `$CODEX_HOME/config.toml`, default `~/.codex/config.toml` | `[mcp_servers.scenario-blender]` with `url` |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.scenario-blender`, URL |
+| Claude Desktop | `claude_desktop_config.json` in Claude's folder | `mcpServers.scenario-blender`, the stdio shim below |
+
+The whole `scenario-blender` entry is replaced; other servers and settings are
+kept. The previous file is copied beside it as `<file>.scenario-backup-<time>`
+with the same permissions, and the new file replaces it in one step. A file that
+is not valid JSON or TOML, or a Codex entry that is not a plain table, is left
+untouched and the panel says so. Reload the client afterwards.
+
+Otherwise use the panel's Copy buttons for the actual port and platform paths. These clients
+must run where `127.0.0.1` reaches the same machine as Blender; a hosted agent cannot reach your
+computer's loopback address directly. The server needs no credential; see the
+[security model](#security-model).
 
 ### Claude Code
 
 ```sh
-claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp \
-  --header "Authorization: Bearer <token>"
+claude mcp add --transport http scenario-blender http://127.0.0.1:9876/mcp
 ```
+
+In a repository checkout, the committed `.mcp.json` registers the same server. Approve the project
+server when asked.
 
 ### Cursor
 
@@ -278,8 +300,7 @@ Add the copied entry to your client MCP configuration:
 {
   "mcpServers": {
     "scenario-blender": {
-      "url": "http://127.0.0.1:9876/mcp",
-      "headers": {"Authorization": "Bearer <token>"}
+      "url": "http://127.0.0.1:9876/mcp"
     }
   }
 }
@@ -300,26 +321,19 @@ absolute working interpreter path there. Replace both path placeholders:
       "command": "<absolute path to Blender Python>",
       "args": [
         "<installed extension>/mcp/stdio_shim.py",
-        "--url", "http://127.0.0.1:9876/mcp",
-        "--token", "<token>"
+        "--url", "http://127.0.0.1:9876/mcp"
       ]
     }
   }
 }
 ```
 
-The bridge token is a process argument. It does not start Blender or grant
-Scenario API access by itself.
+The bridge does not start Blender or grant Scenario API access by itself.
 
 ### Codex
 
-The installed CLI supports `--url` and `--bearer-token-env-var`. Export the token
-in the environment that launches Codex, then add the server:
-
 ```sh
-export SCENARIO_BLENDER_TOKEN='<token>'
-codex mcp add scenario-blender --url http://127.0.0.1:9876/mcp \
-  --bearer-token-env-var SCENARIO_BLENDER_TOKEN
+codex mcp add scenario-blender --url http://127.0.0.1:9876/mcp
 ```
 
 The equivalent `config.toml` entry is:
@@ -327,12 +341,11 @@ The equivalent `config.toml` entry is:
 ```toml
 [mcp_servers.scenario-blender]
 url = "http://127.0.0.1:9876/mcp"
-bearer_token_env_var = "SCENARIO_BLENDER_TOKEN"
 ```
 
-Restart a client launched before the environment variable was set. See the
-[official Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
-for configuration and token-environment behavior.
+See the [official Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+for other settings. In a repository checkout, the committed `.codex/config.toml` entry is disabled;
+start Codex with `codex -c mcp_servers.scenario-blender.enabled=true`.
 
 ### Connection check
 
@@ -340,7 +353,6 @@ This request lists tool metadata; it does not call a generation tool:
 
 ```sh
 curl -sS -X POST http://127.0.0.1:9876/mcp \
-  -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 ```
@@ -350,16 +362,12 @@ curl -sS -X POST http://127.0.0.1:9876/mcp \
 With the extension enabled, use the registered underscore command:
 
 ```sh
-export SCENARIO_BLENDER_TOKEN='<token>'
 blender --background scene.blend --command scenario_blender --port 9876
 ```
 
-Blender must allow online access; `--online-mode` explicitly enables it for the
-invocation. `--token '<token>'` overrides the environment but exposes the token
-in process arguments. Supplied tokens are hidden in the startup banner. If
-neither source is present, the command generates a token and displays it once
-in that banner. Stop with Ctrl+C. Scene captures need the GUI; other scene tools
-use the headless main-thread request loop. Development builds and tests use the
+Blender must allow online access; `--online-mode` explicitly enables it for the invocation. Stop
+with Ctrl+C. Scene captures need the GUI; other scene tools use the headless main-thread request
+loop. Development builds and tests use the
 [isolated native runner](../CONTRIBUTING.md#native-blender-test-loop).
 
 ## Tools
@@ -378,12 +386,12 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 
 | Tool | Description | Arguments | Notes |
 | --- | --- | --- | --- |
-| `scene_summary` | Inspect the open Blender scene before choosing a scene operation. | none | read-only annotation |
+| `scene_summary` | Inspect the open Blender scene before choosing a scene operation; large scenes come back in pages. | `limit`: integer<br>`offset`: integer<br>`types`: array<br>`collection`: string<br>`name_contains`: string<br>`selected_only`: boolean<br>`fields`: array | read-only annotation |
 | `object_detail` | Inspect one named Blender object's transform, geometry summary and custom properties. | `name`*: string | read-only annotation |
 | `execute_python` | Run arbitrary Python with bpy on Blender's main thread, only when explicitly enabled in preferences. | `code`*: string; Python source. bpy and result = {} are preloaded. | destructive annotation; Python preference gate; off by default |
 | `select_objects` | Replace the selection in the current view layer with the named Blender objects. | `names`*: array | - |
 | `set_frame` | Move Blender's timeline to a frame and evaluate the scene there. | `frame`*: integer | - |
-| `screenshot_viewport` | Capture the visible 3D viewport area as a PNG image, including its UI overlays. | none | read-only annotation; GUI required |
+| `screenshot_viewport` | Capture the largest visible 3D viewport as a PNG image, including its UI overlays. | `max_size`: integer | read-only annotation; GUI required |
 | `camera_path` | Build an animated scene camera from a preset, description or explicit waypoints for Render Video. | `preset`: string<br>`duration`: number; seconds<br>`focal`: number; mm<br>`aim_at_subject`: boolean<br>`description`: string; e.g. 'slow orbit, 8 s, 35mm'<br>`waypoints`: array | - |
 | `render_still` | Capture a quick OpenGL camera or viewport still as a PNG at the requested size. | `source`: string (['CAMERA', 'VIEWPORT'])<br>`width`: integer<br>`height`: integer | read-only annotation; GUI required |
 | `blender_api_help` | Inspect Blender's running Python API before writing a script. | `path`*: string; e.g. bpy.ops.mesh.primitive_cube_add, bpy.types.Object, bpy.data.objects | read-only annotation |
@@ -465,7 +473,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `estimate_cost` | Get the exact CU cost with a dry run that spends no credits. | `model_id`*: string<br>`parameters`: object<br>`lane`: string (enum: see tools/list) | read-only annotation |
 | `generate` | Submit a generation that spends the user's credits. Every model lane uses durable shared jobs. | `lane`*: string (enum: see tools/list)<br>`quote_id`*: string<br>`approved_cost`*: string<br>`model_id`*: string<br>`parameters`: object; Model parameters; file parameters take Scenario asset ids | spends credits |
 | `job_status` | Read one local generation's status and cost without spending credits. Active model jobs advance through shared remote polling and verified downloads; restarted jobs remain inspection-only. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | read-only annotation |
-| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, a workflow waits for a decision, is held by disabled Online Access, or the wait expires. Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
+| `wait_for_job` | Wait for a generation while Blender remains responsive. Shared jobs return when delivery finishes, pauses for review, a workflow waits for a decision, is held by disabled Online Access, or the wait expires; a ready job, restarted or not, first waits for the check of its saved result files (file_check_pending). Restarted shared jobs remain inspection-only until explicitly resumed. Prototype records return a local snapshot immediately with scoped recovery guidance. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility<br>`timeout`: number | read-only annotation |
 | `recover_cloud_job` | Read one completed cloud model job into the selected credential-scoped saved jobs. | `job_id`*: string<br>`model_id`*: string | - |
 | `import_result` | Reject direct cached-file import and explain the required saved-result approval flow. | `job_id`: string; Scenario job id (job_...) or the local_id returned by generate<br>`id`: string; Same as job_id, kept for compatibility | - |
 | `capture_reference` | Capture a viewport/camera still or clip, or export selected meshes, and upload the snapshot as a Scenario reference asset. | `source`: string (['VIEWPORT', 'CAMERA', 'VIEWPORT_CLIP', 'CAMERA_CLIP', 'MESH']) | - |
@@ -495,13 +503,13 @@ No tool saves the file: ask the user to save it. See
 
 ## Security model
 
-The Blender integration binds only to `127.0.0.1`. MCP operations require the
-bearer token, checked with a constant-time comparison. `/health` is unauthenticated
-and reports availability, Blender version and server name/version. Native clients
-may omit Origin; a supplied Origin must be an HTTP(S) loopback origin. Other
-origins and browser CORS preflights are refused. Every request first passes the
-[Host check](#request-boundaries). This is local access control,
-not a promise that a token-holding program is safe.
+The Blender integration binds only to `127.0.0.1` and asks for no credential: any program on this
+computer that can reach the port, under any account, can call every tool. Clients that send an
+`Authorization` header are served the same way. `/health` reports availability, Blender version
+and server name/version. Native clients may omit Origin; a supplied Origin must be an HTTP(S)
+loopback origin. Other origins and browser CORS preflights are refused. Every request first passes
+the [Host check](#request-boundaries), so pages from other sites cannot call the server; a page
+served from this computer, such as `http://localhost:3000`, can.
 
 Early POST and Origin rejections send the complete HTTP error with
 `Connection: close`, then close the socket's write side before discarding a
@@ -512,7 +520,7 @@ risk of a TCP reset hiding the error from clients still sending their body;
 malformed, chunked or oversized requests close without reading their declared body.
 
 **Allow connected agents to run Python** is off by default and fails closed if
-preferences are unavailable. With it off, an authorized agent can still read
+preferences are unavailable. With it off, a connected agent can still read
 and change the scene, capture/upload a reference and request paid generation.
 Require an estimate and explicit spending approval. If a generation call times
 out, inspect job status; do not submit it again blindly. Client timeouts do not
@@ -531,7 +539,9 @@ or after dispatch.
 A call that omits an argument its input schema lists as required, or whose
 arguments are not an object, is refused before the tool runs with
 `ValueError: Missing required argument: <name>` (or the plural form); argument
-values are still checked by each tool.
+values are still checked by each tool. A top-level argument sent as `null` counts
+as omitted, as clients using strict function calling send `null` for every option
+the model left out; a required argument sent as `null` is missing.
 A failed tool call returns an `isError` result with one line, `Type: message`,
 and no traceback. The message is returned only when the extension wrote it: a
 validation error or refusal raised by the tool or by extension code it calls,
@@ -547,21 +557,21 @@ remain.
 
 With Python enabled, a connected agent can run arbitrary Python with your user's
 permissions. The blocklist in `scenario/mcp/sandbox.py` is a guard rail, not a
-security boundary. The token can be copied into client configuration files and,
-for the stdio bridge, command arguments. Do not expose the port through a public
-proxy or share setup snippets.
+security boundary. Do not expose or forward the port beyond this computer, for example
+through a public proxy.
 
 Film video and case-study exports let an agent write new MP4 or ZIP files only
-inside the configured Output Folder. The destination's folder is resolved, following links, and must lie
-in the resolved Output Folder. Each part's spelling is compared exactly, although
-Windows resolution returns an existing folder's on-disk spelling. Only the missing
-default `Film` subfolder, with a missing Output Folder above it, can be created,
-an existing file is never overwritten, and Blender, extension and staging storage
-stay refused even when the Output Folder points there. Render and copy approvals
-must repeat the exact resolved destination and recheck the Output Folder, so an
-agent cannot approve a file chosen elsewhere in Blender's file browser. This is a
-policy check before a long render, not a sandbox: with Python
-execution enabled, a token holder can still write elsewhere. Report vulnerabilities through
+inside the configured Output Folder. The destination's folder is resolved,
+following links, and must lie in the resolved Output Folder. Each part's
+spelling is compared exactly, although Windows resolution returns an existing
+folder's on-disk spelling. Only the missing default `Film` subfolder, with a
+missing Output Folder above it, can be created, an existing file is never
+overwritten, and Blender, extension and staging storage stay refused even when
+the Output Folder points there. Render and copy approvals must repeat the exact
+resolved destination and recheck the Output Folder, so an agent cannot approve a
+file chosen elsewhere in Blender's file browser. This is a policy check before a
+long render, not a sandbox: with Python execution enabled, a connected agent can
+still write elsewhere. Report vulnerabilities through
 [SECURITY.md](../SECURITY.md); see [privacy and local data](PRIVACY.md) for uploads,
 credential storage and data handling.
 
@@ -570,12 +580,13 @@ credential storage and data handling.
 Every request, `/health` included, must carry exactly one `Host` header naming
 `127.0.0.1`, `localhost` or `[::1]`, with or without a port, in any letter case.
 The server checks it before routing, authentication and the Origin check. A missing
-or repeated `Host` returns 400; any other name returns 403 `forbidden host`, with the
-same early-rejection teardown as an Origin refusal. A DNS-rebinding page reaches the
-port under its own host name, which its browser sends as `Host`, so it can neither
-read `/health` nor call `/mcp`, even without an `Origin` header. MCP clients, the
-stdio bridge and `curl` send the host of the URL they were given; use the copied
-`127.0.0.1` URL, because a URL naming this computer another way is refused.
+or repeated `Host` returns 400; any other name returns 403 `forbidden host`,
+with the same early-rejection teardown as an Origin refusal. A DNS-rebinding
+page reaches the port under its own host name, which its browser sends as
+`Host`, so it can neither read `/health` nor call `/mcp`, even without an
+`Origin` header. MCP clients, the stdio bridge and `curl` send the host of the
+URL they were given; use the copied `127.0.0.1` URL, because a URL naming this
+computer another way is refused.
 
 Each connection has a 60-second idle timeout: a socket read or write that makes no
 progress for 60 seconds closes the connection, so an idle keep-alive connection or
@@ -601,31 +612,33 @@ this computer can connect. The server refuses any bind address other than
 
 Every other path, including the Output Folder, which can point anywhere, is refused
 with `UploadRefused` before the file is opened, copied or sent. The path is resolved
-first: `~` is expanded, a blend-relative `//` path is made absolute and every link is
-followed. The result must be an existing regular file inside one of those folders,
-or a file the user chose, compared by resolved path; the resolved file is what is
-uploaded. A link inside the extension's folders that points outside is refused, and
-a missing file receives the same refusal as a file outside the allowlist, so a
-refusal does not reveal which files exist. `render_form` `prepare` with the
-`first_frame` role applies the same rule, so a `first_frame_path` an agent set through
-`configure` is refused until the user chooses that file.
+first: `~` is expanded, a blend-relative `//` path is made absolute and every
+link is followed. The result must be an existing regular file inside one of
+those folders, or a file the user chose, compared by resolved path; the resolved
+file is what is uploaded. A link inside the extension's folders that points
+outside is refused, and a missing file receives the same refusal as a file
+outside the allowlist, so a refusal does not reveal which files exist.
+`render_form` `prepare` with the `first_frame` role applies the same rule, so a
+`first_frame_path` an agent set through `configure` is refused until the user
+chooses that file.
 
 Choices are recorded on Blender's main thread when one of those fields changes or
-the **Upload** file browser confirms a file, outside a local MCP tool call: a value an agent
-writes while its tool runs is never a choice. They are kept in memory by resolved
-path, up to the 256 most recent, and forgotten when Blender quits or the extension
-is disabled; a path saved in a blend file in an earlier session must be chosen again.
-This policy does not apply to the user's own uploads from forms and does not bind
-Python execution: with **Allow connected agents to run Python** on, an agent can
-read and send files with your permissions.
+the **Upload** file browser confirms a file, outside a local MCP tool call: a
+value an agent writes while its tool runs is never a choice. They are kept in
+memory by resolved path, up to the 256 most recent, and forgotten when Blender
+quits or the extension is disabled; a path saved in a blend file in an earlier
+session must be chosen again. This policy does not apply to the user's own
+uploads from forms and does not bind Python execution: with **Allow connected
+agents to run Python** on, an agent can read and send files with your
+permissions.
 
 ### Default start and upload decisions
 
 Agent uploads use the allowlist above rather than a native confirmation that
 names each file: the extension uploads its own captures directly, so
 `upload_reference` mostly serves files the user chose. Local MCP starts
-automatically in GUI sessions when **Allow Online Access** is on, protected by its
-token and the Origin, Host, idle-timeout and loopback-bind checks above. **Stop MCP
+automatically in GUI sessions when **Allow Online Access** is on, protected by the
+Origin, Host, idle-timeout and loopback-bind checks above. **Stop MCP
 server** in **Scenario > Agents (MCP)** closes it for the rest of the session. The
 extension's network permission text and [PRIVACY.md](PRIVACY.md#the-local-mcp-server)
 disclose the loopback listener. The headless `scenario_blender` command stays an
@@ -693,7 +706,11 @@ as a new request, or clean a finished private source copy; it never resends a
 part to the same upload or deletes the original file.
 See [upload limits and destination policy](SDK_UPLOADS.md#active-reference-uploads).
 
-`wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 170).
+`wait_for_job` accepts a finite timeout from 0 to 170 seconds (default 45).
+Codex and clients built on the MCP TypeScript SDK stop waiting for a tool call
+after 60 seconds unless configured otherwise, so the default wait answers first;
+an expired wait returns `delivery_active` true and the agent calls again. Pass a
+longer timeout only to a client that waits longer.
 A zero timeout reads status immediately. Shared waits observe their scoped session
 on the HTTP thread while main-thread maintenance performs delivery. Server stop
 interrupts waiting; a changed session rejects the old completion. Waiting does
@@ -706,8 +723,9 @@ No credentials, service requests or registry writes are needed for cold reads.
 
 ## Troubleshooting
 
-- **401:** the token is missing or differs from the server's current token. Copy
-  the setup again; check the actual port and the client's launch environment.
+- **Codex: `Environment variable SCENARIO_BLENDER_TOKEN for MCP server 'scenario-blender' is not
+  set`:** your Codex entry still names a token variable. Run `codex mcp remove scenario-blender`,
+  then add the server again with the [Codex setup](#codex).
 - **403 `forbidden host` or 400:** the client named the server other than
   `127.0.0.1`, `localhost` or `[::1]`, or sent no `Host`; use the copied URL. See
   [request boundaries](#request-boundaries).
@@ -715,14 +733,14 @@ No credentials, service requests or registry writes are needed for cold reads.
   button, the first-frame field or a workflow input's **File** field) and call it
   again, or capture the scene with `capture_reference`; see
   [agent file uploads](#agent-file-uploads).
-- **No free port from 9876:** all four candidate ports are busy. Choose a different
-  MCP Port and copy the newly displayed URL.
+- **Port 9876 is in use:** another program, often another Blender, holds the
+  MCP Port. Stop its server, or choose a different MCP Port, press **Start MCP
+  server** and copy the setup again.
 - **Allow Online Access is off:** enable it in Blender's System preferences before
   starting the server; this permission also allows Scenario network operations.
 - **Capture fails in background mode:** open a GUI session with a 3D viewport.
 - **Catalog is still loading:** retry after loading completes and inspect the
-  extension's status for credential or service errors. This is separate from the
-  local MCP bearer token.
+  extension's status for credential or service errors.
 - **Model description is still loading:** the read took longer than the
   [30-second wait](#model-quote-and-submission-contract); nothing was quoted,
   submitted or changed. Call again; the call joins the same read.
@@ -744,26 +762,26 @@ server cost as a decimal string), the numeric `cu_cost` and `details`. Model
 preparation and credential checks run on Blender's main thread, and the dry run
 on the shared session workers while the MCP request thread waits without
 blocking Blender. After explicit user approval, pass those values as `quote_id`
-and `approved_cost` to `generate` with the same lane, model and parameters. The estimate's lane
-is `image` when omitted. A changed lane, scene, credential context, input or
-consumed quote requires a fresh estimate. An estimate alone does not authorize
-spending. Failed or timed-out submissions must be inspected by their returned
-local ID, never blindly repeated.
+and `approved_cost` to `generate` with the same lane, model and parameters. The
+estimate's lane is `image` when omitted. A changed lane, scene, credential
+context, input or consumed quote requires a fresh estimate. An estimate alone
+does not authorize spending. Failed or timed-out submissions must be inspected
+by their returned local ID, never blindly repeated.
 
 `model_schema`, `estimate_cost` and `generate` on every lane, including the
 render lanes, `render_form` (`configure` and `prepare`) and the render-lane
 `estimate_prompt` need the model's description. When this session has not
 loaded it yet, the call starts or joins its background read and waits up to 30
-seconds (a chosen limit, not a measured read time) for it on the MCP request thread. Blender's main thread stays free, then
-delivers the read and answers the call. These tools read the description before
-they quote, submit or change anything. If the read is still in flight after the
-wait, the call returns `The model description is still loading; call again in a
-few seconds. Nothing was quoted, submitted or changed`. A failed read returns its
-reason, and the next call reads the description again. `render_form` `inspect`
-and `remove` wait the same way, but still answer, with the form's errors, when
-the read fails or is still in flight. Reviewing a `video_first_frame`
-application never starts a read; it requires the Render Video model loaded, for
-example by `render_form`.
+seconds (a chosen limit, not a measured read time) for it on the MCP request
+thread. Blender's main thread stays free, then delivers the read and answers the
+call. These tools read the description before they quote, submit or change
+anything. If the read is still in flight after the wait, the call returns `The
+model description is still loading; call again in a few seconds. Nothing was
+quoted, submitted or changed`. A failed read returns its reason, and the next
+call reads the description again. `render_form` `inspect` and `remove` wait the
+same way, but still answer, with the form's errors, when the read fails or is
+still in flight. Reviewing a `video_first_frame` application never starts a
+read; it requires the Render Video model loaded, for example by `render_form`.
 
 All MCP model submissions persist intent before SDK dispatch. `job_status`,
 `wait_for_job` and `list_local_jobs` expose saved state across restart. Active
@@ -781,19 +799,50 @@ there is no implicit texture assignment, mesh import or sequencer insertion.
 a declared OpenEXR original was saved instead of its preview, or a WAV original
 instead of Scenario's MP3 copy, with unknown size;
 `projection: equirectangular` appears only when Scenario declares a 360 image.
-Neither is an application approval. This inspection does not reverify local files
-or authorize scene application. Recovered display records use generic
-`kind: model`; original lane metadata is not persisted. PNG/EXR results can use
-the explicit image import approval above, without inferring a material or World
-assignment from their media type. Supported video/audio uses the explicit
-asset and scene/frame approval above. Saved model `import_units` use the
-scene/cursor approval above; in-place mesh editing is separate.
-`import_result` rejects
-direct cached-file import, including prototype records, with guidance for scoped
-recovery and explicit destination approval. It requires complete selected
-credentials to inspect the saved store. Read-only inspection of any prototype record
-uses its local snapshot without credentials, polling or manager creation. No
-prototype result event automatically applies cached files into the current scene.
+Neither is an application approval, and neither is a listed file. Recovered
+display records use generic `kind: model`; original lane metadata is not
+persisted. PNG/EXR results can use the explicit image import approval above,
+without inferring a material or World assignment from their media type.
+Supported video/audio uses the explicit asset and scene/frame approval above.
+Saved model `import_units` use the scene/cursor approval above; in-place mesh
+editing is separate. `import_result` rejects direct cached-file import,
+including prototype records, with guidance for scoped recovery and explicit
+destination approval. It requires complete selected credentials to inspect the
+saved store. Read-only inspection of any prototype record uses its local
+snapshot without credentials, polling or manager creation. No prototype result
+event automatically applies cached files into the current scene.
+
+### Saved result files
+
+Shared `job_status` and `wait_for_job` list the local file of every downloaded
+result of a ready job (`ready`, `applying`, `apply_failed` or `applied`) in
+`files`, in result order, whatever its media type and whether or not it was
+imported, including after a restart. The files come from the saved store and
+receipts, and only bytes that match their receipt are listed. A file this Blender
+session downloaded or imported is listed at once with the identity it had when
+the session hashed it. Any other file, such as after a restart, is rehashed on
+the preview lane after the first status read of its job. Each `results`
+entry adds `file`, its path when listed and `null` otherwise, and `file_state`:
+
+- `verified`: the bytes match the receipt; `file` names them.
+- `checking`: not checked yet, or the file changed since its check;
+  `file_check_pending` is then true. Call `job_status` again, or `wait_for_job`,
+  which also waits for the check.
+- `missing`: no file is at the saved location.
+- `changed`: a file is there, but it is partial, replaced by a link or holds
+  other bytes.
+- `unavailable`: the check could not run, such as a read error, or the file
+  changed while it was hashed. Blender tries again by itself after 5 seconds,
+  doubling the delay up to 5 minutes, and `file_check_pending` stays true;
+  `wait_for_job` does not wait for that retry.
+- `not_downloaded` or `not_ready`: nothing was saved yet, or the job is not
+  ready, such as an interrupted download that needs `recover_download`.
+
+A status read compares each listed file with its identity when it was hashed,
+so a file edited, replaced or removed afterwards is checked again before it is
+listed. Checks stay in the selected credentials and project and never return a
+download URL. A listed file grants no application: every import or application
+rehashes the bytes it reads and needs its own approval.
 
 Speech-to-text (`audio2txt`) and video-to-motion (`video23d`) models are
 experimental. `estimate_cost` and `generate` describe this status and accept
@@ -877,13 +926,14 @@ Approval is unchanged: `generate` needs the same parameters and the exact
 runs now; when it runs, `parameters` holds the base's LoRA inputs to add to an
 Image `estimate_cost` call. `set` takes `context_id`, `expected_revision`,
 `base_model_id` and `picks`; a LoRA without `scale` is saved at its `start_scale`,
-as choosing it in the picker and then **Save** would. Like the native **Save**, it refuses a choice that
-cannot run in that form now, a stale revision, or a context from other credentials
-or another project; `clear` takes the same context and revision. Neither requests
-a price or changes a payload. A form without an explicit choice takes the saved
-default, as in the native UI, while Image `estimate_cost` uses only the parameters
-it is given. A default is a local choice kept in the job store, not spending
-authority. Live use of a private composition is tracked in
+as choosing it in the picker and then **Save** would. Like the native **Save**,
+it refuses a choice that cannot run in that form now, a stale revision, or a
+context from other credentials or another project; `clear` takes the same
+context and revision. Neither requests a price or changes a payload. A form
+without an explicit choice takes the saved default, as in the native UI, while
+Image `estimate_cost` uses only the parameters it is given. A default is a local
+choice kept in the job store, not spending authority. Live use of a private
+composition is tracked in
 [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
 
 ### Preparing Render Image and Render Video
@@ -931,12 +981,13 @@ before explicitly replacing a snapshot. A model change requires removing its
 old references first. `style_assets` replaces only unmarked style references;
 marked uploads require explicit removal. When the style input also takes the
 scene capture or an enabled first frame sent as a reference image, it keeps
-one slot free for each that is not prepared yet. Optional scalar parameters accept null
-to disable them; invalid edits fail before changing the form. Final quotes still
-validate conditional and one-of schema requirements, and refuse two file inputs
-whose descriptions say they can't be combined. That guard reads description
-wording and checks file inputs only: a setting described as exclusive, such as
-Kling V3 Omni's `generateAudio` with a reference video, is still sent (see
+one slot free for each that is not prepared yet. Optional scalar parameters
+accept null to disable them; invalid edits fail before changing the form. Final
+quotes still validate conditional and one-of schema requirements, and refuse two
+file inputs whose descriptions say they can't be combined. That guard reads
+description wording and checks file inputs only: a setting described as
+exclusive, such as Kling V3 Omni's `generateAudio` with a reference video, is
+still sent (see
 [known limitations](KNOWN_LIMITATIONS.md#creation-and-scene-application)).
 
 Inspection returns only the enabled parameters used by the render lane. Its
@@ -1186,9 +1237,10 @@ separate explicit local **Build plan** action.
 After failure or restart, use `list_local_jobs` for context/revision and
 `job_status` for saved asset IDs. `read_model_text` retrieves one selected full
 text output without spending or applying it to a scene. Incomplete previews must
-be downloaded successfully; truncated JSON prefixes are not plans. For native recovery, choose **Read saved Blockout plan** in saved jobs, then
-**Use saved Blockout plan** to review the destination and whether its existing
-plan will be replaced. This does not change geometry or spend credits.
+be downloaded successfully; truncated JSON prefixes are not plans. For native
+recovery, choose **Read saved Blockout plan** in saved jobs, then **Use saved
+Blockout plan** to review the destination and whether its existing plan will be
+replaced. This does not change geometry or spend credits.
 
 MCP uses `prepare_blockout_plan` with the current context and saved revision,
 then `blockout_plan_status` until ready. Show the scene, element/group counts and
@@ -1396,11 +1448,12 @@ selected until building: selecting another scene and then the recipe scene again
 also invalidates it. `WAITING` means preparation finished while another scene was
 active; a return through the scene selector turns it into `ERROR`, so prepare again.
 Building consumes the review, saves application claims for generated sources and
-creates a new scene while the working scene stays selected. `film_review_status` can
-cancel preparation, discard an unbuilt review's copies, `retry_receipt` for a known
-saved outcome or dismiss an inspected uncertain review with `inspected: true`; none
-rebuilds or clears a saved claim. An uncertain review blocks new preparation for its
-scene until its receipt is saved or it is dismissed.
+creates a new scene while the working scene stays selected. `film_review_status`
+can cancel preparation, discard an unbuilt review's copies, `retry_receipt` for
+a known saved outcome or dismiss an inspected uncertain review with
+`inspected: true`; none rebuilds or clears a saved claim. An uncertain review
+blocks new preparation for its scene until its receipt is saved or it is
+dismissed.
 
 These three local commands have no platform equivalent, make no service call and
 share the [native review controls](FILM_PLAN.md#native-and-mcp-review-controls).
@@ -1633,13 +1686,13 @@ and a tag cannot be added and removed together. See the
 validation rule. Preparation reads each asset's current tags and memberships with
 one bulk read, plus the target collection or, for a create, an exact-name lookup.
 It sends no write. The review lists each asset's change and `request_count`, the
-writes apply sends when each one succeeds. A missing asset, an existing exact collection name
-(returned in `existing_collection_ids`) or a name whose earlier create in this
-session had an unknown outcome makes the review `REJECTED`. Apply checks the name
-again before creating: a name taken since preparation sends nothing and returns
-`NOT_SENT` with those IDs in `existing_collection_ids`. A request with nothing
-to change is `UNCHANGED`. `project_id` is the Project ID override, or `null` for
-the key's own scope.
+writes apply sends when each one succeeds. A missing asset, an existing exact
+collection name (returned in `existing_collection_ids`) or a name whose earlier
+create in this session had an unknown outcome makes the review `REJECTED`. Apply
+checks the name again before creating: a name taken since preparation sends
+nothing and returns `NOT_SENT` with those IDs in `existing_collection_ids`. A
+request with nothing to change is `UNCHANGED`. `project_id` is the Project ID
+override, or `null` for the key's own scope.
 
 Show the review to the user before applying. Organization changes are immediate
 Scenario account metadata: they use no credits and Blender Undo does not reverse

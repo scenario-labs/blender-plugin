@@ -5,19 +5,29 @@ developer credentials and explicit live commands.
 
 Use the uv version required by `pyproject.toml`. Run `uv sync --locked` to create
 the worktree's `.venv` from `uv.lock` and the interpreter in `.python-version`.
-`make test` runs `uv run --locked --no-env-file python -m pytest`; use the same prefix for
-focused tests. Dependency and interpreter changes follow
+`make test` runs `uv run --locked --no-env-file python -m pytest`; use the same
+prefix for focused tests. `pyproject.toml` already passes `-q`; another `-q`
+hides the pass count. Dependency and interpreter changes follow
 [Python style](../PYTHON_STYLE.md#dependency-changes). Blender native tests still
 use Blender's bundled Python and an isolated profile. Preserve exit codes when
 capturing logs, and distinguish passed checks from checks that were not run.
 
 [CI](../../.github/workflows/ci.yml) runs Python lint, unit tests, SDK contracts,
-the Linux/Windows Blender baseline, knowledge checks and agent-skill validation
-as reusable workflows on pull requests and pushes to `main`. The `ci-ok` job
-waits for all six workloads in that run and passes only when each succeeds;
-failed, cancelled, skipped or missing results fail the gate. PR updates cancel
-older CI runs for that PR. Concurrency belongs to the caller so reusable
-workflows cannot cancel their parent run.
+the Linux/Windows Blender baseline, knowledge checks, agent-skill validation and
+the site script tests as reusable workflows on pull requests and pushes to `main`.
+Its `changes` job skips the Blender baseline on a pull request when every changed
+file is a root Markdown file, the PR template, `.nvmrc`, `package.json`,
+`pnpm-lock.yaml`, `vitest.config.mts`, or under `docs/`, `.agents/`,
+`.claude/`, `.codex/`, `.github/ISSUE_TEMPLATE/`, `.clusterfuzzlite/`,
+`tools/site_proxy/`, `tests/site/` or `tests/fuzz/`. Any other path, a push or an
+unreadable diff runs the baseline.
+Changes to that list need matching cases in `tests/unit/test_workflows.py`.
+The `ci-ok` job waits for that classification and all seven workloads and passes
+only when each succeeds. It accepts a skipped
+baseline only when the classification succeeded and found no native input;
+failed, cancelled, other skipped or missing results fail the gate. PR
+updates cancel older CI runs for that PR. Concurrency belongs to the caller so
+reusable workflows cannot cancel their parent run.
 
 Individual job names can include their caller prefix; artifact names and native
 matrix coverage are unchanged. The separate `pr-title` and `commits` checks
@@ -29,7 +39,9 @@ those settings. Keep their reported names synchronized with the ruleset.
 into their local reusable workflows and composite actions to check the explicit
 read-only/no-secrets convention. They also check distinct declared job contexts
 and run the actual `ci-ok` shell with every workload successful, failed,
-cancelled, skipped, empty or absent. Every workload must appear in the gate's
+cancelled, skipped, empty or absent, with and without native changes. They run
+the actual `changes` shell on a temporary merge commit, including a rename out of
+`scenario/`. Every workload must appear in the gate's
 dependencies and result inputs. These stdlib checks cover the repository's
 block-style workflow subset and reject unsupported trigger/permission forms;
 they do not replace general YAML/action validation or GitHub's actual scheduling,
@@ -48,6 +60,15 @@ See [matrix maintenance and failure reporting](../../CONTRIBUTING.md#bumping-the
 on pinned Python 3.11 and 3.13 interpreters with the same locked dependencies and
 dotenv loading disabled. It needs no credentials.
 
+Fuzz harnesses for the local MCP server, the upload policy and media parsers live
+in `tests/fuzz/`; `make test` and unit CI run each on its seeds and a fixed
+pseudo-random corpus. [ClusterFuzzLite](../../.github/workflows/cflite.yml) fuzzes
+them with Atheris for an hour weekly, or on demand for any branch from the Actions
+tab. To fuzz locally with Docker, run
+`python infra/helper.py build_fuzzers --external <checkout>`, then
+`python infra/helper.py run_fuzzer --external <checkout> fuzz_glb`, from an
+[OSS-Fuzz](https://github.com/google/oss-fuzz) clone.
+
 Each unit matrix leg measures statement coverage for `scenario/core` and
 `scenario/mcp` using the pinned pytest-cov development dependency and locked
 coverage.py version. The log and Actions summary contain per-file totals;
@@ -60,7 +81,7 @@ Blender behavior or subprocess execution and do not prove live service acceptanc
 To generate the same XML and HTML reports locally from the repository root:
 
 ```sh
-uv run --locked --no-env-file python -m pytest tests/unit -rx \
+uv run --locked --no-env-file python -m pytest tests/unit tests/fuzz -rx \
   --cov --cov-report=term --cov-report=xml --cov-report=html
 ```
 
@@ -81,11 +102,13 @@ over the whole tree, checks both. Follow [Python style](../PYTHON_STYLE.md#whole
 for path scoping, mechanical reformatting and Blender registration/annotation
 cautions.
 
-`make check-rules` runs the currently implemented offline house rules. Its
-`actions-pinned` rule checks remote workflow and composite-action references;
-the unit suite exercises failures and checks the repository, so no extra CI
-job is needed. See [the contribution guide](contributions.md#github-actions-updates)
-for supported declaration syntax, explicit file selection and remaining scope.
+`make check-rules` runs the offline house rules, including `actions-pinned` for
+remote workflow and composite-action references; the unit suite exercises
+failures and checks the repository, so no extra CI job is needed. See
+[the contribution guide](contributions.md#house-rules) for each rule and
+[action updates](contributions.md#github-actions-updates) for supported
+declaration syntax and explicit file selection. `make lint-licence` runs
+`reuse lint` from the locked development group; Python lint CI runs it too.
 
 `make test-blender` owns fresh disposable profiles for its entire build/install/test
 sequence, including probes. It strips inherited credentials and Blender/Python path
@@ -112,8 +135,8 @@ GUI probes never spend credits; capture requires a desktop session with the
 necessary display access, which may be unavailable to a cloud agent.
 
 The portable build/install tools also create fresh isolated profiles and scrub
-inherited credentials and path overrides. For every direct Blender invocation outside these tools,
-including probes, export an absolute disposable profile:
+inherited credentials and path overrides. For every direct Blender invocation
+outside these tools, including probes, export an absolute disposable profile:
 `export BLENDER_USER_RESOURCES="$PWD/.blender-profile"`.
 Never install development builds into the user's normal profile.
 
@@ -185,35 +208,36 @@ uv run --locked --no-env-file python tools/test_repository_update.py \
   --candidate-zip artifacts/scenario-CANDIDATE.zip
 ```
 
-For a selected release pair, both ZIP options are required together. The candidate must have a newer stable
-version and the same `scenario` identity. The runner copies the selected archives
-without rebuilding or rewriting their contents, generates each repository through
-the existing validator, and verifies installed bytes before and after upgrade.
-Only the index and the two explicit archive filenames are served on loopback.
-The default invocation still runs the small synthetic fixture above.
+For a selected release pair, both ZIP options are required together. The
+candidate must have a newer stable version and the same `scenario` identity. The
+runner copies the selected archives without rebuilding or rewriting their
+contents, generates each repository through the existing validator, and verifies
+installed bytes before and after upgrade. Only the index and the two explicit
+archive filenames are served on loopback. The default invocation still runs the
+small synthetic fixture above.
 
 The package probe seeds synthetic saved preferences, credentials and a nonempty
-Project ID, six durable job states (prepared, uncertain, remote, download failed, ready and applied), a
-second credential scope with the same project, result manifests/receipts and
-local result bytes,
-three image upload states plus an imported captured-mesh upload with verified
-staged bytes, and a saved blend with a reference.
-It compares these after native upgrade in the same process and after reopening
-the blend in a second, offline Blender process. Exact quote strings, nonempty texture roles, application
-origins, upload markers and the installation's scope key must survive. Original
-reference bytes are checked too. The saved project preference and runtime job scope
-must agree; the same key with default scope or another project must see no jobs,
-uploads or Film upload association. Both native reports require
-`project_scope_preserved: true`. Packages without the optional project preference
-need their matching historical probe and cannot establish this coverage.
-Ready/applied jobs retain the exact mesh input
-binding, export hash, source transform and upload revision. The completed job
-retains successful, confirmed-failed and unfinished local application claims;
-the probe attempts another claim and requires rejection without changing the
-record before update, after update and after restart. These fixtures require
-packages with the captured-source and local-reuse storage APIs. They do not
-restore live object authority or replay scene application. The actual package's storage APIs perform reads
-and verification; no mocked add-on replaces the installed extension.
+Project ID, six durable job states (prepared, uncertain, remote, download
+failed, ready and applied), a second credential scope with the same project,
+result manifests/receipts and local result bytes, three image upload states plus
+an imported captured-mesh upload with verified staged bytes, and a saved blend
+with a reference. It compares these after native upgrade in the same process and
+after reopening the blend in a second, offline Blender process. Exact quote
+strings, nonempty texture roles, application origins, upload markers and the
+installation's scope key must survive. Original reference bytes are checked too.
+The saved project preference and runtime job scope must agree; the same key with
+default scope or another project must see no jobs, uploads or Film upload
+association. Both native reports require `project_scope_preserved: true`.
+Packages without the optional project preference need their matching historical
+probe and cannot establish this coverage. Ready/applied jobs retain the exact
+mesh input binding, export hash, source transform and upload revision. The
+completed job retains successful, confirmed-failed and unfinished local
+application claims; the probe attempts another claim and requires rejection
+without changing the record before update, after update and after restart. These
+fixtures require packages with the captured-source and local-reuse storage APIs.
+They do not restore live object authority or replay scene application. The
+actual package's storage APIs perform reads and verification; no mocked add-on
+replaces the installed extension.
 
 When the installed predecessor exposes Film task storage, all six selected jobs
 also retain their production/task and recipe hashes. When Film upload storage is
@@ -246,8 +270,9 @@ When the package seeding the defaults ships the runtime
 them through `runtime.ensure_model_defaults` instead of the store. After the update
 and after the offline restart it reads every seeded lane through the candidate's
 owner, whose scope must equal the selected store's and whose states must equal the
-stored rows. Both reports record `model_defaults_preserved`; the runner requires it
-to be true exactly when the candidate archive contains `core/jobs/model_defaults.py`.
+stored rows. Both reports record `model_defaults_preserved`; the runner requires
+it to be true exactly when the candidate archive contains
+`core/jobs/model_defaults.py`.
 
 When the candidate declares a newer schema than the predecessor, the runner then
 starts one more offline Blender process with factory settings, so neither package
@@ -292,12 +317,12 @@ predecessors report false: they show only that an older saved tab survives the
 appended item.
 
 When the predecessor saves trained-model choices on generation forms, the probe
-seeds two LoRAs with strengths and ranges on the Image form, including a Unicode name,
-each tagged with the selected connection's scope. After the update and the offline
-reopen it compares their IDs, names, kinds, strengths, ranges and scope tags. The
-candidate's trained-model scope check must accept them for the selected store and
-refuse them under the other credential scope and under the same credentials with
-the default scope or another project. Both reports include
+seeds two LoRAs with strengths and ranges on the Image form, including a Unicode
+name, each tagged with the selected connection's scope. After the update and the
+offline reopen it compares their IDs, names, kinds, strengths, ranges and scope
+tags. The candidate's trained-model scope check must accept them for the
+selected store and refuse them under the other credential scope and under the
+same credentials with the default scope or another project. Both reports include
 `trained_selection_preserved`, which must be true exactly when
 `expected-state.json` contains a trained choice; predecessors without these
 properties report false.
@@ -344,12 +369,13 @@ actual schema upgrade through Blender's updater; like the candidate-derived mode
 it is synthetic version evidence, not published release-pair acceptance.
 
 Each Linux and Windows baseline job runs both the small fixture and this
-actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly one
-ZIP from that job's successful native run and preserves update/restart reports,
-logs, indices and both test archives on failure as well as success. A failed
-package check fails its matrix job and the existing aggregate gate. Hosted results
-remain evidence for their actual run, platform and archives; this CI mode does
-not establish published release-pair compatibility or public update availability.
+actual-package lifecycle check for Blender 5.0, 5.1 and 5.2. It requires exactly
+one ZIP from that job's successful native run and preserves update/restart
+reports, logs, indices and both test archives on failure as well as success. A
+failed package check fails its matrix job and the existing aggregate gate.
+Hosted results remain evidence for their actual run, platform and archives; this
+CI mode does not establish published release-pair compatibility or public update
+availability.
 
 - `make build`: build and validate the extension ZIP; use
   `BLENDER_BUILD_ARGS="--repo"` to also generate a local extension repository.
@@ -372,12 +398,12 @@ not establish published release-pair compatibility or public update availability
   license content. Keep root `LICENSE` and `scenario/LICENSE` identical.
 - For UI changes, exercise native behavior and inspect captured screenshots.
   Report actual Blender/OS versions and limitations.
-- For instruction or documentation changes, check links, symlinks, commands and
-  the diff. Do not run the full Blender suite just to populate a test count.
+- For instruction or documentation changes, check links, symlinks, commands,
+  `make check-rules` and the diff. Do not run the full Blender suite just to
+  populate a test count.
 - Smoke tests, generation, prompt helpers and scene design can spend credits.
   Do not run them as part of a documentation command.
 
 Use `blender --background scene.blend --command scenario_blender` for local MCP.
-Set `SCENARIO_BLENDER_TOKEN` for an explicit token, or use the generated session
-token shown at startup. Online access must be enabled; SIGINT/SIGTERM stop the
+Online access must be enabled; SIGINT/SIGTERM stop the
 server cleanly. Run it only in the isolated development profile described above.

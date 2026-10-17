@@ -2,15 +2,19 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Code owners
 #
-# Request reviews for release files, repository automation, licence and security
-# texts. Ownership of scenario/ as a whole would request owners on every change.
-# Both owners must be on the same line; paths are root-anchored, last match wins.
+# Request the maintainer's review on every pull request, and the platform team's
+# too for release files, repository automation, licence and security texts.
+# A later matching line replaces earlier owners, so each path line repeats the
+# maintainer. Owners must be on the same line; paths are root-anchored.
 #
 # This file defines requested reviewers, not permissions or required approvals.
 # The main - review ruleset currently does not require code-owner approval.
 # Changing that policy or team access is a separate repository-admin decision.
 # Requests use the CODEOWNERS file on the PR base branch; drafts request owners
 # when marked ready for review.
+
+# Every path
+*                                @hervenivon
 
 # Release version and changelog files (release-please owns release updates)
 /CHANGELOG.md                    @hervenivon @scenario-labs/platform

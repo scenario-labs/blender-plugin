@@ -536,7 +536,7 @@ class RuntimeJobTests(unittest.TestCase):
                 patch.object(server_type, "serve_blocking", serve_once),
                 patch.object(service, "McpServer", side_effect=ephemeral_server),
             ):
-                self.assertEqual(service.cli(["--token", "synthetic-cli-token"]), 0)
+                self.assertEqual(service.cli([]), 0)
             self.assertEqual(observed, [True])
             self.assertTrue(adapter._closed)
             self.assertEqual(store.get(prepared.intent.request_id).remote_job_id, "fixture-remote")

@@ -672,7 +672,28 @@ def test_an_unreadable_definition_blocks_choosing_and_is_read_again(setup, defin
     )
     assert item.blocked == "unverified" and item.actions == ("reject",)
     coordinator.refresh_remote("request", expected_revision=record.revision)
+    # The definition read makes one attempt: the next retrieval reads it again.
     assert len(setup.reads) == 2 and len(calls) == 2
+
+
+@pytest.mark.parametrize("failure", ["timeout", 503])
+@pytest.mark.parametrize("automatic", [True, False])
+def test_the_definition_read_makes_one_attempt_for_any_refresh(setup, failure, automatic):
+    # The step-link definition is read again at the next retrieval, so its read
+    # never adds SDK retries to a poll, an explicit refresh or a decision.
+    def fail(request):
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private fixture detail", request=request)
+        return httpx.Response(failure, json={"message": "private fixture detail"})
+
+    waiting = into_loop()
+    coordinator, _, calls, record = setup([waiting], definition=fail)
+    snapshot = coordinator.refresh_remote(
+        "request", expected_revision=record.revision, automatic=automatic
+    )
+    assert snapshot.links is None
+    assert len(calls) == 1
+    assert len(setup.reads) == 1
 
 
 def test_an_unreadable_definition_logs_only_its_error_type_once_until_read(setup, caplog):

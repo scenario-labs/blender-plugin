@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import os
+import tempfile
 import unittest
 
 import bpy
+import imbuf
 from helpers import FIXTURES, reset_scene, submodule
 
 
@@ -29,6 +32,106 @@ class McpToolsTests(unittest.TestCase):
         self.assertIn("vertices", detail)
         with self.assertRaises(ValueError):
             self.tb.object_detail({"name": "Nope"})
+
+    def test_scene_summary_pages_and_filters_large_scenes(self):
+        stage = bpy.data.collections.new("Stage")
+        bpy.context.scene.collection.children.link(stage)
+        for index in range(120):
+            stage.objects.link(bpy.data.objects.new(f"Marker {index:03}", None))
+        first = self.tb.scene_summary({})
+        self.assertEqual((first["scene_object_count"], first["total"]), (121, 121))
+        self.assertEqual((len(first["objects"]), first["next_offset"]), (100, 100))
+        self.assertIn("offset 100", first["note"])
+        rest = self.tb.scene_summary({"offset": first["next_offset"]})
+        self.assertEqual((len(rest["objects"]), rest["next_offset"]), (21, None))
+        self.assertNotIn("note", rest)
+        names = [o["name"] for o in first["objects"] + rest["objects"]]
+        self.assertEqual(len(set(names)), 121)
+        meshes = self.tb.scene_summary({"types": ["mesh"], "fields": ["dimensions"]})
+        self.assertEqual(meshes["objects"], [{"name": "Crate", "dimensions": [2.0, 2.0, 2.0]}])
+        staged = self.tb.scene_summary(
+            {"collection": "Stage", "name_contains": "MARKER 11", "limit": 5}
+        )
+        self.assertEqual(
+            [o["name"] for o in staged["objects"]], [f"Marker {i}" for i in range(110, 115)]
+        )
+        self.assertEqual((staged["total"], staged["next_offset"]), (10, 5))
+        self.tb.select_objects({"names": ["Marker 007"]})
+        picked = self.tb.scene_summary({"selected_only": True, "fields": []})
+        self.assertEqual(picked["objects"], [{"name": "Marker 007"}])
+        for bad in (
+            {"limit": 0},
+            {"limit": 501},
+            {"limit": True},
+            {"offset": -1},
+            {"types": "MESH"},
+            {"types": ["ROCKET"]},
+            {"fields": ["vertices"]},
+            {"collection": "Nope"},
+            {"collection": 3},
+            {"name_contains": 3},
+            {"selected_only": "yes"},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.tb.scene_summary(bad)
+
+    def test_scene_summary_collection_filter_ignores_a_linked_namesake(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "twin.blend")
+            twin = bpy.data.objects.new("Twin", None)
+            bpy.data.libraries.write(path, {twin})
+            bpy.data.objects.remove(twin)
+            with bpy.data.libraries.load(path, link=True) as (_, target):
+                target.objects = ["Twin"]
+            bpy.context.scene.collection.objects.link(target.objects[0])
+            stage = bpy.data.collections.new("Stage")
+            bpy.context.scene.collection.children.link(stage)
+            stage.objects.link(bpy.data.objects.new("Twin", None))
+            twins = self.tb.scene_summary({"name_contains": "Twin", "fields": []})
+            self.assertEqual(twins["total"], 2)
+            staged = self.tb.scene_summary({"collection": "Stage", "fields": []})
+            self.assertEqual((staged["total"], staged["objects"]), (1, [{"name": "Twin"}]))
+
+    def test_scene_summary_caps_selected_and_camera_names(self):
+        for index in range(55):
+            camera = bpy.data.objects.new(f"Shot {index:02}", bpy.data.cameras.new("Shot"))
+            bpy.context.scene.collection.objects.link(camera)
+            camera.select_set(True)
+        summary = self.tb.scene_summary({"types": ["CAMERA"], "limit": 1})
+        self.assertEqual((summary["camera_count"], len(summary["cameras"])), (55, 50))
+        self.assertEqual((summary["selected_count"], len(summary["selected"])), (56, 50))
+        self.assertEqual((summary["total"], summary["next_offset"]), (55, 1))
+
+    def test_image_sizes_are_bounded_and_screenshots_scaled_down(self):
+        for args in ({"width": 15}, {"width": 4097}, {"height": 0}, {"width": "1280"}):
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                self.tb.render_still(args)
+        with self.assertRaises(ValueError):
+            self.tb._image_size({"max_size": 63}, "max_size", 1280, minimum=64)
+        # Background Blender still loads the startup layout, so its areas can be compared.
+        _, area = self.tb._largest_viewport()
+        views = [
+            a
+            for window in bpy.context.window_manager.windows
+            for a in window.screen.areas
+            if a.type == "VIEW_3D"
+        ]
+        self.assertEqual(area.width * area.height, max(a.width * a.height for a in views))
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "wide.png")
+            image = bpy.data.images.new("Wide", 2000, 1000)
+            image.filepath_raw, image.file_format = path, "PNG"
+            image.save()
+            bpy.data.images.remove(image)
+            for max_size, expected in ((1280, (1280, 640)), (2000, (1280, 640)), (500, (500, 250))):
+                self.tb._fit_png(path, max_size)
+                with open(path, "rb") as handle:
+                    self.assertEqual(handle.read(8), b"\x89PNG\r\n\x1a\n")
+                scaled = imbuf.load(path)
+                try:
+                    self.assertEqual(tuple(scaled.size), expected, max_size)
+                finally:
+                    scaled.free()
 
     def test_blender_api_help_returns_docs_and_properties(self):
         op = self.tb.blender_api_help({"path": "bpy.ops.mesh.primitive_cube_add"})

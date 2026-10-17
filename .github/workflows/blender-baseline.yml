@@ -9,21 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  runner-unit:
-    name: runner-unit
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          version-file: pyproject.toml
-          enable-cache: true
-      - run: uv sync --locked
-      - run: make test
-
   blender:
     name: blender-baseline (${{ matrix.version }})
     runs-on: ubuntu-24.04
@@ -47,7 +32,7 @@ jobs:
           version: ${{ matrix.version }}
           sha256: ${{ matrix.sha256 }}
       - name: Install pinned uv
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: pyproject.toml
           enable-cache: true
@@ -105,7 +90,7 @@ jobs:
           done
       - name: Preserve plugin screenshots and capture evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: blender-screenshots-${{ matrix.version }}
           if-no-files-found: warn
@@ -119,7 +104,7 @@ jobs:
             ${{ runner.temp }}/scenario-screenshots/*/*.log
       - name: Preserve ZIP, reports and logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: blender-baseline-${{ matrix.version }}
           if-no-files-found: warn
@@ -160,7 +145,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version-file: pyproject.toml
           enable-cache: true
@@ -194,7 +179,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Preserve Windows ZIP, reports and logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: blender-baseline-windows-${{ matrix.version }}
           if-no-files-found: warn
@@ -219,12 +204,11 @@ jobs:
 
   blender-baseline-ok:
     if: always()
-    needs: [runner-unit, blender, blender-windows]
+    needs: [blender, blender-windows]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every baseline matrix leg
         env:
-          UNIT_RESULT: ${{ needs.runner-unit.result }}
           MATRIX_RESULT: ${{ needs.blender.result }}
           WINDOWS_RESULT: ${{ needs.blender-windows.result }}
-        run: test "$UNIT_RESULT" = success && test "$MATRIX_RESULT" = success && test "$WINDOWS_RESULT" = success
+        run: test "$MATRIX_RESULT" = success && test "$WINDOWS_RESULT" = success

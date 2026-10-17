@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from scenario.core.api.sdk_adapter import SDKAdapter
+from scenario.core.api.sdk_adapter import READ_RETRIES, SDKAdapter
 from tools import record_fixtures as recorder
 
 
@@ -92,7 +92,9 @@ def test_records_exact_selected_reads_scrubs_and_writes_truthful_provenance(reco
 
 
 @pytest.mark.parametrize("endpoint", ["/v1/models/model_fixture", "/v1/models"])
-def test_failed_read_makes_one_attempt_and_preserves_previous_files(recording, endpoint, capsys):
+def test_failed_read_makes_bounded_attempts_and_preserves_previous_files(
+    recording, endpoint, capsys
+):
     (recording.root / "models").mkdir()
     old = {
         "models/model_fixture.json": b"old model",
@@ -103,7 +105,8 @@ def test_failed_read_makes_one_attempt_and_preserves_previous_files(recording, e
         (recording.root / relative).write_bytes(content)
     recording.install(fail=endpoint)
     assert recorder.main([]) == 1
-    assert sum(r.url.path == endpoint for r in recording.requests) == 1
+    # The SDK retries the failing model read, then the recorder stops.
+    assert sum(r.url.path == endpoint for r in recording.requests) == 1 + READ_RETRIES
     assert {relative: (recording.root / relative).read_bytes() for relative in old} == old
     assert all(client._closed for client in recording.clients)
     assert "private-response" not in capsys.readouterr().err

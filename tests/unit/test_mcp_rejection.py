@@ -28,7 +28,7 @@ def listener(monkeypatch):
         return Observed
 
     monkeypatch.setattr(server, "_make_handler", observed_handler)
-    owner = server.McpServer("127.0.0.1", 0, "fixture-token", None, {})
+    owner = server.McpServer("127.0.0.1", 0, None, {})
     owner.handle = Mock(side_effect=AssertionError("A rejected request must not dispatch"))
     owner.start()
     try:
@@ -39,11 +39,10 @@ def listener(monkeypatch):
         owner.handle.assert_not_called()
 
 
-def begin(client, *, method="POST", path="/mcp", token="fixture-token", extra=()):
+def begin(client, *, method="POST", path="/mcp", extra=()):
     headers = [
         f"{method} {path} HTTP/1.1",
         "Host: localhost",
-        f"Authorization: Bearer {token}",
         *(f"{name}: {value}" for name, value in extra),
     ]
     client.sendall(("\r\n".join(headers) + "\r\n\r\n").encode("ascii"))
@@ -59,7 +58,6 @@ def begin(client, *, method="POST", path="/mcp", token="fixture-token", extra=()
     "options,status",
     [
         ({"extra": [("Origin", "https://evil.example")]}, 403),
-        ({"token": "wrong"}, 401),
         ({"path": "/missing"}, 404),
         ({"method": "OPTIONS"}, 403),
     ],
@@ -71,8 +69,6 @@ def test_error_arrives_before_delayed_body_and_connection_drains(listener, optio
     with socket.create_connection(address, timeout=2) as client:
         response = begin(client, **options)
         assert response.status == status
-        if status == 401:
-            assert response.getheader("WWW-Authenticate") == "Bearer"
         assert not finished.wait(0.05), "Connection closed before the declared body arrived"
         client.sendall(b"abcde")
         assert finished.wait(2)
@@ -92,7 +88,7 @@ def test_trickling_bytes_do_not_extend_rejection_deadline(listener, monkeypatch)
     _owner, finished, address = listener
     stop = threading.Event()
     with socket.create_connection(address, timeout=2) as client:
-        assert begin(client, token="wrong", extra=[("Content-Length", "1000")]).status == 401
+        assert begin(client, path="/missing", extra=[("Content-Length", "1000")]).status == 404
 
         def trickle():
             while not stop.wait(0.02):

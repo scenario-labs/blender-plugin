@@ -18,6 +18,7 @@ from scenario.core.api.sdk_adapter import (
     LOOP_NODE_FIELDS,
     MODEL_BULK_LIMIT,
     NON_LOOP_NODE_TYPES,
+    READ_RETRIES,
     AdapterError,
     AdapterStatusError,
     AdapterUnavailable,
@@ -356,8 +357,9 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
         "/v1/models",
     )
     assert not [value for value in private if value in message]
-    assert dict(calls[0].url.params).get("projectId") == project
-    assert len(calls) == 1
+    assert {dict(call.url.params).get("projectId") for call in calls} == {project}
+    # A model page is an allow-listed read: the SDK retries only 429 and 5xx.
+    assert len(calls) == (1 + READ_RETRIES if status in (429, 500) else 1)
 
 
 def test_unscoped_discovery_never_blames_the_project_override(adapter):
@@ -593,8 +595,8 @@ def test_job_discovery_never_returns_partial_or_conflicting_history(adapter, mod
 
     def handler(request):
         calls.append(request)
-        assert len(calls) <= 2
-        if mode == "http-error" and len(calls) == 2:
+        assert len(calls) <= 2 + READ_RETRIES
+        if mode == "http-error" and len(calls) >= 2:
             return httpx.Response(503, json={"private": "do-not-expose"})
         row = {"jobId": "job-one", "status": "pending"}
         if mode == "conflict" and len(calls) == 2:
@@ -610,7 +612,8 @@ def test_job_discovery_never_returns_partial_or_conflicting_history(adapter, mod
     with pytest.raises(AdapterError) as error:
         adapter(handler).jobs(max_pages=1 if mode == "limit" else 4)
     assert "do-not-expose" not in str(error.value)
-    assert len(calls) <= 2
+    # Only the failing second page is retried, never the whole history.
+    assert len(calls) == 2 + READ_RETRIES if mode == "http-error" else len(calls) <= 2
 
 
 def test_job_discovery_follows_empty_page_cursor_but_stops_when_exhausted(adapter):
@@ -1126,7 +1129,7 @@ def test_bulk_model_reads_accept_the_limit_and_recheck_permission_per_chunk(adap
 
 
 @pytest.mark.parametrize("failure", [403, 404, 429, 500, "timeout"])
-def test_bulk_model_failures_are_single_sanitized_attempts(adapter, failure):
+def test_bulk_model_failures_are_sanitized_and_retried_only_when_transient(adapter, failure):
     calls = []
 
     def handler(request):
@@ -1144,7 +1147,8 @@ def test_bulk_model_failures_are_single_sanitized_attempts(adapter, failure):
     assert not isinstance(error.value, AdapterUnavailable)
     assert "selected-secret" not in str(error.value)
     assert "private-model" not in str(error.value)
-    assert len(calls) == 1
+    # A bulk read changes nothing, so the SDK retries a transient failure.
+    assert len(calls) == (1 if failure in (403, 404) else 1 + READ_RETRIES)
 
 
 @pytest.mark.parametrize("status", [403, 404])
@@ -1180,7 +1184,7 @@ def test_other_model_read_failures_keep_generic_errors(adapter, status):
 
 
 @pytest.mark.parametrize("project", [None, "fixture-project"])
-def test_bulk_assets_read_known_records_in_scope_without_retry(adapter, project):
+def test_bulk_assets_read_known_records_in_scope(adapter, project):
     requests = []
     rows = [
         {"id": "asset-one", "thumbnail": {"assetId": "thumb", "url": "https://cdn.example/t"}},
@@ -1243,7 +1247,7 @@ def test_bulk_assets_and_permission_checks_respect_online_access(adapter):
 
 
 @pytest.mark.parametrize("failure", [429, 500, 503, 504, "timeout"])
-def test_bulk_assets_send_retryable_failures_once_and_sanitize_them(adapter, failure):
+def test_bulk_assets_retry_transient_failures_boundedly_and_sanitize_them(adapter, failure):
     calls = []
 
     def handler(request):
@@ -1260,8 +1264,8 @@ def test_bulk_assets_send_retryable_failures_once_and_sanitize_them(adapter, fai
         adapter(handler).bulk_assets(["asset-one", "asset-two"])
     assert "selected-secret" not in str(error.value)
     assert "signed-url" not in str(error.value)
-    # max_retries=0: the SDK never repeats a preview metadata read on its own.
-    assert len(calls) == 1
+    # A bulk read is allow-listed: the SDK retries it READ_RETRIES times, no more.
+    assert len(calls) == 1 + READ_RETRIES
 
 
 # SDK 2.2.0 WorkflowFlow.type values other than for-each and workflow, plus the

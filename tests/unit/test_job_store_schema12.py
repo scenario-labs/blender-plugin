@@ -22,7 +22,7 @@ from scenario.core.jobs.store import (
 )
 from tests.unit.test_job_store_schema10 import _dump, _pragma, _rows, _scopes
 
-# SQL dump of a database written by the 0.11.0 (schema 11) storage code.
+# SQL dump of a database written by the schema 11 release's storage code.
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/synthetic/jobs-schema11.sql"
 CLAIMED = "2026-10-14T21:18:11.123Z"
 
@@ -146,7 +146,7 @@ def test_schema_twelve_is_refused_by_a_schema_eleven_reader_and_newer_by_this_on
     JobStore(schema11, scope)
     upgraded = schema11.read_bytes()
     with monkeypatch.context() as patch:
-        # 0.11.0: a schema 11 reader refuses the store as a newer format, not as damage.
+        # The schema 11 release refuses the store as a newer format, not as damage.
         patch.setattr(storage, "_VERSION", 11)
         with pytest.raises(StoreError, match="Unsupported"):
             JobStore(schema11, scope)

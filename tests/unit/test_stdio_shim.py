@@ -7,6 +7,8 @@ import subprocess
 import sys
 import threading
 
+import pytest
+
 SHIM = pathlib.Path(__file__).resolve().parents[2] / "scenario" / "mcp" / "stdio_shim.py"
 
 
@@ -16,8 +18,8 @@ class _Stub(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        if self.headers.get("Authorization") != "Bearer secret":
-            self.send_response(401)
+        if self.headers.get("Authorization") is not None:
+            self.send_response(400)
             self.end_headers()
             return
         payload = json.dumps(
@@ -30,14 +32,16 @@ class _Stub(http.server.BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
 
-def test_shim_round_trips_requests_and_skips_notifications():
+# An existing client configuration may still pass --token; the shim ignores it.
+@pytest.mark.parametrize("extra", [[], ["--token", "from-an-older-setup"]])
+def test_shim_round_trips_requests_and_skips_notifications(extra):
     server = http.server.HTTPServer(("127.0.0.1", 0), _Stub)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     url = f"http://127.0.0.1:{server.server_port}/mcp"
     try:
         proc = subprocess.run(
-            [sys.executable, str(SHIM), "--url", url, "--token", "secret"],
+            [sys.executable, str(SHIM), "--url", url, *extra],
             input='{"jsonrpc":"2.0","id":1,"method":"ping"}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/list"}\n',
             capture_output=True,
             text=True,

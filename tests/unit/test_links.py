@@ -169,6 +169,7 @@ def test_link_reporter_deduplicates_in_documentation_scope(monkeypatch, tmp_path
         "repos/example/extension/issues/7/comments",
     ]
     assert writes[0][1]["labels"] == ["documentation", "area:docs"]
+    assert writes[0][1]["type"] == "Task"
     assert report.read_text() in writes[1][1]["body"]
     assert "actions/runs/42" in writes[1][1]["body"]
 
@@ -214,5 +215,5 @@ def test_report_scope_must_be_among_creation_labels(monkeypatch):
     calls = []
     monkeypatch.setattr(report_ci_failure, "github", lambda *a, **k: calls.append(a))
     with pytest.raises(ValueError, match="scope label"):
-        report_ci_failure.report_failure("example/repo", "title", "body", ["area:docs"])
+        report_ci_failure.report_failure("example/repo", "title", "body", ["area:docs"], "Task")
     assert not calls

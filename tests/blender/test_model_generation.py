@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, call, patch
 
 import bpy
 import httpx
@@ -75,6 +75,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.download_error = False
         self.cancel_calls = []
         self.status_after_cancel = "canceled"
+        # Job reads to answer with HTTP 503, and a cancel action to lose with a timeout.
+        self.failed_job_reads = 0
+        self.lose_cancel = False
         self.lose_response = False
         self.cloud_jobs = []  # the recent-jobs listing an unconfirmed submission reads
         self.missing_jobs = set()  # job IDs whose retrieval this project cannot read
@@ -114,6 +117,12 @@ class ModelGenerationTests(unittest.TestCase):
                 if request.url.path.endswith("/v1/jobs"):
                     # Recent cloud jobs for an unconfirmed submission; read-only.
                     return httpx.Response(200, json={"jobs": list(self.cloud_jobs)})
+                if "/jobs/" in request.url.path and self.failed_job_reads:
+                    self.failed_job_reads -= 1
+                    # retry-after-ms keeps the SDK's own read retries quick here.
+                    return httpx.Response(
+                        503, json={"reason": "private outage"}, headers={"retry-after-ms": "1"}
+                    )
                 if "/jobs/" in request.url.path:
                     if request.url.path.rsplit("/", 1)[-1] in self.missing_jobs:
                         return httpx.Response(404, json={"error": "not found"})
@@ -173,13 +182,19 @@ class ModelGenerationTests(unittest.TestCase):
                 model_id = request.url.path.rsplit("/", 1)[-1]
                 if self.failed_descriptions:
                     self.failed_descriptions -= 1
-                    return httpx.Response(503, json={"reason": "private outage detail"})
+                    return httpx.Response(
+                        503,
+                        json={"reason": "private outage detail"},
+                        headers={"retry-after-ms": "1"},
+                    )
                 return httpx.Response(
                     200, json={"model": self.extra_models.get(model_id, self.model)}
                 )
             if "/jobs/" in request.url.path:
                 self.assertEqual(json.loads(request.content), {"action": "cancel"})
                 self.cancel_calls.append(request)
+                if self.lose_cancel:
+                    raise httpx.ReadTimeout("synthetic lost cancel", request=request)
                 self.remote_status = self.status_after_cancel
                 return httpx.Response(200, json={"job": {"jobId": "remote-1"}})
             if request.url.params.get("dryRun") == "true":
@@ -1022,6 +1037,161 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.cancel_calls, [])
         self.assertEqual(len(self.paid), 1)
 
+    def job_reads(self):
+        return sum(1 for r in self.calls if r.method == "GET" and "/jobs/" in r.url.path)
+
+    def read_attempts(self):
+        """Requests one failed explicit job read makes: the first and the SDK's retries.
+
+        An automatic status poll makes one request; ModelJobs retries it later.
+        """
+        return 1 + submodule("core.api.sdk_adapter").READ_RETRIES
+
+    def review_buttons(self, box):
+        return [
+            c for c in box.operator.call_args_list if c.kwargs.get("text") == "Job needs review"
+        ]
+
+    def test_transient_refresh_failures_keep_polling_then_deliver(self):
+        jobs = submodule("blender.model_jobs")
+        backoff = submodule("core.jobs.refresh_backoff")
+        self.result_fixture()
+        self.remote_status, self.remote_progress = "in-progress", 0.5
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        owner = self.runtime.state.model_jobs
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.REMOTE)
+        for failures in (1, 2, 3):
+            # Each automatic refresh is one request, answered with a 503.
+            self.failed_job_reads = 1
+            reads, before = self.job_reads(), time.monotonic()
+            self.poll_now(request_id)
+            self.assertEqual(self.failed_job_reads, 0)
+            self.assertEqual(self.job_reads() - reads, 1)
+            status = self.tools.job_status({"job_id": request_id})
+            self.assertEqual(status["status"], "remote", status)
+            self.assertFalse(status["delivery_paused"])
+            self.assertTrue(status["delivery_active"])
+            self.assertIsNone(status["error"])
+            self.assertTrue(status["remote_stale"])
+            self.assertEqual(status["status_notes"], [jobs.REFRESH_RETRYING])
+            # The next automatic refresh waits out the doubled interval.
+            wait = backoff.delay(failures, None, interval=jobs.POLL_INTERVAL)
+            self.assertGreaterEqual(owner._next_poll[request_id], before + wait)
+        box = self.draw_job(owner.views[request_id])
+        box.label.assert_any_call(text=jobs.REFRESH_RETRYING, icon="INFO")
+        self.assertNotIn(call(text="Status is not updating", icon="INFO"), box.label.call_args_list)
+        self.assertEqual(self.review_buttons(box), [])
+        self.remote_status = "success"
+        self.poll_now(request_id)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["status_notes"], [])
+        self.assertIsNone(status["error"])
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.downloads), 1)
+
+    def test_refresh_failure_ceiling_pauses_delivery_for_review(self):
+        jobs = submodule("blender.model_jobs")
+        backoff = submodule("core.jobs.refresh_backoff")
+        self.result_fixture()
+        self.remote_status = "in-progress"
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        self.failed_job_reads = 10**6
+        before = self.job_reads()
+        for _ in range(backoff.FAILURE_CEILING - 1):
+            self.poll_now(request_id)
+            self.assertFalse(self.tools.job_status({"job_id": request_id})["delivery_paused"])
+        self.poll_now(request_id)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "remote", status)
+        self.assertTrue(status["delivery_paused"])
+        self.assertFalse(status["delivery_active"])
+        self.assertEqual(status["error"], jobs.REFRESH_STOPPED)
+        self.assertEqual(status["status_notes"], [])
+        self.assertIn("resume", status["actions"])
+        # One request per automatic refresh: the SDK retries none of them.
+        reads = self.job_reads() - before
+        self.assertEqual(reads, backoff.FAILURE_CEILING)
+        # Paused: automatic polling sends nothing more.
+        self.poll_now(request_id)
+        self.assertEqual(self.job_reads() - before, reads)
+        self.assertEqual(
+            len(
+                self.review_buttons(self.draw_job(self.runtime.state.model_jobs.views[request_id]))
+            ),
+            1,
+        )
+        self.failed_job_reads = 0
+        self.remote_status = "success"
+        self.recover(request_id, "resume")
+        self.deliver_results()
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_lost_cancel_request_keeps_the_job_polled_without_sending_it_again(self):
+        jobs = submodule("blender.model_jobs")
+        self.job_type = "inference"
+        self.remote_status = "in-progress"
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        owner = self.hold_polling(request_id)
+        self.assertIn("cancel", self.tools.job_status({"job_id": request_id})["actions"])
+        self.lose_cancel = True
+        status = self.recover(request_id, "cancel")
+        self.assertEqual(status["status"], "cancel_requested", status)
+        self.assertFalse(status["delivery_paused"])
+        self.assertTrue(status["delivery_active"])
+        self.assertIsNone(status["error"])
+        self.assertEqual(status["status_notes"], [jobs.CANCEL_UNCONFIRMED])
+        self.assertEqual(len(self.cancel_calls), 1)
+        # The held job is polled again by itself, on the normal interval.
+        self.assertLessEqual(owner._next_poll[request_id], time.monotonic() + jobs.POLL_INTERVAL)
+        box = self.draw_job(owner.views[request_id])
+        box.label.assert_any_call(text=jobs.CANCEL_UNCONFIRMED, icon="INFO")
+        self.assertEqual(self.review_buttons(box), [])
+        self.remote_status = "canceled"
+        self.poll_now(request_id)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "canceled", status)
+        self.assertEqual(status["status_notes"], [])
+        self.assertEqual(len(self.cancel_calls), 1)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_cancel_not_sent_after_a_failed_read_keeps_the_job_polled(self):
+        jobs = submodule("blender.model_jobs")
+        self.job_type = "inference"
+        self.result_fixture()
+        self.remote_status = "in-progress"
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        owner = self.hold_polling(request_id)
+        # The cancel's own read keeps the SDK's retries; all of them fail.
+        self.failed_job_reads = self.read_attempts()
+        status = self.recover(request_id, "cancel")
+        self.assertEqual(status["status"], "remote", status)
+        self.assertFalse(status["delivery_paused"])
+        self.assertTrue(status["delivery_active"])
+        self.assertIsNone(status["error"])
+        self.assertEqual(status["status_notes"], [jobs.CANCEL_NOT_SENT, jobs.REFRESH_RETRYING])
+        self.assertEqual(self.cancel_calls, [])
+        self.draw_job(owner.views[request_id]).label.assert_any_call(
+            text=jobs.CANCEL_NOT_SENT, icon="INFO"
+        )
+        self.remote_status = "success"
+        self.poll_now(request_id)
+        # The cancel took the automatic import with it; results are saved for review.
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status_notes"], [])
+        self.assertEqual(self.cancel_calls, [])
+        self.assertEqual(len(self.paid), 1)
+
     def poll_now(self, *request_ids):
         """Make maintenance refresh these known jobs now instead of after the interval."""
         owner = self.runtime.state.model_jobs
@@ -1424,6 +1594,20 @@ class ModelGenerationTests(unittest.TestCase):
             },
         )
         self.assertEqual(waited, self.tools.job_status({"job_id": result["local_id"]}))
+        self.assertEqual(len(self.paid), 1)
+
+    def test_shared_wait_defaults_inside_a_one_minute_client_limit(self):
+        self.remote_progress = 0.75
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        owner = self.runtime.state.model_jobs
+        waited = []
+        with patch.object(
+            owner, "wait", side_effect=lambda _, timeout, **__: waited.append(timeout)
+        ):
+            self.tools.wait_for_job({"job_id": result["local_id"]}).run()
+        self.assertEqual(waited, [self.tools.WAIT_DEFAULT_SECONDS])
+        self.assertLess(self.tools.WAIT_DEFAULT_SECONDS, 60)
         self.assertEqual(len(self.paid), 1)
 
     def wait_briefly(self, request_id, timeout=8):
@@ -2765,7 +2949,8 @@ class ModelGenerationTests(unittest.TestCase):
         ):
             with self.subTest(lane=lane):
                 self.result_media_type = media_type
-                self.result_bytes = b"synthetic saved output, never passed to a decoder"
+                # Bytes differ per lane, so another lane's file cannot pass for this one.
+                self.result_bytes = f"synthetic {lane} output, never passed to a decoder".encode()
                 self.remote_status = "success"
                 result = self.mcp_submit(self.mcp_quote(lane))
                 reference = result["local_id"]
@@ -2775,7 +2960,16 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(status["status"], "ready", status)
                 self.assertIsNone(status["error"])
                 self.assertEqual(status["images"], [])
-                self.assertEqual(status["files"], [])
+                # job_status lists every verified download (#523); listing applies nothing.
+                self.assertFalse(status["file_check_pending"])
+                self.assertEqual(status["results"][0]["file_state"], "verified")
+                self.assertEqual(status["files"], [status["results"][0]["file"]])
+                listed = Path(status["files"][0])
+                # Windows spells result paths in the extended \\?\ namespace, which pathlib
+                # never relates to the configured state_dir; in_cache compares both in it.
+                inside = submodule("core.jobs.result_previews").in_cache
+                self.assertTrue(inside(listed, self.runtime.paths().state_dir), listed)
+                self.assertEqual(listed.read_bytes(), self.result_bytes)
                 with self.assertRaisesRegex(ValueError, "prepare_result_application"):
                     self.tools.import_result({"job_id": reference})
                 self.assertEqual(status["results"][0]["media_type"], media_type)
@@ -3078,7 +3272,9 @@ class ModelGenerationTests(unittest.TestCase):
         # A failed read leaves inspection answering with the form's own errors.
         # Preparation needs the model's inputs: it reads again and reports a failure.
         self.forget_description()
-        self.failed_descriptions = 2
+        # Two failed reads, each through the SDK's own read retries.
+        attempts = self.read_attempts()
+        self.failed_descriptions = 2 * attempts
         inspect = {"lane": lane_name}
         result = self.mcp_call("render_form", inspect)
         self.assertFalse(result.get("isError"), result)
@@ -3095,7 +3291,7 @@ class ModelGenerationTests(unittest.TestCase):
         # Inspection never replaces a recorded failure with another read.
         result = self.mcp_call("render_form", inspect)
         self.assertFalse(result.get("isError"), result)
-        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len(self.calls), 1 + 2 * attempts)
         marks.assert_not_called()  # waits, failed reads and refusals leave the file unmarked
         # A configure that waits for the description changes the form once, then marks it.
         self.forget_description()
@@ -3105,7 +3301,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertFalse(result.get("isError"), result)
         self.assertEqual(json.loads(result["content"][0]["text"])["look"], "copper")
         self.assertEqual(marks.call_count, 1)
-        self.assertEqual(len(self.calls), 4)
+        self.assertEqual(len(self.calls), 2 + 2 * attempts)
         self.assertEqual(self.paid, [])
 
     def test_mcp_render_cannot_skip_scene_upload_or_automatic_spark_approval(self):
@@ -3302,7 +3498,6 @@ class ModelGenerationTests(unittest.TestCase):
                         def call(name, arguments):
                             response = connection.post(
                                 url,
-                                headers={"Authorization": "Bearer synthetic-cli-token"},
                                 json={
                                     "jsonrpc": "2.0",
                                     "id": 1,
@@ -3338,7 +3533,7 @@ class ModelGenerationTests(unittest.TestCase):
             patch.object(server_type, "serve_blocking", serve_once),
             patch.object(service, "McpServer", side_effect=ephemeral_server),
         ):
-            self.assertEqual(service.cli(["--token", "synthetic-cli-token"]), 0)
+            self.assertEqual(service.cli([]), 0)
         self.assertEqual((bpy.context.window, bpy.context.scene, bpy.context.view_layer), context)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         self.assertEqual(len(completed), 1)

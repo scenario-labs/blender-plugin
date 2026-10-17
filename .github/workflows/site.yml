@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: Site
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  site-scripts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Install TypeScript and Vitest from the lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Type-check the proxy middleware
+        run: >-
+          pnpm exec tsc --noEmit --strict --target es2022
+          --module nodenext --moduleResolution nodenext --allowImportingTsExtensions
+          --types node tools/site_proxy/middleware.ts tests/site/middleware.test.ts
+          tests/site/middleware.fuzz.ts
+      # Vercel type-checks the middleware alone, without Node's types.
+      - name: Type-check the middleware as Vercel builds it
+        run: >-
+          pnpm exec tsc --noEmit --strict --target es2022
+          --lib es2022,dom --module nodenext --moduleResolution nodenext
+          --typeRoots "$RUNNER_TEMP/no-types" tools/site_proxy/middleware.ts
+      - name: Type-check the handbook search
+        run: >-
+          pnpm exec tsc --noEmit --strict --target es2022
+          --lib es2022,dom,dom.iterable --module nodenext --moduleResolution nodenext
+          --allowJs --checkJs --allowImportingTsExtensions --types node
+          docs/handbook-search.js tests/site/handbook-search.test.ts
+      # package.json sets no "type" because docs/handbook-search.js is CommonJS,
+      # so Node warns before it detects that the tests are ES modules.
+      - name: Test the middleware and the handbook search
+        run: >-
+          node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+          --test tests/site/middleware.test.ts tests/site/handbook-search.test.ts
+      - name: Fuzz the middleware with property-based tests
+        run: pnpm exec vitest run

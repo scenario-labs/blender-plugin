@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Content that must never return to this public repository. tools/check_rules.py
+# compiles each non-empty, non-comment line as a Python regular expression and
+# reports only this file's line number, never the matched text.
+# Keep every pattern generic: describe the shape of private data, never add a
+# real handle, name, path, session id or account identifier here.
+(?:claude|codex) (?:--resume|resume)\b
+/Users/[a-z]
+~/Developer
+\.claude/projects/
+superpowers:
+claude\.ai/(?:code|chat)/
+adversarial review
+github\.com/[^/ ]+/scenario-for-blender

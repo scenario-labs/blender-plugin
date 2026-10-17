@@ -83,6 +83,13 @@ class McpTokenTests(unittest.TestCase):
         self.assertEqual(list_tools(server.port, new), 200)
         self.assertEqual(self.restart_session().token, new)
 
+    def test_copied_setups_name_the_configured_port_while_stopped(self):
+        self.prefs.mcp_port = 9912
+        configs = self.service.client_configs()
+        for key in ("claude_code", "cursor", "claude_desktop", "codex", "curl"):
+            self.assertIn("http://127.0.0.1:9912/mcp", configs[key], key)
+            self.assertNotIn(":9876/", configs[key], key)
+
     def test_a_busy_port_is_reported_and_no_other_port_is_taken(self):
         with socket.socket() as holder:
             holder.bind(("127.0.0.1", self.prefs.mcp_port))

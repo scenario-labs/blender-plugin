@@ -123,6 +123,15 @@ def shim_path():
     )
 
 
+def server_url():
+    """The running server's URL, else the one the MCP Port preference will serve."""
+    server = runtime.state.mcp
+    if server is not None and server.running:
+        return server.url
+    prefs = runtime.prefs()
+    return f"http://127.0.0.1:{prefs.mcp_port if prefs else 9876}/mcp"
+
+
 # What the last Connect wrote, as panel lines with the token masked. Main thread only.
 connect_report = []
 
@@ -140,12 +149,7 @@ def connect(key, home=None, environ=None):
     if not runtime.state.mcp_token:
         runtime.state.mcp_token = local_token.load_or_create(token_dir())
     token = runtime.state.mcp_token
-    server = runtime.state.mcp
-    if server is not None and server.running:
-        url = server.url
-    else:
-        prefs = runtime.prefs()
-        url = f"http://127.0.0.1:{prefs.mcp_port if prefs else 9876}/mcp"
+    url = server_url()
     entry = client_setup.entry(key, url, token, _blender_python(), shim_path())
     try:
         written = client_setup.write(client, entry, url)
@@ -165,7 +169,7 @@ def connect(key, home=None, environ=None):
 
 def client_configs():
     st = status()
-    url, token = st["url"] or "http://127.0.0.1:9876/mcp", st["token"] or "<token>"
+    url, token = server_url(), st["token"] or "<token>"
     stdio = {
         "mcpServers": {
             "scenario-blender": {

@@ -368,7 +368,9 @@ setup and start the client from the checkout root, where the helper runs. Neithe
 client passes an exported token to the helper, so `.env.local` is its only source.
 uv loads all of `.env.local` into the helper, which prints only the `Authorization`
 header. The token stays out of command arguments, configuration and the model's
-context, but an agent that can read `.env.local` can still read it.
+context, but an agent that can read `.env.local` can still read it. The helper runs
+the checked-out code whenever the client connects, so starting Claude Code or
+Codex on an unreviewed branch is like running its tests.
 
 After a Blender restart, update `.env.local`. Claude Code runs the helper on each
 new connection; reconnect from `/mcp`. Codex runs it again after the next 401 and

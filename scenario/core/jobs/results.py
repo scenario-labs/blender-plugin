@@ -207,6 +207,29 @@ def _changed(target):
     return "This saved result changed; preview it again"
 
 
+def _job_parents(records):
+    """Asset ID -> the other result of this job it was generated from (`metadata.parentId`).
+
+    `records` maps each of the job's asset IDs to its retrieved asset. A parent
+    outside the job, such as an input asset, the asset itself or any other value is
+    left out, and so is every asset on a parent cycle: lineage never refuses a manifest.
+    """
+    parents = {}
+    for identifier, record in records.items():
+        metadata = record.get("metadata")
+        parent = metadata.get("parentId") if isinstance(metadata, dict) else None
+        if isinstance(parent, str) and parent != identifier and parent in records:
+            parents[identifier] = parent
+    cyclic = set()
+    for identifier in parents:
+        current, steps = parents.get(identifier), 0
+        while current is not None and current != identifier and steps < len(parents):
+            current, steps = parents.get(current), steps + 1
+        if current == identifier:
+            cyclic.add(identifier)
+    return {key: value for key, value in parents.items() if key not in cyclic}
+
+
 def _asset(record, identifier, name, *, source=None):
     """Describe the file to save; a saved manifest passes its own source when refreshing."""
     if record.get("id") != identifier or record.get("status") != "success":
@@ -475,7 +498,7 @@ class ResultCommands:
                 raise ValueError
         except ValueError:
             raise ResultError("Scenario returned invalid result asset identities") from None
-        assets = []
+        assets, records = [], {}
         for index, identifier in enumerate(identifiers):
             # Downloads need the untransformed bytes that mimeType and size describe.
             record = self._request(self._adapter.asset, identifier, original_assets=True)
@@ -484,6 +507,9 @@ class ResultCommands:
             suffix = ext_for_mime(mime) if isinstance(mime, str) else "bin"
             name = f"{index:03d}-{hashlib.sha256(identifier.encode()).hexdigest()[:24]}.{suffix}"
             assets.append(_asset(record, identifier, name))
+            records[identifier] = record
+        parents = _job_parents(records)
+        assets = [replace(asset, parent_id=parents.get(asset.asset_id)) for asset in assets]
         with self._guard():
             return self._store.set_results(
                 request_id, tuple(assets), expected_revision=current.revision
@@ -579,6 +605,8 @@ class ResultCommands:
         if item.asset.projection is None:
             # Likewise, a later response cannot relabel saved bytes as 360.
             fresh = replace(fresh, projection=None)
+        # Lineage is kept as saved; it never refuses a download.
+        fresh = replace(fresh, parent_id=item.asset.parent_id)
         if fresh != item.asset:
             raise ResultError("Result metadata changed after the manifest was saved")
         return _download_url(response, item.asset.source)

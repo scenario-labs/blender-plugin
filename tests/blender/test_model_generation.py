@@ -2767,7 +2767,10 @@ class ModelGenerationTests(unittest.TestCase):
                 self.assertEqual(status["results"][0]["file_state"], "verified")
                 self.assertEqual(status["files"], [status["results"][0]["file"]])
                 listed = Path(status["files"][0])
-                self.assertTrue(listed.is_relative_to(self.runtime.paths().state_dir), listed)
+                # Windows spells result paths in the extended \\?\ namespace, which pathlib
+                # never relates to the configured state_dir; in_cache compares both in it.
+                inside = submodule("core.jobs.result_previews").in_cache
+                self.assertTrue(inside(listed, self.runtime.paths().state_dir), listed)
                 self.assertEqual(listed.read_bytes(), self.result_bytes)
                 with self.assertRaisesRegex(ValueError, "prepare_result_application"):
                     self.tools.import_result({"job_id": reference})

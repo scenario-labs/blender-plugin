@@ -264,15 +264,16 @@ def inspect(path, *, maximum=16 * 1024**3):
             if kind == b"moov":
                 if movie is not None or size > MAX_MOVIE_BYTES:
                     raise Mp4Error("MP4 movie metadata is ambiguous or too large")
-                stream.seek(offset)
-                movie = stream.read(size)
-                if len(movie) != size:
+                # Only the body: the header is 8 bytes, or 16 with a 64-bit size.
+                stream.seek(offset + length)
+                movie = stream.read(size - length)
+                if len(movie) != size - length:
                     raise Mp4Error("MP4 movie metadata changed while reading")
             offset += size
     if not kinds or kinds[0] != b"ftyp" or b"mdat" not in kinds or movie is None:
         raise Mp4Error("File is not a complete MP4 movie")
     budget = _Budget()
-    found = _children(movie, 8, len(movie), budget)
+    found = _children(movie, 0, len(movie), budget)
     movie_scale, _ = _full_box_duration(movie, *_one(found, b"mvhd"), track=False)
     tracks = found.get(b"trak", [])
     if not 1 <= len(tracks) <= MAX_TRACKS:

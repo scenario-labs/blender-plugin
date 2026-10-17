@@ -83,12 +83,13 @@ same operation, target and `payload_sha256`, is still `submitting` or
 `uncertain`. Such a request may have been sent without a confirmed job, so a
 second one could be charged twice. `DuplicateRequestError`, a `QuoteError`,
 names the earlier request: one still `submitting` asks the user to wait for
-Scenario's answer, while an `uncertain` one asks for a review. The check runs after the free dry run but before a
-quote is returned, again before preparation, and once more inside the
-submission claim under the coordinator lock, so concurrent identical
-submissions send at most one. A confirmed `remote` job never blocks: repeating a
-generation is a deliberate new request. The store's `unconfirmed()` lookup
-filters these rows in SQLite, so quoting never decodes unrelated history.
+Scenario's answer, while an `uncertain` one asks for a review. The check runs
+after the free dry run but before a quote is returned, again before preparation,
+and once more inside the submission claim under the coordinator lock, so
+concurrent identical submissions send at most one. A confirmed `remote` job
+never blocks: repeating a generation is a deliberate new request. The store's
+`unconfirmed()` lookup filters these rows in SQLite, so quoting never decodes
+unrelated history.
 
 There is deliberately no command that resolves an uncertain record. The user
 checks Scenario history (and can save a completed job with **Save for
@@ -104,8 +105,9 @@ A dry-run response that carries a job raises `EstimateStartedJob` in the adapter
 and issues no `Estimate`. The adapter also records the event for the process, so
 automatic form pricing stays off until Blender restarts even when that quote was
 superseded or discarded unread. `ModelJobs.finish_quote` turns a delivered error
-into `AutomaticEstimatesStopped`, naming the job. Nothing is resubmitted. Cloud adoption accepts only
-completed jobs, so the user saves that job from history once it finishes.
+into `AutomaticEstimatesStopped`, naming the job. Nothing is resubmitted. Cloud
+adoption accepts only completed jobs, so the user saves that job from history
+once it finishes.
 
 ## Local capture queue
 
@@ -141,13 +143,14 @@ grants no scene, upload or spend authority. Deactivation forgets issued staged
 exports, and a render that finishes afterwards registers none.
 
 `export_case_study(spec, destination, ...)` does the same for a
-[portable case-study bundle](FILM_PLAN.md#portable-case-study-bundle): it requires a
-`.zip` destination, reserves it after the same checks, runs the free-space
-preflight for the media copies and archive, builds and verifies the archive and
-publishes it. Like a render, a build that finishes after deactivation registers
-no staged file and publishes nothing. `publish_film_export` re-publishes either
-kind of staged file with its own suffix, and the local log names a video or case
-study with its basename and SHA-256.
+[portable case-study bundle](FILM_PLAN.md#portable-case-study-bundle): it
+requires a `.zip` destination, reserves it after the same checks, runs the
+free-space preflight for the media copies and archive, builds and verifies the
+archive and publishes it. Like a render, a build that finishes after
+deactivation registers no staged file and publishes nothing.
+`publish_film_export` re-publishes either kind of staged file with its own
+suffix, and the local log names a video or case study with its basename and
+SHA-256.
 
 `LocalExportWorker` runs these commands on its own named thread, one at a time
 per owner, instead of the bounded `JobWorkers` queue. A multi-hour export
@@ -227,12 +230,15 @@ review, while completed/failed/canceled records are finished. Inspection does no
 claim another process's worker is dead or silently change its state.
 
 `refresh_remote(request_id, expected_revision=...)` only accepts the current
-`remote` or `cancel_requested` record with a known remote ID. It uses `SDKAdapter.job`, which calls the
-public SDK `jobs.retrieve` with the selected project and online-access guard.
-A matching ID and recognized terminal state are committed before returning an
-immutable `RemoteSnapshot`. Unknown states, mismatched IDs, read failures and
-failed persistence preserve local state. A stale polling result cannot overwrite
-a newer decision; simultaneous identical terminal results are idempotent.
+`remote` or `cancel_requested` record with a known remote ID. It uses
+`SDKAdapter.job`, which calls the public SDK `jobs.retrieve` with the selected
+project and online-access guard and its bounded
+[read retries](SDK_ADOPTION.md#read-retries); an `automatic=True` poll makes one
+attempt, since its owner retries it later. A matching ID and recognized terminal
+state are committed before returning an immutable `RemoteSnapshot`. Unknown
+states, mismatched IDs, read failures and failed persistence preserve local
+state. A stale polling result cannot overwrite a newer decision; simultaneous
+identical terminal results are idempotent.
 
 The snapshot retains the response in memory behind copy-on-read JSON access.
 Raw responses, result text and signed URLs are not persisted. An active refresh
@@ -336,7 +342,8 @@ remains `cancel_requested`, a completed job becomes `succeeded`, and only observ
 
 Action/observation transport or malformed-wrapper failures report
 `CancellationUncertain`; invalid status/identity evidence reports `RecoveryError`.
-Both preserve the durable cancellation claim and known ID for explicit refresh.
+Both preserve the durable cancellation claim and known ID for refresh; Blender's
+owner keeps polling it automatically.
 Persistence and revision conflicts also propagate; failed writes never report
 terminal success. After restart, `recovery_plan()` suggests polling that saved ID,
 including if the process died after the claim but before sending. Recovery never
@@ -367,8 +374,8 @@ values, in flow order: node ID and type, iteration index and loop node ID of a
 loop copy, dependencies (at most 64 listed), review asset IDs from every
 dependency's outputs (at most 50, with their total) and whether every node's
 links were read
-(see [step links](#step-links)). A selection also carries its frozen candidates, at
-most 50 asset IDs or texts of at most 4,096 characters each, and its declared
+(see [step links](#step-links)). A selection also carries its frozen candidates,
+at most 50 asset IDs or texts of at most 4,096 characters each, and its declared
 pick bounds (defaults 1 and 100). Signed asset URLs are never copied.
 `review_id` hashes the projected fields with the remote job ID, so a re-signed
 URL keeps it while any reviewed change replaces it. The response must be this
@@ -461,9 +468,9 @@ a valid MIME type and an integral nonnegative `properties.size`. An image asset
 that declares an OpenEXR original, or an audio asset that declares a WAV original,
 with a download destination is instead saved as that original, with its MIME type
 and an unknown size; see
-[declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection). Unsupported
-non-asset outputs and malformed/changed metadata fail explicitly. No result list
-is inferred from a similar job or current selection.
+[declared HDR originals](RESULT_TRANSFERS.md#declared-hdr-originals-and-360-projection).
+Unsupported non-asset outputs and malformed/changed metadata fail explicitly. No
+result list is inferred from a similar job or current selection.
 
 The entire URL-free manifest is committed once after metadata validation. Local
 basenames derive from index, asset-ID digest and MIME extension; provider paths
@@ -489,10 +496,11 @@ A saved known texture role must match too.
 An unclassified/legacy result remains unclassified even if a fresh response
 supplies a role; that does not rewrite its manifest or grant material semantics.
 The saved source and projection follow the same rule: the manifest's file choice
-is refreshed, never switched to a newly declared original or relabelled as 360. The bounded downloader publishes without
-overwriting files; its verification uses the same configured byte cap. Each
-receipt commits before advancing to another asset. Existing receipts are
-rehash-verified instead of redownloaded. All receipts must exist before `ready`.
+is refreshed, never switched to a newly declared original or relabelled as 360.
+The bounded downloader publishes without overwriting files; its verification
+uses the same configured byte cap. Each receipt commits before advancing to
+another asset. Existing receipts are rehash-verified instead of redownloaded.
+All receipts must exist before `ready`.
 
 A transfer, metadata or verification failure saves `download_failed` and reports
 a sanitized error. A persistence failure propagates and can leave `downloading`
@@ -578,20 +586,21 @@ remote job and asset, without a receipt. The caller, which owns the waiting
 step projection, supplies that step's asset IDs.
 
 The [preview lane](#application-owned-workers) runs six commands with the cache
-root supplied by the application, and a seventh, `world_sizes`, without it. `prepare_result_previews(work, root=...)`
-rechecks that each target still holds the same receipt (a review target, the
-same `remote` workflow job), reads verified cache
-entries, issues private decode copies for images and audio, and reads server
-preview metadata once per batch through the adapter's `assets.get_bulk`, whatever
-the batch size. Available stills and clips are downloaded with the configured
-result downloader and its storage hosts, passing the task's cancellation event.
-A transfer that does not complete is reported `pending` until the work item's
-final poll, then `failed`; bytes that fail their receipt or content checks fail
-at once. Without online access those renditions report `offline`; no other
-request is made. Receipts are checked again before the batch returns, and every
-issued copy is removed if the batch fails, is canceled or reaches an inactive
-coordinator. `finish_result_preview` validates and caches Blender's decoded
-output for an owned request; `discard_result_preview` removes an unused copy.
+root supplied by the application, and two more, `world_sizes` and
+`result_files`, without it. `prepare_result_previews(work, root=...)` rechecks
+that each target still holds the same receipt (a review target, the same
+`remote` workflow job), reads verified cache entries, issues private decode
+copies for images and audio, and reads server preview metadata once per batch
+through the adapter's `assets.get_bulk`, whatever the batch size. Available
+stills and clips are downloaded with the configured result downloader and its
+storage hosts, passing the task's cancellation event. A transfer that does not
+complete is reported `pending` until the work item's final poll, then `failed`;
+bytes that fail their receipt or content checks fail at once. Without online
+access those renditions report `offline`; no other request is made. Receipts are
+checked again before the batch returns, and every issued copy is removed if the
+batch fails, is canceled or reaches an inactive coordinator.
+`finish_result_preview` validates and caches Blender's decoded output for an
+owned request; `discard_result_preview` removes an unused copy.
 `maintain_result_previews(root=...)` only sweeps abandoned work directories and
 evicts cache entries beyond the budget, without reading a job or the network.
 `decode_result_preview(request, root=..., waveform=...)` decodes an owned audio
@@ -602,22 +611,28 @@ event terminates the process.
 `prepare_playback(request_id, expected_revision=..., asset_id=..., root=...)`
 makes a [private player copy](RESULT_PREVIEWS.md#private-player-copies) of one
 downloaded video or audio receipt at the exact saved revision. It first removes
-copies the owner listed in `discard` and sweeps stale ones not in `keep`, returns
-an unchanged `reuse` copy of the same receipt instead of copying again, and
-rechecks the record at receipt level afterwards. A cancellation or inactive
-coordinator after copying removes the new copy.
-`world_sizes(targets)` takes at most one preview batch, the scheduler's
-`BATCH_LIMIT` of 32, of (request ID, asset ID, receipt SHA-256) triples naming
-downloaded World candidates, so it holds the lane no longer than a preview
-batch, and reads at most the first 2 MiB of each file. It returns each triple
-with the declared width and height, or none when the record no longer holds
-that receipt as a candidate, the file cannot be read or those bytes declare no
-size. It neither hashes nor copies; the
-[World offer](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) uses it only
-as a display filter. Only `prepare_result_previews` reads the network. None of these commands transitions a job, changes its
-revision, claims application or submits work. See
-[result previews](RESULT_PREVIEWS.md) for renditions, limits and the polling
-window.
+copies the owner listed in `discard` and sweeps stale ones not in `keep`,
+returns an unchanged `reuse` copy of the same receipt instead of copying again,
+and rechecks the record at receipt level afterwards. A cancellation or inactive
+coordinator after copying removes the new copy. `world_sizes(targets)` takes at
+most one preview batch, the scheduler's `BATCH_LIMIT` of 32, of (request ID,
+asset ID, receipt SHA-256) triples naming downloaded World candidates, so it
+holds the lane no longer than a preview batch, and reads at most the first 2 MiB
+of each file. It returns each triple with the declared width and height, or none
+when the record no longer holds that receipt as a candidate, the file cannot be
+read or those bytes declare no size. It neither hashes nor copies; the
+[World offer](WORLD_APPLICATION.md#saved-result-ui-and-mcp-approval) uses it
+only as a display filter. `result_files(targets)` takes the same bounded triples
+naming downloaded results of a ready job (`ready`, `applying`, `apply_failed` or
+`applied`) and rehashes each file against its receipt without following links.
+It returns each triple with a check (verified, missing or changed, the file's
+location and its identity as hashed; unavailable when the file changed while it
+was hashed), or none when the record no longer holds that receipt in a ready
+job. Local MCP [`job_status`](MCP.md#saved-result-files) lists only verified
+files; the check authorizes no application. Only `prepare_result_previews` reads
+the network. None of these commands transitions a job, changes its revision,
+claims application or submits work. See [result previews](RESULT_PREVIEWS.md)
+for renditions, limits and the polling window.
 
 ## Durable application claims
 
@@ -715,10 +730,10 @@ suggestions do not grant permission to dispatch or retry. See
 the state mapping and lifecycle boundaries.
 
 `discard_upload_source(request_id, expected_revision=...)` queues explicit local
-cleanup for a saved CANCELED, FAILED, IMPORTED or ABANDONED upload. It verifies the staged
-copy and rechecks the active scope/record before removal, preserving the original
-file and durable history. Source hashing runs outside the coordinator lock;
-guarded deletion does not require a current scene origin. See
+cleanup for a saved CANCELED, FAILED, IMPORTED or ABANDONED upload. It verifies
+the staged copy and rechecks the active scope/record before removal, preserving
+the original file and durable history. Source hashing runs outside the
+coordinator lock; guarded deletion does not require a current scene origin. See
 [finished-upload cleanup](SDK_UPLOADS.md#explicit-finished-upload-source-cleanup)
 for filesystem ownership, interruption and orphan limits.
 
@@ -744,8 +759,8 @@ unique asset IDs (optional for a create), the collection ID or name, and tags.
 Tags and names are stripped and must pass the adapter's label rules. A tag list
 takes at most 200 entries, counting duplicates, and at most 30 unique tags after
 deduplication, without commas; each refusal names the limit it enforces, and a
-tag cannot be added and removed together. The coordinator refuses a request for another scope before
-any request is made.
+tag cannot be added and removed together. The coordinator refuses a request for
+another scope before any request is made.
 
 A snapshot reads the assets' tags and memberships with `get_bulk`, the target
 collection, or for a create an exact-name lookup of at most 20 pages of 100.
@@ -793,8 +808,8 @@ and read-back rules and their tests adapt Studio's `organization.py` at the
 [recorded source revision](STUDIO_ADOPTION.md#source-intake-and-provenance).
 [JobSession reviews](BLENDER_JOB_CONTEXT.md#asset-organization-reviews) own
 review state and delivery. The [local MCP tools](MCP.md#asset-organization) and
-the native [Library organization](ui/studio-and-library.md#library-organization) controls use
-them; desktop and live acceptance remain.
+the native [Library organization](ui/studio-and-library.md#library-organization)
+controls use them; desktop and live acceptance remain.
 
 
 ## Shared catalog and origin-bound quotes
@@ -872,9 +887,10 @@ never submits the render itself.
 on the existing coordinator, worker pool and JobSession. It requires scoped
 `prompt` or `translate` intent in `succeeded`, retrieves that exact successful job
 through `SDKAdapter.job`, and checks the matching job type. It reads
-`metadata.output.prompts` for Spark or `metadata.output.translation` for translation. The result holds the
-original stored record and one to five verbatim, nonempty strings, each limited
-to 64 KiB of UTF-8. It is not an application claim or new spending approval.
+`metadata.output.prompts` for Spark or `metadata.output.translation` for
+translation. The result holds the original stored record and one to five
+verbatim, nonempty strings, each limited to 64 KiB of UTF-8. It is not an
+application claim or new spending approval.
 
 Asset references are resolved through `SDKAdapter.asset`. Only successful
 assets with top-level `kind="text"` and `mimeType="text/plain"` qualify.

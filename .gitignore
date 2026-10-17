@@ -24,6 +24,8 @@ dist/
 # Per-machine files
 .DS_Store
 scenario_output/
+# vercel link records the team and project IDs
+.vercel/
 
 # Working .blend files stay local; tools/blank.blend is the test scene
 tools/*.blend
@@ -32,7 +34,7 @@ tools/*.blend?
 *.blend1
 *.blend2
 
-# Commitlint run locally with the same npm command as CI
+# Node tooling installs with pnpm from pnpm-lock.yaml; npm's lockfile is not used
 node_modules/
 package-lock.json
 

@@ -37,6 +37,7 @@ def main(argv=None):
             "docs: broken or redirected links",
             body,
             ["documentation", "area:docs"],
+            "Task",
             scope_label="area:docs",
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:

@@ -23,7 +23,7 @@ from organization_service import (
     collection,
 )
 
-from scenario.core.api.sdk_adapter import MAX_COLLECTION_ASSETS, MAX_TAG_CHANGES
+from scenario.core.api.sdk_adapter import MAX_COLLECTION_ASSETS, MAX_TAG_CHANGES, READ_RETRIES
 from scenario.core.jobs.organization import (
     NOTICE,
     DuplicateCollection,
@@ -359,7 +359,8 @@ def test_failed_verification_read_is_unverified(service):
     snapshot = owner.snapshot(request("update_tags", asset_ids=["asset-a"], remove_tags=["x"]))
     assert snapshot.request_count == 0  # the tag is already absent
     snapshot = owner.snapshot(request("update_tags", asset_ids=["asset-b"], remove_tags=["hero"]))
-    service.fault("POST", "/v1/assets/get-bulk", 500)
+    # Fail the read-back and both of its SDK retries.
+    service.fault("POST", "/v1/assets/get-bulk", *[500] * (1 + READ_RETRIES))
     result = owner.execute(snapshot, guarded())
     assert states(result) == [("asset-b", Outcome.UNVERIFIED)]
     assert result.state == ResultState.UNCONFIRMED
@@ -372,7 +373,8 @@ def test_refused_membership_without_a_read_back_is_not_called_definite(service):
         request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
     )
     service.fault("PUT", "/v1/collections/props/assets", 403)
-    service.fault("POST", "/v1/assets/get-bulk", 500)
+    # Fail the read-back and both of its SDK retries.
+    service.fault("POST", "/v1/assets/get-bulk", *[500] * (1 + READ_RETRIES))
     result = owner.execute(snapshot, guarded())
     assert {outcome.state for outcome in result.outcomes} == {Outcome.UNVERIFIED}
     assert result.state == ResultState.UNCONFIRMED
@@ -520,7 +522,8 @@ def test_failed_read_after_an_already_member_refusal_sends_nothing_more(service)
         request("add_to_collection", asset_ids=["asset-a", "asset-c"], collection_id="props")
     )
     join_props(service, "asset-a")
-    service.fault("POST", "/v1/assets/get-bulk", 500)
+    # Fail the read-back and both of its SDK retries.
+    service.fault("POST", "/v1/assets/get-bulk", *[500] * (1 + READ_RETRIES))
     result = owner.execute(snapshot, guarded())
     assert len(add_writes(service)) == 1
     assert states(result) == [("asset-a", Outcome.VERIFIED), ("asset-c", Outcome.REJECTED)]

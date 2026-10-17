@@ -101,6 +101,25 @@ class Edit3DLaneTests(unittest.TestCase):
         self.assertGreater(new_min_x, 1.0)
         self.assertAlmostEqual(new_min_z, 0.0, places=3)
 
+    def test_export_writes_only_the_active_scene(self):
+        mesh_export = submodule("blender.mesh_export")
+        other = bpy.data.scenes.new("Other scene")
+        try:
+            # An object selected in another scene must not join the upload.
+            elsewhere = bpy.data.objects.new("Elsewhere", self.cube.data.copy())
+            other.collection.objects.link(elsewhere)
+            elsewhere.select_set(True, view_layer=other.view_layers[0])
+            path = mesh_export.export_glb(bpy.context, [self.cube])
+            with open(path, "rb") as stream:
+                stream.seek(12)
+                size = int.from_bytes(stream.read(4), "little")
+                stream.seek(20)
+                document = json.loads(stream.read(size))
+            self.assertEqual(len(document["scenes"]), 1)
+            self.assertEqual([node["name"] for node in document["nodes"]], ["Hero"])
+        finally:
+            bpy.data.scenes.remove(other)
+
     def test_mesh_param_for_the_curated_models(self):
         catalog = submodule("core.api.catalog")
         self.assertEqual(catalog.mesh_param(rec("model_meshy-7-retexture")), "model")

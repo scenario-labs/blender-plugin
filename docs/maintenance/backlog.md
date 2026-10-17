@@ -71,6 +71,6 @@ Filing and triage do not implement these features or establish new runtime, live
 provider or human acceptance. The linked feature and integration issues remain
 open for their own complete acceptance.
 
-External link monitoring is implemented and accepted under closed #47, as a separate documentation check.
-A scheduled model-generated updater is
-deferred until maintainers choose its review behavior and spending limits.
+External link monitoring is implemented and accepted under closed #47, as a
+separate documentation check. A scheduled model-generated updater is deferred
+until maintainers choose its review behavior and spending limits.

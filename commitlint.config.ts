@@ -1,11 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Scenario Inc.
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Single source of truth for commit headers and PR titles.
 // Types come from @commitlint/config-conventional; the scope list below is the
-// one the contributor guide mirrors. Node is never part of the checkout: CI
-// installs commitlint ad hoc (see .github/workflows/pr-name.yml and
-// .github/workflows/commitlint.yml). To run the same check locally:
+// one the contributor guide mirrors. CI installs commitlint from pnpm-lock.yaml
+// (see .github/workflows/pr-name.yml and .github/workflows/commitlint.yml).
+// To run the same check locally with the Node version in .nvmrc:
 //
-//   npm install --no-save --no-package-lock --no-audit --no-fund @commitlint/cli@21 @commitlint/config-conventional@21 @commitlint/types@21
-//   printf '%s\n' "feat(ui): my title" | npx --no-install commitlint --config commitlint.config.ts --verbose
+//   pnpm install --frozen-lockfile
+//   printf '%s\n' "feat(ui): my title" | pnpm exec commitlint --config commitlint.config.ts --verbose
 
 import type { Plugin, UserConfig } from "@commitlint/types";
 

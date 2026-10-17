@@ -40,7 +40,7 @@ repository ref patterns.
 
 | Ruleset | ID / target | Inspected rules | Bypass |
 | --- | --- | --- | --- |
-| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. | None |
+| main - integrity | `22257774`; branch `refs/heads/main` | No deletion or non-fast-forward updates; linear history; pull request with squash only and zero required approvals; extra approval for unattributed changes. Code quality severity `errors`. CodeQL security threshold `high_or_higher`, alert threshold `errors`. Required status checks `ci-ok`, `pr-title` and `commits`, all integration `15368`; strict up-to-date policy off, enforcement on creation on. Merge queue: squash, up to 5 groups built and 5 PRs merged at once, minimum group size 1 with no wait, 60-minute check timeout, every queued PR must pass (`ALLGREEN`). | `RepositoryRole` `5` (repository admin), `pull_request` |
 | main - review | `22257776`; branch `refs/heads/main` | Pull request with squash only; one approval, dismiss stale reviews, resolve review threads, extra approval for unattributed changes. | `RepositoryRole` `5` (repository admin), `always` |
 | versioning | `22257778`; tags `refs/tags/v*` and `refs/tags/blender-plugin-v*` | Restrict creation, updates, deletion and non-fast-forward updates. | Release App integration `4751046`, `always`. The repository-admin bypass was removed on 2026-10-13 after 0.10.0 was published (#36). |
 | Default security | `3247630`; inherited organization repository policy | Restrict repository creation, deletion and transfer. | `OrganizationAdmin`, `always` |
@@ -48,10 +48,17 @@ repository ref patterns.
 Both branch pull-request rules have code-owner approval and last-push approval
 off, no specific required reviewers, and dismissal restrictions disabled. The
 integrity rule also has stale-review dismissal and thread-resolution requirements
-off; the review rule supplies those requirements. Admin review bypass does not
-bypass integrity: direct pushes, force pushes and deletion of `main` remain
-prohibited. Other contributors need the configured review approval; unattributed
-changes require an additional approval. Tag restrictions have their own bypasses.
+off; the review rule supplies those requirements. Repository admins can bypass
+integrity only when merging a pull request, which skips the merge queue; direct
+pushes, force pushes and deletion of `main` remain prohibited. Other contributors
+need the configured review approval; unattributed changes require an additional
+approval. Tag restrictions have their own bypasses.
+
+On 2026-10-17, the merge queue was added to the integrity ruleset after #592 made
+`ci-ok`, `pr-title` and `commits` report on merge queue groups (#587). API readback
+confirms the integrity ruleset's other rules are unchanged. Because the review rule's
+approval cannot come from a PR's own author, the queue blocked admins' own pull
+requests, so the repository admin bypass in `pull_request` mode was added the same day.
 
 On 2026-10-09, `ci-ok` from [CI](../.github/workflows/ci.yml) was added to
 required status checks after its successful GitHub Actions check identity
@@ -123,8 +130,8 @@ gh api repos/scenario-labs/blender-plugin --jq '{allow_squash_merge,allow_merge_
 | Fork PR workflow approval | `all_external_contributors` |
 | Immutable releases | Enabled on 2026-10-13 after 0.10.0 was published and verified (#36); not enforced by the owner. 0.10.0 predates the setting and is not itself immutable. |
 
-[Dependabot](../.github/dependabot.yml) updates GitHub Actions weekly, seven days
-after each release at the earliest.
+[Dependabot](../.github/dependabot.yml) updates GitHub Actions and the Node
+tooling in `pnpm-lock.yaml` weekly, seven days after each release at the earliest.
 The extension also has pinned Python/SDK dependencies and bundled wheels; the
 old stdlib-only assumption is obsolete. Their coordinated update procedure is
 [SDK_BUNDLE.md](SDK_BUNDLE.md), not automatic version updates from the Actions
@@ -169,8 +176,11 @@ issue forms or `support@scenario.com`. The approved direction keeps Discussions
 off; revisit after external participation justifies a monitored Q&A channel.
 The wiki is already off and needs no further change under #20.
 
-Pages is configured with build type `workflow`, custom domain `blender.scenario.com`
-and enforced HTTPS. The handbook at `https://blender.scenario.com/` serves the
+Pages is configured with build type `workflow`, no custom domain and enforced
+HTTPS, so it serves the site at `https://scenario-labs.github.io/blender-plugin/`.
+A Vercel project serves `blender.scenario.com` in front of it, as described in
+[site hosting and download counts](#site-hosting-and-download-counts).
+The handbook at `https://blender.scenario.com/` serves the
 installation, update and support guidance; the repository homepage and
 [extension manifest](../scenario/blender_manifest.toml) Website link point there.
 The native repository at `/repo/index.json` has listed the published releases
@@ -180,7 +190,8 @@ before changing these links again.
 
 The description is:
 
-> Scenario for Blender: AI images, video, 3D and PBR materials in the viewport, plus a local MCP server for agents. Blender 5.0+ extension, GPL-3.0-or-later.
+> Scenario for Blender: AI images, video, 3D and PBR materials in the viewport,
+> plus a local MCP server for agents. Blender 5.0+ extension, GPL-3.0-or-later.
 
 The repository has a custom social preview since 2026-10-13: `usesCustomOpenGraphImage`
 is `true`, its image URL uses `repository-images.githubusercontent.com`, the
@@ -204,6 +215,60 @@ gh api repos/scenario-labs/blender-plugin/pages
 gh api graphql -f query='{ repository(owner:"scenario-labs", name:"blender-plugin") { usesCustomOpenGraphImage openGraphImageUrl } }'
 ```
 
+### Site hosting and download counts
+
+`blender.scenario.com` is a Vercel project built from this repository with Root
+Directory `tools/site_proxy`, framework preset Other, no build or install
+command, and production branch `main`. Its Ignored Build Step,
+`git diff --quiet HEAD^ HEAD -- .`, skips a deployment when the last commit left
+that directory unchanged. [vercel.json](../tools/site_proxy/vercel.json)
+serves the project's Web Analytics script at `/handbook/page.js`, because blocker
+lists block Vercel's own path, forwards every other path to the Pages address
+above, and redirects `/repo` to `/repo/`, which Pages would otherwise redirect
+to its own host. Web Analytics counts page visits, and Download ZIP clicks as a
+`Download` event, from the snippet in the
+[handbook template](handbook-template.html) and
+[the downloads pages](../tools/site_pages.py). The directory holds only that
+file and the middleware: Vercel would serve any other file there instead of
+forwarding its path, and a Git deployment applies a `.vercelignore` from the
+repository root, so the tests live in `tests/site/`. Production deployments stay
+public because Blender cannot authenticate. The DNS CNAME `blender` points to
+the target Vercel shows for the domain; #492 records the move from GitHub Pages.
+
+[The middleware](../tools/site_proxy/middleware.ts) runs on `/repo/*` and sends
+one anonymous PostHog event per counted request after the request continues:
+`extension_downloaded` for `GET /repo/scenario-X.Y.Z.zip` and
+`repository_checked` for `GET /repo/index.json`, with the properties listed in
+the [privacy page](PRIVACY.md#where-it-goes). Every event carries
+`plugin: "blender"`, because the PostHog project is shared with other Scenario
+plugins. Its `client` says who made the request: `blender`, `browser`, `tool`
+for scripts and command-line clients, `bot` for crawlers and link checkers, or
+`other`. Events recorded before that split use `other` for everything except
+Blender. The dashboard counts downloads in Blender (`blender`) and outside it
+(`browser`, `tool` and `other`) separately, and shows `bot` only in its chart by
+source. HEAD
+requests, resumed downloads and other files are not counted. A ZIP keeps its
+version only when the repository index lists it. The middleware reads that index
+from Pages, caches it for five minutes and rereads it at most once a minute for
+an unseen version.
+Any other name, which Pages cannot serve, counts as `unknown`, and so does every
+ZIP while the index cannot be read. A new release's first minutes can count as
+`unknown` until both caches refresh: Pages also serves the index for ten
+minutes. It reads the project token from `POSTHOG_PROJECT_TOKEN`, the optional
+ingestion host from `POSTHOG_HOST` (US cloud by default) and the optional Pages
+address from `SITE_ORIGIN`; without a token it counts nothing. A send that fails
+or takes over two seconds is logged and dropped without changing the response.
+
+A Blender download is an install or an update; the request does not say which.
+Index requests are repository additions and manual update checks, not active
+installations, because the extension sets up the repository without startup
+checks. Manual installs from release assets are not counted, and the release
+download counters include CI downloads. [CI](../.github/workflows/site.yml)
+type-checks the middleware and runs [its tests](../tests/site/middleware.test.ts)
+and [property-based tests](../tests/site/middleware.fuzz.ts); locally, run
+`node --test tests/site/middleware.test.ts` and `pnpm exec vitest run` with
+Node 24.
+
 ## Access
 
 The inspected repository team grants are `@scenario-labs/platform` with
@@ -211,8 +276,9 @@ The inspected repository team grants are `@scenario-labs/platform` with
 On 2026-10-13 the maintainer lowered `platform` from admin to maintain, and both
 grants were read back (#20, #21). By the same decision no extra direct write
 grants are added; do not publish personal access records.
-[CODEOWNERS](../.github/CODEOWNERS) requests reviews for specific release,
-automation, licence and security paths; it grants no access. Required
+[CODEOWNERS](../.github/CODEOWNERS) requests the maintainer's review on every
+pull request, and the platform team's on release, automation, licence and
+security paths; it grants no access. Required
 code-owner approval stays off by the maintainer's decision while there is one
 active maintainer (#21).
 
@@ -263,8 +329,11 @@ which stays unset. A manual dispatch defaults to the monthly plan and a 40 CU ca
 selecting the private plan, or a higher cap, is its own budget decision. API
 readback on 2026-10-10 again shows the required reviewer and exactly the `main`
 policy, so the monthly plan needs no further repository setting.
-Configure any provider-side project/monthly budget separately; the workflow's cap
-is per run, and manual runs do not share a monthly ledger. The approval job shows
+On 2026-10-14 the maintainer capped all hosted smoke runs at 5000 CU per
+calendar month, `MONTHLY_BUDGET_CU` in `tools/smoke_ci.py`. The workflow sums
+the approved caps of the month's started runs; see the
+[monthly budget](../tests/smoke/README.md#monthly-budget). It does not configure
+a provider-side limit. The approval job shows
 the plan and cap frozen by admission. Review them and the configured scope before
 approving. Version-2 plans also authorize exact input files and
 hashes from the checked-out repository; the protected job stages them privately
@@ -296,10 +365,9 @@ none of the configured secret values, saved job/asset identities or signed queri
 This version-1 plan exercises generation, polling, download and completed-result
 recovery. It does not establish version-2 reference uploads, uncertain remote-job
 recovery, Blender application, physical interaction or media-quality acceptance.
-No provider-side monthly budget was configured. The 40 CU monthly allowance
-above came later and has no scheduled run yet; the first approved monthly run is
-separate acceptance. Keep those remaining #40 and #440 scopes separate from the
-completed hosted check.
+No provider-side monthly budget was configured. The first approved monthly run,
+on 2026-10-17, uploaded the version-2 reference and completed all three cases
+within its 40 CU cap.
 
 ## Project and labels
 
@@ -344,15 +412,49 @@ These tasks retain their existing owner issues. Read back the result and update
 this guide after an authorized change; do not treat the checklist as permission
 to perform it.
 
-- [x] Configure the protected smoke environment and private secrets, then verify the authorized five-lane hosted run and decrypted completed-result recovery: #40. Scheduled runs use the committed monthly plan with a fixed 40 CU cap. Reference-upload acceptance, the first approved monthly run and any provider-side budget remain separate.
-- [x] Add and read back the `ci-ok` required check with its verified GitHub Actions identity; preserve existing `pr-title`, `commits`, CodeQL, code-quality and review rules: #45. The hosted negative title check is verified; documentation review and merge remain.
-- [x] Verify the first automated release, then remove the repository-admin tag bypass while retaining release App integration `4751046`, both tag patterns and all protection rules; enable immutable releases only after publication and download verification: #36. Done on 2026-10-13 after 0.10.0 was published and its downloads verified, and read back: the tag ruleset keeps both patterns and its four rules with the release App as its only bypass actor, and immutable releases are enabled.
-- [x] Decide restricted allowed actions and require SHA pinning after workflow pins and update behavior are verified: #39. Decided and applied on 2026-10-13: full-SHA pinning is required and allowed actions stay `all`, read back through the API; a Pages run on `main` passed with the setting on.
-- [ ] Complete #56: the published handbook, homepage and manifest Website link are aligned; desktop Website-action acceptance remains. The native repository has served releases since 0.10.0.
-- [x] Upload the reviewed, merged social-preview card and verify its custom-image flag and URL: #19. Uploaded on 2026-10-13 and read back: the flag is `true`, the URL is on `repository-images.githubusercontent.com` and the image matches the committed card byte for byte.
-- [ ] Recheck the rendered shared-link preview of the repository in an application that unfurls links once its link cache refreshes. A Slack unfurl right after the 2026-10-13 upload still showed the previous card. #19 is closed with the GitHub-side evidence above.
-- [x] Decide the platform team's maintain/admin grant and confirm required code-owner review and direct-write policy: #20 / #21. Decided on 2026-10-13: `platform` holds maintain and `scenario` write, both read back; required code-owner review stays off; no extra direct write grants.
-- [x] Decide project 31's views, Auto-archive and built-in workflow targets for this repository: #20. Decided on 2026-10-13: project 31 is a board shared by several plugins, so this repository needs no views of its own and that review is dropped. The project stays private (read back).
+- [x] Configure the protected smoke environment and private secrets, then verify
+      the authorized five-lane hosted run and decrypted completed-result
+      recovery: #40. Scheduled runs use the committed monthly plan with a fixed
+      40 CU cap; the first approved monthly run passed on 2026-10-17. No
+      provider-side budget is configured.
+- [x] Add and read back the `ci-ok` required check with its verified GitHub
+      Actions identity; preserve existing `pr-title`, `commits`, CodeQL,
+      code-quality and review rules: #45. The hosted negative title check is
+      verified; documentation review and merge remain.
+- [x] Verify the first automated release, then remove the repository-admin tag
+      bypass while retaining release App integration `4751046`, both tag
+      patterns and all protection rules; enable immutable releases only after
+      publication and download verification: #36. Done on 2026-10-13 after
+      0.10.0 was published and its downloads verified, and read back: the tag
+      ruleset keeps both patterns and its four rules with the release App as its
+      only bypass actor, and immutable releases are enabled.
+- [x] Decide restricted allowed actions and require SHA pinning after workflow
+      pins and update behavior are verified: #39. Decided and applied on
+      2026-10-13: full-SHA pinning is required and allowed actions stay `all`,
+      read back through the API; a Pages run on `main` passed with the setting
+      on.
+- [x] Move `blender.scenario.com` behind the Vercel project and accept its
+      download counts: #492. Done on 2026-10-15: the site is served through
+      Vercel and the first installs were counted.
+- [ ] Complete #56: the published handbook, homepage and manifest Website link
+      are aligned; desktop Website-action acceptance remains. The native
+      repository has served releases since 0.10.0.
+- [x] Upload the reviewed, merged social-preview card and verify its
+      custom-image flag and URL: #19. Uploaded on 2026-10-13 and read back: the
+      flag is `true`, the URL is on `repository-images.githubusercontent.com`
+      and the image matches the committed card byte for byte.
+- [ ] Recheck the rendered shared-link preview of the repository in an
+      application that unfurls links once its link cache refreshes. A Slack
+      unfurl right after the 2026-10-13 upload still showed the previous
+      card. #19 is closed with the GitHub-side evidence above.
+- [x] Decide the platform team's maintain/admin grant and confirm required
+      code-owner review and direct-write policy: #20 / #21. Decided on
+      2026-10-13: `platform` holds maintain and `scenario` write, both read
+      back; required code-owner review stays off; no extra direct write grants.
+- [x] Decide project 31's views, Auto-archive and built-in workflow targets for
+      this repository: #20. Decided on 2026-10-13: project 31 is a board shared
+      by several plugins, so this repository needs no views of its own and that
+      review is dropped. The project stays private (read back).
 
 Release-App setup belongs to completed #35: the current workflow references its
 organization-provided client ID/private-key secrets, and the tag ruleset includes

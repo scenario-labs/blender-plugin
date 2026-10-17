@@ -375,6 +375,26 @@ class JobSession:
             raise OriginUnavailable("This job connection is no longer active")
         return self._workers.world_sizes(targets)
 
+    def result_files(self, targets):
+        """Queue a rehash of saved results for local MCP job_status on the preview lane.
+
+        Targets are (request_id, asset_id, receipt SHA-256) triples. The task
+        resolves to each target with its ``FileCheck`` or None. Like the World
+        size read it is not a session completion and grants no authority.
+        """
+        _main_thread()
+        if not self._active:
+            raise OriginUnavailable("This job connection is no longer active")
+        return self._workers.result_files(targets)
+
+    def verified_files(self, request_id):
+        """(asset_id, FileCheck) pairs this connection verified while downloading or
+        importing the job's results. Memory only: nothing is read or queued."""
+        _main_thread()
+        if not self._active:
+            return ()
+        return self._coordinator.verified_files(request_id)
+
     @staticmethod
     def _identity(records, value):
         for identity, existing in records.items():
@@ -647,8 +667,11 @@ class JobSession:
         self._pending.append((task, prepared.intent.origin))
         return task
 
-    def refresh_remote(self, request_id, *, expected_revision):
-        return self._record_command("refresh_remote", request_id, expected_revision)
+    def refresh_remote(self, request_id, *, expected_revision, automatic=False):
+        """Queue one known-job read; `automatic` polls make a single attempt."""
+        return self._record_command(
+            "refresh_remote", request_id, expected_revision, automatic=automatic
+        )
 
     def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
         """Queue an explicit cloud-result read; this never approves scene application."""

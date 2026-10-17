@@ -77,7 +77,7 @@ def inspect_glb(data, *, static_only=True):
             elif isinstance(value, float) and not math.isfinite(value):
                 raise GLBError("Nonfinite GLB values are unsupported")
         return document
-    except (KeyError, TypeError, ValueError, struct.error, RecursionError) as error:
+    except (KeyError, TypeError, ValueError, AttributeError, struct.error, RecursionError) as error:
         if isinstance(error, GLBError):
             raise
         raise GLBError("Malformed or unsupported GLB description") from None

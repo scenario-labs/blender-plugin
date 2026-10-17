@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from scenario.core.api.errors import ScenarioError
+from scenario.core.api.sdk_adapter import READ_RETRIES
 from scenario.core.jobs.manager import JobManager
 from scenario.core.jobs.store import JobScope
 from tests.unit.test_sdk_catalog import catalog
@@ -43,7 +44,7 @@ def test_probe_is_one_fresh_read_and_does_not_replace_the_catalog(monkeypatch):
 @pytest.mark.parametrize(
     "status,page", [(401, {}), (403, {}), (503, {}), (200, {}), (200, {"models": [None]})]
 )
-def test_failed_probe_delivers_safe_error_without_retrying(status, page):
+def test_failed_probe_delivers_safe_error_and_retries_only_transient_reads(status, page):
     calls = []
 
     def respond(request):
@@ -61,7 +62,8 @@ def test_failed_probe_delivers_safe_error_without_retrying(status, page):
         [(name, payload)] = manager.drain_catalog()
         assert name == "connection" and payload["key"] is key and payload["catalog"] is context
         assert payload["error"] and "do-not-expose" not in payload["error"]
-        assert len(calls) == 1
+        # The probe is a model page read: the SDK retries a 5xx, never a refusal.
+        assert len(calls) == (1 + READ_RETRIES if status == 503 else 1)
     finally:
         context.close()
 

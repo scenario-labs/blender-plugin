@@ -22,8 +22,11 @@ Tests inspect its outgoing requests and how it parses synthetic responses.
 Network connections are forbidden, so even submission tests spend no credits.
 
 These are dependency checks: an SDK upgrade that changes these behaviors needs
-review. They do not yet exercise a Blender integration adapter, prove that the
-live API accepts the requests, or establish native Blender compatibility.
+review. The read retry section at the end also drives SDKAdapter: its
+allow-listed job, asset, model and workflow reads retry through the SDK's
+per-request option, and every write, paid call, price check and decision makes
+one attempt. None of this proves that the live API accepts the requests or
+establishes native Blender compatibility.
 """
 
 import base64
@@ -1330,3 +1333,278 @@ def test_asset_retrieve_exposes_server_thumbnail_and_preview(client_factory):
     parsed = sdk.assets.retrieve("fixture-video", project_id=PROJECT).to_dict()["asset"]
     assert parsed["thumbnail"]["assetId"] == "fixture-still"
     assert parsed["preview"]["url"] == "https://cdn.example/light"
+
+
+# Read retry allow-list (#451). SDKAdapter retries idempotent job, asset, model
+# and workflow reads through the SDK's documented per-request option,
+# `with_options(max_retries=READ_RETRIES)`, which keeps the SDK's jittered
+# backoff and Retry-After handling. Every write, paid call, price check and
+# decision stays on the zero-retry client: one attempt, whatever the failure.
+
+ADAPTER_URL = "https://service.example.invalid/v1"
+RETRYABLE_FAILURES = ["timeout", "connect", 408, 429, 500, 503]
+# Each allow-listed adapter read, with the SDK request it sends.
+RETRIED_READS = {
+    "job": (lambda c: c.job("fixture-job"), "GET", "/v1/jobs/fixture-job"),
+    "model": (lambda c: c.model("fixture-model"), "GET", "/v1/models/fixture-model"),
+    "workflow": (
+        lambda c: c.workflow("fixture-workflow"),
+        "GET",
+        "/v1/workflows/fixture-workflow",
+    ),
+    "asset": (lambda c: c.asset("fixture-asset"), "GET", "/v1/assets/fixture-asset"),
+    "job_page": (lambda c: c.job_page(), "GET", "/v1/jobs"),
+    "jobs": (lambda c: c.jobs(), "GET", "/v1/jobs"),
+    "model_page": (lambda c: c.model_page(), "GET", "/v1/models"),
+    "models": (lambda c: c.models(), "GET", "/v1/models"),
+    "workflows": (lambda c: c.workflows(), "GET", "/v1/workflows"),
+    "asset_page": (lambda c: c.asset_page(), "GET", "/v1/assets"),
+    # get-bulk is a POST that only carries the requested IDs: a documented read
+    # with no side effect, so a replay returns the same records.
+    "models_bulk": (lambda c: c.models_bulk(["fixture-model"]), "POST", "/v1/models/get-bulk"),
+    "bulk_assets": (lambda c: c.bulk_assets(["fixture-asset"]), "POST", "/v1/assets/get-bulk"),
+    "asset_records": (
+        lambda c: c.asset_records(["fixture-asset"]),
+        "POST",
+        "/v1/assets/get-bulk",
+    ),
+}
+# One body that satisfies every allow-listed read's wrapper.
+READ_BODY = {
+    "job": {"jobId": "fixture-job", "status": "in-progress"},
+    "model": {"id": "fixture-model"},
+    "workflow": {"id": "fixture-workflow"},
+    "asset": {"id": "fixture-asset"},
+    "jobs": [],
+    "models": [],
+    "workflows": [],
+    "assets": [],
+}
+ADAPTER_MODEL = {
+    "id": "fixture-model",
+    "type": "custom",
+    "inputs": [{"name": "prompt", "type": "string"}],
+}
+# Every adapter call that writes, spends, prices or decides, and the automatic job
+# status poll. Each must make one attempt only. Paid submissions first take a
+# successful price check.
+SINGLE_ATTEMPTS = {
+    "model-estimate": lambda c: c.estimate_model(ADAPTER_MODEL, {"prompt": "fixture"}),
+    "model-run": lambda c: c.submit_estimate(
+        c.estimate_model(ADAPTER_MODEL, {"prompt": "fixture"}), before_send=lambda: None
+    ),
+    "workflow-run": lambda c: c.submit_estimate(
+        c.estimate_workflow({"id": "fixture-workflow", "inputs": []}, {}),
+        before_send=lambda: None,
+    ),
+    "prompt-run": lambda c: c.submit_estimate(
+        c.estimate_prompt({"mode": "completion", "prompt": "fixture"}), before_send=lambda: None
+    ),
+    "translate-run": lambda c: c.submit_estimate(
+        c.estimate_translate({"prompt": "fixture"}), before_send=lambda: None
+    ),
+    # The automatic status poll: ModelJobs schedules its retry without a worker.
+    "automatic-job-poll": lambda c: c.job("fixture-job", retry=False),
+    "automatic-poll-definition": lambda c: c.workflow("fixture-workflow", retry=False),
+    # History page step and prompt preview reads, up to 24 and 30 per page.
+    "history-row-asset": lambda c: c.asset("fixture-asset", retry=False),
+    "cancel": lambda c: c.cancel_inference("fixture-job"),
+    "approval": lambda c: c.workflow_decision(
+        "fixture-workflow", "fixture-job", "fixture-node", "user-approval", "approve"
+    ),
+    "selection": lambda c: c.workflow_decision(
+        "fixture-workflow", "fixture-job", "fixture-node", "user-selection", "select", [0]
+    ),
+    "upload-create": lambda c: c.create_upload(
+        kind="image", file_name="reference.png", content_type="image/png", file_size=4, parts=1
+    ),
+    "upload-complete": lambda c: c.complete_upload("fixture-upload"),
+    "collection-create": lambda c: c.create_collection("Hero props"),
+    "collection-add": lambda c: c.add_collection_assets("fixture-collection", ["fixture-asset"]),
+    "collection-remove": lambda c: c.remove_collection_assets(
+        "fixture-collection", ["fixture-asset"]
+    ),
+    "tags": lambda c: c.update_asset_tags("fixture-asset", add=["hero"]),
+}
+
+
+@pytest.fixture
+def retry_sleeps(monkeypatch):
+    """Record the SDK's retry waits instead of sleeping; nothing else changes."""
+    import time
+    from types import SimpleNamespace
+
+    import scenario_sdk._base_client as base
+
+    sleeps = []
+    monkeypatch.setattr(base, "time", SimpleNamespace(sleep=sleeps.append, time=time.time))
+    return sleeps
+
+
+@pytest.fixture
+def adapter_factory():
+    from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
+
+    clients = []
+
+    def create(handler):
+        client = SDKAdapter(
+            Credentials("selected-key", "selected-secret"),
+            online=lambda: True,
+            base_url=ADAPTER_URL,
+            transport=httpx.MockTransport(handler),
+        )
+        clients.append(client)
+        return client
+
+    yield create
+    for client in clients:
+        client.close()
+
+
+def _failing(failure, request, headers=None):
+    if failure == "timeout":
+        raise httpx.ReadTimeout("fixture lost response", request=request)
+    if failure == "connect":
+        raise httpx.ConnectError("fixture lost connection", request=request)
+    return httpx.Response(failure, json={"error": "fixture failure"}, headers=headers or {})
+
+
+def test_per_request_retries_leave_the_zero_retry_client_unchanged(client_factory, retry_sleeps):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return httpx.Response(503, json={"error": "fixture"}, headers={"Retry-After": "3"})
+
+    sdk = client_factory(respond)
+    reads = sdk.with_options(max_retries=2)
+    assert (sdk.max_retries, reads.max_retries) == (0, 2)
+    with pytest.raises(APIStatusError):
+        reads.jobs.with_raw_response.retrieve("fixture-job", project_id=PROJECT)
+    # One first attempt and two retries, each after the server's Retry-After.
+    assert len(requests) == 3
+    assert retry_sleeps == [3.0, 3.0]
+    requests.clear()
+    with pytest.raises(APIStatusError):
+        sdk.jobs.with_raw_response.retrieve("fixture-job", project_id=PROJECT)
+    assert len(requests) == 1
+    assert retry_sleeps == [3.0, 3.0]
+
+
+def test_per_request_retries_resend_a_bulk_read_without_an_idempotency_key(
+    client_factory, retry_sleeps
+):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(503, json={"error": "fixture"})
+        return httpx.Response(200, json={"assets": []})
+
+    reads = client_factory(respond).with_options(max_retries=2)
+    response = reads.assets.with_raw_response.get_bulk(asset_ids=["fixture-a"], project_id=PROJECT)
+    assert json.loads(response.read()) == {"assets": []}
+    assert [request.content for request in requests] == [requests[0].content] * 2
+    assert not any("idempotency" in name.lower() for r in requests for name in r.headers)
+    assert len(retry_sleeps) == 1
+
+
+@pytest.mark.parametrize("failure", RETRYABLE_FAILURES)
+@pytest.mark.parametrize("operation", sorted(RETRIED_READS))
+def test_adapter_retries_allow_listed_reads_until_they_succeed(
+    adapter_factory, retry_sleeps, operation, failure
+):
+    call, method, path = RETRIED_READS[operation]
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) <= 2:
+            return _failing(failure, request)
+        return httpx.Response(200, json=READ_BODY)
+
+    client = adapter_factory(respond)
+    call(client)
+    assert len(requests) == 3
+    assert {(request.method, request.url.path) for request in requests} == {(method, path)}
+    # The retrying client keeps the adapter's selected credentials on every attempt.
+    expected = "Basic " + base64.b64encode(b"selected-key:selected-secret").decode()
+    assert {request.headers["Authorization"] for request in requests} == {expected}
+    assert len(retry_sleeps) == 2
+
+
+@pytest.mark.parametrize("operation", sorted(RETRIED_READS))
+def test_adapter_read_retries_are_bounded_and_carry_retry_after(
+    adapter_factory, retry_sleeps, operation
+):
+    from scenario.core.api.sdk_adapter import READ_RETRIES, AdapterStatusError
+
+    call = RETRIED_READS[operation][0]
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return _failing(429, request, {"Retry-After": "7"})
+
+    with pytest.raises(AdapterStatusError) as error:
+        call(adapter_factory(respond))
+    assert READ_RETRIES == 2
+    assert len(requests) == 1 + READ_RETRIES
+    assert retry_sleeps == [7.0] * READ_RETRIES
+    assert (error.value.status_code, error.value.retry_after) == (429, 7.0)
+
+
+@pytest.mark.parametrize("failure", ["timeout", "connect"])
+def test_adapter_reports_an_unanswered_read_as_unreachable(adapter_factory, retry_sleeps, failure):
+    from scenario.core.api.sdk_adapter import AdapterStatusError, AdapterUnreachable
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return _failing(failure, request)
+
+    with pytest.raises(AdapterUnreachable) as error:
+        adapter_factory(respond).job("fixture-job")
+    assert not isinstance(error.value, AdapterStatusError)
+    assert str(error.value) == "Could not reach Scenario"
+    assert len(requests) == 3
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+def test_adapter_reads_do_not_retry_definite_refusals(adapter_factory, retry_sleeps, status):
+    from scenario.core.api.sdk_adapter import AdapterError
+
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return _failing(status, request, {"Retry-After": "0"})
+
+    with pytest.raises(AdapterError):
+        adapter_factory(respond).job("fixture-job")
+    assert len(requests) == 1
+    assert retry_sleeps == []
+
+
+@pytest.mark.parametrize("failure", RETRYABLE_FAILURES)
+@pytest.mark.parametrize("operation", sorted(SINGLE_ATTEMPTS))
+def test_adapter_writes_paid_calls_and_decisions_make_one_attempt(
+    adapter_factory, retry_sleeps, operation, failure
+):
+    from scenario.core.api.sdk_adapter import AdapterError
+
+    sent = []
+
+    def respond(request):
+        if request.url.params.get("dryRun") == "true" and operation != "model-estimate":
+            return httpx.Response(200, json={"creativeUnitsCost": 1})
+        sent.append(request)
+        return _failing(failure, request, {"Retry-After": "0", "x-should-retry": "true"})
+
+    with pytest.raises(AdapterError):
+        SINGLE_ATTEMPTS[operation](adapter_factory(respond))
+    assert len(sent) == 1
+    assert retry_sleeps == []

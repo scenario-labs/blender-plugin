@@ -1,6 +1,8 @@
 # Workflows, Studio and Library
 
-Integration status of workflow commands and controls, the explicit Studio view and the asset Library. The [runtime map](runtime.md) lists the entry points and shared components.
+Integration status of workflow commands and controls, the explicit Studio view
+and the asset Library. The [runtime map](runtime.md) lists the entry points and
+shared components.
 
 ## Active workflow commands
 
@@ -166,8 +168,8 @@ read-back once more. The owner applies one review at a time; a ready card says
 when an agent's change holds it, and Apply then refuses with that reason.
 Retirement on a credential, Project ID or file change drops the view with the
 session and its reviews. See
-[the UI contract](../ui/studio-and-library.md#library-organization); physical desktop and live
-acceptance remain pending.
+[the UI contract](../ui/studio-and-library.md#library-organization); physical
+desktop and live acceptance remain pending.
 
 ## Workflow Library reference bindings
 
@@ -211,15 +213,15 @@ attachment, so existing pricing checks reject edited or cross-connection values.
 Stale, failed or retired bindings, including one whose upload **Upload again**
 abandoned, keep the marker and an inspectable error; saved uploads, including that
 restart's new upload, attach only through a separate single-use confirmation in
-the shared inspection view. For a snapshot, any scene edit, frame change, render or undo
-makes JobSession refuse the upload's next initialization, part or completion admission,
-and the ticket stops. A chosen file's upload binds only to its scene, so it continues
-through edits, frame changes and renders and stops only after undo, redo, removal of
-that scene or a file load.
-The exception to keeping the marker is a stopped ticket that `ReferenceUploads`
-reports as never having reached Scenario (failed staging, a refused admission
-while still prepared, or cancellation): the marker is removed and existing values
-stay. Explicit cancellation of a prepared record frees inputs still marked for it
+the shared inspection view. For a snapshot, any scene edit, frame change, render
+or undo makes JobSession refuse the upload's next initialization, part or
+completion admission, and the ticket stops. A chosen file's upload binds only to
+its scene, so it continues through edits, frame changes and renders and stops
+only after undo, redo, removal of that scene or a file load. The exception to
+keeping the marker is a stopped ticket that `ReferenceUploads` reports as never
+having reached Scenario (failed staging, a refused admission while still
+prepared, or cancellation): the marker is removed and existing values stay.
+Explicit cancellation of a prepared record frees inputs still marked for it
 through a marker-to-ticket ledger that survives undo, or through the request
 recorded at first observation. Without a running delivery, **Stop waiting**
 releases the marker without changing values. Undo/redo, file load and connection

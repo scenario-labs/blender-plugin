@@ -1,6 +1,7 @@
 # Environment, panorama and World
 
-Interaction rules and desktop evidence for the Environment lane and World application. The shared rules are in the [UI style guide](../UI_STYLE.md).
+Interaction rules and desktop evidence for the Environment lane and World
+application. The shared rules are in the [UI style guide](../UI_STYLE.md).
 
 ## Environment lane
 

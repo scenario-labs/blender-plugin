@@ -6,8 +6,7 @@ Video and image-to-3D entry points now share one quote/submit/resume implementat
 The generic entry point also supports audio. No smoke runs in ordinary tests or
 PR CI. The aggregate suite and protected workflow below implement the shared
 budget path for [#40](https://github.com/scenario-labs/blender-plugin/issues/40),
-including a [monthly plan](#monthly-plan) with a fixed total cap. Live
-reference-upload and monthly-run acceptance remain pending.
+including a [monthly plan](#monthly-plan) with a fixed total cap.
 
 These commands verify service round-trips and saved result receipts. They do not
 establish native UI/MCP interaction, scene application, playback quality, Film
@@ -40,9 +39,10 @@ uv run --locked --env-file .env.local python -m tools.smoke_model quote \
 `quote` performs model retrieval and a `dryRun=true` estimate, never generation or
 IP detection. It creates a new private run directory, prints the exact decimal CU
 cost and the SHA-256 of `quote.json`, and saves the selected credential scope,
-model, inputs, expected result kind, normalized payload hash and exact price there. Existing run
-directories are rejected. Review the private quote file and intended test scope;
-the printed hash binds subsequent approval to those exact bytes.
+model, inputs, expected result kind, normalized payload hash and exact price
+there. Existing run directories are rejected. Review the private quote file and
+intended test scope; the printed hash binds subsequent approval to those exact
+bytes.
 
 After explicit approval, replace `QUOTE_SHA256`, `EXACT_COST` and `APPROVED_CAP`
 below with the reviewed values. There is no default spending cap. Both decimal
@@ -105,13 +105,14 @@ own timeouts. A polling deadline preserves the job and never cancels or resubmit
 | 4 | Saved state needs review or polling deadline expired; no generation replay |
 
 Stdout contains only costs, an approval hash, known state names and file counts.
-`report.json` contains result kind, state, cost, payload hash and result byte counts/hashes; it
-omits credentials, raw responses, request inputs, project/job/asset IDs and signed
-URLs. Review even that summary before sharing. The rest of the run directory is
-private and must never be committed or uploaded as a public artifact. The directory
-is retained deliberately for recovery; remove it only after the job's outcome is
-resolved and required evidence has been reviewed. The directory and its ancestors
-must remain privately owned; this is not protection against a local attacker.
+`report.json` contains result kind, state, cost, payload hash and result byte
+counts/hashes; it omits credentials, raw responses, request inputs,
+project/job/asset IDs and signed URLs. Review even that summary before sharing.
+The rest of the run directory is private and must never be committed or uploaded
+as a public artifact. The directory is retained deliberately for recovery;
+remove it only after the job's outcome is resolved and required evidence has
+been reviewed. The directory and its ancestors must remain privately owned; this
+is not protection against a local attacker.
 
 ## Result kinds and entry points
 
@@ -180,9 +181,11 @@ them; their original digest, attempt marker and durable state still apply.
 For Video and image-to-3D, prepare/upload references explicitly through the shared
 native or MCP upload commands and put the resulting authorized asset IDs in the
 input JSON. These smoke commands do not upload a path argument, perform captures,
-or run extra multi-view estimates. The [explicit reference plan](#prepare-reference-inputs) below also automates
-shared upload commands; live upload acceptance remains separate. Material receipts retain the shared runtime's documented texture
-roles; this tool does not construct or apply Blender materials.
+or run extra multi-view estimates. The
+[explicit reference plan](#prepare-reference-inputs) below also automates shared
+upload commands; live upload acceptance remains separate. Material receipts
+retain the shared runtime's documented texture roles; this tool does not
+construct or apply Blender materials.
 
 Omit `--env-file` and use `--no-env-file` when the shell supplies credentials.
 Keep the spending flag out of dotenv files. Offline tests use synthetic SDK
@@ -248,7 +251,8 @@ make smoke SMOKE_ARGS="resume --run-dir workdir/suite"
 Unattempted cases remain unsubmitted and require review; resume cannot spend.
 Preserve the complete suite directory, individual databases and scope keys.
 A directory copied or edited outside the command is not another authorization.
-Independent suites still do not share an account-wide or monthly budget ledger.
+Outside the hosted workflow's [monthly budget](#monthly-budget), independent
+suites do not share an account-wide or monthly budget ledger.
 
 `budget-run --plan PLAN --run-dir NEW_DIRECTORY --max-cu CAP` is for separately
 budget-authorized automation. It requires `SCENARIO_SMOKE=1` and a positive,
@@ -536,13 +540,14 @@ Luminance uses Rec.709 weights on the values Blender decodes. For OpenEXR these
 are floats after Blender's color space conversion, which turns an ACES2065-1
 file into its scene-linear Rec.709 space; `decoded.colorspace` records Blender's
 choice, which can be wrong: Blender labels an OpenEXR without declared
-chromaticities sRGB while keeping its float values. PNG and JPEG values keep their stored sRGB encoding, so their seam and
-pole values describe luma and no dynamic range is reported. Across a seamless
-wrap the edge differs like adjacent columns do, so `edge_to_neighbor` stays
-around 1 or below and `edge_to_quarter_turn` well below 1; a visible seam raises
-both. Uniform poles score near 0. These are advisory evidence, not thresholds:
-the report never accepts or rejects a panorama, and seams, poles and lighting
-still need review in Blender.
+chromaticities sRGB while keeping its float values. PNG and JPEG values keep
+their stored sRGB encoding, so their seam and pole values describe luma and no
+dynamic range is reported. Across a seamless wrap the edge differs like adjacent
+columns do, so `edge_to_neighbor` stays around 1 or below and
+`edge_to_quarter_turn` well below 1; a visible seam raises both. Uniform poles
+score near 0. These are advisory evidence, not thresholds: the report never
+accepts or rejects a panorama, and seams, poles and lighting still need review
+in Blender.
 
 The JSON names run and result positions, the contract model ID, media type,
 source, receipt size and SHA-256 and Blender's version. It omits credentials,
@@ -570,8 +575,8 @@ so later inputs or environment variables cannot change them after review:
   takes a reviewed commit.
 - A manual dispatch chooses `plan`: `monthly` (the default) or `private`, the
   `SMOKE_PLAN_JSON` environment secret. Its `max_cu` defaults to `40`; a zero,
-  empty or malformed cap fails before execution. Only a `private` dispatch
-  receives the private plan secret.
+  empty or malformed cap, or one above the monthly budget, fails before
+  execution. Only a `private` dispatch receives the private plan secret.
 
 Approving means authorizing the displayed plan, the configured test scope and the
 displayed total cap, including the exact input files/hashes of a version-2 plan.
@@ -580,6 +585,24 @@ exceeds the cap, it exits 3 and submits nothing. Hosted input paths are relative
 to the checked-out repository; use reviewed fixtures and preserve their licenses.
 Decline if these inputs or authorization are unclear.
 The job never prints the plan, account/project, asset/job IDs or raw exceptions.
+
+### Monthly budget
+
+All hosted runs share a budget of 5000 CU per calendar month (UTC),
+`MONTHLY_BUDGET_CU` in `tools/smoke_ci.py`. Admission, and the paid job again
+after approval, list this workflow's runs and add the requested total cap to the
+total caps of the month's other runs whose paid job started. A cap comes from
+that job's approved name; a started job whose cap cannot be read counts as the
+whole budget. Jobs skipped, rejected at approval or cancelled before starting
+count as zero. A run exceeding the remainder fails before any Scenario request.
+
+Reserved caps bound spending from above: a run that quotes or spends less still
+reserves its whole cap for the month. Workflow concurrency runs one smoke at a
+time, and the post-approval recheck makes the later of two overlapping runs
+count the other. An unreadable run history fails closed. Local runs are outside
+this ledger. As a server-side backstop, a Scenario Enterprise administrator can
+set a per-key usage limit (`maxConsumption`) on the test key in the Scenario
+portal; the workflow neither configures nor reads one.
 
 ### Monthly plan
 
@@ -609,8 +632,8 @@ When a price change pushes the exact total above 40 CU, the monthly run exits 3
 and submits nothing. Re-quote the plan with the
 [reference input commands](#prepare-reference-inputs), which never submit, then
 trim a case or raise `MONTHLY_MAX_CU` in a reviewed change. The cap applies per
-run. Manual dispatches are separate authorizations and share no monthly ledger,
-and the workflow configures no provider-side project budget. GitHub disables a
+run. Manual dispatches are separate authorizations; scheduled and manual runs
+share the [monthly budget](#monthly-budget). GitHub disables a
 public repository's schedules after 60 days without activity; re-enable the
 workflow from the Actions tab.
 

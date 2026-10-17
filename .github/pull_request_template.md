@@ -6,35 +6,41 @@ tools, docs, ci, deps, release, agents, repo.
 Example: fix(blender): preserve the current frame after a viewport capture
 
 Keep one concern per PR. See CONTRIBUTING.md and docs/development/contributions.md.
-Mark applicable checks below; explain checks that do not apply or were not run.
-Do not claim human review, test results or authorization that has not happened.
+Keep the description short. Tick only checks you did; leave the rest unticked
+without comment. Never claim review, results or authorization that has not happened.
 -->
 
 ## What does this PR change?
 
-<!-- Lead with the problem and the resulting behavior for users or maintainers.
-For a behavior change, give a concrete before/after example when useful. For
-internal work, explain its maintenance benefit. Name any action needed to use or
-validate the change and any material limits. Keep the detail proportional to the
-change; a file inventory alone does not explain its effect.
+<!--
 
-Use Closes #n only for complete issue acceptance; use Refs #n for partial work
-and describe what remains. -->
+One to three sentences: the problem and what changes. Add a before/after
+only for a behavior change. Name any action needed after merge and any known gap.
+Closes #n for complete issue scope; Refs #n otherwise, saying what remains.
+
+When relevant, show a visible change with screenshots in a table, before/after
+for UI. Agents leave a [drop <file>] placeholder per image; see
+docs/development/contributions.md#screenshots.
+
+-->
 
 ## Validation
 
-- [ ] Relevant locked pytest checks and `make lint` pass; exact commands and results are recorded below.
-- [ ] Native changes were tested with `make test-blender` against the exact packaged ZIP in an isolated profile; Blender/OS versions and results, or the reason this was not needed, are stated.
+- [ ] Relevant locked pytest checks and `make lint` pass; commands and results are listed below.
+- [ ] Native changes were tested with `make test-blender` against the exact packaged ZIP in an isolated profile; Blender/OS versions and results are listed.
 - [ ] Packaging changes pass `make build`; the ZIP and dependency licenses were inspected.
 - [ ] UI changes include before/after screenshots and native input, focus and viewport evidence, with Blender/OS versions.
 - [ ] Live/paid smoke status is stated. Any paid check had prior authorization for its project, exact quote and budget; private approval details remain private.
 
-<!-- Validation evidence and relevant limitations: -->
+Commands and results:
+
+<!-- One line per command run and its result. Keep the line above: it stops
+GitHub merging this list into the checklist. -->
 
 ## Public content
 
 - [ ] No private account, customer, workspace, project or internal infrastructure records are exposed.
-- [ ] No credentials, MCP bearer tokens, signed URL query strings or private job/asset IDs are included.
+- [ ] No credentials, signed URL query strings or private job/asset IDs are included.
 - [ ] No personal paths, agent session IDs, private research exports or spend anecdotes are included.
 
 ## Coding rules

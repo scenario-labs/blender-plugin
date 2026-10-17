@@ -88,7 +88,7 @@ def main(argv=None):
             body += "The audit upload recorded no artifact ID. "
         body += "Inspect this run before attributing the failure to model schema drift."
         outcome = report_failure(
-            args.repository, TITLE, body, ["bug", "feature:API", "quality", "area:ci"]
+            args.repository, TITLE, body, ["feature:API", "quality", "area:ci"], "Task"
         )
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         print(f"API failure reporting failed ({type(error).__name__}).", file=sys.stderr)

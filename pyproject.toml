@@ -19,6 +19,7 @@ dev = [
     "pre-commit-hooks==6.0.0",
     "conventional-pre-commit==4.4.0",
     "pillow==12.3.0",
+    "reuse[charset-normalizer]==6.2.0",
 ]
 
 [tool.uv]
@@ -54,7 +55,7 @@ indent-style = "space"
 line-ending = "lf"
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit"]
+testpaths = ["tests/unit", "tests/fuzz"]
 addopts = "-q --strict-markers"
 markers = [
     "allow_network: explicitly permit non-loopback connections in this test process",

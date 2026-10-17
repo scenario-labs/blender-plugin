@@ -35,12 +35,15 @@ def test_repeated_failure_comments_exact_issue_beyond_first_page(monkeypatch):
         return issues[-1]
 
     monkeypatch.setattr(reporter, "github", github)
-    labels = ["bug", "area:ci", "os:macos", "blender:5.1"]
-    assert reporter.report_failure(REPOSITORY, TITLE, "first run", labels) == "created"
-    assert reporter.report_failure(REPOSITORY, TITLE, "second run", labels) == "commented"
+    labels = ["area:ci", "os:macos", "blender:5.1"]
+    assert reporter.report_failure(REPOSITORY, TITLE, "first run", labels, "Bug") == "created"
+    assert reporter.report_failure(REPOSITORY, TITLE, "second run", labels, "Bug") == "commented"
     writes = [(endpoint, payload) for endpoint, _, payload in calls if payload is not None]
     assert writes == [
-        (f"repos/{REPOSITORY}/issues", {"title": TITLE, "body": "first run", "labels": labels}),
+        (
+            f"repos/{REPOSITORY}/issues",
+            {"title": TITLE, "body": "first run", "labels": labels, "type": "Bug"},
+        ),
         (f"repos/{REPOSITORY}/issues/42/comments", {"body": "second run"}),
     ]
     assert "--paginate" in calls[0][1]
@@ -71,7 +74,7 @@ def test_invalid_or_ambiguous_listing_never_writes(monkeypatch, pages):
 
     monkeypatch.setattr(reporter, "github", github)
     with pytest.raises(ValueError):
-        reporter.report_failure(REPOSITORY, TITLE, "run", ["area:ci"])
+        reporter.report_failure(REPOSITORY, TITLE, "run", ["area:ci"], "Bug")
     assert calls == [None]
 
 
@@ -87,7 +90,7 @@ def test_api_failure_is_not_retried(monkeypatch, fail_on):
 
     monkeypatch.setattr(reporter, "github", github)
     with pytest.raises(subprocess.CalledProcessError):
-        reporter.report_failure(REPOSITORY, TITLE, "run", ["area:ci"])
+        reporter.report_failure(REPOSITORY, TITLE, "run", ["area:ci"], "Bug")
     assert len(calls) == fail_on
 
 
@@ -140,12 +143,13 @@ def test_cli_builds_scoped_tracking_issue(monkeypatch):
         reporter, "report_failure", lambda *args: captured.append(args) or "created"
     )
     assert reporter.main(cli_arguments()) == 0
-    repository, title, body, labels = captured[0]
+    repository, title, body, labels, issue_type = captured[0]
     assert repository == REPOSITORY
     assert title == "ci: weekly headless run failed on windows-latest"
     assert f"https://github.com/{REPOSITORY}/actions/runs/42" in body
     assert "blender-tests-windows-latest" in body
-    assert labels == ["bug", "area:ci", "os:windows", "blender:5.1"]
+    assert labels == ["area:ci", "os:windows", "blender:5.1"]
+    assert issue_type == "Task"
 
 
 @pytest.mark.parametrize(

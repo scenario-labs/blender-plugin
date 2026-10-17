@@ -5,12 +5,15 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import quote
 
 from tools.smoke_image import SmokeError, create_file, decimal_cost, read_bytes
 
@@ -20,7 +23,22 @@ ROOT = Path(__file__).resolve().parents[1]
 # either one only in a reviewed commit, never through repository settings.
 MONTHLY_PLAN = ROOT / "tests" / "smoke" / "monthly-plan.json"
 MONTHLY_MAX_CU = Decimal("40")
+# Every hosted run, scheduled or dispatched, also fits this calendar-month (UTC)
+# budget, set by the maintainer on 2026-10-14. Admission and the post-approval
+# recheck add the requested total cap to the caps of this month's earlier runs
+# whose paid job started; see monthly_reserved().
+MONTHLY_BUDGET_CU = Decimal("5000")
 PLANS = ("monthly", "private")
+WORKFLOW = "smoke.yml"
+# Environment approval waits at most 30 days, so a run created up to then can
+# start its paid job in the current month.
+LEDGER_LOOKBACK = timedelta(days=35)
+LEDGER_PAGES = 10
+# The paid job's name is the text the reviewer approved, frozen from admission
+# outputs. Runs before the plan input named only the cap.
+APPROVED_NAME = re.compile(
+    r"Budget approval \((?:(?:monthly|private) plan, )?([0-9]{1,64}(?:\.[0-9]{1,64})?) CU total\)"
+)
 
 
 def check_context(environ):
@@ -42,6 +60,8 @@ def admission(environ, max_cu, plan):
     cap = decimal_cost(max_cu)
     if cap <= 0:
         raise SmokeError("Authorize a positive aggregate budget before execution", 3)
+    if cap > MONTHLY_BUDGET_CU:
+        raise SmokeError("The total cap exceeds the monthly smoke budget", 3)
     return plan, cap
 
 
@@ -61,18 +81,86 @@ def validate_gate(environment, branches):
         raise SmokeError("Configure smoke required reviewers and exactly the main branch policy")
 
 
+def gh_json(path):
+    result = subprocess.run(["gh", "api", path], capture_output=True, check=True, timeout=30)
+    return json.loads(result.stdout)
+
+
 def check_gate(environ):
     check_context(environ)
     endpoint = f"repos/{REPOSITORY}/environments/smoke"
-
-    def read(suffix):
-        result = subprocess.run(
-            ["gh", "api", endpoint + suffix], capture_output=True, check=True, timeout=30
-        )
-        return json.loads(result.stdout)
-
-    validate_gate(read(""), read("/deployment-branch-policies?per_page=100"))
+    validate_gate(gh_json(endpoint), gh_json(endpoint + "/deployment-branch-policies?per_page=100"))
     print("Verified smoke reviewers and main-only deployment policy")
+
+
+def paged(path, key):
+    """Every item of a paginated list; an incomplete listing fails closed."""
+    items = []
+    for page in range(1, LEDGER_PAGES + 1):
+        body = gh_json(f"{path}&per_page=100&page={page}")
+        batch = body[key]
+        items += batch
+        if len(items) >= body["total_count"]:
+            return items
+        if not batch:
+            break
+    raise SmokeError("Could not read the complete smoke run history")
+
+
+def started_this_month(job, month):
+    """Whether a paid job passed approval and started in this month; unknown counts."""
+    if job.get("conclusion") == "skipped":
+        return False
+    times = [step["started_at"] for step in job.get("steps") or [] if step.get("started_at")]
+    if times:
+        return min(datetime.fromisoformat(value.replace("Z", "+00:00")) for value in times) >= month
+    # A runner without step times, a running job or one that approval can start
+    # at any moment counts; one rejected, cancelled or expired at approval does not.
+    return job.get("status") in {"in_progress", "waiting"} or bool(job.get("runner_name"))
+
+
+def reservation(job):
+    match = APPROVED_NAME.fullmatch(job.get("name") or "")
+    # A started paid job without a readable cap consumes the whole budget.
+    return decimal_cost(match.group(1)) if match else MONTHLY_BUDGET_CU
+
+
+def monthly_reserved(environ, now=None):
+    """Sum the approved total caps of this month's other runs whose paid job started.
+
+    Reserved caps bound actual spending from above. Workflow concurrency runs
+    one run at a time, and each paid job rechecks after approval while it is
+    itself in progress, so of two overlapping runs the later one counts the other.
+    """
+    now = now or datetime.now(UTC)
+    month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    current = environ.get("GITHUB_RUN_ID", "")
+    if not current.isdigit():
+        raise SmokeError("Hosted smokes require the current workflow run identity")
+    since = quote(">=" + (month - LEDGER_LOOKBACK).date().isoformat())
+    runs = paged(
+        f"repos/{REPOSITORY}/actions/workflows/{WORKFLOW}/runs?created={since}", "workflow_runs"
+    )
+    total = Decimal(0)
+    for run in runs:
+        if str(run["id"]) == current:
+            continue
+        # filter=all keeps every attempt, so a rerun cannot hide a paid attempt.
+        jobs = paged(f"repos/{REPOSITORY}/actions/runs/{run['id']}/jobs?filter=all", "jobs")
+        for job in jobs:
+            if job.get("name") != "gate" and started_this_month(job, month):
+                total += reservation(job)
+    return total
+
+
+def check_ledger(environ, cap, now=None):
+    reserved = monthly_reserved(environ, now)
+    if reserved + cap > MONTHLY_BUDGET_CU:
+        raise SmokeError("This total cap would exceed the monthly smoke budget", 3)
+    print(
+        f"Monthly smoke ledger: {reserved:f} CU reserved this month, {cap:f} CU requested,"
+        f" {MONTHLY_BUDGET_CU:f} CU budget"
+    )
 
 
 def passphrase(environ):
@@ -178,9 +266,10 @@ def main(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     gate = commands.add_parser("gate")
     # Admission passes both raw inputs; they are empty on a schedule. The
-    # post-approval recheck passes neither and freezes nothing.
+    # post-approval recheck passes only the frozen cap and freezes nothing.
     gate.add_argument("--max-cu")
     gate.add_argument("--plan")
+    gate.add_argument("--recheck-cu")
     for command in ("prepare", "seal"):
         item = commands.add_parser(command)
         item.add_argument("--root", type=Path, required=True)
@@ -191,12 +280,17 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "gate":
-            frozen = None
-            if args.max_cu is not None or args.plan is not None:
-                frozen = admission(os.environ, args.max_cu, args.plan)
+            if args.recheck_cu is not None:
+                if args.max_cu is not None or args.plan is not None:
+                    raise SmokeError("Recheck only the cap frozen by admission")
+                plan, cap = None, decimal_cost(args.recheck_cu)
+                if cap <= 0:
+                    raise SmokeError("Recheck a positive frozen cap", 3)
+            else:
+                plan, cap = admission(os.environ, args.max_cu, args.plan)
             check_gate(os.environ)
-            if frozen is not None:
-                plan, cap = frozen
+            check_ledger(os.environ, cap)
+            if plan is not None:
                 with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
                     output.write(f"max_cu={cap:f}\nplan={plan}\n")
                 print(f"Admitted the {plan} smoke plan with a {cap:f} CU total cap")

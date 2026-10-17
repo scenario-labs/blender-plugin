@@ -4,6 +4,7 @@ name: CI
 
 on:
   pull_request:
+  merge_group:
   push:
     branches: [main]
 
@@ -15,6 +16,44 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.classify.outputs.native }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+      - name: Decide whether the change needs the Blender baseline
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          # Pushes and merge queue groups run every workload.
+          native=true
+          # A pull request checks out its merge commit; the first parent is the base.
+          if [ "$EVENT_NAME" = pull_request ] && git rev-parse -q --verify HEAD^2 >/dev/null \
+              && paths=$(git diff --no-renames --name-only HEAD^1 HEAD) && [ -n "$paths" ]; then
+            native=false
+            while IFS= read -r path; do
+              case "$path" in
+                docs/* | .agents/* | .claude/* | .codex/* | .github/ISSUE_TEMPLATE/*) ;;
+                .github/pull_request_template.md) ;;
+                tools/site_proxy/* | tests/site/*) ;;
+                .clusterfuzzlite/* | tests/fuzz/*) ;;
+                .nvmrc | package.json | pnpm-lock.yaml | vitest.config.mts) ;;
+                */*) echo "Native input: $path"; native=true ;;
+                *.md) ;;
+                *) echo "Native input: $path"; native=true ;;
+              esac
+            done <<< "$paths"
+          fi
+          echo "native=$native" | tee -a "$GITHUB_OUTPUT"
+
   lint:
     uses: ./.github/workflows/python-lint.yml
   unit:
@@ -22,31 +61,44 @@ jobs:
   sdk:
     uses: ./.github/workflows/sdk-contracts.yml
   blender:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     uses: ./.github/workflows/blender-baseline.yml
   knowledge:
     uses: ./.github/workflows/knowledge.yml
   agents:
     uses: ./.github/workflows/agent-skills.yml
+  site:
+    uses: ./.github/workflows/site.yml
 
   ci-ok:
     name: ci-ok
     if: always()
-    needs: [lint, unit, sdk, blender, knowledge, agents]
+    needs: [changes, lint, unit, sdk, blender, knowledge, agents, site]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every CI workload to succeed
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           LINT_RESULT: ${{ needs.lint.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           SDK_RESULT: ${{ needs.sdk.result }}
           BLENDER_RESULT: ${{ needs.blender.result }}
           KNOWLEDGE_RESULT: ${{ needs.knowledge.result }}
           AGENTS_RESULT: ${{ needs.agents.result }}
+          SITE_RESULT: ${{ needs.site.result }}
+          NATIVE_CHANGES: ${{ needs.changes.outputs.native }}
         run: |
           set -euo pipefail
-          for result in "$LINT_RESULT" "$UNIT_RESULT" "$SDK_RESULT" \
-              "$BLENDER_RESULT" "$KNOWLEDGE_RESULT" "$AGENTS_RESULT"; do
+          blender="$BLENDER_RESULT"
+          if [ "$blender" = skipped ] && [ "$NATIVE_CHANGES" = false ]; then
+            echo "Blender baseline skipped: the pull request changes no native inputs"
+            blender=success
+          fi
+          for result in "$CHANGES_RESULT" "$LINT_RESULT" "$UNIT_RESULT" \
+              "$SDK_RESULT" "$blender" "$KNOWLEDGE_RESULT" "$AGENTS_RESULT" \
+              "$SITE_RESULT"; do
             if [ "$result" != success ]; then
               echo "A required CI workload did not succeed: $result"
               exit 1

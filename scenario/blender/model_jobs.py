@@ -15,20 +15,21 @@ from mathutils import Matrix
 
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
-from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, EstimateStartedJob
-from ..core.jobs import failures, progress, refresh_backoff, workflow_nodes
+from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, AdapterError, EstimateStartedJob
+from ..core.jobs import failures, progress, reconcile, refresh_backoff, workflow_nodes
 from ..core.jobs.coordinator import (
     UNCONFIRMED,
     CancellationUnsupported,
     DecisionRefused,
     DecisionUncertain,
+    RecoveryError,
     RemoteSnapshot,
     cancellable_job,
 )
 from ..core.jobs.preview_scheduler import BATCH_LIMIT
 from ..core.jobs.records import JobRecord
 from ..core.jobs.result_files import CHECKING, UNAVAILABLE, VERIFIED, ResultFiles
-from ..core.jobs.results import ResultError
+from ..core.jobs.results import DownloadCanceled, ResultError
 from ..core.jobs.store import (
     JobOrigin,
     JobState,
@@ -79,12 +80,15 @@ CANCEL_UNSUPPORTED = (
     "Scenario documents cancellation only for inference jobs and has not confirmed "
     "this job as one; nothing was sent and the job keeps running"
 )
+# A download the user stopped: nothing partial was saved and Resume starts it again.
+DOWNLOAD_STOPPED = "Download stopped; nothing partial was saved. Resume download starts it again"
 # Shared by the native World operator and MCP prepare_result_application.
 NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
 # Native review notes for a submission Scenario never confirmed; MCP keeps the error.
 UNCONFIRMED_REVIEW = (
-    "Scenario may have started this request. Check your Scenario history; "
-    "if it isn't there, choose Mark reviewed, then you can send it again."
+    "Scenario may have started this request. If a listed cloud job is it, link it "
+    "with Choose cloud job; if it isn't there, choose Mark reviewed, then you can "
+    "send it again."
 )
 UNCONFIRMED_REVIEWED = (
     "Marked reviewed for this session: an identical request can be sent again. "
@@ -114,6 +118,9 @@ STALE_GRACE = 2 * POLL_INTERVAL
 # re-signs up to 50 candidate URLs, and only a decision moves the job on.
 STEP_POLL_INTERVAL = 15.0
 DECIDE = "decide_workflow_node"
+# Read-only cloud candidates for an unconfirmed submission, and a person's link.
+FIND = "unconfirmed_candidates"
+LINK = "link_unconfirmed"
 # What happened to one finished decision command; see ModelJobs.decision_outcome.
 DECISION_OUTCOMES = ("applied", "refused", "uncertain", "not_sent")
 
@@ -280,6 +287,16 @@ class StepProjection:
 
 
 @dataclass
+class CloudLookup:
+    """Cloud candidates listed for one unconfirmed record revision; memory only."""
+
+    revision: int
+    candidates: tuple = ()
+    complete: bool = True
+    error: str = ""
+
+
+@dataclass
 class CloudRecovery:
     job_id: str
     model_id: str
@@ -403,6 +420,8 @@ class ModelJobs:
         self._step_errors = {}
         self._unreadable_steps = set()
         self._paused = set()
+        # Downloads the user asked to stop; their command reports the outcome.
+        self._stopping = set()
         self._images = {}
         self._receipts = {}
         self._automatic_application = set()
@@ -446,6 +465,12 @@ class ModelJobs:
         self._model_imports = {}
         self.cloud_reads = {}
         self._cloud_read_owner = object()
+        # request_id -> CloudLookup for unconfirmed submissions, and the requests
+        # this session already looked up automatically (once each). Memory only.
+        self._lookups = {}
+        self._looked_up = set()
+        # request_id -> prompt texts read for copying; memory only, never saved.
+        self._prompt_texts = {}
 
     def recover_cloud(self, job_id, model_id, scene):
         """Save one selected cloud job for explicit recovery, never automatic import."""
@@ -679,8 +704,13 @@ class ModelJobs:
             if not task.done():
                 continue
             del self._commands[request_id]
+            stopped = request_id in self._stopping
+            self._stopping.discard(request_id)
             if command == DECIDE:
                 self._finish_decision(request_id, task)
+                continue
+            if command in (FIND, LINK):
+                self._finish_lookup(request_id, command, task)
                 continue
             destination = self._application_destinations.pop(request_id, None)
             media = self._media_destinations.pop(request_id, None)
@@ -771,6 +801,8 @@ class ModelJobs:
                 elif command in ("refresh_remote", "cancel_remote"):
                     observed = completion.result
                     self._refresh_failures.pop(request_id, None)
+                elif command == "read_prompt_results":
+                    self._prompt_texts[request_id] = tuple(completion.result.prompts)
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except first_frame_handoff.FirstFrameHandoffError as error:
                 self._remember_first_frame(request_id, first_frame, error=error.reason)
@@ -837,6 +869,14 @@ class ModelJobs:
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
+                elif (
+                    stopped
+                    and command == "download_results"
+                    and isinstance(error, DownloadCanceled)
+                ):
+                    # Only the cancellation itself reads as a stop; a real
+                    # failure at the same moment keeps the review wording.
+                    self._pause(request_id, DOWNLOAD_STOPPED)
                 elif command in ("refresh_remote", "cancel_remote") and self._refresh_failed(
                     request_id, command, error
                 ):
@@ -878,6 +918,9 @@ class ModelJobs:
             )
             view.meta["saved_revision"] = record.revision
             view.meta["saved_state"] = record.state.value
+            self._lookup_automatically(request_id, record, online)
+            self._project_lookup(request_id, record, view)
+            view.meta["prompt_texts"] = self._prompt_texts.get(request_id, ())
             self._project_steps(request_id, record)
             view.meta["recovery_actions"] = self.actions(record)
             # Native first-frame controls name only the stills a review accepts.
@@ -1603,20 +1646,33 @@ class ModelJobs:
             # translate submission, can be canceled locally like MCP allows.
             # The shared command rejects it once dispatch claims the revision.
             return ("cancel_prepared",)
+        if self._stoppable(record):
+            return ("stop_download",)
         if request_id in self._commands or request_id in self.submissions:
             return ()
         if request_id in self._receipts:
             return ("retry_receipt",)
         if state in UNCONFIRMED:
+            actions = []
+            if record.intent.operation in reconcile.JOB_TYPES:
+                # Read-only listing; only a person links one, in Blender.
+                actions.append("find_cloud_job")
+                if self._candidates(request_id, record):
+                    actions.append("link_cloud_job")
             # An identical request stays refused until the user reviews this one.
-            return () if self.session.unconfirmed_reviewed(request_id) else ("mark_reviewed",)
+            if not self.session.unconfirmed_reviewed(request_id):
+                actions.append("mark_reviewed")
+            return tuple(actions)
         if any(item.state == LocalApplicationState.APPLYING for item in record.local_applications):
             return ()
         reusable = state in (JobState.READY, JobState.APPLY_FAILED) or (
             state == JobState.APPLIED and len(record.local_applications) < 128
         )
         if record.intent.operation in {"prompt", "translate"}:
-            return ("refresh",) if state == JobState.REMOTE else ()
+            if state == JobState.REMOTE:
+                return ("refresh",)
+            # Text results are read into memory only, for copying after a restart.
+            return ("read_prompt_text",) if state == JobState.SUCCEEDED else ()
         from .blockout_recovery import available as blockout_available
 
         if blockout_available(record):
@@ -1669,6 +1725,22 @@ class ModelJobs:
             actions.append("retry_receipt")
         return tuple(actions)
 
+    def _stoppable(self, record):
+        """Whether this owner's own download of `record` is running and not yet stopped.
+
+        Only a `downloading` record whose download task this owner started can be
+        stopped; a download another session or a restarted owner runs is not offered.
+        """
+        request_id = record.intent.request_id
+        command = self._commands.get(request_id)
+        return (
+            record.state == JobState.DOWNLOADING
+            and command is not None
+            and command[0] == "download_results"
+            and not command[1].done()
+            and request_id not in self._stopping
+        )
+
     def control(self, request_id, expected_revision, action):
         """Explicit recovery never reconstructs a quote or approves another import."""
         record = self.store.get(request_id)
@@ -1712,10 +1784,19 @@ class ModelJobs:
                 "use_first_frame",
                 "recover_blockout",
                 "review_step",
+                "link_cloud_job",
             }
         ):
             raise ScenarioError(0, "The saved job or available action changed; inspect it again")
         view = self._view(record)
+        if action == "stop_download":
+            # Signal the running transfer; its completion saves download_failed
+            # with no receipt for the unfinished asset, and Resume restarts it.
+            self.session.cancel_download(self._commands[request_id][1])
+            self._stopping.add(request_id)
+            self._automatic_application.discard(request_id)
+            view.meta["recovery_actions"] = ()
+            return None
         if action == "mark_reviewed":
             # Local and session-only: nothing is sent, saved or resubmitted.
             self.session.mark_unconfirmed_reviewed(request_id, expected_revision=expected_revision)
@@ -1744,7 +1825,13 @@ class ModelJobs:
             self._paused.discard(request_id)
             view.error = None
             return None
+        if action == "find_cloud_job":
+            lookup = self._lookups.get(request_id)
+            if lookup is not None:
+                lookup.error = ""
         command = {
+            "find_cloud_job": FIND,
+            "read_prompt_text": "read_prompt_results",
             "refresh": "refresh_remote",
             "cancel": "cancel_remote",
             "recover_download": "recover_downloads",
@@ -1767,6 +1854,163 @@ class ModelJobs:
             self._paused.discard(request_id)
         else:
             self._paused.add(request_id)
+        return task
+
+    def _candidates(self, request_id, record):
+        """Candidates listed for this exact unconfirmed revision, or ()."""
+        lookup = self._lookups.get(request_id)
+        if lookup is None or lookup.revision != record.revision:
+            return ()
+        return lookup.candidates
+
+    def _lookup_automatically(self, request_id, record, online):
+        """List cloud candidates once per session for an abandoned unconfirmed request.
+
+        Read-only: one bounded `jobs.list` read, never a pick. A request this
+        session is still sending, or one with a command in flight, waits.
+        """
+        if (
+            record.state not in UNCONFIRMED
+            or record.intent.operation not in reconcile.JOB_TYPES
+            or not online
+            or request_id in self._looked_up
+            or request_id in self.submissions
+            or request_id in self._commands
+        ):
+            return
+        self._looked_up.add(request_id)
+        try:
+            task = self.session.unconfirmed_candidates(
+                request_id, expected_revision=record.revision
+            )
+        except Exception:
+            self._lookups[request_id] = CloudLookup(
+                record.revision, error="Could not look in cloud history; try again"
+            )
+            return
+        self._commands[request_id] = (FIND, task)
+
+    def _finish_lookup(self, request_id, command, task):
+        """Keep a listing or a link outcome; neither pauses or resumes other delivery."""
+        try:
+            completions = self.session.drain(task=task)
+            if not completions:
+                raise RuntimeError("Missing cloud lookup completion")
+            if completions[0].error is not None:
+                raise completions[0].error
+            result = completions[0].result
+        except reconcile.LinkRefused as error:
+            message = f"{error}; nothing was saved"
+        except StoreConflict as error:
+            message = str(error)
+        except RecoveryError as error:
+            # The coordinator's own fixed reasons, such as a job outside this project.
+            message = f"{error}; nothing was saved" if command == LINK else str(error)
+        except AdapterError as error:
+            if command == FIND and "Online access" in str(error):
+                # Nothing was read: look again automatically once access is allowed.
+                self._looked_up.discard(request_id)
+                message = "Online access is disabled; nothing was read"
+            else:
+                message = (
+                    "Could not confirm the chosen cloud job; nothing was saved"
+                    if command == LINK
+                    else "Could not look in cloud history; try again"
+                )
+        except Exception:
+            message = (
+                "Could not confirm the chosen cloud job; nothing was saved"
+                if command == LINK
+                else "Could not look in cloud history; try again"
+            )
+        else:
+            message = ""
+        view = self.views.get(request_id)
+        if command == FIND:
+            if message:
+                previous = self._lookups.get(request_id)
+                self._lookups[request_id] = CloudLookup(
+                    previous.revision if previous else -1,
+                    previous.candidates if previous else (),
+                    previous.complete if previous else True,
+                    message,
+                )
+            else:
+                self._lookups[request_id] = CloudLookup(
+                    result.record.revision, result.candidates, result.complete
+                )
+            return
+        if message:
+            lookup = self._lookups.get(request_id)
+            if lookup is not None:
+                lookup.error = message
+            return
+        # The linked job is now an ordinary known remote job: poll it right away.
+        self._lookups.pop(request_id, None)
+        self._paused.discard(request_id)
+        self._next_poll[request_id] = 0
+        if view is not None:
+            view.error = None
+            view.meta["review_note"] = None
+
+    def _project_lookup(self, request_id, record, view):
+        """Drawing and MCP read the lookup from the view; nothing here reads the network."""
+        if record.state not in UNCONFIRMED or record.intent.operation not in reconcile.JOB_TYPES:
+            view.meta["cloud_lookup"] = None
+            view.meta["cloud_candidates"] = ()
+            return
+        command = self._commands.get(request_id, (None,))[0]
+        lookup = self._lookups.get(request_id)
+        candidates = self._candidates(request_id, record)
+        icon = "INFO"
+        if command == FIND:
+            note, icon = "Looking in cloud history...", "TIME"
+        elif command == LINK:
+            note, icon = "Saving the chosen cloud job...", "TIME"
+        elif lookup is not None and lookup.error:
+            note, icon = lookup.error, "ERROR"
+        elif lookup is None or lookup.revision != record.revision:
+            note = None
+        elif not candidates:
+            note = (
+                "No matching cloud job found"
+                if lookup.complete
+                else "No matching cloud job among the newest jobs"
+            )
+        else:
+            count = len(candidates)
+            note = f"{count} possible cloud job{'s' if count != 1 else ''} found"
+        view.meta["cloud_lookup"] = note
+        view.meta["cloud_lookup_icon"] = icon
+        view.meta["cloud_candidates"] = tuple(asdict(item) for item in candidates)
+
+    def link(self, request_id, expected_revision, remote_job_id):
+        """Queue a person's confirmed choice of one listed cloud job. Native only.
+
+        The choice must be one of the candidates listed for this exact saved
+        revision; the coordinator verifies it again with a fresh retrieval
+        before saving. Nothing is submitted.
+        """
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or "link_cloud_job" not in self.actions(record)
+            or remote_job_id not in {item.job_id for item in self._candidates(request_id, record)}
+        ):
+            raise ScenarioError(0, "The saved job or its cloud candidates changed; look again")
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access before contacting Scenario")
+        view = self._view(record)
+        task = self.session.link_unconfirmed(
+            request_id, expected_revision=expected_revision, remote_job_id=remote_job_id
+        )
+        self._commands[request_id] = (LINK, task)
+        # A chosen job may not be this request's: its results always wait for review.
+        self._automatic_application.discard(request_id)
+        self._lookups[request_id].error = ""
+        view.meta["recovery_actions"] = ()
         return task
 
     def show_canceled(self, record):
@@ -2629,6 +2873,12 @@ class ModelJobs:
             "status_notes": list(view.meta.get("status_notes", ())) if view is not None else [],
             # Only the user marks an unconfirmed request reviewed, in Blender's Jobs list.
             "actions": tuple(item for item in self.actions(record) if item not in NATIVE_ONLY),
+            # Read-only cloud candidates for an unconfirmed submission; only the
+            # user links one, in Blender. A candidate is not proof of identity.
+            "cloud_lookup": view.meta.get("cloud_lookup") if view is not None else None,
+            "cloud_candidates": [
+                asdict(item) for item in self._candidates(record.intent.request_id, record)
+            ],
             "error": self.views[record.intent.request_id].error
             if record.intent.request_id in self.views
             else None,

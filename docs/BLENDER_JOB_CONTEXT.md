@@ -911,6 +911,13 @@ revision. Queued commands retain their original scope.
   the offer and pauses delivery with the same message, without a claim.
 - `recover_download` verifies interrupted saved receipts under the existing lock,
   without network access or import.
+- `stop_download` (**Stop download**) is offered only for a `downloading` record
+  whose download command this owner started and is still running; a download
+  another session or a restarted owner runs offers nothing. It signals the
+  command's [transfer-lane cancel](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume)
+  without a confirmation, since nothing is lost: the job becomes
+  `download_failed` with no receipt for the unfinished asset, delivery pauses
+  with a note that nothing partial was saved, and `resume` downloads it again.
 - `retry_receipt` saves an already completed local application's outcome without
   any scene mutation. The exact pending owner-local handle must still exist.
 - `mark_reviewed` is offered for a `submitting` or `uncertain` record with no
@@ -918,6 +925,30 @@ revision. Queued commands retain their original scope.
   are refused. After native confirmation (**Mark reviewed**) it lets them through
   for this session only, sending and saving nothing. MCP `job_status` omits it
   and `recover_local_job` refuses it.
+- `find_cloud_job` is offered for the same records of a model, workflow, prompt or
+  translate operation. It queues the read-only
+  [candidate lookup](JOB_COORDINATOR.md#unconfirmed-submission-candidates-and-links)
+  through `JobSession.unconfirmed_candidates`. `ModelJobs` also runs it once per
+  session for each such record it shows while Online Access is allowed and no
+  command for it is in flight. The view's `cloud_lookup` note and
+  `cloud_candidates` rows, kept in memory for that saved revision, are what MCP
+  `job_status` reports too.
+- `link_cloud_job` is offered while candidates are listed for the current revision.
+  Its **Choose cloud job...** dialog lists them with no job selected, warns that
+  Scenario cannot tell which job the request created and that linking cannot be
+  undone, and **Link this job** calls `ModelJobs.link`, which accepts only a
+  listed candidate and queues `JobSession.link_unconfirmed`. A refused link keeps
+  the record and shows the reason as the lookup note; a saved one resumes
+  automatic polling at once. Its results are never imported automatically, even
+  in the Image session that sent the request: they wait for explicit review. MCP
+  lists and accepts neither this action nor a link, so only the user decides
+  which job a lost request created.
+- `read_prompt_text` is offered for a finished `prompt` or `translate` job. It reads
+  the text through `JobSession.read_prompt_results` into memory only, and each text
+  gets a preview and **Copy prompt text**; nothing writes a prompt field. MCP uses
+  its own `read_prompt_result` tool instead. Within the session that sent it, a
+  prompt action that stopped on an unconfirmed submission reads its linked job's
+  text into its unchanged field once Scenario reports success.
 - `cancel_prepared` is offered for any unsent prepared intent: model (including
   Blockout), workflow, Film task, prompt or translate, including one queued behind
   other work. Prompt, translate, Blockout and restarted intents get a Jobs panel
@@ -940,7 +971,7 @@ label, icon, operator and operator properties (the context token, then either
 the request ID and observed revision or a ready Blockout review ID, and any
 asset, purpose, action, or workflow node and step review ID). Each job-action descriptor
 keeps its `ModelJobs.actions` name, which MCP `job_status` reports except
-`mark_reviewed`. `import_model`
+`mark_reviewed`, `link_cloud_job` and `read_prompt_text`. `import_model`
 draws one control per importable unit that `ModelJobs` projected into the view,
 in classified order, instead of one per GLB media type. The sidebar
 Jobs and Generations panels, and the Studio Jobs and Results pages that reuse

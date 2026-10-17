@@ -77,7 +77,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **11**. SQLite transactions
+The database has an application ID and schema version **12**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -93,7 +93,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 10 upgrade in one
+its database disappears. Previous shared schemas 2 through 11 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -107,7 +107,8 @@ schema 6 preserves its captured mesh sources. Schema 7 cloud results remain
 cloud records without synthetic spend or Film bindings. Schemas before 10
 receive the asset's own file and no projection (see
 [schema 10](#schema-10-declared-originals-and-lane-defaults)). Schema 10 rows keep
-their exact bytes ([schema 11](#schema-11-wav-originals)). Older extension builds
+their exact bytes ([schema 11](#schema-11-wav-originals)). Schemas before 12 receive
+an unknown submission claim time ([schema 12](#schema-12-submission-claim-time)). Older extension builds
 reject a newer schema; stop older Blender processes before upgrading and do not
 expect an older build to open the upgraded store.
 
@@ -139,7 +140,7 @@ This is an explicit cloud read, not bulk import of the prototype registry.
 | --- | --- |
 | Prepared intent | `prepared` → `submitting` or local `canceled` |
 | Submission attempt | `submitting` → `remote` with a remote ID, or `uncertain` |
-| Lost response | `uncertain` → `remote` only after authoritative correlation |
+| Lost response | `uncertain`, or a `submitting` left by an earlier session, → `remote` only through `link_remote`, after a person's confirmed choice that a fresh retrieval verified |
 | Remote job | `remote` → observed `succeeded`, `failed` or `canceled`, or durable `cancel_requested` |
 | Cancellation claim | `cancel_requested` → observed `succeeded`, `failed` or `canceled`; never reset or replay |
 | Download | `succeeded` → `downloading` → `ready` or `download_failed`; explicit download retry is allowed |
@@ -581,3 +582,32 @@ tests build a schema 10 store from the upgraded schema 9 fixture plus a saved la
 default, and check the upgrade, its rollback and refusal by a schema 10 reader. The
 [package update check](development/validation.md#scenario-package-state-across-updates)
 opens the upgraded store with the predecessor package's own storage code.
+
+## Schema 12: submission claim time
+
+Scenario offers no idempotency key or client reference for paid submissions, so
+a lost response cannot be matched to its job. The coordinator lists recent cloud
+jobs of the same kind for a person to choose from
+([candidates and links](JOB_COORDINATOR.md#unconfirmed-submission-candidates-and-links)).
+To narrow and order that list, schema 12 adds `claimed_at` to every job record:
+the wall-clock time of the `prepared` → `submitting` claim, as a UTC ISO 8601
+string with milliseconds (`2026-10-14T21:18:11.123Z`). Only that transition sets
+it, later transitions keep it, and a prepared or cloud record must not have one.
+It is display data for the candidate list, never correlation or spending authority.
+
+`link_remote(request_id, expected_revision=..., remote_job_id=...)` is the only way
+an unconfirmed record gains a remote ID without its own receipt. In one immediate
+transaction it requires the exact revision of a `submitting` or `uncertain` record,
+refuses a remote ID already saved by any record in the scope, including adopted
+cloud records, and saves `remote`. The coordinator verifies the job first.
+`remote_job_ids()` lists the scope's saved IDs, selected in SQLite, so candidates
+already saved are left out without decoding history.
+
+Opening a schema 11 store upgrades it in one immediate transaction like earlier
+schemas: every row is decoded and rewritten with `claimed_at: null`, an unknown
+time that is never guessed, and Film upload associations and lane defaults are
+rechecked and preserved byte for byte. A row that already names a claim time, one
+invalid row or a failed commit leaves the schema 11 file unchanged. A schema 11
+build refuses the upgraded store as an unsupported format. The unit and installed tests
+rebuild `tests/fixtures/synthetic/jobs-schema11.sql`, a store written by the schema 11
+release's storage code, and check the upgrade, its rollback and refusal by a schema 11 reader.

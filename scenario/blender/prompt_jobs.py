@@ -32,6 +32,9 @@ class PromptAction:
     cost: str = ""
     error: str = ""
     next_poll: float = 0.0
+    # The submission's outcome was unconfirmed when this action stopped; once
+    # the user links its cloud job and it finishes, the action reads its text.
+    unconfirmed: bool = False
 
 
 class PromptJobs:
@@ -75,7 +78,9 @@ class PromptJobs:
             saved = self.store.get(current.request_id)
             if saved is not None and saved.state in {JobState.SUBMITTING, JobState.UNCERTAIN}:
                 raise ScenarioError(
-                    0, "Inspect the uncertain saved prompt job before another generation"
+                    0,
+                    "Find the unconfirmed prompt job's cloud job in Jobs, or mark it "
+                    "reviewed there, before another generation",
                 )
         target = scene.scenario.lane_state(lane)
         if target is None:
@@ -163,10 +168,43 @@ class PromptJobs:
         # Delivered by maintenance, after the approval operator has returned.
         file_state.mark_modified("Scenario prompt")
 
+    def _resume_linked(self, item):
+        """Read a linked job's text into the unchanged field once Scenario finishes it."""
+        if item.phase != "ERROR" or not item.unconfirmed or item.task is not None:
+            return
+        try:
+            record = self.store.get(item.request_id)
+        except Exception:
+            return
+        if record is None or record.state in {JobState.SUBMITTING, JobState.UNCERTAIN}:
+            return
+        if record.state == JobState.REMOTE:
+            item.error = "Linked cloud job is still running; its text follows when it finishes"
+            return
+        if record.state == JobState.SUCCEEDED and not self._online():
+            # Keep waiting: the text is read once Online Access is allowed again.
+            item.error = "Linked cloud job finished; allow Online Access to read its text"
+            return
+        item.unconfirmed = False
+        if record.state != JobState.SUCCEEDED:
+            item.error = "Prompt action stopped; inspect the saved job"
+            return
+        try:
+            self._binding(item, item.scene)
+            item.task = self.session.read_prompt_results(
+                item.request_id, expected_revision=record.revision
+            )
+        except Exception:
+            item.error = "The prompt changed; read the linked job's text from Jobs"
+            return
+        item.phase, item.error = "READING", ""
+
     def poll(self):
         if not self.session.active:
             return
         for item in tuple(self.actions.values()):
+            if item.request_id:
+                self._resume_linked(item)
             if item.phase not in BUSY:
                 continue
             try:
@@ -221,6 +259,20 @@ class PromptJobs:
                     if item.request_id
                     else "Prompt price unavailable or inputs changed; request a new price"
                 )
+                if item.request_id:
+                    try:
+                        saved = self.store.get(item.request_id)
+                    except Exception:
+                        saved = None
+                    item.unconfirmed = saved is not None and saved.state in {
+                        JobState.SUBMITTING,
+                        JobState.UNCERTAIN,
+                    }
+                    if item.unconfirmed:
+                        item.error = (
+                            "Submission unconfirmed; find its cloud job in Jobs, "
+                            "never send it again"
+                        )
 
     def _stopped(self, request_id):
         # Local cancellation makes a queued submission fail its stored-state

@@ -222,3 +222,33 @@ The live-provider, other-OS and release limitations above still apply.
 ![Save for recovery is enabled in Edit Mode](../images/cloud-recovery-edit-mode.png)
 
 ![The paused cloud record survives switching to another scene](../images/cloud-recovery-scene-switch.png)
+
+## Unconfirmed submission recovery controls
+
+A saved job whose submission Scenario never confirmed shows **Submission not
+confirmed** and, under it, the cloud lookup's note: **Looking in cloud
+history...**, **N possible cloud jobs found**, **No matching cloud job found**
+or the reason a lookup or link failed. Blender looks once per session for each
+such job it shows while Online Access is allowed; **Find in cloud history** looks
+again. Both only read Scenario's job list.
+
+While candidates are listed, **Choose cloud job...** opens a dialog that says
+Scenario cannot tell which job the request created, that linking cannot be
+undone and that results still need review. Each candidate shows when it was
+created relative to sending (or its UTC time when the send time is unknown), its
+status and cost on one line and its prompt on the next. No job is selected at
+first; **Link this job** without a choice links nothing. A link Scenario's fresh
+retrieval refuses keeps the job unconfirmed and shows why. A saved link turns
+the row into an ordinary running job, polled and downloaded as usual; its
+results wait for review, even on the Image lane that sent the request. **Mark
+reviewed** stays available. The compact job strip still offers only **Inspect**
+for these jobs.
+
+A finished prompt helper job offers **Read prompt text**, then a preview and
+**Copy prompt text** for each text. In the session that sent it, a prompt action
+stopped by an unconfirmed submission fills its unchanged field once the linked
+job finishes.
+
+Installed tests cover the candidate dialog's operator and the link flow for a
+model, a workflow and a prompt helper job with a synthetic SDK transport. The
+desktop check of the dialog, its focus and viewport input afterward is pending.

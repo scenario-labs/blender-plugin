@@ -360,8 +360,25 @@ uv run --locked --no-env-file python tools/make_job_store_fixture.py \
 cmp /path/to/new/jobs-schema9.sql tests/fixtures/synthetic/jobs-schema9.sql
 ```
 
+## Schema 11 job store
+
+`synthetic/jobs-schema11.sql` is the same kind of first-party GPL-3.0-or-later
+dump, written by the schema 11 storage code of the schema 11 release commit
+`861d554e`. It holds the schema 9 fixture's rows plus three that schema 10 and 11
+code could write: a saved lane default, a ready job whose results are a declared
+WAV original and an equirectangular EXR original, and an uncertain model request.
+The [schema 12](../unit/test_job_store_schema12.py) upgrade tests and the
+installed-ZIP store test rebuild it the same way:
+
+```sh
+git archive 861d554e scenario | tar -x -C /path/to/empty-directory
+uv run --locked --no-env-file python tools/make_job_store_fixture.py \
+  --source /path/to/empty-directory --output /path/to/new/jobs-schema11.sql
+cmp /path/to/new/jobs-schema11.sql tests/fixtures/synthetic/jobs-schema11.sql
+```
+
 The tool never overwrites a file: `--output` must name a new `.sql` path, so delete
 the committed fixture first only when intentionally replacing it. It refuses any
-source whose store is not schema 9, imports nothing from the current checkout and
+source whose store is not schema 9 or 11, imports nothing from the current checkout and
 writes the database only to a temporary directory. The dump records rows, schema
 and index definitions, not SQLite page layout, which the upgrade does not depend on.

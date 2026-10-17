@@ -36,6 +36,7 @@ from ..core.jobs.organization import (
 )
 from ..core.jobs.origins import OriginRevisions
 from ..core.jobs.preview_scheduler import ResultPreviewScheduler
+from ..core.jobs.reconcile import CandidateLookup
 from ..core.jobs.results import (
     ModelTextResult,
     PreparedModelImport,
@@ -673,6 +674,16 @@ class JobSession:
             "refresh_remote", request_id, expected_revision, automatic=automatic
         )
 
+    def unconfirmed_candidates(self, request_id, *, expected_revision):
+        """Queue a read-only cloud listing for an unconfirmed request; saves nothing."""
+        return self._record_command("unconfirmed_candidates", request_id, expected_revision)
+
+    def link_unconfirmed(self, request_id, *, expected_revision, remote_job_id):
+        """Queue a confirmed, verified link of one cloud job; never submits."""
+        return self._record_command(
+            "link_unconfirmed", request_id, expected_revision, remote_job_id=remote_job_id
+        )
+
     def adopt_cloud_job(self, identifier, *, expected_model_id, scene):
         """Queue an explicit cloud-result read; this never approves scene application."""
         _main_thread()
@@ -731,8 +742,18 @@ class JobSession:
         return self._record_command("load_results", request_id, expected_revision)
 
     def download_results(self, request_id, *, expected_revision):
-        """Queue an explicit download using the configured private storage policy."""
+        """Queue an explicit download on the transfer lane under the private storage policy."""
         return self._record_command("download_results", request_id, expected_revision)
+
+    def cancel_download(self, task):
+        """Stop one of this session's downloads at its next chunk, without a receipt.
+
+        The job then reads `download_failed`; its completed receipts stay and a
+        later explicit download resumes the rest. Retirement cancels them all.
+        """
+        _main_thread()
+        if any(pending is task for pending, _ in self._pending):
+            self._workers.cancel_transfer(task)
 
     def verify_results(self, request_id, *, expected_revision):
         """Queue local receipt verification; this does not authorize application."""
@@ -1196,7 +1217,14 @@ class JobSession:
                 if isinstance(result, PreparedModelImport):
                     record = result.verified.record
                 elif isinstance(
-                    result, (RemoteSnapshot, VerifiedResults, PromptResults, ModelTextResult)
+                    result,
+                    (
+                        RemoteSnapshot,
+                        VerifiedResults,
+                        PromptResults,
+                        ModelTextResult,
+                        CandidateLookup,
+                    ),
                 ):
                     record = result.record
                 else:

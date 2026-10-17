@@ -24,6 +24,8 @@ dist/
 # Per-machine files
 .DS_Store
 scenario_output/
+# vercel link records the team and project IDs
+.vercel/
 
 # Working .blend files stay local; tools/blank.blend is the test scene
 tools/*.blend

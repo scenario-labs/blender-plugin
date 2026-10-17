@@ -53,7 +53,7 @@ class McpWaitTests(unittest.TestCase):
                         self.tools.wait_for_job({"job_id": self.rec.job_id, "timeout": value})
             manager.assert_not_called()
 
-    def test_authenticated_wait_keeps_scene_executor_available(self):
+    def test_wait_keeps_scene_executor_available(self):
         protocol = submodule("mcp.protocol")
         server_module = submodule("mcp.server")
         registry = protocol.Registry()
@@ -67,9 +67,7 @@ class McpWaitTests(unittest.TestCase):
             return {"available": True}
 
         registry.add(protocol.ToolSpec("scene_probe", "Fixture", {}, scene_probe))
-        server = server_module.McpServer(
-            "127.0.0.1", 0, "fixture-wait-token", registry, {}, timeout=2
-        )
+        server = server_module.McpServer("127.0.0.1", 0, registry, {}, timeout=2)
         server.start()
         server.port = server._httpd.server_address[1]
         self.addCleanup(server.stop)
@@ -85,10 +83,7 @@ class McpWaitTests(unittest.TestCase):
                         "params": {"name": name, "arguments": arguments or {}},
                     }
                 ).encode(),
-                headers={
-                    "Authorization": "Bearer fixture-wait-token",
-                    "Content-Type": "application/json",
-                },
+                headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(req, timeout=5) as response:
                 return json.load(response)

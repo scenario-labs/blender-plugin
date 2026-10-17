@@ -224,16 +224,10 @@ def test_every_paid_local_mcp_tool_asks_first():
     assert asked == paid
 
 
-def test_mcp_template_matches_documented_client_setup_without_a_token():
+def test_mcp_template_matches_documented_client_setup():
     assert set(MCP) == {"mcpServers"}
     assert set(MCP["mcpServers"]) == {SERVER}
-    server = MCP["mcpServers"][SERVER]
     doc = (ROOT / "docs/MCP.md").read_text(encoding="utf-8")
     documented = re.search(r"claude mcp add --transport (\S+) (\S+) (\S+)", doc)
     assert documented[2] == SERVER
-    assert server == {
-        "type": documented[1],
-        "url": documented[3],
-        "headers": {"Authorization": "Bearer ${SCENARIO_BLENDER_TOKEN}"},
-    }
-    assert "SCENARIO_BLENDER_TOKEN" in doc
+    assert MCP["mcpServers"][SERVER] == {"type": documented[1], "url": documented[3]}

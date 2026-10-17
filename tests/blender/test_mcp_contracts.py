@@ -129,7 +129,7 @@ class McpContractTests(unittest.TestCase):
                             method(args)
             manager.assert_not_called()
 
-    def test_authenticated_http_discovery_exposes_all_real_tool_contracts(self):
+    def test_http_discovery_exposes_all_real_tool_contracts(self):
         protocol = submodule("mcp.protocol")
         server_module = submodule("mcp.server")
         registry = protocol.Registry()
@@ -141,7 +141,6 @@ class McpContractTests(unittest.TestCase):
         server = server_module.McpServer(
             "127.0.0.1",
             port,
-            "synthetic-contract-token",
             registry,
             {"name": "test", "version": "0"},
         )
@@ -150,10 +149,7 @@ class McpContractTests(unittest.TestCase):
             request = urllib.request.Request(
                 f"http://{host}:{port}/mcp",
                 data=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode(),
-                headers={
-                    "Authorization": "Bearer synthetic-contract-token",
-                    "Content-Type": "application/json",
-                },
+                headers={"Content-Type": "application/json"},
             )
             with urllib.request.urlopen(request, timeout=5) as response:
                 tools = json.load(response)["result"]["tools"]

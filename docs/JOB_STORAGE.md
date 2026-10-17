@@ -108,7 +108,8 @@ cloud records without synthetic spend or Film bindings. Schemas before 10
 receive the asset's own file and no projection (see
 [schema 10](#schema-10-declared-originals-and-lane-defaults)). Schema 10 rows keep
 their exact bytes ([schema 11](#schema-11-wav-originals)). Schemas before 12 receive
-an unknown submission claim time ([schema 12](#schema-12-submission-claim-time)). Older extension builds
+an unknown submission claim time and no result parents
+([schema 12](#schema-12-submission-claim-time)). Older extension builds
 reject a newer schema; stop older Blender processes before upgrading and do not
 expect an older build to open the upgraded store.
 
@@ -601,21 +602,22 @@ cloud records, and saves `remote`. The coordinator verifies the job first.
 `remote_job_ids()` lists the scope's saved IDs, selected in SQLite, so candidates
 already saved are left out without decoding history.
 
-Opening a schema 11 store upgrades it in one immediate transaction like earlier
-schemas: every row is decoded and rewritten with `claimed_at: null` and each result's
+Opening a schema 11 store upgrades it in one immediate transaction like earlier schemas:
+every row is decoded and rewritten with `claimed_at: null` and each result's
 `parent_id: null`, unknown values that are never guessed, and Film upload associations
-and lane defaults are rechecked and preserved byte for byte. A row that already names a claim time, one
-invalid row or a failed commit leaves the schema 11 file unchanged. A schema 11
-build refuses the upgraded store as an unsupported format. The unit and installed tests
-rebuild `tests/fixtures/synthetic/jobs-schema11.sql`, a store written by the schema 11
-release's storage code, and check the upgrade, its rollback and refusal by a schema 11 reader.
+and lane defaults are rechecked and preserved byte for byte. A row that already names a claim
+time, one invalid row or a failed commit leaves the schema 11 file unchanged. A schema
+11 build refuses the upgraded store as an unsupported format. The unit and installed
+tests rebuild `tests/fixtures/synthetic/jobs-schema11.sql`, a store written by the
+schema 11 release's storage code, and check the upgrade, its rollback and refusal by a
+schema 11 reader.
 
 ### Result parents
 
 Each result also records `parent_id`: the asset ID of another result of the same job
 that it was generated from, read from `metadata.parentId` in the same `assets.retrieve`
-response that describes it, such as the GLB behind a model's OBJ, MTL and maps. A
-parent outside the job, such as an input asset, or an unusable value is stored as
-`null`. The store refuses a parent outside the manifest, the result itself or a
-cycle. A later retrieval keeps the saved value, so lineage never refuses a download.
+response that describes it, such as the GLB behind a model's OBJ, MTL and maps. A parent
+outside the job, such as an input asset, one on a parent cycle or an unusable value is
+stored as `null`. The store refuses a parent outside the manifest, the result itself or
+a cycle. A later retrieval keeps the saved value, so lineage never refuses a download.
 Nothing reads it yet; 3D import does not bind files by parent.

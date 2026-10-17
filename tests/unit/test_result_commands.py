@@ -1217,3 +1217,19 @@ def test_refresh_keeps_the_saved_parent(setup):
     coordinator.download_results("request", expected_revision=manifest.revision)
     assert len(downloader.calls) == 2
     assert _parents(store.get("request")) == [None, None]
+
+
+@pytest.mark.parametrize("later", [None, {}, {"parentId": "asset-two"}])
+def test_refresh_keeps_a_saved_parent_whatever_the_server_reports_later(setup, later):
+    coordinator, store, current, _, assets, downloader, _, _ = setup
+    assets["asset-two"]["metadata"] = {"parentId": "asset-one"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == [None, "asset-one"]
+    if later is None:
+        del assets["asset-two"]["metadata"]
+    else:
+        assets["asset-two"]["metadata"] = later
+    coordinator.download_results("request", expected_revision=manifest.revision)
+    assert len(downloader.calls) == 2
+    assert store.get("request").state == JobState.READY
+    assert _parents(store.get("request")) == [None, "asset-one"]

@@ -25,7 +25,10 @@ summary and no trailing period. For example,
 Pull requests merge through the merge queue: choose **Merge when ready** or run
 `gh pr merge`. The queue squash-merges a PR only after CI passes on it combined with
 the current `main` and any PRs queued ahead of it. A repository admin can bypass the
-queue when merging, which skips that check.
+queue when merging, which skips that check. The queue writes the squash message itself:
+the PR title, then the branch commit messages as the body, which cannot be edited at
+merge time. Put a trailer or footer the squash commit needs, such as `Co-authored-by` or
+`Release-As:`, in the last branch commit.
 
 Squash merges use the PR title as the commit header. Keep branch commits
 conventional too: current CI checks them. Branch commit bodies are optional;

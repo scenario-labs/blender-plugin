@@ -5,13 +5,12 @@
 import json
 import logging
 import os
-import secrets
 import sys
 
 import bpy
 
 from .. import __version__
-from ..mcp import protocol
+from ..mcp import local_token, protocol
 from ..mcp.cli import CLI_COMMAND, cli_banner, resolve_cli_token
 from ..mcp.server import McpServer
 from . import runtime
@@ -49,7 +48,11 @@ def start():
     prefs = runtime.prefs()
     port = prefs.mcp_port if prefs else 9876
     if not runtime.state.mcp_token:
-        runtime.state.mcp_token = secrets.token_urlsafe(24)
+        try:
+            runtime.state.mcp_token = local_token.load_or_create(token_dir())
+        except OSError as err:
+            runtime.state.mcp_error = f"Could not read or save the MCP token: {err}"
+            return None
     try:
         server = McpServer(
             "127.0.0.1",
@@ -86,6 +89,21 @@ def process_pending():
 def masked_token():
     token = runtime.state.mcp_token or ""
     return (token[:4] + "...") if len(token) > 8 else token
+
+
+def token_dir():
+    """The extension's private state folder holds the saved local MCP token."""
+    return runtime.paths().state_dir
+
+
+def new_token():
+    """Replace the saved token; a running server accepts only the new one from now on."""
+    token = local_token.replace(token_dir())
+    runtime.state.mcp_token = token
+    server = runtime.state.mcp
+    if server is not None:
+        server.token = token
+    return token
 
 
 def _blender_python():

@@ -277,7 +277,7 @@ def _sdk_model_types():
     return found[0]
 
 
-# Pinned scenario-sdk 2.2.0 model type literals. An SDK upgrade that changes this set needs a
+# Pinned scenario-sdk 2.3.0 model type literals. An SDK upgrade that changes this set needs a
 # classification review before the expected kinds below are updated.
 SDK_LORA_TYPES = {
     "flux.1-kontext-lora",

@@ -177,7 +177,7 @@ class SDKBundleTests(unittest.TestCase):
         self.assertEqual(requests[0].headers["Host"], "service.example.invalid")
         self.assertNotIn("projectId", requests[0].url.params)
 
-    def test_discovery_extensions_reuse_bundled_sdk_without_project_scope(self):
+    def test_discovery_reuses_bundled_sdk_without_project_scope(self):
         import httpx
 
         requests = []
@@ -205,8 +205,8 @@ class SDKBundleTests(unittest.TestCase):
         import httpx
         from scenario_sdk.resources.workflows import WorkflowsResource
 
-        # SDK issue #33: review the selection fallback once the bundle provides it.
-        self.assertFalse(hasattr(WorkflowsResource, "user_selection"))
+        # Selections use the bundled SDK's generated method (SDK issue #33).
+        self.assertTrue(hasattr(WorkflowsResource, "user_selection"))
         requests = []
         replies = [409, 200, 200]
 

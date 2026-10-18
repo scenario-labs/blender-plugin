@@ -791,10 +791,12 @@ to none. **Apply mesh edit** still reviews only the active mesh.
   accepts (GLB, glTF, FBX or OBJ). **Scene coordinates** use the
   identity mapping; **Fit and verify** fits only that scene base. **Object local
   coordinates** have no meaning for several objects and are refused.
-- `RIG` gives every object its own weights and an Armature modifier to the same
-  returned rig. That rig group is placed in scene coordinates, without a parent,
-  in the first object's collections. Rigged objects have their skins replaced as
-  [for one object](#replace-an-existing-skin).
+- `RETEXTURE` gives each object only the result materials its own faces use, in
+  first-use order.
+- `RIG` gives every object its own weights, with only the bone groups it uses,
+  and an Armature modifier to the same returned rig. That rig group is placed in
+  scene coordinates, without a parent, in the first object's collections. Rigged
+  objects have their skins replaced as [for one object](#replace-an-existing-skin).
 - Every object is revalidated immediately before mutation: one deleted, renamed,
   moved or edited object refuses the whole application. All objects are staged
   before any is published; a failed publication or binding restores the objects

@@ -3314,6 +3314,16 @@ class SeveralSourcesTests(unittest.TestCase):
                 self.assertTrue(name.startswith(faces[index, _rounded(polygon.center)]), name)
         # Without Keep original, the unchanged previous meshes are released.
         self.assertFalse(any(name in bpy.data.meshes for name in names))
+        # Each source keeps only its own result materials, in first-use order.
+        for index, obj in enumerate(self.sources):
+            slots = [material.name for material in obj.data.materials]
+            self.assertEqual(
+                [name[: len(f"Result {index} B")] for name in slots],
+                [
+                    f"Result {index} B",
+                    f"Result {index} A",
+                ],
+            )
 
     def rig(self, weights):
         """One returned rig skinning every copy; weights differ per source and vertex."""
@@ -3436,6 +3446,28 @@ class SeveralSourcesTests(unittest.TestCase):
             for sources, results in ((self.sources, copies[:1]), (self.sources[:1], copies)):
                 with self.assertRaisesRegex(self.mesh.MeshApplicationError, "component limit"):
                     self.mesh.match_sources(sources, tuple(results), identity, "UV")
+
+    def test_rig_gives_each_source_only_the_bone_groups_it_uses(self):
+        weights = {}
+        skin = self.rig(weights)
+
+        def change(index, copy):
+            skin(index, copy)
+            if index == 0:
+                # The first source follows only the root bone.
+                everything = [vertex.index for vertex in copy.data.vertices]
+                copy.vertex_groups["Tip"].remove(everything)
+                copy.vertex_groups["Root"].add(everything, 1.0, "REPLACE")
+                for vertex in copy.data.vertices:
+                    weights[0, _rounded(vertex.co)] = {"Root": 1.0}
+
+        change.extra = skin.extra
+        self.result(change)
+        result = self.apply(policy="RIG")
+        self.assertEqual([group.name for group in self.sources[0].vertex_groups], ["Root"])
+        for obj in self.sources[1:]:
+            self.assertEqual([group.name for group in obj.vertex_groups], ["Root", "Tip"])
+        self.assert_weights(weights, result.rig)
 
     def test_rig_from_one_merged_skin(self):
         weights = {}

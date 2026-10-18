@@ -701,12 +701,21 @@ def _retexture_values(surface, sources):
     return materials, layers, indices, first.uv_layers.active_index
 
 
-def _retexture(staged, values, loop, polygon):
+def _retexture(staged, values, loop, polygon, several=False):
     """Adopt result UV/material bindings without mutating shared shader graphs.
 
     `loop` and `polygon` are this source's starts in the resolved joined values.
+    One of `several` sources keeps only the materials its faces use, in first-use
+    order; one source keeps every result slot.
     """
     materials, layers, indices, active = values
+    local = indices[polygon : polygon + len(staged.polygons)]
+    if several:
+        slots = {}
+        for index in local:
+            slots.setdefault(index, len(slots))
+        materials = [materials[index] for index in slots]
+        local = array("i", (slots[index] for index in local))
     corners = slice(2 * loop, 2 * (loop + len(staged.loops)))
     for layer in tuple(staged.uv_layers):
         staged.uv_layers.remove(layer)
@@ -721,7 +730,7 @@ def _retexture(staged, values, loop, polygon):
     staged.materials.clear()
     for material in materials:
         staged.materials.append(material)
-    staged.polygons.foreach_set("material_index", indices[polygon : polygon + len(staged.polygons)])
+    staged.polygons.foreach_set("material_index", local)
 
 
 def _stage(source, result, policy, mapping):
@@ -758,7 +767,7 @@ def _stage_surface(source, surface, policy, values, part=0):
     staged = source.copy()
     try:
         if policy == "RETEXTURE":
-            _retexture(staged, values, loop, polygon)
+            _retexture(staged, values, loop, polygon, len(surface.source_offsets) > 1)
         else:
             destination = staged.uv_layers.active or staged.uv_layers.new(
                 name=surface.meshes[0].uv_layers[0].name

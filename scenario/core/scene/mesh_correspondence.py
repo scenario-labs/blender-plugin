@@ -171,47 +171,81 @@ def _count(count, noun, plural=None):
     return f"{count} {noun}" if count == 1 else f"{count} {plural or noun + 's'}"
 
 
-def _candidates(source, used, result_co, result_used, tolerance):
-    """Source vertices within tolerance of each used result vertex (8-cell hash).
+def _buckets(source, used, tolerance):
+    """Hash `used` source vertices by radius: one grid per power-of-two radius level.
 
-    `tolerance` is one radius, or one per source vertex; cells fit the widest.
+    `tolerance` is one radius, or one per source vertex. Each level's cells fit
+    its own widest radius, so a small dense source never shares the coarse cells
+    of a large or distant one. Returns (cell, grid, low, high) per level, where
+    low/high bound the level's vertices widened by that radius.
     """
-    if isinstance(tolerance, (int, float)):
-        widest, limits = tolerance, None
-    else:
-        if len(tolerance) != len(source.co) // 3:
-            raise CorrespondenceError("use one radius per source vertex")
-        widest = max(tolerance, default=MIN_POSITION_TOLERANCE)
-        limits = [radius * radius for radius in tolerance]
-    cell = 2.0 * widest
-    grid = {}
     co = source.co
+    scalar = isinstance(tolerance, (int, float))
+    if not scalar and len(tolerance) != len(co) // 3:
+        raise CorrespondenceError("use one radius per source vertex")
+    levels = {}
     for vertex in used:
-        x, y, z = co[3 * vertex], co[3 * vertex + 1], co[3 * vertex + 2]
-        key = (math.floor(x / cell), math.floor(y / cell), math.floor(z / cell))
-        grid.setdefault(key, []).append(vertex)
-    limit = widest * widest
-    candidates = {}
-    unmatched = 0
-    for vertex in result_used:
-        x, y, z = result_co[3 * vertex], result_co[3 * vertex + 1], result_co[3 * vertex + 2]
+        radius = tolerance if scalar else tolerance[vertex]
+        levels.setdefault(math.frexp(radius)[1], []).append(vertex)
+    buckets = []
+    for vertices in levels.values():
+        widest = tolerance if scalar else max(tolerance[vertex] for vertex in vertices)
+        cell = 2.0 * widest
+        grid = {}
+        low, high = [math.inf] * 3, [-math.inf] * 3
+        for vertex in vertices:
+            position = co[3 * vertex : 3 * vertex + 3]
+            key = tuple(math.floor(value / cell) for value in position)
+            grid.setdefault(key, []).append(vertex)
+            for axis, value in enumerate(position):
+                low[axis] = min(low[axis], value)
+                high[axis] = max(high[axis], value)
+        buckets.append(
+            (cell, grid, [value - widest for value in low], [value + widest for value in high])
+        )
+    return buckets
+
+
+def _scan(buckets, x, y, z):
+    """Source vertices in the cells around one position, at every radius level."""
+    for cell, grid, low, high in buckets:
+        if not (low[0] <= x <= high[0] and low[1] <= y <= high[1] and low[2] <= z <= high[2]):
+            continue
         # A ball of radius `cell / 2` overlaps at most two cells per axis.
         spans = []
         for value in (x, y, z):
             scaled = value / cell
             base = math.floor(scaled)
             spans.append((base - 1, base) if scaled - base < 0.5 else (base, base + 1))
-        found = []
         for kx in spans[0]:
             for ky in spans[1]:
                 for kz in spans[2]:
-                    for other in grid.get((kx, ky, kz), ()):
-                        dx = co[3 * other] - x
-                        dy = co[3 * other + 1] - y
-                        dz = co[3 * other + 2] - z
-                        bound = limit if limits is None else limits[other]
-                        if dx * dx + dy * dy + dz * dz <= bound:
-                            found.append(other)
+                    yield from grid.get((kx, ky, kz), ())
+
+
+def _candidates(source, used, result_co, result_used, tolerance):
+    """Source vertices within tolerance of each used result vertex (8-cell hash).
+
+    `tolerance` is one radius, or one per source vertex (see `_buckets`).
+    """
+    buckets = _buckets(source, used, tolerance)
+    if isinstance(tolerance, (int, float)):
+        limit, limits = tolerance * tolerance, None
+    else:
+        limit, limits = None, [radius * radius for radius in tolerance]
+    co = source.co
+    candidates = {}
+    unmatched = 0
+    for vertex in result_used:
+        x, y, z = result_co[3 * vertex], result_co[3 * vertex + 1], result_co[3 * vertex + 2]
+        found = []
+        for other in _scan(buckets, x, y, z):
+            dx = co[3 * other] - x
+            dy = co[3 * other + 1] - y
+            dz = co[3 * other + 2] - z
+            bound = limit if limits is None else limits[other]
+            if dx * dx + dy * dy + dz * dz <= bound:
+                found.append(other)
         if not found:
             unmatched += 1
         candidates[vertex] = found

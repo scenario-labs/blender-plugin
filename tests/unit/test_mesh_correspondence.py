@@ -294,3 +294,19 @@ def test_per_vertex_tolerance_keeps_fine_sources_far_apart_unambiguous():
     assert sorted(found.polygons) == list(range(len(source.polygon_starts)))
     with pytest.raises(mc.CorrespondenceError, match="one radius per source vertex"):
         mc.match(source, result, radii[1:])
+
+
+def test_dense_small_source_beside_a_huge_one_scans_only_its_own_cells():
+    # A 50 x 50 lattice 1 mm apart, radius 1e-5, beside a sparse 1 km plane, radius 0.1.
+    dense = [(0.001 * i, 0.001 * j, 0) for i in range(50) for j in range(50)]
+    huge = [(x, y, 0) for x in (-500, 500) for y in (-500, 500)]
+    co = [c for p in (*dense, *huge) for c in p]
+    source = mc.MeshArrays(co, [], [], [], [], 0)
+    radii = [1e-5] * len(dense) + [0.1] * len(huge)
+    buckets = mc._buckets(source, range(len(radii)), radii)
+    scanned = sum(len(list(mc._scan(buckets, x, y, z))) for x, y, z in dense)
+    # Each dense position meets only its own vertex, not the whole lattice.
+    assert scanned <= 2 * len(dense)
+    found, unmatched = mc._candidates(source, range(len(radii)), co, range(len(radii)), radii)
+    assert unmatched == 0
+    assert all(found[vertex] == [vertex] for vertex in range(len(radii)))

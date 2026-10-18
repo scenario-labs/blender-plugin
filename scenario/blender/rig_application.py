@@ -309,6 +309,18 @@ def _bind(target, bound, rig, names, weights, imported_modifier):
     modifier.use_deform_preserve_volume = imported_modifier.use_deform_preserve_volume
 
 
+def _own_groups(names, weights, several):
+    """One of several sources keeps only the bone groups its vertices use, in joined order."""
+    if not several:
+        return names, weights
+    used = sorted({group for vertex in weights for group, _ in vertex})
+    index = {group: position for position, group in enumerate(used)}
+    return (
+        tuple(names[group] for group in used),
+        tuple(tuple((index[group], weight) for group, weight in vertex) for vertex in weights),
+    )
+
+
 def apply_skin(target, skins, objects, mapping, *, keep_original):
     """Retain imported rig hierarchy; keep source geometry, materials and object context.
 
@@ -319,13 +331,13 @@ def apply_skin(target, skins, objects, mapping, *, keep_original):
     targets = _targets(target)
     rig, imported_modifier, names, weights, surface = validate_skin(target, skins, objects, mapping)
     parts = tuple(
-        weights[start : start + len(item.mesh.vertices)]
+        _own_groups(names, weights[start : start + len(item.mesh.vertices)], len(targets) > 1)
         for (start, _, _), item in zip(surface.source_offsets, targets, strict=True)
     )
     staged = []
     try:
         for item, part in zip(targets, parts, strict=True):
-            staged.append(_stage_weights(item, names, part))
+            staged.append(_stage_weights(item, *part))
     except BaseException:
         for data in staged:
             bpy.data.meshes.remove(data)
@@ -338,7 +350,7 @@ def apply_skin(target, skins, objects, mapping, *, keep_original):
             )
             bound.append(SkinnedSource(receipt))
         for item, skin, part in zip(targets, bound, parts, strict=True):
-            _bind(item, skin, rig, names, part, imported_modifier)
+            _bind(item, skin, rig, *part, imported_modifier)
         first = targets[0]
         retained = tuple(obj for obj in objects if obj.type != "MESH")
         root = bpy.data.objects.new(f"{first.name} Rig", None)

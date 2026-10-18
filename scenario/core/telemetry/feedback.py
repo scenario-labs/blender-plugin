@@ -7,7 +7,9 @@ build checks them exactly as the relay does, so the extension never sends what i
 refuse: the message and email are trimmed of the whitespace JavaScript trims, absent fields
 are left out rather than null, and at least a rating or a message is required. submit waits
 up to TIMEOUT, beyond the relay's own four-second deadline, sends once and turns the answer
-into a short sentence for the user; a failure is never retried. Nothing logged names the
+into a short sentence for the user; a failure is never retried automatically. An answer that
+leaves open whether the relay recorded the feedback says it may not have been sent: a retry
+reuses the submission ID, by which PostHog groups survey responses. Nothing logged names the
 message or the email.
 """
 
@@ -61,8 +63,12 @@ class Outcome:
 SENT = Outcome(True, "Feedback sent, thank you")
 UNAVAILABLE = Outcome(False, "Feedback is not available right now; try again later")
 RATE_LIMITED = Outcome(False, "Too many messages; try again in a minute")
+# Not sent: the request never reached the relay, or the relay refused it.
 UNREACHABLE = Outcome(False, "Could not reach Scenario; check your connection and try again")
 FAILED = Outcome(False, "Something went wrong; your feedback was not sent")
+# Uncertain: the request went out, but no answer confirmed or refused it.
+NO_ANSWER = Outcome(False, "No answer from Scenario; your feedback may not have been sent")
+UNCONFIRMED = Outcome(False, "Something went wrong; your feedback may not have been sent")
 
 
 def trim(text):
@@ -126,23 +132,34 @@ def submit(payload, *, send=None, url=FEEDBACK_URL, timeout=TIMEOUT):
     """POST one feedback body once and return its Outcome; never raises, never retries.
 
     `send(url, payload, timeout)` defaults to relay.post_json, which returns the HTTP status
-    and raises for a refusal or a failure to connect; tests replace it.
+    and raises for a refusal or a failure. urllib raises URLError when it could not send the
+    request (no address, no connection, TLS); a plain OSError such as a timeout or a reset
+    connection comes while it waits for the answer, after the body went out. A refusal (4xx)
+    was not recorded; a server error other than 503 or an unexpected answer may have been.
     """
     try:
         status = (send or relay.post_json)(url, payload, timeout)
     except urllib.error.HTTPError as error:  # before URLError, its base class
         status = error.code
-    except OSError as error:  # URLError, a timeout, a refused connection or TLS failure
-        log.info("Feedback not sent: %s", type(error).__name__)
+    except urllib.error.URLError as error:
+        log.info("Feedback not sent: %s", type(error.reason).__name__)
         return UNREACHABLE
-    except Exception as error:
+    except OSError as error:
+        log.info("Feedback may not have been sent: %s", type(error).__name__)
+        return NO_ANSWER
+    except ValueError as error:  # refused before sending: the body exceeds the relay's limit
         log.warning("Feedback not sent: %s", type(error).__name__)
         return FAILED
+    except Exception as error:
+        log.warning("Feedback may not have been sent: %s", type(error).__name__)
+        return UNCONFIRMED
     if status == 202:
         return SENT
-    log.info("Feedback not sent: HTTP %s", status)
+    log.info("Feedback not confirmed: HTTP %s", status)
     if status == 503:
         return UNAVAILABLE
     if status == 429:
         return RATE_LIMITED
-    return FAILED
+    if isinstance(status, int) and 400 <= status < 500:
+        return FAILED
+    return UNCONFIRMED

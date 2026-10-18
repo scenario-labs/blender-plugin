@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """User-sent feedback: the relay's checks mirrored and each outcome mapped. No sockets."""
 
+import http.client
 import json
 import logging
+import re
+import socket
 import ssl
+import threading
 import urllib.error
 
 import pytest
@@ -251,25 +255,32 @@ def test_the_default_transport_is_the_relay_post(monkeypatch):
     ("answer", "outcome"),
     [
         (202, feedback.SENT),
-        (200, feedback.FAILED),
-        (204, feedback.FAILED),
         (refusal(503), feedback.UNAVAILABLE),
         (refusal(429), feedback.RATE_LIMITED),
+        # Refused: the relay recorded nothing.
         (refusal(400), feedback.FAILED),
         (refusal(404), feedback.FAILED),
         (refusal(405), feedback.FAILED),
         (refusal(413), feedback.FAILED),
         (refusal(415), feedback.FAILED),
-        (refusal(500), feedback.FAILED),
-        (refusal(502), feedback.FAILED),
-        (urllib.error.URLError("name resolution failed"), feedback.UNREACHABLE),
-        (TimeoutError("timed out"), feedback.UNREACHABLE),
-        (ConnectionRefusedError("refused"), feedback.UNREACHABLE),
-        (ConnectionResetError("reset"), feedback.UNREACHABLE),
-        (ssl.SSLError("certificate verify failed"), feedback.UNREACHABLE),
-        (OSError("network is unreachable"), feedback.UNREACHABLE),
         (ValueError("telemetry body exceeds the relay's limit"), feedback.FAILED),
-        (RuntimeError("unexpected"), feedback.FAILED),
+        # urllib could not send the request.
+        (urllib.error.URLError(socket.gaierror(8, "nodename nor servname")), feedback.UNREACHABLE),
+        (urllib.error.URLError(ConnectionRefusedError(61, "refused")), feedback.UNREACHABLE),
+        (urllib.error.URLError(ssl.SSLError("certificate verify failed")), feedback.UNREACHABLE),
+        (urllib.error.URLError(TimeoutError("connect timed out")), feedback.UNREACHABLE),
+        (urllib.error.URLError("unknown url type"), feedback.UNREACHABLE),
+        # The request went out; no answer said whether it was recorded.
+        (TimeoutError("timed out"), feedback.NO_ANSWER),
+        (ConnectionResetError("reset"), feedback.NO_ANSWER),
+        (http.client.RemoteDisconnected("closed"), feedback.NO_ANSWER),
+        (OSError("read failed"), feedback.NO_ANSWER),
+        (refusal(500), feedback.UNCONFIRMED),
+        (refusal(502), feedback.UNCONFIRMED),
+        (refusal(504), feedback.UNCONFIRMED),
+        (200, feedback.UNCONFIRMED),
+        (204, feedback.UNCONFIRMED),
+        (RuntimeError("unexpected"), feedback.UNCONFIRMED),
     ],
 )
 def test_each_answer_maps_to_one_short_sentence_after_one_try(answer, outcome, caplog):
@@ -291,8 +302,10 @@ def test_outcome_sentences_are_short_plain_and_distinct():
         feedback.RATE_LIMITED,
         feedback.UNREACHABLE,
         feedback.FAILED,
+        feedback.NO_ANSWER,
+        feedback.UNCONFIRMED,
     )
-    assert [outcome.sent for outcome in outcomes] == [True, False, False, False, False]
+    assert [outcome.sent for outcome in outcomes] == [True] + [False] * 6
     texts = [outcome.text for outcome in outcomes]
     assert len(set(texts)) == len(texts)
     for text in texts:
@@ -301,4 +314,73 @@ def test_outcome_sentences_are_short_plain_and_distinct():
     assert feedback.UNAVAILABLE.text.startswith("Feedback is not available right now")
     assert feedback.RATE_LIMITED.text.startswith("Too many messages")
     assert feedback.UNREACHABLE.text.startswith("Could not reach Scenario")
-    assert feedback.FAILED.text.startswith("Something went wrong")
+    assert feedback.FAILED.text.endswith("your feedback was not sent")
+    for uncertain in (feedback.NO_ANSWER, feedback.UNCONFIRMED):
+        assert uncertain.text.endswith("your feedback may not have been sent")
+
+
+# -- real urllib on loopback ----------------------------------------------------
+class Relay:
+    """A loopback stand-in for the relay that answers, hangs up or stays silent."""
+
+    def __init__(self, behaviour):
+        self.behaviour, self.requests = behaviour, []
+        self.server = socket.create_server(("127.0.0.1", 0))
+        self.url = f"http://127.0.0.1:{self.server.getsockname()[1]}/telemetry/v1/feedback"
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        connection, _ = self.server.accept()
+        with connection:
+            connection.settimeout(5)
+            data = b""
+            while b"\r\n\r\n" not in data:
+                data += connection.recv(65536)
+            head, _, body = data.partition(b"\r\n\r\n")
+            length = int(re.search(rb"(?i)content-length: *(\d+)", head).group(1))
+            while len(body) < length:
+                body += connection.recv(65536)
+            self.requests.append(json.loads(body))
+            if isinstance(self.behaviour, int):
+                connection.sendall(
+                    b"HTTP/1.1 %d X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    % self.behaviour
+                )
+            elif self.behaviour == "silent":
+                self.done.wait(5)
+        self.server.close()
+
+    def close(self):
+        self.done.set()
+        self.thread.join(5)
+
+
+@pytest.mark.parametrize(
+    ("behaviour", "outcome"),
+    [
+        (202, feedback.SENT),
+        (503, feedback.UNAVAILABLE),
+        (400, feedback.FAILED),
+        (502, feedback.UNCONFIRMED),
+        ("hang up", feedback.NO_ANSWER),
+        ("silent", feedback.NO_ANSWER),
+    ],
+)
+def test_urllib_failures_after_the_body_went_out_are_uncertain(behaviour, outcome):
+    relay_stub = Relay(behaviour)
+    try:
+        payload = build(rating=3, message="Loopback")
+        assert feedback.submit(payload, url=relay_stub.url, timeout=0.5) is outcome
+    finally:
+        relay_stub.close()
+    assert relay_stub.requests == [payload]  # the relay received it every time
+
+
+def test_urllib_failures_before_sending_mean_not_sent():
+    closed = socket.create_server(("127.0.0.1", 0))
+    port = closed.getsockname()[1]
+    closed.close()
+    url = f"http://127.0.0.1:{port}/telemetry/v1/feedback"
+    assert feedback.submit(build(rating=3), url=url, timeout=0.5) is feedback.UNREACHABLE

@@ -127,9 +127,9 @@ the extension and Blender versions, operating system and processor type, plus th
 install ID only while usage data is shared, to
 `https://blender.scenario.com/telemetry/v1/feedback`. That relay adds the country
 Vercel derives from your address and records it, without your address, as a
-response to Scenario's feedback survey in PostHog. A failed send is not retried.
-Until a send succeeds, the dialog keeps your text in memory for this Blender
-session; it is never saved to disk.
+response to Scenario's feedback survey in PostHog. A failed send is not retried automatically.
+Until a send succeeds, the dialog keeps your text, and its submission ID for
+another try, in memory for this Blender session; it is never saved to disk.
 
 The extension has no automatic crash-reporting service and no independent
 update-check service. Blender manages configured extension repositories and their

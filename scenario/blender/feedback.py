@@ -5,14 +5,20 @@
 **Send feedback** opens a dialog with a rating, a message and an optional email; nothing is
 sent until the user presses Send, and usage sharing is not required. What the user typed
 is kept in this module, never in the blend file or the preferences, until a send succeeds,
-so a refused or failed send can be retried with the same text. One worker thread posts the
-body through core.telemetry.feedback and queues its outcome; the pump applies it on the
-main thread with process(), and background Blender waits for it in the operator, as Test
-connection does. The outcome becomes the status message and the preferences' status line.
+so a refused or failed send can be retried with the same text. The text keeps one
+submission ID until it is sent or edited, so a retry after an uncertain failure is grouped
+with the response it may duplicate. One worker thread posts the body through
+core.telemetry.feedback and queues its outcome; the pump applies it on the main thread with
+process(), and background Blender waits for it in the operator, as Test connection does. A
+send still running ABANDON_AFTER seconds after it started (urllib's timeout does not bound
+name resolution) is given up as unanswered, and its late outcome is ignored. Each outcome
+is shown as the status message and, as fresh as that message, in the preferences.
 """
 
 import queue
 import threading
+import time
+import uuid
 
 import bpy
 from bpy.props import EnumProperty, StringProperty
@@ -35,14 +41,21 @@ EMPTY = {"rating": "NONE", "message": "", "email": ""}
 SENDING = "Sending your feedback..."
 BUSY = "Your feedback is being sent"
 OFFLINE = "Enable Allow Online Access in Blender's System preferences"
-NOTE = "Sent to Scenario with the extension, Blender and OS versions"
-DIALOG_WIDTH = 440
+NOTE = (
+    "Sent with your extension and Blender versions and system type,",
+    "plus your install ID while usage data is shared",
+)
+DIALOG_WIDTH = 480
+ABANDON_AFTER = core.TIMEOUT + 1.0
 
 _draft = dict(EMPTY)  # the dialog's text, kept until a send succeeds; main thread only
-_results = queue.Queue()  # (worker, Outcome, the fields it sent) from finished sends
-_worker = None  # the send in flight, until process() applies its outcome
-_status = None  # (text, sent) of the last applied outcome
+_submission = None  # the kept text's submission ID, reused until it is sent or edited
+_results = queue.Queue()  # (worker, Outcome, its submission ID) from finished sends
+_worker = None  # the send in flight, until process() applies or abandons it
+_started = 0.0  # when the send in flight started, on _clock
+_status = None  # (text, sent, when) of the last applied outcome
 _send = None  # tests replace the relay POST
+_clock = time.monotonic  # tests move time
 
 
 def draft():
@@ -50,66 +63,92 @@ def draft():
     return dict(_draft)
 
 
+def _abandoned():
+    return _worker is not None and _clock() - _started >= ABANDON_AFTER
+
+
 def sending():
-    return _worker is not None
+    return _worker is not None and not _abandoned()
+
+
+def _fresh():
+    """(text, sent) of the last outcome while it is current, as status messages are."""
+    if _status is None:
+        return None
+    text, sent, at = _status
+    return (text, sent) if _clock() - at <= runtime.MESSAGE_TTL else None
 
 
 def status():
-    """(text, icon) of the send in flight or the last outcome, or None before any send."""
-    if _worker is not None:
+    """(text, icon) of the send in flight or a fresh outcome, else None."""
+    if sending():
         return SENDING, "SORTTIME"
-    if _status is None:
+    fresh = _fresh()
+    if fresh is None:
         return None
-    text, sent = _status
+    text, sent = fresh
     return text, "CHECKMARK" if sent else "ERROR"
 
 
 def failure():
-    """Why the last send failed, while its text is kept for another try; else None."""
-    if _worker is None and _status is not None and not _status[1]:
-        return _status[0]
-    return None
+    """Why the last send failed, while that is fresh and its text kept; else None."""
+    fresh = None if sending() else _fresh()
+    return fresh[0] if fresh is not None and not fresh[1] else None
 
 
 def rating_value(identifier):
     return None if identifier == "NONE" else int(identifier)
 
 
-def start(payload, fields):
+def start(payload):
     """Post one body on a worker thread; process() applies its outcome on the main thread."""
-    global _worker
+    global _started, _worker
     worker = threading.Thread(
-        target=_run, args=(payload, fields, _send), daemon=True, name="scenario-feedback"
+        target=_run, args=(payload, _send), daemon=True, name="scenario-feedback"
     )
-    _worker = worker
+    _worker, _started = worker, _clock()
     worker.start()
     return worker
 
 
-def _run(payload, fields, send):
-    outcome = core.FAILED
+def _run(payload, send):
+    outcome = core.UNCONFIRMED
     try:
         outcome = core.submit(payload, send=send)
     finally:
-        _results.put((threading.current_thread(), outcome, fields))
+        _results.put((threading.current_thread(), outcome, payload["submission_id"]))
+
+
+def _apply(outcome, submission):
+    global _draft, _status, _submission
+    _status = (outcome.text, outcome.sent, _clock())
+    if outcome.sent and submission == _submission:  # the kept text was not edited meanwhile
+        _draft, _submission = dict(EMPTY), None
+    runtime.set_message(outcome.text)
+
+
+def _give_up():
+    global _worker
+    _worker = None  # its late outcome no longer matches and is ignored
+    _apply(core.NO_ANSWER, None)
 
 
 def process():
-    """Apply finished sends on the main thread; True when what is drawn changed."""
-    global _draft, _status, _worker
+    """Apply finished or abandoned sends on the main thread; True when what is drawn changed."""
+    global _worker
     changed = False
+    if _abandoned():
+        _give_up()
+        changed = True
     while True:
         try:
-            worker, outcome, fields = _results.get_nowait()
+            worker, outcome, submission = _results.get_nowait()
         except queue.Empty:
             return changed
         if worker is not _worker:
-            continue  # a send from before the extension was last unregistered
+            continue  # abandoned, or from before the extension was last unregistered
         _worker = None
-        _status = (outcome.text, outcome.sent)
-        if outcome.sent and _draft == fields:
-            _draft = dict(EMPTY)
-        runtime.set_message(outcome.text)
+        _apply(outcome, submission)
         changed = True
 
 
@@ -119,6 +158,9 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
     bl_description = (
         "Rate the extension or tell Scenario what to improve; nothing is sent until you press Send"
     )
+    # Not REGISTER: the Info editor would log the message and email as a Python call, and
+    # Repeat Last would send it again without the dialog.
+    bl_options = set()
 
     rating: EnumProperty(name="Rating", items=RATINGS, default="NONE", options={"SKIP_SAVE"})
     message: StringProperty(
@@ -165,14 +207,17 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
         hint = core.problem(rating_value(self.rating), self.message, self.email)
         if hint:
             layout.label(text=hint, icon="INFO")
-        note = layout.row()
+        note = layout.column(align=True)
         note.active = False
-        note.label(text=NOTE)
+        for line in NOTE:
+            note.label(text=line)
 
     def execute(self, context):
-        global _draft
+        global _draft, _submission
         process()  # a send that ended since the last pump tick
         fields = {name: getattr(self, name) for name in FIELDS}
+        if fields != _draft or _submission is None:  # new or edited text: a new response
+            _submission = uuid.uuid4().hex
         _draft = dict(fields)  # kept until a send succeeds, so a refusal keeps the text
         if sending():
             self.report({"WARNING"}, BUSY)
@@ -187,15 +232,18 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
                 self.email,
                 context=relay.context(__version__, usage.blender_version()),
                 install_id=usage.install_id(),
+                submission_id=_submission,
             )
         except core.FeedbackError as error:
             self.report({"WARNING"}, str(error))
             return {"CANCELLED"}
-        worker = start(payload, fields)
-        if bpy.app.background:  # no pump: wait for the outcome here
-            worker.join(core.TIMEOUT + 1.0)
+        worker = start(payload)
+        if bpy.app.background:  # no pump: wait for the outcome, or give the send up, here
+            worker.join(ABANDON_AFTER)
             process()
-        text, icon = status()
+            if worker is _worker:
+                _give_up()
+        text, icon = status() or (SENDING, "SORTTIME")
         if icon == "SORTTIME":
             runtime.set_message(text)
         self.report({"WARNING"} if icon == "ERROR" else {"INFO"}, text)

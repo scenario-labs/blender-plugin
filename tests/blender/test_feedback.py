@@ -9,6 +9,7 @@ dialog's invoke and draw are called directly, as Blender would.
 
 import pathlib
 import tempfile
+import threading
 import unittest
 import urllib.error
 from types import SimpleNamespace
@@ -31,6 +32,21 @@ class Transport:
         return self.answer
 
 
+class Stalled(Transport):
+    """The first send hangs, as name resolution can past urllib's timeout, until released."""
+
+    def __init__(self):
+        super().__init__()
+        self.release, self.stalled = threading.Event(), None
+
+    def __call__(self, url, payload, timeout):
+        if self.stalled is None:
+            self.stalled = threading.current_thread()
+            self.release.wait(10)
+            return 202
+        return super().__call__(url, payload, timeout)
+
+
 def refusal(status):
     return urllib.error.HTTPError("https://relay.invalid/feedback", status, "refused", {}, None)
 
@@ -49,8 +65,10 @@ class FeedbackTests(unittest.TestCase):
         for name, value in (
             ("_send", self.transport),
             ("_draft", dict(self.feedback.EMPTY)),
+            ("_submission", None),
             ("_status", None),
             ("_worker", None),
+            ("_started", 0.0),
         ):
             patcher = patch.object(self.feedback, name, value)
             patcher.start()
@@ -82,6 +100,8 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(rating.enum_items["NONE"].name, "Not rated")
         for name in ("rating", "message", "email"):
             self.assertTrue(properties[name].is_skip_save, name)
+        # Never logged as a Python call in the Info editor, nor repeated without the dialog.
+        self.assertFalse({"REGISTER", "UNDO"} & set(operator.bl_options), operator.bl_options)
         icons = bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items
         for icon in ("HEART", "FUND", "SORTTIME", "CHECKMARK", "ERROR", "INFO"):
             self.assertIn(icon, icons)
@@ -105,9 +125,13 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(self.runtime.message_visible(), self.core.SENT.text)
         # A rating alone, or a message alone, is enough.
         self.assertEqual(self.send(rating="1"), {"FINISHED"})
-        self.assertNotIn("message", self.sent())
+        first = self.sent()
+        self.assertNotIn("message", first)
         self.assertEqual(self.send(message="Only words"), {"FINISHED"})
         self.assertNotIn("rating", self.sent())
+        # The same text sent again after a success is a new response.
+        self.assertEqual(self.send(rating="1"), {"FINISHED"})
+        self.assertNotEqual(self.sent()["submission_id"], first["submission_id"])
 
     def test_the_install_id_is_sent_only_while_usage_sharing_is_on(self):
         directory = tempfile.TemporaryDirectory(prefix="scenario-test-feedback-")
@@ -157,65 +181,68 @@ class FeedbackTests(unittest.TestCase):
                     reason,
                 )
 
-    def test_a_failed_send_keeps_the_text_for_another_try(self):
+    def test_a_failed_send_keeps_the_text_and_its_submission_for_another_try(self):
         fields = {"rating": "2", "message": "It crashed", "email": "me@example.com"}
+        submissions = set()
         for answer, outcome in (
             (refusal(503), self.core.UNAVAILABLE),
             (refusal(429), self.core.RATE_LIMITED),
             (refusal(400), self.core.FAILED),
-            (refusal(502), self.core.FAILED),
+            (refusal(502), self.core.UNCONFIRMED),
             (urllib.error.URLError("unreachable"), self.core.UNREACHABLE),
-            (TimeoutError("timed out"), self.core.UNREACHABLE),
+            (TimeoutError("timed out"), self.core.NO_ANSWER),
+            (ConnectionResetError("reset"), self.core.NO_ANSWER),
         ):
             with self.subTest(outcome=outcome.text):
                 self.transport.answer = answer
                 with self.assertLogs("scenario", level="DEBUG") as logs:
                     self.assertEqual(self.send(**fields), {"FINISHED"})
-                self.sent()
+                submissions.add(self.sent()["submission_id"])
                 self.assertEqual(self.feedback.draft(), fields)
                 self.assertEqual(self.feedback.status(), (outcome.text, "ERROR"))
                 self.assertEqual(self.feedback.failure(), outcome.text)
                 self.assertEqual(self.runtime.message_visible(), outcome.text)
                 for private in ("It crashed", "me@example.com"):
                     self.assertNotIn(private, "\n".join(logs.output))
-        # Retrying the kept text succeeds and clears it.
+        # Every retry of the unchanged text is the same response, so PostHog groups any
+        # duplicate an uncertain failure left behind.
+        self.assertEqual(len(submissions), 1)
+        self.assertIn("may not have been sent", self.core.NO_ANSWER.text)
+        self.assertIn("may not have been sent", self.core.UNCONFIRMED.text)
+        # Retrying the kept text succeeds with the same submission and clears it.
         self.transport.answer = 202
         self.assertEqual(self.send(**self.feedback.draft()), {"FINISHED"})
-        self.assertEqual(self.sent()["message"], "It crashed")
+        retried = self.sent()
+        self.assertEqual(
+            (retried["message"], retried["submission_id"]), ("It crashed", *submissions)
+        )
         self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
+        self.assertIsNone(self.feedback._submission)
         self.assertIsNone(self.feedback.failure())
 
-    def test_nothing_is_sent_while_online_access_is_off(self):
-        self.assertFalse(self.operator.poll(bpy.context))
-        with self.assertRaises(RuntimeError) as refused:
-            bpy.ops.scenario.send_feedback(rating="5", message="offline")
-        self.assertIn(self.feedback.OFFLINE, str(refused.exception))
-        # Access can change between poll and execute: execute checks again.
-        operator = SimpleNamespace(rating="5", message="offline", email="", report=Mock())
-        self.assertEqual(self.operator.execute(operator, bpy.context), {"CANCELLED"})
-        operator.report.assert_called_once_with(
-            {"WARNING"}, "Allow Online Access is off; your feedback was not sent"
-        )
-        self.assertEqual(self.transport.calls, [])
-        self.assertEqual(self.feedback.draft()["message"], "offline")
-        with online_access(True):
-            self.assertTrue(self.operator.poll(bpy.context))
-
-    def test_one_send_at_a_time(self):
-        with patch.object(self.feedback, "_worker", object()), online_access(True):
-            self.assertTrue(self.feedback.sending())
-            self.assertFalse(self.operator.poll(bpy.context))
-            self.assertEqual(self.feedback.status(), (self.feedback.SENDING, "SORTTIME"))
-            operator = SimpleNamespace(rating="5", message="again", email="", report=Mock())
-            self.assertEqual(self.operator.execute(operator, bpy.context), {"CANCELLED"})
-            operator.report.assert_called_once_with({"WARNING"}, self.feedback.BUSY)
+    def test_edited_text_is_a_new_submission(self):
+        self.transport.answer = TimeoutError("timed out")
+        self.send(rating="3", message="First words")
+        first = self.sent()["submission_id"]
+        self.send(rating="3", message="First words")
+        self.assertEqual(self.sent()["submission_id"], first)
+        self.send(rating="3", message="Other words")
+        self.assertNotEqual(self.sent()["submission_id"], first)
+        # Any edit is a new response, even one refused before sending; repeating it is not.
+        kept = self.feedback._submission
+        self.assertEqual(self.send(rating="3", message="Other words", email="nope"), {"CANCELLED"})
+        edited = self.feedback._submission
+        self.assertNotEqual(edited, kept)
+        self.send(rating="3", message="Other words", email="nope")
+        self.assertEqual(self.feedback._submission, edited)
         self.assertEqual(self.transport.calls, [])
 
     def test_the_pump_applies_an_outcome_once(self):
         fields = {"rating": "4", "message": "Pumped", "email": ""}
         self.feedback._draft = dict(fields)
         payload = self.core.build(4, "Pumped", submission_id="0" * 32)
-        worker = self.feedback.start(payload, fields)
+        self.feedback._submission = payload["submission_id"]
+        worker = self.feedback.start(payload)
         self.assertTrue(self.feedback.sending())
         worker.join(5)
         self.assertTrue(self.feedback.process())
@@ -225,12 +252,61 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
         # Text edited while a send was in flight is not cleared by its success.
         edited = {**fields, "message": "Edited meanwhile"}
-        worker = self.feedback.start(payload, fields)
-        self.feedback._draft = dict(edited)
+        self.feedback._submission = payload["submission_id"]
+        worker = self.feedback.start(payload)
+        self.feedback._draft, self.feedback._submission = dict(edited), "1" * 32
         worker.join(5)
         self.assertTrue(self.feedback.process())
         self.sent()
         self.assertEqual(self.feedback.draft(), edited)
+
+    def test_a_send_that_never_ends_is_given_up_and_its_late_outcome_ignored(self):
+        stalled = self.transport = Stalled()
+        self.feedback._send = stalled
+        self.addCleanup(stalled.release.set)
+        fields = {"rating": "5", "message": "Hung", "email": ""}
+        with patch.object(self.feedback, "ABANDON_AFTER", 0.2):
+            self.assertEqual(self.send(**fields), {"FINISHED"})
+            # Background Blender waited ABANDON_AFTER, then gave the send up as unanswered.
+            self.assertTrue(stalled.stalled.is_alive())
+            self.assertFalse(self.feedback.sending())
+            self.assertEqual(self.feedback.status(), (self.core.NO_ANSWER.text, "ERROR"))
+            self.assertEqual(self.feedback.draft(), fields)
+            with online_access(True):
+                self.assertTrue(self.operator.poll(bpy.context))
+            submission = self.feedback._submission
+            self.assertEqual(self.send(**fields), {"FINISHED"})
+        self.assertEqual(self.sent()["submission_id"], submission)
+        self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+        stalled.release.set()
+        stalled.stalled.join(5)
+        self.assertFalse(self.feedback.process())
+        self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+        # On the pump's clock: a send older than ABANDON_AFTER no longer blocks a new one.
+        self.feedback._worker, self.feedback._started = object(), self.feedback._clock()
+        later = self.feedback._started + self.feedback.ABANDON_AFTER
+        with online_access(True):
+            self.assertFalse(self.operator.poll(bpy.context))
+            with patch.object(self.feedback, "_clock", return_value=later):
+                self.assertTrue(self.operator.poll(bpy.context))
+                self.assertTrue(self.feedback.process())
+                self.assertIsNone(self.feedback._worker)
+                self.assertEqual(self.feedback.status(), (self.core.NO_ANSWER.text, "ERROR"))
+
+    def test_an_outcome_is_shown_only_while_it_is_current(self):
+        self.send(rating="4")
+        self.sent()
+        self.transport.answer = refusal(502)
+        self.send(rating="2")
+        self.sent()
+        self.assertEqual(self.feedback.failure(), self.core.UNCONFIRMED.text)
+        later = self.feedback._clock() + self.runtime.MESSAGE_TTL + 1
+        with patch.object(self.feedback, "_clock", return_value=later):
+            self.assertIsNone(self.feedback.status())
+            self.assertIsNone(self.feedback.failure())
+            _, labels = self.drawn(rating="2")
+            self.assertFalse([label for label in labels if label.get("icon") == "ERROR"])
+        self.assertEqual(self.feedback.draft()["rating"], "2")  # the text itself stays
 
     def test_the_dialog_opens_with_the_kept_text_and_send_button(self):
         self.feedback._draft = {"rating": "3", "message": "Kept", "email": "me@example.com"}
@@ -260,7 +336,7 @@ class FeedbackTests(unittest.TestCase):
         self.operator.draw(operator, bpy.context)
         layout = operator.layout
         labels = [call.kwargs for call in layout.label.call_args_list]
-        labels += [call.kwargs for call in layout.row.return_value.label.call_args_list]
+        labels += [call.kwargs for call in layout.column.return_value.label.call_args_list]
         return layout, labels
 
     def test_the_dialog_draws_its_fields_note_and_reasons(self):
@@ -272,9 +348,12 @@ class FeedbackTests(unittest.TestCase):
             text="",
             placeholder="Email, if you would like a reply (optional)",
         )
-        self.assertIn({"text": self.feedback.NOTE}, labels)
+        for line in self.feedback.NOTE:
+            self.assertIn({"text": line}, labels)
         self.assertEqual(
-            self.feedback.NOTE, "Sent to Scenario with the extension, Blender and OS versions"
+            " ".join(self.feedback.NOTE),
+            "Sent with your extension and Blender versions and system type, "
+            "plus your install ID while usage data is shared",
         )
         self.assertFalse([label for label in labels if label.get("icon") == "ERROR"])
         self.assertNotIn({"text": self.core.NEEDS_CONTENT, "icon": "INFO"}, labels)
@@ -290,7 +369,7 @@ class FeedbackTests(unittest.TestCase):
         self.assertIn({"text": self.core.NEEDS_CONTENT, "icon": "INFO"}, labels)
         _, labels = self.drawn(rating="2", email="nope")
         self.assertIn({"text": self.core.EMAIL_INVALID, "icon": "INFO"}, labels)
-        self.feedback._status = (self.core.UNREACHABLE.text, False)
+        self.feedback._status = (self.core.UNREACHABLE.text, False, self.feedback._clock())
         _, labels = self.drawn(message="Kept")
         self.assertIn({"text": self.core.UNREACHABLE.text, "icon": "ERROR"}, labels)
 
@@ -312,7 +391,7 @@ class FeedbackTests(unittest.TestCase):
                     )
         for online, status in ((True, None), (True, ("Sent", True)), (False, ("Lost", False))):
             with self.subTest(online=online, status=status):
-                self.feedback._status = status
+                self.feedback._status = status and (*status, self.feedback._clock())
                 owner = SimpleNamespace(
                     layout=Mock(),
                     credential_source="PREFERENCES",

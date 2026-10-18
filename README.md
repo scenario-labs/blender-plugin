@@ -98,6 +98,10 @@ reference and inspect the estimate before Generate. Results appear in Generation
 and your Output Folder, with actions for viewing or importing supported media.
 The [user guide](docs/USER_GUIDE.md) describes each lane and its controls.
 
+To rate the extension or tell Scenario what to improve, use the heart in the
+Scenario panel or **Feedback** in Studio. **Share anonymous usage data**, in the
+extension's preferences, stays off unless you turn it on.
+
 ## Features
 
 - [Image](docs/USER_GUIDE.md#image): generate from text or reference images and

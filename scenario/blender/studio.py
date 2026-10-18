@@ -137,6 +137,9 @@ def _draw_page(layout, context, width):
     header = layout.row()
     header.label(text="Scenario Studio", icon="SHADERFX")
     header.label(text=context.scene.name, icon="SCENE_DATA")
+    feedback = header.row()
+    feedback.alignment = "RIGHT"  # its own width at the right, not a third of the row
+    feedback.operator("scenario.send_feedback", text="Feedback", icon="HEART")
     layout.label(text="Press Esc or click outside to return to the viewport")
     identifiers = tuple(item[0] for item in PAGES)
     rows = (
@@ -147,7 +150,8 @@ def _draw_page(layout, context, width):
     panels.draw_enum_tabs(layout, view, "page", rows)
     layout.separator(factor=0.5)
     if view.page == "CREATE":
-        draw_panel(layout, context, panels.SCENARIO_PT_main)
+        with panels.feedback_in_header():
+            draw_panel(layout, context, panels.SCENARIO_PT_main)
     elif view.page == "FILM":
         # Studio reuses panel bodies only, so it draws the sidebar header's status itself.
         film.draw_experimental(layout)

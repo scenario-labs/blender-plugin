@@ -181,6 +181,10 @@ and, with the GitHub CLI,
   to type a prompt and generate; see
   [The floating composer](#the-floating-composer).
 - **Studio**, next to **Scenario** in the header, opens [expanded controls](#expanded-studio-view).
+- The **heart** in the Scenario panel, or **Feedback** in Studio, sends Scenario a
+  rating or a message. **Share anonymous usage data**, in the extension's
+  preferences, stays off unless you turn it on; see
+  [What leaves your machine](#what-leaves-your-machine).
 
 The four panels:
 
@@ -785,7 +789,8 @@ for requirements.
 **Studio**, next to **Scenario** in the viewport header, opens larger pages:
 **Create** (the same form as the sidebar), **Film**, **Workflows**, **Library**,
 **Jobs**, **Results** and **Connection**. Switching pages keeps your work; press
-Esc or click outside to go back to Blender while jobs keep running.
+Esc or click outside to go back to Blender while jobs keep running. **Feedback**, at
+the top right, opens the same feedback dialog as the heart.
 
 ### Run a workflow
 

@@ -4,7 +4,7 @@
 
 import unittest
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import bpy
 import test_workflow_commands
@@ -85,6 +85,23 @@ class StudioViewTests(unittest.TestCase):
         self.assertEqual(len(studio), 2)
         self.assertTrue(all(a is b for a, b in zip(sidebar, studio, strict=True)))
         self.assertFalse(self.workflow.calls)
+
+    def test_every_page_labels_feedback_once_and_the_sidebar_keeps_its_heart(self):
+        panels = submodule("blender.panels")
+        labelled = call("scenario.send_feedback", text="Feedback", icon="HEART")
+        heart = call("scenario.send_feedback", text="", icon="HEART")
+        for page, _, _ in self.studio.PAGES:
+            with self.subTest(page):
+                self.view.page = page
+                layout = MagicMock()
+                self.studio.draw_view(layout, bpy.context, width=960)
+                header = layout.row.return_value  # also the Create page's account strip
+                self.assertEqual(header.row.return_value.alignment, "RIGHT")
+                self.assertIn(labelled, header.row.return_value.operator.call_args_list)
+                self.assertNotIn(heart, header.operator.call_args_list)
+        layout = MagicMock()
+        panels.SCENARIO_PT_main.draw(SimpleNamespace(layout=layout), bpy.context)
+        self.assertIn(heart, layout.row.return_value.operator.call_args_list)
 
     def test_surface_navigation_preserves_admitted_work_and_results_owner(self):
         result = self.workflow.approve(self.workflow.quote())

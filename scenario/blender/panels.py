@@ -5,6 +5,7 @@ back, here and in the cloud), "Agents" (the MCP server). Lane tabs only cover ge
 
 import os
 import textwrap
+from contextlib import contextmanager
 
 import bpy
 
@@ -67,7 +68,7 @@ def draw_account_strip(layout, context):
         )
         row.label(text=message, icon="ERROR")
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
-        row.operator("scenario.send_feedback", text="", icon="HEART")
+        draw_feedback_heart(row)
         return False
     if not runtime.online():
         row.label(text="Online access is disabled", icon="ERROR")
@@ -82,8 +83,28 @@ def draw_account_strip(layout, context):
     row.label(text=label, icon=icon)
     row.operator("scenario.refresh_catalog", text="", icon="FILE_REFRESH")
     row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
-    row.operator("scenario.send_feedback", text="", icon="HEART")
+    draw_feedback_heart(row)
     return True
+
+
+_feedback_in_header = False  # Studio's top row offers Feedback while it draws a panel
+
+
+@contextmanager
+def feedback_in_header():
+    """Studio draws the sidebar's panels under its own Feedback button: no heart twice."""
+    global _feedback_in_header
+    previous, _feedback_in_header = _feedback_in_header, True
+    try:
+        yield
+    finally:
+        _feedback_in_header = previous
+
+
+def draw_feedback_heart(row):
+    """The compact sidebar's way to Send feedback; Studio labels it in its top row."""
+    if not _feedback_in_header:
+        row.operator("scenario.send_feedback", text="", icon="HEART")
 
 
 def thumbnail(path):

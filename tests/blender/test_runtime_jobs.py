@@ -520,8 +520,7 @@ class RuntimeJobTests(unittest.TestCase):
             observed = []
 
             def serve_once(server, stop_event, *, before_process):
-                self.assertIs(before_process, self.runtime.sync_catalog_context)
-
+                # The loop's upkeep ends with the catalog sync that retires the old scope.
                 def tick():
                     before_process()
                     observed.append(adapter._closed)

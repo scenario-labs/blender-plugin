@@ -7404,6 +7404,27 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(submodule("blender.mesh_application").MeshApplicationError):
             self.prepare_mesh_edit(request_id, purpose="mesh_source")
 
+    def assert_source_action_needs_retention(self, request_id, count):
+        jobs = self.runtime.state.model_jobs
+        record = self.store.get(request_id)
+        self.assertIn("apply_mesh_source", jobs.actions(record))
+        self.assertEqual(jobs._view(record).meta["mesh_source_objects"], count)
+        # Undo, file loading or an uncapturable source leaves nothing to apply to.
+        jobs.session._mesh_sources.clear()
+        jobs.poll()
+        actions = jobs.actions(record)
+        self.assertIn("apply_mesh", actions)
+        self.assertNotIn("apply_mesh_source", actions)
+        self.assertEqual(jobs._view(record).meta["mesh_source_objects"], 0)
+
+    def test_captured_source_action_needs_its_retained_export(self):
+        request_id, _ = self.captured_source_result()
+        self.assert_source_action_needs_retention(request_id, 1)
+
+    def test_several_captured_sources_action_needs_their_retained_export(self):
+        request_id, _, _ = self.captured_sources_result()
+        self.assert_source_action_needs_retention(request_id, 3)
+
     def test_several_captured_sources_refuse_other_edits_without_change(self):
         request_id, sources, _ = self.captured_sources_result()
         before, meshes = self.store.get(request_id), [source.data for source in sources]

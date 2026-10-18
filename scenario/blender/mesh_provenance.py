@@ -10,7 +10,7 @@ import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.mesh_source import MeshSource, MeshSourceObject
-from . import mesh_export, mesh_export_fingerprint
+from . import mesh_application, mesh_export, mesh_export_fingerprint
 from .job_session import OriginUnavailable, _main_thread
 from .mesh_application import MeshApplicationError, capture_target, validate_target
 
@@ -71,10 +71,14 @@ def export_with_source(context, objects, path, session):
     # A live application guard is stricter than upload provenance: unsupported
     # rigs/modifiers remain uploadable, but never become an in-place edit target.
     # A single Armature skin is retained; the exporter sends its unposed mesh.
-    # Several objects are retained together only when every one is capturable.
+    # Several objects are retained together only when every one is capturable,
+    # and within the joint bound their application enforces: never fingerprint
+    # sources that could not be applied.
     captured = ()
+    total = sum(mesh_application._components(obj.data) for obj in objects)
     try:
-        captured = tuple(capture_target(scene, obj) for obj in objects)
+        if total <= mesh_application.MAX_COMPONENTS:
+            captured = tuple(capture_target(scene, obj) for obj in objects)
     except MeshApplicationError:
         # Upload/export supports more sources than in-place replacement.
         # Preserve the upload without granting a live application guard.

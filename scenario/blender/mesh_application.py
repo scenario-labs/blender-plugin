@@ -60,18 +60,22 @@ def _skin_rig(scene, obj):
         or not obj.vertex_groups
     ):
         raise MeshApplicationError("Use a vertex-group Armature skin without envelopes or a mask")
-    rig = modifier.object
+    return modifier, _check_rig(scene, modifier.object)
+
+
+def _check_rig(scene, rig):
     if rig is None or rig.type != "ARMATURE" or not _present(scene.objects, rig) or _linked(rig):
         raise MeshApplicationError("Bind the Armature skin to a local armature in this scene")
     if rig.mode == "EDIT":
         raise MeshApplicationError("Leave Edit Mode on the source rig")
-    return modifier, rig
+    return rig
 
 
-def _validate_object(scene, obj, *, skin=False, read_only=False):
+def _validate_object(scene, obj, *, skin=False, read_only=False, deform=True):
     """Check supported structure; skin admits only one vertex-weight Armature skin.
 
     read_only admits custom mesh properties on a result that is only read.
+    deform=False leaves modifiers and vertex groups to the caller.
     """
     if not _present(bpy.data.scenes, scene) or not _present(scene.objects, obj):
         raise MeshApplicationError("Use a live object in the explicit originating scene")
@@ -79,13 +83,13 @@ def _validate_object(scene, obj, *, skin=False, read_only=False):
         raise MeshApplicationError("Only meshes in Object Mode are supported")
     if _linked(obj):
         raise MeshApplicationError("Linked and overridden objects or meshes are unsupported")
-    if obj.constraints or (not skin and (obj.modifiers or obj.vertex_groups)):
+    if obj.constraints or (deform and not skin and (obj.modifiers or obj.vertex_groups)):
         raise MeshApplicationError(
             "Modifiers, constraints and vertex groups require another policy"
         )
     if obj.animation_data or obj.data.animation_data or obj.data.shape_keys:
         raise MeshApplicationError("Animation and shape keys require another policy")
-    if skin:
+    if skin and deform:
         _skin_rig(scene, obj)
     if obj.parent and obj.parent_type == "ARMATURE":
         raise MeshApplicationError(
@@ -860,14 +864,17 @@ class MeshApplication:
     def originals(self):
         return (self.original,)
 
-    def check_rollback(self):
-        """Raise unless rollback would restore this source; changes nothing."""
+    def check_rollback(self, *, deform=True):
+        """Raise unless rollback would restore this source; changes nothing.
+
+        deform=False leaves modifiers and vertex groups to the caller.
+        """
         _main_thread()
         if self._closed:
             raise MeshApplicationError("This application receipt is already finalized")
         try:
             try:
-                _validate_object(self._scene, self.source, skin=self._skin)
+                _validate_object(self._scene, self.source, skin=self._skin, deform=deform)
             except MeshApplicationError as exc:
                 raise MeshApplicationError(
                     f"Target structure changed; rollback requires explicit review: {exc}"

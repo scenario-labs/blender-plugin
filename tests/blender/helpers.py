@@ -490,7 +490,9 @@ def several_source_result(scene, sources, path, change, *, merge=False, finish=N
         scene.collection.objects.link(copy)
         copy.parent = None
         copy.matrix_world = source.matrix_world.copy()
-        extra.extend(change(index, copy) or ())
+        returned = change(index, copy)
+        if returned is not None:
+            extra.extend(returned)
         copies.append(copy)
     bpy.context.view_layer.update()
     if merge:

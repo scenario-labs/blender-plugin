@@ -3497,6 +3497,47 @@ class SeveralSourcesTests(unittest.TestCase):
         self.assertEqual([obj.data for obj in self.sources], self.data)
         self.assertTrue(all(not obj.modifiers and not obj.vertex_groups for obj in self.sources))
 
+    def assert_rig_kept(self, count):
+        """Every published source is still skinned: no rollback started."""
+        for obj, data in zip(self.sources[:count], self.data, strict=False):
+            self.assertIsNot(obj.data, data)
+            self.assertEqual([m.name for m in obj.modifiers], ["Scenario Rig"])
+
+    def test_rig_rollback_checks_every_source_before_unwinding_any(self):
+        self.result(self.rig({}))
+        release = self.module._release_import
+
+        def fail_after_publication(*args):
+            # The last source's restore check now fails: its original mesh changed.
+            self.data[-1].vertices[0].co.x += 1
+            release(*args)
+            raise RuntimeError("synthetic failure after publication")
+
+        with patch.object(self.module, "_release_import", side_effect=fail_after_publication):
+            with self.assertRaises(RuntimeError) as raised:
+                self.apply(policy="RIG")
+        self.assertIn("uncertain", str(raised.exception))
+        self.assert_rig_kept(3)
+
+    def test_failed_rig_binding_unwinds_nothing_when_one_source_cannot_restore(self):
+        self.result(self.rig({}))
+        bind = self.rig_module._bind
+        calls = []
+
+        def fail_second(*args):
+            calls.append(args)
+            if len(calls) == 2:
+                self.data[0].vertices[0].co.x += 1
+                raise RuntimeError("bind")
+            bind(*args)
+
+        with patch.object(self.rig_module, "_bind", side_effect=fail_second):
+            with self.assertRaises(RuntimeError) as raised:
+                self.apply(policy="RIG")
+        self.assertNotIsInstance(raised.exception, self.module.MeshResultApplicationError)
+        self.assertIsNot(self.sources[1].data, self.data[1])
+        self.assert_rig_kept(1)
+
     def test_geometry_policies_and_object_local_coordinates_are_refused(self):
         self.result(self.islands({}))
         before = self.model._snapshot()
@@ -3585,3 +3626,28 @@ class SeveralSourcesTests(unittest.TestCase):
         )
         self.assertEqual(len(source.objects), 3)
         self.assertEqual(self.session._mesh_sources, retained)
+
+    def test_export_over_the_joint_bound_uploads_without_capturing_any_source(self):
+        self.ready_session()
+        provenance = submodule("blender.mesh_provenance")
+        total = sum(self.mesh._components(obj.data) for obj in self.sources)
+        retained = dict(self.session._mesh_sources)
+        capture = patch.object(provenance, "capture_target", wraps=provenance.capture_target)
+        fingerprint = patch.object(self.mesh, "_fingerprint", wraps=self.mesh._fingerprint)
+        # Application refuses sources beyond the joint bound: capture none of them.
+        with patch.object(self.mesh, "MAX_COMPONENTS", total - 1):
+            with capture as captured, fingerprint as fingerprinted:
+                _, source = provenance.export_with_source(
+                    bpy.context, self.sources, self.root / "large.glb", self.session
+                )
+        self.assertEqual(len(source.objects), 3)
+        self.assertEqual(self.session._mesh_sources, retained)
+        captured.assert_not_called()
+        fingerprinted.assert_not_called()
+        # At the bound, every source is retained.
+        with patch.object(self.mesh, "MAX_COMPONENTS", total):
+            origin, source = provenance.export_with_source(
+                bpy.context, self.sources, self.root / "bound.glb", self.session
+            )
+        binding = self.storage.JobMeshSource("mesh", None, "asset", "upload", 0, origin, source)
+        self.assertEqual(len(self.session.mesh_source_targets(binding)), 3)

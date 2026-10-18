@@ -213,12 +213,48 @@ class SkinnedSource:
                 "Applied skin changed; inspect the source before recovery"
             )
 
+    def check_unwind(self):
+        """Raise unless unwind() would restore this source; changes nothing."""
+        receipt = self.receipt
+        if self.modifier is None and self.previous is None and receipt._skin:
+            # Never bound: the old skin is still in place.
+            receipt.check_rollback()
+            return
+        receipt.check_rollback(deform=False)
+        bound = (self.modifier,) if self.modifier is not None else ()
+        if tuple(receipt.source.modifiers) != bound:
+            raise mesh.MeshApplicationError(
+                "Applied skin changed; inspect the source before recovery"
+            )
+        if self.previous is not None:
+            try:
+                mesh._check_rig(receipt._scene, dict(self.previous[1])["object"])
+            except ReferenceError:
+                raise mesh.MeshApplicationError("The replaced skin's rig was removed") from None
+
     def unwind(self):
         """Remove the new skin; the mesh receipt still checks and restores the source."""
         try:
             _unwind(self.receipt.source, self.modifier, self.previous, self.receipt._skin)
         finally:
             self.receipt.rollback()
+
+
+def _unwind_all(skins):
+    """Unwind skins whose check_unwind() passed, in reverse, each restoring its mesh.
+
+    One source's error propagates; for several, any failure leaves them uncertain.
+    """
+    failed = None
+    for skin in reversed(skins):
+        try:
+            skin.unwind()
+        except Exception as error:
+            failed = failed or error
+    if failed is not None:
+        if len(skins) == 1:
+            raise failed
+        raise RuntimeError("Rig rollback is uncertain; inspect the sources") from None
 
 
 @dataclass
@@ -246,10 +282,11 @@ class RigApplication:
             skin.receipt.accept()
 
     def rollback(self):
+        # Prove every source restorable before unwinding any.
         for skin in self.skins:
             skin.check()
-        for skin in reversed(self.skins):
-            skin.unwind()
+            skin.check_unwind()
+        _unwind_all(self.skins)
 
 
 def _bind(target, bound, rig, names, weights, imported_modifier):
@@ -335,7 +372,12 @@ def apply_skin(target, skins, objects, mapping, *, keep_original):
         for data in staged[len(bound) + 1 :]:
             if not data.users:
                 bpy.data.meshes.remove(data)
-        # Each unwinding leaves the structure its mesh receipt's rollback validates.
-        for skin in reversed(bound):
-            skin.unwind()
+        # Each unwinding leaves the structure its mesh receipt's rollback validates;
+        # every source must be restorable before any is unwound.
+        try:
+            for skin in bound:
+                skin.check_unwind()
+        except Exception:
+            raise RuntimeError("Rig replacement is uncertain; inspect the sources") from None
+        _unwind_all(bound)
         raise

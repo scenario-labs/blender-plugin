@@ -984,7 +984,9 @@ class ModelJobs:
             # How many objects the captured-source action edits together.
             bindings = record.intent.mesh_sources
             view.meta["mesh_source_objects"] = (
-                len(bindings[0].mesh_source.objects) if len(bindings) == 1 else 0
+                len(bindings[0].mesh_source.objects)
+                if "apply_mesh_source" in view.meta["recovery_actions"]
+                else 0
             )
             self._project_remote(request_id, record, view, online=online)
             view.meta["error_title"] = view.meta["review_note"] = None
@@ -1757,8 +1759,10 @@ class ModelJobs:
         # In-place mesh edits stage a classified GLB, glTF, FBX or OBJ unit.
         if reusable and any(mesh_applicable(unit) for unit in self._units(record)):
             actions.append("apply_mesh")
-            # One captured input, of one object or several exported together.
-            if len(record.intent.mesh_sources) == 1:
+            # One captured input, of one object or several exported together,
+            # whose live export guard this session still retains.
+            bindings = record.intent.mesh_sources
+            if len(bindings) == 1 and self.session.has_mesh_source(bindings[0]):
                 actions.append("apply_mesh_source")
         if reusable and self._world_offer(record):
             actions.append("apply_world")

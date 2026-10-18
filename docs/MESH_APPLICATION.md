@@ -740,9 +740,11 @@ automatically.
 Export, static or [skinned](#replace-an-existing-skin), retains a live
 `MeshTarget` for each exported object before exporting, rechecks them afterwards
 and keys them by the exact upload origin and export metadata. Several objects
-are retained together only when every one can be captured. Shared quotes persist
-that upload binding in the generation intent. Review resolves only this retained
-guard, never an object name or a reconstructed match from disk. Retention
+are retained together only when every one can be captured and their meshes
+total at most 2,000,000 components; larger uploads are never fingerprinted for
+this guard. The action appears only while the guard is retained. Shared quotes
+persist that upload binding in the generation intent. Review resolves only this
+retained guard, never an object name or a reconstructed match from disk. Retention
 compares the stored export digest with a fresh export fingerprint of the live
 mesh. The stricter edit fingerprint has a different format and remains part of
 the retained target's validation, rather than substituting for that digest.
@@ -795,9 +797,10 @@ mesh.
 - Every object is revalidated immediately before mutation: one deleted, renamed,
   moved or edited object refuses the whole application. All objects are staged
   before any is published; a failed publication or binding restores the objects
-  already changed. Keep original makes one unselected copy per object. One pair
-  of native undo checkpoints covers the whole application, and receipt-only
-  recovery never applies it again.
+  already changed only once every one is proven restorable, and otherwise
+  restores none and reports the outcome uncertain. Keep original makes one
+  unselected copy per object. One pair of native undo checkpoints covers the
+  whole application, and receipt-only recovery never applies it again.
 
 The approval's `target` is null and `targets` lists every object; after
 application, `mesh_edit.targets` and `mesh_edit.originals` list them in capture

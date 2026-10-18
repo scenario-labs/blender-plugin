@@ -3432,6 +3432,59 @@ class PartsAndRemeshTests(unittest.TestCase):
             self.assertAlmostEqual(a, b, delta=0.05)
         self.assertTrue(all(not part.data.uv_layers for part in result.parts))
 
+    @staticmethod
+    def cap(part):
+        """Close a part with a dense interior disc, as completed parts are returned."""
+        mesh = bmesh.new()
+        mesh.from_mesh(part.data)
+        disc = bmesh.ops.create_grid(mesh, x_segments=20, y_segments=20, size=0.5)
+        bmesh.ops.scale(mesh, vec=(1, 2, 1), verts=disc["verts"])
+        mesh.to_mesh(part.data)
+        mesh.free()
+
+    def test_completed_parts_with_interior_caps_are_copied_under_a_fit(self):
+        self.use_ellipsoid()
+        moved = Matrix.Translation((5, -2, 1)) @ Matrix.Scale(1 / 3, 4)
+        for shape, reason in (
+            ("BOX", "PARTS result does not match the source surface after fitting"),
+            ("ICO", None),
+        ):
+            with self.subTest(shape=shape):
+                copy = self.remeshed(shape=shape)
+                parts = self.split(copy, [int(p.center.z > 0) for p in copy.data.polygons])
+                for part in parts:
+                    self.cap(part)
+                self.place(parts, moved)
+                self.deliver(parts)
+                if reason:
+                    self.assert_unchanged(
+                        self.model._snapshot(), reason, policy="PARTS", result_to_source=self.fit()
+                    )
+                    continue
+                result = self.apply(policy="PARTS", result_to_source=self.fit())
+        self.assertEqual((result.parts_from, result.fitted_from), ("result_meshes", "WORLD"))
+        self.assertLess(result.fit_residual[0], 0.02)
+        low, high = _bounds(v.co for part in result.parts for v in part.data.vertices)
+        expected = _bounds(self.geometry)
+        for a, b in zip(low + high, expected[0] + expected[1], strict=True):
+            self.assertAlmostEqual(a, b, delta=0.05)
+        # The caps stay inside the source, at its middle.
+        cap = [v.co for part in result.parts for v in part.data.vertices if abs(v.co.z) < 1e-3]
+        self.assertGreater(len(cap), 400)
+
+    def test_remesh_with_an_interior_cap_still_fails_its_fit(self):
+        self.use_ellipsoid()
+        copy = self.remeshed()
+        self.cap(copy)
+        self.place([copy], Matrix.Translation((5, -2, 1)) @ Matrix.Scale(1 / 3, 4))
+        self.deliver([copy])
+        self.assert_unchanged(
+            self.model._snapshot(),
+            "REMESH result does not match the source surface after fitting",
+            policy="REMESH",
+            result_to_source=self.fit(),
+        )
+
     def test_remesh_fits_a_normalized_result_and_joins_a_local_multi_part_one(self):
         self.use_ellipsoid()
         expected = _bounds(self.geometry)

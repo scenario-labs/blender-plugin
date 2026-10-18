@@ -653,13 +653,23 @@ def _tree(mesh):
     return BVHTree.FromPolygons(vertices, polygons)
 
 
-def _distances(tree, mesh, limit=mesh_correspondence.SURFACE_SAMPLES):
-    """Nearest-surface distances of evenly sampled vertices that `mesh` faces use."""
+def _distances(tree, mesh, limit=mesh_correspondence.SURFACE_SAMPLES, *, inside=False):
+    """Nearest-surface distances of evenly sampled vertices that `mesh` faces use.
+
+    With `inside`, a vertex behind the nearest face of the tree's surface, by
+    that face's outward normal, counts as on it: inside a closed volume.
+    """
     co = mesh.co
     out = []
     for vertex in mesh_correspondence.evenly(sorted(set(mesh.loop_vertices)), limit):
-        hit = tree.find_nearest(Vector(co[3 * vertex : 3 * vertex + 3]))
-        out.append(hit[3] if hit[0] is not None else math.inf)
+        point = Vector(co[3 * vertex : 3 * vertex + 3])
+        location, normal, _, distance = tree.find_nearest(point)
+        if location is None:
+            out.append(math.inf)
+        elif inside and (point - location).dot(normal) < 0:
+            out.append(0.0)
+        else:
+            out.append(distance)
     return out
 
 
@@ -689,8 +699,11 @@ def fit_bounds(source, results, result_to_source, policy):
     it. Only when no base verifies so does each get one uniform scale and offset
     from the axis-aligned bounds, never a rotation. A base is kept only if
     sampled vertices of the source and the placed result lie near each other's
-    surface both ways (`mesh_correspondence.surface_residual`). Two verified
-    bases must place the result alike; otherwise this fails closed.
+    surface both ways (`mesh_correspondence.surface_residual`). Copied PARTS
+    may close each part with hidden contact or cap faces, so their vertices
+    inside the source volume also pass; every sampled source vertex must still
+    lie near a part. Two verified bases must place the result alike; otherwise
+    this fails closed.
     """
     if not isinstance(result_to_source, FitRequest):
         return BoundsFit(result_to_source)
@@ -727,7 +740,9 @@ def fit_bounds(source, results, result_to_source, policy):
                     )
                     mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
                 residual = mesh_correspondence.surface_residual(
-                    _distances(source_tree, result), _distances(_tree(result), src), size
+                    _distances(source_tree, result, inside=policy == "PARTS"),
+                    _distances(_tree(result), src),
+                    size,
                 )
             except mesh_correspondence.CorrespondenceError as exc:
                 if fitted:

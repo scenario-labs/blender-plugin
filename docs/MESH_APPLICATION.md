@@ -113,6 +113,11 @@ faces use count. Distances are fractions of the source's bounding-box diagonal:
 - at most 5% of either side's sampled vertices may lie farther than 2%;
 - none may lie farther than 10%.
 
+Copied parts may close each part with hidden contact or cap faces, so a part
+vertex inside the source volume also passes: it lies behind the nearest source
+face by that face's normal, which assumes outward-facing source normals. Every
+sampled source vertex must still lie near a part.
+
 Provider remeshes measured within 0.7% of a source (1.8% for one delivered in
 object-local coordinates), and remeshed parts with interior caps had 2.2% of
 their vertices beyond 2% and none beyond 7.5%; a different object, or a result

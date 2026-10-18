@@ -759,8 +759,8 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   changed shapes are refused.
 - **Replace with parts**: replaces the mesh with the result's named parts, under
   an empty parent. When the parts are cut from your mesh's own surface, your
-  mesh is split along them and every part keeps your UVs and materials;
-  otherwise the returned parts are used.
+  mesh is split along them and every part keeps your UVs and materials, or the
+  parts' own when they bring new ones; otherwise the returned parts are used.
 - **Attach rig**: adds the returned armature and weights to your mesh, when its
   skin is the same surface. If the mesh already has a rig, its weights are
   replaced and the old rig is left as it was; **Keep original** keeps a copy

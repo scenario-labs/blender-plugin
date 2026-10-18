@@ -253,9 +253,9 @@ read-only explanation identifies the source, empty mesh parent, named children,
 2-to-128 part limit, unchanged source context and Keep original behavior. It
 states that every mesh in the chosen result is treated as a part, and, since
 which applies is known only after import, that parts made of this surface split
-it and keep its UVs and materials while other parts, such as remeshed ones, are
-copied from the result. It does not infer variants; **Fit and verify** is the
-default placement. The shared UI/MCP command applies the
+it and keep its UVs and materials, or their own, while other parts, such as
+remeshed ones, are copied from the result. It does not infer variants; **Fit and
+verify** is the default placement. The shared UI/MCP command applies the
 [parts contract](../MESH_APPLICATION.md#apply-static-parts).
 
 Native clicks and keyboard input selected the policy, cancelled without mutation,

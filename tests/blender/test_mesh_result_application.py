@@ -3239,9 +3239,14 @@ class PartsAndRemeshTests(unittest.TestCase):
         bpy.data.meshes.remove(data)
         return parts
 
-    def segment(self, assign, *, triangulate=False, normalize=1.0):
+    def segment(self, assign, *, triangulate=False, normalize=1.0, textured=()):
         """Segmentation-style parts: UVs and materials stripped, split by source face,
-        baked into one normalized frame, each part's origin at its own centre."""
+        baked into one normalized frame, each part's origin at its own centre.
+
+        Parts listed in `textured` carry new UVs and materials instead, as a
+        provider that splits and retextures returns them; `self.textures` holds
+        their expected source-local corner UVs and face material names.
+        """
         copy = self.copy_source()
         data = copy.data
         if triangulate:
@@ -3254,10 +3259,27 @@ class PartsAndRemeshTests(unittest.TestCase):
         for layer in tuple(data.uv_layers):
             data.uv_layers.remove(layer)
         data.materials.clear()
+        if textured:
+            layer = data.uv_layers.new(name="Result UV")
+            for polygon in data.polygons:
+                for corner, loop in enumerate(polygon.loop_indices):
+                    layer.data[loop].uv = (0.1 * polygon.index + 0.01 * corner, 0.2 + 0.05 * corner)
+            for name in ("Result A", "Result B"):
+                data.materials.append(bpy.data.materials.new(name))
+            for polygon in data.polygons:
+                polygon.material_index = polygon.index % 2
+            self.textures = (
+                _uvs(data, layer),
+                {_rounded(p.center): ("Result A", "Result B")[p.index % 2] for p in data.polygons},
+            )
         data.transform(copy.matrix_world)
         copy.parent = None
         copy.matrix_world = Matrix()
         parts = self.split(copy, owner)
+        for index, part in enumerate(parts):
+            if textured and index not in textured:
+                part.data.uv_layers.remove(part.data.uv_layers[0])
+                part.data.materials.clear()
         low, high = _bounds(v.co for part in parts for v in part.data.vertices)
         scale = normalize / max(b - a for a, b in zip(low, high, strict=True)) if normalize else 1
         centre = [(a + b) / 2 for a, b in zip(low, high, strict=True)] if normalize else (0, 0, 0)
@@ -3310,6 +3332,36 @@ class PartsAndRemeshTests(unittest.TestCase):
                     self.assertAlmostEqual(a, b, places=3)
             seen.update(_uvs(mesh, mesh.uv_layers.active))
         self.assertEqual(seen, uvs)
+
+    def test_split_parts_adopt_the_uvs_and_materials_they_carry(self):
+        self.deliver(self.segment(lambda polygon: 0 if polygon.index < 3 else 1, textured={0, 1}))
+        result = self.apply(policy="PARTS", result_to_source=self.fit())
+        self.assertEqual(result.parts_from, "source_faces")
+        uvs, faces = self.textures
+        geometry, seen = set(self.geometry), {}
+        for part in result.parts:
+            mesh = part.data
+            # Source positions, with the result's UVs and only the materials used.
+            self.assertLessEqual({tuple(vertex.co) for vertex in mesh.vertices}, geometry)
+            self.assertNotIn("Source UV", mesh.uv_layers)
+            names = [material.name.split(".")[0] for material in mesh.materials]
+            self.assertEqual(
+                sorted(names), sorted({faces[_rounded(p.center)] for p in mesh.polygons})
+            )
+            for polygon in mesh.polygons:
+                self.assertEqual(names[polygon.material_index], faces[_rounded(polygon.center)])
+            seen.update(_uvs(mesh, mesh.uv_layers.active))
+        self.assertEqual(seen.keys(), uvs.keys())
+        for key, uv in uvs.items():
+            for a, b in zip(seen[key], uv, strict=True):
+                self.assertAlmostEqual(a, b, places=5)
+
+    def test_parts_carrying_uvs_on_only_some_parts_are_copied(self):
+        self.deliver(self.segment(lambda polygon: 0 if polygon.index < 3 else 1, textured={0}))
+        with self.assertLogs("scenario.jobs", "INFO") as logs:
+            result = self.apply(policy="PARTS", result_to_source=self.fit())
+        self.assertIn("only some result parts carry UVs or materials", "\n".join(logs.output))
+        self.assertEqual(result.parts_from, "result_meshes")
 
     def test_strict_world_splits_parts_returned_in_scene_coordinates(self):
         self.deliver(self.segment(lambda polygon: polygon.index % 2, normalize=None))
@@ -3562,6 +3614,19 @@ class PartsAndRemeshTests(unittest.TestCase):
         low, high = _bounds(v.co for v in self.source.data.vertices)
         for a, b in zip(low + high, expected[0] + expected[1], strict=True):
             self.assertAlmostEqual(a, b, delta=1e-4)
+
+    def test_remesh_with_small_touching_pieces_is_joined(self):
+        self.use_ellipsoid()
+        # Two small pieces touching on the surface, like rows of teeth.
+        pieces = [self.remeshed()]
+        for side in (-1, 1):
+            piece = self.remeshed((0.04, 0.04, 0.04), subdivisions=1)
+            piece.data.transform(Matrix.Translation((1.0, 0.03 * side, 0)))
+            pieces.append(piece)
+        self.place(pieces, Matrix())
+        self.deliver(pieces)
+        result = self.apply(policy="REMESH", result_to_source=self.fit())
+        self.assertEqual(result.joined_meshes, 3)
 
     def test_remesh_variants_in_one_place_are_not_joined(self):
         self.use_ellipsoid()

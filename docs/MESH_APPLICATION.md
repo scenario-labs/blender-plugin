@@ -607,8 +607,8 @@ meshes, as some providers return a remesh split into pieces, are joined into
 one: each object's world matrix is applied and material slots are merged once
 per material (`joined_meshes` counts them). Joining needs Fit and verify, and
 stops when two meshes each have over half of their sampled vertices within 2% of
-the meshes' size from the other's surface, as levels of detail or variants in
-one place do. `UV` and `RETEXTURE` match every static mesh in the result
+the smaller one's size from the other's surface, as levels of detail or variants
+in one place do. `UV` and `RETEXTURE` match every static mesh in the result
 together as one surface, since providers split results by connectivity or color
 region; RETEXTURE merges their material slots, once per material. The explicit
 `PARTS` policy accepts 2 to 128 static surface meshes in that one result; other
@@ -945,8 +945,13 @@ places, reported as `parts_from`:
   attributes, seams, sharp edges and smooth flags. Custom normals are set again
   per corner, since a part boundary changes the corner fans Blender stores them
   against; without custom normals, smooth shading at a part boundary is computed
-  per part. All result faces on one source face must come from one part, and the
-  source must have no loose vertices or edges; otherwise the result meshes are
+  per part. A provider that also retextures returns parts with their own UVs and
+  materials: when every part carries them, the parts adopt them through the
+  verified correspondence as [RETEXTURE](#surface-matching) does, UV layers with
+  their names and roles and materials per face, each part keeping only the
+  materials its faces use. All result faces on one source face must come from
+  one part, the source must have no loose vertices or edges, and either every
+  part or none must carry UVs or materials; otherwise the result meshes are
   copied under the verified mapping, and the reason, such as **the result splits
   4 source faces between parts**, is logged.
 - `result_meshes`: otherwise, such as for remeshed parts, independent copies of

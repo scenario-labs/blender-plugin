@@ -205,13 +205,48 @@ def _part_name(target, index, obj):
     return f"{target.name} Part {index:03d} {obj.name}"
 
 
-def _source_parts(target, meshes, surface, owner):
+def _part_textures(surface, meshes, source, owner):
+    """The UVs and materials the result parts carry, resolved per split part, or None.
+
+    Parts that all carry them are retextured through the verified correspondence,
+    like RETEXTURE; when only some do, this fails, so the parts are copied.
+    """
+    carried = [
+        bool(obj.data.uv_layers) or any(material is not None for material in obj.data.materials)
+        for obj in meshes
+    ]
+    if not any(carried):
+        return None
+    if not all(carried):
+        raise mesh_application.MeshApplicationError("only some result parts carry UVs or materials")
+    materials, layers, indices, active = mesh_application._retexture_values(surface, (source,))
+    starts, totals = surface.source.polygon_starts, surface.source.polygon_totals
+    corners = [[array("f") for _ in layers] for _ in meshes]
+    faces = [array("i") for _ in meshes]
+    for polygon, part in enumerate(owner):
+        faces[part].append(indices[polygon])
+        start, end = 2 * starts[polygon], 2 * (starts[polygon] + totals[polygon])
+        for values, (_, coordinates) in zip(corners[part], layers, strict=True):
+            values.extend(coordinates[start:end])
+    return [
+        (
+            materials,
+            [(layer, values) for (layer, _), values in zip(layers, corners[part], strict=True)],
+            faces[part],
+            active,
+        )
+        for part in range(len(meshes))
+    ]
+
+
+def _source_parts(target, meshes, surface, owner, textures=None):
     """Split the source mesh along the part boundaries of a verified result surface.
 
     `owner` gives each source polygon's part. Each part keeps the source's own
-    positions, UVs, materials, attributes and edge and face flags; custom
-    normals are set again per corner, since splitting changes the corner fans
-    they are stored against. The source is read once and halved by part until
+    positions, attributes and edge and face flags, and its UVs and materials
+    unless `textures` (`_part_textures`) replaces them; custom normals are set
+    again per corner, since splitting changes the corner fans they are stored
+    against. The source is read once and halved by part until
     each piece holds one part, so the work grows with the source size times the
     logarithm of the part count; deleting faces keeps the rest in source order.
     """
@@ -258,6 +293,9 @@ def _source_parts(target, meshes, surface, owner):
     parts = []
     for index, obj in enumerate(meshes):
         mesh = split[index]
+        if textures is not None:
+            # Each part keeps only the materials its faces use.
+            mesh_application._retexture(mesh, textures[index], 0, 0, several=True)
         if normals is not None:
             mesh.normals_split_custom_set(normals[index])
         mesh.update()
@@ -287,7 +325,8 @@ def _stage_parts(target, meshes, mapping):
     """Stage parts before replacement, from the source's faces when possible.
 
     When the result meshes together are the source surface, each source face in
-    one part, the source is split along their boundaries. Otherwise, such as for
+    one part, the source is split along their boundaries, adopting the UVs and
+    materials the parts carry, if every part carries them. Otherwise, such as for
     remeshed parts, the result meshes are copied, under a verified bounds fit for
     FIT coordinates, or the face match's mapping when only the split failed.
     """
@@ -321,13 +360,16 @@ def _stage_parts(target, meshes, mapping):
                 surface.polygons(),
                 surface.offsets,
             )
+            textures = _part_textures(surface, meshes, target.mesh, owner)
         except mesh_application.MeshApplicationError as exc:
-            # The source's surface, but not split along whole source faces: copy
-            # the result meshes under the mapping the face match verified.
+            # The source's surface, but not split along whole source faces or not
+            # consistently textured: copy the result meshes under the mapping the
+            # face match verified.
             _log.info("Parts are copied from the result meshes: %s", exc)
             parts, origin = _copied_parts(target, meshes, fit.mapping), "result_meshes"
         else:
-            parts, origin = _source_parts(target, meshes, surface, owner), "source_faces"
+            parts = _source_parts(target, meshes, surface, owner, textures)
+            origin = "source_faces"
     # Reuse the guarded mesh-swap primitive with an empty result. The original
     # object becomes the group anchor; existing children/context are unchanged.
     blank = bpy.data.objects.new("Scenario parts staging", bpy.data.meshes.new("Scenario parts"))

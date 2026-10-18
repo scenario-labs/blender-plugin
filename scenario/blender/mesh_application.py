@@ -778,21 +778,20 @@ def separate_pieces(results):
 
     Pieces of one remesh meet only along seams. Two meshes are alternatives,
     such as levels of detail or variants in one place, when each has most of its
-    sampled vertices within the surface tolerance of the other's surface, both
-    in scene coordinates and relative to the meshes' joint size.
+    sampled vertices within the surface tolerance of the other's surface, in
+    scene coordinates and relative to the smaller of the two meshes, so small
+    neighbouring pieces such as rows of teeth are not taken for variants.
     """
     pieces = []
     for obj in results:
         piece, rows = _arrays(obj.data), tuple(tuple(row) for row in obj.matrix_world)
         pieces.append(replace(piece, co=mesh_correspondence.transformed(piece.co, rows)))
-    tolerance = mesh_correspondence.SURFACE_TOLERANCE * mesh_correspondence.diagonal(
-        mesh_correspondence.concatenate(pieces)[0]
-    )
+    sizes = [mesh_correspondence.diagonal(piece) for piece in pieces]
     limit = max(1, mesh_correspondence.SURFACE_SAMPLES // len(pieces))
     boxes = [mesh_correspondence.bounds(piece) for piece in pieces]
     trees = {}
 
-    def near(a, b):
+    def near(a, b, tolerance):
         if b not in trees:
             trees[b] = _tree(pieces[b])
         distances = _distances(trees[b], pieces[a], limit)
@@ -802,12 +801,13 @@ def separate_pieces(results):
     for a in range(len(pieces)):
         for b in range(a + 1, len(pieces)):
             (low, high), (other_low, other_high) = boxes[a], boxes[b]
+            tolerance = mesh_correspondence.SURFACE_TOLERANCE * min(sizes[a], sizes[b])
             if any(
                 low[axis] - other_high[axis] > tolerance or other_low[axis] - high[axis] > tolerance
                 for axis in range(3)
             ):
                 continue
-            if near(a, b) and near(b, a):
+            if near(a, b, tolerance) and near(b, a, tolerance):
                 raise MeshApplicationError(
                     f"result meshes {a + 1} and {b + 1} cover the same surface, like levels "
                     "of detail or variants; choose a result that holds one remesh"

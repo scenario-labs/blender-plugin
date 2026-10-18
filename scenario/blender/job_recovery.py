@@ -956,7 +956,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             layout.label(
                 text="Treat each of the result's 2 to 128 meshes as a part, not a variant."
             )
-            layout.label(text="Parts made of this surface split it, keeping its UVs and materials;")
+            layout.label(text="Parts made of this surface split it, keeping its or their own UVs;")
             layout.label(text="other parts, such as remeshed ones, are copied from the result.")
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")

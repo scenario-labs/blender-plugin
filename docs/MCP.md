@@ -1276,8 +1276,8 @@ a part. The source retains its object identity and becomes an empty mesh parent
 with 2 to 128 named static children; Keep original defaults to true. The same
 coordinate mapping or fit, target checks, durable claims and undo limits apply.
 When those meshes together are the source surface, the source is split along
-them and each part keeps its UVs, materials and attributes
-(`mesh_edit.parts_from: source_faces`); otherwise, such as for remeshed parts,
+them and each part keeps its attributes, and its UVs and materials unless every
+part carries its own (`mesh_edit.parts_from: source_faces`); otherwise, such as for remeshed parts,
 the result meshes are copied (`result_meshes`). Which applies is known only
 after import, so describe both before approval.
 `mesh_edit.parts` reports the child names while the live application is valid;

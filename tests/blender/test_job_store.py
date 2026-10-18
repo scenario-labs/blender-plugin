@@ -127,7 +127,7 @@ class JobStoreTests(unittest.TestCase):
                 del raw["claimed_at"]
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
-                for key in ("texture_role", "source", "projection"):
+                for key in ("texture_role", "source", "projection", "parent_id"):
                     del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
@@ -159,7 +159,7 @@ class JobStoreTests(unittest.TestCase):
                 del raw["claimed_at"]
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
-                for key in ("source", "projection"):
+                for key in ("source", "projection", "parent_id"):
                     del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
@@ -228,7 +228,7 @@ class JobStoreTests(unittest.TestCase):
                 self.assertEqual(record.revision, revision)
                 expected = json.loads(raw) | {"claimed_at": None}
                 for item in expected["results"]:
-                    item["asset"].update(source="asset", projection=None)
+                    item["asset"].update(source="asset", projection=None, parent_id=None)
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 12)
@@ -270,6 +270,8 @@ class JobStoreTests(unittest.TestCase):
                 self.assertEqual(record.revision, revision)
                 self.assertIsNone(record.claimed_at)
                 expected = json.loads(raw) | {"claimed_at": None}
+                for item in expected["results"]:
+                    item["asset"]["parent_id"] = None
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 12)

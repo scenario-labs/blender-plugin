@@ -44,6 +44,7 @@ class RenderSettings:
     camera_name: str
     media_type: str = ""
     frame_current: int = 1
+    color_depth: str = ""
 
     @classmethod
     def snapshot(cls, scene):
@@ -66,6 +67,7 @@ class RenderSettings:
             scene.camera.name if scene.camera else "",
             getattr(r.image_settings, "media_type", ""),
             scene.frame_current,
+            r.image_settings.color_depth,
         )
 
     def restore(self, scene):
@@ -83,6 +85,12 @@ class RenderSettings:
             r.image_settings.color_mode = self.color_mode
         except TypeError:
             pass
+        # A capture format without the saved depth, such as PNG for 10-bit DPX, changes it.
+        if self.color_depth and r.image_settings.color_depth != self.color_depth:
+            try:
+                r.image_settings.color_depth = self.color_depth
+            except TypeError:
+                pass  # The restored format offers no such depth; Blender kept a valid one.
         r.filepath, r.use_stamp = self.filepath, self.use_stamp
         scene.frame_start, scene.frame_end = self.frame_start, self.frame_end
         _set_preview_range(scene, self.use_preview_range)

@@ -1,0 +1,117 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+name: MCP tool comment
+
+# Runs the default branch's copy of this file after an MCP tool report run. It
+# checks out and runs no pull request code: the report artifact is parsed as
+# data and only bounded numbers, a commit SHA and tool names enter the comment.
+on:
+  workflow_run:
+    workflows: [MCP tool report]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: mcp-tool-comment-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  comment:
+    name: comment
+    # Fork runs report no pull request here, so they never get a comment.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.pull_requests[0] != null
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      pull-requests: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mcp-tool-report
+          path: mcp-tool-report
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const run = context.payload.workflow_run;
+            const report = JSON.parse(fs.readFileSync('mcp-tool-report/report.json', 'utf8'));
+            if (report.version !== 1 || !/^[0-9a-f]{40}$/.test(report.base_ref ?? '')) {
+              throw new Error('Unexpected MCP tool report version or baseline');
+            }
+            function metric(surface, key) {
+              const value = surface?.[key];
+              if (!Number.isSafeInteger(value) || value < 0 || value > 100_000_000) {
+                throw new Error('Invalid MCP tool report metric');
+              }
+              return value;
+            }
+            function delta(value) { return value > 0 ? `+${value}` : String(value); }
+            const cells = ['tools', 'bytes', 'estimated_tokens', 'model_visible_bytes'].map(key => {
+              const value = metric(report.current, key);
+              return `${value} (${delta(value - metric(report.baseline, key))})`;
+            });
+            // Tool names reach the comment, so they are held to the tool name grammar.
+            function charsOf(list) {
+              if (!Array.isArray(list) || list.length > 500) throw new Error('Invalid headroom list');
+              return new Map(list.map(row => {
+                if (!/^[a-z][a-z0-9_]{0,63}$/.test(row?.name) || !Number.isSafeInteger(row?.chars)
+                  || row.chars < 0 || row.chars > 1_000_000 || row.headroom !== 2048 - row.chars) {
+                  throw new Error('Invalid headroom row');
+                }
+                return [row.name, row.chars];
+              }));
+            }
+            const now = charsOf(report.current.headroom);
+            const before = charsOf(report.baseline.headroom);
+            // A tool missing from the baseline is new and always listed.
+            const shown = [...now].filter(([name, chars]) => chars > 1848 || before.get(name) !== chars);
+            const headroomRows = shown.map(([name, chars]) => {
+              const change = before.has(name) ? delta(chars - before.get(name)) : 'new';
+              return `| ${name} | ${chars} (${change}) | ${2048 - chars} |`;
+            });
+            const removed = [...before.keys()].filter(name => !now.has(name));
+            const number = run.pull_requests[0].number;
+            const latest = await github.rest.pulls.get({ ...context.repo, pull_number: number });
+            if (latest.data.head.sha !== run.head_sha || latest.data.state !== 'open') return;
+            const marker = '<!-- mcp-tool-report -->';
+            const body = [
+              marker,
+              '### MCP tool definitions',
+              `Tested merge for ${run.head_sha.slice(0, 7)} against base ${report.base_ref.slice(0, 7)}. Deltas in parentheses.`,
+              '',
+              '| Surface | Tools | Wire bytes | Wire tokens (bytes / 4) | Model-visible bytes |',
+              '| --- | ---: | ---: | ---: | ---: |',
+              `| tools/list | ${cells.join(' | ')} |`,
+              '',
+              'Wire: the tools/list entries as the local server sends them, without the JSON-RPC envelope. Tokens = rounded bytes / 4, not tokenizer output. Model-visible: name, description and inputSchema only, what Claude Code shows the model.',
+              '',
+              ...(headroomRows.length
+                ? [
+                    '**Descriptions within 200 chars of Claude Code\'s 2,048-char cut, or changed by this PR**',
+                    '',
+                    '| Tool | Chars | Headroom |',
+                    '| --- | ---: | ---: |',
+                    ...headroomRows,
+                    '',
+                    'Negative headroom = text Claude Code never shows the model.',
+                  ]
+                : []),
+              ...(removed.length ? ['', `Removed: ${removed.join(', ')}`] : []),
+              '',
+              `[JSON report and measuring run](${run.html_url})`,
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: number });
+            const previous = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.startsWith(marker));
+            if (previous) {
+              await github.rest.issues.updateComment({ ...context.repo, comment_id: previous.id, body });
+            } else {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: number, body });
+            }

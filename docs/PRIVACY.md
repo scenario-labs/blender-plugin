@@ -235,9 +235,9 @@ managers may retain copied text.
 
 ## The local MCP server
 
-In a Blender window, the server starts by itself with the extension whenever
-**Allow Online Access** is on, and listens for local agents until Blender quits or
-you choose **Stop MCP server** in **Scenario > Agents (MCP)**; the extension's
+In a Blender window, the server starts by itself whenever **Allow Online Access**
+is on, and listens for local agents until Blender quits, the setting is switched
+off or you choose **Stop MCP server** in **Scenario > Agents (MCP)**; the extension's
 network permission names this `127.0.0.1` listener. Background Blender starts it
 only with the explicit `scenario_blender` command. The server binds to `127.0.0.1`
 and refuses any other address, using the port selected in Preferences (default

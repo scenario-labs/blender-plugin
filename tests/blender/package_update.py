@@ -81,6 +81,8 @@ def job_snapshot(record):
         # Schema 10 gives earlier results the asset's own file and no projection.
         item["asset"].setdefault("source", "asset")
         item["asset"].setdefault("projection", None)
+        # Schema 12 gives earlier results an unknown parent.
+        item["asset"].setdefault("parent_id", None)
     return value
 
 

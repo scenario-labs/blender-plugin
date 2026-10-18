@@ -39,7 +39,7 @@ from ..core.jobs.store import (
     _identity,
 )
 from ..core.jobs.workers import WorkerError
-from ..core.scene import panorama_contract
+from ..core.scene import panorama_contract, placement
 from ..core.scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
@@ -250,6 +250,25 @@ def _remember(cache, request_id, values, collection):
     )
 
 
+def _size_summary(application):
+    """The imported group's root, applied scale and measured world size for MCP status.
+
+    Lengths are Blender units, metres at the default unit scale, rounded like
+    scene_summary dimensions so agents compare them directly.
+    """
+    try:
+        root = application.root.name
+    except ReferenceError:  # removed, as by an undo before a receipt retry
+        root = None
+    return {
+        "root": root,
+        "target_size_m": application.target_size,
+        "scale": float(f"{application.scale:.6g}"),
+        "dimensions_m": [round(value, 4) for value in application.dimensions] or None,
+        "bottom_z_m": None if application.bottom is None else round(application.bottom, 4),
+    }
+
+
 @dataclass
 class ModelQuote:
     identifier: str
@@ -331,7 +350,8 @@ class ModelApplicationApproval:
     """One reviewed import unit; `asset_id` is its key, the primary member's ID.
 
     SPZ, .splat and PLY units also carry the reviewed point limit and saved axes;
-    mesh units leave both None.
+    mesh units leave both None. `target_size` is the reviewed longest side in
+    Blender units, or None to keep the saved size.
     """
 
     identifier: str
@@ -344,6 +364,7 @@ class ModelApplicationApproval:
     unit: object = field(default=None, repr=False)
     max_points: int | None = None
     axes: str | None = None
+    target_size: float | None = None
 
     @property
     def splat_options(self):
@@ -776,6 +797,7 @@ class ModelJobs:
                         asset_id=model.asset_id,
                         cursor=model.cursor,
                         options=model.splat_options,
+                        target_size=model.target_size,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
@@ -2112,13 +2134,27 @@ class ModelJobs:
         return ticket
 
     def prepare_model_application(
-        self, request_id, expected_revision, scene, asset_id, *, max_points=None, axes=None
+        self,
+        request_id,
+        expected_revision,
+        scene,
+        asset_id,
+        *,
+        max_points=None,
+        axes=None,
+        target_size=None,
     ):
         """Capture one import unit's destination; `asset_id` is the unit key.
 
         SPZ, .splat and PLY units take a point limit (default 1,000,000) and saved
         axes (default: the file format's convention); mesh units take neither.
+        Any unit takes an optional `target_size`, the longest side in Blender units that
+        the new group is scaled to; it is checked here, before anything is captured.
         """
+        try:
+            target_size = placement.target_size(target_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
         record = self.store.get(request_id)
         if (
             type(expected_revision) is not int
@@ -2154,6 +2190,7 @@ class ModelJobs:
             unit=unit,
             max_points=max_points,
             axes=axes,
+            target_size=target_size,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
@@ -2210,6 +2247,7 @@ class ModelJobs:
                     "dropped_references": application.dropped_references,
                     "frame_rate_mismatch": application.frame_rate_mismatch,
                     "splat": dict(application.splat) if application.splat else None,
+                    **_size_summary(application),
                 }
                 self._model_imports[request_id] = (self.session.history_revision, summary)
 
@@ -2530,7 +2568,15 @@ class ModelJobs:
         }
 
     def prepare_asset_application(
-        self, request_id, expected_revision, scene, asset_id, *, max_points=None, axes=None
+        self,
+        request_id,
+        expected_revision,
+        scene,
+        asset_id,
+        *,
+        max_points=None,
+        axes=None,
+        target_size=None,
     ):
         record = self.store.get(request_id)
         # Any model-family file routes to model review, which accepts only unit keys.
@@ -2544,10 +2590,18 @@ class ModelJobs:
             for item in record.results
         ):
             return self.prepare_model_application(
-                request_id, expected_revision, scene, asset_id, max_points=max_points, axes=axes
+                request_id,
+                expected_revision,
+                scene,
+                asset_id,
+                max_points=max_points,
+                axes=axes,
+                target_size=target_size,
             )
         if max_points is not None or axes is not None:
             raise ScenarioError(0, "Point limits and axes apply only to SPZ, PLY or .splat")
+        if target_size is not None:
+            raise ScenarioError(0, "A target size applies only to a model import unit")
         return self.prepare_media_application(request_id, expected_revision, scene, asset_id)
 
     def apply_saved_result(self, identifier):

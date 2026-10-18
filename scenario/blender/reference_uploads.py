@@ -134,13 +134,11 @@ def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False
             if image is None or not image.has_data:
                 raise ScenarioError(0, "Render an image before uploading the render result")
             settings = capture.RenderSettings.snapshot(context.scene)
-            depth = context.scene.render.image_settings.color_depth
             try:
                 capture.set_image_output(context.scene.render, "PNG")
                 image.save_render(str(path), scene=context.scene)
             finally:
                 settings.restore(context.scene)
-                context.scene.render.image_settings.color_depth = depth
         else:
             if bpy.app.background:
                 raise ScenarioError(0, "Viewport and camera captures require the Blender GUI")

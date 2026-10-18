@@ -386,6 +386,9 @@ alt="Render Video lane with Clip to render and the camera path planner">
 <figure><img src="images/panel-blockout.png" width="440" height="400" loading="lazy"
 alt="Blockout lane with a greybox layout of a medieval market in the viewport">
 <figcaption><a href="#blockout">Blockout</a> a description to a greybox layout</figcaption></figure>
+<figure><img class="tall" src="images/panel-environment.png" width="242" height="815" loading="lazy"
+alt="Environment lane in Generate mode with Scenario Skybox Flux.1 and its settings">
+<figcaption><a href="#environment">Environment</a> a 360 panorama for the scene World</figcaption></figure>
 </div>
 
 ### Image
@@ -681,6 +684,8 @@ If a request's outcome is uncertain, don't generate again: select the scene, cho
 reverts it); choose **Build plan** to update the geometry.
 
 ### Environment
+
+![Environment tab in Generate mode: Scenario Skybox Flux.1 with a prompt, a reference panorama, Style, Skybox Count and Sampling Steps settings, and Generate with its price](images/panel-environment.png)
 
 Generate a 360 panorama for the scene World. Modes:
 

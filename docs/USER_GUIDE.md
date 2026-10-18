@@ -60,6 +60,7 @@ for its version as `scenario-handbook-<version>.html`. The
 [documentation index](index.md) covers the technical details.
 
 Screenshots may show earlier layouts, and prices in them are examples, not quotes.
+Select a screenshot to enlarge it.
 
 ## What it does
 
@@ -357,34 +358,34 @@ If the composer keeps failing, it switches itself off: turn it back on with
 ## Lanes
 
 Model names below are examples; what's available depends on your access and each
-model's current settings. Scroll sideways through the panels and select one to read
-its section.
+model's current settings. Scroll sideways through the panels; select a panel to enlarge
+it, or its name to read its section.
 
 <div class="lane-strip" role="region" aria-label="Lane panels" tabindex="0">
-<a href="#image"><img src="images/panel-image.png" width="440" height="400" loading="lazy"
-alt="Image lane with an offline example form in the Scenario sidebar"><b>Image</b>
-text or references to image</a>
-<a href="#video"><img class="tall" src="images/panel-video.png" width="245" height="750"
-loading="lazy" alt="Video lane with Seedance parameters and frame references"><b>Video</b>
-text, images or your scene</a>
-<a href="#3d"><img class="tall" src="images/panel-3d.png" width="245" height="600"
-loading="lazy" alt="3D lane in Text mode with Meshy and texture options"><b>3D</b>
-text, image, multi-view or edit</a>
-<a href="#materials"><img class="tall" src="images/panel-materials.png" width="245" height="820"
-loading="lazy" alt="Materials lane with a prompt and PBR map choices"><b>Materials</b>
-seamless PBR maps</a>
-<a href="#audio"><img class="tall" src="images/panel-audio.png" width="245" height="385"
-loading="lazy" alt="Audio lane with ElevenLabs Music v2 and duration settings"><b>Audio</b>
-speech, music and effects</a>
-<a href="#render-image"><img class="tall" src="images/panel-render-image.png" width="245"
-height="585" loading="lazy" alt="Render Image lane with Scene to render and the Look field">
-<b>Render Image</b> your view as a finished still</a>
-<a href="#render-video"><img class="tall" src="images/panel-render-video.png" width="245"
-height="820" loading="lazy" alt="Render Video lane with Clip to render and the camera path planner">
-<b>Render Video</b> your playblast as a finished clip</a>
-<a href="#blockout"><img src="images/panel-blockout.png" width="440" height="400" loading="lazy"
-alt="Blockout lane with a greybox layout of a medieval market in the viewport"><b>Blockout</b>
-a description to a greybox layout</a>
+<figure><img src="images/panel-image.png" width="440" height="400" loading="lazy"
+alt="Image lane with an offline example form in the Scenario sidebar">
+<figcaption><a href="#image">Image</a> text or references to image</figcaption></figure>
+<figure><img class="tall" src="images/panel-video.png" width="245" height="750" loading="lazy"
+alt="Video lane with Seedance parameters and frame references">
+<figcaption><a href="#video">Video</a> text, images or your scene</figcaption></figure>
+<figure><img class="tall" src="images/panel-3d.png" width="245" height="600" loading="lazy"
+alt="3D lane in Text mode with Meshy and texture options">
+<figcaption><a href="#3d">3D</a> text, image, multi-view or edit</figcaption></figure>
+<figure><img class="tall" src="images/panel-materials.png" width="245" height="820" loading="lazy"
+alt="Materials lane with a prompt and PBR map choices">
+<figcaption><a href="#materials">Materials</a> seamless PBR maps</figcaption></figure>
+<figure><img class="tall" src="images/panel-audio.png" width="245" height="385" loading="lazy"
+alt="Audio lane with ElevenLabs Music v2 and duration settings">
+<figcaption><a href="#audio">Audio</a> speech, music and effects</figcaption></figure>
+<figure><img class="tall" src="images/panel-render-image.png" width="245" height="585" loading="lazy"
+alt="Render Image lane with Scene to render and the Look field">
+<figcaption><a href="#render-image">Render Image</a> your view as a finished still</figcaption></figure>
+<figure><img class="tall" src="images/panel-render-video.png" width="245" height="820" loading="lazy"
+alt="Render Video lane with Clip to render and the camera path planner">
+<figcaption><a href="#render-video">Render Video</a> your playblast as a finished clip</figcaption></figure>
+<figure><img src="images/panel-blockout.png" width="440" height="400" loading="lazy"
+alt="Blockout lane with a greybox layout of a medieval market in the viewport">
+<figcaption><a href="#blockout">Blockout</a> a description to a greybox layout</figcaption></figure>
 </div>
 
 ### Image

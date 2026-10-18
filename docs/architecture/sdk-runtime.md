@@ -109,10 +109,8 @@ exact checks at approval.
 Caches are connection-local and in memory. The active path does not reuse the
 prototype's unscoped disk model cache. Restart therefore requires a catalog
 refresh. API-key requests use the server's credential-bound scope without requiring
-team/project selection. Missing generated discovery resources in
-[SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29)
-are bridged by the adapter's [named extensions](../SDK_ADOPTION.md#sdk-resource-extensions).
-Discovery is optional and does not infer the key's default project from the first
+team/project selection. Discovery uses the generated `teams` and `projects`
+resources, is optional and does not infer the key's default project from the first
 listed project. Opening the catalog also opens the
 [credential-bound local job store](../JOB_STORAGE.md#identity-and-ownership).
 Its installation-local HMAC pseudonym binds the exact selected key/secret pair to

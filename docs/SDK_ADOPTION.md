@@ -1,10 +1,10 @@
 # SDK contracts for Studio adoption
 
 The shared adapter for compact creation, expanded Studio and local MCP must use
-`scenario-sdk`. The adoption baseline is **2.2.0**, inspected from the published
-[PyPI release](https://pypi.org/project/scenario-sdk/2.2.0/). Its wheel is
-`scenario_sdk-2.2.0-py3-none-any.whl`, with SHA256
-`a1058ea5e41b6fadcdc399760ab22590409835ab7e66957fe719215c178779b6`.
+`scenario-sdk`. The adoption baseline is **2.3.0**, inspected from the published
+[PyPI release](https://pypi.org/project/scenario-sdk/2.3.0/). Its wheel is
+`scenario_sdk-2.3.0-py3-none-any.whl`, with SHA256
+`8f36ce8e456ec75ad8ca966962312c4d98c673e1cfd83671a3a65714fa85cddd`.
 The development dependency group pins this version and the MockTransport test
 client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencies.
 
@@ -37,19 +37,19 @@ catalog cache, generation/job/asset/upload endpoints, Spark and LLM clients are
 removed. No compatibility client or second job engine remains. Useful pure model
 records, lane/schema helpers and local display status classification remain.
 
-| Service operation | Shared implementation and selected SDK 2.2.0 method |
+| Service operation | Shared implementation and selected SDK 2.3.0 method |
 | --- | --- |
 | Model catalog, schemas, connection check | `SDKCatalog` / `SDKAdapter`: `models.with_raw_response.list/retrieve`; [trained-model discovery](#trained-model-catalog-reads) adds `models.with_raw_response.get_bulk` |
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
 | New/Rewrite and Translate | Shared prompt commands: `generate.with_raw_response.prompt/translate`, including separate exact estimates and submission claims |
 | Cloud history, known-job recovery, polling, remote progress and inference cancellation | Shared catalog/coordinator: `jobs.with_raw_response.list/retrieve/trigger_action`; progress reads `Job.status` and `Job.progress` from the same polling retrieve, with no extra request; a [failure's reason](BLENDER_JOB_CONTEXT.md#failure-reasons) reads `Job.metadata.error` and `Job.metadata.hint` from it too |
-| Waiting workflow step decisions (shared job command for the native review dialog and local MCP) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval`; selection uses the named [SDK issue #33 exception](#workflow-step-decisions); steps are read from the polling `jobs.retrieve`; while one waits, `SDKAdapter.workflow` (`workflows.retrieve`) reads the definition's step links once |
+| Waiting workflow step decisions (shared job command for the native review dialog and local MCP) | `JobCoordinator` / `SDKAdapter.workflow_decision`: `workflows.with_raw_response.user_approval/user_selection`; steps are read from the polling `jobs.retrieve`; while one waits, `SDKAdapter.workflow` (`workflows.retrieve`) reads the definition's step links once |
 | Result and complete prompt/model-text metadata | Shared coordinator: `assets.with_raw_response.retrieve`; bounded complete text uses the signed result transport |
 | Saved-result preview metadata | Shared coordinator on the preview lane: `assets.with_raw_response.get_bulk` for every batch, one asset included, so an omitted asset means the same at any size; stills and clips use the signed result transport ([result previews](RESULT_PREVIEWS.md)). Stills of a waiting workflow step's [review assets](RESULT_PREVIEWS.md#workflow-review-assets) use the same read and transport |
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Collection and tag organization (shared review commands, native Library and local MCP tools) | Shared organization commands / `SDKAdapter`: `collections.with_raw_response.list/retrieve/create`, `collections.with_raw_response.assets.add/remove`, `assets.with_raw_response.update_tags/get_bulk`; see [asset organization writes](#asset-organization-writes) |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
-| Optional team/project discovery | Adapter-owned `SDKResourceExtensions`, the named [SDK issue #29 exception](https://github.com/scenario-labs/scenario-sdk-python/issues/29) below |
+| Optional team/project discovery | `SDKAdapter.teams/projects`: `teams.with_raw_response.list` and `projects.with_raw_response.list`; see [discovery](#sdk-resource-extensions) |
 | Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
 
 Workflow adapter primitives also use the pinned public SDK methods documented
@@ -94,7 +94,7 @@ Scenario or spending credits.
 [SDK contracts CI](../.github/workflows/sdk-contracts.yml) repeats these checks
 using the locked environment.
 
-| Adapter requirement | SDK 2.2.0 contract exercised |
+| Adapter requirement | SDK 2.3.0 contract exercised |
 | --- | --- |
 | Generic model estimate and submission | `generate.run_model`: POST, unchanged model-specific body, `dryRun` and `projectId` in the query |
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
@@ -107,8 +107,8 @@ using the locked environment.
 | Multipart upload lifecycle | `uploads.create/retrieve/trigger_action`: project query, asset-option aliases, part URLs and processing/result fields; creation does not transfer bytes |
 | Job discovery | `jobs.list`: `jobs` page wrapper, filters, comma-separated `types`, opaque cursor and project/filter preservation on the next page |
 | Workflow approval decisions | `workflows.with_raw_response.user_approval`: one PUT with workflow, job and node identity and an explicit `approve` or `reject` action; `projectId` only when supplied, because `omit` drops it. Rejection stops a waiting step; it is not general workflow cancellation |
-| Workflow selection gap | 2.2.0 has no `workflows.user_selection` ([#33](https://github.com/scenario-labs/scenario-sdk-python/issues/33)); the low-level `put` sends one PUT with the documented body and optional `projectId`, and a per-request `max_retries=0` holds even on a client configured to retry |
-| Workflow step links | `workflows.with_raw_response.retrieve`: GET with `projectId` only when supplied; the raw JSON keeps each flow node's `dependsOn`, `inputs` references, `loopBodyNodeIds` and the workflow's `updatedAt`, including `user-selection` nodes that 2.2.0's typed flow model does not list |
+| Workflow selection decisions | `workflows.with_raw_response.user_selection`: one PUT with workflow, job and node identity, an explicit `select` or `reject` action and, for `select`, ordered `selectedIndices`; `projectId` only when supplied. A failure makes one attempt on the adapter's zero-retry client |
+| Workflow step links | `workflows.with_raw_response.retrieve`: GET with `projectId` only when supplied; the raw JSON keeps each flow node's `dependsOn`, `inputs` references, `loopBodyNodeIds` and the workflow's `updatedAt`, including fields the typed flow model does not declare |
 | Remote cancellation | `jobs.trigger_action(action="cancel")`: POST action and project query; acknowledgements can remain in progress or report a completion race; upload/cancel failures make one attempt |
 | Collection and tag writes | `collections.assets.add/remove`: PUT and DELETE with a JSON `assetIds` body; `collections.create`: POST `name`; `assets.update_tags`: PUT `add`/`delete` with explicit `strict=false`; `projectId` stays in the query. Timeouts, lost connections and 408/409/429/5xx make one attempt even with `x-should-retry: true`, and no idempotency header is sent. A refused add exposes its decoded JSON body, or the raw text, as `APIStatusError.body` |
 | Collection pages and organization read-back | `collections.list/retrieve`: `collections` page wrapper, opaque cursor with unchanged scope and `collection` wrapper; `assets.get_bulk`: POST `assetIds` body, `projectId` query, `tags` and `collectionIds` retained, and a synthetic partial response passes through unchanged |
@@ -619,7 +619,7 @@ and multipart upload metadata commands are mapped in
 | Retrieve known job | `jobs.retrieve`: GET `/jobs/{id}`, `projectId` query, `job` wrapper |
 | Request inference cancellation | `jobs.trigger_action(action="cancel")`: POST `/jobs/{id}/action`, `projectId` query, `job` wrapper |
 | Decide workflow approval | `workflows.user_approval(action="approve" or "reject")`: PUT `/workflows/{id}/user-approval`, `projectId` query (typed required), `nodeId`/`workflowJobId`/`action` body, `job` wrapper; an omitted action approves |
-| Decide workflow selection | Absent from 2.2.0. The [API reference](https://docs.scenario.com/api/resources/workflows/methods/user_selection) documents PUT `/workflows/{workflowId}/user-selection`, a `projectId` query marked required, `action` (`select` or `reject`), `nodeId`, `workflowJobId` and, for `select`, ordered zero-based `selectedIndices`; `job` wrapper |
+| Decide workflow selection | `workflows.user_selection(action="select" or "reject")`: PUT `/workflows/{id}/user-selection`, `projectId` query (typed required), `nodeId`/`workflowJobId`/`action` body and, for `select`, ordered zero-based `selectedIndices`; `job` wrapper |
 
 ### Uploads and signed storage
 
@@ -727,21 +727,22 @@ a separate concern, deferred for this release. Local durable jobs must still be
 isolated when credentials or an optional project override change. A local
 credential identity must not be presented as a server-reported account identity.
 
-The selected SDK 2.2.0 has no generated `teams` or `projects` resource, tracked in
-[SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29).
-The API operations already used by Scenario MCP can be exposed without waiting
-for SDK regeneration. [SDKResourceExtensions](../scenario/core/api/sdk_extensions.py)
-holds named methods inside the shared adapter boundary, using the adapter's
-existing SDK client and HTTP pool:
+SDK 2.3.0 generates every operation the adapter uses, so
+[SDKResourceExtensions](../scenario/core/api/sdk_extensions.py) holds no method.
+It is where a named fallback goes, inside the shared adapter boundary and using
+the adapter's existing SDK client and HTTP pool, when a selected release lacks an
+operation. The former discovery
+([SDK issue #29](https://github.com/scenario-labs/scenario-sdk-python/issues/29))
+and selection ([SDK issue #33](https://github.com/scenario-labs/scenario-sdk-python/issues/33))
+fallbacks now use generated methods:
 
-| Adapter method | Narrow SDK fallback | Query contract |
+| Adapter method | SDK 2.3.0 method | Query contract |
 | --- | --- | --- |
-| `teams()` | `Scenario.get("/teams", cast_to=httpx.Response)` | No team/project query, including when the adapter has a selected project. |
-| `projects(team_id)` | `Scenario.get("/projects", cast_to=httpx.Response)` | Only the explicitly requested `teamId`; never inherit `projectId`. |
-| `workflow_user_selection(workflow_id, body=...)` | `Scenario.put("/workflows/{workflowId}/user-selection", cast_to=httpx.Response)` with per-request `max_retries=0`; [SDK issue #33](https://github.com/scenario-labs/scenario-sdk-python/issues/33) | The adapter's project override as `projectId` when configured; otherwise no query, as for workflow runs. See [workflow step decisions](#workflow-step-decisions). |
+| `teams()` | `teams.with_raw_response.list` | No team/project query, including when the adapter has a selected project. |
+| `projects(team_id)` | `projects.with_raw_response.list(team_id=...)` | Only the explicitly requested `teamId`; never inherit `projectId`. |
+| `workflow_decision(...)` for a selection | `workflows.with_raw_response.user_selection` | The adapter's project override as `projectId` when configured; otherwise no query, as for workflow runs. See [workflow step decisions](#workflow-step-decisions). |
 
-These are explicit raw endpoint exceptions, not generated resource methods.
-They retain the SDK's configured credentials, base URL, timeout, zero retries,
+They keep the SDK's configured credentials, base URL, timeout, zero retries,
 redirect policy and adapter online/lifetime checks and sanitized errors. For
 discovery, the adapter validates the named list and each record's ID while
 preserving unknown fields and the full response wrapper. Each discovery method
@@ -755,20 +756,17 @@ personal team/default project for a user without teams during `GET /teams`, so
 do not describe that route as universally side-effect-free or add an automatic
 onboarding probe. These methods are not yet called by the active Blender UI.
 
-To add another missing method, inspect the pinned SDK, reproduce the gap, link
+To add a missing method, inspect the pinned SDK, reproduce the gap, link
 an upstream issue, then add a named extension with a verified endpoint/body/query
 contract and offline transport tests. Keep generated SDK methods for operations
 already covered. Do not expose an arbitrary-URL bypass to UI, jobs or local MCP.
 Replace each fallback when the selected SDK provides an equivalent method and
-its contract tests pass; the dependency tests flag newly available discovery
-resources and `workflows.user_selection` for that review. No dependency upgrade
-is required for this layer.
+its contract tests pass.
 
-[Extension tests](../tests/unit/test_sdk_extensions.py) cover selected Basic and
-Bearer credentials despite conflicting environment values, stale-project
-discovery, permission/lifetime checks, malformed data and single-attempt errors,
-including the selection fallback on an SDK client configured to retry.
-They also exercise API-key estimate/submission without discovery or tenant IDs,
+[Discovery and decision tests](../tests/unit/test_sdk_extensions.py) cover
+selected Basic and Bearer credentials despite conflicting environment values,
+stale-project discovery, permission/lifetime checks, malformed data and
+single-attempt errors. They also exercise API-key estimate/submission without discovery or tenant IDs,
 and the workflow decisions below. These synthetic checks and the installed-bundle
 test do not claim live service acceptance.
 
@@ -777,12 +775,8 @@ test do not claim live service acceptance.
 `SDKAdapter.workflow_decision` answers one waiting workflow step. A
 `user-approval` step accepts `approve` or `reject` through the generated
 `workflows.with_raw_response.user_approval`. A `user-selection` step accepts
-`select` or `reject` through `workflow_user_selection`, because SDK 2.2.0 lacks
-the generated method. The [API reference](https://docs.scenario.com/api/resources/workflows/methods/user_selection)
-documents that route and SDK `main` already has it, but no published release
-does ([SDK issue #33](https://github.com/scenario-labs/scenario-sdk-python/issues/33)).
-Remove the extension when the pinned SDK provides `workflows.user_selection` and
-these contracts pass with its raw-response wrapper.
+`select` or `reject` through the generated
+`workflows.with_raw_response.user_selection`.
 
 - **Request shape.** Workflow and job IDs use the adapter's path-safe identifier
   rules; the selection path uses the same segment encoding as the generated
@@ -797,8 +791,8 @@ these contracts pass with its raw-response wrapper.
   reference's default maximum, and indices stay within the exact JSON integer
   range. The step's own min/max bounds and candidate count remain the caller's
   check.
-- **Scope.** Both endpoints document `projectId` as required, and SDK 2.2.0
-  types it as required for approvals. A decision uses the scope of the run it
+- **Scope.** Both endpoints document `projectId` as required, and SDK 2.3.0
+  types it as required for both. A decision uses the scope of the run it
   answers: the adapter's explicit project override when configured, otherwise
   API-key credential-bound scope with `projectId` omitted, as for `workflows.run`.
   Omission for these two endpoints is not yet live-verified. If a key needs the
@@ -934,7 +928,7 @@ can tell a transient refresh failure from a refusal. The
 [contract tests](../tests/unit/test_scenario_sdk_contract.py) drive each
 allow-listed read and each single-attempt operation through the adapter.
 
-| Adapter operation | SDK 2.2.0 method and contract |
+| Adapter operation | SDK 2.3.0 method and contract |
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
 | Bulk model summaries | `models.get_bulk` through its public raw-response wrapper: at most 50 IDs per request and 200 per call, requested identities only, identical duplicates merged, conflicts rejected, scope and online permission on every request, no partial result; see [trained-model catalog reads](#trained-model-catalog-reads) |
@@ -1030,6 +1024,18 @@ The explicit live command is documented in
 tests do not claim live service acceptance or authorize a paid operation.
 
 ## Source baseline and remaining work
+
+### Selected SDK 2.3.0 upgrade
+
+The inspected 2.3.0 wheel keeps 2.2.0's required dependency closure and
+byte-identical MIT notice. Client/authentication and transport sources only add
+the `projects`, `teams` and `recommendations` resources, so the #26 header
+workaround remains necessary. The generated `teams.list`, `projects.list` and
+`workflows.user_selection` pass the discovery and decision contracts and replace
+the #29 and #33 extensions. `WorkflowFlow.type` now lists `user-selection`.
+`required.conditional` replaces `conditionalValues` in model and workflow inputs;
+the adapter reads raw schemas and used neither. Other new operations, such as
+quality gate, IP detection and model presets, are not adopted by this upgrade.
 
 ### Selected SDK 2.2.0 upgrade
 
@@ -1234,7 +1240,7 @@ no service or paid check is implied. See [the composition contract](FILM_PLAN.md
 Native workflow forms and local MCP list public/private workflows and read their
 inputs through the adapter's `workflows.list` and `workflows.retrieve` wrappers.
 Estimates and single approved submissions call
-`workflows.with_raw_response.run`; the selected SDK 2.2.0 resource was inspected
+`workflows.with_raw_response.run`; the selected SDK 2.3.0 resource was inspected
 for its workflow-specific body, `dry_run` and `project_id` query mapping. No
 adapter, dependency or raw-API exception is added. The same JobSession and
 ModelJobs own scoped metadata, approvals, persisted identity, uncertainty,
@@ -1282,7 +1288,7 @@ dependency change is needed. These are free account metadata changes. They
 spend no credits, do not change the Blender scene and cannot be undone by
 Blender Undo.
 
-| Adapter method | SDK 2.2.0 method | Request and response contract |
+| Adapter method | SDK 2.3.0 method | Request and response contract |
 | --- | --- | --- |
 | `collection_page` | `collections.with_raw_response.list` | One page of 1 to 100 records and an opaque cursor. IDs are validated, identical duplicates are dropped, and conflicting duplicates, oversized pages or a repeated cursor fail. An empty page is valid. |
 | `collection` | `collections.with_raw_response.retrieve` | The returned `collection.id` must equal the requested ID. |

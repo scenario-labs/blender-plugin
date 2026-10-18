@@ -290,8 +290,7 @@ class Estimate:
         return _json(self.response_json, exact=True)
 
 
-# SDK 2.2.0 WorkflowFlow.type values that neither loop nor nest a workflow, plus
-# user-selection, observed in live workflow job flows but not in that type.
+# SDK 2.3.0 WorkflowFlow.type values that neither loop nor nest a workflow.
 NON_LOOP_NODE_TYPES = frozenset(
     {
         "custom-model",
@@ -835,8 +834,8 @@ class SDKAdapter:
             # this, so a local request-building failure is not expected here.
             raise WriteUncertain(_UNCONFIRMED) from None
 
-    def _discovery(self, method, wrapper, *args):
-        value = _json(self._unscoped_request(method, *args))
+    def _discovery(self, method, wrapper, **options):
+        value = _json(self._unscoped_request(method, **options))
         records = value.get(wrapper)
         if not isinstance(records, list):
             raise AdapterError(f"Scenario returned no {wrapper} list")
@@ -853,11 +852,15 @@ class SDKAdapter:
         Optional metadata discovery; API-key operations need no team/project
         selection. This list does not establish a key's default project.
         """
-        return self._discovery(self._extensions.teams, "teams")
+        return self._discovery(self._sdk.teams.with_raw_response.list, "teams")
 
     def projects(self, team_id):
         """Return one team's discovery response, ignoring the selected project."""
-        return self._discovery(self._extensions.projects, "projects", _identifier(team_id))
+        # Only the explicit team belongs in this query: projectId can make the
+        # authorizer derive a different team, even on a project-bound adapter.
+        return self._discovery(
+            self._sdk.projects.with_raw_response.list, "projects", team_id=_identifier(team_id)
+        )
 
     def _retrieve(self, resource, identifier, wrapper, *, unavailable=False, retry=True, **options):
         client = self._reads if retry and resource in _RETRIED_RESOURCES else self._sdk
@@ -1210,10 +1213,18 @@ class SDKAdapter:
                 action=action,
             )
         else:
-            body = {"action": action, "nodeId": node_id, "workflowJobId": workflow_job_id}
-            if action == "select":
-                body["selectedIndices"] = _selected_indices(selected_indices)
-            raw = self._request(self._extensions.workflow_user_selection, workflow_id, body=body)
+            # selectedIndices keep the caller's order: the node output preserves it.
+            raw = self._request(
+                self._sdk.workflows.with_raw_response.user_selection,
+                workflow_id,
+                project_id=omit,
+                action=action,
+                node_id=node_id,
+                workflow_job_id=workflow_job_id,
+                selected_indices=(
+                    _selected_indices(selected_indices) if action == "select" else omit
+                ),
+            )
         job = _json(raw).get("job")
         if not isinstance(job, dict) or job.get("jobId") != workflow_job_id:
             raise AdapterError("Scenario returned no matching workflow decision acknowledgement")

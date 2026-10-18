@@ -1380,6 +1380,6 @@ def test_known_non_loop_node_types_match_the_pinned_sdk():
 
     fields = WorkflowFlow.model_fields
     sdk_types = set(get_args(fields["type"].annotation))
-    assert sdk_types - {"for-each", "workflow"} == NON_LOOP_NODE_TYPES - {"user-selection"}
+    assert sdk_types - {"for-each", "workflow"} == NON_LOOP_NODE_TYPES
     assert set(NON_LOOP_TYPES) == NON_LOOP_NODE_TYPES
     assert set(LOOP_NODE_FIELDS) <= {field.alias or name for name, field in fields.items()}

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Classify a saved job's 3D result files into explicit import units. No bpy.
 
-Inputs are URL-free manifest facts typed by the pinned SDK 2.2.0
+Inputs are URL-free manifest facts typed by the pinned SDK 2.3.0
 (``scenario_sdk/types/asset_retrieve_response.py``): ``Asset.mime_type``,
 ``AssetProperties.size``, ``AssetMetadata.type`` and ``AssetMetadata.parent_id``.
 Undocumented provider filenames are never used. The MIME type selects handling;

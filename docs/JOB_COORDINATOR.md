@@ -362,7 +362,7 @@ shutdown. One owner per coordinator is required: in Blender, the selected
 `remote` record with a known ID and a model operation. A fresh `jobs.retrieve`
 observation must report `jobType=inference`. The public
 [job action reference](https://docs.scenario.com/api/resources/jobs/methods/trigger_action)
-and the pinned SDK 2.2.0 `jobs.trigger_action` both state "Today only cancel on
+and the pinned SDK 2.3.0 `jobs.trigger_action` both state "Today only cancel on
 inference jobs is supported". The SDK's retrieve enum lists `custom` and
 `workflow` as separate types, and the sanitized
 [captured model-job fixture](../tests/fixtures/patina-copper-512/job.json) uses

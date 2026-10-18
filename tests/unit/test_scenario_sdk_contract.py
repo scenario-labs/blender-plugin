@@ -378,7 +378,7 @@ def test_explicit_basic_credentials_override_ambient_basic(client_factory, monke
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="SDK 2.2.0 auth precedence: https://github.com/scenario-labs/scenario-sdk-python/issues/26",
+    reason="SDK 2.3.0 auth precedence: https://github.com/scenario-labs/scenario-sdk-python/issues/26",
 )
 def test_explicit_bearer_must_override_ambient_basic(client_factory, monkeypatch):
     monkeypatch.setenv("SCENARIO_SDK_API_KEY", "ambient-key")
@@ -684,23 +684,12 @@ def test_workflow_approval_decision_targets_one_node(client_factory, project, ac
     assert json.loads(result.read())["job"]["status"] == "in-progress"
 
 
-@pytest.mark.parametrize("project", [PROJECT, None])
-@pytest.mark.parametrize(
-    "body",
-    [
-        {
-            "action": "select",
-            "nodeId": "fixture-node",
-            "workflowJobId": "fixture-workflow-job",
-            "selectedIndices": [2, 0],
-        },
-        {"action": "reject", "nodeId": "fixture-node", "workflowJobId": "fixture-workflow-job"},
-    ],
-)
-def test_workflow_selection_gap_and_low_level_put_contract(client_factory, project, body):
-    # Issue #33: the API reference documents PUT /workflows/{id}/user-selection,
-    # but 2.2.0 has no generated method. Remove the adapter fallback once the
-    # selected release provides one that passes these decision contracts.
+@pytest.mark.parametrize("project", [PROJECT, omit])
+@pytest.mark.parametrize("indices", [[2, 0], omit])
+def test_workflow_selection_decision_targets_one_node(client_factory, project, indices):
+    # Issue #33: 2.3.0 generates workflows.user_selection, replacing the
+    # adapter fallback. Like approvals, projectId is typed required but the
+    # adapter omits it unless the connection has a project override.
     requests = []
     payload = {"job": {"jobId": "fixture-workflow-job", "futureField": True}}
 
@@ -709,15 +698,14 @@ def test_workflow_selection_gap_and_low_level_put_contract(client_factory, proje
         return httpx.Response(200, json=payload)
 
     sdk = client_factory(respond)
-    message = "Review the selection fallback on SDK upgrade"
-    assert not hasattr(sdk.workflows, "user_selection"), message
-    assert not hasattr(sdk.workflows.with_raw_response, "user_selection"), message
-    params = {} if project is None else {"projectId": project}
-    response = sdk.put(
-        "/workflows/fixture-workflow/user-selection",
-        cast_to=httpx.Response,
-        body=body,
-        options={"params": params, "max_retries": 0},
+    action = "reject" if indices is omit else "select"
+    response = sdk.workflows.with_raw_response.user_selection(
+        "fixture-workflow",
+        project_id=project,
+        action=action,
+        node_id="fixture-node",
+        workflow_job_id="fixture-workflow-job",
+        selected_indices=indices,
     )
     assert json.loads(response.read()) == payload
     assert len(requests) == 1
@@ -726,8 +714,11 @@ def test_workflow_selection_gap_and_low_level_put_contract(client_factory, proje
         "PUT",
         "/v1/workflows/fixture-workflow/user-selection",
     )
-    assert dict(request.url.params) == params
-    # Selected indices keep their order: the node output preserves it.
+    assert dict(request.url.params) == ({} if project is omit else {"projectId": PROJECT})
+    body = {"action": action, "nodeId": "fixture-node", "workflowJobId": "fixture-workflow-job"}
+    if indices is not omit:
+        # Selected indices keep their order: the node output preserves it.
+        body["selectedIndices"] = indices
     assert json.loads(request.content) == body
 
 
@@ -785,17 +776,18 @@ def test_workflow_definition_raw_wrapper_keeps_step_links(client_factory, projec
     assert len(requests) == 1
     assert (requests[0].method, requests[0].url.path) == ("GET", "/v1/workflows/fixture-workflow")
     assert dict(requests[0].url.params) == ({} if project is omit else {"projectId": PROJECT})
-    # 2.2.0's typed flow model has no user-selection node type, so the raw
-    # JSON wrapper, not the parsed model, is the contract the projection uses.
+    # The projection reads the raw JSON wrapper, not the parsed model, so node
+    # fields the typed flow model does not declare are kept too.
     from scenario_sdk.types.workflow_retrieve_response import WorkflowFlow
 
     types = typing.get_args(WorkflowFlow.model_fields["type"].annotation)
-    assert "user-selection" not in types and "for-each" in types
+    assert {"user-selection", "for-each"} <= set(types)
     assert {"depends_on", "inputs", "loop_body_node_ids"} <= set(WorkflowFlow.model_fields)
 
 
 @pytest.mark.parametrize("failure", ["timeout", 400, 409, 503])
-def test_low_level_put_options_disable_retries_for_one_decision(client_factory, failure):
+@pytest.mark.parametrize("node", ["user-approval", "user-selection"])
+def test_decisions_make_one_attempt_on_a_zero_retry_client(client_factory, node, failure):
     requests = []
 
     def fail(request):
@@ -806,15 +798,17 @@ def test_low_level_put_options_disable_retries_for_one_decision(client_factory, 
             failure, json={"error": "fixture failure"}, headers={"Retry-After": "0"}
         )
 
-    # The per-request option wins even over a client configured to retry.
-    sdk = client_factory(fail, max_retries=2)
+    # The adapter's client is configured with max_retries=0, as client_factory is.
+    sdk = client_factory(fail)
+    method = getattr(sdk.workflows.with_raw_response, node.replace("-", "_"))
     expected = APITimeoutError if failure == "timeout" else APIStatusError
     with pytest.raises(expected) as error:
-        sdk.put(
-            "/workflows/fixture-workflow/user-selection",
-            cast_to=httpx.Response,
-            body={"action": "reject", "nodeId": "n", "workflowJobId": "j"},
-            options={"params": {}, "max_retries": 0},
+        method(
+            "fixture-workflow",
+            project_id=omit,
+            action="reject",
+            node_id="n",
+            workflow_job_id="j",
         )
     assert len(requests) == 1
     if failure != "timeout":
@@ -854,9 +848,9 @@ def test_upload_and_cancel_failures_do_not_replay_mutations(client_factory, oper
 
 
 @pytest.mark.parametrize("resource", ["teams", "projects"])
-def test_discovery_gap_and_low_level_get_contract(client_factory, resource):
-    # Issue #29: remove the adapter fallback after equivalent generated methods
-    # exist in the selected release and pass the discovery scope contracts.
+def test_discovery_raw_list_contract(client_factory, resource):
+    # Issue #29: 2.3.0 generates teams.list and projects.list. Their raw
+    # wrappers send one GET carrying only the explicit team, as discovery needs.
     requests = []
     payload = {resource: [{"id": "fixture-id", "futureField": True}]}
 
@@ -865,9 +859,11 @@ def test_discovery_gap_and_low_level_get_contract(client_factory, resource):
         return httpx.Response(200, json=payload)
 
     sdk = client_factory(respond)
-    assert not hasattr(sdk, resource), "Review the discovery fallback on SDK upgrade"
     params = {} if resource == "teams" else {"teamId": "fixture-team"}
-    response = sdk.get(f"/{resource}", cast_to=httpx.Response, options={"params": params})
+    if resource == "teams":
+        response = sdk.teams.with_raw_response.list()
+    else:
+        response = sdk.projects.with_raw_response.list(team_id="fixture-team")
     assert json.loads(response.read()) == payload
     assert len(requests) == 1
     assert requests[0].url.path == f"/v1/{resource}"

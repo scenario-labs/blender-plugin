@@ -872,16 +872,18 @@ override the clips. Neither armature object may be mirrored.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
-animated bone's rest orientation relative to its parent (or to world space for
-a root bone, so either armature object may be turned) must therefore be within
-15 degrees of the destination's. One provider re-rigging its own rigged
-character moved some joint rest orientations by up to about 11 degrees, while a
-skeleton built in another pose or orientation differs by tens of degrees, which
-no correction makes right.
+animated bone's rest orientation relative to its parent (or to armature space
+for a root bone) must therefore be within 15 degrees of the destination's. If it
+is not, world space is tried for root bones, as when an FBX import turns its
+armature object and its bones back. Armature space comes first, so a character
+turned in the scene plays the clip in its own facing. One provider re-rigging
+its own rigged character moved some joint rest orientations by up to about 11
+degrees, while a skeleton built in another pose or orientation differs by tens
+of degrees, which no correction makes right.
 
 Within that limit, copied keys are corrected so that each bone moves the mesh
 as the returned clip moves the returned character. With C the rotation from the
-destination bone's world-space rest orientation to the result's, each
+destination bone's rest orientation to the result's, in the space chosen, each
 quaternion key q becomes C q C⁻¹ and each location vector l becomes C l, in
 every key and handle; automatic Bezier handles become free. The destination's
 rest heads stay, so the mesh bends about its own joints. A corrected bone must

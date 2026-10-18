@@ -8,19 +8,23 @@ never modified, and no returned object is kept. Bones are matched by name only;
 retargeting across different skeletons is unsupported.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
-a bone differently on it, and either armature object can be turned, as FBX
-imports are. Skinning moves a vertex by its bone's armature-space deform matrix,
-the posed matrix times the inverted rest. A bone that inherits rotation and scale
-and keys a local location, as every glTF bone does and so the matching
-destination bone must, with world-space rest rotation A (its armature object's
-rotation times its armature-space rest), pose rotation q and pose location l,
-deforms by A q A^-1 about its rest head and moves by A l in world space, after
-its parent's deform. The destination therefore gets q' = C q C^-1 and l' = C l
-with C = A_destination^-1 A_result, so every bone, and every mesh it moves,
-deforms as in the returned clip. The rest head positions stay the destination's:
-the user's mesh bends about its own joints.
+a bone differently on it. Skinning moves a vertex by its bone's armature-space
+deform matrix, the posed matrix times the inverted rest. A bone that inherits
+rotation and scale and keys a local location, as every glTF bone does and so the
+matching destination bone must, with rest rotation A, pose rotation q and pose
+location l, deforms by A q A^-1 about its rest head and moves by A l, after its
+parent's deform. The destination therefore gets q' = C q C^-1 and l' = C l with
+C = A_destination^-1 A_result, so every bone, and every mesh it moves, deforms as
+in the returned clip. The rest head positions stay the destination's: the user's
+mesh bends about its own joints.
+
+A is the armature-space rest when the rigs match that way, so a turned character
+plays the clip in its own facing. Otherwise, as when an FBX import turns its
+armature object and its bones back, A is the world-space rest: the armature
+object's rotation times the armature-space rest.
 """
 
+import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -29,6 +33,8 @@ import bpy
 from mathutils import Vector
 
 from . import mesh_application as mesh
+
+_log = logging.getLogger("scenario.jobs")
 
 # Clips are corrected for rest differences (see above), which only holds when both
 # rigs bind the character in the same pose. One provider re-rigging its own rigged
@@ -121,15 +127,18 @@ def _channels(action, slot):
     return bones, moved
 
 
-def _world_rest(rig, bone):
-    """Rest orientation in world space; the armature object may be turned."""
-    return (rig.matrix_world.to_quaternion() @ bone.matrix_local.to_quaternion()).normalized()
+def _orientation(rig, bone, world):
+    """Rest orientation in armature space, or in world space with `world`."""
+    rest = bone.matrix_local.to_quaternion()
+    if world:
+        rest = rig.matrix_world.to_quaternion() @ rest
+    return rest.normalized()
 
 
-def _rest(rig, bone):
-    """Rest orientation relative to the parent bone, or to world space for a root."""
+def _rest(rig, bone, world):
+    """Rest orientation relative to the parent bone, or to the chosen space for a root."""
     if bone.parent is None:
-        return _world_rest(rig, bone)
+        return _orientation(rig, bone, world)
     matrix = bone.parent.matrix_local.inverted_safe() @ bone.matrix_local
     return matrix.to_quaternion().normalized()
 
@@ -205,7 +214,17 @@ def _correctable(properties, rotation_mode):
         )
 
 
-def _corrections(source, destination, animated, clips):
+def _within(source, destination, animated, world):
+    """Whether every animated bone's rest is within the tolerance in the chosen space."""
+    for name in animated:
+        returned = _rest(source, source.data.bones[name], world)
+        existing = _rest(destination, destination.data.bones[name], world)
+        if 2 * math.acos(min(1.0, abs(returned.dot(existing)))) > REST_TOLERANCE:
+            return False
+    return True
+
+
+def _corrections(source, destination, animated, clips, world):
     """Each animated bone's rest correction C and the largest correction angle.
 
     Only bones whose correction exceeds export rounding are returned, after their
@@ -213,8 +232,8 @@ def _corrections(source, destination, animated, clips):
     """
     corrections, largest = {}, 0.0
     for name in animated:
-        existing = _world_rest(destination, destination.data.bones[name])
-        returned = _world_rest(source, source.data.bones[name])
+        existing = _orientation(destination, destination.data.bones[name], world)
+        returned = _orientation(source, source.data.bones[name], world)
         correction = existing.inverted() @ returned
         angle = _angle(correction)
         largest = max(largest, angle)
@@ -330,9 +349,13 @@ def validate_clips(target, objects):
             source.pose.bones[name].rotation_mode != destination.pose.bones[name].rotation_mode
         ):
             raise mesh.MeshApplicationError("Animated bones must use the same rotation mode")
-        dot = min(1.0, abs(_rest(source, returned).dot(_rest(destination, existing))))
-        if 2 * math.acos(dot) > REST_TOLERANCE:
-            raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+    # Armature space first: a turned character keeps the clip in its own facing.
+    for world in (False, True):
+        if _within(source, destination, animated, world):
+            break
+    else:
+        raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+    _log.info("Clip rests compared in %s space", "world" if world else "armature")
     # Constraints and drivers evaluate after the action and would override the clips.
     drivers = data.drivers if data is not None else ()
     driven = {
@@ -344,7 +367,7 @@ def validate_clips(target, objects):
         destination.pose.bones[name].constraints for name in animated
     ):
         raise mesh.MeshApplicationError("Constraints or drivers move the animated bones")
-    corrections, largest = _corrections(source, destination, animated, clips)
+    corrections, largest = _corrections(source, destination, animated, clips, world)
     # Rest-head location keys stay zero at any scale; sampled exports key every bone.
     ratio = _scale(source, destination) if moved else 1.0
     return destination, clips, ratio, corrections, largest

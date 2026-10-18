@@ -1569,6 +1569,37 @@ class AnimateResultTests(unittest.TestCase):
                     self.tearDown()
                     self.setUp()
 
+    def test_clips_play_relative_to_a_turned_character(self):
+        import math
+
+        from helpers import CHAIN, clip_deforms, deform_matrices
+
+        # Turning the whole character to face +X is placement, not a rest change:
+        # the clip plays in the character's own facing, as in the returned rig.
+        _, spine, head = CHAIN
+        bones = (("Hips", None, (0, 0, 1), (0.025, 0, 1.2)), spine, (*head, 0.2))
+        self.use_clips(bones=bones)
+        self.rig.rotation_euler.z = math.pi / 2
+        bpy.context.view_layer.update()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        result = self.apply(policy="ANIMATE")
+        frames = range(1, 26, 8)
+        data = self.rig.animation_data
+        for index, clip in enumerate(result.clips, 1):
+            data.action = clip
+            got = deform_matrices(self.scene, self.rig, frames)
+            want = clip_deforms(self.body, f"Clip {index}", frames, fps=self.scene.render.fps)
+            for frame in frames:
+                for name, matrix in want[frame].items():
+                    mine = got[frame][name]
+                    turned = mine.to_quaternion().rotation_difference(matrix.to_quaternion())
+                    self.assertLess(_degrees(turned), 0.1, (index, frame, name))
+                    # The returned rig's centimetres are this rig's metres.
+                    offset = mine.translation - matrix.translation * 0.01
+                    self.assertLess(offset.length, 1e-4, (index, frame, name))
+        self.assertGreater(want[25]["Hips"].translation.length, 50)
+        self.assertAlmostEqual(result.rest_correction_deg, 11.5, delta=0.1)
+
     def test_constrained_or_driven_animated_bones_fail_without_mutation(self):
         # Constraints and drivers evaluate after the action and would override the clips.
         apply_clips = self.animation.apply_clips

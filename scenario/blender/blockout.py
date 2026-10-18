@@ -324,6 +324,60 @@ def needs_price(scene, action="DESIGN"):
     return not (item.phase == "READY" and item.action == action and binding(scene) == item.binding)
 
 
+def draw_price(layout, scene):
+    """What stands in for Generate blockout while the design has no current price. Never mutates.
+
+    The pump prices settled inputs by itself, so the normal path shows a short wait and then
+    the priced button. A request by hand stays for a new plan from unchanged inputs and for
+    a failed automatic price, whose reason is shown.
+    """
+    from . import model_jobs
+    from .blockout_jobs import _design_inputs, binding
+
+    if not needs_price(scene):
+        return
+    props = scene.scenario_blockout
+    if props.image_path and not props.image_asset_id:
+        return  # The Upload button above comes first.
+    if not (props.prompt.strip() or props.image_asset_id):
+        layout.label(text="Describe a scene to see its price", icon="INFO")
+        return
+    jobs = runtime.state.blockout_jobs
+    item = jobs.current(scene) if jobs is not None else None
+    if item is not None and _design_inputs(item.binding) == _design_inputs(binding(scene)):
+        # A finished plan, an error or a refinement for these inputs stays on screen.
+        text = "Try again" if item.phase == "ERROR" and not item.request_id else "New plan"
+        layout.operator("scenario.blockout_design", text=text, icon="FILE_REFRESH")
+        return
+    reason = jobs.auto_price_error(scene) if jobs is not None else ""
+    if reason:
+        _wrapped(layout, reason, "ERROR")
+        layout.operator("scenario.blockout_design", text="Try again", icon="FILE_REFRESH")
+    elif (
+        model_jobs.automatic_estimates_stopped()
+        or not runtime.online()
+        or not runtime.credentials().valid
+    ):
+        layout.operator("scenario.blockout_design", text="Get price", icon="FILE_REFRESH")
+    else:
+        layout.label(text="Getting the price...", icon="TIME")
+
+
+def running_plans(shown=()):
+    """Blockout plans Scenario is designing, as Jobs rows; `shown` lists saved jobs drawn already."""
+    from .blockout_jobs import MINUTES
+
+    jobs = runtime.state.blockout_jobs
+    if jobs is None:
+        return []
+    return [
+        f"{core.model_label(item.model)}, {MINUTES.get(item.tier, 'a few minutes')}"
+        for item in tuple(jobs.actions.values())
+        if item.phase in {"SUBMITTING", "POLLING", "LISTING", "READING"}
+        and item.request_id not in shown
+    ]
+
+
 def auto_quote(scene, now):
     """Pump hook: price the visible Blockout design once its inputs settle."""
     return runtime.ensure_blockout_jobs().auto_quote(scene, now)

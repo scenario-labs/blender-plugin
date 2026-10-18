@@ -6,9 +6,10 @@ jobs. The shared rules are in the [UI style guide](../UI_STYLE.md).
 ## Blockout plan approval interaction
 
 Blockout prices a settled description automatically and shows **Generate
-blockout (cost)**; **Get price** requests one by hand. Refine has its own quote. A
-completed plan exposes **Build blockout**; generation itself leaves geometry
-unchanged. Clear opens a confirmation dialog. Drawing is read-only.
+blockout (cost)**; **New plan** or **Try again** requests one by hand for unchanged
+or refused inputs. Refine has its own quote. A completed plan exposes **Build
+blockout**; generation itself leaves geometry unchanged. Clear opens a confirmation
+dialog. Drawing is read-only.
 
 The exact ZIP with SHA-256
 `44edc43008d64f1e2836c95c0cb526f5c727a4278f6468676d4d7ef71b8fc47e`

@@ -669,8 +669,9 @@ coloured primitives, grouped in a `Blockout` collection.
    finer detail) and a model: **Best** (Claude Opus, a few minutes) or **Fast**
    (Gemini Flash, under a minute, cheaper).
 3. The price appears on **Generate blockout**; choose it to pay once and design
-   the plan. **Get price** asks again by hand. Changing the fields, scene or
-   credentials first cancels the approval.
+   the plan, which Jobs lists until it arrives. **New plan** prices another one
+   from the same fields. Changing the fields, scene or credentials first cancels
+   the approval.
 4. Choose **Build blockout** to create the geometry. To refine, describe the
    change, choose **Get refinement price**, approve it, then build again.
 5. **Clear** removes the collection and plan after asking. Build and Clear

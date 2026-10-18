@@ -915,10 +915,7 @@ def draw_blockout_tab(layout, context):
     row.prop(props, "tier", expand=True)
     if item is None or item.action == "DESIGN":
         bo.draw_status(box, scene)
-    if bo.needs_price(scene):
-        price = box.row()
-        price.scale_y = 1.4
-        price.operator("scenario.blockout_design", text="Get price", icon="MOD_BUILD")
+    bo.draw_price(box, scene)
 
     plan = bo.stored_plan(scene)
     if plan:
@@ -949,10 +946,7 @@ def draw_blockout_tab(layout, context):
         rrow.operator("scenario.blockout_refine", text="Get refinement price", icon="MOD_BUILD")
         if item is not None and item.action == "REFINE":
             bo.draw_status(refine, scene)
-    layout.label(
-        text="Pay for the plan once, then build its primitives locally.",
-        icon="INFO",
-    )
+    draw_wrapped(layout, "Pay for the plan once, then build its primitives locally.", "INFO")
 
 
 class SCENARIO_PT_main(bpy.types.Panel):
@@ -1088,7 +1082,10 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
     bl_order = 1
 
     def draw_header(self, context):
-        active = sum(1 for r in runtime.state.jobs_view if not r.is_terminal)
+        from . import blockout
+
+        active = [r for r in runtime.state.jobs_view if not r.is_terminal]
+        active = len(active) + len(blockout.running_plans({r.local_id for r in active}))
         self.layout.label(
             text="Jobs" if not active else ("1 Job" if active == 1 else f"{active} Jobs")
         )
@@ -1098,10 +1095,17 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
         layout.operator(
             "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="FILE_REFRESH"
         )
+        from . import blockout
+
         active = [r for r in runtime.state.jobs_view if not r.is_terminal]
-        if not active:
+        plans = blockout.running_plans({r.local_id for r in active})
+        if not active and not plans:
             layout.label(text="No job running", icon="CHECKMARK")
             return
+        for text in plans:
+            box = layout.box()
+            box.label(text="Blockout plan", icon="MESH_CUBE")
+            box.label(text=f"{text}: designing", icon="TIME")
         for rec in active:
             draw_active_job(layout, rec)
 

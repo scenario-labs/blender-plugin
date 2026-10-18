@@ -374,6 +374,44 @@ class BlockoutJobsTests(unittest.TestCase):
             read.assert_called_once()
         self.assertEqual(len(self.paid), 1)
 
+    def test_panel_prices_by_itself_and_lists_the_running_plan(self):
+        generation = submodule("blender.generation")
+        jobs = self.jobs()
+
+        def drawn():
+            layout = MagicMock()
+            self.blockout.draw_price(layout, self.scene)
+            labels = " ".join(call.kwargs["text"] for call in layout.label.call_args_list)
+            return labels, [call.kwargs["text"] for call in layout.operator.call_args_list]
+
+        # Settling inputs wait for the automatic price: there is no price step to press.
+        self.assertEqual(drawn(), ("Getting the price...", []))
+        self.scene.scenario_blockout.prompt = ""
+        self.assertEqual(drawn(), ("Describe a scene to see its price", []))
+        self.scene.scenario_blockout.prompt = "A stone tower"
+        item = self.quote()
+        self.assertEqual(drawn(), ("", []))  # draw_status shows Generate blockout (cost).
+        self.lose_response = True
+        self.approve(item)
+        # The Jobs panel lists the plan Scenario is designing, unless its saved job is shown.
+        self.assertEqual(len(self.blockout.running_plans()), 1)
+        self.assertEqual(self.blockout.running_plans({item.request_id}), [])
+        self.advance(item)
+        self.assertEqual((item.phase, self.blockout.running_plans()), ("ERROR", []))
+        # A finished or failed plan for these inputs stays; a new plan is a small request.
+        self.assertEqual(drawn(), ("", ["New plan"]))
+        self.scene.scenario_blockout.prompt = "A taller stone tower"
+        with (
+            patch.object(generation, "request_model"),
+            patch.object(generation, "is_loading", return_value=False),
+        ):
+            for now in (50.0, 51.0, 52.0):
+                self.assertFalse(jobs.auto_quote(self.scene, now))
+        self.assertEqual(
+            drawn(), ("Inspect the uncertain saved Blockout job before continuing", ["Try again"])
+        )
+        self.assertEqual(len(self.paid), 1)
+
     def test_late_result_does_not_overwrite_edited_plan(self):
         item = self.quote()
         self.approve(item)

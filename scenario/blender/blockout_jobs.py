@@ -130,6 +130,7 @@ class BlockoutJobs:
         self.recovery = BlockoutRecovery(session, store)
         self.uploads = {}  # scene session UID -> the reference image upload in progress
         self._seen = None  # (scene, design inputs, first seen) for the automatic price
+        self._auto_error = ""  # why the automatic price for those inputs could not be requested
         self._schema_requested = False
 
     def current(self, scene):
@@ -259,12 +260,22 @@ class BlockoutJobs:
                 return False
         try:
             self.quote(scene, "DESIGN")
-        except Exception:
+        except Exception as error:
             # An uncertain saved job, a busy session or a changed connection: wait for an
-            # input change; the panel's Get price button reports the reason.
+            # input change; the panel shows the reason and a manual retry.
             self._seen = (*seen, float("inf"))
+            self._auto_error = refusal(error)
             return False
         return True
+
+    def auto_price_error(self, scene):
+        """Why the automatic price for the scene's current design failed, or "" when it did not."""
+        seen = self._seen
+        if seen is None or seen[0] != scene or seen[2] != float("inf"):
+            return ""
+        if seen[1] != _design_inputs(binding(scene)):
+            return ""
+        return self._auto_error.rstrip(".") or "Could not get a price; check the inputs"
 
     def upload_image(self, scene):
         """Upload the chosen reference image once; the pump stores its asset when imported."""

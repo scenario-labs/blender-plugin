@@ -467,7 +467,8 @@ def clip_glb(
     `turn_object` only the bones turn back. Clip N (one NLA track, `Clip N`) turns
     every bone not named in `still` about its X axis by half its amount in radians
     and, with `location`, moves the first such bone along its Y axis by its amount
-    in world units, over 24 frames; `stretch` also scales it along its Y axis. The
+    in world units, over 24 frames; `stretch` also scales it along its Y axis, or by
+    `1 + amount * rate` on each axis when it is a tuple of three rates. The
     `still` bones stay unkeyed in the export. A triangle skinned to the first bone
     is included. All scratch data is removed.
     """
@@ -512,7 +513,8 @@ def clip_glb(
                         pose.location = (0, factor * unit, 0)
                         pose.keyframe_insert("location", frame=frame)
                     if stretch and number == 0:
-                        pose.scale = (1, 1 + factor / 2, 1)
+                        rates = (0, 0.5, 0) if stretch is True else stretch
+                        pose.scale = [1 + factor * rate for rate in rates]
                         pose.keyframe_insert("scale", frame=frame)
             data.action = None
             track = data.nla_tracks.new()

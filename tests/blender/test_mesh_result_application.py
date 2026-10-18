@@ -1822,6 +1822,15 @@ class AnimateResultTests(unittest.TestCase):
         rise, _ = self.head_rise(result.clips[0])
         self.assertAlmostEqual(rise.z, 1, places=3)
 
+    def test_float_noise_in_uniform_scale_keys_is_accepted(self):
+        from helpers import CHAIN
+
+        # Real provider clips key uniform scale with up to a few 1e-5 between axes.
+        hips = ("Hips", None, (0, 0, 1), (0.025, 0, 1.2))
+        self.use_clips(bones=(hips, *CHAIN[1:]), clips=(1.0,), stretch=(2e-5, 0, -1e-5))
+        result = self.apply(policy="ANIMATE")
+        self.assertEqual(len(result.clips), 1)
+
     def test_incompatible_rigs_and_results_fail_without_mutation(self):
         from helpers import CHAIN
 

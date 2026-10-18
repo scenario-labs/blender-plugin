@@ -890,8 +890,8 @@ quaternion key q becomes C q C⁻¹ and each location vector l becomes C l, in
 every key and handle; automatic Bezier handles become free. The destination's
 rest heads stay, so the mesh bends about its own joints. A corrected bone must
 key the components of each location and quaternion channel together, with
-constant, linear or Bezier interpolation, scale uniformly and use quaternion
-rotation, as glTF clips do; otherwise the result is rejected.
+constant, linear or Bezier interpolation, scale uniformly to within 0.01% and
+use quaternion rotation, as glTF clips do; otherwise the result is rejected.
 
 Location keys are armature-space distances. When any location key leaves its
 bone's rest head, every location key and handle is scaled by the ratio of the

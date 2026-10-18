@@ -44,6 +44,8 @@ _log = logging.getLogger("scenario.jobs")
 REST_TOLERANCE = math.radians(15)
 # Smaller rest differences are export rounding: their keys are copied unchanged.
 _NEGLIGIBLE = 1e-5
+# Exported uniform scale keys can differ between axes by a few 1e-5.
+_UNIFORM = 1e-4
 _CHANNEL = re.compile(
     r'pose\.bones\["((?:[^"\\]|\\.)*)"\]\.'
     r"(location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale)"
@@ -202,7 +204,8 @@ def _correctable(properties, rotation_mode):
             if uniform:
                 values = [_values(curve) for curve in present]
                 uniform = all(
-                    max(items) - min(items) <= 1e-6 for items in zip(*values, strict=True)
+                    max(items) - min(items) <= _UNIFORM * max(1.0, *map(abs, items))
+                    for items in zip(*values, strict=True)
                 )
             if not (uniform or _constant(present, 1.0)):
                 raise mesh.MeshApplicationError(

@@ -5,6 +5,7 @@
 import dis
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 
 log = logging.getLogger("scenario.mcp")
@@ -179,7 +180,28 @@ def _check_arguments(spec, arguments):
     return arguments
 
 
-def handle_message(message, registry, server_info, executor=None):
+def _elapsed_ms(started):
+    return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _observe(observer, event, *args):
+    """Report to the optional observer; its failure never changes the response."""
+    if observer is None:
+        return
+    try:
+        getattr(observer, event)(*args)
+    except Exception:
+        log.debug("MCP observer failed", exc_info=True)
+
+
+def handle_message(message, registry, server_info, executor=None, observer=None):
+    """Answer one JSON-RPC message; `observer` optionally sees connections and tool calls.
+
+    The observer's `client_connected(client_info)` receives an initialize request's
+    clientInfo as sent. Its `tool_called(name, outcome, duration_ms)` receives each call
+    of a registered tool with outcome "ok", "error" or "timeout", never its arguments or
+    result. Calls naming an unknown tool are not reported.
+    """
     if not isinstance(message, dict) or "method" not in message:
         return _error(
             message.get("id") if isinstance(message, dict) else None,
@@ -196,7 +218,7 @@ def handle_message(message, registry, server_info, executor=None):
     if method == "initialize":
         wanted = params.get("protocolVersion")
         version = wanted if wanted in PROTOCOL_VERSIONS else PROTOCOL_VERSIONS[0]
-        return _result(
+        response = _result(
             msg_id,
             {
                 "protocolVersion": version,
@@ -205,6 +227,8 @@ def handle_message(message, registry, server_info, executor=None):
                 "instructions": INSTRUCTIONS,
             },
         )
+        _observe(observer, "client_connected", params.get("clientInfo"))
+        return response
     if method == "ping":
         return _result(msg_id, {})
     if method == "tools/list":
@@ -215,6 +239,7 @@ def handle_message(message, registry, server_info, executor=None):
         if spec is None:
             return _error(msg_id, INVALID_PARAMS, f"Unknown tool: {name}")
         arguments = params.get("arguments") or {}
+        started = time.monotonic()
         try:
             arguments = _check_arguments(spec, arguments)
             if executor is not None and not spec.offthread:
@@ -232,11 +257,15 @@ def handle_message(message, registry, server_info, executor=None):
                     else deferred.finish(completed)
                 )
         except ToolTimeout as err:
+            _observe(observer, "tool_called", spec.name, "timeout", _elapsed_ms(started))
             return _error(msg_id, TOOL_TIMEOUT, f"Tool timeout: {err}")
         except Exception as err:  # tool failures are results, not protocol errors
             text = tool_failure_text(spec.name, err)
+            _observe(observer, "tool_called", spec.name, "error", _elapsed_ms(started))
             return _result(msg_id, {"content": [{"type": "text", "text": text}], "isError": True})
-        return _result(msg_id, {"content": to_content(value)})
+        content = to_content(value)
+        _observe(observer, "tool_called", spec.name, "ok", _elapsed_ms(started))
+        return _result(msg_id, {"content": content})
     return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
 
 

@@ -30,6 +30,7 @@ BASELINE = (
     "test_upload_commands",
     "test_register",
     "test_updates",
+    "test_usage",
     "test_desktop_open",
     "test_icons",
     "test_model_picker",

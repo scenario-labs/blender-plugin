@@ -1,0 +1,308 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Opt-in anonymous usage data: preference lifecycle, online-access mirror and event hooks.
+
+**Share anonymous usage data** is off by default. Turning it on saves a random install ID
+in the extension's user directory and records extension_started; turning it off discards
+unsent events, stops the sender and deletes the ID. core.telemetry.usage owns the queue
+and the sender thread, which rereads the two Events below before each send. Only the main
+thread changes them: the preference, and follow_online_access on every pump tick.
+
+A window session records from registration. Background Blender records only inside the
+scenario_blender command, whose loop keeps the online-access mirror current; other
+background runs have no main-thread tick to follow a change of Allow Online Access.
+
+Operator events come from wrappers around the extension's own operators, installed after
+registration: Blender looks an operator's execute, invoke and modal up on its class at each
+call, so a replaced method takes effect, while registration only checks which of them
+exist and their argument counts. The wrappers keep those counts and are removed on
+unregister. With sharing off a wrapper costs one global read.
+"""
+
+import functools
+import logging
+import pathlib
+import threading
+import types
+
+import bpy
+
+from .. import __version__
+from ..core.telemetry import relay
+from ..core.telemetry import usage as events
+from ..mcp import server as mcp_server
+from . import runtime
+
+log = logging.getLogger("scenario.usage")
+
+# Operators that are not a user's action, or that fire at high frequency. What they start
+# is still counted: the composer's Generate, Settings and model chip run their own operators.
+EXCLUDED_OPERATORS = frozenset(
+    {
+        # A MOUSEMOVE keymap item invokes it on every pointer move over a 3D view, and its
+        # modal then sees every event while the floating composer is engaged.
+        "scenario.composer_modal",
+    }
+)
+_METHODS = ("execute", "invoke", "modal")
+# The scenario_blender command waits this long for its last send before Blender exits.
+FINAL_SEND_WAIT = relay.TIMEOUT + 1.0
+_ORIGINAL = "_scenario_usage_original"
+
+# Worker-safe permissions for the sender thread and local MCP's HTTP threads.
+_sharing = threading.Event()
+_online = threading.Event()
+_recorder = None  # the running events.UsageRecorder, or None while sharing is off
+_active = False  # a window session, or the scenario_blender command
+_send = None  # tests replace the HTTP POST
+_start_recorded = False  # extension_started queued for this install ID in this process
+_calls = threading.local()  # depth of wrapped operator calls on this thread
+_instrumented = {}  # operator class -> {method: its own original, or None when inherited}
+
+# Local MCP reports through this observer; it records only while sharing is running.
+MCP_OBSERVER = events.McpObserver(lambda: _recorder)
+
+
+def state_dir():
+    return pathlib.Path(bpy.utils.extension_path_user(runtime.PACKAGE, path="state", create=True))
+
+
+def blender_version():
+    return "{}.{}.{}".format(*bpy.app.version[:3])
+
+
+def sharing_enabled():
+    prefs = runtime.prefs()
+    return bool(prefs is not None and getattr(prefs, "share_usage", False))
+
+
+def recorder():
+    """The running recorder, or None; tests read its queue."""
+    return _recorder
+
+
+# -- lifecycle -----------------------------------------------------------------
+def register():
+    instrument_operators()
+    if not bpy.app.background:
+        activate()
+
+
+def unregister():
+    deactivate()
+    restore_operators()
+
+
+def activate(*, send=None):
+    """Allow recording in this session; starts the sender when the preference is on."""
+    global _active, _send
+    _active, _send = True, send
+    _sync()
+
+
+def deactivate(*, wait=None):
+    """Stop recording; what is queued is sent first if still permitted, waiting up to `wait`.
+
+    The preference has not changed, so the sharing permission stays as it is for that send.
+    """
+    global _active
+    _active = False
+    _stop(discard=False, wait=wait)
+
+
+def set_sharing(enabled):
+    """The preference's update: on saves an ID and starts, off forgets everything."""
+    global _start_recorded
+    if enabled:
+        try:
+            directory = state_dir()
+            if events.read_install_id(directory) is None:
+                events.create_install_id(directory)
+                _start_recorded = False  # a new opt-in is a new install
+        except OSError as error:
+            log.warning(
+                "Usage data is not sent: its install ID was not saved (%s)", type(error).__name__
+            )
+            return
+        _sync()
+        return
+    _sharing.clear()
+    _stop(discard=True)
+    try:
+        events.delete_install_id(state_dir())
+    except OSError as error:
+        log.warning("The usage install ID was not deleted (%s)", type(error).__name__)
+
+
+def follow_online_access():
+    """Mirror Allow Online Access for worker threads; the main thread calls it every tick."""
+    if runtime.online():
+        _online.set()
+    else:
+        _online.clear()
+    _record_start()
+
+
+def _sync():
+    global _recorder
+    if not _active or not sharing_enabled():
+        return
+    _sharing.set()
+    if _recorder is None:
+        try:
+            directory = state_dir()
+            install_id = events.read_install_id(directory) or events.create_install_id(directory)
+        except OSError as error:  # never let usage data stop the extension from registering
+            log.warning(
+                "Usage data is not sent: its install ID was not saved (%s)", type(error).__name__
+            )
+            return
+        recorder = events.UsageRecorder(
+            install_id,
+            relay.context(__version__, blender_version()),
+            enabled=_sharing.is_set,
+            online_access=_online.is_set,
+            send=_send,
+        )
+        recorder.start()
+        _recorder = recorder
+    follow_online_access()
+
+
+def _stop(*, discard, wait=None):
+    global _recorder
+    recorder, _recorder = _recorder, None
+    if recorder is not None:
+        recorder.stop(discard=discard, wait=wait)
+
+
+def _record_start():
+    """extension_started once per install ID and process, as soon as it can be sent."""
+    global _start_recorded
+    recorder = _recorder
+    if recorder is not None and not _start_recorded and _online.is_set():
+        _start_recorded = recorder.record("extension_started")
+
+
+# -- operators -----------------------------------------------------------------
+def _extension_operators():
+    """Registered operator classes defined by this extension's modules."""
+    pending, seen = list(bpy.types.Operator.__subclasses__()), set()
+    while pending:
+        cls = pending.pop()
+        if cls in seen:
+            continue
+        seen.add(cls)
+        pending.extend(cls.__subclasses__())
+        module = getattr(cls, "__module__", "") or ""
+        if (module == runtime.PACKAGE or module.startswith(runtime.PACKAGE + ".")) and getattr(
+            cls, "is_registered", False
+        ):
+            yield cls
+
+
+def instrument_operators():
+    for cls in tuple(_extension_operators()):
+        instrument(cls)
+
+
+def restore_operators():
+    for cls in tuple(_instrumented):
+        restore(cls)
+
+
+def instrument(cls):
+    """Count the user's actions of one `scenario.*` operator; True when it was wrapped."""
+    idname = getattr(cls, "bl_idname", None)
+    if (
+        cls in _instrumented
+        or not isinstance(idname, str)
+        or not idname.startswith("scenario.")
+        or idname in EXCLUDED_OPERATORS
+    ):
+        return False
+    originals = {}
+    for name in _METHODS:
+        method = getattr(cls, name, None)
+        if not isinstance(method, types.FunctionType) or hasattr(method, _ORIGINAL):
+            continue
+        originals[name] = cls.__dict__.get(name)
+        setattr(cls, name, _wrap(idname, name, method))
+    _instrumented[cls] = originals
+    return True
+
+
+def restore(cls):
+    """Put an instrumented operator's own methods back, so a reload starts clean."""
+    for name, original in _instrumented.pop(cls, {}).items():
+        if original is not None:
+            setattr(cls, name, original)
+        elif name in cls.__dict__:
+            delattr(cls, name)
+
+
+def _wrap(idname, name, method):
+    # Blender checks each callback's positional argument count at registration.
+    if name == "execute":
+
+        def wrapper(self, context):
+            return _counted(idname, method, self, (context,))
+
+    else:  # invoke and modal
+
+        def wrapper(self, context, event):
+            return _counted(idname, method, self, (context, event))
+
+    functools.update_wrapper(wrapper, method)
+    setattr(wrapper, _ORIGINAL, method)
+    return wrapper
+
+
+def _counted(idname, method, operator, args):
+    """Run the operator's method unchanged and record the outermost call's outcome.
+
+    An invoke that calls execute, or an operator that runs another one, is one action:
+    only the call that is not inside another wrapped call records. An invoke that opens
+    a dialog, a file browser or a modal handler records nothing; the execute or modal
+    that ends it does. Calls made by a local MCP tool are the agent's, not the user's.
+    """
+    recorder = _recorder
+    if recorder is None:
+        return method(operator, *args)
+    depth = getattr(_calls, "depth", 0)
+    outermost = depth == 0 and not mcp_server.executing_tool()
+    _calls.depth = depth + 1
+    try:
+        result = method(operator, *args)
+    except Exception as error:
+        if outermost:
+            _record_operator(recorder, idname, "error", type(error).__name__)
+        raise
+    finally:
+        _calls.depth = depth
+    if outermost:
+        outcome = _outcome(result)
+        if outcome is not None:
+            _record_operator(recorder, idname, outcome)
+    return result
+
+
+def _outcome(result):
+    try:
+        flags = set(result)
+    except TypeError:
+        return None
+    if "RUNNING_MODAL" in flags or "INTERFACE" in flags:
+        return None  # a dialog, file browser or modal handler: its ending reports
+    if "FINISHED" in flags:
+        return "finished"
+    if "CANCELLED" in flags:
+        return "cancelled"
+    return None
+
+
+def _record_operator(recorder, idname, outcome, error_type=None):
+    try:
+        recorder.record("operator_used", events.operator_properties(idname, outcome, error_type))
+    except Exception:  # recording must never change what the operator did
+        log.debug("Recording an operator event failed", exc_info=True)

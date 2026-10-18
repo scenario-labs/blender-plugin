@@ -921,7 +921,9 @@ settings to `https://api.cloud.scenario.com` as you edit. Generating can send
 reference files, captures and exported meshes, and spends credits. Catalogs and
 thumbnails load from Scenario, and cloud history loads when you ask for it. Saved
 credentials, prompts, jobs and media stay on your machine. A connected local agent
-can read your scene and request paid work. See
+can read your scene and request paid work. **Share anonymous usage data**, in the
+extension's preferences, is off by default; turned on, it tells Scenario which
+commands and agent tools you use, never your prompts, files or account. See
 [Privacy and data handling](PRIVACY.md) for details.
 
 ## Files and folders

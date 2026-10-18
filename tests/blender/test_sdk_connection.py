@@ -194,7 +194,7 @@ class SDKConnectionTests(unittest.TestCase):
         self.runtime.state.account_label = label
         self.runtime.state.catalog_error = message
         owner = SimpleNamespace(
-            layout=Mock(), credential_source="ENVIRONMENT", composer_enabled=True
+            layout=Mock(), credential_source="ENVIRONMENT", composer_enabled=True, share_usage=False
         )
         with patch.object(prefs.updates, "draw"):
             prefs.ScenarioPreferences.draw(owner, bpy.context)

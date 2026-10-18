@@ -47,10 +47,11 @@ def _tick():
 
 
 def _process():
-    from . import file_state, mcp_service, model_picker, studio
+    from . import file_state, mcp_service, model_picker, studio, usage
 
     changed = generation.process_catalog_events()
     changed |= mcp_service.follow_online_access()
+    usage.follow_online_access()
     mcp_service.process_pending()
     # A change delivered during a sculpt or paint stroke is marked once it ends.
     file_state.flush()

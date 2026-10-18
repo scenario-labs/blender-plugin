@@ -13,7 +13,7 @@ from .. import __version__
 from ..mcp import client_setup, protocol
 from ..mcp.cli import CLI_COMMAND, cli_banner
 from ..mcp.server import McpServer
-from . import runtime
+from . import runtime, usage
 
 log = logging.getLogger("scenario.mcp")
 SERVER_INFO = {"name": "scenario-blender", "version": __version__}
@@ -56,6 +56,7 @@ def start(*, by_user=False):
             build_registry(),
             SERVER_INFO,
             blender_version=bpy.app.version_string,
+            observer=usage.MCP_OBSERVER,
         )
         server.start()
     except OSError as err:
@@ -206,9 +207,17 @@ def cli(argv):
         build_registry(),
         SERVER_INFO,
         blender_version=bpy.app.version_string,
+        observer=usage.MCP_OBSERVER,
     )
     stop_event = threading.Event()
     previous = {}
+
+    def before_process():
+        runtime.sync_catalog_context()
+        usage.follow_online_access()
+
+    # Background Blender shares usage only here, where this loop follows online access.
+    usage.activate()
     try:
         for sig in (signal.SIGINT, signal.SIGTERM):
             previous[sig] = signal.signal(sig, lambda *_: stop_event.set())
@@ -217,11 +226,13 @@ def cli(argv):
         except OSError as error:
             parser.error(f"Unable to start local MCP: {error}")
         print(cli_banner(server.url), flush=True)
-        server.serve_blocking(stop_event, before_process=runtime.sync_catalog_context)
+        server.serve_blocking(stop_event, before_process=before_process)
     except KeyboardInterrupt:
         stop_event.set()
     finally:
         server.stop()
+        # Blender exits after this command: give queued usage events one bounded send.
+        usage.deactivate(wait=usage.FINAL_SEND_WAIT)
         for sig, handler in previous.items():
             # Blender can install a native handler that Python reports as None.
             # None is not accepted by signal.signal; the command is exiting.

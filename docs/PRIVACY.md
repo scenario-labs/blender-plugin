@@ -104,12 +104,27 @@ only the link or path; what it records, such as history, is outside the
 extension's control, and macOS still adds proxy settings from your login session
 to every application it launches.
 
-The extension has no telemetry, analytics or automatic crash-reporting service,
-and no independent update-check service. Blender manages configured extension
-repositories and their update checks separately.
+**Share anonymous usage data**, in the extension's preferences, is off by default.
+When you turn it on, the extension saves a random install ID in its user directory,
+not linked to your Scenario account, and about once a minute sends telemetry events
+with it: that the extension started; which Scenario commands you run and whether
+each finished, was cancelled or failed, with the error's type; which local MCP tools
+agents call, with outcome and duration; and each connecting agent's name and version.
+Each batch adds the extension and Blender versions, operating system and processor
+type. It never sends prompts, tool arguments or results, file paths, scene or object
+names, model or asset IDs, your API key, team or project. Events go to
+`https://blender.scenario.com/telemetry/v1/events`, which adds the country Vercel
+derives from your address, drops any other event or field and forwards the rest to
+Scenario's PostHog project without your address. Turning the setting off discards
+unsent events and deletes the ID. In background Blender only the `scenario_blender`
+command sends them.
 
-Blender's Allow Online Access setting gates catalog loading, MCP startup and
-interactive network actions. It is not an instantaneous network cutoff: work
+The extension has no automatic crash-reporting service and no independent
+update-check service. Blender manages configured extension repositories and their
+update checks separately.
+
+Blender's Allow Online Access setting gates catalog loading, MCP startup, usage data
+and interactive network actions. It is not an instantaneous network cutoff: work
 already started can finish. Shared SDK requests and result/upload transfers check
 the selected permission snapshot. Model picker thumbnail downloads check it, or a
 main-thread mirror of online access when no catalog is selected, only before

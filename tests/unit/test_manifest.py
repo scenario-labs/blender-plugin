@@ -191,11 +191,12 @@ def test_network_permission_matches_code():
     assert declared == bool(uses), f"Network imports: {uses}; declared={declared}"
 
 
-def test_network_permission_discloses_the_api_and_the_local_listener():
-    # Local MCP starts by default in GUI sessions with Online Access on (#448).
-    # Exact text: it names the API host and the loopback listener within Blender's limit.
+def test_network_permission_discloses_the_api_the_usage_relay_and_the_local_listener():
+    # Local MCP starts by default in GUI sessions with Online Access on (#448), and the
+    # opt-in usage data goes to the relay on blender.scenario.com (#128). Exact text: it
+    # names the API host, the opt-in relay and the loopback listener in Blender's 64 characters.
     assert permissions()["network"] == (
-        "Scenario API (api.cloud.scenario.com), local agents on 127.0.0.1"
+        "api.cloud.scenario.com, blender.scenario.com (opt-in), 127.0.0.1"
     )
 
 

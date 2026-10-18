@@ -171,6 +171,7 @@ class McpServer:
         timeout=120.0,
         blender_version="",
         idle_timeout=IDLE_TIMEOUT,
+        observer=None,
     ):
         if host != BIND_HOST:
             raise ValueError(f"The local MCP server binds only to {BIND_HOST}")
@@ -180,6 +181,8 @@ class McpServer:
         self.registry, self.server_info, self.timeout = registry, server_info, timeout
         self.idle_timeout = idle_timeout
         self.blender_version = blender_version
+        # Sees client connections and tool calls (protocol.handle_message), on HTTP threads.
+        self.observer = observer
         self.calls_served = 0
         self._queue = queue.Queue()
         self._admission = threading.Lock()
@@ -282,7 +285,7 @@ class McpServer:
 
     def handle(self, message):
         response = protocol.handle_message(
-            message, self.registry, self.server_info, executor=self.executor
+            message, self.registry, self.server_info, executor=self.executor, observer=self.observer
         )
         if isinstance(message, dict) and message.get("method") == "tools/call":
             self.calls_served += 1

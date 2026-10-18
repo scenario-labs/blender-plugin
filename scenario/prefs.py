@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Add-on preferences: credentials, output folder, composer, MCP."""
+"""Add-on preferences: credentials, output folder, composer, MCP, usage data."""
 
 import textwrap
 
@@ -17,6 +17,12 @@ def credentials_changed(self, context):
 
     runtime.state.account_label = ""
     runtime.sync_catalog_context()
+
+
+def usage_sharing_changed(self, context):
+    from .blender import usage
+
+    usage.set_sharing(self.share_usage)
 
 
 class ScenarioPreferences(bpy.types.AddonPreferences):
@@ -88,6 +94,12 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         default=False,
         description="Off by default: connected agents keep the read and scene tools; turn on only to let them run arbitrary bpy code in this Blender",
     )
+    share_usage: BoolProperty(
+        name="Share anonymous usage data",
+        default=False,
+        description="Send which Scenario commands and agent tools you use, never prompts, files or account details",
+        update=usage_sharing_changed,
+    )
     log_level: EnumProperty(
         name="Log Level",
         items=[("INFO", "Info", ""), ("DEBUG", "Debug", "")],
@@ -143,6 +155,14 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         box.label(text="MCP server (agents)", icon="PLUGIN")
         box.prop(self, "mcp_port")
         box.prop(self, "mcp_allow_python")
+        box = layout.box()
+        box.label(text="Usage data", icon="FUND")
+        box.prop(self, "share_usage")
+        box.label(
+            text="Which commands and agent tools you use, never prompts or files", icon="INFO"
+        )
+        if self.share_usage and not runtime.online():
+            box.label(text="Nothing is sent while Allow Online Access is off", icon="ERROR")
         layout.prop(self, "log_level")
         updates.draw(layout, context)
 

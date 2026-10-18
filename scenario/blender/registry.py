@@ -109,8 +109,10 @@ def register():
         bpy.utils.register_class(cls)
     for module in _modules():
         module.register()
-    from . import mcp_service, pump
+    from . import mcp_service, pump, usage
 
+    # After every operator is registered: usage wraps the extension's own operators.
+    usage.register()
     pump.start()
     if not bpy.app.background:
         mcp_service.start_with_extension()
@@ -125,8 +127,9 @@ def register():
 
 
 def unregister():
-    from . import mcp_service, pump, runtime
+    from . import mcp_service, pump, runtime, usage
 
+    usage.unregister()
     handle = getattr(runtime.state, "cli_handle", None)
     if handle is not None:
         try:

@@ -514,3 +514,150 @@ def test_executor_and_deferred_failures_use_the_same_rule():
 
     assert _call(deferred(EXTENSION["lookup"])) == f"KeyError: {UNEXPECTED}"
     assert _call(deferred(EXTENSION["reject"])).startswith("ValueError: lane must be")
+
+
+class Observer:
+    """Records what handle_message reports; never sees arguments or results."""
+
+    def __init__(self):
+        self.seen = []
+
+    def client_connected(self, client_info):
+        self.seen.append(("client", client_info))
+
+    def tool_called(self, name, outcome, duration_ms):
+        self.seen.append(("tool", name, outcome, duration_ms))
+
+
+def _observed(name, arguments=None, *, reg=None, observer=None, executor=None):
+    observer = observer or Observer()
+    response = protocol.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 30,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        },
+        reg or registry(),
+        INFO,
+        executor=executor,
+        observer=observer,
+    )
+    return response, getattr(observer, "seen", None)
+
+
+def test_observer_sees_each_registered_tool_call_outcome_and_duration(monkeypatch):
+    ticks = iter([10.0, 10.25, 20.0, 20.004, 30.0, 30.0])
+    monkeypatch.setattr(protocol, "time", type("Clock", (), {"monotonic": lambda: next(ticks)}))
+    response, seen = _observed("echo", {"text": "secret prompt"})
+    assert response["result"].get("isError") is not True
+    assert seen == [("tool", "echo", "ok", 250)]
+    response, seen = _observed("boom")
+    assert response["result"]["isError"] is True
+    assert seen == [("tool", "boom", "error", 4)]
+    response, seen = _observed("echo", {})  # a missing argument fails before the handler
+    assert response["result"]["isError"] is True and seen == [("tool", "echo", "error", 0)]
+
+
+def test_observer_sees_timeouts_and_deferred_tools_but_not_unknown_tools():
+    def busy(handler, arguments):
+        raise protocol.ToolTimeout("main thread busy")
+
+    response, seen = _observed("echo", {"text": "hi"}, executor=busy)
+    assert response["error"]["code"] == protocol.TOOL_TIMEOUT
+    assert [entry[:3] for entry in seen] == [("tool", "echo", "timeout")]
+    reg = registry()
+    reg.add(
+        protocol.ToolSpec(
+            "later",
+            "Deferred",
+            {"type": "object"},
+            lambda args: protocol.DeferredTool(run=lambda: 2, finish=lambda value: value * 2),
+        )
+    )
+    response, seen = _observed("later", reg=reg)
+    assert json.loads(response["result"]["content"][0]["text"]) == 4
+    assert [entry[:3] for entry in seen] == [("tool", "later", "ok")]
+    assert isinstance(seen[0][3], int) and seen[0][3] >= 0
+    response, seen = _observed("nope")
+    assert response["error"]["code"] == protocol.INVALID_PARAMS and seen == []
+
+
+def test_observer_sees_the_initialize_client_info_only():
+    observer = Observer()
+    info = {"name": "claude-code", "version": "2.1.0"}
+    for method, params in (
+        ("initialize", {"protocolVersion": "2025-06-18", "clientInfo": info}),
+        ("initialize", {}),
+        ("tools/list", {}),
+        ("ping", {}),
+    ):
+        protocol.handle_message(
+            {"jsonrpc": "2.0", "id": 31, "method": method, "params": params},
+            registry(),
+            INFO,
+            observer=observer,
+        )
+    assert observer.seen == [("client", info), ("client", None)]
+
+
+def test_a_failing_observer_never_changes_the_response():
+    class Broken:
+        def client_connected(self, client_info):
+            raise RuntimeError("observer")
+
+        def tool_called(self, name, outcome, duration_ms):
+            raise RuntimeError("observer")
+
+    plain = protocol.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 32,
+            "method": "tools/call",
+            "params": {"name": "echo", "arguments": {"text": "hi"}},
+        },
+        registry(),
+        INFO,
+    )
+    response, _ = _observed("echo", {"text": "hi"}, observer=Broken())
+    assert response == {**plain, "id": 30}
+    started = protocol.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 33,
+            "method": "initialize",
+            "params": {"clientInfo": {"name": "x"}},
+        },
+        registry(),
+        INFO,
+        observer=Broken(),
+    )
+    assert started["result"]["serverInfo"] == INFO
+
+
+def test_server_passes_its_observer_to_every_message():
+    from scenario.mcp.server import McpServer
+
+    observer = Observer()
+    reg = protocol.Registry()
+    reg.add(protocol.ToolSpec("lookup", "Off-thread", {"type": "object"}, dict, offthread=True))
+    server = McpServer("127.0.0.1", 0, reg, INFO, timeout=5, observer=observer)
+    server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 34,
+            "method": "initialize",
+            "params": {"clientInfo": {"name": "c"}},
+        }
+    )
+    response = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 35,
+            "method": "tools/call",
+            "params": {"name": "lookup", "arguments": {}},
+        }
+    )
+    assert response["result"].get("isError") is not True
+    assert observer.seen[0] == ("client", {"name": "c"})
+    assert observer.seen[1][:3] == ("tool", "lookup", "ok")

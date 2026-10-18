@@ -228,30 +228,148 @@ class BlockoutJobsTests(unittest.TestCase):
                 self.assertEqual(len(self.paid), paid + 1)
 
     def test_changed_inputs_and_rounded_cost_cannot_spend(self):
+        names = (
+            "prompt",
+            "refine",
+            "density",
+            "tier",
+            "image_path",
+            "image_asset_id",
+            "image_scope",
+            "plan_json",
+        )
         for name, value in [
             ("prompt", "new"),
             ("refine", "new"),
-            ("scene_type", "interior"),
-            ("scale", "room"),
+            ("density", "simple"),
+            ("tier", "fast"),
+            ("image_path", "//other.png"),
+            ("image_asset_id", "asset_other"),
+            ("image_scope", "other"),
             ("plan_json", "[]"),
         ]:
             with self.subTest(name=name):
                 item = self.quote()
                 setattr(self.scene.scenario_blockout, name, value)
                 self.assertEqual(self.approve(item), {"CANCELLED"})
-                setattr(
-                    self.scene.scenario_blockout,
-                    name,
-                    item.binding[
-                        ("prompt", "refine", "scene_type", "scale", "plan_json").index(name)
-                    ],
-                )
+                setattr(self.scene.scenario_blockout, name, item.binding[names.index(name)])
         item = self.quote()
         self.assertEqual(
             bpy.ops.scenario.blockout_approve(quote_id=item.identifier, approved_cost="0.123"),
             {"CANCELLED"},
         )
         self.assertEqual(self.paid, [])
+
+    def quoted_parameters(self):
+        return json.loads(
+            [call for call in self.calls if call.method == "POST"][-1].content.decode()
+        )
+
+    def test_quote_sends_the_tier_model_and_density_budget(self):
+        props = self.scene.scenario_blockout
+        self.assertEqual((props.density, props.tier), ("advanced", "best"))
+        item = self.quote()
+        sent = self.quoted_parameters()
+        self.assertEqual(sent["model"], "claude-opus-5-5")
+        # The form keeps the schema default, which Claude models ignore and are not billed for.
+        self.assertEqual(sent["thinkingLevel"], "none")
+        self.assertNotIn("images", sent)
+        self.assertIn("Use 120 to 200 elements", sent["instruction"])
+        self.assertEqual(item.model, "claude-opus-5-5")
+        props.tier, props.density = "fast", "expert"
+        item = self.quote()
+        sent = self.quoted_parameters()
+        self.assertEqual((sent["model"], sent["thinkingLevel"]), ("gemini-3.7-flash", "low"))
+        self.assertIn("Use 200 to 350 elements", sent["instruction"])
+        self.assertEqual(self.paid, [])
+
+    def test_mcp_estimate_reports_the_resolved_model(self):
+        deferred = self.mcp.estimate_blockout({"action": "DESIGN"})
+        self.assertEqual(deferred.finish(deferred.run())["model"], "claude-opus-5-5")
+
+    def test_reference_image_must_be_uploaded_and_is_sent_by_asset(self):
+        props = self.scene.scenario_blockout
+        props.image_path = "//concept.png"
+        props.prompt = ""
+        with self.assertRaisesRegex(self.facade.ScenarioError, "Upload the reference image"):
+            self.jobs().quote(self.scene, "DESIGN")
+        props.image_asset_id, props.image_scope = "asset_reference", "another connection"
+        with self.assertRaisesRegex(self.facade.ScenarioError, "again for this connection"):
+            self.jobs().quote(self.scene, "DESIGN")
+        props.image_scope = self.facade._scope_key(self.jobs().session.scope)
+        item = self.quote()
+        sent = self.quoted_parameters()
+        self.assertEqual(sent["images"], ["asset_reference"])
+        self.assertIn("A reference image is attached", sent["instruction"])
+        self.assertTrue(
+            sent["instruction"].endswith("Scene to block out: the place in the reference image")
+        )
+        self.assertEqual(item.binding[4:7], ("//concept.png", "asset_reference", props.image_scope))
+        # Choosing another file forgets the uploaded asset, so the old price cannot be approved.
+        props.image_path = "//other.png"
+        self.assertEqual((props.image_asset_id, props.image_scope), ("", ""))
+        self.assertEqual(self.approve(item), {"CANCELLED"})
+        self.assertEqual(self.paid, [])
+
+    def test_wrapped_answer_builds_and_an_unusable_answer_names_the_reason(self):
+        plan = json.loads(self.result_text)
+        self.result_text = json.dumps({"results": [{"text": json.dumps(plan), "probability": 1}]})
+        item = self.quote()
+        self.approve(item)
+        self.advance(item)
+        self.assertEqual(item.phase, "DONE", item.error)
+        self.assertEqual(json.loads(self.scene.scenario_blockout.plan_json), plan)
+        self.scene.scenario_blockout.plan_json = ""
+        self.scene.scenario_blockout.prompt = "A different tower"
+        self.result_text = '{"results": [{"text": "[...blockout json...]", "probability": 0.99}]}'
+        item = self.quote()
+        self.approve(item)
+        self.advance(item)
+        self.assertEqual(item.phase, "ERROR")
+        self.assertTrue(item.error.startswith("The model's answer is not a usable plan"))
+        self.assertIn("[...blockout json...]", item.error)
+        self.assertEqual(self.scene.scenario_blockout.plan_json, "")
+        self.assertEqual(len(self.paid), 2)
+        layout = MagicMock()
+        self.blockout.draw_status(layout, self.scene)
+        drawn = " ".join(call.kwargs.get("text") for call in layout.label.call_args_list)
+        self.assertIn("not a usable plan", drawn)
+
+    def test_automatic_price_waits_for_settled_inputs_and_keeps_outcomes(self):
+        generation = submodule("blender.generation")
+        jobs = self.jobs()
+        with (
+            patch.object(generation, "request_model") as read,
+            patch.object(generation, "is_loading", return_value=False),
+        ):
+            self.assertFalse(jobs.auto_quote(self.scene, 10.0))
+            self.assertFalse(jobs.auto_quote(self.scene, 10.3))
+            # The first settled tick reads the live model list once, then prices.
+            self.assertFalse(jobs.auto_quote(self.scene, 11.0))
+            read.assert_called_once()
+            self.assertTrue(jobs.auto_quote(self.scene, 11.2))
+            item = jobs.current(self.scene)
+            self.advance(item)
+            self.assertEqual(item.phase, "READY", item.error)
+            self.assertFalse(jobs.auto_quote(self.scene, 12.0))
+            self.assertIs(jobs.current(self.scene), item)
+            self.scene.scenario_blockout.prompt = "A taller stone tower"
+            self.assertFalse(jobs.auto_quote(self.scene, 13.0))
+            self.assertTrue(jobs.auto_quote(self.scene, 14.0))
+            item = jobs.current(self.scene)
+            self.advance(item)
+            self.approve(item)
+            self.advance(item)
+            self.assertEqual(item.phase, "DONE", item.error)
+            # A delivered plan or a refinement quote is never replaced by a new design price.
+            self.assertFalse(jobs.auto_quote(self.scene, 20.0))
+            self.assertIs(jobs.current(self.scene), item)
+            # A pending upload holds the price until the image is uploaded.
+            self.scene.scenario_blockout.image_path = "//concept.png"
+            self.assertFalse(jobs.auto_quote(self.scene, 30.0))
+            self.assertFalse(jobs.auto_quote(self.scene, 31.0))
+            read.assert_called_once()
+        self.assertEqual(len(self.paid), 1)
 
     def test_late_result_does_not_overwrite_edited_plan(self):
         item = self.quote()
@@ -708,13 +826,13 @@ class BlockoutJobsTests(unittest.TestCase):
 
     def test_recovered_plan_rejects_changed_destination_and_same_name_replacement(self):
         record = self.saved_plan()
-        for field in ("prompt", "refine", "plan_json", "scale", "scene_type"):
+        for field in ("prompt", "refine", "plan_json", "density", "tier"):
             with self.subTest(field=field):
                 recovery, review = self.ready_review(record)
                 self.assertEqual(review.phase, "READY")
                 props = self.scene.scenario_blockout
                 original = getattr(props, field)
-                replacement = {"scale": "room", "scene_type": "interior"}.get(field, "changed")
+                replacement = {"density": "simple", "tier": "fast"}.get(field, "changed")
                 setattr(props, field, replacement)
                 with self.assertRaises((RuntimeError, self.facade.ScenarioError)):
                     recovery.apply(review.identifier)

@@ -6,27 +6,82 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import DuplicateRequestError
 from ..core.jobs.store import JobState
+from ..core.jobs.upload_store import UploadState
 from ..core.scene import blockout
 from . import file_state
 
 MODEL = "model_scenario-llm"
 CANCELED = "Blockout request canceled; nothing was sent to Scenario"
 BUSY = {"QUOTING", "SUBMITTING", "POLLING", "LISTING", "READING"}
+AUTO_QUOTE_DELAY = 0.7  # seconds the design inputs stay unchanged before an automatic price
+# Measured per plan in October 2026; shown as an expectation, never used to bind anything.
+MINUTES = {"best": "about 3 min", "fast": "under a minute"}
 
 
 def binding(scene):
+    """Every input a quote depends on; the stored plan stays last (saved-plan reviews read it)."""
     props = scene.scenario_blockout
-    return props.prompt, props.refine, props.scene_type, props.scale, props.plan_json
+    return (
+        props.prompt,
+        props.refine,
+        props.density,
+        props.tier,
+        props.image_path,
+        props.image_asset_id,
+        props.image_scope,
+        props.plan_json,
+    )
+
+
+def _design_inputs(snapshot):
+    """The inputs of a new design, without the refinement text and the stored plan."""
+    return tuple(value for index, value in enumerate(snapshot) if index not in {1, 7})
 
 
 def parse_complete_plan(text):
     return blockout.parse_complete_plan(text)
+
+
+class PlanUnusable(ScenarioError):
+    """The paid job finished but its answer holds no complete plan; never retried automatically."""
+
+
+def unusable_reason(text):
+    snippet = " ".join(str(text or "").split())[:60]
+    answer = (
+        f"The model's answer is not a usable plan ({snippet}...)."
+        if snippet
+        else ("The model returned an empty answer, not a plan.")
+    )
+    return answer + " The job was charged; try again or switch model."
+
+
+def _model_parameters(tier):
+    """Resolve the tier against the cached live Scenario LLM model list, else the fallback."""
+    from . import generation
+
+    schema = generation.schema_for(MODEL)
+    if schema is None:
+        return blockout.model_parameters(tier)
+    model, thinking = schema.by_name("model"), schema.by_name("thinkingLevel")
+    return blockout.model_parameters(
+        tier,
+        model.allowed_values if model is not None else None,
+        thinking.allowed_values if thinking is not None else None,
+    )
+
+
+def _scope_key(scope):
+    from .reference_form import scope_key
+
+    return scope_key(scope)
 
 
 @dataclass
@@ -42,6 +97,16 @@ class BlockoutAction:
     cost: str = ""
     error: str = ""
     next_poll: float = 0.0
+    model: str = ""
+    tier: str = ""
+
+
+@dataclass
+class ImageUpload:
+    scene: object = field(repr=False)
+    path: str
+    ticket: object = field(repr=False)
+    error: str = ""
 
 
 class BlockoutJobs:
@@ -53,6 +118,9 @@ class BlockoutJobs:
         self.session, self.store, self._online = session, store, online
         self.actions = {}
         self.recovery = BlockoutRecovery(session, store)
+        self.uploads = {}  # scene session UID -> the reference image upload in progress
+        self._seen = None  # (scene, design inputs, first seen) for the automatic price
+        self._schema_requested = False
 
     def current(self, scene):
         return next(
@@ -101,9 +169,13 @@ class BlockoutJobs:
             if record is not None and record.state in {JobState.SUBMITTING, JobState.UNCERTAIN}:
                 raise ScenarioError(0, "Inspect the uncertain saved Blockout job before continuing")
         snapshot = binding(scene)
-        prompt, refine, scene_type, scale, previous = snapshot
+        prompt, refine, density, tier, image_path, image_asset, image_scope, previous = snapshot
+        if image_path and not image_asset:
+            raise ScenarioError(0, "Upload the reference image before requesting a price")
+        if image_asset and image_scope != _scope_key(self.session.scope):
+            raise ScenarioError(0, "Upload the reference image again for this connection")
         text = prompt if action == "DESIGN" else refine
-        if not text.strip() or not self._online():
+        if not (text.strip() or (action == "DESIGN" and image_asset)) or not self._online():
             raise ScenarioError(
                 0, "Write the requested plan or refinement and enable online access"
             )
@@ -115,7 +187,16 @@ class BlockoutJobs:
                 raise ScenarioError(
                     0, "Design or recover a complete Blockout plan before refining it"
                 ) from None
-        instruction = blockout.instruction(text, scene_type, scale, previous=original)
+        instruction = blockout.instruction(
+            text, density, previous=original, image=bool(image_asset)
+        )
+        try:
+            model = _model_parameters(tier)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
+        parameters = {"instruction": instruction, "numOutputs": 1, **model}
+        if image_asset:
+            parameters["images"] = [image_asset]
         if current is not None:
             self.actions.pop(current.identifier)
         if len(self.actions) >= 32:
@@ -125,12 +206,114 @@ class BlockoutJobs:
         if scene == bpy.context.scene:
             bpy.context.view_layer.update()
         origin = self.session.capture(scene)
-        task = self.session.quote_model(
-            MODEL, {"instruction": instruction, "numOutputs": 1}, origin=origin
-        )
+        task = self.session.quote_model(MODEL, parameters, origin=origin)
         item = BlockoutAction(uuid.uuid4().hex, scene, action, snapshot, task)
+        item.model, item.tier = model["model"], tier
         self.actions[item.identifier] = item
         return item
+
+    def auto_quote(self, scene, now):
+        """Price a new design once its inputs settle, so the button carries the exact cost.
+
+        Main thread, from the maintenance pump, only while the Blockout tab is visible. A
+        quote is free. It never replaces a running action, a refinement quote or a design
+        whose inputs did not change, so an error or a finished plan stays on screen.
+        """
+        snapshot = binding(scene)
+        design = _design_inputs(snapshot)
+        prompt, image_path, image_asset = snapshot[0], snapshot[4], snapshot[5]
+        if not (prompt.strip() or image_asset) or (image_path and not image_asset):
+            self._seen = None
+            return False
+        seen = (scene, design)
+        if self._seen is None or self._seen[:2] != seen:
+            self._seen = (*seen, now)
+            return False
+        if now - self._seen[2] < AUTO_QUOTE_DELAY:
+            return False
+        current = self.current(scene)
+        if current is not None and (
+            current.phase in BUSY or _design_inputs(current.binding) == design
+        ):
+            return False
+        from . import generation
+
+        if generation.schema_for(MODEL) is None:
+            # Read the live model list once so the tier picks the newest model; a failed
+            # read leaves the fixed fallback, which the exact quote still checks.
+            if not self._schema_requested:
+                self._schema_requested = True
+                generation.request_model(MODEL, mark_dirty=False)
+                return False
+            if generation.is_loading(MODEL):
+                return False
+        try:
+            self.quote(scene, "DESIGN")
+        except Exception:
+            # An uncertain saved job, a busy session or a changed connection: wait for an
+            # input change; the panel's Get price button reports the reason.
+            self._seen = (*seen, float("inf"))
+            return False
+        return True
+
+    def upload_image(self, scene):
+        """Upload the chosen reference image once; the pump stores its asset when imported."""
+        from . import runtime
+        from .reference_uploads import note_chosen_file
+
+        props = scene.scenario_blockout
+        path = props.image_path
+        if not path:
+            raise ScenarioError(0, "Choose a reference image first")
+        key = scene.session_uid
+        pending = self.uploads.get(key)
+        if pending is not None and not pending.error and pending.ticket.error is None:
+            raise ScenarioError(0, "The reference image is already uploading")
+        note_chosen_file(path)
+        ticket = runtime.ensure_reference_uploads().start(
+            scene, str(Path(bpy.path.abspath(path))), kind="image", external=True
+        )
+        self.uploads[key] = ImageUpload(scene, path, ticket)
+        return ticket
+
+    def upload_state(self, scene):
+        """'', 'UPLOADING' or the reason the upload stopped, for drawing."""
+        pending = self.uploads.get(scene.session_uid)
+        if pending is None:
+            return ""
+        return pending.error or pending.ticket.error or "UPLOADING"
+
+    def _deliver_uploads(self):
+        for key, pending in tuple(self.uploads.items()):
+            ticket = pending.ticket
+            if pending.error or ticket.error:
+                continue
+            try:
+                props = pending.scene.scenario_blockout
+            except ReferenceError:
+                self.uploads.pop(key)
+                continue
+            if props.image_path != pending.path:
+                self.uploads.pop(key)  # another image was chosen; this upload is not used
+                continue
+            record = ticket.record
+            if record is None or pending.scene != bpy.context.scene:
+                continue
+            if record.state in {UploadState.FAILED, UploadState.CANCELED, UploadState.ABANDONED}:
+                pending.error = "Upload finished without an asset; inspect saved uploads"
+                continue
+            if record.state != UploadState.IMPORTED:
+                continue
+            try:
+                self.session.validate_destination(record.intent.origin)
+            except Exception:
+                pending.error = "The scene changed; choose the reference image again"
+                continue
+            props.image_asset_id = record.asset_id
+            props.image_scope = _scope_key(self.session.scope)
+            self.uploads.pop(key)
+            # Delivered by maintenance, after the upload operator has returned.
+            file_state.mark_modified("Scenario Blockout reference image")
 
     def approve(self, identifier, scene, *, approved_cost):
         item = self.actions.get(identifier)
@@ -166,7 +349,10 @@ class BlockoutJobs:
         if result.record.intent.request_id != item.request_id:
             raise ScenarioError(0, "The returned plan does not match this action")
         props = self._binding(item, scene)
-        elements = parse_complete_plan(result.text)
+        try:
+            elements = parse_complete_plan(result.text)
+        except (ValueError, RecursionError):
+            raise PlanUnusable(0, unusable_reason(result.text)) from None
         props.plan_json = json.dumps(elements)
         # Delivered by maintenance, after the approval operator has returned.
         file_state.mark_modified("Scenario Blockout plan")
@@ -176,6 +362,7 @@ class BlockoutJobs:
         if not self.session.active:
             return
         self.recovery.poll()
+        self._deliver_uploads()
         for item in tuple(self.actions.values()):
             if item.phase not in BUSY:
                 continue
@@ -239,7 +426,9 @@ class BlockoutJobs:
             except Exception as error:
                 item.task, item.phase = None, "ERROR"
                 item.error = (
-                    self._stopped(item.request_id)
+                    error.reason
+                    if isinstance(error, PlanUnusable)
+                    else self._stopped(item.request_id)
                     if item.request_id
                     else str(error)
                     if isinstance(error, DuplicateRequestError)

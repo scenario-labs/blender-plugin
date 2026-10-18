@@ -889,19 +889,49 @@ def draw_blockout_tab(layout, context):
     from ..core.scene import blockout as core
     from . import blockout as bo
 
-    props = context.scene.scenario_blockout
+    scene = context.scene
+    props = scene.scenario_blockout
+    jobs = runtime.state.blockout_jobs
+    item = jobs.current(scene) if jobs is not None else None
     box = layout.box()
     box.label(text="Prompt to Blockout", icon="MESH_CUBE")
     box.prop(props, "prompt", text="")
     row = box.row(align=True)
-    row.prop(props, "scene_type", text="")
-    row.prop(props, "scale", text="")
-    box.operator("scenario.blockout_design", text="Get design price", icon="MOD_BUILD")
+    row.prop(
+        props, "image_path", text="", icon="IMAGE_DATA", placeholder="Reference image (optional)"
+    )
+    if props.image_path and not props.image_asset_id:
+        upload = jobs.upload_state(scene) if jobs is not None else ""
+        if upload == "UPLOADING":
+            box.label(text="Uploading the reference image...", icon="TIME")
+        else:
+            row.operator("scenario.blockout_upload_image", text="Upload", icon="EXPORT")
+            if upload:
+                box.label(text=upload, icon="ERROR")
+    elif props.image_asset_id:
+        box.label(text="Reference image uploaded: the plan follows it", icon="CHECKMARK")
+    box.prop(props, "density")
+    row = box.row(align=True)
+    row.prop(props, "tier", expand=True)
+    if item is None or item.action == "DESIGN":
+        bo.draw_status(box, scene)
+    if bo.needs_price(scene):
+        price = box.row()
+        price.scale_y = 1.4
+        price.operator("scenario.blockout_design", text="Get price", icon="MOD_BUILD")
 
-    plan = bo.stored_plan(context.scene)
+    plan = bo.stored_plan(scene)
     if plan:
         summary = core.plan_summary(plan)
         info = layout.box()
+        build = info.row(align=True)
+        build.scale_y = 1.4
+        build.operator(
+            "scenario.blockout_build",
+            text=f"Build blockout ({summary['total']} elements)",
+            icon="MOD_BUILD",
+        )
+        build.operator("scenario.blockout_clear", text="", icon="TRASH")
         info.label(
             text=f"{summary['total']} elements  ·  {len(summary['by_group'])} group(s)",
             icon="OUTLINER_OB_GROUP_INSTANCE",
@@ -910,9 +940,6 @@ def draw_blockout_tab(layout, context):
         for cat, count in sorted(summary["by_category"].items(), key=lambda kv: (-kv[1], kv[0])):
             label = core.CATEGORIES.get(cat, core.CATEGORIES[core.DEFAULT_CATEGORY])[0]
             grid.label(text=f"{label}: {count}", icon="LAYER_ACTIVE")
-        actions = info.row(align=True)
-        actions.operator("scenario.blockout_build", text="Build plan", icon="FILE_REFRESH")
-        actions.operator("scenario.blockout_clear", text="Clear", icon="TRASH")
         refine = layout.box()
         refine.label(text="Refine", icon="GREASEPENCIL")
         rrow = refine.row(align=True)
@@ -920,9 +947,10 @@ def draw_blockout_tab(layout, context):
             props, "refine", text="", placeholder="add a second floor, taller tower, more stalls..."
         )
         rrow.operator("scenario.blockout_refine", text="Get refinement price", icon="MOD_BUILD")
-    bo.draw_status(layout, context.scene)
+        if item is not None and item.action == "REFINE":
+            bo.draw_status(refine, scene)
     layout.label(
-        text="Generate a plan, then build its grouped primitives locally.",
+        text="Pay for the plan once, then build its primitives locally.",
         icon="INFO",
     )
 

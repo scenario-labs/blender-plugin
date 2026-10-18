@@ -267,7 +267,9 @@ prototype rows; it never drops shared recovery rows or changes durable records.
 
 `BlockoutJobs` is a presentation facade over the selected session, not another
 worker or store. Design and Refine capture the original scene revision plus
-prompt, refinement, type, scale and previous plan before quoting. Refine includes
+prompt, refinement, density, model tier, uploaded reference image and previous
+plan before quoting. The tier resolves to the newest Claude Opus (Best) or Gemini
+Flash (Fast) that the loaded Scenario LLM schema allows, else a fixed fallback. Refine includes
 the complete bounded prior plan, without text truncation, using an explicit
 update instruction rather than describing the refinement note as a new scene.
 An absent, malformed or incomplete prior plan is rejected with a guided error
@@ -282,12 +284,14 @@ quotes and unconfirmed or uncertain jobs retain their handles.
 The application pump polls the known job, lists its single plain-text output and
 reads the complete body through `JobSession.read_model_text`. Delivery validates
 scope, original scene/revision and unchanged inputs before storing a normalized
-array of 1–200 elements. Complete arrays may have Markdown fences or surrounding
-prose; malformed/truncated arrays are rejected without recovering a partial
-prefix. Delivery never creates geometry. A scene switch, edited plan, file load
-or retired owner cannot redirect a late result to the current scene.
+array of 1–400 elements. Complete arrays may have Markdown fences, surrounding
+prose or the Scenario LLM `{"results": [{"text": ...}]}` answer wrapper;
+malformed/truncated arrays are rejected without recovering a partial prefix, and
+the error names the unusable answer. Delivery never creates geometry. A scene
+switch, edited plan, file load or retired owner cannot redirect a late result to
+the current scene.
 
-Build plan stages local geometry before replacing the scene's explicitly stored
+Build blockout stages local geometry before replacing the scene's explicitly stored
 collection pointer. It does not adopt collections by name. Unmarked additions,
 externally linked objects and shared collection trees block destructive rebuild
 or Clear; a staging failure removes only the new tree and preserves the old one.

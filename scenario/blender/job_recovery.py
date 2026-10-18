@@ -261,7 +261,7 @@ class SCENARIO_OT_use_saved_blockout(bpy.types.Operator):
         if self.replaces_plan:
             layout.label(text="Replace this scene's existing stored plan.", icon="ERROR")
         layout.label(text="Keep existing geometry unchanged; no new generation.")
-        layout.label(text="Choose Build plan separately to update geometry.")
+        layout.label(text="Choose Build blockout separately to update geometry.")
         layout.label(text="Use Blender Undo to restore the previous plan.")
 
     def cancel(self, context):
@@ -275,7 +275,7 @@ class SCENARIO_OT_use_saved_blockout(bpy.types.Operator):
         except Exception:
             self.report({"ERROR"}, "The saved plan or destination changed; review it again")
             return {"CANCELLED"}
-        runtime.set_message("Saved plan ready; choose Build plan to update geometry")
+        runtime.set_message("Saved plan ready; choose Build blockout to update geometry")
         return {"FINISHED"}
 
 

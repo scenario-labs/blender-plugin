@@ -399,7 +399,15 @@ def test_urllib_failures_before_sending_mean_not_sent():
         ),
         (
             "Saved as C:\\Users\\someone\\out.png, then ~/renders/a.png",
-            "Saved as <path> then <path>",
+            "Saved as <path>, then <path>",
+        ),
+        ("Could not read C:\\Users\\Jane Doe\\private.blend", "Could not read <path>"),
+        ("Could not read /home/Jane Doe/my scenes/a.blend for upload", "Could not read <path>"),
+        ("Saved to C:\\Users\\Doe, Jane\\out.png. Try again", "Saved to <path>. Try again"),
+        ("Missing file (see /tmp/a b/x.png)", "Missing file (see <path>)"),
+        (
+            "Cannot open \\\\server\\share name\\x.png; check access",
+            "Cannot open <path>; check access",
         ),
         ("See https://example.com/asset?token=abc for details", "See <link> for details"),
         ("Reply to someone@example.com", "Reply to <email>"),

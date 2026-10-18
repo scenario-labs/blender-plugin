@@ -45,10 +45,23 @@ EMAIL = re.compile(_PART + "@" + _PART + r"\." + _PART)
 
 ERROR_LIMIT = 300  # characters of a panel error that a feedback message starts with
 _START = r"(?:^|(?<=[\s(\[=,]))"  # a path or quoted name starts the text or follows these
+# An unquoted path may hold spaces, so it runs to the end of its clause: the end of the text,
+# a quote or semicolon, or a comma, colon, parenthesis or period before a space. A comma or
+# colon continues it when the next word holds a separator. Words after a path in the same
+# clause are redacted with it: redacting too much is safer than leaving a name behind.
+_PATH_END = r"(?=$|[\n\"'<>|;]|[,:)](?:\s|$)|\.(?:\s|$))"
+_PATH = (
+    _START
+    + r"(?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\.{1,2}[\\/]|/)[^\s\"'<>|][^\n\"'<>|;]*?"
+    + _PATH_END
+    + r"(?:[,:]\s+[^\s\"'<>|]*[\\/][^\n\"'<>|;]*?"
+    + _PATH_END
+    + ")*"
+)
 _REDACTIONS = (
     (re.compile(r"\b[A-Za-z][A-Za-z0-9+.-]*://\S+"), "<link>"),
     (re.compile(r"[^\s@<>()\"']+@[^\s@<>()\"']+\.[^\s@<>()\"']+"), "<email>"),
-    (re.compile(_START + r"(?:[A-Za-z]:[\\/]|\\\\|~[\\/]|\.{1,2}[\\/]|/)[^\s\"'<>|]+"), "<path>"),
+    (re.compile(_PATH), "<path>"),
     (re.compile(_START + r"'[^'\n]{1,200}'(?=$|[\s.,;:!?)\]])"), "<name>"),
     (re.compile(_START + r"\"[^\"\n]{1,200}\""), "<name>"),
     (re.compile("‘[^’\n]{1,200}’|“[^”\n]{1,200}”"), "<name>"),

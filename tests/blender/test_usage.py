@@ -48,10 +48,18 @@ class SCENARIO_OT_usage_probe(bpy.types.Operator):
             raise ValueError("probe failure")
         if self.mode == "nested":
             bpy.ops.scenario.usage_probe(mode="finish")
+        if self.mode == "clean_up":  # as the saved-job dialogs do on a refused execute
+            self.cancel(context)
+            return {"CANCELLED"}
         return {"CANCELLED"} if self.mode == "cancel" else {"FINISHED"}
 
     def modal(self, context, event):
         return {"FINISHED"} if event.type == "RET" else {"RUNNING_MODAL"}
+
+    def cancel(self, context):
+        # Blender calls it when the user closes the dialog without OK; it returns nothing.
+        if self.mode == "fail_cancel":
+            raise ValueError("probe cancel failure")
 
 
 class UsageTests(unittest.TestCase):
@@ -96,8 +104,9 @@ class UsageTests(unittest.TestCase):
     def probe(self, mode, method="execute", event_type="NONE"):
         operator = SimpleNamespace(mode=mode)
         operator.execute = types.MethodType(SCENARIO_OT_usage_probe.execute, operator)
-        if method == "execute":
-            return SCENARIO_OT_usage_probe.execute(operator, bpy.context)
+        operator.cancel = types.MethodType(SCENARIO_OT_usage_probe.cancel, operator)
+        if method in ("execute", "cancel"):
+            return getattr(SCENARIO_OT_usage_probe, method)(operator, bpy.context)
         event = SimpleNamespace(type=event_type)
         return getattr(SCENARIO_OT_usage_probe, method)(operator, bpy.context, event)
 
@@ -380,6 +389,22 @@ class UsageTests(unittest.TestCase):
             self.assertEqual(self.probe("finish", "modal", "RET"), {"FINISHED"})
             self.assertEqual(self.sent(), [self.used("finished")])
 
+    def test_a_dialog_closed_without_ok_counts_once_as_cancelled(self):
+        with online_access(True):
+            self.share()
+            # Invoke opens the props dialog; Blender calls cancel when the user closes it.
+            self.assertEqual(self.probe("dialog", "invoke"), {"RUNNING_MODAL"})
+            self.assertIsNone(self.probe("dialog", "cancel"))
+            self.assertEqual(self.sent(), [self.used("cancelled")])
+            # An execute that cleans up through its own cancel counts only its outcome.
+            self.assertEqual(self.probe("clean_up"), {"CANCELLED"})
+            self.assertEqual(self.sent(), [self.used("cancelled")])
+            with self.assertRaises(ValueError):
+                self.probe("fail_cancel", "cancel")
+            self.assertEqual(self.sent(), [self.used("error", error_type="ValueError")])
+        cancel = bpy.types.SCENARIO_OT_pick_model.cancel
+        self.assertTrue(hasattr(cancel, self.usage._ORIGINAL))
+
     def test_nothing_is_recorded_when_sharing_is_off_or_an_agent_runs_the_operator(self):
         with online_access(True), patch.object(self.usage, "_record_operator") as record:
             self.assertEqual(bpy.ops.scenario.usage_probe(), {"FINISHED"})
@@ -402,7 +427,7 @@ class UsageTests(unittest.TestCase):
                 continue
             methods = [
                 method
-                for name in ("execute", "invoke", "modal")
+                for name in ("execute", "invoke", "modal", "cancel")
                 if isinstance(method := getattr(cls, name, None), types.FunctionType)
             ]
             with self.subTest(operator=cls.bl_idname):
@@ -411,7 +436,8 @@ class UsageTests(unittest.TestCase):
                 excluded = cls.bl_idname in self.usage.EXCLUDED_OPERATORS
                 self.assertEqual(wrapped, [not excluded] * len(methods))
         modal = bpy.types.SCENARIO_OT_composer_modal
-        self.assertFalse(hasattr(modal.invoke, marker) or hasattr(modal.modal, marker))
+        for method in (modal.invoke, modal.modal, modal.cancel):
+            self.assertFalse(hasattr(method, marker))
         # Instrumenting is idempotent and restoring puts the class's own methods back.
         self.assertFalse(self.usage.instrument(SCENARIO_OT_usage_probe))
         wrapped = SCENARIO_OT_usage_probe.__dict__["execute"]

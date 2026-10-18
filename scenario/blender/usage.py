@@ -16,9 +16,9 @@ scenario_blender command, whose loop keeps the online-access mirror current; oth
 background runs have no main-thread tick to follow a change of Allow Online Access.
 
 Operator events come from wrappers around the extension's own operators, installed after
-registration: Blender looks an operator's execute, invoke and modal up on its class at each
-call, so a replaced method takes effect, while registration only checks which of them
-exist and their argument counts. The wrappers keep those counts and are removed on
+registration: Blender looks an operator's execute, invoke, modal and cancel up on its class
+at each call, so a replaced method takes effect, while registration only checks which of
+them exist and their argument counts. The wrappers keep those counts and are removed on
 unregister. With sharing off a wrapper costs one global read.
 """
 
@@ -49,7 +49,7 @@ EXCLUDED_OPERATORS = frozenset(
         "scenario.composer_modal",
     }
 )
-_METHODS = ("execute", "invoke", "modal")
+_METHODS = ("execute", "invoke", "modal", "cancel")
 # The scenario_blender command waits this long for its last send before Blender exits.
 FINAL_SEND_WAIT = relay.TIMEOUT + 1.0
 # Unregistering in a window session, at quit too, waits at most this long for it.
@@ -310,10 +310,11 @@ def restore(cls):
 
 def _wrap(idname, name, method):
     # Blender checks each callback's positional argument count at registration.
-    if name == "execute":
+    if name in ("execute", "cancel"):
+        cancelling = name == "cancel"
 
         def wrapper(self, context):
-            return _counted(idname, method, self, (context,))
+            return _counted(idname, method, self, (context,), cancelling=cancelling)
 
     else:  # invoke and modal
 
@@ -325,13 +326,16 @@ def _wrap(idname, name, method):
     return wrapper
 
 
-def _counted(idname, method, operator, args):
+def _counted(idname, method, operator, args, *, cancelling=False):
     """Run the operator's method unchanged and record the outermost call's outcome.
 
     An invoke that calls execute, or an operator that runs another one, is one action:
     only the call that is not inside another wrapped call records. An invoke that opens
     a dialog, a file browser or a modal handler records nothing; the execute or modal
-    that ends it does. Calls made by a local MCP tool are the agent's, not the user's.
+    that ends it does, or Blender's call of cancel (`cancelling`, which returns None)
+    when the user closes the dialog without OK. An execute that calls its own cancel to
+    clean up records only its own outcome. Calls made by a local MCP tool are the
+    agent's, not the user's.
     Known overcount: Blender runs a REGISTER and UNDO operator's execute again for each
     change in the Adjust Last Operation panel, and each of those runs counts.
     """
@@ -350,7 +354,7 @@ def _counted(idname, method, operator, args):
     finally:
         _calls.depth = depth
     if outermost:
-        outcome = _outcome(result)
+        outcome = "cancelled" if cancelling else _outcome(result)
         if outcome is not None:
             _record_operator(recorder, idname, outcome)
     return result

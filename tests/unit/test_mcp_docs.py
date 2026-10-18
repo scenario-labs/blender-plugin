@@ -28,6 +28,56 @@ def test_committed_reference_matches_all_registered_source_contracts():
         assert not re.search(r"\b\d+ tools\b", (ROOT / relative).read_text())
 
 
+def test_guide_tool_map_shows_every_registered_tool_once():
+    guide = (ROOT / "docs/USER_GUIDE.md").read_text()
+    assert (
+        generator.replace_block(
+            guide, generator.generated_map(), generator.MAP_START, generator.MAP_END
+        )
+        == guide
+    )
+    block = guide.split(generator.MAP_START, 1)[1].split(generator.MAP_END, 1)[0]
+    shown = re.findall(r'<li tabindex="0"><code>([^<]+)</code></li>', block)
+    registered = [
+        tool["name"]
+        for _, relative in generator.GROUPS
+        for tool in generator.parse_specs(ROOT / relative)
+    ]
+    assert sorted(shown) == sorted(registered)
+
+
+def test_tool_map_families_route_overlapping_names_to_the_specific_family():
+    groups = [
+        ("Scene", [{"name": "scene_summary"}, {"name": "render_still"}]),
+        (
+            "Scenario",
+            [
+                {"name": name}
+                for name in (
+                    "bind_film_upload",
+                    "recover_reference_upload",
+                    "upload_reference",
+                    "estimate_workflow",
+                    "prepare_blockout_plan",
+                    "cancel_prepared_job",
+                    "a_future_tool",
+                )
+            ],
+        ),
+    ]
+    members = generator.families(groups)
+    assert members["scene"] == ["scene_summary", "render_still"]
+    assert members["film"] == ["bind_film_upload"]
+    assert members["jobs"] == ["recover_reference_upload", "cancel_prepared_job"]
+    assert members["library"] == ["upload_reference"]
+    assert members["workflows"] == ["estimate_workflow"]
+    assert members["blockout"] == ["prepare_blockout_plan"]
+    assert members["generate"] == ["a_future_tool"]
+    rendered = generator.render_map(groups)
+    assert '<b>1</b> Film <span class="tool-family-tag">experimental</span>' in rendered
+    assert "Generate &amp; place" in rendered
+
+
 def test_renamed_tool_is_detected_as_documentation_drift(tmp_path):
     source = ROOT / "scenario/mcp/tools_blender.py"
     changed = tmp_path / "tools_blender.py"

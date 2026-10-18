@@ -86,6 +86,30 @@ window.va = window.va || function () { (window.vaq = window.vaq || []).push(argu
     if (narrow.matches && event.target.closest("a[href^='#']")) contents.open = false;
   });
 })();
+// Previous and next buttons for sideways strips; without script they still scroll.
+document.querySelectorAll(".lane-strip").forEach(strip => {
+  const nav = document.createElement("div");
+  nav.className = "strip-nav";
+  const still = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const buttons = [["Previous panels", "←", -1], ["Next panels", "→", 1]].map(([label, arrow, step]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "button quiet";
+    button.setAttribute("aria-label", label);
+    button.textContent = arrow;
+    button.addEventListener("click", () => strip.scrollBy({left: step * strip.clientWidth * 0.8, behavior: still.matches ? "auto" : "smooth"}));
+    nav.append(button);
+    return button;
+  });
+  const update = () => {
+    buttons[0].disabled = strip.scrollLeft <= 1;
+    buttons[1].disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+  };
+  strip.after(nav);
+  strip.addEventListener("scroll", update, {passive: true});
+  window.addEventListener("resize", update);
+  update();
+});
 </script>
 <script>{{search}}</script>
 </body>

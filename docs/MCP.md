@@ -772,7 +772,8 @@ No credentials, service requests or registry writes are needed for cold reads.
   or modify the scene. `wait_for_job` leaves the main thread available while
   waiting, but its preparation and final status delivery still require that thread.
 
-Maintainers: run `make mcp-docs` after changing tool definitions and
+Maintainers: run `make mcp-docs` after changing tool definitions (it also redraws
+the user guide's tool map) and
 `uv run --locked --no-env-file python tools/gen_mcp_docs.py --check` to detect drift.
 Every session loads all tool definitions, so `tests/unit/test_mcp_context_budget.py`
 caps their total and per-tool size; raise a budget there only on purpose. A pull

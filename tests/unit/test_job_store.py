@@ -415,6 +415,8 @@ def legacy_store(path, version):
             value = json.loads(raw)
             if version < 12:
                 del value["claimed_at"]
+                for item in value["results"]:
+                    del item["asset"]["parent_id"]
             if version < 8 and "film_task" in value["intent"]:
                 del value["intent"]["film_task"]
             if version < 6:

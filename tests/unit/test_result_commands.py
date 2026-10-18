@@ -1076,7 +1076,7 @@ def test_schema_nine_manifest_keeps_downloading_its_saved_preview(setup, tmp_pat
     with sqlite3.connect(path) as connection:
         value = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
         for item in value["results"]:
-            del item["asset"]["source"], item["asset"]["projection"]
+            del item["asset"]["source"], item["asset"]["projection"], item["asset"]["parent_id"]
         del value["claimed_at"]
         connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
         connection.execute("DROP TABLE trained_defaults")
@@ -1163,3 +1163,73 @@ def test_original_outside_policy_or_world_byte_cap_is_rejected(setup, monkeypatc
     assert all(item.receipt is None for item in failed.results)
     assert https.called is (damage == "cap")
     assert requested == (["/asset-one-original?signed=private"] if damage == "cap" else [])
+
+
+def _parents(record):
+    return [item.asset.parent_id for item in record.results]
+
+
+def test_manifest_keeps_only_parents_within_the_job(setup):
+    coordinator, store, current, _, assets, _, calls, _ = setup
+    assets["asset-one"]["metadata"] = {"parentId": "input-asset"}
+    assets["asset-two"]["metadata"] = {"parentId": "asset-one"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == [None, "asset-one"]
+    # One job read and one read per asset: lineage costs no extra request.
+    assert len(calls) == 3
+
+
+def test_manifest_parent_listed_after_its_child_is_kept(setup):
+    coordinator, _, current, _, assets, _, _, _ = setup
+    assets["asset-one"]["metadata"] = {"parentId": "asset-two"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == ["asset-two", None]
+
+
+@pytest.mark.parametrize("value", [None, 7, "", "bad id/"])
+def test_unusable_parent_is_stored_as_none(setup, value):
+    coordinator, _, current, _, assets, _, _, _ = setup
+    assets["asset-two"]["metadata"] = {"parentId": value}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == [None, None]
+
+
+def test_self_parent_is_stored_as_none(setup):
+    coordinator, _, current, _, assets, _, _, _ = setup
+    assets["asset-two"]["metadata"] = {"parentId": "asset-two"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == [None, None]
+
+
+def test_parent_cycle_is_dropped_and_the_manifest_saved(setup):
+    coordinator, store, current, _, assets, _, _, _ = setup
+    assets["asset-one"]["metadata"] = {"parentId": "asset-two"}
+    assets["asset-two"]["metadata"] = {"parentId": "asset-one"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == [None, None]
+    assert store.get("request").results == manifest.results
+
+
+def test_refresh_keeps_the_saved_parent(setup):
+    coordinator, store, current, _, assets, downloader, _, _ = setup
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assets["asset-two"]["metadata"] = {"parentId": "asset-one"}
+    coordinator.download_results("request", expected_revision=manifest.revision)
+    assert len(downloader.calls) == 2
+    assert _parents(store.get("request")) == [None, None]
+
+
+@pytest.mark.parametrize("later", [None, {}, {"parentId": "asset-two"}])
+def test_refresh_keeps_a_saved_parent_whatever_the_server_reports_later(setup, later):
+    coordinator, store, current, _, assets, downloader, _, _ = setup
+    assets["asset-two"]["metadata"] = {"parentId": "asset-one"}
+    manifest = coordinator.load_results("request", expected_revision=current.revision)
+    assert _parents(manifest) == [None, "asset-one"]
+    if later is None:
+        del assets["asset-two"]["metadata"]
+    else:
+        assets["asset-two"]["metadata"] = later
+    coordinator.download_results("request", expected_revision=manifest.revision)
+    assert len(downloader.calls) == 2
+    assert store.get("request").state == JobState.READY
+    assert _parents(store.get("request")) == [None, "asset-one"]

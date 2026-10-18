@@ -320,11 +320,12 @@ name passed to these functions is written into the snapshot before import:
 Blender looks for a missing file elsewhere, including the process working
 directory. The import must still check the images it creates.
 
-The store does not persist lineage, and no planned store migration includes it.
-Persisting it would need two optional `ResultAsset` fields captured from the same
-`assets.retrieve` response as the manifest: `asset_type` (SDK `AssetMetadata.type`)
-and `parent_id` (`AssetMetadata.parent_id`). No issue tracks that follow-up yet.
-Until it lands, every stored manifest uses the stricter rules without lineage;
+Schema 12 stores each result's in-job parent as `parent_id`
+([result parents](JOB_STORAGE.md#result-parents)), but the classifier does not read it
+yet. Its lineage rules expect an OBJ's MTL and maps under the OBJ; live Meshy results
+put them beside it, under the GLB. Until binding by parent lands
+([#609](https://github.com/scenario-labs/blender-plugin/issues/609)), every stored
+manifest uses the stricter rules without lineage;
 `members_from_results` accepts lineage only as an explicit mapping, so parent
 binding and generated-output ordering apply only when a caller supplies it.
 Undocumented provider file names are never used. Provider package shapes, SPZ

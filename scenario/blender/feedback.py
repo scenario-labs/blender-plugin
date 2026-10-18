@@ -129,16 +129,6 @@ def edit(name, value):
     _keep({**_draft, name: RATINGS[value][0] if name == "rating" else value})
 
 
-def _untag_preferences(operator, context):
-    """Editing the controls marks the preferences modified, as any preference edit does.
-
-    Undone when the dialog closes, unless they were already modified when it opened, so
-    Blender does not save the preferences at quit for text that is not in them.
-    """
-    if getattr(operator, "preferences_were_dirty", True) is False:
-        context.preferences.is_dirty = False
-
-
 def rating_value(identifier):
     return None if identifier == "NONE" else int(identifier)
 
@@ -274,7 +264,6 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
             if self.properties.is_property_set(name):
                 kept[name] = getattr(self, name)
         _keep(kept)
-        self.preferences_were_dirty = context.preferences.is_dirty
         return context.window_manager.invoke_props_dialog(
             self, width=DIALOG_WIDTH, confirm_text="Send"
         )
@@ -305,14 +294,16 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
             note.label(text=line)
 
     def cancel(self, context):
-        # Blender calls it when the dialog closes without Send (Esc, Cancel, a click outside).
-        # The controls have kept the text already.
-        _untag_preferences(self, context)
+        """Blender calls it when the dialog closes without Send (Esc, Cancel, a click outside).
+
+        The controls have kept the text already. Editing them marks the preferences modified,
+        as any preference edit does; that flag is left alone, since clearing it could drop a
+        real change made meanwhile, and saving the preferences stores none of the text.
+        """
 
     def execute(self, context):
         global _submission
         if self.options.is_invoke:  # Send in the dialog, whose controls edit the kept text
-            _untag_preferences(self, context)
             fields = draft()
         else:  # a script's call, whose arguments are the text
             fields = {name: getattr(self, name) for name in FIELDS}

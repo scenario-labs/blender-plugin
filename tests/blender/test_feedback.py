@@ -584,23 +584,24 @@ class FeedbackTests(unittest.TestCase):
         operator.report.assert_called_once_with({"INFO"}, self.core.SENT.text)
         self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
 
-    def test_the_dialog_leaves_the_preferences_modified_only_if_they_were(self):
-        """An edit in a control marks the preferences modified, as Blender does any field of them."""
+    def test_the_dialog_leaves_the_preferences_modified_flag_alone(self):
+        """Clearing it could drop a real change made while the dialog is open."""
         preferences = bpy.context.preferences
         for before in (False, True):
             with self.subTest(modified_before=before):
                 preferences.is_dirty = before
                 operator = self.opened()
                 self.prefs.feedback_message = "Typed"
-                preferences.is_dirty = True  # as Blender marks them for that edit
+                preferences.is_dirty = True  # an edit made meanwhile, or Blender marking this one
                 self.operator.cancel(operator, bpy.context)
-                self.assertEqual(preferences.is_dirty, before)
+                self.assertTrue(preferences.is_dirty)
         preferences.is_dirty = False
         operator = self.opened()
-        with online_access(True):  # turning it on marks the preferences modified too
+        preferences.is_dirty = True
+        with online_access(True):
             operator.options, operator.report = SimpleNamespace(is_invoke=True), Mock()
             self.assertEqual(self.operator.execute(operator, bpy.context), {"FINISHED"})
-            self.assertFalse(preferences.is_dirty)
+        self.assertTrue(preferences.is_dirty)
         self.assertEqual(self.sent()["message"], "Typed")
 
     def test_the_status_bar_shows_the_outcome_the_pump_applied(self):

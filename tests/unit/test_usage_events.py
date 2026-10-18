@@ -459,6 +459,52 @@ def test_each_send_rechecks_both_permissions(withdrawn):
     assert owner.flush() == 0 and len(sends.calls) == 1
 
 
+def test_turning_sharing_off_stops_a_flush_already_in_progress():
+    """Off then quickly on again shares the same permission: the old batches still stop."""
+    owner = None
+
+    def switch_off_then_on(payload):
+        owner.stop(discard=True)  # the preference goes off; `enabled` stays True (on again)
+
+    sends = Sends(hook=switch_off_then_on)
+    owner = recorder(sends)
+    for _ in range(150):
+        owner.record("extension_started")
+    owner.flush()
+    assert len(sends.calls) == 1  # the batch on the wire when it went off, and no other
+    assert not owner.permitted() and not owner.record("extension_started")
+
+
+@pytest.mark.parametrize(
+    "saved",
+    [
+        lambda: None,  # deleted: sharing went off, here or in another Blender
+        lambda: "f" * 32,  # replaced by a new opt-in
+        lambda: (_ for _ in ()).throw(OSError("unreadable")),
+    ],
+    ids=["deleted", "replaced", "unreadable"],
+)
+def test_a_batch_never_goes_out_under_an_id_that_is_no_longer_saved(saved):
+    sends = Sends()
+    owner = recorder(sends, saved_install_id=saved)
+    owner.record("extension_started")
+    assert owner.flush() == 0 and sends.calls == [] and owner.pending() == 0
+
+
+def test_the_saved_id_is_checked_before_each_batch():
+    current = [ID]
+
+    def delete_after_first(payload):
+        current[0] = None
+
+    sends = Sends(hook=delete_after_first)
+    owner = recorder(sends, saved_install_id=lambda: current[0])
+    for _ in range(150):
+        owner.record("extension_started")
+    assert owner.flush() == 100
+    assert len(sends.calls) == 1 and sends.payloads[0]["install_id"] == ID
+
+
 def test_permission_withdrawn_after_recording_discards_the_queue():
     online = Switch()
     sends = Sends()

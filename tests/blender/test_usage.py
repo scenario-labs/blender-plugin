@@ -164,6 +164,68 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(recorder.pending(), 1)
         self.assertEqual(self.sent(), [])  # the sender rechecks online access before sending
 
+    def test_a_preference_on_without_the_saved_id_shares_nothing(self):
+        """The ID file is the opt-in record: another Blender may have switched sharing off."""
+        with online_access(True):
+            self.share()
+            self.usage.deactivate()
+            # Off in another Blender whose preferences were not saved: its ID file is gone.
+            self.events.delete_install_id(self.state)
+            self.usage.activate(send=self.transport)  # as the scenario_blender command does
+            self.assertTrue(self.prefs.share_usage)
+            self.assertIsNone(self.usage.recorder())
+            self.assertIsNone(self.events.read_install_id(self.state))
+            bpy.ops.scenario.usage_probe()
+            self.usage.tick()
+            self.assertEqual(self.transport.payloads, [])
+
+    def test_switching_sharing_off_in_another_blender_stops_sending(self):
+        with online_access(True):
+            self.share()
+            bpy.ops.scenario.usage_probe()
+            self.events.delete_install_id(self.state)
+            self.assertEqual(self.sent(), [])
+
+    def test_the_tick_turns_sharing_off_when_the_preference_changed_silently(self):
+        """Revert to Saved Preferences changes the preference without its update callback."""
+        runtime = submodule("blender.runtime")
+        with online_access(True):
+            self.share()
+            bpy.ops.scenario.usage_probe()
+            reverted = SimpleNamespace(share_usage=False)
+            with patch.object(runtime, "prefs", return_value=reverted):
+                self.usage.tick()
+            self.assertIsNone(self.usage.recorder())
+            self.assertIsNone(self.events.read_install_id(self.state))
+            self.assertEqual(self.transport.payloads, [])
+            # Unavailable preferences decide nothing.
+            self.prefs.share_usage = False
+            self.prefs.share_usage = True
+            with patch.object(runtime, "prefs", return_value=None):
+                self.usage.tick()
+            self.assertIsNotNone(self.usage.recorder())
+
+    def test_the_pump_mirrors_online_access_first_and_survives_a_usage_failure(self):
+        pump = submodule("blender.pump")
+
+        class Stop(Exception):
+            pass
+
+        self.usage._online.clear()
+        with (
+            online_access(True),
+            patch.object(pump.generation, "process_catalog_events", side_effect=Stop),
+        ):
+            with self.assertRaises(Stop):
+                pump._process()
+            self.assertTrue(self.usage._online.is_set())
+            with (
+                patch.object(self.usage, "tick", side_effect=RuntimeError("usage")),
+                self.assertRaises(Stop),  # the tick went on to its next step
+            ):
+                pump._process()
+        pump._failures.pop("usage", None)
+
     def test_one_event_per_execute_only_action(self):
         with online_access(True):
             self.share()

@@ -8,8 +8,8 @@ never enters the queue. Events wait in memory, at most QUEUE_LIMIT with the olde
 first, until the sender thread posts them: every FLUSH_INTERVAL seconds, or sooner once
 FLUSH_SIZE are queued, in batches of at most BATCH_LIMIT. Before each send it rereads two
 worker-safe permissions, sharing enabled and online access, that only Blender's main
-thread changes. A failed batch is dropped, never retried, and logged without its URL or
-contents. The install ID is random, stored under the extension's user directory, and not
+thread changes, and checks that its install ID is still the saved one. A failed batch is
+dropped, never retried, and logged without its URL or contents. The install ID is random, stored under the extension's user directory, and not
 derived from or linked to the Scenario account, key, team or project.
 """
 
@@ -180,8 +180,11 @@ class UsageRecorder:
     """Thread-safe bounded queue of sanitized events and the thread that posts them.
 
     `enabled` and `online_access` are worker-safe callables, rechecked when an event is
-    recorded and before every send. `send(url, payload, timeout)` defaults to
-    relay.post_json; tests replace it, the clocks and the URL.
+    recorded and before every send. `saved_install_id` returns the ID saved now, or None;
+    a batch goes out only while it is still this recorder's ID, so turning sharing off,
+    here or in another Blender, stops even a batch already taken off the queue.
+    `send(url, payload, timeout)` defaults to relay.post_json; tests replace it, the
+    clocks and the URL.
     """
 
     def __init__(
@@ -191,6 +194,7 @@ class UsageRecorder:
         *,
         enabled,
         online_access,
+        saved_install_id=None,
         send=None,
         url=EVENTS_URL,
         clock=time.time,
@@ -206,6 +210,7 @@ class UsageRecorder:
         self.install_id = install_id
         self.context = relay.sanitize_context(context)
         self._enabled, self._online_access = enabled, online_access
+        self._saved_install_id = saved_install_id
         self._send = send or relay.post_json
         self._url, self._timeout = url, timeout
         self._clock, self._monotonic = clock, monotonic
@@ -214,12 +219,23 @@ class UsageRecorder:
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._stopping = threading.Event()
-        self._discard = False
+        self._discarded = threading.Event()  # never cleared: a stopped recorder is not reused
         self._last_send = -math.inf
         self._thread = None
 
     def permitted(self):
-        return bool(self._enabled() and self._online_access())
+        return bool(not self._discarded.is_set() and self._enabled() and self._online_access())
+
+    def _sendable(self):
+        """permitted(), and the install ID this recorder sends under is still the saved one."""
+        if not self.permitted():
+            return False
+        if self._saved_install_id is None:
+            return True
+        try:
+            return self._saved_install_id() == self.install_id
+        except Exception:  # an unreadable ID is no opt-in
+            return False
 
     def pending(self):
         with self._lock:
@@ -258,7 +274,7 @@ class UsageRecorder:
         events = [event for at, event in queued if at >= oldest]
         sent = 0
         for start in range(0, len(events), BATCH_LIMIT):
-            if not self.permitted():
+            if not self._sendable():
                 log.debug("Usage events discarded: sharing is off or online access is disabled")
                 break
             batch = events[start : start + BATCH_LIMIT]
@@ -284,7 +300,7 @@ class UsageRecorder:
         seconds, and not at all by default.
         """
         if discard:
-            self._discard = True
+            self._discarded.set()
             self.clear()
         self._stopping.set()
         self._wake.set()
@@ -308,7 +324,7 @@ class UsageRecorder:
                     break
             self.flush()
             due = self._monotonic() + self._interval
-        if not self._discard:
+        if not self._discarded.is_set():
             self.flush()
 
 

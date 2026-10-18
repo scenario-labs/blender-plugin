@@ -4,9 +4,12 @@
 
 **Share anonymous usage data** is off by default. Turning it on saves a random install ID
 in the extension's user directory and records extension_started; turning it off discards
-unsent events, stops the sender and deletes the ID. core.telemetry.usage owns the queue
-and the sender thread, which rereads the two Events below before each send. Only the main
-thread changes them: the preference, and follow_online_access on every pump tick.
+unsent events, stops the sender and deletes the ID. Only that update creates the ID, and
+the ID file is the opt-in record every Blender process shares: a preference that reads on
+without it (switched off in another Blender whose preferences were not saved) shares
+nothing. core.telemetry.usage owns the queue and the sender thread, which rereads the two
+Events below and the saved ID before each send. Only the main thread changes the Events:
+the preference, and tick on every pump tick.
 
 A window session records from registration. Background Blender records only inside the
 scenario_blender command, whose loop keeps the online-access mirror current; other
@@ -143,25 +146,37 @@ def follow_online_access():
     _record_start()
 
 
+def tick():
+    """Every main-loop tick: mirror online access, and stop when the preference reads off.
+
+    Revert to Saved Preferences and Load Factory Preferences change the preference without
+    its update callback, so the tick turns sharing off the way the preference would.
+    """
+    follow_online_access()
+    prefs = runtime.prefs()  # None while preferences are unavailable: no decision then
+    if _recorder is not None and prefs is not None and not prefs.share_usage:
+        set_sharing(False)
+
+
 def _sync():
     global _recorder
     if not _active or not sharing_enabled():
         return
-    _sharing.set()
     if _recorder is None:
         try:
             directory = state_dir()
-            install_id = events.read_install_id(directory) or events.create_install_id(directory)
-        except OSError as error:  # never let usage data stop the extension from registering
-            log.warning(
-                "Usage data is not sent: its install ID was not saved (%s)", type(error).__name__
-            )
-            return
+            install_id = events.read_install_id(directory)
+        except OSError:  # never let usage data stop the extension from registering
+            install_id = None
+        if install_id is None:
+            return  # no opt-in record: only turning the preference on creates one
+        _sharing.set()
         recorder = events.UsageRecorder(
             install_id,
             relay.context(__version__, blender_version()),
             enabled=_sharing.is_set,
             online_access=_online.is_set,
+            saved_install_id=functools.partial(events.read_install_id, directory),
             send=_send,
         )
         recorder.start()
@@ -265,6 +280,8 @@ def _counted(idname, method, operator, args):
     only the call that is not inside another wrapped call records. An invoke that opens
     a dialog, a file browser or a modal handler records nothing; the execute or modal
     that ends it does. Calls made by a local MCP tool are the agent's, not the user's.
+    Known overcount: Blender runs a REGISTER and UNDO operator's execute again for each
+    change in the Adjust Last Operation panel, and each of those runs counts.
     """
     recorder = _recorder
     if recorder is None:

@@ -213,8 +213,8 @@ def cli(argv):
     previous = {}
 
     def before_process():
+        usage.tick()
         runtime.sync_catalog_context()
-        usage.follow_online_access()
 
     # Background Blender shares usage only here, where this loop follows online access.
     usage.activate()

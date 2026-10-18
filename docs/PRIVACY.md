@@ -158,7 +158,8 @@ recovery. The key derives local credential-bound identities; it does not encrypt
 the database or store your API key/secret. An explicit project override selects a
 separate scope in that storage. The same database keeps any per-lane default you
 save for trained or private models: their model IDs and optional strengths, per
-credential and project scope, without prompts or model details.
+credential and project scope, without prompts or model details. While usage data is
+shared, `state/usage-install-id` holds its random install ID.
 
 Verified result files live under `state/shared-results`; upload intents and
 private source copies live under `state/shared-uploads`, including

@@ -54,3 +54,5 @@ jobs:
           name: mcp-tool-report
           path: mcp-tool-report/report.json
           if-no-files-found: error
+          # A re-run keeps the run ID; replace the earlier attempt's report.
+          overwrite: true

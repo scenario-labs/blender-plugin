@@ -2989,6 +2989,26 @@ class FormatResultTests(unittest.TestCase):
             for name, weight in expected.items():
                 self.assertAlmostEqual(actual[name], weight, places=4)
         MatchedRigTests.assert_rest_pose(self)
+        self.assertFalse(result.frame_rate_mismatch)
+
+    def test_rig_from_an_fbx_at_another_frame_rate_reports_it(self):
+        def animated(copy):
+            objects = MatchedRigTests.rig(self, copy, {})
+            tip = objects[1].pose.bones["Tip"]
+            tip.keyframe_insert("rotation_quaternion", frame=1)
+            tip.rotation_quaternion = (0.9, 0.1, 0, 0)
+            tip.keyframe_insert("rotation_quaternion", frame=10)
+            tip.rotation_quaternion = (1, 0, 0, 0)
+            return objects
+
+        # Exported from this scene at 30 fps, then applied at 24 fps.
+        self.scene.render.fps = 30
+        self.fbx(animated, bake_anim=True)
+        self.scene.render.fps = 24
+        result = self.apply(policy="RIG", result_to_source=self.fit())
+        self.assertIsNotNone(result.rig.animation_data.action)
+        self.assertTrue(result.frame_rate_mismatch)
+        self.assertEqual((self.scene.render.fps, self.scene.render.fps_base), (24, 1.0))
 
 
 class FbxAnimateTests(unittest.TestCase):
@@ -3016,7 +3036,7 @@ class FbxAnimateTests(unittest.TestCase):
         self.target = self.mesh.capture_target(self.scene, self.source)
         self.skin = _skin(self.source, self.mesh)
 
-    def clip_fbx(self, bones):
+    def clip_fbx(self, bones, fps=24):
         """Export a character on a chain rig whose Spine bends over one baked FBX clip."""
         from helpers import chain_rig
 
@@ -3025,6 +3045,7 @@ class FbxAnimateTests(unittest.TestCase):
         window = bpy.context.window
         previous = window.scene, window.view_layer
         scene = bpy.data.scenes.new("FBX clip fixture")
+        scene.render.fps = fps
         directory = Path(self.enterContext(tempfile.TemporaryDirectory()))
         try:
             window.scene, window.view_layer = scene, scene.view_layers[0]
@@ -3068,10 +3089,10 @@ class FbxAnimateTests(unittest.TestCase):
                 for value in set(values) - before[name]:
                     values.remove(value, do_unlink=True)
 
-    def use_fbx(self, bones):
+    def use_fbx(self, bones, fps=24):
         from helpers import CHAIN
 
-        self.body = self.clip_fbx(bones or CHAIN)
+        self.body = self.clip_fbx(bones or CHAIN, fps)
         self.path = self.root / "clip.bin"
         self.path.write_bytes(self.body)
         self.item = self.storage.StoredResult(
@@ -3090,6 +3111,19 @@ class FbxAnimateTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.objects), objects)
         self.assertEqual(_skin(self.source, self.mesh), self.skin)
         self.assertIs(self.rig.animation_data.action, result.clips[0])
+        self.scene.frame_set(25)
+        bend = self.rig.pose.bones["Spine"].rotation_quaternion.angle
+        self.scene.frame_set(1)
+        self.assertAlmostEqual(bend, 0.6, places=2)
+        self.assertFalse(result.frame_rate_mismatch)
+
+    def test_fbx_clip_at_another_frame_rate_is_reported_without_retiming(self):
+        # A 30 fps file in this 24 fps scene: the clip keeps the file's frames.
+        self.use_fbx(None, fps=30)
+        timeline = self.timing()
+        result = self.apply(policy="ANIMATE")
+        self.assertTrue(result.frame_rate_mismatch)
+        self.assertEqual(self.timing(), timeline)
         self.scene.frame_set(25)
         bend = self.rig.pose.bones["Spine"].rotation_quaternion.angle
         self.scene.frame_set(1)

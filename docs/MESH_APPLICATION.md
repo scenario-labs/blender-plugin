@@ -438,9 +438,11 @@ not already reach the shader through a Normal Map node gets one. The importer's
 node takes its Strength from the rewritten `-bm`, so a saved MTL without one
 gets full strength, as in the GLB. Accepted images are packed and their file
 paths cleared. The FBX importer sets the file's frame rate on the staging scene:
-clips keep that timing and the destination scene keeps its own, and
-`model_import.frame_rate_mismatch` reports when they differ. Publication matches
-the GLB group and records `scenario_assets` with the member list on the root.
+clips keep that timing and the destination scene keeps its own. When they
+differ, `model_import.frame_rate_mismatch` is true and the job row shows **Clips
+keep the file's frame rate, which differs from the scene's**. Publication
+matches the GLB group and records `scenario_assets` with the member list on the
+root.
 Failure removes only new objects, meshes, materials, images, curves, textures,
 actions and the staging scene, then verifies the datablock sets. Receipt-only
 retry, reuse claims and session cleanup are shared with the GLB path. MCP status
@@ -554,7 +556,9 @@ reason. Splat units are never applicable, and PLY units are left out because
 only the worker import path reads whether their bytes hold a mesh. Application
 stages the snapshot with the package importers, texture roles and image packing
 in an isolated staging scene. For static policies FBX clips are not read; RIG
-and ANIMATE read them. `REMESH` requires exactly one mesh with optional Empty
+and ANIMATE read them at the file's frame rate, never retimed, and
+`mesh_edit.frame_rate_mismatch` and the same job row report a different scene
+rate. `REMESH` requires exactly one mesh with optional Empty
 parents. `UV` and `RETEXTURE` match every static mesh in the result together as
 one surface, since providers split results by connectivity or color region;
 RETEXTURE merges their material slots, once per material. The explicit `PARTS`
@@ -1012,10 +1016,10 @@ The first clip becomes the rig's active action. The previous active action, if
 any, moves to a muted NLA track with its slot, and each copied clip gets its own
 muted NLA track, as Blender's importer does, so changing the active action loses
 none of them. The active action blends as Replace at full influence; existing
-NLA tracks and the extrapolation stay as they were. Clip timing already follows
-the destination's effective frame rate through the
-[shared staging scene](#rigged-and-animated-model-import); frame range, current
-frame and frame rate stay unchanged.
+NLA tracks and the extrapolation stay as they were. GLB and glTF clip timing
+follows the destination's effective frame rate through the
+[shared staging scene](#rigged-and-animated-model-import); FBX clips keep the
+file's. Frame range, current frame and frame rate stay unchanged.
 
 The captured target guards the rig's identity, bones, rest and transform, so a
 changed rig is stale before import; posing or animating it is not. Animation

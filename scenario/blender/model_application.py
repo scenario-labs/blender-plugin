@@ -883,6 +883,24 @@ def staged_snapshot(snapshot, previous, *, animation=True):
     yield staging, objects
 
 
+def frame_rate_mismatch(snapshot, staging, previous, scene):
+    """Whether staged clips play at another speed in `scene`; never retimes them.
+
+    glTF converts seconds at the destination rate. FBX instead sets the file's
+    frame rate on the staging scene; the destination keeps its own, so different
+    rates play the imported clips at another speed.
+    """
+    return (
+        snapshot.unit.format not in (ModelFormat.GLB, ModelFormat.GLTF)
+        and bool(set(bpy.data.actions) - previous["actions"])
+        and not math.isclose(
+            staging.render.fps / staging.render.fps_base,
+            scene.render.fps / scene.render.fps_base,
+            rel_tol=1e-6,
+        )
+    )
+
+
 def import_snapshot(scene, snapshot, *, cursor, history=False, target_size=None):
     """Import one prepared snapshot into a new group; only new data is published.
 
@@ -899,21 +917,10 @@ def import_snapshot(scene, snapshot, *, cursor, history=False, target_size=None)
     use_snapshot(snapshot)
     undo = _begin_history(history)
     fmt = snapshot.unit.format
-    gltf = fmt in (ModelFormat.GLB, ModelFormat.GLTF)
     previous = _snapshot(_PACKAGE_TRACKED)
-    destination = scene.render.fps / scene.render.fps_base
     try:
         with staged_snapshot(snapshot, previous) as (staging, objects):
-            # glTF converts seconds at the destination rate. FBX instead sets the
-            # file's frame rate on the staging scene; the destination keeps its own,
-            # so different rates play the imported clips at another speed.
-            mismatch = (
-                not gltf
-                and bool(set(bpy.data.actions) - previous["actions"])
-                and not math.isclose(
-                    staging.render.fps / staging.render.fps_base, destination, rel_tol=1e-6
-                )
-            )
+            mismatch = frame_rate_mismatch(snapshot, staging, previous, scene)
             layer = staging.view_layers[0]
             with bpy.context.temp_override(scene=staging, view_layer=layer):
                 staging.frame_set(0)

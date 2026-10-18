@@ -536,8 +536,8 @@ def apply_clips(target, objects):
     """Assign the first returned clip; keep it, the others and any previous action in muted NLA.
 
     The rig's action blending becomes Replace at full influence. Timeline settings
-    stay unchanged. Clip timing already follows the destination frame rate through
-    the shared staging scene.
+    stay unchanged. GLB and glTF clip timing follows the destination frame rate
+    through the shared staging scene; FBX clips keep the file's.
     """
     rig, clips, ratio, corrections, largest = validate_clips(target, objects)
     before = _state(rig)

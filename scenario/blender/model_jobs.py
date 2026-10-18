@@ -97,6 +97,8 @@ UNCONFIRMED_REVIEWED = (
 )
 # Status notes: one information line each, never a review error. See _status_notes.
 REFRESH_RETRYING = "Status not refreshed; retrying"
+# FBX clips keep the file's frame rate in a model import or a RIG/ANIMATE edit.
+FRAME_RATE_NOTICE = "Clips keep the file's frame rate, which differs from the scene's"
 CANCEL_NOT_SENT = "Cancel not sent; the job keeps running"
 CANCEL_UNCONFIRMED = "Cancel not confirmed yet; checking the job's status"
 # Delivery pauses with this once refresh_backoff.FAILURE_CEILING refreshes in a row failed.
@@ -2840,6 +2842,7 @@ class ModelJobs:
             "rest_correction_deg": application.rest_correction_deg,
             "result_to_source": [list(row) for row in application.mapping],
             "fitted_from": application.fitted_from,
+            "frame_rate_mismatch": application.frame_rate_mismatch,
         }
 
     def _model_import_status(self, request_id):
@@ -2850,14 +2853,18 @@ class ModelJobs:
         return dict(saved[1])
 
     def _import_notices(self, request_id):
-        """Status rows for this session's last splat import or clip correction while current."""
+        """Status rows for this session's last import or mesh edit clips while current."""
         notices = []
         edit = self._mesh_edits.get(request_id)
+        edit = edit[1] if edit is not None and edit[0] == self.session.history_revision else None
         # The receipt rounds to 0.1 degrees; smaller corrections are not shown.
-        if edit is not None and edit[0] == self.session.history_revision:
-            if correction := edit[1].rest_correction_deg:
-                notices.append(f"Clips adjusted to this rig's rest pose by up to {correction:g}°")
+        if edit is not None and (correction := edit.rest_correction_deg):
+            notices.append(f"Clips adjusted to this rig's rest pose by up to {correction:g}°")
         status = self._model_import_status(request_id)
+        if (edit is not None and edit.frame_rate_mismatch) or (
+            status and status["frame_rate_mismatch"]
+        ):
+            notices.append(FRAME_RATE_NOTICE)
         splat = status.get("splat") if status else None
         if splat:
             kept, total = splat["points_kept"], splat["points_total"]

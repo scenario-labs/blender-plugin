@@ -48,6 +48,8 @@ class MeshEditApplication:
     # empty for ANIMATE, which uses no mapping.
     mapping: tuple = ()
     fitted_from: str | None = None
+    # RIG or ANIMATE clips keyed at an FBX file's other frame rate; never retimed.
+    frame_rate_mismatch: bool = False
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
@@ -220,6 +222,9 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
             staging,
             objects,
         ):
+            mismatch = policy in _RIGGED and model_application.frame_rate_mismatch(
+                snapshot, staging, before, target.scene
+            )
             # Display helpers are not results; they go with the other imported data.
             helpers = _helpers(objects)
             meshes = [obj for obj in objects if obj.type == "MESH" and obj not in helpers]
@@ -306,6 +311,7 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 correction,
                 tuple(tuple(row) for row in used),
                 surface.fitted_from if surface else None,
+                mismatch,
             )
     except Exception as error:
         if receipt is not None:

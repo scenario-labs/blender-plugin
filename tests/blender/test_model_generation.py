@@ -4162,6 +4162,9 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applied", status)
         self.assertTrue(status["model_import"]["frame_rate_mismatch"])
         self.assertEqual((scene.render.fps, scene.render.fps_base), (30, 1.0))
+        view = self.runtime.state.model_jobs.views[request_id]
+        rows = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
+        self.assertIn("Clips keep the file's frame rate, which differs from the scene's", rows)
         images = [
             image
             for name in status["objects"]
@@ -7051,6 +7054,7 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual(data.action.name, clip)
             self.assertEqual((data.action_influence, data.action_blend_type), (1.0, "REPLACE"))
             self.assertEqual(edit["rest_correction_deg"], 9.7)
+            self.assertFalse(edit["frame_rate_mismatch"])
             view = self.runtime.state.model_jobs.views[request_id]
             rows = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
             self.assertIn("Clips adjusted to this rig's rest pose by up to 9.7°", rows)
@@ -7071,6 +7075,19 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
         finally:
             prefs.use_global_undo, prefs.undo_steps = settings
+
+    def test_clips_at_another_frame_rate_are_reported_in_status_and_the_job_row(self):
+        request_id, _ = self.captured_clip_result()
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")
+        # A GLB keeps scene timing; stand in for an FBX staged at another rate.
+        model = submodule("blender.model_application")
+        with patch.object(model, "frame_rate_mismatch", return_value=True):
+            status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertTrue(status["mesh_edit"]["frame_rate_mismatch"])
+        view = self.runtime.state.model_jobs.views[request_id]
+        rows = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
+        self.assertIn("Clips keep the file's frame rate, which differs from the scene's", rows)
 
     def test_native_animate_review_shares_the_guarded_command(self):
         request_id, source = self.captured_clip_result()

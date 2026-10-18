@@ -1301,8 +1301,9 @@ and `keep_original` are not used. An unskinned source, a different skeleton or a
 result without clips is rejected, leaving the job reviewable. `mesh_edit.rig`
 names the animated rig, `mesh_edit.clips` the new actions and
 `mesh_edit.rest_correction_deg` the largest rest correction in degrees while the
-status is current. The shared native history and receipt-only recovery rules
-apply. See
+status is current. FBX clips, for RIG too, keep the file's frame rate and
+`mesh_edit.frame_rate_mismatch` reports a different scene FPS. The shared native
+history and receipt-only recovery rules apply. See
 [the ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
 
 

@@ -140,11 +140,13 @@ type Endpoint = "events" | "feedback";
 type Usage = { event: string; properties: Properties };
 
 const MAX_BODY = 64 * 1024;
-// Feedback answers within one deadline, before the extension's own timeout. The
-// survey read gets the usual timeout, the capture what remains, but never less
-// than its floor.
+// Feedback answers within one deadline from its arrival, before the extension's
+// own timeout. Reading the body, the survey read (at most the usual timeout) and
+// the capture share it; the capture always gets at least its floor.
 const FEEDBACK_DEADLINE_MS = 4000;
 const MIN_CAPTURE_MS = 500;
+// Events have no deadline of their own, but a body may take only this long.
+const EVENTS_READ_MS = 2000;
 // Per instance and per client address; a Vercel Firewall rule is the durable limit.
 const RATE_LIMITS: Record<Endpoint, number> = { events: 60, feedback: 5 };
 const RATE_WINDOW_MS = 60_000;
@@ -309,20 +311,34 @@ function admit(endpoint: Endpoint, address: string): boolean {
   return allowed;
 }
 
-/** The body as text, or undefined when it exceeds the cap; reading stops there. */
-async function readBody(request: Request): Promise<string | undefined> {
+/** Whole milliseconds left of the feedback deadline, as AbortSignal.timeout requires. */
+function remainingMs(started: number): number {
+  return Math.max(0, Math.round(FEEDBACK_DEADLINE_MS - (performance.now() - started)));
+}
+
+type BodyRead = { text: string } | { error: "timeout" | "too_large" };
+
+/** The body as text, unless it exceeds the cap or takes too long; reading stops there. */
+async function readBody(request: Request, timeoutMs: number): Promise<BodyRead> {
   const reader = request.body?.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (reader) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    size += value.byteLength;
-    if (size > MAX_BODY) {
-      await reader.cancel();
-      return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<"expired">((resolve) => (timer = setTimeout(() => resolve("expired"), timeoutMs)));
+  try {
+    while (reader) {
+      const result = await Promise.race([reader.read(), expired]);
+      if (result === "expired" || (!result.done && size + result.value.byteLength > MAX_BODY)) {
+        // A stalled client could otherwise hold the request open.
+        reader.cancel().catch(() => {});
+        return { error: result === "expired" ? "timeout" : "too_large" };
+      }
+      if (result.done) break;
+      size += result.value.byteLength;
+      chunks.push(result.value);
     }
-    chunks.push(value);
+  } finally {
+    clearTimeout(timer);
   }
   const bytes = new Uint8Array(size);
   let offset = 0;
@@ -331,7 +347,7 @@ async function readBody(request: Request): Promise<string | undefined> {
     offset += chunk.byteLength;
   }
   // Invalid UTF-8 throws, and the caller refuses it with the malformed JSON.
-  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  return { text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
 }
 
 function parseObject(text: string): Json | undefined {
@@ -525,7 +541,11 @@ function readSurveys(value: unknown): Map<string, Survey> | undefined {
 }
 
 /** Running surveys, cached; a failed read keeps the last ones read, or is itself remembered. */
-async function runningSurveys(host: string, token: string): Promise<Map<string, Survey> | undefined> {
+async function runningSurveys(
+  host: string,
+  token: string,
+  timeoutMs: number,
+): Promise<Map<string, Survey> | undefined> {
   const key = `${host} ${token}`;
   const cached = surveySources.get(key);
   const now = Date.now();
@@ -533,7 +553,7 @@ async function runningSurveys(host: string, token: string): Promise<Map<string, 
   let surveys: Map<string, Survey> | undefined;
   try {
     const response = await fetch(`${host}/api/surveys/?token=${encodeURIComponent(token)}`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     surveys = response.ok ? readSurveys(await response.json()) : undefined;
     const reason = response.ok ? "unexpected body" : `HTTP ${response.status}`;
@@ -542,6 +562,8 @@ async function runningSurveys(host: string, token: string): Promise<Map<string, 
     console.warn(`Feedback survey not read: ${(error as Error).name}`);
   }
   surveys ??= cached?.surveys;
+  // A read cut short by a slow request says nothing about PostHog.
+  if (!surveys && timeoutMs < TIMEOUT_MS) return undefined;
   surveySources.delete(key);
   surveySources.set(key, { surveys, at: now });
   for (const other of surveySources.keys()) {
@@ -579,7 +601,7 @@ async function relayFeedback(
   if (!feedback) return refuse(400, "bad_request");
   const host = postHogHost();
   // A draft or stopped survey is left out of the running ones.
-  const survey = (await runningSurveys(host, token))?.get(surveyId);
+  const survey = (await runningSurveys(host, token, Math.min(TIMEOUT_MS, remainingMs(started))))?.get(surveyId);
   const answers = survey ? surveyAnswers(survey, feedback) : {};
   if (!survey || Object.keys(answers).length === 0) return refuse(503, "unavailable");
   const properties = {
@@ -594,14 +616,12 @@ async function relayFeedback(
     ...anonymous(request),
   };
   const distinctId = feedback.installId ?? feedback.submissionId;
-  // What remains of the deadline, in whole milliseconds as AbortSignal.timeout requires.
-  const remaining = Math.round(FEEDBACK_DEADLINE_MS - (performance.now() - started));
   try {
     const response = await fetch(`${host}/i/v0/e/`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ api_key: token, event: "survey sent", distinct_id: distinctId, properties }),
-      signal: AbortSignal.timeout(Math.max(MIN_CAPTURE_MS, remaining)),
+      signal: AbortSignal.timeout(Math.max(MIN_CAPTURE_MS, remainingMs(started))),
     });
     if (response.ok) return reply(202, { ok: true });
     console.warn(`Feedback not relayed: HTTP ${response.status}`);
@@ -626,14 +646,14 @@ async function relay(request: Request, path: string, context: RequestContext): P
   const surveyId = env("POSTHOG_FEEDBACK_SURVEY_ID") ?? "";
   if (!token || (endpoint === "feedback" && !surveyId)) return refuse(503, "unavailable");
   if (Number(request.headers.get("content-length")) > MAX_BODY) return refuse(413, "too_large");
-  let text: string | undefined;
+  let read: BodyRead;
   try {
-    text = await readBody(request);
+    read = await readBody(request, endpoint === "events" ? EVENTS_READ_MS : remainingMs(started));
   } catch {
     return refuse(400, "bad_request");
   }
-  if (text === undefined) return refuse(413, "too_large");
-  const body = parseObject(text);
+  if ("error" in read) return refuse(read.error === "timeout" ? 408 : 413, read.error);
+  const body = parseObject(read.text);
   if (!body) return refuse(400, "bad_request");
   if (endpoint === "events") return relayEvents(request, body, token, context);
   return relayFeedback(request, body, token, surveyId, started);

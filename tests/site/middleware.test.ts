@@ -355,7 +355,10 @@ async function post(path: string, body: unknown, headers: HeaderValues = {}, met
   const all = { "content-type": "application/json", "user-agent": AGENT, "x-real-ip": address, ...headers };
   const present = Object.entries(all).filter((entry): entry is [string, string] => entry[1] !== undefined);
   const init: RequestInit = { method, headers: present };
-  if (method !== "GET" && method !== "HEAD") {
+  if (body instanceof ReadableStream) {
+    // Node sends a streamed body only in half-duplex mode.
+    Object.assign(init, { body, duplex: "half" });
+  } else if (method !== "GET" && method !== "HEAD") {
     init.body =
       typeof body === "string"
         ? body
@@ -384,6 +387,29 @@ const sendFeedback = (body: Record<string, unknown>, headers: HeaderValues = {})
   post("/telemetry/v1/feedback", { submission_id: SUBMISSION, ...body }, headers);
 const batch = () => (received[0]?.body.batch ?? []) as Sent[];
 const at = (offset = 0) => new Date(Date.now() + offset).toISOString();
+
+/** A body that sends each part after its delay in milliseconds, then ends, or stalls when `end` is false. */
+function slowBody(parts: [number, string][], end = true) {
+  const state = { cancelled: false };
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      for (const [delay, text] of parts) {
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (state.cancelled) return;
+        controller.enqueue(encoder.encode(text));
+      }
+      if (end) controller.close();
+    },
+    cancel() {
+      state.cancelled = true;
+    },
+  });
+  return { stream, state };
+}
+
+/** Milliseconds since `started`, from performance.now(). */
+const since = (started: number) => performance.now() - started;
 
 describe("usage events", () => {
   test("relays the allowed events to PostHog's batch endpoint", async () => {
@@ -806,6 +832,20 @@ describe("relay requests", () => {
       assert.equal(result.status, 400, agent);
       assert.deepEqual(result.body, { error: "bad_request" });
     }
+  });
+
+  test("stops reading an events body that takes over two seconds", async () => {
+    const body = slowBody([[0, `{"install_id":"${INSTALL}",`]], false);
+    const started = performance.now();
+
+    const result = await post("/telemetry/v1/events", body.stream);
+
+    const elapsed = since(started);
+    assert.equal(result.status, 408);
+    assert.deepEqual(result.body, { error: "timeout" });
+    assert.ok(elapsed >= 1900 && elapsed < 2400, `${elapsed} ms`);
+    assert.ok(body.state.cancelled);
+    assert.deepEqual(received, []);
   });
 
   test("refuses a body over 64 KiB before or while reading it", async () => {
@@ -1253,6 +1293,61 @@ describe("feedback", () => {
 
     assert.equal(surveyReads.length, 18);
     assert.equal(surveyReads.at(-1), `/api/surveys/?token=${tokens[0]}`);
+  });
+
+  test("stops reading a feedback body still arriving at the four-second deadline", async () => {
+    newToken();
+    const body = slowBody([[0, `{"submission_id":"${SUBMISSION}",`]], false);
+    const started = performance.now();
+
+    const result = await post("/telemetry/v1/feedback", body.stream);
+
+    const elapsed = since(started);
+    assert.equal(result.status, 408);
+    assert.deepEqual(result.body, { error: "timeout" });
+    assert.ok(elapsed >= 3900 && elapsed < 4400, `${elapsed} ms`);
+    assert.ok(body.state.cancelled);
+    assert.deepEqual(surveyReads, []);
+  });
+
+  test("gives the survey read only what a slow body leaves, without remembering its failure", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    newToken();
+    surveyDelay = Infinity;
+    const body = slowBody([
+      [0, `{"submission_id":"${SUBMISSION}",`],
+      [3500, `"rating":5}`],
+    ]);
+    const started = performance.now();
+
+    const slow = await post("/telemetry/v1/feedback", body.stream);
+
+    const elapsed = since(started);
+    assert.equal(slow.status, 503);
+    assert.ok(elapsed >= 3900 && elapsed < 4400, `${elapsed} ms`);
+    surveyDelay = 0;
+    newAddress();
+    assert.equal((await sendFeedback({ rating: 5 })).status, 202);
+    assert.equal(surveyReads.length, 2);
+  });
+
+  test("gives the capture at least half a second after a slow body, then answers", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    newToken();
+    assert.equal((await sendFeedback({ rating: 5 })).status, 202);
+    respond = () => {};
+    newAddress();
+    const body = slowBody([
+      [0, `{"submission_id":"${SUBMISSION}",`],
+      [3900, `"rating":4}`],
+    ]);
+    const started = performance.now();
+
+    const result = await post("/telemetry/v1/feedback", body.stream);
+
+    const elapsed = since(started);
+    assert.equal(result.status, 502);
+    assert.ok(elapsed >= 4300 && elapsed < 4800, `${elapsed} ms`);
   });
 
   test("refuses a __proto__ key at the top level", async () => {

@@ -7,16 +7,22 @@ records which invitations were answered, how many generations succeeded up to
 RATING_AFTER, and until when feedback prompts stay quiet. It is never sent: an answer,
 No thanks above all, stays on this computer. A missing, unreadable or malformed file
 reads as nothing answered, and an unknown or malformed entry is ignored. Each update
-rereads the file and replaces it atomically, so Blender processes sharing the directory
-keep each other's answers.
+rereads the file and replaces it atomically while it holds the record's lock, so Blender
+processes sharing the directory keep each other's answers and counts.
 """
 
 import json
 import math
 import os
 import pathlib
+import time
+from contextlib import contextmanager
 
 PROMPTS_FILE = "prompts.json"
+# The record's lock: a directory, which every platform creates atomically or not at all.
+LOCK = ".prompts.lock"
+LOCK_WAIT = 1.0  # seconds an update waits for another Blender's
+LOCK_STALE = 10.0  # seconds after which a lock was left by a Blender that stopped
 ANSWERED = "answered"
 # Successful generations before the rating prompt is offered.
 RATING_AFTER = 10
@@ -50,19 +56,63 @@ def update(directory, **entries):
     for key, value in entries.items():
         if key not in _VALID or not _VALID[key](value):
             raise ValueError(f"Not a prompt record entry: {key}")
-    directory = pathlib.Path(directory)
-    directory.mkdir(parents=True, exist_ok=True)
-    saved = {**read(directory), **entries}
+    with _locked(directory) as directory:
+        return _write(directory, {**read(directory), **entries})
+
+
+def count_generation(directory):
+    """Count one successful generation, up to RATING_AFTER, and return the record."""
+    with _locked(directory) as directory:
+        saved = read(directory)
+        return _write(
+            directory, {**saved, "generations": min(RATING_AFTER, saved.get("generations", 0) + 1)}
+        )
+
+
+def _write(directory, saved):
     temporary = directory / f".{PROMPTS_FILE}.{os.getpid()}.tmp"
     temporary.write_text(json.dumps(saved, sort_keys=True) + "\n", encoding="utf-8")
     temporary.replace(directory / PROMPTS_FILE)
     return saved
 
 
-def count_generation(directory):
-    """Count one successful generation, up to RATING_AFTER, and return the record."""
-    counted = read(directory).get("generations", 0)
-    return update(directory, generations=min(RATING_AFTER, counted + 1))
+@contextmanager
+def _locked(directory):
+    """Hold the record's lock for one read and write; TimeoutError, an OSError, if busy.
+
+    A lock older than LOCK_STALE was left by a Blender that stopped while holding it, and
+    is removed. Holding it lasts one small file write, far less than either delay.
+    """
+    directory = pathlib.Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    lock = directory / LOCK
+    deadline = time.monotonic() + LOCK_WAIT
+    while True:
+        try:
+            lock.mkdir()
+            break
+        except FileExistsError:
+            try:
+                stale = time.time() - lock.stat().st_mtime > LOCK_STALE
+            except FileNotFoundError:
+                continue  # released meanwhile
+            if stale:
+                _release(lock)
+            elif time.monotonic() >= deadline:
+                raise TimeoutError("The prompt record is locked by another Blender") from None
+            else:
+                time.sleep(0.02)
+    try:
+        yield directory
+    finally:
+        _release(lock)
+
+
+def _release(lock):
+    try:
+        lock.rmdir()
+    except OSError:  # already removed: released as stale by another Blender
+        pass
 
 
 def quiet(saved, now):

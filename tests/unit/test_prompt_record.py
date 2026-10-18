@@ -1,8 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The local record of answered invitations: tolerant reads and atomic, merging updates."""
+"""The local record of answered invitations: tolerant reads, and locked, atomic updates."""
 
 import json
+import os
+import pathlib
+import subprocess
+import sys
+import time
 
 import pytest
 
@@ -106,3 +111,55 @@ def test_prompts_stay_quiet_until_the_recorded_time():
     assert prompts.quiet(saved, 1000.0 + prompts.QUIET_PERIOD - 1)
     assert not prompts.quiet(saved, 1000.0 + prompts.QUIET_PERIOD)
     assert prompts.QUIET_PERIOD == 7 * 24 * 3600
+
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+# Each process counts generations with a threshold high enough to see every count.
+COUNTER = """
+import sys
+from scenario.core.telemetry import prompts
+prompts.RATING_AFTER = 10_000
+for _ in range(int(sys.argv[2])):
+    prompts.count_generation(sys.argv[1])
+"""
+
+
+def test_blenders_counting_at_once_lose_no_generation(tmp_path):
+    processes = [
+        subprocess.Popen([sys.executable, "-c", COUNTER, str(tmp_path), "40"], cwd=ROOT)
+        for _ in range(4)
+    ]
+    assert [process.wait(timeout=60) for process in processes] == [0] * 4
+    assert saved(tmp_path) == {"generations": 160}
+    assert sorted(path.name for path in tmp_path.iterdir()) == [prompts.PROMPTS_FILE]
+
+
+def test_an_update_waits_for_another_blender_then_gives_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(prompts, "LOCK_WAIT", 0.1)
+    prompts.update(tmp_path, usage_card=prompts.ANSWERED)
+    (tmp_path / prompts.LOCK).mkdir()
+    started = time.monotonic()
+    with pytest.raises(TimeoutError):  # an OSError, which callers already handle
+        prompts.count_generation(tmp_path)
+    assert time.monotonic() - started >= 0.1
+    assert saved(tmp_path) == {"usage_card": prompts.ANSWERED}
+    assert (tmp_path / prompts.LOCK).is_dir()  # another Blender's lock is left alone
+
+
+def test_a_lock_left_by_a_stopped_blender_is_cleared(tmp_path):
+    lock = tmp_path / prompts.LOCK
+    lock.mkdir()
+    old = time.time() - prompts.LOCK_STALE - 1
+    os.utime(lock, (old, old))
+    assert prompts.update(tmp_path, usage_card=prompts.ANSWERED) == {"usage_card": prompts.ANSWERED}
+    assert not lock.exists()
+
+
+def test_the_lock_is_released_when_a_write_fails(tmp_path, monkeypatch):
+    def fail(directory, record):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(prompts, "_write", fail)
+    with pytest.raises(PermissionError):
+        prompts.update(tmp_path, usage_card=prompts.ANSWERED)
+    assert not (tmp_path / prompts.LOCK).exists()

@@ -92,6 +92,20 @@ def recorder():
     return _recorder
 
 
+def install_id():
+    """The install ID while sharing is on, else None; feedback carries it only then.
+
+    As for events, the saved file is the opt-in record: a preference that reads on
+    without it shares nothing, so the file is read rather than the recorder's copy.
+    """
+    if not sharing_enabled():
+        return None
+    try:
+        return events.read_install_id(state_dir())
+    except OSError:
+        return None
+
+
 # -- lifecycle -----------------------------------------------------------------
 def register():
     instrument_operators()

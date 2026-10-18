@@ -119,6 +119,18 @@ Scenario's PostHog project without your address. Turning the setting off discard
 unsent events and deletes the ID. In background Blender only the `scenario_blender`
 command sends them.
 
+**Send feedback**, the heart button in the Scenario panel or in the extension's
+preferences, opens a dialog for a 1 to 5 rating, a message and an optional email
+address for a reply. Nothing is sent until you press Send, and it works whether or
+not usage data is shared. It sends what you entered with a random submission ID,
+the extension and Blender versions, operating system and processor type, plus the
+install ID only while usage data is shared, to
+`https://blender.scenario.com/telemetry/v1/feedback`. That relay adds the country
+Vercel derives from your address and records it, without your address, as a
+response to Scenario's feedback survey in PostHog. A failed send is not retried.
+Until a send succeeds, the dialog keeps your text in memory for this Blender
+session; it is never saved to disk.
+
 The extension has no automatic crash-reporting service and no independent
 update-check service. Blender manages configured extension repositories and their
 update checks separately.

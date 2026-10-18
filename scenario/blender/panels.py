@@ -67,6 +67,7 @@ def draw_account_strip(layout, context):
         )
         row.label(text=message, icon="ERROR")
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
+        row.operator("scenario.send_feedback", text="", icon="HEART")
         return False
     if not runtime.online():
         row.label(text="Online access is disabled", icon="ERROR")
@@ -81,6 +82,7 @@ def draw_account_strip(layout, context):
     row.label(text=label, icon=icon)
     row.operator("scenario.refresh_catalog", text="", icon="FILE_REFRESH")
     row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
+    row.operator("scenario.send_feedback", text="", icon="HEART")
     return True
 
 
@@ -908,6 +910,7 @@ class SCENARIO_PT_main(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         if not draw_account_strip(layout, context):
+            draw_message(layout)  # a feedback outcome, which needs no credentials
             return
         scenario = context.scene.scenario
         draw_enum_tabs(
@@ -939,9 +942,13 @@ class SCENARIO_PT_main(bpy.types.Panel):
             from . import render_lanes
 
             render_lanes.draw_render_video_lane(layout, context)
-        message = runtime.message_visible()
-        if message:
-            layout.label(text=message[:80])
+        draw_message(layout)
+
+
+def draw_message(layout):
+    message = runtime.message_visible()
+    if message:
+        layout.label(text=message[:80])
 
 
 STATUS_TEXT = {

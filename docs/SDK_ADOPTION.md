@@ -61,8 +61,9 @@ Network protocols outside the Scenario service API remain distinct: guarded
 result downloads and signed upload parts use `jobs/transfers.py` and
 `jobs/upload_transfers.py`; model thumbnails use the credential-free downloader
 in `api/assets.py`. Blender owns public update downloads. Local MCP's stdio bridge
-uses authenticated loopback HTTP. Opt-in usage events go to the blender.scenario.com relay
-through `telemetry/relay.py`. None is an alternative Scenario service client.
+uses authenticated loopback HTTP. Opt-in usage events and the feedback a user sends go to
+the blender.scenario.com relay through `telemetry/relay.py`. None is an alternative
+Scenario service client.
 The extension User-Agent lives in `api/user_agent.py`, so SDK and thumbnail
 requests retain the same package version without importing a retired client.
 

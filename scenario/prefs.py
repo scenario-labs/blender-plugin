@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Add-on preferences: credentials, output folder, composer, MCP, usage data."""
+"""Add-on preferences: credentials, output folder, composer, MCP, usage data and feedback."""
 
 import textwrap
 
@@ -110,7 +110,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
     )
 
     def draw(self, context):
-        from .blender import runtime
+        from .blender import feedback, runtime
 
         layout = self.layout
         box = layout.box()
@@ -156,12 +156,16 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         box.prop(self, "mcp_port")
         box.prop(self, "mcp_allow_python")
         box = layout.box()
-        box.label(text="Usage data", icon="FUND")
+        box.label(text="Usage data and feedback", icon="FUND")
         box.prop(self, "share_usage")
         box.label(
             text="Which commands and agent tools you use, never prompts or files", icon="INFO"
         )
-        if self.share_usage and not runtime.online():
+        box.operator("scenario.send_feedback", text="Send feedback...", icon="HEART")
+        sent = feedback.status()
+        if sent is not None:
+            box.label(text=sent[0], icon=sent[1])
+        if not runtime.online():
             box.label(text="Nothing is sent while Allow Online Access is off", icon="ERROR")
         layout.prop(self, "log_level")
         updates.draw(layout, context)

@@ -47,7 +47,7 @@ def _tick():
 
 
 def _process():
-    from . import file_state, mcp_service, model_picker, studio, usage
+    from . import feedback, file_state, mcp_service, model_picker, studio, usage
 
     # First and guarded: the usage sender's online-access mirror must never go stale
     # because another step of this tick failed.
@@ -58,7 +58,8 @@ def _process():
         if type(error).__name__ != _failures.get("usage"):
             _failures["usage"] = type(error).__name__
             log.exception("usage data upkeep failed")
-    changed = generation.process_catalog_events()
+    changed = feedback.process()
+    changed |= generation.process_catalog_events()
     changed |= mcp_service.follow_online_access()
     mcp_service.process_pending()
     # A change delivered during a sculpt or paint stroke is marked once it ends.

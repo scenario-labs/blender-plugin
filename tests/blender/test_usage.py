@@ -135,10 +135,10 @@ class UsageTests(unittest.TestCase):
                 prefs_module.ScenarioPreferences.draw(owner, bpy.context)
             box = owner.layout.box.return_value
             box.prop.assert_any_call(owner, "share_usage")
-            box.label.assert_any_call(text="Usage data", icon="FUND")
+            box.label.assert_any_call(text="Usage data and feedback", icon="FUND")
             notice = "Nothing is sent while Allow Online Access is off"
             drawn = [call.kwargs.get("text") for call in box.label.call_args_list]
-            self.assertEqual(notice in drawn, enabled and not online)
+            self.assertEqual(notice in drawn, not online)
         self.assertIn(
             "FUND", bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items
         )

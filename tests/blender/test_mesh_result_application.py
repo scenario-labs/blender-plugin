@@ -1131,13 +1131,16 @@ class RiggedSourceTests(unittest.TestCase):
         )
         self.assertEqual(second.original.modifiers[0].object, first.rig)
 
-    def test_failures_after_replacement_restore_the_old_skin_exactly(self):
-        failures = {
+    def late_failures(self):
+        """Failures after the skin swap: in apply_skin, or in rollback after it."""
+        return {
             "cleanup": (self.module, "_release_import"),
             "receipt": (self.rig_module, "RigApplication"),
         }
+
+    def test_failures_after_replacement_restore_the_old_skin_exactly(self):
         for keep_original in (False, True):
-            for kind, (owner, name) in failures.items():
+            for kind, (owner, name) in self.late_failures().items():
                 with self.subTest(keep_original=keep_original, failure=kind):
                     before = self.model._snapshot()
                     with (
@@ -1148,6 +1151,48 @@ class RiggedSourceTests(unittest.TestCase):
                     self.assertEqual(self.model._snapshot(), before)
                     self.assert_old_skin()
                     self.assertTrue(self.path.exists())
+
+    def test_inactive_old_skin_is_restored_after_a_late_failure(self):
+        # Blender activates a recreated modifier; capture ignores interface state.
+        for kind, (owner, name) in self.late_failures().items():
+            with self.subTest(failure=kind):
+                self.source.modifiers.active = None
+                self.assertFalse(self.source.modifiers[0].is_active)
+                self.target = self.mesh.capture_target(self.scene, self.source)
+                before = self.model._snapshot()
+                with (
+                    patch.object(owner, name, side_effect=RuntimeError("synthetic")),
+                    self.assertRaises(self.module.MeshResultApplicationError),
+                ):
+                    self.apply(policy="RIG")
+                self.assertEqual(self.model._snapshot(), before)
+                self.assertIs(self.source.data, self.old_mesh)
+                self.assertEqual(_skin(self.source, self.mesh)[1:], self.old_skin[1:])
+                self.mesh.validate_target(self.target)
+
+    def test_skin_restore_error_still_restores_the_source_mesh(self):
+        restore = self.rig_module._restore_skin
+
+        def fail_after_restore(*args):
+            restore(*args)
+            raise self.mesh.MeshApplicationError("synthetic restore")
+
+        for kind, (owner, name) in self.late_failures().items():
+            with self.subTest(failure=kind):
+                try:
+                    with (
+                        patch.object(owner, name, side_effect=RuntimeError("synthetic")),
+                        patch.object(
+                            self.rig_module, "_restore_skin", side_effect=fail_after_restore
+                        ),
+                        # Uncertain after a cleanup failure; a clean failure otherwise.
+                        self.assertRaises(RuntimeError),
+                    ):
+                        self.apply(policy="RIG")
+                    self.assert_old_skin()
+                finally:
+                    self.tearDown()
+                    self.setUp()
 
     def test_uncertain_rollback_retains_possible_applied_skin(self):
         with (

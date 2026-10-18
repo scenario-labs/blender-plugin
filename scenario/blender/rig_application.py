@@ -115,7 +115,12 @@ def _restore_skin(source, previous):
     modifier = source.modifiers.new(dict(settings)["name"], kind)
     for identifier, value in settings:
         setattr(modifier, identifier, set(value) if isinstance(value, frozenset) else value)
-    if tuple(source.modifiers) != (modifier,) or mesh.modifier_settings(modifier) != previous:
+    # As capture does, ignore interface state: a new modifier is always active.
+    expected = (kind, tuple(s for s in settings if s[0] not in mesh._INTERFACE_STATE))
+    if (
+        tuple(source.modifiers) != (modifier,)
+        or mesh.modifier_settings(modifier, interface=False) != expected
+    ):
         raise mesh.MeshApplicationError("Could not restore the source Armature skin")
 
 
@@ -161,8 +166,10 @@ class RigApplication:
             raise mesh.MeshApplicationError(
                 "Applied skin changed; inspect the source before recovery"
             )
-        _unwind(source, self.modifier, self.previous, self.receipt._skin)
-        self.receipt.rollback()
+        try:
+            _unwind(source, self.modifier, self.previous, self.receipt._skin)
+        finally:
+            self.receipt.rollback()
 
 
 def apply_skin(target, primary, objects, mapping, *, keep_original):
@@ -218,6 +225,8 @@ def apply_skin(target, primary, objects, mapping, *, keep_original):
             previous,
         )
     except BaseException:
-        _unwind(target.obj, modifier, previous, rigged)
-        receipt.rollback()
+        try:
+            _unwind(target.obj, modifier, previous, rigged)
+        finally:
+            receipt.rollback()
         raise

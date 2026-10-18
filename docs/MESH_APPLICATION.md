@@ -824,9 +824,9 @@ Keep original retains a copy that keeps the old mesh, vertex groups, Armature
 modifier and parent, so it still deforms with the old rig. Without it, rollback
 recreates the old modifier with every writable setting it had and restores the
 old mesh with its groups and weights; Blender assigns the recreated modifier a
-new internal identifier. Static policies applied to a skinned target are
-rejected with an instruction to choose RIG, before any import or claim. Without
-a requested policy, both the native review and MCP start a skinned source on RIG
-(see [the approval defaults](#saved-mesh-edit-approval)); an explicit static
-policy is rejected. The resulting skin can be replaced again. Applying returned
-clips to the existing rig is separate work.
+new internal identifier and makes it active. Static policies applied to a
+skinned target are rejected with an instruction to choose RIG, before any import
+or claim. Without a requested policy, both the native review and MCP start a
+skinned source on RIG (see [the approval defaults](#saved-mesh-edit-approval));
+an explicit static policy is rejected. The resulting skin can be replaced again.
+Applying returned clips to the existing rig is separate work.

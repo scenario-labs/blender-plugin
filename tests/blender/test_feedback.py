@@ -366,7 +366,8 @@ class FeedbackTests(unittest.TestCase):
         self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
         # On the pump's clock: a send older than ABANDON_AFTER no longer blocks a new one.
         self.feedback._worker, self.feedback._started = object(), self.feedback._clock()
-        later = self.feedback._started + self.feedback.ABANDON_AFTER
+        # A margin: (started + ABANDON_AFTER) - started can round to just under ABANDON_AFTER.
+        later = self.feedback._started + self.feedback.ABANDON_AFTER + 1
         with online_access(True):
             self.assertFalse(self.operator.poll(bpy.context))
             with patch.object(self.feedback, "_clock", return_value=later):

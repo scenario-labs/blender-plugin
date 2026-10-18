@@ -106,12 +106,9 @@ def unregister():
 def shutdown():
     """Stop at unregister; a window session waits up to TEARDOWN_SEND_WAIT for the last send.
 
-    Blender may exit right after, ending the daemon sender thread, so the wait is short
-    and only taken when sharing is on and events are queued or a send is in flight.
+    Blender may exit right after, ending the daemon sender thread, so the wait is short.
     """
-    recorder = _recorder
-    sending = recorder is not None and recorder.permitted() and recorder.busy()
-    deactivate(wait=TEARDOWN_SEND_WAIT if sending else None)
+    deactivate(wait=TEARDOWN_SEND_WAIT)
 
 
 def activate(*, send=None):
@@ -122,13 +119,22 @@ def activate(*, send=None):
 
 
 def deactivate(*, wait=None):
-    """Stop recording; what is queued is sent first if still permitted, waiting up to `wait`.
+    """Stop recording; a last send goes out only if the live settings still permit it.
 
-    The preference has not changed, so the sharing permission stays as it is for that send.
+    The worker-safe Events are as of the last tick: Revert to Saved Preferences, Load Factory
+    Preferences or switching Allow Online Access off may have come since. So this main-thread
+    call rereads the preference and online access first and discards everything when either
+    is withdrawn. Otherwise it waits up to `wait` seconds, and only while events are queued
+    or a send is in flight.
     """
     global _active
     _active = False
-    _stop(discard=False, wait=wait)
+    if not (sharing_enabled() and runtime.online()):
+        _stop(discard=True)
+        return
+    recorder = _recorder
+    busy = recorder is not None and recorder.permitted() and recorder.busy()
+    _stop(discard=False, wait=wait if busy else None)
 
 
 def set_sharing(enabled):

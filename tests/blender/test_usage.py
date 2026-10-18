@@ -105,10 +105,15 @@ class UsageTests(unittest.TestCase):
         operator = SimpleNamespace(mode=mode)
         operator.execute = types.MethodType(SCENARIO_OT_usage_probe.execute, operator)
         operator.cancel = types.MethodType(SCENARIO_OT_usage_probe.cancel, operator)
-        if method in ("execute", "cancel"):
-            return getattr(SCENARIO_OT_usage_probe, method)(operator, bpy.context)
+        # Each callback with its own signature: (self, context), or with the event.
+        if method == "execute":
+            return SCENARIO_OT_usage_probe.execute(operator, bpy.context)
+        if method == "cancel":
+            return SCENARIO_OT_usage_probe.cancel(operator, bpy.context)
         event = SimpleNamespace(type=event_type)
-        return getattr(SCENARIO_OT_usage_probe, method)(operator, bpy.context, event)
+        if method == "invoke":
+            return SCENARIO_OT_usage_probe.invoke(operator, bpy.context, event)
+        return SCENARIO_OT_usage_probe.modal(operator, bpy.context, event)
 
     def used(self, outcome, **extra):
         return ("operator_used", {"operator": "scenario.usage_probe", "outcome": outcome, **extra})
@@ -285,6 +290,32 @@ class UsageTests(unittest.TestCase):
             waited = time.monotonic() - begin
         self.assertGreaterEqual(waited, 0.9)
         self.assertLess(waited, 1.5)
+
+    def test_unregistering_after_a_silent_revert_discards_instead_of_sending(self):
+        """Revert to Saved Preferences before the next tick: the cached permission is stale."""
+        runtime = submodule("blender.runtime")
+        with online_access(True):
+            self.share()
+            recorder = self.usage.recorder()
+            bpy.ops.scenario.usage_probe()
+            reverted = SimpleNamespace(share_usage=False)
+            with patch.object(runtime, "prefs", return_value=reverted):
+                self.usage.shutdown()
+        recorder._thread.join(5)
+        self.assertFalse(recorder._thread.is_alive())
+        self.assertEqual((recorder.pending(), self.transport.payloads), (0, []))
+
+    def test_unregistering_after_online_access_went_off_discards_instead_of_sending(self):
+        with online_access(True):
+            self.share()
+            recorder = self.usage.recorder()
+            bpy.ops.scenario.usage_probe()
+            with online_access(False):  # switched off, and no tick has followed it yet
+                self.assertTrue(self.usage._online.is_set())
+                self.usage.shutdown()
+        recorder._thread.join(5)
+        self.assertFalse(recorder._thread.is_alive())
+        self.assertEqual((recorder.pending(), self.transport.payloads), (0, []))
 
     def test_a_usage_failure_never_ends_the_scenario_blender_command(self):
         service = submodule("blender.mcp_service")

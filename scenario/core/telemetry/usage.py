@@ -169,10 +169,7 @@ def create_install_id(directory):
 
 def delete_install_id(directory):
     """Forget the install ID; a later opt-in starts with a new one."""
-    try:
-        (pathlib.Path(directory) / INSTALL_ID_FILE).unlink()
-    except FileNotFoundError:
-        pass
+    (pathlib.Path(directory) / INSTALL_ID_FILE).unlink(missing_ok=True)
 
 
 # -- queue and sender ---------------------------------------------------------

@@ -9,6 +9,7 @@ invoke and modal paths call the installed wrappers directly, as Blender would.
 
 import pathlib
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -185,6 +186,71 @@ class UsageTests(unittest.TestCase):
             bpy.ops.scenario.usage_probe()
             self.events.delete_install_id(self.state)
             self.assertEqual(self.sent(), [])
+
+    def test_a_blender_left_running_follows_sharing_turned_off_and_on_elsewhere(self):
+        with online_access(True):
+            self.share()
+            bpy.ops.scenario.usage_probe()
+            # Another Blender turns sharing off: this one stops and keeps nothing to send.
+            self.events.delete_install_id(self.state)
+            self.usage.check_install_id()
+            self.assertIsNone(self.usage.recorder())
+            self.assertTrue(self.prefs.share_usage)
+            self.assertEqual(self.transport.payloads, [])
+            # It turns sharing on again: a new ID, a new install, followed here.
+            second = self.events.create_install_id(self.state)
+            self.usage.check_install_id()
+            self.assertEqual(self.usage.recorder().install_id, second)
+            bpy.ops.scenario.usage_probe()
+            # Replaced without a pause in between: the old queue never leaves.
+            third = self.events.create_install_id(self.state)
+            self.usage.check_install_id()
+            self.assertEqual(self.usage.recorder().install_id, third)
+            self.usage.recorder().flush()
+            self.assertEqual(
+                [
+                    (p["install_id"], [e["event"] for e in p["events"]])
+                    for p in self.transport.payloads
+                ],
+                [(third, ["extension_started"])],
+            )
+            self.transport.payloads.clear()
+            self.usage.check_install_id()  # unchanged: the same recorder carries on
+            self.assertEqual(self.usage.recorder().install_id, third)
+
+    def test_the_tick_compares_the_saved_id_at_most_every_interval(self):
+        with online_access(True), patch.object(self.usage, "check_install_id") as check:
+            self.share()
+            with patch.object(self.usage, "ID_CHECK_INTERVAL", 0.0):
+                self.usage.tick()
+            self.assertEqual(check.call_count, 1)
+            with patch.object(self.usage, "ID_CHECK_INTERVAL", 3600.0):
+                self.usage.tick()
+            self.assertEqual(check.call_count, 1)
+
+    def test_unregistering_waits_at_most_a_second_for_the_last_send(self):
+        started, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def blocked(url, payload, timeout):
+            started.set()
+            release.wait(10)
+            return 202
+
+        with online_access(True):
+            self.share()
+            begin = time.monotonic()
+            self.usage.shutdown()  # nothing queued: no wait
+            self.assertLess(time.monotonic() - begin, 0.5)
+            self.usage.activate(send=blocked)
+            bpy.ops.scenario.usage_probe()
+            begin = time.monotonic()
+            self.usage.shutdown()
+            waited = time.monotonic() - begin
+        self.assertTrue(started.is_set())
+        self.assertGreaterEqual(waited, 0.9)
+        self.assertLess(waited, 1.0 + 0.5)
+        self.assertEqual(self.usage.TEARDOWN_SEND_WAIT, 1.0)
 
     def test_the_tick_turns_sharing_off_when_the_preference_changed_silently(self):
         """Revert to Saved Preferences changes the preference without its update callback."""

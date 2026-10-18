@@ -24,8 +24,10 @@ unregister. With sharing off a wrapper costs one global read.
 
 import functools
 import logging
+import math
 import pathlib
 import threading
+import time
 import types
 
 import bpy
@@ -50,6 +52,10 @@ EXCLUDED_OPERATORS = frozenset(
 _METHODS = ("execute", "invoke", "modal")
 # The scenario_blender command waits this long for its last send before Blender exits.
 FINAL_SEND_WAIT = relay.TIMEOUT + 1.0
+# Unregistering in a window session, at quit too, waits at most this long for it.
+TEARDOWN_SEND_WAIT = 1.0
+# How often the tick compares the saved install ID with the running recorder's.
+ID_CHECK_INTERVAL = 5.0
 _ORIGINAL = "_scenario_usage_original"
 
 # Worker-safe permissions for the sender thread and local MCP's HTTP threads.
@@ -59,6 +65,7 @@ _recorder = None  # the running events.UsageRecorder, or None while sharing is o
 _active = False  # a window session, or the scenario_blender command
 _send = None  # tests replace the HTTP POST
 _start_recorded = False  # extension_started queued for this install ID in this process
+_last_id_check = -math.inf  # time.monotonic() of the tick's last install ID comparison
 _calls = threading.local()  # depth of wrapped operator calls on this thread
 _instrumented = {}  # operator class -> {method: its own original, or None when inherited}
 
@@ -92,8 +99,19 @@ def register():
 
 
 def unregister():
-    deactivate()
+    shutdown()
     restore_operators()
+
+
+def shutdown():
+    """Stop at unregister; a window session waits up to TEARDOWN_SEND_WAIT for queued events.
+
+    Blender may exit right after, ending the daemon sender thread, so the wait is short
+    and only taken when sharing is on and there is something it may send.
+    """
+    recorder = _recorder
+    sending = recorder is not None and recorder.permitted() and recorder.pending() > 0
+    deactivate(wait=TEARDOWN_SEND_WAIT if sending else None)
 
 
 def activate(*, send=None):
@@ -147,15 +165,49 @@ def follow_online_access():
 
 
 def tick():
-    """Every main-loop tick: mirror online access, and stop when the preference reads off.
+    """Every main-loop tick: mirror online access and follow the opt-in.
 
     Revert to Saved Preferences and Load Factory Preferences change the preference without
-    its update callback, so the tick turns sharing off the way the preference would.
+    its update callback, so the tick turns sharing off the way the preference would. Every
+    ID_CHECK_INTERVAL it also follows the saved install ID, which another Blender may have
+    deleted or replaced (check_install_id).
     """
+    global _last_id_check
     follow_online_access()
     prefs = runtime.prefs()  # None while preferences are unavailable: no decision then
-    if _recorder is not None and prefs is not None and not prefs.share_usage:
-        set_sharing(False)
+    if prefs is None:
+        return
+    if not prefs.share_usage:
+        if _recorder is not None:
+            set_sharing(False)
+        return
+    now = time.monotonic()
+    if _active and now >= _last_id_check + ID_CHECK_INTERVAL:
+        _last_id_check = now
+        check_install_id()
+
+
+def check_install_id():
+    """Follow the saved install ID while the preference is on; main thread.
+
+    Another Blender turning sharing off deletes the ID: this one stops and discards its
+    queue. Turning it on again there saves a new ID: this one restarts under it, which is
+    a new install, so extension_started is recorded again.
+    """
+    global _start_recorded
+    try:
+        saved = events.read_install_id(state_dir())
+    except OSError:
+        saved = None
+    running = _recorder.install_id if _recorder is not None else None
+    if saved == running:
+        return
+    if _recorder is not None:
+        _sharing.clear()
+        _stop(discard=True)  # its ID is gone: nothing queued under it may leave
+    if saved is not None:
+        _start_recorded = False
+        _sync()
 
 
 def _sync():

@@ -11,9 +11,9 @@ uncertain failure is grouped with the response it may duplicate. One worker thre
 the body through core.telemetry.feedback and queues its outcome; the pump applies it on the
 main thread with process(), and background Blender waits for it in the operator, as Test
 connection does. A send still running ABANDON_AFTER seconds after it started (urllib's
-timeout does not bound name resolution) is given up as unanswered, and its late outcome is
-ignored. Each outcome is shown as the status message and, as fresh as that message, in the
-preferences.
+timeout does not bound name resolution) is given up as unanswered, so another can start; its
+outcome still replaces that message if it arrives before another send starts. Each outcome
+is shown as the status message and, as fresh as that message, in the preferences.
 """
 
 import queue
@@ -53,6 +53,7 @@ _draft = dict(EMPTY)  # the dialog's text, kept until a send succeeds; main thre
 _submission = None  # the kept text's submission ID, reused until it is sent or edited
 _results = queue.Queue()  # (worker, Outcome, its submission ID) from finished sends
 _worker = None  # the send in flight, until process() applies or abandons it
+_gave_up = None  # the send last given up: its late outcome applies until another starts
 _started = 0.0  # when the send in flight started, on _clock
 _status = None  # (text, sent, when) of the last applied outcome
 _send = None  # tests replace the relay POST
@@ -111,11 +112,11 @@ def rating_value(identifier):
 
 def start(payload):
     """Post one body on a worker thread; process() applies its outcome on the main thread."""
-    global _started, _worker
+    global _gave_up, _started, _worker
     worker = threading.Thread(
         target=_run, args=(payload, _send), daemon=True, name="scenario-feedback"
     )
-    _worker, _started = worker, _clock()
+    _worker, _started, _gave_up = worker, _clock(), None
     worker.start()
     return worker
 
@@ -137,22 +138,25 @@ def _apply(outcome, submission):
 
 
 def _give_up():
-    global _worker
-    _worker = None  # its late outcome no longer matches and is ignored
+    global _gave_up, _worker
+    _gave_up, _worker = _worker, None
     _apply(core.NO_ANSWER, None)
 
 
 def _drain():
-    global _worker
+    global _gave_up, _worker
     changed = False
     while True:
         try:
             worker, outcome, submission = _results.get_nowait()
         except queue.Empty:
             return changed
-        if worker is not _worker:
-            continue  # abandoned, or from before the extension was last unregistered
-        _worker = None
+        if worker is _worker:
+            _worker = None
+        elif worker is _gave_up:  # a late answer, and no other send started since
+            _gave_up = None
+        else:
+            continue  # superseded, or from before the extension was last unregistered
         _apply(outcome, submission)
         changed = True
 
@@ -244,16 +248,19 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
 
     def execute(self, context):
         global _submission
-        process()  # a send that ended since the last pump tick
         _keep({name: getattr(self, name) for name in FIELDS})  # until a send succeeds
+        if _submission is None:
+            _submission = uuid.uuid4().hex
+        # Taken before process(): a late answer it applies may clear the kept text, and a
+        # resend of that text must still carry its submission ID to be grouped with it.
+        submission = _submission
+        process()  # a send that ended since the last pump tick
         if sending():
             self.report({"WARNING"}, BUSY)
             return {"CANCELLED"}
         if not runtime.online():  # access can change after poll
             self.report({"WARNING"}, "Allow Online Access is off; your feedback was not sent")
             return {"CANCELLED"}
-        if _submission is None:
-            _submission = uuid.uuid4().hex
         try:
             payload = core.build(
                 rating_value(self.rating),
@@ -261,7 +268,7 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
                 self.email,
                 context=relay.context(__version__, usage.blender_version()),
                 install_id=usage.install_id(),
-                submission_id=_submission,
+                submission_id=submission,
             )
         except core.FeedbackError as error:
             self.report({"WARNING"}, str(error))
@@ -288,8 +295,8 @@ def register():
 
 
 def unregister():
-    global _status, _worker
-    _worker = None  # a send still in flight is not applied
+    global _gave_up, _status, _worker
+    _worker = _gave_up = None  # a send still in flight is not applied
     _status = None
     for cls in reversed(CLASSES):
         bpy.utils.unregister_class(cls)

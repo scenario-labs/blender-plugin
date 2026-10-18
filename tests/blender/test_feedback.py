@@ -36,15 +36,17 @@ class Transport:
 class Stalled(Transport):
     """The first send hangs, as name resolution can past urllib's timeout, until released."""
 
-    def __init__(self):
+    def __init__(self, late=202):
         super().__init__()
-        self.release, self.stalled = threading.Event(), None
+        self.release, self.stalled, self.late = threading.Event(), None, late
 
     def __call__(self, url, payload, timeout):
         if self.stalled is None:
             self.stalled = threading.current_thread()
             self.release.wait(10)
-            return 202
+            if isinstance(self.late, BaseException):
+                raise self.late
+            return self.late
         return super().__call__(url, payload, timeout)
 
 
@@ -69,6 +71,7 @@ class FeedbackTests(unittest.TestCase):
             ("_submission", None),
             ("_status", None),
             ("_worker", None),
+            ("_gave_up", None),
             ("_started", 0.0),
         ):
             patcher = patch.object(self.feedback, name, value)
@@ -321,6 +324,59 @@ class FeedbackTests(unittest.TestCase):
                 self.assertTrue(self.feedback.process())
                 self.assertIsNone(self.feedback._worker)
                 self.assertEqual(self.feedback.status(), (self.core.NO_ANSWER.text, "ERROR"))
+
+    def give_up(self, late=202, fields=None):
+        """Start a send that hangs and give it up on the pump's clock; returns its thread."""
+        stalled = self.transport = self.feedback._send = Stalled(late)
+        self.addCleanup(stalled.release.set)
+        fields = fields or {"rating": "3", "message": "Slow", "email": ""}
+        payload = self.core.build(3, fields["message"])
+        self.feedback._draft = dict(fields)
+        self.feedback._submission = payload["submission_id"]
+        worker = self.feedback.start(payload)
+        later = self.feedback._started + self.feedback.ABANDON_AFTER + 1
+        with patch.object(self.feedback, "_clock", return_value=later):
+            self.assertTrue(self.feedback.process())
+        self.assertEqual(self.feedback.status(), (self.core.NO_ANSWER.text, "ERROR"))
+        self.assertEqual(self.feedback.draft(), fields)
+        self.assertIs(self.feedback._gave_up, worker)
+        return stalled, worker
+
+    def test_a_late_answer_from_a_given_up_send_still_applies(self):
+        stalled, worker = self.give_up()
+        stalled.release.set()
+        worker.join(5)  # SENT is queued by the thread that was given up
+        self.assertTrue(self.feedback.process())
+        self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+        self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
+        self.assertIsNone(self.feedback._submission)
+        self.assertIsNone(self.feedback._gave_up)
+        self.assertFalse(self.feedback.process())
+
+    def test_a_late_answer_is_ignored_once_another_send_started(self):
+        stalled, worker = self.give_up(late=TimeoutError("timed out"))
+        payload = self.core.build(5, "Newer")
+        newer = self.feedback.start(payload)  # the stalled transport answers it at once
+        self.assertIsNone(self.feedback._gave_up)
+        newer.join(5)
+        self.assertTrue(self.feedback.process())
+        self.assertEqual(self.sent(), payload)
+        self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+        stalled.release.set()
+        worker.join(5)
+        self.assertFalse(self.feedback.process())  # its "no answer" does not replace SENT
+        self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+
+    def test_resending_after_a_late_answer_keeps_its_submission(self):
+        """The late answer arrives just before Send: the resend groups with it in PostHog."""
+        fields = {"rating": "3", "message": "Slow", "email": ""}
+        stalled, worker = self.give_up(fields=fields)
+        submission = self.feedback._submission
+        stalled.release.set()
+        worker.join(5)  # queued, not yet applied when the user presses Send again
+        self.assertEqual(self.send(**fields), {"FINISHED"})
+        self.assertEqual(self.sent()["submission_id"], submission)
+        self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
 
     def test_an_answer_queued_before_a_late_tick_is_applied_not_given_up(self):
         """A file load or bake can hold the main thread past ABANDON_AFTER."""

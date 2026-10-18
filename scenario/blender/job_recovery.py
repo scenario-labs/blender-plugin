@@ -938,7 +938,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         layout.prop(self, "keep_original")
         if self.policy == "REMESH":
             layout.label(text="Replace this mesh's geometry, UVs and mesh materials.")
-            layout.label(text="Several meshes in the result are joined into one remesh.")
+            layout.label(text="With Fit and verify, several result meshes are joined into one.")
         elif self.policy == "RIG":
             layout.label(text="Attach bone weights and rig; preserve geometry, UVs and materials.")
             if self.source_rigged:

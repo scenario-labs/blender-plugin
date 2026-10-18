@@ -205,50 +205,61 @@ def _part_name(target, index, obj):
     return f"{target.name} Part {index:03d} {obj.name}"
 
 
-def _source_parts(target, meshes, surface):
+def _source_parts(target, meshes, surface, owner):
     """Split the source mesh along the part boundaries of a verified result surface.
 
-    Each part keeps the source's own positions, UVs, materials, attributes and
-    edge and face flags; custom normals are set again per corner, since splitting
-    changes the corner fans they are stored against.
+    `owner` gives each source polygon's part. Each part keeps the source's own
+    positions, UVs, materials, attributes and edge and face flags; custom
+    normals are set again per corner, since splitting changes the corner fans
+    they are stored against. The source is read once and halved by part until
+    each piece holds one part, so the work grows with the source size times the
+    logarithm of the part count; deleting faces keeps the rest in source order.
     """
-    owner = mesh_application._transfer(
-        "PARTS",
-        mesh_correspondence.owners,
-        surface.source,
-        surface.polygons(),
-        surface.offsets,
-    )
     source = target.mesh
     normals = None
     if source.has_custom_normals:
-        normals = array("f", [0.0]) * (3 * len(source.loops))
-        source.corner_normals.foreach_get("vector", normals)
-    starts, totals = surface.source.polygon_starts, surface.source.polygon_totals
+        values = array("f", [0.0]) * (3 * len(source.loops))
+        source.corner_normals.foreach_get("vector", values)
+        normals = [[] for _ in meshes]
+        starts, totals = surface.source.polygon_starts, surface.source.polygon_totals
+        for polygon, part in enumerate(owner):
+            start = starts[polygon]
+            normals[part].extend(
+                values[3 * loop : 3 * loop + 3] for loop in range(start, start + totals[polygon])
+            )
+    geometry = bmesh.new()
+    pending = [(geometry, list(owner), 0, len(meshes))]
+    split = {}
+    try:
+        geometry.from_mesh(source)
+        while pending:
+            # Every bmesh stays pending until it is freed, so a failure frees it.
+            geometry, owners, low, high = pending[-1]
+            if high - low == 1:
+                mesh = source.copy()
+                mesh.use_fake_user = False
+                geometry.to_mesh(mesh)
+                pending.pop()[0].free()
+                split[low] = mesh
+                continue
+            middle = (low + high) // 2
+            upper = geometry.copy()
+            pending[-1] = (geometry, [part for part in owners if part < middle], low, middle)
+            pending.append((upper, [part for part in owners if part >= middle], middle, high))
+            # Removing faces also removes the edges and vertices only they used.
+            for piece, keep in ((geometry, range(low, middle)), (upper, range(middle, high))):
+                others = [
+                    face for face, part in zip(piece.faces, owners, strict=True) if part not in keep
+                ]
+                bmesh.ops.delete(piece, geom=others, context="FACES")
+    finally:
+        for geometry, *_ in pending:
+            geometry.free()
     parts = []
     for index, obj in enumerate(meshes):
-        mesh = source.copy()
-        mesh.use_fake_user = False
-        geometry = bmesh.new()
-        try:
-            geometry.from_mesh(source)
-            geometry.faces.ensure_lookup_table()
-            others = [face for face in geometry.faces if owner[face.index] != index]
-            # Removing faces also removes the edges and vertices only they used.
-            bmesh.ops.delete(geometry, geom=others, context="FACES")
-            geometry.to_mesh(mesh)
-        finally:
-            geometry.free()
+        mesh = split[index]
         if normals is not None:
-            # Kept faces and their corners stay in source order.
-            mesh.normals_split_custom_set(
-                [
-                    normals[3 * loop : 3 * loop + 3]
-                    for polygon, part in enumerate(owner)
-                    if part == index
-                    for loop in range(starts[polygon], starts[polygon] + totals[polygon])
-                ]
-            )
+            mesh.normals_split_custom_set(normals[index])
         mesh.update()
         mesh_application._fingerprint(mesh)
         parts.append(bpy.data.objects.new(_part_name(target, index + 1, obj), mesh))
@@ -275,9 +286,10 @@ def _copied_parts(target, meshes, mapping):
 def _stage_parts(target, meshes, mapping):
     """Stage parts before replacement, from the source's faces when possible.
 
-    When the result meshes together are the source surface, the source is split
-    along their boundaries. Otherwise, such as for remeshed parts, the result
-    meshes are copied, under a verified bounds fit for FIT coordinates.
+    When the result meshes together are the source surface, each source face in
+    one part, the source is split along their boundaries. Otherwise, such as for
+    remeshed parts, the result meshes are copied, under a verified bounds fit for
+    FIT coordinates, or the face match's mapping when only the split failed.
     """
     if not 2 <= len(meshes) <= 128:
         raise MeshResultApplicationError("Choose a static result containing 2 to 128 mesh parts")
@@ -300,8 +312,22 @@ def _stage_parts(target, meshes, mapping):
         fit = mesh_application.fit_bounds(target.obj, tuple(meshes), mapping, "PARTS")
         parts, origin = _copied_parts(target, meshes, fit.mapping), "result_meshes"
     else:
-        parts, origin = _source_parts(target, meshes, surface), "source_faces"
         fit = mesh_application.BoundsFit(surface.mapping, surface.fitted_from)
+        try:
+            owner = mesh_application._transfer(
+                "PARTS",
+                mesh_correspondence.owners,
+                surface.source,
+                surface.polygons(),
+                surface.offsets,
+            )
+        except mesh_application.MeshApplicationError as exc:
+            # The source's surface, but not split along whole source faces: copy
+            # the result meshes under the mapping the face match verified.
+            _log.info("Parts are copied from the result meshes: %s", exc)
+            parts, origin = _copied_parts(target, meshes, fit.mapping), "result_meshes"
+        else:
+            parts, origin = _source_parts(target, meshes, surface, owner), "source_faces"
     # Reuse the guarded mesh-swap primitive with an empty result. The original
     # object becomes the group anchor; existing children/context are unchanged.
     blank = bpy.data.objects.new("Scenario parts staging", bpy.data.meshes.new("Scenario parts"))
@@ -312,6 +338,7 @@ def _stage_parts(target, meshes, mapping):
 def _join(target, meshes):
     """Join several REMESH result meshes into one, in imported scene coordinates.
 
+    Meshes that cover one surface between them, such as variants, are refused.
     Each mesh's world matrix is applied and its material slots are merged once
     per material, so the joined mesh keeps every face's material.
     """
@@ -320,12 +347,14 @@ def _join(target, meshes):
         > mesh_application.MAX_COMPONENTS
     ):
         raise MeshResultApplicationError("Result meshes exceed the synchronous component limit")
+    for obj in meshes:
+        mesh_application._validate_object(obj.users_scene[0], obj)
+        mesh_application._fingerprint(obj.data)
+    mesh_application.separate_pieces(meshes)
     materials, slots = [], {}
     geometry = bmesh.new()
     try:
         for obj in meshes:
-            mesh_application._validate_object(obj.users_scene[0], obj)
-            mesh_application._fingerprint(obj.data)
             matrix = mesh_application._matrix(obj.matrix_world)
             copy = obj.data.copy()
             try:
@@ -431,8 +460,15 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 if policy == "REMESH":
                     # One remesh may arrive in several meshes; join them first.
                     joined = len(meshes)
-                    primary = meshes[0] if joined == 1 else _join(first, meshes)
+                    primary = meshes[0]
                     if joined > 1:
+                        if not isinstance(mapping, mesh_application.FitRequest):
+                            # Only a verified fit checks the joined meshes are the surface.
+                            raise mesh_application.MeshApplicationError(
+                                f"{joined} result meshes are joined into one remesh only "
+                                "under Fit and verify"
+                            )
+                        primary = _join(first, meshes)
                         objects = (*objects, primary)
                     fit = mesh_application.fit_bounds(first.obj, (primary,), mapping, policy)
                     # Blender has already converted the file's axes and units. Preserve

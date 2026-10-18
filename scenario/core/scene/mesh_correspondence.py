@@ -46,6 +46,11 @@ SURFACE_OUTLIERS = 0.05
 SURFACE_LIMIT = 0.10
 # Vertices sampled evenly per side, bounding main-thread surface queries.
 SURFACE_SAMPLES = 20_000
+# Meshes joined into one remesh must be its pieces, which meet only along seams.
+# Two meshes that each have more than this fraction of their sampled vertices
+# within SURFACE_TOLERANCE of the other's surface, such as levels of detail or
+# variants in one place, cover the same surface instead.
+SURFACE_OVERLAP = 0.5
 
 
 class CorrespondenceError(ValueError):
@@ -175,9 +180,14 @@ def scaled(co, scale, offset):
     return out
 
 
+def bounds(mesh):
+    """The axis-aligned (low, high) corners of the vertices `mesh` faces use."""
+    return _used_bounds(mesh.co, set(mesh.loop_vertices))
+
+
 def diagonal(mesh):
     """The bounding-box diagonal of the vertices `mesh` faces use."""
-    low, high = _used_bounds(mesh.co, set(mesh.loop_vertices))
+    low, high = bounds(mesh)
     return math.dist(low, high) if low[0] <= high[0] else 0.0
 
 

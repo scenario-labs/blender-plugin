@@ -257,8 +257,9 @@ class MeshResultTests(unittest.TestCase):
         self.assertEqual(self.model._snapshot(), before)
         self.mesh.validate_target(self.target)
 
-    def test_multi_mesh_remesh_result_is_joined_into_one_mesh(self):
+    def test_multi_mesh_remesh_result_is_joined_only_under_a_fit(self):
         original = self.model._import
+        before = self.model._snapshot()
 
         def add_mesh(path):
             original(path)
@@ -267,15 +268,13 @@ class MeshResultTests(unittest.TestCase):
             bpy.context.scene.collection.objects.link(other)
             other.location.z += 5
 
+        # Scene coordinates verify nothing, so variants could be joined unnoticed.
         with patch.object(self.model, "_import", side_effect=add_mesh):
-            result = self.apply()
-        self.assertEqual(result.joined_meshes, 2)
-        data = self.source.data
-        self.assertEqual(len(data.polygons), 2)
-        # Each mesh keeps its own placement; their shared material merges once.
-        self.assertEqual(max(v.co.z for v in data.vertices) - min(v.co.z for v in data.vertices), 6)
-        self.assertEqual(len(data.materials), 1)
-        self.assertEqual([polygon.material_index for polygon in data.polygons], [0, 0])
+            with self.assertRaises(self.module.MeshResultApplicationError) as raised:
+                self.apply()
+        self.assertIn("only under Fit and verify", raised.exception.reason)
+        self.assertEqual(self.model._snapshot(), before)
+        self.mesh.validate_target(self.target)
 
     def test_multi_mesh_uv_and_retexture_results_are_rejected_without_mutation(self):
         self.matching_source()
@@ -3301,7 +3300,7 @@ class PartsAndRemeshTests(unittest.TestCase):
             self.assertEqual(list(mesh.materials), materials)
             self.assertEqual(mesh.uv_layers.active.name, "Source UV")
             # Source-local positions are kept exactly, not remapped from the result.
-            self.assertTrue({tuple(vertex.co) for vertex in mesh.vertices} <= geometry)
+            self.assertLessEqual({tuple(vertex.co) for vertex in mesh.vertices}, geometry)
             for polygon in mesh.polygons:
                 self.assertEqual(
                     (polygon.material_index, polygon.use_smooth), faces[_rounded(polygon.center)]
@@ -3318,25 +3317,34 @@ class PartsAndRemeshTests(unittest.TestCase):
         self.assertEqual((result.parts_from, result.fitted_from), ("source_faces", None))
         self.assertEqual(sum(len(part.data.polygons) for part in result.parts), 7)
 
-    def test_split_source_faces_and_loose_source_geometry_fail_with_a_reason(self):
+    def assert_copied_parts(self, reason, faces):
+        """The parts match the source surface but cannot split it: they are copied,
+        with the exported triangles."""
+        expected = _bounds(self.geometry)
+        with self.assertLogs("scenario.jobs", "INFO") as logs:
+            result = self.apply(policy="PARTS", result_to_source=self.fit())
+        self.assertIn(reason, "\n".join(logs.output))
+        self.assertEqual((result.parts_from, result.fitted_from), ("result_meshes", "WORLD"))
+        self.assertEqual(len(self.source.data.polygons), 0)
+        self.assertEqual(sum(len(part.data.polygons) for part in result.parts), faces)
+        # Placed by the verified face match, onto the source's own positions.
+        low, high = _bounds(v.co for part in result.parts for v in part.data.vertices)
+        for a, b in zip(low + high, expected[0] + expected[1], strict=True):
+            self.assertAlmostEqual(a, b, delta=1e-4)
+
+    def test_parts_that_split_source_faces_are_copied_from_the_result(self):
         # Side quads of the cube are triangulated across the two parts.
         self.deliver(self.segment(lambda polygon: int(polygon.center.z > 0), triangulate=True))
-        self.assert_unchanged(
-            self.model._snapshot(),
-            "the result splits 4 source faces between parts",
-            policy="PARTS",
-            result_to_source=self.fit(),
-        )
-        self.source.data.vertices.add(1)
-        self.source.data.update()
-        self.recapture()
+        self.assert_copied_parts("the result splits 4 source faces between parts", 15)
+
+    def test_parts_of_a_source_with_loose_geometry_are_copied_from_the_result(self):
         self.deliver(self.segment(lambda polygon: 0 if polygon.index < 3 else 1))
-        self.assert_unchanged(
-            self.model._snapshot(),
-            "the source has 1 loose vertex or edge that no part covers",
-            policy="PARTS",
-            result_to_source=self.fit(),
-        )
+        data = self.source.data
+        data.vertices.add(1)
+        data.vertices[-1].co = data.vertices[0].co
+        data.update()
+        self.recapture()
+        self.assert_copied_parts("the source has 1 loose vertex or edge that no part covers", 15)
 
     def test_failed_source_part_publication_restores_the_source(self):
         self.deliver(self.segment(lambda polygon: 0 if polygon.index < 3 else 1))
@@ -3368,12 +3376,12 @@ class PartsAndRemeshTests(unittest.TestCase):
         bpy.context.view_layer.update()
         self.recapture()
 
-    def remeshed(self, radii=(1.0, 2.0, 0.6), *, shape="ICO"):
+    def remeshed(self, radii=(1.0, 2.0, 0.6), *, shape="ICO", subdivisions=3):
         """A differently tessellated copy of the ellipsoid (or a box), in source-local units."""
         copy = self.copy_source()
         mesh = bmesh.new()
         if shape == "ICO":
-            bmesh.ops.create_icosphere(mesh, subdivisions=3, radius=1.0)
+            bmesh.ops.create_icosphere(mesh, subdivisions=subdivisions, radius=1.0)
         else:
             bmesh.ops.create_cube(mesh, size=2.0)
         bmesh.ops.scale(mesh, vec=radii, verts=mesh.verts)
@@ -3452,6 +3460,11 @@ class PartsAndRemeshTests(unittest.TestCase):
         self.scene.collection.objects.link(group)
         for part in parts:
             part.parent = group
+            # Each piece keeps its origin at its own centre, placed by its node.
+            low, high = _bounds(v.co for v in part.data.vertices)
+            middle = [(a + b) / 2 for a, b in zip(low, high, strict=True)]
+            part.data.transform(Matrix.Translation([-c for c in middle]))
+            part.location = middle
         counts = [len(part.data.polygons) for part in parts]
         self.deliver([group, *parts])
         result = self.apply(policy="REMESH", result_to_source=self.fit())
@@ -3478,6 +3491,36 @@ class PartsAndRemeshTests(unittest.TestCase):
         self.deliver([copy])
         self.assert_unchanged(
             self.model._snapshot(), "several ways", policy="REMESH", result_to_source=self.fit()
+        )
+
+    def test_remesh_already_in_place_keeps_its_size(self):
+        self.use_ellipsoid()
+        # Smoothing shrank the remesh a little; its scene positions are still true.
+        copy = self.remeshed((0.98, 1.96, 0.588))
+        expected = _bounds(v.co for v in copy.data.vertices)
+        self.place([copy], Matrix())
+        self.deliver([copy])
+        result = self.apply(policy="REMESH", result_to_source=self.fit())
+        self.assertEqual(result.fitted_from, "WORLD")
+        for row, strict in zip(result.mapping, self.mapping, strict=True):
+            for a, b in zip(row, strict, strict=True):
+                self.assertAlmostEqual(a, b, places=6)
+        self.assertLess(result.fit_residual[0], 0.02)
+        low, high = _bounds(v.co for v in self.source.data.vertices)
+        for a, b in zip(low + high, expected[0] + expected[1], strict=True):
+            self.assertAlmostEqual(a, b, delta=1e-4)
+
+    def test_remesh_variants_in_one_place_are_not_joined(self):
+        self.use_ellipsoid()
+        # Two levels of detail of one remesh, as a provider might return together.
+        variants = [self.remeshed(), self.remeshed(subdivisions=2)]
+        self.place(variants, Matrix())
+        self.deliver(variants)
+        self.assert_unchanged(
+            self.model._snapshot(),
+            "result meshes 1 and 2 cover the same surface",
+            policy="REMESH",
+            result_to_source=self.fit(),
         )
 
     def test_failed_joined_remesh_cleanup_restores_the_source(self):

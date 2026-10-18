@@ -255,11 +255,13 @@ full render-lane desktop acceptance.
   unconnected. Provider FBX and OBJ results have been applied only in
   offline tests built with Blender's own exporters; live provider packages still
   need evidence (#440).
-- Parts split from the source need each source face in one part: a quad whose
-  two triangles land in different parts is refused. Remeshed parts and remeshes
-  are checked only by sampled distance to the source surface (2% of its size),
-  so a small missing or extra detail can pass. Several meshes in a remesh result
-  are always joined, even if they were alternate variants.
+- Parts split from the source need each source face in one part: when a quad's
+  two triangles land in different parts, the returned parts are copied without
+  the source's UVs and materials. Remeshed parts and remeshes are checked only
+  by sampled distance to the source surface (2% of its size), so a small missing
+  or extra detail can pass. Several meshes in a remesh result are joined only
+  under Fit and verify; variants that mostly overlap are refused, but ones that
+  only partly overlap are not detected.
 - The Environment lane (sidebar, Studio, the composer's Generate mode and local
   MCP) generates 360 panoramas, HDRIs and upscales only through verified model
   contracts, and its results wait for explicit World approval. Paid runs

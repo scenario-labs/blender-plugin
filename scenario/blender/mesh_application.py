@@ -653,11 +653,11 @@ def _tree(mesh):
     return BVHTree.FromPolygons(vertices, polygons)
 
 
-def _distances(tree, mesh):
+def _distances(tree, mesh, limit=mesh_correspondence.SURFACE_SAMPLES):
     """Nearest-surface distances of evenly sampled vertices that `mesh` faces use."""
     co = mesh.co
     out = []
-    for vertex in mesh_correspondence.evenly(sorted(set(mesh.loop_vertices))):
+    for vertex in mesh_correspondence.evenly(sorted(set(mesh.loop_vertices)), limit):
         hit = tree.find_nearest(Vector(co[3 * vertex : 3 * vertex + 3]))
         out.append(hit[3] if hit[0] is not None else math.inf)
     return out
@@ -684,11 +684,13 @@ def _scene_bounds(pieces, results):
 def fit_bounds(source, results, result_to_source, policy):
     """Place REMESH or copied PARTS results, verifying a fit by surface distance.
 
-    A strict mapping is returned unchanged. For a `FitRequest`, each base gets
-    one uniform scale and offset from the axis-aligned bounds, never a rotation,
-    and is kept only if sampled vertices of the source and the fitted result lie
-    near each other's surface both ways (`mesh_correspondence.surface_residual`).
-    Two verified bases must place the result alike; otherwise this fails closed.
+    A strict mapping is returned unchanged. For a `FitRequest`, each base is
+    first tried as it is: a result already at the source's size and place keeps
+    it. Only when no base verifies so does each get one uniform scale and offset
+    from the axis-aligned bounds, never a rotation. A base is kept only if
+    sampled vertices of the source and the placed result lie near each other's
+    surface both ways (`mesh_correspondence.surface_residual`). Two verified
+    bases must place the result alike; otherwise this fails closed.
     """
     if not isinstance(result_to_source, FitRequest):
         return BoundsFit(result_to_source)
@@ -700,7 +702,7 @@ def fit_bounds(source, results, result_to_source, policy):
     size = mesh_correspondence.diagonal(src)
     source_tree = _tree(src)
     pieces = [_arrays(obj.data) for obj in results]
-    verified, reasons = [], []
+    placed = []
     for label, rows in result_to_source.bases:
         base = _matrix(rows)
         parts = [
@@ -712,18 +714,28 @@ def fit_bounds(source, results, result_to_source, policy):
             )
             for piece, obj in zip(pieces, results, strict=True)
         ]
-        result, _ = mesh_correspondence.concatenate(parts)
-        try:
-            scale, offset = mesh_correspondence.similarity_fit(src, result)
-            result = replace(result, co=mesh_correspondence.scaled(result.co, scale, offset))
-            residual = mesh_correspondence.surface_residual(
-                _distances(source_tree, result), _distances(_tree(result), src), size
-            )
-        except mesh_correspondence.CorrespondenceError as exc:
-            reasons.append(f"{label}: {exc}")
-            continue
-        mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
-        verified.append(BoundsFit(mapping, label, residual))
+        placed.append((label, base, mesh_correspondence.concatenate(parts)[0]))
+    verified, reasons = [], []
+    for fitted in (False, True):
+        for label, base, result in placed:
+            try:
+                mapping = base
+                if fitted:
+                    scale, offset = mesh_correspondence.similarity_fit(src, result)
+                    result = replace(
+                        result, co=mesh_correspondence.scaled(result.co, scale, offset)
+                    )
+                    mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
+                residual = mesh_correspondence.surface_residual(
+                    _distances(source_tree, result), _distances(_tree(result), src), size
+                )
+            except mesh_correspondence.CorrespondenceError as exc:
+                if fitted:
+                    reasons.append(f"{label}: {exc}")
+                continue
+            verified.append(BoundsFit(mapping, label, residual))
+        if verified:
+            break
     if not verified:
         raise MeshApplicationError(
             f"{policy} result does not match the source surface after fitting "
@@ -744,6 +756,47 @@ def fit_bounds(source, results, result_to_source, policy):
                 "object local coordinates"
             )
     return first
+
+
+def separate_pieces(results):
+    """Refuse result meshes that cover one surface between them, before a join.
+
+    Pieces of one remesh meet only along seams. Two meshes are alternatives,
+    such as levels of detail or variants in one place, when each has most of its
+    sampled vertices within the surface tolerance of the other's surface, both
+    in scene coordinates and relative to the meshes' joint size.
+    """
+    pieces = []
+    for obj in results:
+        piece, rows = _arrays(obj.data), tuple(tuple(row) for row in obj.matrix_world)
+        pieces.append(replace(piece, co=mesh_correspondence.transformed(piece.co, rows)))
+    tolerance = mesh_correspondence.SURFACE_TOLERANCE * mesh_correspondence.diagonal(
+        mesh_correspondence.concatenate(pieces)[0]
+    )
+    limit = max(1, mesh_correspondence.SURFACE_SAMPLES // len(pieces))
+    boxes = [mesh_correspondence.bounds(piece) for piece in pieces]
+    trees = {}
+
+    def near(a, b):
+        if b not in trees:
+            trees[b] = _tree(pieces[b])
+        distances = _distances(trees[b], pieces[a], limit)
+        close = sum(1 for distance in distances if distance <= tolerance)
+        return close > mesh_correspondence.SURFACE_OVERLAP * len(distances) > 0
+
+    for a in range(len(pieces)):
+        for b in range(a + 1, len(pieces)):
+            (low, high), (other_low, other_high) = boxes[a], boxes[b]
+            if any(
+                low[axis] - other_high[axis] > tolerance or other_low[axis] - high[axis] > tolerance
+                for axis in range(3)
+            ):
+                continue
+            if near(a, b) and near(b, a):
+                raise MeshApplicationError(
+                    f"result meshes {a + 1} and {b + 1} cover the same surface, like levels "
+                    "of detail or variants; choose a result that holds one remesh"
+                )
 
 
 def _corner_values(surface, layers, width, count, policy, label):

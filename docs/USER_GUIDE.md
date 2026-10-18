@@ -752,8 +752,8 @@ this job's task, pick it yourself. GLB, glTF, FBX and OBJ results can be
 applied: a main result in another format shows it, as in **Apply mesh edit: FBX
 (N)**, and a job's other results show as **Apply alternate mesh edit: OBJ (N)**.
 
-- **Replace geometry**: geometry, UVs and materials. A result that comes back in
-  several pieces is joined into one mesh.
+- **Replace geometry**: geometry, UVs and materials. With **Fit and verify**, a
+  result that comes back in several pieces is joined into one mesh.
 - **Replace active UVs** or **Replace textures**: only when the result is the
   same surface as your mesh. Triangulated, split or reordered results are fine;
   changed shapes are refused.

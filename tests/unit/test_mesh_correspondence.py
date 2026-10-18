@@ -393,6 +393,7 @@ def test_mapping_gap_measures_affine_differences_at_box_corners():
     assert mc.mapping_gap(identity, turned, (-1, -1, 0), (1, 1, 0)) == pytest.approx(2.0)
 
 
-def test_diagonal_measures_only_vertices_faces_use():
+def test_bounds_and_diagonal_measure_only_vertices_faces_use():
     source = arrays([*SOURCE_POSITIONS, (90, 90, 90)], SOURCE_FACES)
-    assert mc.diagonal(source) == pytest.approx(math.hypot(5.5, 2))
+    low, high = mc.bounds(source)
+    assert math.dist(low, high) == mc.diagonal(source) == pytest.approx(math.hypot(5.5, 2))

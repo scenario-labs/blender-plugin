@@ -101,13 +101,14 @@ synchronously on the main thread, within the mesh component limit.
 
 A remesh, or parts that are not the source's own faces, is a different mesh of
 the same surface, so faces cannot be matched. `mesh_application.fit_bounds`
-verifies a fit by surface distance instead. For each base it estimates one
-uniform scale and offset from the axis-aligned bounding boxes, never a rotation,
-then measures, in source-local units, how far evenly sampled vertices lie from
-the other surface, both ways: result vertices from the source surface, and
-source vertices from the fitted result's surface. At most 20,000 vertices per
-side are sampled, and only vertices that faces use count. Distances are
-fractions of the source's bounding-box diagonal:
+verifies a fit by surface distance instead. Each base is first tried as it is,
+so a result already at the source's size and place keeps it; only if no base
+verifies does each get one uniform scale and offset from the axis-aligned
+bounding boxes, never a rotation. Verification measures, in source-local units,
+how far evenly sampled vertices lie from the other surface, both ways: result
+vertices from the source surface, and source vertices from the placed result's
+surface. At most 20,000 vertices per side are sampled, and only vertices that
+faces use count. Distances are fractions of the source's bounding-box diagonal:
 
 - at most 5% of either side's sampled vertices may lie farther than 2%;
 - none may lie farther than 10%.
@@ -599,9 +600,10 @@ and ANIMATE read them at the file's frame rate, never retimed, and
 rate. `REMESH` requires static meshes with optional Empty parents. Several
 meshes, as some providers return a remesh split into pieces, are joined into
 one: each object's world matrix is applied and material slots are merged once
-per material (`joined_meshes` counts them). Choose the result that contains one
-remeshed object; a result of alternate variants would be joined too, and a fit
-then fails to verify. `UV` and `RETEXTURE` match every static mesh in the result
+per material (`joined_meshes` counts them). Joining needs Fit and verify, and
+stops when two meshes each have over half of their sampled vertices within 2% of
+the meshes' size from the other's surface, as levels of detail or variants in
+one place do. `UV` and `RETEXTURE` match every static mesh in the result
 together as one surface, since providers split results by connectivity or color
 region; RETEXTURE merges their material slots, once per material. The explicit
 `PARTS` policy accepts 2 to 128 static surface meshes in that one result; other
@@ -939,8 +941,9 @@ places, reported as `parts_from`:
   per corner, since a part boundary changes the corner fans Blender stores them
   against; without custom normals, smooth shading at a part boundary is computed
   per part. All result faces on one source face must come from one part, and the
-  source must have no loose vertices or edges; otherwise application stops with
-  the reason, such as **the result splits 4 source faces between parts**.
+  source must have no loose vertices or edges; otherwise the result meshes are
+  copied under the verified mapping, and the reason, such as **the result splits
+  4 source faces between parts**, is logged.
 - `result_meshes`: otherwise, such as for remeshed parts, independent copies of
   the imported meshes are staged with their node transforms baked through the
   explicit mapping or a verified

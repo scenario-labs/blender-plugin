@@ -96,13 +96,13 @@ or **Default edit is not from this job's task; check it.** Invoke also starts
 the coordinates from the approval: **Fit and verify**, except scene coordinates
 for **Apply animation** and for a geometry replacement that is not from the
 job's task. Explain geometry/UV/material replacement and that several meshes are
-joined for it, the same-surface UV/retexture/rig requirement, whether the chosen
-coordinates fit (uniform scale and offset, never rotation, stopping on any
-mismatch), preserved object context and the dependence of undo on Blender
-settings. Defaults keep an original copy. Explain that history changes affect
-the scene only, not saved jobs or spending. After confirmation, the temporary
-message acknowledges approval rather than describing verification that may
-already have finished.
+joined for it under Fit and verify, the same-surface UV/retexture/rig
+requirement, whether the chosen coordinates fit (uniform scale and offset, never
+rotation, stopping on any mismatch), preserved object context and the dependence
+of undo on Blender settings. Defaults keep an original copy. Explain that
+history changes affect the scene only, not saved jobs or spending. After
+confirmation, the temporary message acknowledges approval rather than describing
+verification that may already have finished.
 
 Option changes use `check()`, outside drawing, and revise the existing captured
 approval instead of selecting a new target. Choosing any policy but **Apply

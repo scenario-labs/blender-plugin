@@ -2815,6 +2815,7 @@ class ModelJobs:
             "parts": tuple(part.name for part in application.parts if part in objects),
             "rig": application.rig.name if application.rig in objects else None,
             "clips": tuple(clip.name for clip in application.clips if clip in actions),
+            "rest_correction_deg": application.rest_correction_deg,
         }
 
     def _model_import_status(self, request_id):
@@ -2825,14 +2826,20 @@ class ModelJobs:
         return dict(saved[1])
 
     def _import_notices(self, request_id):
-        """Status rows for this session's last splat import while its summary is current."""
+        """Status rows for this session's last splat import or clip correction while current."""
+        notices = []
+        edit = self._mesh_edits.get(request_id)
+        # The receipt rounds to 0.1 degrees; smaller corrections are not shown.
+        if edit is not None and edit[0] == self.session.history_revision:
+            if correction := edit[1].rest_correction_deg:
+                notices.append(f"Clips adjusted to this rig's rest pose by up to {correction:g}°")
         status = self._model_import_status(request_id)
         splat = status.get("splat") if status else None
-        if not splat:
-            return ()
-        notices = [f"Shown as points: {splat['points_kept']:,} of {splat['points_total']:,} splats"]
-        if splat["spz_extensions"]:
-            notices.append("This SPZ declares extensions; check its axes")
+        if splat:
+            kept, total = splat["points_kept"], splat["points_total"]
+            notices.append(f"Shown as points: {kept:,} of {total:,} splats")
+            if splat["spz_extensions"]:
+                notices.append("This SPZ declares extensions; check its axes")
         return tuple(notices)
 
     def _import_units_status(self, record):

@@ -865,17 +865,26 @@ clip may key only pose-bone location, rotation and scale in the armature's own
 action slot, without F-Curve modifiers. Other animated objects, shape-key or
 armature-data animation and other channels are rejected rather than dropped.
 Every bone a clip animates must exist in the destination rig by name, with the
-same parent name, connection and rotation/scale inheritance; rotated bones must
-use the same rotation mode.
+same parent name, connection, rotation/scale inheritance and local location
+setting; rotated bones must use the same rotation mode.
 
-Rotation keys pose a bone relative to its rest orientation, so each animated
-bone's rest orientation relative to its parent (or to armature space for a root
-bone) must be within 15 degrees of the destination's. One provider re-rigging
-its own rigged character moved some joint rest orientations by up to about 11
-degrees, while a skeleton built in another pose or orientation differs by tens
-of degrees. Keys are copied unchanged, without per-bone correction: both rigs
-bind the same character in the same rest pose, so a small rest difference only
-tilts the rotation axis slightly.
+Both rigs bind the same character in the same rest pose, but a re-rig can orient
+a bone differently on it, and keys pose each bone relative to its own rest. Each
+animated bone's rest orientation relative to its parent (or to armature space
+for a root bone) must therefore be within 15 degrees of the destination's. One
+provider re-rigging its own rigged character moved some joint rest orientations
+by up to about 11 degrees, while a skeleton built in another pose or orientation
+differs by tens of degrees, which no correction makes right.
+
+Within that limit, copied keys are corrected so that each bone moves the mesh
+as the returned clip moves the returned character. With C the rotation from the
+destination bone's armature-space rest orientation to the result's, each
+quaternion key q becomes C q C⁻¹ and each location vector l becomes C l, in
+every key and handle; automatic Bezier handles become free. The destination's
+rest heads stay, so the mesh bends about its own joints. A corrected bone must
+key the components of each location and quaternion channel together, with
+constant, linear or Bezier interpolation, scale uniformly and use quaternion
+rotation, as glTF clips do; otherwise the result is rejected.
 
 Location keys are armature-space distances. When any location key leaves its
 bone's rest head, every location key and handle is scaled by the ratio of the
@@ -888,7 +897,8 @@ coordinate mapping and Keep original choice are not used: ANIMATE changes no
 mesh data.
 
 Application copies each clip as a new action named after the destination rig and
-the clip, keeps only its armature slot, renamed after the rig, and rescales it.
+the clip, keeps only its armature slot, renamed after the rig, and rescales and
+corrects it.
 The first clip becomes the rig's active action. The previous active action, if
 any, moves to a muted NLA track with its slot, and each copied clip gets its own
 muted NLA track, as Blender's importer does, so changing the active action loses
@@ -906,10 +916,13 @@ slot and tracks exactly before the shared command removes the new clips and
 verifies the datablock sets. An unexpected difference remains uncertain and
 never authorizes another application. Native undo and receipt-only recovery
 follow the [saved mesh history](#native-undo-for-saved-mesh-edits). Session
-status reports the rig in `mesh_edit.rig` and the new clip names in
-`mesh_edit.clips`.
+status reports the rig in `mesh_edit.rig`, the new clip names in
+`mesh_edit.clips` and the largest rest correction applied to an animated bone,
+in degrees rounded to 0.1, in `mesh_edit.rest_correction_deg` (null for other
+policies). A nonzero correction also shows **Clips adjusted to this rig's rest
+pose by up to N°** in the job row until undo history changes.
 
 Bones are matched by name only. Clips from a different skeleton, such as another
-provider's or a rig whose rest pose differs, are rejected; retargeting them
-stays open under #99. UI **Apply animation** and MCP `mesh_policy: ANIMATE` use
-the same captured target guards.
+provider's or a rig whose rest pose differs by more than 15 degrees, are
+rejected; retargeting them stays open under #99. UI **Apply animation** and MCP
+`mesh_policy: ANIMATE` use the same captured target guards.

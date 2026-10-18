@@ -266,9 +266,9 @@ full render-lane desktop acceptance.
 - Attach rig can replace the skin of a mesh already skinned to an armature, but
   only one vertex-group Armature modifier is supported; armature-deform or bone
   parenting, other modifiers and shape keys are rejected. Apply animation copies
-  returned clips only onto a rig with the same bone names, parents and rest pose
-  (within 15 degrees); retargeting clips across different skeletons is not
-  available yet (#99).
+  returned clips only onto a rig with the same bone names and parents and a rest
+  pose within 15 degrees per bone, correcting the keys for that difference;
+  retargeting clips across different skeletons is not available yet (#99).
 - Automatic Image-lane import and saved image and material application
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.

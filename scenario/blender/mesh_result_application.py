@@ -28,6 +28,8 @@ class MeshEditApplication:
     rig: object = field(default=None, repr=False)
     # New actions ANIMATE assigned to the rig, the active one first.
     clips: tuple = field(default=(), repr=False)
+    # ANIMATE's largest rest correction in degrees; None for the other policies.
+    rest_correction_deg: float | None = None
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
@@ -161,7 +163,7 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
             if policy not in _RIGGED and any(obj.type not in {"MESH", "EMPTY"} for obj in objects):
                 raise MeshResultApplicationError("Choose static meshes with optional Empty parents")
             parts = clips = ()
-            rig = None
+            rig = correction = None
             if policy == "PARTS":
                 parts, primary = _stage_parts(target, meshes, mapping)
                 objects = (*objects, primary)
@@ -185,6 +187,7 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                     target, tuple(obj for obj in objects if obj not in helpers)
                 )
                 rig, clips = receipt.rig, receipt.actions
+                correction = receipt.rest_correction_deg
             elif policy == "RIG":
                 skin = tuple(obj for obj in objects if obj not in helpers)
                 receipt = rig_application.apply_skin(
@@ -217,7 +220,7 @@ def apply_saved_mesh(target, item, path, *, policy, result_to_source, keep_origi
                     undo = False
                     _log.warning("Mesh applied, but Blender undo could not be recorded")
             return MeshEditApplication(
-                target.obj, receipt.original, policy, undo, parts, rig, clips
+                target.obj, receipt.original, policy, undo, parts, rig, clips, correction
             )
     except Exception:
         if receipt is not None:

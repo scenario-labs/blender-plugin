@@ -1278,14 +1278,16 @@ Use `mesh_policy: ANIMATE` with `purpose: mesh_source` or `mesh_edit` and one
 saved GLB from an Animate job when the source is skinned to an armature. The
 returned armature's clips are copied onto that existing rig; the source's mesh,
 skin, rig and object context stay, and no returned object is added. Every
-animated bone needs the same name, parent and rest pose (within 15 degrees) as
-the rig, and location keys are scaled to the rig's units. The first clip becomes
-the active action; it, the other clips and the previous action stay in muted NLA
-tracks. `mesh_placement` and `keep_original` are not used. An unskinned source,
-a different skeleton or a result without clips is rejected, leaving the job
-reviewable. `mesh_edit.rig` names the animated rig and `mesh_edit.clips` the new
-actions while the status is current. The shared native history and receipt-only
-recovery rules apply. See
+animated bone needs the same name and parent as the rig and a rest pose within
+15 degrees, which the copied keys are corrected for, and location keys are
+scaled to the rig's units. The first clip becomes the active action; it, the
+other clips and the previous action stay in muted NLA tracks. `mesh_placement`
+and `keep_original` are not used. An unskinned source, a different skeleton or a
+result without clips is rejected, leaving the job reviewable. `mesh_edit.rig`
+names the animated rig, `mesh_edit.clips` the new actions and
+`mesh_edit.rest_correction_deg` the largest rest correction in degrees while the
+status is current. The shared native history and receipt-only recovery rules
+apply. See
 [the ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
 
 

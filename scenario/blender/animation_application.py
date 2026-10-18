@@ -6,6 +6,17 @@ A returned armature's clips are copied onto the armature that the captured
 source's Armature skin uses. The source mesh, its skin and the rig's rest data are
 never modified, and no returned object is kept. Bones are matched by name only;
 retargeting across different skeletons is unsupported.
+
+Both rigs bind the same character in the same rest pose, but a re-rig can orient
+a bone differently on it. Skinning moves a vertex by its bone's armature-space
+deform matrix, the posed matrix times the inverted rest. A bone that inherits
+rotation and scale and keys a local location, as every glTF bone does and so the
+matching destination bone must, with armature-space rest rotation A, pose rotation
+q and pose location l, deforms by A q A^-1 about its rest head and moves by A l,
+after its parent's deform. The destination therefore gets q' = C q C^-1 and
+l' = C l with C = A_destination^-1 A_result, so every bone, and every mesh it
+moves, deforms as in the returned clip. The rest head positions stay the
+destination's: the user's mesh bends about its own joints.
 """
 
 import math
@@ -13,19 +24,29 @@ import re
 from dataclasses import dataclass, field
 
 import bpy
+from mathutils import Vector
 
 from . import mesh_application as mesh
 
-# Rotation channels pose a bone relative to its rest orientation, so a different
-# rest poses it differently. One provider re-rigging its own rigged character
-# moved some joints' rest orientations by up to about 11 degrees; a skeleton built
-# for another pose or orientation differs by tens of degrees.
+# Clips are corrected for rest differences (see above), which only holds when both
+# rigs bind the character in the same pose. One provider re-rigging its own rigged
+# character moved some joints' rest orientations by up to about 11 degrees relative
+# to their parents; a skeleton built for another pose or orientation differs by
+# tens of degrees, which a correction would turn into a wrong motion.
 REST_TOLERANCE = math.radians(15)
+# Smaller rest differences are export rounding: their keys are copied unchanged.
+_NEGLIGIBLE = 1e-5
 _CHANNEL = re.compile(
     r'pose\.bones\["((?:[^"\\]|\\.)*)"\]\.'
     r"(location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale)"
 )
 _ROTATIONS = frozenset({"rotation_quaternion", "rotation_euler", "rotation_axis_angle"})
+# Vector components a correction rotates: location, and the quaternion's X, Y and Z
+# (conjugation keeps W). Both maps are linear, so rotating every key and handle of
+# curves that share their timing rotates the interpolated values exactly, and the
+# dot product between keys, and so their sign continuity, is kept.
+_VECTORS = {"location": (0, 1, 2), "rotation_quaternion": (1, 2, 3)}
+_INTERPOLATIONS = frozenset({"CONSTANT", "LINEAR", "BEZIER"})
 
 
 def _clips(rig):
@@ -106,6 +127,124 @@ def _rest(bone):
     return matrix.to_quaternion().normalized()
 
 
+def _angle(rotation):
+    return 2 * math.acos(min(1.0, abs(rotation.w)))
+
+
+def _curves(action, slot):
+    """Each bone's curves by property and array index."""
+    curves = {}
+    for bag in _channelbags(action, slot):
+        for curve in bag.fcurves:
+            match = _CHANNEL.fullmatch(curve.data_path)
+            name = bpy.utils.unescape_identifier(match.group(1))
+            properties = curves.setdefault(name, {})
+            properties.setdefault(match.group(2), {})[curve.array_index] = curve
+    return curves
+
+
+def _timing(curve):
+    """What makes a curve's interpolation the same function of its key values as another's."""
+    keys = curve.keyframe_points
+    interpolation = tuple(key.interpolation for key in keys)
+    names = ("co", "handle_left", "handle_right") if "BEZIER" in interpolation else ("co",)
+    frames = []
+    for name in names:
+        pairs = [0.0] * (2 * len(keys))
+        keys.foreach_get(name, pairs)
+        frames.append(tuple(pairs[::2]))
+    return curve.extrapolation, interpolation, tuple(frames)
+
+
+def _shared(curves):
+    """Whether these curves share keys, handle frames and interpolation exactly."""
+    timing = {_timing(curve) for curve in curves}
+    return len(timing) == 1 and set(next(iter(timing))[1]) <= _INTERPOLATIONS
+
+
+def _constant(curves, value):
+    return all(abs(item - value) <= 1e-6 for curve in curves for item in _values(curve))
+
+
+def _correctable(properties, rotation_mode):
+    """Raise unless a rest correction can transform this bone's curves exactly."""
+    for name, curves in properties.items():
+        if name in _VECTORS:
+            present = [curves[index] for index in _VECTORS[name] if index in curves]
+            if len(present) == 3 and _shared(present):
+                continue
+            # A missing component holds its rest value, which the correction keeps.
+            if len(present) < 3 and _constant(present, 0.0):
+                continue
+            raise mesh.MeshApplicationError(
+                "Rest-corrected bones must key each vector channel together"
+            )
+        if name == "scale":
+            # A different rest would turn an axis-aligned stretch off its axes.
+            present = list(curves.values())
+            uniform = len(present) == 3 and _shared(present)
+            if uniform:
+                values = [_values(curve) for curve in present]
+                uniform = all(
+                    max(items) - min(items) <= 1e-6 for items in zip(*values, strict=True)
+                )
+            if not (uniform or _constant(present, 1.0)):
+                raise mesh.MeshApplicationError(
+                    "Bones whose rest pose differs can only scale uniformly"
+                )
+    if properties.keys() & _ROTATIONS and rotation_mode != "QUATERNION":
+        raise mesh.MeshApplicationError(
+            "Bones whose rest pose differs must use quaternion rotation"
+        )
+
+
+def _corrections(source, destination, animated, clips):
+    """Each animated bone's rest correction C and the largest correction angle.
+
+    Only bones whose correction exceeds export rounding are returned, after their
+    curves are checked in every clip.
+    """
+    corrections, largest = {}, 0.0
+    for name in animated:
+        existing = destination.data.bones[name].matrix_local.to_quaternion().normalized()
+        returned = source.data.bones[name].matrix_local.to_quaternion().normalized()
+        correction = existing.inverted() @ returned
+        angle = _angle(correction)
+        largest = max(largest, angle)
+        if angle > _NEGLIGIBLE:
+            corrections[name] = correction.to_matrix()
+    for action, slot in clips:
+        curves = _curves(action, slot)
+        for name in corrections:
+            if name in curves:
+                _correctable(curves[name], destination.pose.bones[name].rotation_mode)
+    return corrections, largest
+
+
+def _rotate(curves, matrix):
+    """Rotate the vector that three curves key, in every key and handle value."""
+    for curve in curves:
+        if any(key.interpolation == "BEZIER" for key in curve.keyframe_points):
+            # Automatic handles would be recomputed from each curve alone.
+            for key in curve.keyframe_points:
+                key.handle_left_type = key.handle_right_type = "FREE"
+    count = len(curves[0].keyframe_points)
+    for name in ("co", "handle_left", "handle_right"):
+        columns = []
+        for curve in curves:
+            pairs = [0.0] * (2 * count)
+            curve.keyframe_points.foreach_get(name, pairs)
+            columns.append(pairs)
+        for index in range(1, 2 * count, 2):
+            vector = matrix @ Vector([pairs[index] for pairs in columns])
+            for pairs, value in zip(columns, vector, strict=True):
+                pairs[index] = value
+        for curve, pairs in zip(curves, columns, strict=True):
+            curve.keyframe_points.foreach_set(name, pairs)
+    for curve in curves:
+        curve.update()
+
+
 def _offset(bone):
     return (bone.head_local - bone.parent.head_local).length
 
@@ -133,7 +272,11 @@ def _scale(source, destination):
 
 
 def validate_clips(target, objects):
-    """Require one armature whose clips key bones the destination rig has with the same rest."""
+    """Require one armature whose clips key bones the destination rig has with a close rest.
+
+    Return the destination rig, the clips, the location scale, the rest corrections
+    and the largest correction angle.
+    """
     mesh.validate_target(target)
     if target.skin is None:
         raise mesh.MeshApplicationError("Apply animation requires a mesh skinned to an armature")
@@ -169,6 +312,7 @@ def validate_clips(target, objects):
             or returned.use_connect != existing.use_connect
             or returned.use_inherit_rotation != existing.use_inherit_rotation
             or returned.inherit_scale != existing.inherit_scale
+            or returned.use_local_location != existing.use_local_location
         ):
             raise mesh.MeshApplicationError("Animated bones must keep the same hierarchy")
         if properties & _ROTATIONS and (
@@ -178,8 +322,10 @@ def validate_clips(target, objects):
         dot = min(1.0, abs(_rest(returned).dot(_rest(existing))))
         if 2 * math.acos(dot) > REST_TOLERANCE:
             raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+    corrections, largest = _corrections(source, destination, animated, clips)
     # Rest-head location keys stay zero at any scale; sampled exports key every bone.
-    return destination, clips, _scale(source, destination) if moved else 1.0
+    ratio = _scale(source, destination) if moved else 1.0
+    return destination, clips, ratio, corrections, largest
 
 
 def _state(rig):
@@ -213,8 +359,8 @@ def _state(rig):
     )
 
 
-def _copy(action, slot, rig, ratio):
-    """A new clip for the destination rig, its location keys rescaled."""
+def _copy(action, slot, rig, ratio, corrections):
+    """A new clip for the destination rig, its location keys rescaled and rest-corrected."""
     clip = action.copy()
     clip.use_fake_user = False
     clip.name = f"{rig.name} {action.name}"
@@ -234,6 +380,14 @@ def _copy(action, slot, rig, ratio):
                     values[1::2] = [value * ratio for value in values[1::2]]
                     curve.keyframe_points.foreach_set(name, values)
                 curve.update()
+    for name, properties in _curves(clip, bound).items():
+        matrix = corrections.get(name)
+        if matrix is None:
+            continue
+        for property_name, indices in _VECTORS.items():
+            curves = properties.get(property_name, {})
+            if all(index in curves for index in indices):
+                _rotate([curves[index] for index in indices], matrix)
     return clip, bound
 
 
@@ -282,6 +436,8 @@ class AnimationApplication:
     source: object
     rig: object
     actions: tuple
+    # The largest rest correction applied to an animated bone, in degrees.
+    rest_correction_deg: float
     _tracks: tuple = field(repr=False)
     _before: tuple | None = field(repr=False)
     _applied: tuple = field(repr=False)
@@ -318,12 +474,12 @@ def apply_clips(target, objects):
     Timeline settings stay unchanged. Clip timing already follows the destination
     frame rate through the shared staging scene.
     """
-    rig, clips, ratio = validate_clips(target, objects)
+    rig, clips, ratio, corrections, largest = validate_clips(target, objects)
     before = _state(rig)
     actions, tracks = [], []
     try:
         for action, slot in clips:
-            actions.append(_copy(action, slot, rig, ratio))
+            actions.append(_copy(action, slot, rig, ratio, corrections))
         data = rig.animation_data or rig.animation_data_create()
         if data.action is not None:
             tracks.append(_track(data, data.action.name, data.action, data.action_slot))
@@ -338,6 +494,7 @@ def apply_clips(target, objects):
             target.obj,
             rig,
             tuple(clip for clip, _ in actions),
+            round(math.degrees(largest), 1),
             tuple(tracks),
             before,
             _state(rig),

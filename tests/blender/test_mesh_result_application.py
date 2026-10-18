@@ -1386,6 +1386,13 @@ def _rest(rig):
     )
 
 
+def _degrees(rotation):
+    """A unit quaternion's rotation angle, whichever of its two signs it has."""
+    import math
+
+    return math.degrees(2 * math.acos(min(1.0, abs(rotation.w))))
+
+
 class AnimateResultTests(unittest.TestCase):
     tearDown = MeshResultTests.tearDown
     apply = MeshResultTests.apply
@@ -1475,6 +1482,67 @@ class AnimateResultTests(unittest.TestCase):
         for got, want in zip(rotation, expected, strict=True):
             self.assertAlmostEqual(got, want, places=3)
         self.assertEqual(self.timing(), self.timeline)
+        # Matching rests need no correction: the keys are copied unchanged.
+        self.assertEqual(result.rest_correction_deg, 0.0)
+
+    def test_clips_move_the_mesh_as_the_returned_rig_despite_rest_differences(self):
+        from helpers import CHAIN, clip_deforms, deform_matrices
+
+        _, spine, head = CHAIN
+        # The returned Hips leans 7.1 degrees toward X: with Blender's zero roll, a
+        # 10.1 degree rest rotation. Its upright Spine differs that much from Hips
+        # but not in armature space, and its Head is rolled by 11.5 degrees. Hips
+        # keeps its location keys, in centimetres at 0.01 object scale.
+        bones = (("Hips", None, (0, 0, 1), (0.025, 0, 1.2)), spine, (*head, 0.2))
+        self.use_clips(bones=bones)
+        result = self.apply(policy="ANIMATE")
+        frames = range(1, 26, 4)
+        data = self.rig.animation_data
+        for index, clip in enumerate(result.clips, 1):
+            data.action = clip
+            got = deform_matrices(self.scene, self.rig, frames)
+            want = clip_deforms(self.body, f"Clip {index}", frames, fps=self.scene.render.fps)
+            for frame in frames:
+                for name, matrix in want[frame].items():
+                    with self.subTest(clip=index, frame=frame, bone=name):
+                        mine = got[frame][name]
+                        turn = mine.to_quaternion().rotation_difference(matrix.to_quaternion())
+                        self.assertLess(_degrees(turn), 0.1)
+                        # The returned rig's centimetres are this rig's metres.
+                        offset = mine.translation - matrix.translation * 0.01
+                        self.assertLess(offset.length, 1e-4)
+        # The root really moved and turned, so the comparison is not trivial.
+        self.assertGreater(want[25]["Hips"].translation.length, 50)
+        self.assertGreater(_degrees(want[25]["Head"].to_quaternion()), 30)
+        # The largest correction is the Head's roll.
+        self.assertAlmostEqual(result.rest_correction_deg, 11.5, delta=0.1)
+
+    def test_rest_correction_rotates_bezier_keys_exactly(self):
+        from mathutils import Euler, Vector
+
+        # Exported clips are sampled; a Bezier clip with automatic handles still
+        # rotates exactly, between its keys too.
+        action = bpy.data.actions.new("Bezier fixture")
+        try:
+            slot = action.slots.new("OBJECT", "Fixture")
+            bag = (
+                action.layers.new("Layer").strips.new(type="KEYFRAME").channelbag(slot, ensure=True)
+            )
+            curves = [bag.fcurves.new("location", index=index) for index in range(3)]
+            rows = ((0, 2, -1, 3), (1, -2, 0.5, 0), (0, 0, 4, -1))
+            for curve, values in zip(curves, rows, strict=True):
+                for frame, value in zip((1, 4, 9, 12), values, strict=True):
+                    curve.keyframe_points.insert(frame, value)
+            self.assertEqual(curves[0].keyframe_points[1].interpolation, "BEZIER")
+            frames = [1 + step / 4 for step in range(45)]
+            before = [Vector([curve.evaluate(frame) for curve in curves]) for frame in frames]
+            matrix = Euler((0.3, -0.2, 0.5)).to_matrix()
+            self.animation._rotate(curves, matrix)
+            for frame, vector in zip(frames, before, strict=True):
+                after = Vector([curve.evaluate(frame) for curve in curves])
+                self.assertLess((after - matrix @ vector).length, 1e-5, frame)
+        finally:
+            bpy.data.actions.remove(action)
 
     def test_previous_action_is_kept_in_nla_and_restored_after_failure(self):
         # The rig's animation may change after review: application keeps what is there.
@@ -1538,8 +1606,9 @@ class AnimateResultTests(unittest.TestCase):
         from helpers import CHAIN
 
         # Spine leans about 5.7 degrees; a two-unit rig at object scale 1 halves its keys.
+        # Hips, whose rest matches, may stretch along its own axis.
         bones = (CHAIN[0], ("Spine", "Hips", (0, 0, 1.2), (0, 0.04, 1.6)), CHAIN[2])
-        self.use_clips(bones=bones, unit=2.0, scale=1.0, clips=(1.0,))
+        self.use_clips(bones=bones, unit=2.0, scale=1.0, clips=(1.0,), stretch=True)
         result = self.apply(policy="ANIMATE")
         rise, _ = self.head_rise(result.clips[0])
         self.assertAlmostEqual(rise.z, 1, places=3)
@@ -1552,6 +1621,10 @@ class AnimateResultTests(unittest.TestCase):
             "missing bone": dict(bones=(hips, spine, ("Skull", *head[1:]))),
             "hierarchy": dict(bones=(hips, spine, (head[0], "Hips", *head[2:]))),
             "rest": dict(bones=(hips, ("Spine", "Hips", (0, 0, 1.2), (0, 0.3, 1.6)), head)),
+            # Stretch along a bone's own axis cannot follow a rest that differs.
+            "stretch": dict(
+                bones=(("Hips", None, (0, 0, 1), (0.025, 0, 1.2)), spine, head), stretch=True
+            ),
             "no clips": dict(clips=()),
             "rotation mode": dict(),
         }

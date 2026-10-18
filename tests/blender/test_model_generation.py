@@ -6882,8 +6882,11 @@ class ModelGenerationTests(unittest.TestCase):
     def captured_clip_result(self):
         from helpers import clip_glb
 
-        # One rotating clip for the one-bone rig that skin_to_new_rig builds.
-        body = clip_glb((("Old bone", None, (0, 0, 0), (0, 0, 1)),), clips=(1.0,), location=False)
+        # One rotating clip for the one-bone rig that skin_to_new_rig builds. The
+        # returned bone leans 6.8 degrees toward X: with Blender's zero roll, a 9.7
+        # degree rest rotation.
+        bone = ("Old bone", None, (0, 0, 0), (0.12, 0, 1))
+        body = clip_glb((bone,), clips=(1.0,), location=False)
         return self.captured_source_result(
             body, source_geometry=[(0, 0, 0), (1, 0, 0), (0, 0, 1)], rigged=True
         )
@@ -6909,6 +6912,10 @@ class ModelGenerationTests(unittest.TestCase):
             )
             clip = edit["clips"][0]
             self.assertEqual(rig.animation_data.action.name, clip)
+            self.assertEqual(edit["rest_correction_deg"], 9.7)
+            view = self.runtime.state.model_jobs.views[request_id]
+            rows = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
+            self.assertIn("Clips adjusted to this rig's rest pose by up to 9.7°", rows)
             self.assertEqual(set(bpy.data.objects), objects)
             self.assertEqual(source.modifiers[0].object, rig)
             self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})

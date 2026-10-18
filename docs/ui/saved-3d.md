@@ -313,4 +313,6 @@ source starts on Apply animation for an Animate job or when it was requested,
 otherwise on Attach rig; choosing Apply animation for an unskinned mesh shows
 **Apply animation needs a mesh skinned to an armature**. Drawing stays
 read-only; the shared UI/MCP command implements the
-[animation contract](../MESH_APPLICATION.md#apply-returned-animation).
+[animation contract](../MESH_APPLICATION.md#apply-returned-animation). When the
+keys were corrected for a rest difference, the job row then shows **Clips
+adjusted to this rig's rest pose by up to N°** until undo history changes.

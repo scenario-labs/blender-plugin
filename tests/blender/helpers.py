@@ -403,7 +403,8 @@ def skin_to_new_rig(scene, source, *, parent=True):
     return rig
 
 
-# A three-bone chain: (name, parent, head, tail) in armature units.
+# A three-bone chain: (name, parent, head, tail) in armature units, with an
+# optional roll in radians as a fifth item.
 CHAIN = (
     ("Hips", None, (0, 0, 1), (0, 0, 1.2)),
     ("Spine", "Hips", (0, 0, 1.2), (0, 0, 1.6)),
@@ -420,10 +421,11 @@ def chain_rig(scene, name, bones=CHAIN, *, unit=1.0):
     view_layer.objects.active = rig
     bpy.ops.object.mode_set(mode="EDIT")
     try:
-        for bone, parent, head, tail in bones:
+        for bone, parent, head, tail, *roll in bones:
             edit = rig.data.edit_bones.new(bone)
             edit.head = [value * unit for value in head]
             edit.tail = [value * unit for value in tail]
+            edit.roll = roll[0] if roll else 0.0
             if parent:
                 edit.parent = rig.data.edit_bones[parent]
     finally:
@@ -444,14 +446,17 @@ def skin_to_chain_rig(scene, source):
     return rig
 
 
-def clip_glb(bones=CHAIN, *, unit=100.0, scale=0.01, clips=(1.0, 2.0), location=True):
+def clip_glb(
+    bones=CHAIN, *, unit=100.0, scale=0.01, clips=(1.0, 2.0), location=True, stretch=False
+):
     """Export a returned animated character with Blender's glTF exporter.
 
     The armature has `unit` armature-space units per world unit under object scale
     `scale`, like a centimetre rig at 0.01. Clip N (one NLA track, `Clip N`) turns
     every bone about its X axis by half its amount in radians and, with `location`,
-    raises the root bone by its amount in world units, over 24 frames. A triangle
-    skinned to the root bone is included. All scratch data is removed.
+    moves the root bone along its Y axis by its amount in world units, over 24
+    frames; `stretch` also scales the root along its Y axis. A triangle skinned to
+    the root bone is included. All scratch data is removed.
     """
     import math
 
@@ -486,12 +491,16 @@ def clip_glb(bones=CHAIN, *, unit=100.0, scale=0.01, clips=(1.0, 2.0), location=
                     if location and number == 0:
                         pose.location = (0, factor * unit, 0)
                         pose.keyframe_insert("location", frame=frame)
+                    if stretch and number == 0:
+                        pose.scale = (1, 1 + factor / 2, 1)
+                        pose.keyframe_insert("scale", frame=frame)
             data.action = None
             track = data.nla_tracks.new()
             track.name = action.name
             track.strips.new(action.name, 1, action)
         for pose in rig.pose.bones:
             pose.location, pose.rotation_quaternion = (0, 0, 0), (1, 0, 0, 0)
+            pose.scale = (1, 1, 1)
         path = pathlib.Path(directory.name) / "clip.glb"
         # As above, only the window shows the scratch scene during export.
         bpy.ops.export_scene.gltf(
@@ -501,6 +510,80 @@ def clip_glb(bones=CHAIN, *, unit=100.0, scale=0.01, clips=(1.0, 2.0), location=
             export_animation_mode="NLA_TRACKS",
         )
         return path.read_bytes()
+    finally:
+        window.scene, window.view_layer = previous
+        bpy.data.scenes.remove(scene)
+        directory.cleanup()
+        for name in names:
+            values = getattr(bpy.data, name)
+            for value in set(values) - before[name]:
+                values.remove(value, do_unlink=True)
+
+
+def deform_matrices(scene, rig, frames):
+    """Each bone's armature-space deform matrix, pose times inverted rest, at each frame.
+
+    Skinning moves a vertex by this matrix, so equal matrices move a mesh equally
+    whatever each rig's bone orientations. The scene must be the window's scene.
+    """
+    current = scene.frame_current
+    deforms = {}
+    for frame in frames:
+        scene.frame_set(frame)
+        deforms[frame] = {
+            bone.name: rig.pose.bones[bone.name].matrix @ bone.matrix_local.inverted()
+            for bone in rig.data.bones
+        }
+    scene.frame_set(current)
+    return deforms
+
+
+def clip_deforms(body, clip, frames, *, fps=24):
+    """`deform_matrices` of a returned GLB's rig playing clip `clip`, imported as staging does.
+
+    The rig is imported into a scratch scene at `fps` with the staging import
+    options and removed with everything else the import created.
+    """
+    names = (
+        "objects",
+        "meshes",
+        "armatures",
+        "scenes",
+        "actions",
+        "collections",
+        "materials",
+        "images",
+    )
+    before = {name: set(getattr(bpy.data, name)) for name in names}
+    window = bpy.context.window
+    previous = window.scene, window.view_layer
+    scene = bpy.data.scenes.new("Clip reference fixture")
+    scene.render.fps, scene.render.fps_base = fps, 1.0
+    directory = tempfile.TemporaryDirectory()
+    try:
+        window.scene, window.view_layer = scene, scene.view_layers[0]
+        path = pathlib.Path(directory.name) / "clip.glb"
+        path.write_bytes(body)
+        bpy.ops.import_scene.gltf(
+            filepath=str(path),
+            import_pack_images=True,
+            import_select_created_objects=False,
+            import_scene_extras=False,
+            import_scene_as_collection=False,
+            disable_bone_shape=True,
+        )
+        (rig,) = (
+            obj for obj in set(bpy.data.objects) - before["objects"] if obj.type == "ARMATURE"
+        )
+        data = rig.animation_data
+        for track in data.nla_tracks:
+            track.mute = True
+        (action,) = (
+            item for item in set(bpy.data.actions) - before["actions"] if item.name == clip
+        )
+        data.action = action
+        data.action_slot = action.slots[0]
+        return deform_matrices(scene, rig, frames)
     finally:
         window.scene, window.view_layer = previous
         bpy.data.scenes.remove(scene)

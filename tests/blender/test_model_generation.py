@@ -7425,6 +7425,31 @@ class ModelGenerationTests(unittest.TestCase):
         request_id, _, _ = self.captured_sources_result()
         self.assert_source_action_needs_retention(request_id, 3)
 
+    def test_several_captured_sources_action_needs_a_policy_they_accept(self):
+        request_id, _, _ = self.captured_sources_result()
+        jobs = self.runtime.state.model_jobs
+        record = self.store.get(request_id)
+        model_jobs = submodule("blender.model_jobs")
+        policies = submodule("core.scene.mesh_edit_policy")
+        for task, offered in (
+            ("REMESH", False),
+            ("PARTS", False),
+            ("UV", True),
+            ("RETEXTURE", True),
+            # Unrigged sources adopt an Animate job's returned rig.
+            ("ANIMATE", True),
+        ):
+            start = policies.DefaultPolicy(
+                policies.TASK_POLICIES.get(task, "REMESH"), task, task in policies.TASK_POLICIES
+            )
+            with (
+                self.subTest(task=task),
+                patch.object(model_jobs, "default_policy", return_value=start),
+            ):
+                actions = jobs.actions(record)
+                self.assertIn("apply_mesh", actions)
+                self.assertEqual("apply_mesh_source" in actions, offered)
+
     def test_several_captured_sources_refuse_other_edits_without_change(self):
         request_id, sources, _ = self.captured_sources_result()
         before, meshes = self.store.get(request_id), [source.data for source in sources]

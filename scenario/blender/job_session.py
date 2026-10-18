@@ -496,10 +496,16 @@ class JobSession:
         if key in self._mesh_sources or len(self._mesh_sources) < 128:
             self._mesh_sources[key] = target
 
-    def has_mesh_source(self, binding):
-        """Whether this session still retains the live export guard for `binding`."""
+    def retained_mesh_source(self, binding):
+        """The retained targets for `binding`, in export order, without validating them.
+
+        None when this session holds no live export guard for it.
+        """
         _main_thread()
-        return self._active and (binding.origin, binding.mesh_source) in self._mesh_sources
+        target = self._mesh_sources.get((binding.origin, binding.mesh_source))
+        if not self._active or target is None:
+            return None
+        return target if isinstance(target, tuple) else (target,)
 
     def mesh_source_targets(self, binding):
         """Resolve only a retained export, every object in export order.

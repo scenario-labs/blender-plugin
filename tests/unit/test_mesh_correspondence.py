@@ -267,3 +267,30 @@ def test_similarity_fit_never_rotates_or_accepts_a_wrong_hypothesis():
     flat = arrays([(0, 0, 0)] * 4, [(0, 1, 2, 3)])
     with pytest.raises(mc.CorrespondenceError, match="no extent"):
         mc.similarity_fit(source, flat)
+
+
+def fine_strip(x0):
+    """A 1-unit strip whose first ten faces are 0.0005 wide, starting at `x0`."""
+    xs = [x0 + 0.0005 * step for step in range(11)] + [x0 + 1]
+    positions = [(x, y, 0) for x in xs for y in (0, 1)]
+    faces = [(2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1) for i in range(len(xs) - 1)]
+    return positions, faces
+
+
+def test_per_vertex_tolerance_keeps_fine_sources_far_apart_unambiguous():
+    parts, results = [], []
+    for x0 in (-200, 200):
+        positions, faces = fine_strip(x0)
+        parts.append(arrays(positions, faces))
+        results.append(arrays(*split(positions, faces)))
+    source, offsets = mc.concatenate(parts)
+    result, _ = mc.concatenate(results)
+    # One radius from the joined extent is wider than the fine faces.
+    with pytest.raises(mc.CorrespondenceError, match="ambiguous"):
+        mc.match(source, result, mc.position_tolerance(source.co))
+    # Each source's own radius resolves every face.
+    radii = [2e-4] * (len(source.co) // 3)
+    found = mc.match(source, result, radii)
+    assert sorted(found.polygons) == list(range(len(source.polygon_starts)))
+    with pytest.raises(mc.CorrespondenceError, match="one radius per source vertex"):
+        mc.match(source, result, radii[1:])

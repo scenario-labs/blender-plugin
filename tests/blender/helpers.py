@@ -469,11 +469,13 @@ def several_sources(scene):
     return cube, flat, sphere
 
 
-def several_source_result(scene, sources, path, change, *, merge=False, finish=None, fmt="glb"):
+def several_source_result(
+    scene, sources, path, change, *, extra=(), merge=False, finish=None, fmt="glb"
+):
     """Write edited copies of `sources` as one result file, a GLB by default.
 
     Each copy keeps its source's world placement without a parent; `change(index,
-    copy)` edits it and may return extra objects to export, such as a rig. Copies
+    copy)` edits it, and `extra` lists other objects to export, such as a rig. Copies
     are made in reverse order, so the result lists them shuffled. `merge` joins
     them into one mesh, as a provider may; `finish(objects)` then moves them all.
     A GLB uses the Edit 3D exporter; `fmt` "obj" or "fbx" uses Blender's own
@@ -481,7 +483,7 @@ def several_source_result(scene, sources, path, change, *, merge=False, finish=N
     """
     export = submodule("blender.mesh_export")
     bpy.context.view_layer.update()
-    copies, extra = [], []
+    copies = []
     for index in reversed(range(len(sources))):
         source = sources[index]
         copy = source.copy()
@@ -490,9 +492,7 @@ def several_source_result(scene, sources, path, change, *, merge=False, finish=N
         scene.collection.objects.link(copy)
         copy.parent = None
         copy.matrix_world = source.matrix_world.copy()
-        returned = change(index, copy)
-        if returned is not None:
-            extra.extend(returned)
+        change(index, copy)
         copies.append(copy)
     bpy.context.view_layer.update()
     if merge:
@@ -507,7 +507,7 @@ def several_source_result(scene, sources, path, change, *, merge=False, finish=N
         ):
             bpy.ops.object.join()
         copies = copies[:1]
-    objects = [*copies, *(obj for obj in dict.fromkeys(extra))]
+    objects = [*copies, *extra]
     if finish is not None:
         finish(objects)
     bpy.context.view_layer.update()

@@ -172,15 +172,25 @@ def _count(count, noun, plural=None):
 
 
 def _candidates(source, used, result_co, result_used, tolerance):
-    """Source vertices within tolerance of each used result vertex (8-cell hash)."""
-    cell = 2.0 * tolerance
+    """Source vertices within tolerance of each used result vertex (8-cell hash).
+
+    `tolerance` is one radius, or one per source vertex; cells fit the widest.
+    """
+    if isinstance(tolerance, (int, float)):
+        widest, limits = tolerance, None
+    else:
+        if len(tolerance) != len(source.co) // 3:
+            raise CorrespondenceError("use one radius per source vertex")
+        widest = max(tolerance, default=MIN_POSITION_TOLERANCE)
+        limits = [radius * radius for radius in tolerance]
+    cell = 2.0 * widest
     grid = {}
     co = source.co
     for vertex in used:
         x, y, z = co[3 * vertex], co[3 * vertex + 1], co[3 * vertex + 2]
         key = (math.floor(x / cell), math.floor(y / cell), math.floor(z / cell))
         grid.setdefault(key, []).append(vertex)
-    limit = tolerance * tolerance
+    limit = widest * widest
     candidates = {}
     unmatched = 0
     for vertex in result_used:
@@ -199,7 +209,8 @@ def _candidates(source, used, result_co, result_used, tolerance):
                         dx = co[3 * other] - x
                         dy = co[3 * other + 1] - y
                         dz = co[3 * other + 2] - z
-                        if dx * dx + dy * dy + dz * dz <= limit:
+                        bound = limit if limits is None else limits[other]
+                        if dx * dx + dy * dy + dz * dz <= bound:
                             found.append(other)
         if not found:
             unmatched += 1
@@ -234,6 +245,7 @@ def match(source, result, tolerance):
 
     Returns per-loop and per-polygon indices into the source. Coincident source
     vertices are resolved only by the one source polygon a result face lies in.
+    `tolerance` is one radius, or one per source vertex for joined sources.
     Loose source geometry carries no corners and is not matched.
     """
     vertex_count = len(source.co) // 3

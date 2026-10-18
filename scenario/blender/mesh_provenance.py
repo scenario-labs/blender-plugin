@@ -72,7 +72,7 @@ def export_with_source(context, objects, path, session):
     # rigs/modifiers remain uploadable, but never become an in-place edit target.
     # A single Armature skin is retained; the exporter sends its unposed mesh.
     # Several objects are retained together only when every one is capturable,
-    # and within the joint bound their application enforces: never fingerprint
+    # and within the bound application enforces on them together: never fingerprint
     # sources that could not be applied.
     captured = ()
     total = sum(mesh_application._components(obj.data) for obj in objects)

@@ -83,8 +83,9 @@ mesh each came from, for reuse by other policies.
 objects](#several-captured-objects) at once. `match_sources` places each source
 mesh by its world matrix and joins them into one surface in scene coordinates,
 so the mapping takes result scene coordinates to the scene: the identity, or a
-fit of it. The tolerance then uses those joined scene positions, so it grows
-with the objects' spread and their distance from the scene origin. Each source
+fit of it. Each source vertex keeps its own object's tolerance, scaled to scene
+units, so objects far apart still match fine detail. The sources together, and
+the results together, each stay within one object's component limit. Each source
 takes its own corners, faces and vertices of the verified match; positions are
 never copied back.
 
@@ -771,12 +772,12 @@ command.
 ### Several captured objects
 
 An Edit 3D upload of several selected meshes (up to 64) is one GLB with one node
-per object. When every object was retained, **Apply to N captured sources (M)**
-(with the format for a primary that is not a GLB, such as **Apply to N captured
-sources: FBX (M)**, or **Apply alternate to N captured sources: OBJ (M)** for an
-alternate) and MCP `purpose: mesh_source` apply its result to all of them at
-once, one to one, or to none. **Apply mesh edit** still reviews only the active
-mesh.
+per object. When every object was retained and the job's task starts on a policy
+listed below, **Apply to N captured sources (M)** (with the format for a primary
+that is not a GLB, such as **Apply to N captured sources: FBX (M)**, or **Apply
+alternate to N captured sources: OBJ (M)** for an alternate) and MCP
+`purpose: mesh_source` apply its result to all of them at once, one to one, or
+to none. **Apply mesh edit** still reviews only the active mesh.
 
 - Only `UV`, `RETEXTURE` and `RIG`, which keep each object's geometry, are
   accepted. `REMESH`, `PARTS` and `ANIMATE` are refused before import: one

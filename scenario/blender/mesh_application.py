@@ -475,7 +475,7 @@ def _fitted(exact, src, pieces, base, label, policy, tolerance, tried, sources):
         return found
     result = replace(result, co=mesh_correspondence.scaled(result.co, scale, offset))
     # Positions this close verify alike; their assignments cannot differ.
-    limit = tolerance / 10
+    limit = (tolerance if isinstance(tolerance, float) else min(tolerance)) / 10
     for co, outcome in tried:
         if len(co) == len(result.co) and all(
             abs(a - b) <= limit for a, b in zip(co, result.co, strict=True)
@@ -494,17 +494,21 @@ def _fitted(exact, src, pieces, base, label, policy, tolerance, tried, sources):
     return outcome
 
 
-def _verify(src, results, result_to_source, policy, *, scene, origin, exact, sources):
+def _tolerance(source, co, policy):
+    """One source object's matching radius in its local units, from its local positions."""
+    # Far from the scene origin, float32 file transforms round more coarsely.
+    inverse = source.matrix_world.inverted(None)
+    origin = (inverse @ Vector((0.0, 0.0, 0.0))).length if inverse is not None else 0.0
+    return _transfer(policy, mesh_correspondence.position_tolerance, co, origin)
+
+
+def _verify(src, results, result_to_source, policy, *, scene, tolerance, exact, sources):
     """Verify a strict mapping, or each base of an approved `FitRequest`.
 
     `exact` is the one source mesh whose identical indexed topology may skip the
-    correspondence, or None; `origin` widens the tolerance for float32 transforms.
-    `sources` are the joined source buffers' per-object offsets.
+    correspondence, or None; `tolerance()` returns the matching radius, or one per
+    source vertex. `sources` are the joined source buffers' per-object offsets.
     """
-
-    def tolerance():
-        return _transfer(policy, mesh_correspondence.position_tolerance, src.co, origin)
-
     if not isinstance(result_to_source, FitRequest):
         pieces = _pieces(results, result_to_source, scene)
         found = _exact(exact, pieces, result_to_source, None, 1.0)
@@ -537,11 +541,11 @@ def _verify(src, results, result_to_source, policy, *, scene, origin, exact, sou
         found = _exact(exact, pieces, base, label, 1.0)
         if found is not None:
             return found
-    limit = tolerance() if bases else 0.0
+    radii = tolerance() if bases else 0.0
     verified, tried = [], []
     for label, base, pieces in bases:
         try:
-            surface = _fitted(exact, src, pieces, base, label, policy, limit, tried, sources)
+            surface = _fitted(exact, src, pieces, base, label, policy, radii, tried, sources)
         except MeshApplicationError as exc:
             reasons.append(f"{label}: {str(exc).split(': ', 1)[-1]}")
             continue
@@ -576,16 +580,14 @@ def match_surface(source, results, result_to_source, policy, *, scene=True):
     # Split results share one synchronous bound, like parts.
     if sum(_components(obj.data) for obj in results) > MAX_COMPONENTS:
         raise MeshApplicationError("Result meshes exceed the synchronous component limit")
-    # Far from the scene origin, float32 file transforms round more coarsely.
-    inverse = source.matrix_world.inverted(None)
-    origin = (inverse @ Vector((0.0, 0.0, 0.0))).length if inverse is not None else 0.0
+    src = _arrays(source.data)
     return _verify(
-        _arrays(source.data),
+        src,
         results,
         result_to_source,
         policy,
         scene=scene,
-        origin=origin,
+        tolerance=lambda: _tolerance(source, src.co, policy),
         exact=source.data,
         sources=((0, 0, 0),),
     )
@@ -599,20 +601,30 @@ def match_sources(sources, results, result_to_source, policy):
     coordinates (identity for `WORLD`), or is a `FitRequest` of that one base.
     The joined match is split per source with `Surface.source_offsets`.
     """
-    # The sources and results share one synchronous bound.
-    if sum(_components(obj.data) for obj in (*sources, *results)) > MAX_COMPONENTS:
-        raise MeshApplicationError(
-            "Source and result meshes exceed the synchronous component limit"
-        )
-    parts = []
+    # The sources together, and the results together, each take one object's bound.
+    if sum(_components(obj.data) for obj in sources) > MAX_COMPONENTS:
+        raise MeshApplicationError("Source meshes exceed the synchronous component limit")
+    if sum(_components(obj.data) for obj in results) > MAX_COMPONENTS:
+        raise MeshApplicationError("Result meshes exceed the synchronous component limit")
+    parts, radii = [], array("d")
     for obj in sources:
         part = _arrays(obj.data)
+        # Each source keeps its own radius, in scene units, however far apart they are.
+        scale = max(abs(axis) for axis in obj.matrix_world.to_scale())
+        radius = _tolerance(obj, part.co, policy) * scale
+        radii.extend([radius] * (len(part.co) // 3))
         rows = tuple(tuple(row) for row in obj.matrix_world)
         parts.append(replace(part, co=mesh_correspondence.transformed(part.co, rows)))
     src, offsets = mesh_correspondence.concatenate(parts)
-    # Scene positions already carry the distance from the scene origin.
     return _verify(
-        src, results, result_to_source, policy, scene=True, origin=0.0, exact=None, sources=offsets
+        src,
+        results,
+        result_to_source,
+        policy,
+        scene=True,
+        tolerance=lambda: radii,
+        exact=None,
+        sources=offsets,
     )
 
 

@@ -1760,9 +1760,16 @@ class ModelJobs:
         if reusable and any(mesh_applicable(unit) for unit in self._units(record)):
             actions.append("apply_mesh")
             # One captured input, of one object or several exported together,
-            # whose live export guard this session still retains.
+            # whose live export guard this session still retains. Several objects
+            # start only on a policy they accept.
             bindings = record.intent.mesh_sources
-            if len(bindings) == 1 and self.session.has_mesh_source(bindings[0]):
+            retained = (
+                self.session.retained_mesh_source(bindings[0]) if len(bindings) == 1 else None
+            )
+            if retained is not None and (
+                len(retained) == 1
+                or self._starting_policy(record, retained)[1] in SEVERAL_SOURCE_POLICIES
+            ):
                 actions.append("apply_mesh_source")
         if reusable and self._world_offer(record):
             actions.append("apply_world")
@@ -2334,6 +2341,27 @@ class ModelJobs:
         )
         return tuple(tuple(row) for row in mapping)
 
+    def _starting_policy(self, record, targets):
+        """The job's default policy, and the policy and source a review starts from."""
+        skinned = any(item.skin is not None for item in targets)
+        view = self.views.get(record.intent.request_id)
+        start = default_policy(
+            record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
+        )
+        if start.task == "ANIMATE":
+            policy, source = animate_policy(skinned), "edit3d_task"
+        elif skinned:
+            # A source skinned to an armature accepts only RIG or ANIMATE.
+            policy = "RIG"
+            source = "edit3d_task" if start.derived and start.policy == "RIG" else "rigged_source"
+        else:
+            policy = start.policy
+            source = "edit3d_task" if start.derived else "default"
+        if len(targets) > 1 and source == "default" and policy not in SEVERAL_SOURCE_POLICIES:
+            # Several sources keep their geometry; a job's own task is never replaced.
+            policy = SEVERAL_SOURCES_FALLBACK
+        return start, policy, source
+
     def prepare_mesh_application(
         self,
         request_id,
@@ -2386,25 +2414,10 @@ class ModelJobs:
             target = capture_mesh_target(scene, obj)
             targets = (target,)
         several = isinstance(target, tuple)
-        skinned = any(item.skin is not None for item in targets)
-        view = self.views.get(request_id)
-        start = default_policy(
-            record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
-        )
+        start, starting, starting_source = self._starting_policy(record, targets)
         source = "requested"
-        if policy is None and start.task == "ANIMATE":
-            policy = animate_policy(skinned)
-            source = "edit3d_task"
-        elif policy is None and skinned:
-            # A source skinned to an armature accepts only RIG or ANIMATE.
-            policy = "RIG"
-            source = "edit3d_task" if start.derived and start.policy == "RIG" else "rigged_source"
-        elif policy is None:
-            policy = start.policy
-            source = "edit3d_task" if start.derived else "default"
-        if several and source == "default" and policy not in SEVERAL_SOURCE_POLICIES:
-            # Several sources keep their geometry; a job's own task is never replaced.
-            policy = SEVERAL_SOURCES_FALLBACK
+        if policy is None:
+            policy, source = starting, starting_source
         # An explicit placement wins; surface-preserving edits start on a verified
         # fit, the others on scene positions. ANIMATE uses no coordinates, so like
         # the dialog it leaves a requested fit for unused scene positions.

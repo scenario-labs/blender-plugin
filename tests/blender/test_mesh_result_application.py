@@ -3172,7 +3172,11 @@ class SeveralSourcesTests(unittest.TestCase):
         from helpers import several_source_result
 
         path = path or self.path
-        self.body = several_source_result(self.scene, self.sources, path, change, **options)
+        # A returned rig is exported with the copies it skins.
+        extra = getattr(change, "extra", ())
+        self.body = several_source_result(
+            self.scene, self.sources, path, change, extra=extra, **options
+        )
         if path != self.path:
             return
         self.item = self.storage.StoredResult(
@@ -3338,8 +3342,8 @@ class SeveralSourcesTests(unittest.TestCase):
                 groups[1].add([vertex.index], share, "REPLACE")
                 weights[index, _rounded(vertex.co)] = {"Root": 1 - share, "Tip": share}
             copy.modifiers.new("Armature", "ARMATURE").object = armature
-            return [armature]
 
+        change.extra = (armature,)
         return change
 
     def assert_weights(self, weights, rig):
@@ -3381,6 +3385,57 @@ class SeveralSourcesTests(unittest.TestCase):
             for vertex, position in zip(evaluated.vertices, geometry, strict=True):
                 for a, b in zip(vertex.co, position, strict=True):
                     self.assertAlmostEqual(a, b, places=3)
+
+    def fine_sources(self):
+        """Two 1 m strips 400 m apart whose first ten faces are 0.5 mm wide."""
+        sources = []
+        for name, x in (("Fine left", -200), ("Fine right", 200)):
+            xs = [0.0005 * step for step in range(11)] + [1.0]
+            data = bpy.data.meshes.new(name)
+            data.from_pydata(
+                [(v, y, 0) for v in xs for y in (0, 1)],
+                [],
+                [(2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1) for i in range(len(xs) - 1)],
+            )
+            data.uv_layers.new()
+            data.update()
+            obj = bpy.data.objects.new(name, data)
+            self.scene.collection.objects.link(obj)
+            obj.location.x = x
+            sources.append(obj)
+        bpy.context.view_layer.update()
+        return tuple(sources)
+
+    def test_fine_sources_far_apart_match_with_their_own_tolerance(self):
+        self.sources = self.fine_sources()
+        self.capture()
+        expected = {}
+        self.result(self.islands(expected))
+        self.assert_applied_to(self.apply(), expected)
+
+    def assert_applied_to(self, result, expected):
+        self.assertEqual(result.sources, self.sources)
+        self.assert_geometry_kept()
+        self.assert_uvs(expected)
+
+    def test_sources_and_results_are_each_bounded_like_one_source(self):
+        total = sum(self.mesh._components(obj.data) for obj in self.sources)
+        copies = []
+        for obj in self.sources:
+            copy = obj.copy()
+            copy.data = obj.data.copy()
+            self.scene.collection.objects.link(copy)
+            copies.append(copy)
+        bpy.context.view_layer.update()
+        identity = Matrix.Identity(4)
+        # A retained selection at the bound accepts a result of the same size.
+        with patch.object(self.mesh, "MAX_COMPONENTS", total):
+            surface = self.mesh.match_sources(self.sources, tuple(copies), identity, "UV")
+        self.assertEqual(len(surface.source_offsets), 3)
+        with patch.object(self.mesh, "MAX_COMPONENTS", total - 1):
+            for sources, results in ((self.sources, copies[:1]), (self.sources[:1], copies)):
+                with self.assertRaisesRegex(self.mesh.MeshApplicationError, "component limit"):
+                    self.mesh.match_sources(sources, tuple(results), identity, "UV")
 
     def test_rig_from_one_merged_skin(self):
         weights = {}

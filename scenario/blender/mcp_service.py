@@ -211,9 +211,17 @@ def cli(argv):
     )
     stop_event = threading.Event()
     previous = {}
+    failures = {}
 
     def before_process():
-        usage.tick()
+        # Usage data must never end the command or drop its agents' connections.
+        try:
+            usage.tick()
+            failures.pop("usage", None)
+        except Exception as error:  # report each new failure once, as the pump does
+            if type(error).__name__ != failures.get("usage"):
+                failures["usage"] = type(error).__name__
+                log.exception("usage data upkeep failed")
         runtime.sync_catalog_context()
 
     # Background Blender shares usage only here, where this loop follows online access.

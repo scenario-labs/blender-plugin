@@ -505,6 +505,28 @@ def test_the_saved_id_is_checked_before_each_batch():
     assert len(sends.calls) == 1 and sends.payloads[0]["install_id"] == ID
 
 
+def test_a_send_in_flight_keeps_the_recorder_busy_with_an_empty_queue():
+    started, release = threading.Event(), threading.Event()
+
+    def blocked(payload):
+        started.set()
+        release.wait(5)
+
+    owner = recorder(Sends(hook=blocked))
+    assert not owner.busy()
+    owner.record("extension_started")
+    assert owner.busy()
+    flushing = threading.Thread(target=owner.flush)
+    flushing.start()
+    try:
+        assert started.wait(5)
+        assert owner.pending() == 0 and owner.busy()
+    finally:
+        release.set()
+        flushing.join(5)
+    assert not owner.busy()
+
+
 def test_permission_withdrawn_after_recording_discards_the_queue():
     online = Switch()
     sends = Sends()

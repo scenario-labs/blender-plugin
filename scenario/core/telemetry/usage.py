@@ -217,6 +217,7 @@ class UsageRecorder:
         self._wake = threading.Event()
         self._stopping = threading.Event()
         self._discarded = threading.Event()  # never cleared: a stopped recorder is not reused
+        self._in_flight = threading.Event()  # events taken off the queue and not yet settled
         self._last_send = -math.inf
         self._thread = None
 
@@ -237,6 +238,11 @@ class UsageRecorder:
     def pending(self):
         with self._lock:
             return len(self._queue)
+
+    def busy(self):
+        """Events are queued, or taken off the queue by a send that has not finished."""
+        with self._lock:
+            return bool(self._queue) or self._in_flight.is_set()
 
     def record(self, name, properties=None):
         """Queue one event; returns False when it is refused, sharing is off or offline."""
@@ -267,6 +273,14 @@ class UsageRecorder:
         with self._lock:
             queued = list(self._queue)
             self._queue.clear()
+            if queued:
+                self._in_flight.set()  # under the lock: busy() never sees a gap
+        try:
+            return self._send_batches(queued)
+        finally:
+            self._in_flight.clear()
+
+    def _send_batches(self, queued):
         oldest = self._clock() - MAX_AGE
         events = [event for at, event in queued if at >= oldest]
         sent = 0

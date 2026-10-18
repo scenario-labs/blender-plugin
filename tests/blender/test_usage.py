@@ -8,6 +8,7 @@ invoke and modal paths call the installed wrappers directly, as Blender would.
 """
 
 import pathlib
+import signal
 import tempfile
 import threading
 import time
@@ -251,6 +252,52 @@ class UsageTests(unittest.TestCase):
         self.assertGreaterEqual(waited, 0.9)
         self.assertLess(waited, 1.0 + 0.5)
         self.assertEqual(self.usage.TEARDOWN_SEND_WAIT, 1.0)
+
+    def test_unregistering_waits_for_a_send_in_flight_with_an_empty_queue(self):
+        started, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def blocked(url, payload, timeout):
+            started.set()
+            release.wait(10)
+            return 202
+
+        with online_access(True):
+            self.share()
+            self.usage.shutdown()
+            self.usage.activate(send=blocked)
+            recorder = self.usage.recorder()
+            for _ in range(self.events.FLUSH_SIZE):  # the sender thread takes them at once
+                recorder.record("extension_started")
+            self.assertTrue(started.wait(5))
+            self.assertEqual(recorder.pending(), 0)
+            begin = time.monotonic()
+            self.usage.shutdown()
+            waited = time.monotonic() - begin
+        self.assertGreaterEqual(waited, 0.9)
+        self.assertLess(waited, 1.5)
+
+    def test_a_usage_failure_never_ends_the_scenario_blender_command(self):
+        service = submodule("blender.mcp_service")
+        passes = 3
+
+        def serve(stop_event, interval=0.05, *, before_process=None):
+            for _ in range(passes):
+                before_process()
+
+        with (
+            patch.object(service.runtime, "online", return_value=True),
+            patch.object(service.runtime, "sync_catalog_context") as sync,
+            patch.object(self.usage, "tick", side_effect=RuntimeError("usage")) as tick,
+            patch.object(service, "McpServer") as constructor,
+            patch.object(signal, "signal", return_value=signal.SIG_DFL),
+            self.assertLogs("scenario.mcp", level="ERROR") as logged,
+        ):
+            constructor.return_value.serve_blocking.side_effect = serve
+            self.assertEqual(service.cli([]), 0)
+        self.assertEqual(tick.call_count, passes)
+        self.assertEqual(sync.call_count, passes)  # the catalog context still followed each pass
+        self.assertEqual(len(logged.records), 1)  # one report per new failure type
 
     def test_the_tick_turns_sharing_off_when_the_preference_changed_silently(self):
         """Revert to Saved Preferences changes the preference without its update callback."""

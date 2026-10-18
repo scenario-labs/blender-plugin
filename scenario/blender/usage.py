@@ -104,13 +104,13 @@ def unregister():
 
 
 def shutdown():
-    """Stop at unregister; a window session waits up to TEARDOWN_SEND_WAIT for queued events.
+    """Stop at unregister; a window session waits up to TEARDOWN_SEND_WAIT for the last send.
 
     Blender may exit right after, ending the daemon sender thread, so the wait is short
-    and only taken when sharing is on and there is something it may send.
+    and only taken when sharing is on and events are queued or a send is in flight.
     """
     recorder = _recorder
-    sending = recorder is not None and recorder.permitted() and recorder.pending() > 0
+    sending = recorder is not None and recorder.permitted() and recorder.busy()
     deactivate(wait=TEARDOWN_SEND_WAIT if sending else None)
 
 

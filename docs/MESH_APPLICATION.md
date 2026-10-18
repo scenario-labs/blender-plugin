@@ -873,14 +873,15 @@ destination may not solo an NLA track, which keeps the clip from playing.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
-animated bone's rest orientation relative to its parent, and in armature space,
-must therefore be within 15 degrees of the destination's. If it is not, world
-space is tried instead of armature space, as when an FBX import turns its
-armature object and its bones back. Armature space comes first, so a character
-turned in the scene plays the clip in its own facing. One provider re-rigging
-its own rigged character moved some joint rest orientations by up to about 11
-degrees, while a skeleton built in another pose or orientation differs by tens
-of degrees, which no correction makes right.
+animated bone's rest orientation relative to its parent must therefore be within
+15 degrees of the destination's, as must, in armature space, that of each
+animated bone whose parent is not animated, which carries any unkeyed ancestor's
+difference. If it is not, world space is tried instead of armature space, as
+when an FBX import turns its armature object and its bones back. Armature space
+comes first, so a character turned in the scene plays the clip in its own
+facing. One provider re-rigging its own rigged character moved some joint rest
+orientations by up to about 11 degrees, while a skeleton built in another pose
+or orientation differs by tens of degrees, which no correction makes right.
 
 Within that limit, copied keys are corrected so that each bone moves the mesh
 as the returned clip moves the returned character. With C the rotation from the

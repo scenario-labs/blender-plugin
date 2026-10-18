@@ -1659,6 +1659,28 @@ class AnimateResultTests(unittest.TestCase):
                     self.tearDown()
                     self.setUp()
 
+    def test_small_rest_differences_adding_up_down_a_keyed_chain_are_corrected(self):
+        from helpers import CHAIN, clip_deforms, deform_matrices
+
+        # Each returned joint is rolled about 8.6 degrees further than its parent,
+        # so the Head differs by more than the tolerance in armature space while
+        # every keyed bone stays within it relative to its parent.
+        bones = tuple((*bone, 0.15 * number) for number, bone in enumerate(CHAIN, 1))
+        self.use_clips(bones=bones)
+        result = self.apply(policy="ANIMATE")
+        self.assertGreater(result.rest_correction_deg, 15)
+        frames = range(1, 26, 8)
+        self.rig.animation_data.action = result.clips[0]
+        got = deform_matrices(self.scene, self.rig, frames)
+        want = clip_deforms(self.body, "Clip 1", frames, fps=self.scene.render.fps)
+        for frame in frames:
+            for name, matrix in want[frame].items():
+                mine = got[frame][name]
+                turned = mine.to_quaternion().rotation_difference(matrix.to_quaternion())
+                self.assertLess(_degrees(turned), 0.1, (frame, name))
+                offset = mine.translation - matrix.translation * 0.01
+                self.assertLess(offset.length, 1e-4, (frame, name))
+
     def test_rigs_that_would_not_play_the_clips_fail_without_mutation(self):
         # Constraints and drivers evaluate after the action and would override the
         # clips; a soloed NLA track keeps Blender from playing the active action.

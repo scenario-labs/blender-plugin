@@ -215,14 +215,19 @@ def _correctable(properties, rotation_mode):
 
 
 def _within(source, destination, animated, world):
-    """Whether each animated bone's parent-relative rest and correction are within tolerance.
+    """Whether each animated bone's rest is within tolerance in the chosen space.
 
-    Corrections are measured in the chosen space. Their check covers unkeyed ancestors, whose rest difference every
-    descendant's correction carries.
+    Every animated bone's rest is compared relative to its parent. An animated bone
+    whose parent is not animated is also compared absolutely: its correction
+    carries the rest difference of the unkeyed bones above it, which no key
+    corrects. Below it, corrections compose exactly along the keyed chain.
     """
     for name in animated:
         returned, existing = source.data.bones[name], destination.data.bones[name]
-        for measure in (_rest, _orientation):
+        measures = [_rest]
+        if returned.parent is not None and returned.parent.name not in animated:
+            measures.append(_orientation)
+        for measure in measures:
             pair = (measure(source, returned, world), measure(destination, existing, world))
             if 2 * math.acos(min(1.0, abs(pair[0].dot(pair[1])))) > REST_TOLERANCE:
                 return False
@@ -528,8 +533,8 @@ def apply_clips(target, objects):
     """Assign the first returned clip; keep it, the others and any previous action in muted NLA.
 
     The rig's action blending becomes Replace at full influence. Timeline settings
-    stay unchanged. Clip timing already follows the destination
-    frame rate through the shared staging scene.
+    stay unchanged. Clip timing already follows the destination frame rate through
+    the shared staging scene.
     """
     rig, clips, ratio, corrections, largest = validate_clips(target, objects)
     before = _state(rig)

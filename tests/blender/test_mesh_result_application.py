@@ -3524,6 +3524,39 @@ class PartsAndRemeshTests(unittest.TestCase):
         cap = [v.co for part in result.parts for v in part.data.vertices if abs(v.co.z) < 1e-3]
         self.assertGreater(len(cap), 400)
 
+    def test_capped_parts_fit_a_seam_split_glb_source(self):
+        # The source comes from a flat-shaded GLB: every face has its own corners.
+        self.use_ellipsoid()
+        copy = self.copy_source()
+        copy.parent = None
+        copy.matrix_world = Matrix()
+        path = Path(self.temp) / "source.glb"
+        self.export.export_glb(bpy.context, [copy], str(path))
+        data = copy.data
+        bpy.data.objects.remove(copy)
+        bpy.data.meshes.remove(data)
+        before = set(bpy.data.objects)
+        self.model._import(path)
+        (imported,) = (obj for obj in bpy.data.objects if obj not in before)
+        corners = len(self.source.data.loops)
+        self.source.data = imported.data
+        bpy.data.objects.remove(imported)
+        bpy.context.view_layer.update()
+        self.recapture()
+        self.assertEqual(len(self.source.data.vertices), corners)
+        copy = self.remeshed()
+        parts = self.split(copy, [int(p.center.z > 0) for p in copy.data.polygons])
+        for part in parts:
+            self.cap(part)
+        self.place(parts, Matrix.Translation((5, -2, 1)) @ Matrix.Scale(1 / 3, 4))
+        self.deliver(parts)
+        result = self.apply(policy="PARTS", result_to_source=self.fit())
+        self.assertEqual((result.parts_from, result.fitted_from), ("result_meshes", "WORLD"))
+        low, high = _bounds(v.co for part in result.parts for v in part.data.vertices)
+        expected = _bounds(self.geometry)
+        for a, b in zip(low + high, expected[0] + expected[1], strict=True):
+            self.assertAlmostEqual(a, b, delta=0.05)
+
     def test_interior_allowance_needs_a_closed_outward_source(self):
         moved = Matrix.Translation((5, -2, 1)) @ Matrix.Scale(1 / 3, 4)
         reason = "PARTS result does not match the source surface after fitting"

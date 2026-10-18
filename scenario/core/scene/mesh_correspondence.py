@@ -185,14 +185,50 @@ def bounds(mesh):
     return _used_bounds(mesh.co, set(mesh.loop_vertices))
 
 
+def _welded(co, tolerance):
+    """Per vertex, the lowest index of the vertices within `tolerance` of it.
+
+    Seam-split copies of one corner share a position; neighbouring grid cells
+    are searched too, so copies on either side of a cell edge still weld.
+    """
+    count = len(co) // 3
+    parent = list(range(count))
+
+    def root(vertex):
+        while parent[vertex] != vertex:
+            parent[vertex] = parent[parent[vertex]]
+            vertex = parent[vertex]
+        return vertex
+
+    cells = {}
+    for vertex in range(count):
+        point = co[3 * vertex : 3 * vertex + 3]
+        cell = tuple(math.floor(value / tolerance) for value in point)
+        for offset in range(27):
+            near = (
+                cell[0] + offset % 3 - 1,
+                cell[1] + offset // 3 % 3 - 1,
+                cell[2] + offset // 9 - 1,
+            )
+            for other in cells.get(near, ()):
+                if math.dist(point, co[3 * other : 3 * other + 3]) <= tolerance:
+                    a, b = root(vertex), root(other)
+                    parent[max(a, b)] = min(a, b)
+        cells.setdefault(cell, []).append(vertex)
+    return [root(vertex) for vertex in range(count)]
+
+
 def encloses(mesh):
     """Whether `mesh` bounds a volume with outward faces.
 
-    Every face edge, in winding order, must meet its reverse in exactly one other
-    face (closed and consistently wound), and the signed volume must be positive.
-    Only then does lying behind the nearest face mean lying inside.
+    Vertices are welded by position first (`position_tolerance`), so a source
+    split at UV or normal seams still counts as closed. Every face edge, in
+    winding order, must then meet its reverse in exactly one other face (closed
+    and consistently wound), and the signed volume must be positive. Only then
+    does lying behind the nearest face mean lying inside.
     """
-    loops = mesh.loop_vertices
+    welded = _welded(mesh.co, position_tolerance(mesh.co))
+    loops = [welded[vertex] for vertex in mesh.loop_vertices]
     directed = {}
     volume = 0.0
     for start, total in zip(mesh.polygon_starts, mesh.polygon_totals, strict=True):

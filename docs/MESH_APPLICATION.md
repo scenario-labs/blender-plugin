@@ -115,10 +115,11 @@ faces use count. Distances are fractions of the source's bounding-box diagonal:
 
 Copied parts may close each part with hidden contact or cap faces, so a part
 vertex inside the source volume also passes: it lies behind the nearest source
-face by that face's normal. This applies only to a source that encloses a volume,
-every face edge meeting its reverse in one other face and the signed volume
-positive; otherwise part vertices must lie near the surface. Every sampled
-source vertex must still lie near a part.
+face by that face's normal. This applies only to a source that encloses a volume:
+after welding vertices at the same position, as UV and normal seams split them,
+every face edge must meet its reverse in one other face and the signed volume
+must be positive; otherwise part vertices must lie near the surface. Every
+sampled source vertex must still lie near a part.
 
 Provider remeshes measured within 0.7% of a source (1.8% for one delivered in
 object-local coordinates), and remeshed parts with interior caps had 2.2% of

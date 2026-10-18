@@ -417,3 +417,22 @@ def test_encloses_needs_a_closed_outward_surface():
     assert not mc.encloses(arrays(CUBE_POSITIONS, CUBE_FACES[1:]))
     flipped = [CUBE_FACES[0][::-1], *CUBE_FACES[1:]]
     assert not mc.encloses(arrays(CUBE_POSITIONS, flipped))
+
+
+def seam_split(faces):
+    """Give every face its own copies of its corners, as UV and normal seams do."""
+    positions, split = [], []
+    for face in faces:
+        split.append(tuple(range(len(positions), len(positions) + len(face))))
+        positions.extend(CUBE_POSITIONS[vertex] for vertex in face)
+    return positions, split
+
+
+def test_encloses_welds_seam_split_corners_by_position():
+    assert mc.encloses(arrays(*seam_split(CUBE_FACES)))
+    assert not mc.encloses(arrays(*seam_split(CUBE_FACES[1:])))
+    assert not mc.encloses(arrays(*seam_split([face[::-1] for face in CUBE_FACES])))
+    # Copies a hair apart, within the matching tolerance, still weld.
+    positions, faces = seam_split(CUBE_FACES)
+    nudged = [(x + 1e-7 * (index % 3), y, z) for index, (x, y, z) in enumerate(positions)]
+    assert mc.encloses(arrays(nudged, faces))

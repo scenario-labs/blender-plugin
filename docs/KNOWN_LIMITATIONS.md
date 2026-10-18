@@ -158,12 +158,11 @@ full render-lane desktop acceptance.
   interaction with the candidate dialog and live service acceptance are not
   established yet; the checks are synthetic installed tests.
 - Remote cancellation is offered only for jobs Scenario reports as `inference`,
-  the only type its job action reference documents as cancellable. Captured
-  model generations report `custom`, so Blender does not cancel them; they
-  finish or fail on Scenario and stay recoverable. Every job of a paid desktop
-  pass reported `custom`, or `workflow` for a workflow. Which lanes return
-  `inference` and live cancellation acceptance continue in
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+  the only type its job action reference documents as cancellable. No Blender
+  lane creates such jobs: model generations report `custom` and workflows
+  `workflow`, and Scenario refuses a cancel request for a running `custom` job.
+  Blender therefore offers no Cancel today; jobs finish or fail on Scenario and
+  stay recoverable.
 - Existing trained LoRAs and compositions are offered through the model
   picker's Trained chip and local MCP; training is out of scope. A private
   composition, the desktop recheck of project defaults and restart persistence,

@@ -7,7 +7,7 @@ import { createServer, type IncomingMessage, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, beforeEach, describe, test } from "node:test";
 
-import middleware, { config, ORIGIN } from "../../tools/site_proxy/middleware.ts";
+import middleware, { config, ORIGIN, rememberedClients } from "../../tools/site_proxy/middleware.ts";
 
 const BLENDER = "Blender/5.0.1 (Darwin arm64; cycle=release)";
 const BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Firefox/140.0";
@@ -21,8 +21,10 @@ let received: Captured[] = [];
 let respond: (request: IncomingMessage, reply: (status: number) => void) => void;
 // Repository indexes served by the stand-in for GitHub Pages, one per test origin.
 const indexes = new Map<string, Index>();
-// The running surveys the stand-in for PostHog lists, and the reads of that list.
+// The running surveys the stand-in for PostHog lists, after a delay (never when
+// infinite), and the reads of that list.
 let surveyList: { status: number; body: unknown };
+let surveyDelay = 0;
 let surveyReads: string[] = [];
 const indexReads = new Map<string, number>();
 let origins = 0;
@@ -48,8 +50,9 @@ before(async () => {
     }
     if (request.method === "GET" && path.startsWith("/api/surveys/")) {
       surveyReads.push(path);
-      const body = JSON.stringify(surveyList.body);
-      response.writeHead(surveyList.status, { "content-type": "application/json" }).end(body);
+      const { status, body } = surveyList;
+      const answer = () => response.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+      if (Number.isFinite(surveyDelay)) setTimeout(answer, surveyDelay);
       return;
     }
     received.push({ path, body: JSON.parse(await read(request)) });
@@ -315,12 +318,13 @@ let tokens = 0;
 
 // A new client address, so that no request inherits another test's rate limit.
 function newAddress() {
-  address = `2001:db8::${(++clients).toString(16)}`;
+  address = `2001:db8:${(++clients).toString(16)}::1`;
 }
 
 beforeEach(() => {
   newAddress();
   surveyReads = [];
+  surveyDelay = 0;
   launch();
   process.env.POSTHOG_FEEDBACK_SURVEY_ID = SURVEY;
 });
@@ -698,6 +702,37 @@ describe("usage events", () => {
     const logged = warn.mock.calls.map((call) => String(call.arguments[0]));
     assert.deepEqual(logged, ["Usage events not relayed: HTTP 500"]);
   });
+
+  test("treats __proto__ keys as unknown keys, never as a prototype", async () => {
+    const timestamp = at();
+    const tool = `"tool":"generate","outcome":"ok","duration_ms":5`;
+    const event = (rest: string) => `{"event":${rest},"timestamp":"${timestamp}"`;
+    const top = `{"install_id":"${INSTALL}","events":[${event(`"extension_started"`)}}],"__proto__":{}}`;
+    const nested = `{"install_id":"${INSTALL}",
+      "context":{"__proto__":{"os":"macos","extension_version":"9.9.9"},"arch":"x64"},
+      "events":[
+        ${event(`"mcp_tool_called","properties":{${tool}}`)}},
+        ${event(`"extension_started","properties":{"__proto__":{}}`)}},
+        ${event(`"operator_used","properties":{"__proto__":{"operator":"scenario.generate","outcome":"finished"}}`)}},
+        ${event(`"operator_used","properties":{"operator":"scenario.generate","outcome":"error","__proto__":{"error_type":"E"}}`)}},
+        ${event(`"extension_started","__proto__":{}`)}}
+      ]}`;
+
+    const refused = await post("/telemetry/v1/events", top);
+    const result = await post("/telemetry/v1/events", nested);
+
+    assert.equal(refused.status, 400);
+    assert.deepEqual(result.body, { accepted: 1, dropped: 4 });
+    assert.deepEqual(batch()[0].properties, {
+      ...MCP_SERVER,
+      $mcp_tool_name: "generate",
+      $mcp_is_error: false,
+      $mcp_duration_ms: 5,
+      outcome: "ok",
+      arch: "x64",
+      ...ANONYMOUS,
+    });
+  });
 });
 
 describe("relay requests", () => {
@@ -830,6 +865,82 @@ describe("relay requests", () => {
       received.map(({ path }) => path),
       ["/batch/"],
     );
+  });
+
+  /** The status of a request from one address with no project token: 503 when admitted, 429 when limited. */
+  async function admitted(endpoint: "events" | "feedback", headers: HeaderValues): Promise<number> {
+    delete process.env.POSTHOG_PROJECT_TOKEN;
+    return (await post(`/telemetry/v1/${endpoint}`, {}, headers)).status;
+  }
+
+  test("limits an IPv6 /64 prefix as one address, whatever its written form", async () => {
+    const statuses: number[] = [];
+    for (let i = 1; i <= 70; i += 1) {
+      const host = i.toString(16);
+      const forms = [
+        `2001:db8:ffff:1::${host}`,
+        `2001:0DB8:FFFF:0001:0000:0000:0000:${host}`,
+        `[2001:db8:ffff:1::${host}]`,
+        `2001:db8:ffff:1:${host}::`,
+        `2001:db8:ffff:1::${host}%eth0`,
+      ];
+      statuses.push(await admitted("events", { "x-real-ip": forms[i % forms.length] }));
+    }
+
+    assert.deepEqual(statuses, [...Array(60).fill(503), ...Array(10).fill(429)]);
+    assert.equal(await admitted("events", { "x-real-ip": "2001:db8:ffff:2::1" }), 503);
+  });
+
+  test("limits an IPv4-mapped IPv6 address as its IPv4 address", async () => {
+    const statuses: number[] = [];
+    for (const ip of ["192.0.2.7", "192.0.2.7", "192.0.2.7", "::ffff:192.0.2.7", "::FFFF:c000:207"]) {
+      statuses.push(await admitted("feedback", { "x-real-ip": ip }));
+    }
+
+    assert.deepEqual(statuses, Array(5).fill(503));
+    assert.equal(await admitted("feedback", { "x-real-ip": "0:0:0:0:0:ffff:192.0.2.7" }), 429);
+    assert.equal(await admitted("feedback", { "x-real-ip": "::ffff:192.0.2.8" }), 503);
+  });
+
+  test("keys the limit by x-real-ip before x-forwarded-for", async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      const forwarded = i < 5 ? "198.51.100.1" : "198.51.100.2";
+      statuses.push(await admitted("feedback", { "x-real-ip": "198.51.100.9", "x-forwarded-for": forwarded }));
+    }
+
+    assert.deepEqual(statuses, [...Array(5).fill(503), 429]);
+    assert.equal(
+      await admitted("feedback", { "x-real-ip": undefined, "x-forwarded-for": "198.51.100.1, 10.0.0.1" }),
+      503,
+    );
+  });
+
+  test("forgets addresses idle for two minutes", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-20T00:00:00Z") });
+    for (const ip of ["192.0.2.21", "192.0.2.22", "192.0.2.23"]) await admitted("events", { "x-real-ip": ip });
+    assert.ok(rememberedClients() >= 3);
+
+    t.mock.timers.tick(120_000);
+    await admitted("events", { "x-real-ip": "192.0.2.24" });
+
+    assert.equal(rememberedClients(), 1);
+  });
+
+  test("remembers at most 10,000 addresses, forgetting the least recent first", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-21T00:00:00Z") });
+    const first = { "x-real-ip": "192.0.2.30" };
+    const statuses: number[] = [];
+    for (let i = 0; i < 61; i += 1) statuses.push(await admitted("events", first));
+    assert.deepEqual(statuses.slice(59), [503, 429]);
+    assert.equal(rememberedClients(), 1);
+
+    for (let i = 0; i < 10_000; i += 1) {
+      await admitted("events", { "x-real-ip": `10.${i >> 16}.${(i >> 8) & 255}.${i & 255}` });
+    }
+
+    assert.equal(rememberedClients(), 10_000);
+    assert.equal(await admitted("events", first), 503);
   });
 });
 
@@ -1016,12 +1127,19 @@ describe("feedback", () => {
     assert.deepEqual(surveyReads, []);
   });
 
-  test("counts message length in characters, after trimming", async () => {
+  test("accepts a message of up to 5000 code points with a non-blank character, and sends it trimmed", async () => {
     newToken();
+    const emoji = "\u{1F600}";
+    const messages = [emoji.repeat(5000), `${" ".repeat(4999)}x`, ` ${"x".repeat(5000)}`, emoji.repeat(5001)];
+    const statuses: number[] = [];
+    for (const message of messages) {
+      newAddress();
+      statuses.push((await sendFeedback({ message })).status);
+    }
 
-    const emoji = await sendFeedback({ message: `  ${"\u{1F600}".repeat(5000)}  ` });
-
-    assert.equal(emoji.status, 202);
+    assert.deepEqual(statuses, [202, 202, 400, 400]);
+    const sent = received.map(({ body }) => (body.properties as Record<string, unknown>)["$survey_response_q-improve"]);
+    assert.deepEqual(sent, [emoji.repeat(5000), "x"]);
   });
 
   test("tells the extension when PostHog rejects the feedback", async (t) => {
@@ -1037,15 +1155,81 @@ describe("feedback", () => {
     assert.deepEqual(logged, ["Feedback not relayed: HTTP 500"]);
   });
 
-  test("gives up on a PostHog that does not answer the feedback", async (t) => {
+  test("answers within four seconds when PostHog is slow to list surveys and then does not answer", async (t) => {
     t.mock.method(console, "warn", () => {});
     newToken();
+    surveyDelay = 1500;
     respond = () => {};
-    const started = Date.now();
+    const started = performance.now();
 
     const result = await sendFeedback({ rating: 3 });
 
+    // The capture gets what remains of the deadline, not a timeout of its own.
+    const elapsed = performance.now() - started;
     assert.equal(result.status, 502);
-    assert.ok(Date.now() - started < 5000);
+    assert.ok(elapsed >= 3500 && elapsed < 4400, `${elapsed} ms`);
+  });
+
+  test("gives up on a survey list that does not arrive after two seconds", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    newToken();
+    surveyDelay = Infinity;
+    const started = performance.now();
+
+    const result = await sendFeedback({ rating: 3 });
+
+    const elapsed = performance.now() - started;
+    assert.equal(result.status, 503);
+    assert.ok(elapsed >= 1900 && elapsed < 3000, `${elapsed} ms`);
+    assert.deepEqual(received, []);
+  });
+
+  test("remembers a failed survey read for 30 seconds when it has nothing to fall back on", async (t) => {
+    t.mock.method(console, "warn", () => {});
+    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-18T12:00:00Z") });
+    newToken();
+    surveyList = { status: 500, body: {} };
+    const statuses: number[] = [];
+    const send = async () => {
+      newAddress();
+      statuses.push((await sendFeedback({ rating: 4 })).status);
+    };
+
+    await send();
+    launch();
+    t.mock.timers.tick(29_000);
+    await send();
+    assert.equal(surveyReads.length, 1);
+    t.mock.timers.tick(1_000);
+    await send();
+
+    assert.deepEqual(statuses, [503, 503, 202]);
+    assert.equal(surveyReads.length, 2);
+  });
+
+  test("keeps at most 16 survey lists, forgetting the oldest", async () => {
+    const tokens = Array.from({ length: 17 }, () => newToken());
+    const send = async (token: string) => {
+      process.env.POSTHOG_PROJECT_TOKEN = token;
+      newAddress();
+      assert.equal((await sendFeedback({ rating: 5 })).status, 202);
+    };
+
+    for (const token of tokens.slice(0, 16)) await send(token);
+    await send(tokens[0]);
+    assert.equal(surveyReads.length, 16);
+    await send(tokens[16]);
+    await send(tokens[0]);
+
+    assert.equal(surveyReads.length, 18);
+    assert.equal(surveyReads.at(-1), `/api/surveys/?token=${tokens[0]}`);
+  });
+
+  test("refuses a __proto__ key at the top level", async () => {
+    newToken();
+
+    const result = await post("/telemetry/v1/feedback", `{"submission_id":"${SUBMISSION}","rating":5,"__proto__":{}}`);
+
+    assert.equal(result.status, 400);
   });
 });

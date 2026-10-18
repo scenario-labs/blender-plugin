@@ -140,7 +140,11 @@ type Endpoint = "events" | "feedback";
 type Usage = { event: string; properties: Properties };
 
 const MAX_BODY = 64 * 1024;
-const FEEDBACK_TIMEOUT_MS = 3000;
+// Feedback answers within one deadline, before the extension's own timeout. The
+// survey read gets the usual timeout, the capture what remains, but never less
+// than its floor.
+const FEEDBACK_DEADLINE_MS = 4000;
+const MIN_CAPTURE_MS = 500;
 // Per instance and per client address; a Vercel Firewall rule is the durable limit.
 const RATE_LIMITS: Record<Endpoint, number> = { events: 60, feedback: 5 };
 const RATE_WINDOW_MS = 60_000;
@@ -149,6 +153,8 @@ const MAX_CLIENTS = 10_000;
 const MAX_EVENT_AGE_MS = 7 * 24 * 3600_000;
 const MAX_EVENT_AHEAD_MS = 3600_000;
 const SURVEY_TTL_MS = 5 * 60_000;
+// A failed read with nothing to fall back on is retried after this long.
+const SURVEY_RETRY_MS = 30_000;
 const MAX_SURVEY_SOURCES = 16;
 
 const JSON_TYPE = /^application\/json\s*(?:;\s*charset="?utf-8"?\s*)?$/i;
@@ -193,7 +199,8 @@ interface Feedback {
 
 // Least recently seen first, so the oldest entries are the first to go.
 const rateWindows = new Map<string, RateWindow>();
-const surveySources = new Map<string, { surveys: Map<string, Survey>; at: number }>();
+// Surveys read per host and token; none when the last read failed.
+const surveySources = new Map<string, { surveys?: Map<string, Survey>; at: number }>();
 
 function isObject(value: unknown): value is Json {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -233,10 +240,49 @@ function refuse(status: number, error: string, headers?: Record<string, string>)
   return reply(status, { error }, headers);
 }
 
-/** The client's address, used only as an in-memory rate-limit key. */
-function clientAddress(request: Request): string {
+/** The eight groups of an IPv6 address, or undefined for any other text. */
+function ipv6Groups(text: string): number[] | undefined {
+  // An embedded IPv4 tail, as in ::ffff:192.0.2.1, is the last two groups.
+  const v4 = /^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(text);
+  let hex = text;
+  if (v4) {
+    const bytes = v4.slice(2).map(Number);
+    if (bytes.some((byte) => byte > 255)) return undefined;
+    hex = `${v4[1]}${((bytes[0] << 8) | bytes[1]).toString(16)}:${((bytes[2] << 8) | bytes[3]).toString(16)}`;
+  }
+  const halves = hex.split("::");
+  if (halves.length > 2) return undefined;
+  const [left, right] = halves.map((half) => (half === "" ? [] : half.split(":")));
+  // "::" stands for at least one zero group.
+  const zeros = right ? 8 - left.length - right.length : 0;
+  const groups = [...left, ...Array<string>(Math.max(zeros, 0)).fill("0"), ...(right ?? [])];
+  if (groups.length !== 8 || (right && zeros < 1)) return undefined;
+  if (!groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return undefined;
+  return groups.map((group) => parseInt(group, 16));
+}
+
+/**
+ * The rate-limit key of the client's address, kept only in memory: an IPv4
+ * address as is, an IPv6 address by its /64 prefix, which one host can rotate
+ * through freely.
+ */
+function clientKey(request: Request): string {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",", 1)[0];
-  return (request.headers.get("x-real-ip") || forwarded || "").trim().slice(0, 64);
+  const address = (request.headers.get("x-real-ip") || forwarded || "").trim().slice(0, 64);
+  // Without brackets or a zone, as in [fe80::1%eth0].
+  const bare = address.replace(/^\[(.*)\]$/, "$1").split("%", 1)[0];
+  const groups = bare.includes(":") ? ipv6Groups(bare.toLowerCase()) : undefined;
+  if (!groups) return address;
+  if (groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff) {
+    return [groups[6] >> 8, groups[6] & 255, groups[7] >> 8, groups[7] & 255].join(".");
+  }
+  const prefix = groups.slice(0, 4).map((group) => group.toString(16));
+  return `${prefix.join(":")}::/64`;
+}
+
+/** How many client keys the rate limit remembers, for tests. */
+export function rememberedClients(): number {
+  return rateWindows.size;
 }
 
 /** A sliding-window counter per endpoint and address, in this instance's memory only. */
@@ -441,9 +487,9 @@ function readFeedback(body: Json): Feedback | undefined {
     feedback.rating = rating;
   }
   if (has(body, "message")) {
-    if (typeof message !== "string") return undefined;
+    if (typeof message !== "string" || characters(message) > 5000) return undefined;
     const text = message.trim();
-    if (text.length === 0 || characters(text) > 5000) return undefined;
+    if (text.length === 0) return undefined;
     feedback.message = text;
   }
   if (has(body, "email")) {
@@ -471,12 +517,12 @@ function readSurveys(value: unknown): Map<string, Survey> | undefined {
   return surveys;
 }
 
-/** Running surveys, cached; a failed read keeps the last ones read. */
+/** Running surveys, cached; a failed read keeps the last ones read, or is itself remembered. */
 async function runningSurveys(host: string, token: string): Promise<Map<string, Survey> | undefined> {
   const key = `${host} ${token}`;
   const cached = surveySources.get(key);
   const now = Date.now();
-  if (cached && now - cached.at < SURVEY_TTL_MS) return cached.surveys;
+  if (cached && now - cached.at < (cached.surveys ? SURVEY_TTL_MS : SURVEY_RETRY_MS)) return cached.surveys;
   let surveys: Map<string, Survey> | undefined;
   try {
     const response = await fetch(`${host}/api/surveys/?token=${encodeURIComponent(token)}`, {
@@ -489,7 +535,6 @@ async function runningSurveys(host: string, token: string): Promise<Map<string, 
     console.warn(`Feedback survey not read: ${(error as Error).name}`);
   }
   surveys ??= cached?.surveys;
-  if (!surveys) return undefined;
   surveySources.delete(key);
   surveySources.set(key, { surveys, at: now });
   for (const other of surveySources.keys()) {
@@ -516,7 +561,13 @@ function surveyAnswers(survey: Survey, feedback: Feedback): Properties {
 }
 
 /** Sends the feedback as a response to the configured API survey and waits for PostHog. */
-async function relayFeedback(request: Request, body: Json, token: string, surveyId: string): Promise<Response> {
+async function relayFeedback(
+  request: Request,
+  body: Json,
+  token: string,
+  surveyId: string,
+  started: number,
+): Promise<Response> {
   const feedback = readFeedback(body);
   if (!feedback) return refuse(400, "bad_request");
   const host = postHogHost();
@@ -536,12 +587,14 @@ async function relayFeedback(request: Request, body: Json, token: string, survey
     ...anonymous(request),
   };
   const distinctId = feedback.installId ?? feedback.submissionId;
+  // What remains of the deadline, in whole milliseconds as AbortSignal.timeout requires.
+  const remaining = Math.round(FEEDBACK_DEADLINE_MS - (performance.now() - started));
   try {
     const response = await fetch(`${host}/i/v0/e/`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ api_key: token, event: "survey sent", distinct_id: distinctId, properties }),
-      signal: AbortSignal.timeout(FEEDBACK_TIMEOUT_MS),
+      signal: AbortSignal.timeout(Math.max(MIN_CAPTURE_MS, remaining)),
     });
     if (response.ok) return reply(202, { ok: true });
     console.warn(`Feedback not relayed: HTTP ${response.status}`);
@@ -553,6 +606,7 @@ async function relayFeedback(request: Request, body: Json, token: string, survey
 
 /** Answers every /telemetry/ request itself; cheap checks run before the body is read. */
 async function relay(request: Request, path: string, context: RequestContext): Promise<Response> {
+  const started = performance.now();
   const endpoint =
     path === "/telemetry/v1/events" ? "events" : path === "/telemetry/v1/feedback" ? "feedback" : undefined;
   if (!endpoint) return refuse(404, "not_found");
@@ -560,7 +614,7 @@ async function relay(request: Request, path: string, context: RequestContext): P
   // Any other type also makes a browser send a preflight, which gets no CORS headers.
   if (!JSON_TYPE.test(request.headers.get("content-type") ?? "")) return refuse(415, "unsupported_media_type");
   if (!(request.headers.get("user-agent") ?? "").startsWith("ScenarioBlender/")) return refuse(400, "bad_request");
-  if (!admit(endpoint, clientAddress(request))) return refuse(429, "rate_limited");
+  if (!admit(endpoint, clientKey(request))) return refuse(429, "rate_limited");
   const token = env("POSTHOG_PROJECT_TOKEN");
   const surveyId = env("POSTHOG_FEEDBACK_SURVEY_ID") ?? "";
   if (!token || (endpoint === "feedback" && !surveyId)) return refuse(503, "unavailable");
@@ -575,7 +629,7 @@ async function relay(request: Request, path: string, context: RequestContext): P
   const body = parseObject(text);
   if (!body) return refuse(400, "bad_request");
   if (endpoint === "events") return relayEvents(request, body, token, context);
-  return relayFeedback(request, body, token, surveyId);
+  return relayFeedback(request, body, token, surveyId, started);
 }
 
 export default function middleware(request: Request, context: RequestContext): Promise<Response> | undefined {

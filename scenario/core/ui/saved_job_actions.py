@@ -398,10 +398,10 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
     if action == "recover_blockout":
         return _blockout(review, job)
     if action == "review_step":
-        row = _status(action, action, *STATUS_ACTIONS[action])
-        if workflow is None or workflow.revision != dict(job)["expected_revision"]:
-            return (row,)
-        return (row, *_review_steps(workflow.steps, job))
+        rows = [_status(action, action, *STATUS_ACTIONS[action])]
+        if workflow is not None and workflow.revision == dict(job)["expected_revision"]:
+            rows.extend(_review_steps(workflow.steps, job))
+        return tuple(rows)
     if action in STATUS_ACTIONS:
         return (_status(action, action, *STATUS_ACTIONS[action]),)
     if action == "link_cloud_job":

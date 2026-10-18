@@ -3423,6 +3423,38 @@ class SeveralSourcesTests(unittest.TestCase):
         self.result(self.islands(expected))
         self.assert_applied_to(self.apply(), expected)
 
+    def test_stacked_crates_sharing_a_face_apply_together(self):
+        # Two equal crates, the upper one's bottom face on the lower one's top face.
+        corners = [(x, y, z) for z in (0, 2) for y in (0, 2) for x in (0, 2)]
+        faces = [(0, 2, 3, 1), (4, 5, 7, 6), (0, 1, 5, 4), (2, 6, 7, 3), (0, 4, 6, 2), (1, 3, 7, 5)]
+        crates = []
+        for name, z in (("Lower crate", 0), ("Upper crate", 2)):
+            data = bpy.data.meshes.new(name)
+            data.from_pydata(corners, [], faces)
+            data.uv_layers.new()
+            data.update()
+            obj = bpy.data.objects.new(name, data)
+            self.scene.collection.objects.link(obj)
+            obj.location.z = z
+            crates.append(obj)
+        bpy.context.view_layer.update()
+        self.sources = tuple(crates)
+        self.capture()
+        for policy in ("UV", "RETEXTURE"):
+            with self.subTest(policy=policy):
+                expected = {}
+                islands = self.islands(expected)
+
+                def change(index, copy, islands=islands):
+                    material = bpy.data.materials.new(f"Crate {index}")
+                    copy.data.materials.clear()
+                    copy.data.materials.append(material)
+                    islands(index, copy)
+
+                self.result(change)
+                self.assert_applied_to(self.apply(policy=policy), expected)
+                self.capture()
+
     def assert_applied_to(self, result, expected):
         self.assertEqual(result.sources, self.sources)
         self.assert_geometry_kept()

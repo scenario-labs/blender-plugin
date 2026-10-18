@@ -274,12 +274,21 @@ def _tiles(local, total):
     return boundary == total and len(local) == diagonals // 2 + 1
 
 
+def _winds(option, starts, totals):
+    """Whether resolved corners keep the source winding: one advance around the polygon."""
+    polygon, resolved = option
+    size, base = totals[polygon], starts[polygon]
+    local = [loop - base for loop in resolved]
+    total = len(local)
+    return sum((local[(n + 1) % total] - local[n]) % size for n in range(total)) == size
+
+
 def match(source, result, tolerance):
     """Prove `result` (positions already in source-local space) is the source surface.
 
     Returns per-loop and per-polygon indices into the source. Coincident source
-    vertices are resolved only by the one source polygon a result face lies in.
-    `tolerance` is one radius, or one per source vertex for joined sources.
+    vertices are resolved only by the one source polygon a result face lies in
+    with the same winding. `tolerance` is one radius, or one per source vertex for joined sources.
     Loose source geometry carries no corners and is not matched.
     """
     vertex_count = len(source.co) // 3
@@ -334,19 +343,19 @@ def match(source, result, tolerance):
                 else:
                     if len(set(resolved)) == total:
                         options.append((polygon, resolved))
-        if len(options) != 1:
-            if options or unclear:
+        # Coincident faces of opposite winding, such as touching crate faces, are
+        # told apart by winding; faces alike in winding stay ambiguous.
+        wound = [option for option in options if _winds(option, starts, totals)]
+        if len(wound) != 1:
+            if wound or (not options and unclear):
                 ambiguous += 1
+            elif options:
+                reversed_faces += 1
             else:
                 outside += 1
             continue
-        polygon, resolved = options[0]
-        size, base = totals[polygon], starts[polygon]
-        local = [loop - base for loop in resolved]
-        # Corners keep the source winding when they advance once around the polygon.
-        if sum((local[(n + 1) % total] - local[n]) % size for n in range(total)) != size:
-            reversed_faces += 1
-            continue
+        polygon, resolved = wound[0]
+        local = [loop - starts[polygon] for loop in resolved]
         polygons[face] = polygon
         loops[start : start + total] = array("i", resolved)
         by_polygon.setdefault(polygon, []).append(local)

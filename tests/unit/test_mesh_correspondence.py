@@ -310,3 +310,24 @@ def test_dense_small_source_beside_a_huge_one_scans_only_its_own_cells():
     found, unmatched = mc._candidates(source, range(len(radii)), co, range(len(radii)), radii)
     assert unmatched == 0
     assert all(found[vertex] == [vertex] for vertex in range(len(radii)))
+
+
+# Two coincident quads, each with its own vertices, like touching crate faces.
+CARD = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)] * 2
+
+
+def test_opposite_winding_coincident_faces_resolve_by_winding():
+    source = arrays(CARD, [(0, 1, 2, 3), (7, 6, 5, 4)])
+    # The result lists the faces swapped, each split and triangulated.
+    positions, faces = split(CARD, [(7, 6, 5), (7, 5, 4), (0, 1, 2), (0, 2, 3)])
+    found = run(positions, faces, source=source)
+    assert list(found.polygons) == [1, 1, 0, 0]
+    # A crossed face matching neither winding keeps the reversed reason.
+    with pytest.raises(mc.CorrespondenceError, match="1 face with reversed or crossed winding"):
+        run(CARD, [(0, 1, 2, 3), (7, 6, 5, 4), (0, 2, 1, 3)], source=source)
+
+
+def test_same_winding_coincident_faces_stay_ambiguous():
+    source = arrays(CARD, [(0, 1, 2, 3), (4, 5, 6, 7)])
+    with pytest.raises(mc.CorrespondenceError, match="2 faces on ambiguous coincident"):
+        run(CARD, [(0, 1, 2, 3), (4, 5, 6, 7)], source=source)

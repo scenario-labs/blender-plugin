@@ -63,7 +63,9 @@ and reordered vertices and faces.
 - Each result face must lie inside exactly one source face with the same
   winding. The result faces of each source face must tile it exactly: no
   missing, extra or overlapping faces. Coincident source vertices are told apart
-  only by that face; duplicate overlapping faces are ambiguous and fail.
+  only by that face. Coincident faces of opposite winding, such as touching
+  crate faces, are told apart by winding; those of the same winding are
+  ambiguous and fail.
 - Every split copy of one source face corner must carry the same UV within 1e-5
   (relative above 1). A seam inside a source face, such as across a quad's
   diagonal, cannot be represented on that face and fails. RETEXTURE also needs

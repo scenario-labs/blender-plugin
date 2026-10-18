@@ -14,7 +14,7 @@ import threading
 import unittest
 import urllib.error
 from types import SimpleNamespace
-from unittest.mock import ANY, Mock, patch
+from unittest.mock import Mock, call, patch
 
 import bpy
 from helpers import addon, addon_name, online_access, submodule
@@ -80,10 +80,22 @@ class FeedbackTests(unittest.TestCase):
         message = patch.object(self.runtime.state, "last_message", "")
         message.start()
         self.addCleanup(message.stop)
+        preferences = bpy.context.preferences
+        self.addCleanup(setattr, preferences, "is_dirty", preferences.is_dirty)
 
     def send(self, **fields):
         with online_access(True):
             return bpy.ops.scenario.send_feedback(**fields)
+
+    def called(self, rating="NONE", message="", email="", invoked=False):
+        """The operator as execute sees it: a script's call, or Send in the dialog (invoked)."""
+        return SimpleNamespace(
+            rating=rating,
+            message=message,
+            email=email,
+            options=SimpleNamespace(is_invoke=invoked),
+            report=Mock(),
+        )
 
     def sent(self):
         self.assertEqual(len(self.transport.calls), 1)
@@ -106,9 +118,47 @@ class FeedbackTests(unittest.TestCase):
             self.assertTrue(properties[name].is_skip_save, name)
         # Never logged as a Python call in the Info editor, nor repeated without the dialog.
         self.assertFalse({"REGISTER", "UNDO"} & set(operator.bl_options), operator.bl_options)
+        # Nor are its fields' edits: Blender logs an edit only for data an ID owns, as the
+        # window manager owns operator properties, so the dialog draws controls on the
+        # preferences, which no ID owns, and in plain text (PASSWORD is not logged either).
+        last = bpy.context.window_manager.operator_properties_last("scenario.send_feedback")
+        self.assertIsInstance(last.id_data, bpy.types.WindowManager)
+        self.assertIsNone(self.prefs.id_data)
+        controls = self.prefs.bl_rna.properties
+        for name, control in self.feedback.CONTROLS.items():
+            self.assertEqual(controls[control].name, properties[name].name)
+            self.assertEqual(controls[control].description, properties[name].description)
+            self.assertEqual(controls[control].subtype, "NONE")
+        for item in rating.enum_items:
+            self.prefs.feedback_rating = item.identifier
+            self.assertEqual(self.prefs.feedback_rating, item.identifier)
+            self.assertEqual(self.feedback.draft()["rating"], item.identifier)
         icons = bpy.types.UILayout.bl_rna.functions["label"].parameters["icon"].enum_items
         for icon in ("HEART", "FUND", "SORTTIME", "CHECKMARK", "ERROR", "INFO"):
             self.assertIn(icon, icons)
+
+    def test_the_dialog_controls_edit_the_kept_text_and_store_nothing(self):
+        message, email = "feedback-fixture-message-unique", "feedback-fixture@example.com"
+        self.prefs.feedback_rating = "4"
+        self.prefs.feedback_message = message
+        self.prefs.feedback_email = email
+        self.assertEqual(self.feedback.draft(), {"rating": "4", "message": message, "email": email})
+        # With get and set they keep no ID property: saved preferences hold none of it.
+        bpy.ops.wm.save_userpref()
+        raw = (pathlib.Path(bpy.utils.user_resource("CONFIG")) / "userpref.blend").read_bytes()
+        for private in (message, email):
+            self.assertNotIn(private.encode(), raw)
+        self.feedback._draft = {"rating": "2", "message": "Kept", "email": ""}
+        self.assertEqual(
+            (self.prefs.feedback_rating, self.prefs.feedback_message, self.prefs.feedback_email),
+            ("2", "Kept", ""),
+        )
+        # An edit is a new response; setting the same text again is not.
+        self.feedback._submission = "0" * 32
+        self.prefs.feedback_message = "Kept"
+        self.assertEqual(self.feedback._submission, "0" * 32)
+        self.prefs.feedback_message = "Edited"
+        self.assertIsNone(self.feedback._submission)
 
     def test_valid_feedback_is_sent_once_and_its_text_cleared(self):
         self.assertEqual(
@@ -247,7 +297,7 @@ class FeedbackTests(unittest.TestCase):
             bpy.ops.scenario.send_feedback(rating="5", message="offline")
         self.assertIn(self.feedback.OFFLINE, str(refused.exception))
         # Access can change between poll and execute: execute checks again.
-        operator = SimpleNamespace(rating="5", message="offline", email="", report=Mock())
+        operator = self.called(rating="5", message="offline")
         self.assertEqual(self.operator.execute(operator, bpy.context), {"CANCELLED"})
         operator.report.assert_called_once_with(
             {"WARNING"}, "Allow Online Access is off; your feedback was not sent"
@@ -263,7 +313,7 @@ class FeedbackTests(unittest.TestCase):
             self.assertTrue(self.feedback.sending())
             self.assertFalse(self.operator.poll(bpy.context))
             self.assertEqual(self.feedback.status(), (self.feedback.SENDING, "SORTTIME"))
-            operator = SimpleNamespace(rating="5", message="again", email="", report=Mock())
+            operator = self.called(rating="5", message="again")
             self.assertEqual(self.operator.execute(operator, bpy.context), {"CANCELLED"})
             operator.report.assert_called_once_with({"WARNING"}, self.feedback.BUSY)
         self.assertEqual(self.transport.calls, [])
@@ -410,34 +460,46 @@ class FeedbackTests(unittest.TestCase):
         with patch.object(self.feedback, "_clock", return_value=later):
             self.assertIsNone(self.feedback.status())
             self.assertIsNone(self.feedback.failure())
+            self.assertEqual(self.feedback.draft()["rating"], "2")  # the text itself stays
             _, labels = self.drawn(rating="2")
             self.assertFalse([label for label in labels if label.get("icon") == "ERROR"])
-        self.assertEqual(self.feedback.draft()["rating"], "2")  # the text itself stays
 
-    def opened(self):
-        """The operator as Blender holds it while the dialog is open, after invoke."""
+    def opened(self, passed=()):
+        """The operator as Blender holds it while the dialog is open, after invoke.
+
+        `passed` names the properties the call set; the dialog edits the kept text through
+        its controls, `self.prefs.feedback_*`, never through these properties.
+        """
         operator = SimpleNamespace(
             rating="NONE",
             message="",
             email="",
-            properties=SimpleNamespace(is_property_set=lambda name: False),
+            properties=SimpleNamespace(is_property_set=lambda name: name in passed),
         )
         window_manager = Mock()
         window_manager.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
-        context = SimpleNamespace(window_manager=window_manager)
+        context = SimpleNamespace(
+            window_manager=window_manager, preferences=bpy.context.preferences
+        )
         self.assertEqual(self.operator.invoke(operator, context, None), {"RUNNING_MODAL"})
+        window_manager.invoke_props_dialog.assert_called_once_with(
+            operator, width=self.feedback.DIALOG_WIDTH, confirm_text="Send"
+        )
         return operator
 
     def test_closing_the_dialog_without_send_keeps_the_text(self):
         operator = self.opened()
-        operator.rating, operator.message = "4", "Half written"
+        self.prefs.feedback_rating, self.prefs.feedback_message = "4", "Half written"
         self.assertIsNone(self.operator.cancel(operator, bpy.context))
         self.assertEqual(self.transport.calls, [])
         self.assertEqual(
             self.feedback.draft(),
             {**self.feedback.EMPTY, **{"rating": "4", "message": "Half written"}},
         )
-        self.assertEqual((self.opened().rating, self.opened().message), ("4", "Half written"))
+        self.opened()
+        self.assertEqual(
+            (self.prefs.feedback_rating, self.prefs.feedback_message), ("4", "Half written")
+        )
         # A failed send's submission survives a close without edits, not an edit.
         self.transport.answer = TimeoutError("timed out")
         self.send(**self.feedback.draft())
@@ -445,7 +507,7 @@ class FeedbackTests(unittest.TestCase):
         self.operator.cancel(self.opened(), bpy.context)
         self.assertEqual(self.feedback._submission, submission)
         operator = self.opened()
-        operator.message = "Rewritten"
+        self.prefs.feedback_message = "Rewritten"
         self.operator.cancel(operator, bpy.context)
         self.assertIsNone(self.feedback._submission)
         self.transport.answer = 202
@@ -472,7 +534,8 @@ class FeedbackTests(unittest.TestCase):
             self.usage.follow_online_access()
             # Opened, then closed without Send: one cancelled event, from cancel.
             operator = self.opened()
-            operator.message, operator.email = "Private words", "me@example.com"
+            self.prefs.feedback_message = "Private words"
+            self.prefs.feedback_email = "me@example.com"
             self.operator.cancel(operator, bpy.context)
             # Sent, then refused: one event each.
             self.assertEqual(self.send(**self.feedback.draft()), {"FINISHED"})
@@ -498,29 +561,85 @@ class FeedbackTests(unittest.TestCase):
 
     def test_the_dialog_opens_with_the_kept_text_and_send_button(self):
         self.feedback._draft = {"rating": "3", "message": "Kept", "email": "me@example.com"}
-        operator = SimpleNamespace(
-            rating="NONE",
-            message="",
-            email="",
-            properties=SimpleNamespace(is_property_set=lambda name: name == "rating"),
-        )
-        window_manager = Mock()
-        window_manager.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
-        context = SimpleNamespace(window_manager=window_manager)
-        self.assertEqual(self.operator.invoke(operator, context, None), {"RUNNING_MODAL"})
-        # An explicitly passed rating wins; the rest come from the kept text.
+        self.feedback._submission = "0" * 32
+        self.opened(passed=("rating",))
+        # A rating the call passed replaces the kept one, a new response; the rest is kept.
         self.assertEqual(
-            (operator.rating, operator.message, operator.email),
+            (self.prefs.feedback_rating, self.prefs.feedback_message, self.prefs.feedback_email),
             ("NONE", "Kept", "me@example.com"),
         )
-        window_manager.invoke_props_dialog.assert_called_once_with(
-            operator, width=self.feedback.DIALOG_WIDTH, confirm_text="Send"
-        )
+        self.assertIsNone(self.feedback._submission)
+
+    def test_send_in_the_dialog_sends_what_its_controls_hold(self):
+        self.opened()
+        self.prefs.feedback_rating = "5"
+        self.prefs.feedback_message = "From the dialog"
+        # The operator's own properties carry only a script's arguments.
+        operator = self.called(rating="1", message="Not this", invoked=True)
+        with online_access(True):
+            self.assertEqual(self.operator.execute(operator, bpy.context), {"FINISHED"})
+        payload = self.sent()
+        self.assertEqual((payload["rating"], payload["message"]), (5, "From the dialog"))
+        self.assertNotIn("email", payload)
+        operator.report.assert_called_once_with({"INFO"}, self.core.SENT.text)
+        self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
+
+    def test_the_dialog_leaves_the_preferences_modified_only_if_they_were(self):
+        """An edit in a control marks the preferences modified, as Blender does any field of them."""
+        preferences = bpy.context.preferences
+        for before in (False, True):
+            with self.subTest(modified_before=before):
+                preferences.is_dirty = before
+                operator = self.opened()
+                self.prefs.feedback_message = "Typed"
+                preferences.is_dirty = True  # as Blender marks them for that edit
+                self.operator.cancel(operator, bpy.context)
+                self.assertEqual(preferences.is_dirty, before)
+        preferences.is_dirty = False
+        operator = self.opened()
+        with online_access(True):  # turning it on marks the preferences modified too
+            operator.options, operator.report = SimpleNamespace(is_invoke=True), Mock()
+            self.assertEqual(self.operator.execute(operator, bpy.context), {"FINISHED"})
+            self.assertFalse(preferences.is_dirty)
+        self.assertEqual(self.sent()["message"], "Typed")
+
+    def test_the_status_bar_shows_the_outcome_the_pump_applied(self):
+        outcome = bpy.types.SCENARIO_OT_feedback_outcome
+        self.assertEqual(outcome.bl_options, {"INTERNAL"})
+        self.assertIn(outcome.bl_idname, self.usage.EXCLUDED_OPERATORS)  # not a user's action
+        # Background Blender has no status bar; its operator reported the outcome itself.
+        self.assertFalse(self.feedback.announce())
+        # In a window it stays modal for one event, so its report reaches the status bar.
+        manager = Mock()
+        context = SimpleNamespace(window_manager=manager, window=object())
+        operator = SimpleNamespace(report=Mock())
+        self.assertEqual(outcome.execute(operator, context), {"RUNNING_MODAL"})
+        manager.event_timer_add.assert_called_once_with(0.0, window=context.window)
+        manager.modal_handler_add.assert_called_once_with(operator)
+        unreachable, sent = self.core.UNREACHABLE.text, self.core.SENT.text
+        for shown, report in (
+            ((unreachable, False), call({"WARNING"}, unreachable)),
+            ((sent, True), call({"INFO"}, sent)),
+            (None, None),
+        ):
+            with self.subTest(shown=shown):
+                self.feedback._status = shown and (*shown, self.feedback._clock())
+                operator.report.reset_mock()
+                manager.event_timer_remove.reset_mock()
+                self.assertEqual(
+                    outcome.modal(operator, context, None), {"FINISHED", "PASS_THROUGH"}
+                )
+                manager.event_timer_remove.assert_called_once_with(operator.timer)
+                self.assertEqual(operator.report.call_args_list, [report] if report else [])
+        # A send started since: the status bar keeps Send's "Sending your feedback...".
+        self.feedback._worker, self.feedback._started = object(), self.feedback._clock()
+        outcome.modal(operator, context, None)
+        self.assertEqual(operator.report.call_args_list, [])
 
     def drawn(self, **fields):
-        operator = SimpleNamespace(rating="NONE", message="", email="", layout=Mock())
-        for name, value in fields.items():
-            setattr(operator, name, value)
+        """The dialog drawn over the kept text `fields` (empty fields where none are given)."""
+        self.feedback._draft = {**self.feedback.EMPTY, **fields}
+        operator = SimpleNamespace(layout=Mock())
         self.operator.draw(operator, bpy.context)
         layout = operator.layout
         labels = [call.kwargs for call in layout.label.call_args_list]
@@ -529,10 +648,13 @@ class FeedbackTests(unittest.TestCase):
 
     def test_the_dialog_draws_its_fields_note_and_reasons(self):
         layout, labels = self.drawn(rating="4", message="Nice")
-        layout.prop.assert_any_call(ANY, "message", text="", placeholder="What should we improve?")
+        # Its controls, on the preferences: Blender logs no edit there (see the first test).
         layout.prop.assert_any_call(
-            ANY,
-            "email",
+            self.prefs, "feedback_message", text="", placeholder="What should we improve?"
+        )
+        layout.prop.assert_any_call(
+            self.prefs,
+            "feedback_email",
             text="",
             placeholder="Email, if you would like a reply (optional)",
         )
@@ -548,9 +670,9 @@ class FeedbackTests(unittest.TestCase):
         # Every rating cell, Not rated first, in one segmented row.
         segments = layout.row.return_value
         cells = [
-            call.args[2]
-            for call in segments.mock_calls
-            if call[0].endswith("prop_enum") and call.args[1] == "rating"
+            item.args[2]
+            for item in segments.mock_calls
+            if item[0].endswith("prop_enum") and item.args[:2] == (self.prefs, "feedback_rating")
         ]
         self.assertEqual(cells, ["NONE", "1", "2", "3", "4", "5"])
         _, labels = self.drawn()

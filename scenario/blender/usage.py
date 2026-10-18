@@ -47,6 +47,8 @@ EXCLUDED_OPERATORS = frozenset(
         # A MOUSEMOVE keymap item invokes it on every pointer move over a 3D view, and its
         # modal then sees every event while the floating composer is engaged.
         "scenario.composer_modal",
+        # The pump runs it to show a feedback send's outcome in the status bar.
+        "scenario.feedback_outcome",
     }
 )
 _METHODS = ("execute", "invoke", "modal", "cancel")

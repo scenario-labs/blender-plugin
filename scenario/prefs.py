@@ -25,6 +25,28 @@ def usage_sharing_changed(self, context):
     usage.set_sharing(self.share_usage)
 
 
+def feedback_field(name):
+    """get and set for a Send feedback dialog field (see blender.feedback.CONTROLS)."""
+
+    def get(self):
+        from .blender import feedback
+
+        return feedback.field(name)
+
+    def set_value(self, value):
+        from .blender import feedback
+
+        feedback.edit(name, value)
+
+    return {"get": get, "set": set_value}
+
+
+def feedback_ratings(self, context):
+    from .blender import feedback
+
+    return feedback.RATINGS
+
+
 class ScenarioPreferences(bpy.types.AddonPreferences):
     bl_idname = __package__
 
@@ -107,6 +129,16 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         update=lambda self, context: __import__(
             __package__ + ".blender.registry", fromlist=["apply_log_level"]
         ).apply_log_level(self.log_level),
+    )
+    # The Send feedback dialog's fields, which keep nothing here: see blender.feedback.CONTROLS.
+    feedback_rating: EnumProperty(name="Rating", items=feedback_ratings, **feedback_field("rating"))
+    feedback_message: StringProperty(
+        name="Message", description="What should we improve?", **feedback_field("message")
+    )
+    feedback_email: StringProperty(
+        name="Email",
+        description="Your email address, if you would like a reply",
+        **feedback_field("email"),
     )
 
     def draw(self, context):

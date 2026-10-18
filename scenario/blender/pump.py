@@ -59,6 +59,8 @@ def _process():
             _failures["usage"] = type(error).__name__
             log.exception("usage data upkeep failed")
     changed = feedback.process()
+    if changed:  # an outcome was applied: the status bar, which said sending, shows it too
+        feedback.announce()
     changed |= generation.process_catalog_events()
     changed |= mcp_service.follow_online_access()
     mcp_service.process_pending()

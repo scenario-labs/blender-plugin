@@ -481,7 +481,10 @@ class UsageTests(unittest.TestCase):
             record.assert_not_called()
 
     def test_the_extension_operators_are_instrumented_except_the_exclusions(self):
-        self.assertEqual(self.usage.EXCLUDED_OPERATORS, frozenset({"scenario.composer_modal"}))
+        self.assertEqual(
+            self.usage.EXCLUDED_OPERATORS,
+            frozenset({"scenario.composer_modal", "scenario.feedback_outcome"}),
+        )
         marker = self.usage._ORIGINAL
         names = [name for name in dir(bpy.types) if name.startswith("SCENARIO_OT_")]
         self.assertGreater(len(names), 100)

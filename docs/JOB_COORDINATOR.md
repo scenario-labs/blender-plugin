@@ -407,8 +407,8 @@ of silently treating it as dispatchable.
 polling interface. Deactivation before the action is claimed stops dispatch;
 once claimed, late observations stay bound to the original store. Shutdown
 joins this work before closing the SDK. Scenario documents no endpoint to cancel
-a running workflow step. Live cancellation of an `inference` job and which
-generation lanes return `inference` jobs continue in #440.
+a running workflow step. No generation lane returns `inference` jobs, and
+Scenario refuses to cancel a running `custom` job, so no cancel is ever sent today.
 `ModelJobs` exposes these commands through the shared UI/MCP saved-job controls.
 
 

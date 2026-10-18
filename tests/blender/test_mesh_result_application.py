@@ -254,6 +254,27 @@ class MeshResultTests(unittest.TestCase):
         self.assertEqual(self.model._snapshot(), before)
         self.mesh.validate_target(self.target)
 
+    def test_multi_mesh_uv_and_retexture_results_are_rejected_without_mutation(self):
+        self.matching_source()
+        original = self.model._import
+
+        def add_variant(path):
+            original(path)
+            obj = next(obj for obj in bpy.context.scene.objects if obj.type == "MESH")
+            bpy.context.scene.collection.objects.link(obj.copy())
+
+        mapping = Matrix.Translation((-2, 0, 0))
+        for policy in ("UV", "RETEXTURE"):
+            with self.subTest(policy=policy):
+                before = self.model._snapshot()
+                with patch.object(self.model, "_import", side_effect=add_variant):
+                    with self.assertRaises(self.module.MeshResultApplicationError):
+                        self.apply(policy=policy, result_to_source=mapping)
+                self.assertEqual(self.model._snapshot(), before)
+                self.mesh.validate_target(self.target)
+        # The source matches the single-mesh result: only the variant was refused.
+        self.assertEqual(self.apply(policy="UV", result_to_source=mapping).policy, "UV")
+
     def test_failed_cleanup_rolls_back_source_and_removes_created_data(self):
         before = self.model._snapshot()
         original = self.module._release_import
@@ -340,6 +361,63 @@ class MeshResultTests(unittest.TestCase):
         self.assertEqual(self.model._snapshot(), before)
         self.mesh.validate_target(self.target)
         self.assertEqual(self.path.read_bytes(), self.body)
+
+    def matching_source(self):
+        """Give the source the saved result's exact indexed topology, then capture it."""
+        imported = self.model.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        primary = next(obj for obj in imported.objects if obj.type == "MESH")
+        self.source.data = primary.data.copy()
+        self.source.data.materials.clear()
+        self.source.data.materials.append(bpy.data.materials.new("Matching source material"))
+        self.target = self.mesh.capture_target(self.scene, self.source)
+
+    def assert_topology_edit_preserves_transformed_source(self, policy):
+        self.matching_source()
+        parent = bpy.data.objects.new("Transformed parent", None)
+        other = bpy.data.objects.new("Selected other", None)
+        self.scene.collection.objects.link(parent)
+        self.scene.collection.objects.link(other)
+        extra = bpy.data.collections.new("Second membership")
+        self.scene.collection.children.link(extra)
+        extra.objects.link(self.source)
+        parent.location = (7, 8, 9)
+        parent.rotation_euler = (0.1, 0.2, 0.3)
+        self.source.parent = parent
+        self.source.location = (3, 4, 5)
+        self.source.rotation_euler = (0.4, 0.5, 0.6)
+        self.source.scale = (2, 3, 4)
+        for obj in self.scene.objects:
+            obj.select_set(obj == other)
+        bpy.context.view_layer.objects.active = other
+        bpy.context.view_layer.update()
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        before = self.source.data
+        geometry = [tuple(vertex.co) for vertex in before.vertices]
+        world, local = self.source.matrix_world.copy(), self.source.matrix_local.copy()
+        collections = set(self.source.users_collection)
+        self.assertEqual(len(collections), 2)
+        # The fixture node translates +2 on X; the explicit mapping undoes it.
+        result = self.apply(policy=policy, result_to_source=Matrix.Translation((-2, 0, 0)))
+        self.assertEqual(result.policy, policy)
+        self.assertEqual(result.source, self.source)
+        self.assertNotEqual(self.source.data, before)
+        self.assertEqual([tuple(vertex.co) for vertex in self.source.data.vertices], geometry)
+        for obj in (self.source, result.original):
+            self.assertEqual(obj.parent, parent)
+            self.assertEqual(obj.matrix_world, world)
+            self.assertEqual(obj.matrix_local, local)
+            self.assertEqual(set(obj.users_collection), collections)
+        self.assertEqual(self.source.name, "Original source")
+        self.assertEqual(result.original.data, before)
+        self.assertEqual(bpy.context.view_layer.objects.active, other)
+        self.assertEqual(set(bpy.context.selected_objects), {other})
+        self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
+    def test_saved_uv_preserves_transformed_parented_source_and_original(self):
+        self.assert_topology_edit_preserves_transformed_source("UV")
+
+    def test_saved_retexture_preserves_transformed_parented_source_and_original(self):
+        self.assert_topology_edit_preserves_transformed_source("RETEXTURE")
 
     def use_parts(self, count=2):
         self.body = parts_glb(count)

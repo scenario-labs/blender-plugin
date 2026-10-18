@@ -702,9 +702,10 @@ documents a loop-scoped effect for a rejected approval inside a ForEach
 iteration, so callers must trust the refreshed job status. Rejection cannot stop
 an executing step and must not be presented as general cancellation. A response
 may still be `in-progress` or
-already `success`; the SDK preserves it without forcing `canceled`. Live
-cancellation of an `inference` job and rejection inside a loop continue in #440;
-the coordinator tests completion races and known-ID restart polling offline.
+already `success`; the SDK preserves it without forcing `canceled`. No lane
+returns `inference` jobs and Scenario refuses to cancel a running `custom` job,
+so live cancellation is unobserved; rejection inside a loop continues in #494.
+The coordinator tests completion races and known-ID restart polling offline.
 Record a sanitized upstream SDK issue before any fallback for these boundaries;
 these upload/job operations introduce no raw calls or fallback and claim no live
 service failure. Discovery uses the separate exception below.

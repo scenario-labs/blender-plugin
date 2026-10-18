@@ -90,7 +90,7 @@ class RenderSettings:
             try:
                 r.image_settings.color_depth = self.color_depth
             except TypeError:
-                pass
+                pass  # The restored format offers no such depth; Blender kept a valid one.
         r.filepath, r.use_stamp = self.filepath, self.use_stamp
         scene.frame_start, scene.frame_end = self.frame_start, self.frame_end
         _set_preview_range(scene, self.use_preview_range)

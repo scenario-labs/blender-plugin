@@ -133,13 +133,9 @@ def _give_up():
     _apply(core.NO_ANSWER, None)
 
 
-def process():
-    """Apply finished or abandoned sends on the main thread; True when what is drawn changed."""
+def _drain():
     global _worker
     changed = False
-    if _abandoned():
-        _give_up()
-        changed = True
     while True:
         try:
             worker, outcome, submission = _results.get_nowait()
@@ -150,6 +146,27 @@ def process():
         _worker = None
         _apply(outcome, submission)
         changed = True
+
+
+def _settle():
+    """Give up the send in flight, unless it ended after the last drain."""
+    worker = _worker
+    if isinstance(worker, threading.Thread) and not worker.is_alive():
+        return _drain()  # its outcome was queued before the thread ended
+    _give_up()
+    return True
+
+
+def process():
+    """Apply finished or abandoned sends on the main thread; True when what is drawn changed.
+
+    Queued outcomes come first, so a tick delayed past ABANDON_AFTER (a long file load or
+    bake) still applies the answer that arrived; only a send still running is given up.
+    """
+    changed = _drain()
+    if _abandoned():
+        changed |= _settle()
+    return changed
 
 
 class SCENARIO_OT_send_feedback(bpy.types.Operator):
@@ -241,8 +258,8 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
         if bpy.app.background:  # no pump: wait for the outcome, or give the send up, here
             worker.join(ABANDON_AFTER)
             process()
-            if worker is _worker:
-                _give_up()
+            if worker is _worker:  # not over ABANDON_AFTER on the clock yet, but waited out
+                _settle()
         text, icon = status() or (SENDING, "SORTTIME")
         if icon == "SORTTIME":
             runtime.set_message(text)

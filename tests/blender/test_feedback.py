@@ -293,6 +293,27 @@ class FeedbackTests(unittest.TestCase):
                 self.assertIsNone(self.feedback._worker)
                 self.assertEqual(self.feedback.status(), (self.core.NO_ANSWER.text, "ERROR"))
 
+    def test_an_answer_queued_before_a_late_tick_is_applied_not_given_up(self):
+        """A file load or bake can hold the main thread past ABANDON_AFTER."""
+        fields = {"rating": "4", "message": "Arrived", "email": ""}
+        payload = self.core.build(4, "Arrived")
+        self.feedback._draft, self.feedback._submission = dict(fields), payload["submission_id"]
+        self.feedback.start(payload).join(5)  # SENT is queued; no tick has applied it
+        late = self.feedback._started + self.feedback.ABANDON_AFTER + 1
+        with patch.object(self.feedback, "_clock", return_value=late):
+            self.assertTrue(self.feedback.process())
+            self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+        self.sent()
+        self.assertIsNone(self.feedback._worker)
+        self.assertEqual(self.feedback.draft(), self.feedback.EMPTY)
+        # A send that ends between the drain and the give-up is drained, not given up.
+        self.feedback._draft, self.feedback._submission = dict(fields), payload["submission_id"]
+        worker = self.feedback.start(payload)
+        worker.join(5)
+        self.assertTrue(self.feedback._settle())
+        self.assertEqual(self.feedback.status(), (self.core.SENT.text, "CHECKMARK"))
+        self.sent()
+
     def test_an_outcome_is_shown_only_while_it_is_current(self):
         self.send(rating="4")
         self.sent()

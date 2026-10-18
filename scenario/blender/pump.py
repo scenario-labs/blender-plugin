@@ -47,7 +47,7 @@ def _tick():
 
 
 def _process():
-    from . import feedback, file_state, mcp_service, model_picker, studio, usage
+    from . import feedback, file_state, mcp_service, model_picker, prompts, studio, usage
 
     # First and guarded: the usage sender's online-access mirror must never go stale
     # because another step of this tick failed.
@@ -124,6 +124,14 @@ def _process():
                     changed = True
     if _jobs_changed():
         changed = True
+    # After the jobs' saved states moved: count generations for the rating prompt.
+    try:
+        changed |= prompts.tick()
+        _failures.pop("prompts", None)
+    except Exception as error:
+        if type(error).__name__ != _failures.get("prompts"):
+            _failures["prompts"] = type(error).__name__
+            log.exception("counting generations failed")
     # Review previews decode verified cached stills here, never while drawing.
     previews = runtime.state.review_previews
     if previews is not None and previews.pump():

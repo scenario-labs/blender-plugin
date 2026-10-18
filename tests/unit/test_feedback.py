@@ -384,3 +384,43 @@ def test_urllib_failures_before_sending_mean_not_sent():
     closed.close()
     url = f"http://127.0.0.1:{port}/telemetry/v1/feedback"
     assert feedback.submit(build(rating=3), url=url, timeout=0.5) is feedback.UNREACHABLE
+
+
+@pytest.mark.parametrize(
+    ("error", "stripped"),
+    [
+        ("Could not load models: 503 Service Unavailable", None),
+        ("Connection failed: 401 Invalid API key/secret", None),
+        ("Couldn't read the file", None),
+        ("Text / Image lanes", None),
+        (
+            "Could not read /home/artist/projects/scene.blend",
+            "Could not read <path>",
+        ),
+        (
+            "Saved as C:\\Users\\someone\\out.png, then ~/renders/a.png",
+            "Saved as <path> then <path>",
+        ),
+        ("See https://example.com/asset?token=abc for details", "See <link> for details"),
+        ("Reply to someone@example.com", "Reply to <email>"),
+        (
+            "Material 'Wood floor' is missing; \"Cube.001\" too",
+            "Material <name> is missing; <name> too",
+        ),
+        ("Object \u2018Hero\u2019 has no mesh", "Object <name> has no mesh"),
+        ("Asset asset_AbCdEf123456 failed in job_9f8e7d", "Asset <id> failed in <id>"),
+        ("500 Internal error (trace a1b2)", "500 Internal error (trace <id>)"),
+        ("Request 123e4567-e89b-12d3-a456-426614174000 failed", "Request <id> failed"),
+        ("Token Zx81kQ0pLm2Nn4Vb7Cc9 expired", "Token <id> expired"),
+        ("  Several\n\tlines   of  text ", "Several lines of text"),
+    ],
+)
+def test_an_error_quoted_in_feedback_keeps_nothing_identifying(error, stripped):
+    assert feedback.strip_error(error) == (error if stripped is None else stripped)
+
+
+def test_a_long_error_is_cut_at_a_word():
+    stripped = feedback.strip_error("word " * 100)
+    assert len(stripped) <= feedback.ERROR_LIMIT
+    assert stripped.endswith("word...")
+    assert feedback.strip_error("x" * 400, limit=10) == "x" * 7 + "..."

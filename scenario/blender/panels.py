@@ -401,6 +401,7 @@ def draw_generate_row(layout, lane_state, lane):
     error = generation.lane_error(lane_state)  # a stale saved model-load failure is not drawn
     if error:
         draw_wrapped(layout, error, "ERROR")
+        prompts.draw_error_link(layout, error)
 
 
 def draw_wrapped(layout, message, icon):
@@ -413,6 +414,7 @@ def draw_wrapped(layout, message, icon):
 def draw_loading(layout):
     if runtime.state.catalog_error:
         draw_wrapped(layout, runtime.state.catalog_error, "ERROR")
+        prompts.draw_error_link(layout, runtime.state.catalog_error)
         layout.operator(
             "scenario.refresh_catalog", text="Retry loading models", icon="FILE_REFRESH"
         )
@@ -440,6 +442,7 @@ def draw_schema_status(layout, lane_state, lane):
     failure = runtime.state.model_errors.get(model_id)
     if failure:
         draw_wrapped(layout, failure, "ERROR")
+        prompts.draw_error_link(layout, failure)
     else:
         layout.label(text="The model description is not loaded", icon="INFO")
     layout.operator(
@@ -696,6 +699,8 @@ def draw_result(layout, rec, *, collapsible=True):
             row.label(text=f"+{len(rec.asset_ids) - 1}")
     if rec.error and not rec.is_success:
         draw_failure(box, f"Failed: {rec.error}")
+        if collapsible:  # the composer's job card stays compact
+            prompts.draw_error_link(box, rec.error)
     elif rec.error:
         row = box.row(align=True)
         row.label(text=rec.error[:60], icon="ERROR")
@@ -934,6 +939,8 @@ class SCENARIO_PT_main(bpy.types.Panel):
         if not draw_account_strip(layout, context):
             draw_message(layout)  # a feedback outcome, which needs no credentials
             return
+        if runtime.state.connection_status == "error":  # Test connection failed
+            prompts.draw_error_link(layout, runtime.state.account_label)
         prompts.draw_usage_card(layout, context)
         scenario = context.scene.scenario
         draw_enum_tabs(
@@ -1091,6 +1098,7 @@ class SCENARIO_PT_generations(bpy.types.Panel):
                 text="Collapse all" if any_open else "Expand all",
                 icon="FULLSCREEN_EXIT" if any_open else "FULLSCREEN_ENTER",
             )
+        prompts.draw_rating_card(layout, context)
         shown, shown_ids = 0, set()
         for rec in runtime.state.jobs_view:
             if not rec.is_terminal:

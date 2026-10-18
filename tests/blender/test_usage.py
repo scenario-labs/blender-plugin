@@ -484,7 +484,13 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(
             self.usage.EXCLUDED_OPERATORS,
             frozenset(
-                {"scenario.composer_modal", "scenario.feedback_outcome", "scenario.usage_card"}
+                {
+                    "scenario.composer_modal",
+                    "scenario.feedback_outcome",
+                    "scenario.usage_card",
+                    "scenario.report_error",
+                    "scenario.feedback_prompt",
+                }
             ),
         )
         marker = self.usage._ORIGINAL

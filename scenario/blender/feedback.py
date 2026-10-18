@@ -157,6 +157,10 @@ def _apply(outcome, submission):
     _status = (outcome.text, outcome.sent, _clock())
     if outcome.sent and submission == _submission:  # the kept text was not edited meanwhile
         _draft, _submission = dict(EMPTY), None
+    if outcome.sent:
+        from . import prompts
+
+        prompts.feedback_sent()
     runtime.set_message(outcome.text)
 
 

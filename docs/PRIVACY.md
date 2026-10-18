@@ -131,6 +131,10 @@ Vercel derives from your address and records it, without your address, as a
 response to Scenario's feedback survey in PostHog. A failed send is not retried automatically.
 Until a send succeeds, the dialog keeps your text, and its submission ID for
 another try, in memory for this Blender session; it is never saved to disk.
+**Tell us what went wrong**, under an error in the panels, opens the dialog with that
+error as the message, without names, paths, links or IDs, unless it keeps your text.
+After 10 successful generations, **How's it going?** offers the dialog once. Acting on
+either keeps both away for a week; answers and dismissals are never sent.
 
 The extension has no automatic crash-reporting service and no independent
 update-check service. Blender manages configured extension repositories and their
@@ -173,7 +177,8 @@ separate scope in that storage. The same database keeps any per-lane default you
 save for trained or private models: their model IDs and optional strengths, per
 credential and project scope, without prompts or model details. While usage data is
 shared, `state/usage-install-id` holds its random install ID. `state/prompts.json`
-records only that you answered the panel's question about it.
+records only which of the panels' questions you answered, until when feedback prompts
+stay away, and how many generations succeeded, up to 10.
 
 Verified result files live under `state/shared-results`; upload intents and
 private source copies live under `state/shared-uploads`, including

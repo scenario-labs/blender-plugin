@@ -19,6 +19,7 @@ from . import (
     label_wrap,
     panorama_lane,
     params_ui,
+    prompts,
     props,
     runtime,
 )
@@ -105,6 +106,7 @@ class SCENARIO_OT_generate(bpy.types.Operator):
             context.scene.scenario.lane_state(lane).last_error = err.reason
             self.report({"ERROR"}, err.reason)
             return {"CANCELLED"}
+        prompts.watch_generation(rec.local_id)
         self.report({"INFO"}, f"Generating with {rec.meta.get('model_name', rec.model_id)}")
         return {"FINISHED"}
 

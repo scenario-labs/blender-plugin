@@ -596,11 +596,15 @@ def capture_views(args):
                     data = bpy.data.cameras.new("Scenario capture camera")
                     camera = bpy.data.objects.new("Scenario capture camera", data)
                     scene.collection.objects.link(camera)
-                    saved.set(scene, "camera", camera)
-                    # Rendering switches to the camera a timeline marker binds at this frame.
+                    # Rendering switches to the camera a timeline marker binds at this frame,
+                    # and unbinding one re-picks the scene camera from the others: unbind them
+                    # all, then set the capture camera. Restoring runs in reverse, so the scene
+                    # camera recorded first is put back after the markers.
+                    saved.set(scene, "camera", scene.camera)
                     for marker in scene.timeline_markers:
                         if marker.camera is not None:
                             saved.set(marker, "camera", None)
+                    scene.camera = camera
                     for index, name in enumerate(views):
                         direction, label, ortho = CAPTURE_ANGLES[name]
                         direction = Vector(direction).normalized()

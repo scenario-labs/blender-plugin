@@ -195,13 +195,14 @@ def execute_python(args):
 
 def _selection():
     layer = bpy.context.view_layer
-    return frozenset(obj for obj in layer.objects if obj.select_get()), layer.objects.active
+    selected = frozenset(obj for obj in selection.layer_objects(layer) if obj.select_get())
+    return selected, layer.objects.active
 
 
 def select_objects(args):
     names = set(args.get("names") or [])
     with file_state.marking("Scenario MCP selection", _selection):
-        for obj in bpy.context.view_layer.objects:
+        for obj in selection.layer_objects(bpy.context.view_layer):
             obj.select_set(obj.name in names)
         first = next((bpy.data.objects[n] for n in names if n in bpy.data.objects), None)
         if first is not None:
@@ -416,17 +417,16 @@ def _capture_targets(args, scene):
         if missing:
             raise ValueError(f"Not in this scene: {', '.join(missing)}")
         return "objects", [members[name] for name in dict.fromkeys(names)]
+    view_layer = bpy.context.view_layer
+    objects = selection.layer_objects(view_layer)
     # A selected camera or light, common after camera_path, would frame empty space.
-    selected = [
-        obj for obj in bpy.context.view_layer.objects if obj.select_get() and _frameable(obj)
-    ]
+    selected = [obj for obj in objects if obj.select_get() and _frameable(obj)]
     if selected:
         return "selection", selected
-    view_layer = bpy.context.view_layer
     shown = _render_collections(view_layer)
     visible = [
         obj
-        for obj in view_layer.objects
+        for obj in objects
         if (obj.type in _CAPTURE_BOUNDED or _collection_instance(obj))
         and not obj.hide_render
         and any(collection in shown for collection in obj.users_collection)

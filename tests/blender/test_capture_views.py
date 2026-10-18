@@ -9,6 +9,7 @@ import os
 import struct
 import sys
 import tempfile
+import types
 import unittest
 import unittest.mock
 
@@ -181,6 +182,30 @@ class CaptureViewsTests(unittest.TestCase):
         # Framed on the instanced cube and sphere, not on the empty's origin alone.
         self.assertAlmostEqual(selected["center"][0], 102.0, places=3)
         self.assertGreater(selected["radius"], 2.0)
+
+    def test_objects_linked_or_unlinked_just_before_are_read_without_crashing(self):
+        # The view layer lists stale bases until Blender resyncs them, which selecting does:
+        # selecting while iterating it read freed memory and crashed Blender 5.0.
+        _, patch = self.fake_tiles()
+        self.scene.collection.objects.unlink(self.cube)
+        late = bpy.data.objects.new("Late crate", self.cube.data)
+        late.location = (-4, 0, 1)
+        self.scene.collection.objects.link(late)
+        with patch:
+            _, caption = self.capture({"angles": ["front"]})
+        self.assertEqual(sorted(caption["objects"]), ["Ball", "Late crate"])
+        selection = submodule("blender.selection")
+        layer = bpy.context.view_layer
+        self.scene.collection.objects.unlink(late)
+        self.scene.collection.objects.link(self.cube)
+        self.assertEqual(
+            sorted(obj.name for obj in selection.layer_objects(layer)), ["Ball", "Crate", "Shot"]
+        )
+        self.tb.select_objects({"names": ["Crate"]})
+        self.assertTrue(self.cube.select_get())
+        self.scene.collection.objects.link(late)
+        headless = types.SimpleNamespace(view_layer=layer)
+        self.assertEqual(selection.selected_objects(headless), [self.cube])
 
     def test_a_selected_armature_is_framed_by_its_bones(self):
         _, patch = self.fake_tiles()

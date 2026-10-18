@@ -7,13 +7,25 @@ context without `selected_objects` or `active_object`, while its view layer stil
 holds both. The local MCP server's headless command runs in that context."""
 
 
+def layer_objects(view_layer):
+    """A copy of the view layer's objects, resynced with its collections first.
+
+    After objects are linked or unlinked, `view_layer.objects` still walks the old
+    bases until Blender resyncs them. `select_get` and `select_set` resync and free
+    those bases, so calling them while iterating the live collection reads freed
+    memory and can crash Blender.
+    """
+    view_layer.update()
+    return list(view_layer.objects)
+
+
 def selected_objects(context):
     """The selected objects, from `context.selected_objects` or else the context's view layer."""
     objects = getattr(context, "selected_objects", None)
     if objects is not None:
         return list(objects)
     layer = context.view_layer
-    return [obj for obj in layer.objects if obj.select_get(view_layer=layer)]
+    return [obj for obj in layer_objects(layer) if obj.select_get(view_layer=layer)]
 
 
 def active_object(context):

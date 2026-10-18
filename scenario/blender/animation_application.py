@@ -215,12 +215,17 @@ def _correctable(properties, rotation_mode):
 
 
 def _within(source, destination, animated, world):
-    """Whether every animated bone's rest is within the tolerance in the chosen space."""
+    """Whether each animated bone's parent-relative rest and correction are within tolerance.
+
+    Corrections are measured in the chosen space. Their check covers unkeyed ancestors, whose rest difference every
+    descendant's correction carries.
+    """
     for name in animated:
-        returned = _rest(source, source.data.bones[name], world)
-        existing = _rest(destination, destination.data.bones[name], world)
-        if 2 * math.acos(min(1.0, abs(returned.dot(existing)))) > REST_TOLERANCE:
-            return False
+        returned, existing = source.data.bones[name], destination.data.bones[name]
+        for measure in (_rest, _orientation):
+            pair = (measure(source, returned, world), measure(destination, existing, world))
+            if 2 * math.acos(min(1.0, abs(pair[0].dot(pair[1])))) > REST_TOLERANCE:
+                return False
     return True
 
 
@@ -321,6 +326,9 @@ def validate_clips(target, objects):
     data = destination.animation_data
     if data is not None and data.use_tweak_mode:
         raise mesh.MeshApplicationError("Leave NLA tweak mode on the destination rig")
+    if data is not None and any(track.is_solo for track in data.nla_tracks):
+        # Blender plays no active action beside a soloed track outside tweak mode.
+        raise mesh.MeshApplicationError("Unsolo the destination rig's NLA track")
     if any(rig.matrix_world.to_3x3().determinant() <= 0 for rig in (source, destination)):
         # A mirrored or flattened armature object has no rest rotation to correct by.
         raise mesh.MeshApplicationError("Apply animation needs rigs that are not mirrored")
@@ -463,11 +471,14 @@ def _restore(rig, before, tracks):
     if before is None:
         rig.animation_data_clear()
         return
-    action, handle, identifier = before[:3]
+    action, handle, identifier, extrapolation, blend, influence = before[:6]
     data.action = action
     if action is not None:
         data.action_slot = next((slot for slot in action.slots if slot.handle == handle), None)
     data.last_slot_identifier = identifier
+    data.action_extrapolation = extrapolation
+    data.action_blend_type = blend
+    data.action_influence = influence
 
 
 @dataclass(eq=False)
@@ -516,7 +527,8 @@ class AnimationApplication:
 def apply_clips(target, objects):
     """Assign the first returned clip; keep it, the others and any previous action in muted NLA.
 
-    Timeline settings stay unchanged. Clip timing already follows the destination
+    The rig's action blending becomes Replace at full influence. Timeline settings
+    stay unchanged. Clip timing already follows the destination
     frame rate through the shared staging scene.
     """
     rig, clips, ratio, corrections, largest = validate_clips(target, objects)
@@ -533,6 +545,9 @@ def apply_clips(target, objects):
         clip, slot = actions[0]
         data.action = clip
         data.action_slot = slot
+        # The clip replaces the rest pose fully, as on the returned rig.
+        data.action_blend_type = "REPLACE"
+        data.action_influence = 1.0
         if (data.action, data.action_slot) != (clip, slot):
             raise mesh.MeshApplicationError("Blender did not assign the returned clip")
         return AnimationApplication(

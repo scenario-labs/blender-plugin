@@ -1600,16 +1600,83 @@ class AnimateResultTests(unittest.TestCase):
         self.assertGreater(want[25]["Hips"].translation.length, 50)
         self.assertAlmostEqual(result.rest_correction_deg, 11.5, delta=0.1)
 
-    def test_constrained_or_driven_animated_bones_fail_without_mutation(self):
-        # Constraints and drivers evaluate after the action and would override the clips.
+    def test_an_unkeyed_root_rest_difference_counts_against_the_tolerance(self):
+        import math
+
+        from helpers import CHAIN, chain_rig, clip_deforms, deform_matrices
+        from mathutils import Euler
+
+        # An unkeyed Root above Hips: the returned bones are all turned 90 degrees
+        # on X in armature space, so every animated bone's correction is 90 degrees
+        # there although each matches its parent. Only a returned armature object
+        # turned the other way, as FBX imports are, makes them match in the world.
+        turn = Euler((math.pi / 2, 0, 0))
+        hips, spine, head = CHAIN
+        root = ("Root", None, (0, 0, 0), (0, 0, 0.5))
+        bones = (root, (hips[0], "Root", *hips[2:]), spine, head)
+        for turned in (True, False):
+            with self.subTest(turned_object=turned):
+                try:
+                    self.rig = chain_rig(self.scene, "Rooted rig", bones)
+                    self.source.modifiers[0].object = self.rig
+                    bpy.context.view_layer.update()
+                    self.target = self.mesh.capture_target(self.scene, self.source)
+                    self.use_clips(bones=bones, rotation=turn, turn_object=turned, still={"Root"})
+                    if not turned:
+                        objects, before = set(bpy.data.objects), self.model._snapshot()
+                        with self.assertRaises(self.module.MeshResultApplicationError):
+                            self.apply(policy="ANIMATE")
+                        self.assertEqual(self.model._snapshot(), before)
+                        self.assertIsNone(_animation(self.rig))
+                        self.assertEqual(set(bpy.data.objects), objects)
+                        continue
+                    result = self.apply(policy="ANIMATE")
+                    clip = result.clips[0]
+                    paths = {
+                        curve.data_path
+                        for bag in self.animation._channelbags(clip, clip.slots[0])
+                        for curve in bag.fcurves
+                    }
+                    # The scenario needs the returned Root to stay unkeyed.
+                    self.assertFalse(any('"Root"' in path for path in paths), paths)
+                    self.assertLess(result.rest_correction_deg, 0.1)
+                    frames = range(1, 26, 8)
+                    got = deform_matrices(self.scene, self.rig, frames, world=True)
+                    want = clip_deforms(
+                        self.body, "Clip 1", frames, fps=self.scene.render.fps, world=True
+                    )
+                    for frame in frames:
+                        for name in ("Hips", "Spine", "Head"):
+                            mine, matrix = got[frame][name], want[frame][name]
+                            turned_by = mine.to_quaternion().rotation_difference(
+                                matrix.to_quaternion()
+                            )
+                            self.assertLess(_degrees(turned_by), 0.1, (frame, name))
+                            offset = mine.translation - matrix.translation
+                            self.assertLess(offset.length, 1e-4, (frame, name))
+                    self.assertGreater(_degrees(want[25]["Head"].to_quaternion()), 30)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_rigs_that_would_not_play_the_clips_fail_without_mutation(self):
+        # Constraints and drivers evaluate after the action and would override the
+        # clips; a soloed NLA track keeps Blender from playing the active action.
         apply_clips = self.animation.apply_clips
-        for kind in ("constraint", "driver"):
+        cases = {
+            "constraint": "Constraints or drivers move the animated bones",
+            "driver": "Constraints or drivers move the animated bones",
+            "solo": "Unsolo the destination rig's NLA track",
+        }
+        for kind, message in cases.items():
             with self.subTest(kind=kind):
                 try:
                     if kind == "constraint":
                         self.rig.pose.bones["Spine"].constraints.new("COPY_ROTATION")
-                    else:
+                    elif kind == "driver":
                         self.rig.pose.bones["Head"].driver_add("rotation_quaternion", 1)
+                    else:
+                        self.rig.animation_data_create().nla_tracks.new().is_solo = True
                     objects, before = set(bpy.data.objects), self.model._snapshot()
                     animation, errors = _animation(self.rig), []
 
@@ -1625,7 +1692,7 @@ class AnimateResultTests(unittest.TestCase):
                         self.assertRaises(self.module.MeshResultApplicationError),
                     ):
                         self.apply(policy="ANIMATE")
-                    self.assertEqual(errors, ["Constraints or drivers move the animated bones"])
+                    self.assertEqual(errors, [message])
                     self.assertEqual(self.model._snapshot(), before)
                     self.assertEqual(_animation(self.rig), animation)
                     self.assert_unchanged_source(objects)
@@ -1670,6 +1737,8 @@ class AnimateResultTests(unittest.TestCase):
         previous = data.action
         previous.name = "User walk"
         hips.location = (0, 0, 0)
+        # Without full influence and replacement the clip would not play as returned.
+        data.action_influence, data.action_blend_type = 0.0, "ADD"
         self.mesh.validate_target(self.target)
         before = _animation(self.rig)
         track = self.animation._track
@@ -1693,8 +1762,10 @@ class AnimateResultTests(unittest.TestCase):
                     self.apply(policy="ANIMATE")
                 self.assertEqual(self.model._snapshot(), snapshot)
                 self.assertEqual(_animation(self.rig), before)
+                self.assertEqual((data.action_influence, data.action_blend_type), (0.0, "ADD"))
                 self.assertTrue(self.path.exists())
         result = self.apply(policy="ANIMATE")
+        self.assertEqual((data.action_influence, data.action_blend_type), (1.0, "REPLACE"))
         first = result.clips[0]
         self.assertEqual((data.action, data.action_slot.identifier), (first, "OBChain rig"))
         names = [(track.name, track.mute) for track in data.nla_tracks]

@@ -6896,6 +6896,9 @@ class ModelGenerationTests(unittest.TestCase):
         source_name, rig = source.name, source.modifiers[0].object
         rig_name, objects = rig.name, set(bpy.data.objects)
         calls = len(self.calls), len(self.paid), len(self.downloads)
+        # Application plays the clip at full influence, replacing; undo restores these.
+        data = rig.animation_data_create()
+        data.action_influence, data.action_blend_type = 0.0, "ADD"
         approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")
         self.assertEqual((approval["target"], approval["mesh_policy"]), (source_name, "ANIMATE"))
         module = submodule("blender.mesh_result_application")
@@ -6911,7 +6914,9 @@ class ModelGenerationTests(unittest.TestCase):
                 (edit["policy"], edit["rig"], edit["original"]), ("ANIMATE", rig_name, None)
             )
             clip = edit["clips"][0]
-            self.assertEqual(rig.animation_data.action.name, clip)
+            data = rig.animation_data
+            self.assertEqual(data.action.name, clip)
+            self.assertEqual((data.action_influence, data.action_blend_type), (1.0, "REPLACE"))
             self.assertEqual(edit["rest_correction_deg"], 9.7)
             view = self.runtime.state.model_jobs.views[request_id]
             rows = [item.label for item in submodule("blender.job_recovery").result_actions(view)]
@@ -6919,13 +6924,15 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual(set(bpy.data.objects), objects)
             self.assertEqual(source.modifiers[0].object, rig)
             self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
-            rig = bpy.data.objects[rig_name]
-            self.assertIsNone(rig.animation_data)
+            data = bpy.data.objects[rig_name].animation_data
+            self.assertIsNone(data.action)
+            self.assertEqual((data.action_influence, data.action_blend_type), (0.0, "ADD"))
             self.assertNotIn(clip, bpy.data.actions)
             self.assertIsNone(self.tools.job_status({"job_id": request_id})["mesh_edit"])
             self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
             rig = bpy.data.objects[rig_name]
             self.assertEqual(rig.animation_data.action.name, clip)
+            self.assertEqual(rig.animation_data.action_influence, 1.0)
             self.assertEqual(bpy.data.objects[source_name].modifiers[0].object, rig)
             self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
             self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)

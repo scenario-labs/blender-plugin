@@ -868,13 +868,14 @@ Every bone a clip animates must exist in the destination rig by name, with the
 same parent name, connection, rotation/scale inheritance and local location
 setting; rotated bones must use the same rotation mode. They must have no
 constraints, and no drivers on their location, rotation or scale, which would
-override the clips. Neither armature object may be mirrored.
+override the clips. Neither armature object may be mirrored, and the
+destination may not solo an NLA track, which keeps the clip from playing.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
-animated bone's rest orientation relative to its parent (or to armature space
-for a root bone) must therefore be within 15 degrees of the destination's. If it
-is not, world space is tried for root bones, as when an FBX import turns its
+animated bone's rest orientation relative to its parent, and in armature space,
+must therefore be within 15 degrees of the destination's. If it is not, world
+space is tried instead of armature space, as when an FBX import turns its
 armature object and its bones back. Armature space comes first, so a character
 turned in the scene plays the clip in its own facing. One provider re-rigging
 its own rigged character moved some joint rest orientations by up to about 11
@@ -907,9 +908,9 @@ corrects it.
 The first clip becomes the rig's active action. The previous active action, if
 any, moves to a muted NLA track with its slot, and each copied clip gets its own
 muted NLA track, as Blender's importer does, so changing the active action loses
-none of them. Existing NLA tracks and blend, influence and extrapolation
-settings stay as they were. Clip timing already follows the destination's
-effective frame rate through the
+none of them. The active action blends as Replace at full influence; existing
+NLA tracks and the extrapolation stay as they were. Clip timing already follows
+the destination's effective frame rate through the
 [shared staging scene](#rigged-and-animated-model-import); frame range, current
 frame and frame rate stay unchanged.
 

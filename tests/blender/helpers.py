@@ -456,16 +456,20 @@ def clip_glb(
     location=True,
     stretch=False,
     rotation=None,
+    turn_object=True,
+    still=(),
 ):
     """Export a returned animated character with Blender's glTF exporter.
 
     The armature has `unit` armature-space units per world unit under object scale
     `scale`, like a centimetre rig at 0.01. A `rotation` Euler turns the armature
-    object while its bones turn back, so they keep the same world rest. Clip N (one
-    NLA track, `Clip N`) turns every bone about its X axis by half its amount in
-    radians and, with `location`, moves the root bone along its Y axis by its amount
-    in world units, over 24 frames; `stretch` also scales the root along its Y axis.
-    A triangle skinned to the root bone is included. All scratch data is removed.
+    object while its bones turn back, so they keep the same world rest; without
+    `turn_object` only the bones turn back. Clip N (one NLA track, `Clip N`) turns
+    every bone not named in `still` about its X axis by half its amount in radians
+    and, with `location`, moves the first such bone along its Y axis by its amount
+    in world units, over 24 frames; `stretch` also scales it along its Y axis. The
+    `still` bones stay unkeyed in the export. A triangle skinned to the first bone
+    is included. All scratch data is removed.
     """
     import math
 
@@ -487,7 +491,8 @@ def clip_glb(
             back = rotation.to_matrix().to_4x4().inverted()
             rig.data.transform(back)
             mesh.transform(back)
-            rig.rotation_euler = rotation
+            if turn_object:
+                rig.rotation_euler = rotation
         body = bpy.data.objects.new("Body", mesh)
         scene.collection.objects.link(body)
         body.parent = rig
@@ -498,7 +503,8 @@ def clip_glb(
             action = bpy.data.actions.new(f"Clip {index}")
             data.action = action
             for frame, factor in ((1, 0.0), (25, amount)):
-                for number, (name, *_) in enumerate(bones):
+                keyed = (bone for bone in bones if bone[0] not in still)
+                for number, (name, *_) in enumerate(keyed):
                     pose = rig.pose.bones[name]
                     pose.rotation_quaternion = (math.cos(factor / 4), math.sin(factor / 4), 0, 0)
                     pose.keyframe_insert("rotation_quaternion", frame=frame)
@@ -522,6 +528,8 @@ def clip_glb(
             use_active_scene=True,
             export_animations=bool(clips),
             export_animation_mode="NLA_TRACKS",
+            # Otherwise every bone keeps at least one key.
+            export_optimize_animation_keep_anim_armature=not still,
         )
         return path.read_bytes()
     finally:

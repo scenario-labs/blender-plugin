@@ -4,6 +4,54 @@ Scenario for Blender brings Scenario's generation models into Blender. You need
 Blender 5.0 or later, a Scenario account with API access (see the
 [Scenario documentation](https://docs.scenario.com)) and an internet connection.
 
+<div class="hero-map" role="group" aria-label="What Scenario for Blender does">
+<div class="hero-col hero-in">
+<p class="hero-label">From your scene</p>
+<ul>
+<li>A prompt or reference files</li>
+<li>Viewport capture</li>
+<li>Scene camera view</li>
+<li>Playblast of your animation</li>
+<li>Selected mesh</li>
+</ul>
+</div>
+<div class="hero-panel">
+<p class="hero-label">Scenario models</p>
+<ul class="hero-lanes">
+<li><a href="#image">Image</a></li>
+<li><a href="#video">Video</a></li>
+<li><a href="#3d">3D</a></li>
+<li><a href="#materials">Materials</a></li>
+<li><a href="#audio">Audio</a></li>
+<li><a href="#environment">360 World</a></li>
+<li><a href="#render-image">Render Image</a></li>
+<li><a href="#render-video">Render Video</a></li>
+<li><a href="#blockout">Blockout</a></li>
+</ul>
+<p class="hero-edit"><a href="#3d">Mesh edits</a> remesh, retexture, UV unwrap, rig, animate,
+split into parts</p>
+<p class="hero-generate"><a href="#costs">Generate</a> <span>price in credits shown first</span></p>
+</div>
+<div class="hero-col hero-out">
+<p class="hero-label">Back in Blender</p>
+<ul>
+<li>Images as datablocks and textures</li>
+<li>Meshes at the 3D cursor or beside the original</li>
+<li>PBR texture sets on a material slot</li>
+<li>Video and audio for the Sequencer</li>
+<li>360 panorama as the scene World</li>
+<li>Greybox layout in a Blockout collection</li>
+</ul>
+</div>
+<div class="hero-also">
+<p><a href="#agents-mcp">Agents</a> Claude Code, Codex, Cursor or Claude Desktop read your
+scene, run tools and generate over MCP</p>
+<p><a href="#film-tasks">Film</a> a recipe to shots, a timeline, a master and an export
+<span class="tool-family-tag">experimental</span></p>
+<p><a href="#expanded-studio-view">Studio</a> Scenario workflows and your Library</p>
+</div>
+</div>
+
 The extension is experimental: check the [known limitations](KNOWN_LIMITATIONS.md)
 before you rely on a feature. This handbook follows current development, so it may
 describe changes that are not released yet. The [release notes](../CHANGELOG.md)

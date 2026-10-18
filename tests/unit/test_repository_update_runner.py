@@ -685,6 +685,7 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
         "asset_id": "a",
         "source": "asset",
         "projection": None,
+        "parent_id": None,
     }
     binding = {"production_id": "production", "task_id": "take", "task_sha256": "a" * 64}
     bound = Record({"film_task": binding})
@@ -693,7 +694,12 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
     assert package_probe.job_snapshot(cloud)["intent"] == {"source": "cloud"}
     assert old.intent == {"request_id": "old"}
     assert old.results[0]["asset"] == {"asset_id": "a"}
-    saved = {"asset_id": "b", "source": "original", "projection": "equirectangular"}
+    saved = {
+        "asset_id": "b",
+        "source": "original",
+        "projection": "equirectangular",
+        "parent_id": "a",
+    }
     current = Record({"request_id": "new"}, [{"asset": dict(saved), "receipt": None}])
     assert package_probe.job_snapshot(current)["results"][0]["asset"] == saved
 

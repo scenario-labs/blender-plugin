@@ -1130,7 +1130,7 @@ class SCENARIO_OT_mcp_start(bpy.types.Operator):
     def execute(self, context):
         from . import mcp_service
 
-        server = mcp_service.start()
+        server = mcp_service.start(by_user=True)
         if server is None:
             self.report({"ERROR"}, runtime.state.mcp_error or "Could not start")
             return {"CANCELLED"}
@@ -1146,7 +1146,7 @@ class SCENARIO_OT_mcp_stop(bpy.types.Operator):
     def execute(self, context):
         from . import mcp_service
 
-        mcp_service.stop()
+        mcp_service.stop(by_user=True)
         return {"FINISHED"}
 
 

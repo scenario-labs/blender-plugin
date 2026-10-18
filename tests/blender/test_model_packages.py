@@ -128,6 +128,64 @@ class ModelPackageTests(unittest.TestCase):
         textures = [node.image for node in material.node_tree.nodes if node.type == "TEX_IMAGE"]
         self.assertEqual(textures, list(images))
 
+    def measured(self, result):
+        meshes = [obj for obj in result.objects if obj.type == "MESH"]
+        points = [obj.matrix_world @ Vector(corner) for obj in meshes for corner in obj.bound_box]
+        low = [min(point[i] for point in points) for i in range(3)]
+        high = [max(point[i] for point in points) for i in range(3)]
+        return [hi - lo for lo, hi in zip(low, high, strict=True)], low[2]
+
+    def test_target_size_scales_the_group_and_reports_its_measured_world_size(self):
+        self.legacy_obj()
+        saved = self.apply("obj")
+        dimensions, bottom = self.measured(saved)
+        self.assertEqual((saved.target_size, saved.scale), (None, 1.0))
+        self.assertEqual(tuple(saved.root.scale), (1.0, 1.0, 1.0))
+        for reported, actual in zip(saved.dimensions, dimensions, strict=True):
+            self.assertAlmostEqual(reported, actual, places=5)
+        self.assertAlmostEqual(saved.bottom, 6.0, places=5)
+        snapshot = self.module.prepare_snapshot(self.unit("obj"), self.files)
+        try:
+            sized = self.module.import_snapshot(
+                self.scene, snapshot, cursor=(4.0, 5.0, 6.0), target_size=0.25
+            )
+        finally:
+            snapshot.cleanup()
+        self.assert_published(sized, "obj")
+        factor = 0.25 / max(dimensions)
+        self.assertEqual(sized.target_size, 0.25)
+        self.assertAlmostEqual(sized.scale, factor)
+        for value in sized.root.scale:
+            self.assertAlmostEqual(value, factor, places=6)
+        sized_dimensions, sized_bottom = self.measured(sized)
+        self.assertAlmostEqual(max(sized_dimensions), 0.25, places=5)
+        for reported, actual, original in zip(
+            sized.dimensions, sized_dimensions, dimensions, strict=True
+        ):
+            self.assertAlmostEqual(reported, actual, places=5)
+            self.assertAlmostEqual(actual, original * factor, places=5)
+        self.assertAlmostEqual(sized.bottom, sized_bottom, places=5)
+        self.assertAlmostEqual(sized.bottom, 6.0, places=5)
+
+    def test_an_invalid_target_size_stops_before_the_snapshot_is_used(self):
+        self.legacy_obj()
+        snapshot = self.module.prepare_snapshot(self.unit("obj"), self.files)
+        before = {name: set(getattr(bpy.data, name)) for name in self.module._PACKAGE_DATA}
+        try:
+            for value in (0, 1001, float("inf"), True):
+                with self.subTest(value=value):
+                    with self.assertRaisesRegex(
+                        self.module.ModelApplicationError, "target_size_m must be"
+                    ):
+                        self.module.import_snapshot(
+                            self.scene, snapshot, cursor=(0.0, 0.0, 0.0), target_size=value
+                        )
+            self.assertFalse(snapshot.used)
+        finally:
+            snapshot.cleanup()
+        after = {name: set(getattr(bpy.data, name)) for name in self.module._PACKAGE_DATA}
+        self.assertEqual(after, before)
+
     def obj_with_maps(self, **options):
         self.legacy_obj(**options)
         png = self.exports["png"].read_bytes()

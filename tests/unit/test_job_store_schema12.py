@@ -17,6 +17,7 @@ from scenario.core.jobs.store import (
     JobScope,
     JobState,
     JobStore,
+    ResultAsset,
     StoreConflict,
     StoreError,
 )
@@ -72,6 +73,39 @@ def _uncertain(store, request_id="request", **changes):
     return store.transition(request_id, expected_revision=record.revision, state=JobState.UNCERTAIN)
 
 
+def _upgraded(raw):
+    """A schema 11 row as the upgrade rewrites it: unknown claim time and result parents."""
+    expected = json.loads(raw) | {"claimed_at": None}
+    for item in expected["results"]:
+        item["asset"]["parent_id"] = None
+    return expected
+
+
+def _succeeded(store, request_id="request"):
+    record = store.create(_intent(store.scope, request_id))
+    for state, changes in (
+        (JobState.SUBMITTING, {"claimed_at": CLAIMED}),
+        (JobState.REMOTE, {"remote_job_id": f"remote-{request_id}"}),
+        (JobState.SUCCEEDED, {}),
+    ):
+        record = store.transition(
+            request_id, expected_revision=record.revision, state=state, **changes
+        )
+    return record
+
+
+def _package(**parents):
+    """A GLB, an OBJ and an MTL; keyword arguments name each file's parent."""
+    return tuple(
+        ResultAsset(
+            asset_id, f"{index:03d}-{asset_id}.bin", media_type, parent_id=parents.get(asset_id)
+        )
+        for index, (asset_id, media_type) in enumerate(
+            (("glb", "model/gltf-binary"), ("obj", "model/obj"), ("mtl", "model/mtl"))
+        )
+    )
+
+
 def test_fixture_is_the_unmodified_schema_eleven_store(schema11):
     assert _pragma(schema11, "user_version") == 11
     assert _pragma(schema11, "application_id") == storage._APPLICATION_ID
@@ -91,7 +125,7 @@ def test_real_schema_eleven_store_upgrades_every_row_with_an_unknown_claim_time(
     after = _rows(schema11, "jobs", "scope, request_id, revision, record")
     assert [row[:3] for row in after] == [row[:3] for row in before]
     for (key, request_id, _, raw), (*_, migrated) in zip(before, after, strict=True):
-        expected = json.loads(raw) | {"claimed_at": None}
+        expected = _upgraded(raw)
         assert json.loads(migrated) == expected
         record = stores[key].get(request_id)
         assert record.claimed_at is None
@@ -287,3 +321,43 @@ def test_link_refuses_a_stale_revision_or_a_confirmed_request(store):
         store.link_remote("missing", expected_revision=0, remote_job_id="other")
     with pytest.raises(ValueError):
         store.link_remote("prepared", expected_revision=0, remote_job_id="bad/id")
+
+
+def test_result_parent_round_trips_within_the_manifest(store):
+    record = _succeeded(store)
+    store.set_results("request", _package(obj="glb", mtl="glb"), expected_revision=record.revision)
+    parents = [item.asset.parent_id for item in store.get("request").results]
+    assert parents == [None, "glb", "glb"]
+
+
+@pytest.mark.parametrize("parent", ["obj", "", "bad/id", "has space"])
+def test_result_parent_must_be_another_opaque_identity(parent):
+    with pytest.raises(ValueError):
+        ResultAsset("obj", "001-obj.bin", "model/obj", parent_id=parent)
+
+
+@pytest.mark.parametrize(
+    "parents",
+    [
+        {"obj": "elsewhere"},
+        {"obj": "mtl", "mtl": "obj"},
+        {"glb": "obj", "obj": "mtl", "mtl": "glb"},
+    ],
+)
+def test_result_parent_outside_the_manifest_or_on_a_cycle_is_refused(store, parents):
+    record = _succeeded(store)
+    with pytest.raises(ValueError):
+        store.set_results("request", _package(**parents), expected_revision=record.revision)
+    assert store.get("request").results == ()
+
+
+def test_schema_twelve_row_without_a_result_parent_is_invalid_data(store, tmp_path):
+    record = _succeeded(store)
+    store.set_results("request", _package(), expected_revision=record.revision)
+    with closing(sqlite3.connect(tmp_path / "jobs.sqlite3")) as connection, connection:
+        (raw,) = connection.execute("SELECT record FROM jobs").fetchone()
+        value = json.loads(raw)
+        del value["results"][0]["asset"]["parent_id"]
+        connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
+    with pytest.raises(StoreError):
+        store.get("request")

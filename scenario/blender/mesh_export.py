@@ -7,7 +7,7 @@ import time
 
 import bpy
 
-from . import runtime
+from . import runtime, selection
 
 log = logging.getLogger("scenario.mesh_export")
 
@@ -20,9 +20,10 @@ def export_dir():
 
 def source_objects(context):
     """The meshes to send: the selected mesh objects, else the active one if it is a mesh."""
-    meshes = [o for o in context.selected_objects if o.type == "MESH"]
-    if not meshes and context.active_object is not None and context.active_object.type == "MESH":
-        meshes = [context.active_object]
+    meshes = [o for o in selection.selected_objects(context) if o.type == "MESH"]
+    active = selection.active_object(context)
+    if not meshes and active is not None and active.type == "MESH":
+        meshes = [active]
     return meshes
 
 
@@ -36,7 +37,7 @@ def export_glb(context, objects, path=None):
         raise RuntimeError("Blender's glTF exporter is not available")
     path = path or str(export_dir() / f"edit3d_{int(time.time() * 1000)}.glb")
     view_layer = context.view_layer
-    previous = [o for o in context.selected_objects]
+    previous = selection.selected_objects(context)
     active = view_layer.objects.active
     try:
         for obj in previous:
@@ -44,19 +45,30 @@ def export_glb(context, objects, path=None):
         for obj in objects:
             obj.select_set(True)
         view_layer.objects.active = objects[0]
-        bpy.ops.export_scene.gltf(
-            filepath=path,
-            export_format="GLB",
-            use_selection=True,
-            # Other scenes' selections would add objects and scenes to the upload.
-            use_active_scene=True,
-            export_apply=True,
-            export_yup=True,
-            export_animations=False,
-            export_texcoords=True,
-            export_normals=True,
-            export_materials="EXPORT",
-        )
+        # The exporter reads context.active_object and sets the window's cursor; a
+        # command or timer on a file loaded with --background has neither.
+        overrides = {"active_object": objects[0], "selected_objects": list(objects)}
+        if context.window is None and context.window_manager.windows:
+            # A window brings its own scene and view layer; keep the ones selected above.
+            overrides.update(
+                window=context.window_manager.windows[0],
+                scene=context.scene,
+                view_layer=view_layer,
+            )
+        with context.temp_override(**overrides):
+            bpy.ops.export_scene.gltf(
+                filepath=path,
+                export_format="GLB",
+                use_selection=True,
+                # Other scenes' selections would add objects and scenes to the upload.
+                use_active_scene=True,
+                export_apply=True,
+                export_yup=True,
+                export_animations=False,
+                export_texcoords=True,
+                export_normals=True,
+                export_materials="EXPORT",
+            )
     finally:
         for obj in objects:
             obj.select_set(False)

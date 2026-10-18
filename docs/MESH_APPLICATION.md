@@ -150,7 +150,12 @@ can pause Blender. There is no automatic blend save.
 
 Native **Import GLB model (N)** or **Import alternate: GLB (N)** and MCP
 `prepare_result_application` with the unit's `asset_id` capture the scene
-revision and exact cursor. Approval is consumed once; worker verification,
+revision and exact cursor. MCP can also bind a `target_size_m` to the approval:
+publication then scales the group root uniformly so the longest side of the mesh
+bounds, measured like the bottom center, has that length, and keeps the bottom
+center at the cursor. A model with no measurable size fails after the claim and
+is rolled back. Every import reports the group's measured world size and bottom
+height in MCP `model_import`. Approval is consumed once; worker verification,
 destination revalidation and the main-thread snapshot preflight precede the
 durable claim. The current scene must be local and in Object Mode both at
 preparation and after verification. Rejection before the claim, including a
@@ -315,11 +320,12 @@ name passed to these functions is written into the snapshot before import:
 Blender looks for a missing file elsewhere, including the process working
 directory. The import must still check the images it creates.
 
-The store does not persist lineage, and no planned store migration includes it.
-Persisting it would need two optional `ResultAsset` fields captured from the same
-`assets.retrieve` response as the manifest: `asset_type` (SDK `AssetMetadata.type`)
-and `parent_id` (`AssetMetadata.parent_id`). No issue tracks that follow-up yet.
-Until it lands, every stored manifest uses the stricter rules without lineage;
+Schema 12 stores each result's in-job parent as `parent_id`
+([result parents](JOB_STORAGE.md#result-parents)), but the classifier does not read it
+yet. Its lineage rules expect an OBJ's MTL and maps under the OBJ; live Meshy results
+put them beside it, under the GLB. Until binding by parent lands
+([#609](https://github.com/scenario-labs/blender-plugin/issues/609)), every stored
+manifest uses the stricter rules without lineage;
 `members_from_results` accepts lineage only as an explicit mapping, so parent
 binding and generated-output ordering apply only when a caller supplies it.
 Undocumented provider file names are never used. Provider package shapes, SPZ
@@ -449,7 +455,9 @@ Splat** or node group named **Scenario Splat Points** is never reused or
 changed. Publication reuses the model group: a new **Scenario Model** collection
 and root with the bottom center of the decoded bounds at the cursor,
 `scenario_asset` and `scenario_assets`, and `scenario_splat_points` and
-`scenario_splat_kept` counts. Selection, the active object and the timeline stay
+`scenario_splat_kept` counts. An MCP `target_size_m` fits the longest side of
+those decoded centre bounds, so the reported size, which includes point radii,
+can be slightly larger. Selection, the active object and the timeline stay
 unchanged. A failure removes only new objects, collections, meshes, materials
 and node groups, then verifies those sets; incomplete cleanup is reported as
 uncertain, and receipt-only retry never builds the points again. In desktop

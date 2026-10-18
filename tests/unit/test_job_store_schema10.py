@@ -90,8 +90,8 @@ def test_real_schema_nine_store_upgrades_every_row_without_guessing(schema9):
         # Earlier stores never saved a submission claim time (schema 12).
         expected = json.loads(raw) | {"claimed_at": None}
         for item in expected["results"]:
-            # Earlier stores never declared an original or projection.
-            item["asset"].update(source="asset", projection=None)
+            # Earlier stores never declared an original, projection or parent.
+            item["asset"].update(source="asset", projection=None, parent_id=None)
         assert json.loads(migrated) == expected
         record = stores[key].get(request_id)
         assert json.loads(json.dumps(asdict(record))) == expected

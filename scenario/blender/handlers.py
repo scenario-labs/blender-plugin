@@ -6,7 +6,7 @@ import logging
 
 import bpy
 
-from . import generation, props, runtime, trained_models
+from . import generation, prompts, props, runtime, trained_models
 
 log = logging.getLogger("scenario.handlers")
 
@@ -43,10 +43,13 @@ def dispatch(event):
             else "Connected to Scenario (model access verified)"
         )
         runtime.set_message(runtime.state.account_label)
-    elif name == "catalog":
+        if not error:
+            prompts.connected()
+    elif name == "catalog":  # read from Scenario; the local cache is applied without an event
         generation.set_catalog(
             payload["records"], payload["detailed"], warmup=payload.get("warmup", False)
         )
+        prompts.connected()
     elif name == "catalog_failed":
         payload = payload["error"] if isinstance(payload, dict) else payload
         runtime.state.catalog_loading = False

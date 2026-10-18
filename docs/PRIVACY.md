@@ -105,6 +105,7 @@ extension's control, and macOS still adds proxy settings from your login session
 to every application it launches.
 
 **Share anonymous usage data**, in the extension's preferences, is off by default.
+After a connection succeeds, the Scenario panel asks once; **No thanks** sends nothing.
 When you turn it on, the extension saves a random install ID in its user directory,
 not linked to your Scenario account, and about once a minute sends telemetry events
 with it: that the extension started; which Scenario commands you run and whether
@@ -171,7 +172,8 @@ the database or store your API key/secret. An explicit project override selects 
 separate scope in that storage. The same database keeps any per-lane default you
 save for trained or private models: their model IDs and optional strengths, per
 credential and project scope, without prompts or model details. While usage data is
-shared, `state/usage-install-id` holds its random install ID.
+shared, `state/usage-install-id` holds its random install ID. `state/prompts.json`
+records only that you answered the panel's question about it.
 
 Verified result files live under `state/shared-results`; upload intents and
 private source copies live under `state/shared-uploads`, including

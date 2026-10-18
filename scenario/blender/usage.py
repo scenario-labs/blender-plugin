@@ -49,6 +49,8 @@ EXCLUDED_OPERATORS = frozenset(
         "scenario.composer_modal",
         # The pump runs it to show a feedback send's outcome in the status bar.
         "scenario.feedback_outcome",
+        # The usage data card: an answer to it, No thanks above all, is never recorded.
+        "scenario.usage_card",
     }
 )
 _METHODS = ("execute", "invoke", "modal", "cancel")

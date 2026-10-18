@@ -937,8 +937,9 @@ reference files, captures and exported meshes, and spends credits. Catalogs and
 thumbnails load from Scenario, and cloud history loads when you ask for it. Saved
 credentials, prompts, jobs and media stay on your machine. A connected local agent
 can read your scene and request paid work. **Share anonymous usage data**, in the
-extension's preferences, is off by default; turned on, it tells Scenario which
-commands and agent tools you use, never your prompts, files or account. Feedback
+extension's preferences, is off by default, and the Scenario panel asks once after
+you connect; turned on, it tells Scenario which commands and agent tools you use,
+never your prompts, files or account. Feedback
 sends your rating, message and optional email, only when you press Send, with your
 extension and Blender versions and system type, plus your install ID while usage
 data is shared. See [Privacy and data handling](PRIVACY.md) for details.

@@ -20,9 +20,10 @@ def credentials_changed(self, context):
 
 
 def usage_sharing_changed(self, context):
-    from .blender import usage
+    from .blender import prompts, usage
 
     usage.set_sharing(self.share_usage)
+    prompts.sharing_answered()
 
 
 def feedback_field(name):

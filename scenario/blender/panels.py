@@ -15,6 +15,7 @@ from . import (
     job_recovery,
     label_wrap,
     params_ui,
+    prompts,
     props,
     result_previews,
     runtime,
@@ -912,6 +913,7 @@ class SCENARIO_PT_main(bpy.types.Panel):
         if not draw_account_strip(layout, context):
             draw_message(layout)  # a feedback outcome, which needs no credentials
             return
+        prompts.draw_usage_card(layout, context)
         scenario = context.scene.scenario
         draw_enum_tabs(
             layout,

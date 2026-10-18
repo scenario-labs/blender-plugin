@@ -117,21 +117,19 @@ mark{background:var(--primary-soft);color:inherit;border-radius:2px;padding:0 .1
 .lane-strip figcaption a{display:block;font-family:var(--serif);font-size:1.3rem;line-height:1.2;color:var(--fg);text-decoration:none}
 .lane-strip figcaption a:hover{color:var(--primary)}
 
-/* Lightbox: select a guide screenshot to see it large. */
+/* Lightbox: select a guide screenshot to see it whole, fitted to the window. */
 .handbook img[role="button"]{cursor:zoom-in}
 .lightbox{width:100vw;height:100dvh;max-width:none;max-height:none;margin:0;padding:0;border:0;background:transparent;overflow:hidden}
 .lightbox[open]{display:grid;place-items:center}
 .lightbox::backdrop{background:rgba(22,20,19,.88)}
-.lightbox figure{display:grid;justify-items:center;gap:.8rem;max-width:100%;max-height:100%;margin:0;padding:4rem 1rem 1.5rem}
-.lightbox img{display:block;width:auto;height:auto;max-width:min(1600px,100%);max-height:calc(100dvh - 8.5rem);border-radius:6px;background:var(--card);box-shadow:0 30px 80px rgba(0,0,0,.5);cursor:default}
-.lightbox.tall{overflow-y:auto}
-.lightbox.tall[open]{place-items:start center}
-.lightbox.tall img{max-height:none}
-.lightbox figcaption{max-width:70ch;text-align:center;font-size:.88rem;line-height:1.5;color:#e8e4e0}
+.lightbox figure{display:grid;justify-items:center;gap:.6rem;max-width:100%;max-height:100%;margin:0;padding:1rem 4rem}
+.lightbox img{display:block;width:auto;height:auto;max-width:min(1600px,100%);max-height:calc(100dvh - 5.5rem);border-radius:6px;background:var(--card);box-shadow:0 30px 80px rgba(0,0,0,.5);cursor:default}
+.lightbox figcaption{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;max-width:70ch;text-align:center;font-size:.84rem;line-height:1.4;color:#e8e4e0}
 .lightbox-close{position:fixed;top:1rem;right:1rem;display:grid;place-items:center;width:2.75rem;height:2.75rem;padding:0;border:1px solid rgba(255,255,255,.3);border-radius:50%;background:rgba(37,35,34,.75);color:#fff;font:inherit;font-size:1.7rem;line-height:1;cursor:pointer}
 .lightbox-close:hover{background:var(--primary)}
 .lightbox-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
 body:has(.lightbox[open]){overflow:hidden}
+@media (max-width:700px){.lightbox figure{padding:4rem .75rem 1rem}.lightbox img{max-height:calc(100dvh - 8.5rem)}}
 @media (prefers-reduced-motion:no-preference){.lightbox[open] img{animation:lightbox-in .18s ease-out}}
 @keyframes lightbox-in{from{opacity:0;transform:scale(.97)}}
 .strip-nav{display:flex;justify-content:flex-end;gap:.5rem;margin:0 0 1.6rem}

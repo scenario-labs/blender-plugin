@@ -131,11 +131,7 @@ document.querySelectorAll(".lane-strip").forEach(strip => {
     large.src = image.currentSrc || image.src;
     large.alt = image.alt;
     caption.textContent = image.alt;
-    // Tall sidebar panels keep their width and scroll instead of shrinking to the screen height.
-    const ratio = (image.naturalHeight || image.height) / (image.naturalWidth || image.width);
-    dialog.classList.toggle("tall", ratio > 1.4);
     dialog.showModal();
-    dialog.scrollTop = 0;
   };
   document.querySelectorAll(".handbook img").forEach(image => {
     if (image.closest("a")) return;

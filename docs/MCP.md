@@ -16,8 +16,8 @@ The local server accepts MCP JSON-RPC over HTTP at
 **Allow Online Access** is switched on, unless **Stop MCP server** was pressed,
 and stops when it is switched off. It uses only the **MCP Port** preference; if
 another program holds that port, the server stays stopped and the panel names
-the port. Copy the URL from **Scenario > Agents (MCP)**. An
-authenticated GET on `/mcp` returns 405:
+the port. Copy the URL from **Scenario > Agents (MCP)**. A
+GET on `/mcp` returns 405:
 use POST for tool calls; the server does not provide an SSE stream.
 
 The extension is experimental. The [runtime map](architecture/runtime.md)
@@ -380,8 +380,8 @@ blender --background scene.blend --command scenario_blender --port 9876
 ```
 
 Blender must allow online access; `--online-mode` explicitly enables it for the invocation. Stop
-with Ctrl+C. Scene captures need the GUI; other scene tools use the headless main-thread request
-loop. Development builds and tests use the
+with Ctrl+C. `screenshot_viewport` and `render_still` need the GUI; other scene tools use the
+headless main-thread request loop. Development builds and tests use the
 [isolated native runner](../CONTRIBUTING.md#native-blender-test-loop).
 
 ## Tools
@@ -596,7 +596,7 @@ credential storage and data handling.
 
 Every request, `/health` included, must carry exactly one `Host` header naming
 `127.0.0.1`, `localhost` or `[::1]`, with or without a port, in any letter case.
-The server checks it before routing, authentication and the Origin check. A missing
+The server checks it before routing and the Origin check. A missing
 or repeated `Host` returns 400; any other name returns 403 `forbidden host`,
 with the same early-rejection teardown as an Origin refusal. A DNS-rebinding
 page reaches the port under its own host name, which its browser sends as
@@ -956,8 +956,7 @@ context and revision. Neither requests a price or changes a payload. A form
 without an explicit choice takes the saved default, as in the native UI, while
 Image `estimate_cost` uses only the parameters it is given. A default is a local
 choice kept in the job store, not spending authority. Live use of a private
-composition is tracked in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+composition is not verified.
 
 ### Preparing Render Image and Render Video
 
@@ -1041,7 +1040,7 @@ upload, Spark approval and render submission remain separate actions.
 Multi-object material application is
 [#446](https://github.com/scenario-labs/blender-plugin/issues/446), and the open
 render and Film checks are in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 
 ### Reusing completed shared results
@@ -1118,7 +1117,7 @@ like the other native lanes. A native panorama input also accepts a local 2:1
 file that passes a preflight before upload; `upload_reference` has no such check,
 so an uploaded file is refused as a panorama reference here. HY World output and
 the HDR original's host are open in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440). The Image and
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494). The Image and
 Render Image lanes also list these models.
 
 ## Saved result previews
@@ -1309,21 +1308,21 @@ provider/retargeting limitations.
 ## Applying returned animation
 
 Use `mesh_policy: ANIMATE` with `purpose: mesh_source` or `mesh_edit` and one
-saved GLB from an Animate job when the source is skinned to an armature. The
-returned armature's clips are copied onto that existing rig; the source's mesh,
-skin, rig and object context stay, and no returned object is added. Every
-animated bone needs the same name and parent as the rig and a rest pose within
-15 degrees, which the copied keys are corrected for, and location keys are
-scaled to the rig's units. The first clip becomes the active action; it, the
-other clips and the previous action stay in muted NLA tracks. `mesh_placement`
-and `keep_original` are not used. An unskinned source, a different skeleton or a
-result without clips is rejected, leaving the job reviewable. `mesh_edit.rig`
-names the animated rig, `mesh_edit.clips` the new actions and
-`mesh_edit.rest_correction_deg` the largest rest correction in degrees while the
-status is current. FBX clips, for RIG too, keep the file's frame rate and
-`mesh_edit.frame_rate_mismatch` reports a different scene FPS. The shared native
-history and receipt-only recovery rules apply. See
-[the ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
+saved GLB, glTF or FBX unit from an Animate job when the source is skinned to an
+armature. The returned armature's clips are copied onto that existing rig; the
+source's mesh, skin, rig and object context stay, and no returned object is
+added. Every animated bone needs the same name and parent as the rig and a rest
+pose within 15 degrees, which the copied keys are corrected for, and location
+keys are scaled to the rig's units. The first clip becomes the active action;
+it, the other clips and the previous action stay in muted NLA tracks.
+`mesh_placement` and `keep_original` are not used. An unskinned source, a
+different skeleton or a result without clips is rejected, leaving the job
+reviewable. `mesh_edit.rig` names the animated rig, `mesh_edit.clips` the new
+actions and `mesh_edit.rest_correction_deg` the largest rest correction in
+degrees while the status is current. FBX clips, for RIG too, keep the file's
+frame rate and `mesh_edit.frame_rate_mismatch` reports a different scene FPS.
+The shared native history and receipt-only recovery rules apply. See [the
+ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
 
 
 ## Blockout plan commands
@@ -1839,4 +1838,4 @@ tag listing are not provided locally. A tag the service normalizes reads back as
 Studio's [Library organization](ui/studio-and-library.md#library-organization) controls
 prepare and apply the same reviews, one asset at a time, and disable Organize
 on pages loaded with Public assets. Apply from the desktop dialog continues in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).

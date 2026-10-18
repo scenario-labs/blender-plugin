@@ -24,8 +24,9 @@ and follows up through the same private channel.
 ## Scope
 
 This repository ships Scenario for Blender. It uses Scenario API credentials,
-communicates with `api.cloud.scenario.com`, saves generated files and imports
-media into Blender, and provides a local MCP server. Relevant reports include:
+communicates with `api.cloud.scenario.com` and, for opt-in usage data and
+feedback, `blender.scenario.com`, saves generated files and imports media into
+Blender, and provides a local MCP server. Relevant reports include:
 
 - Unexpected exposure of keys, secrets or signed URLs through preferences, logs,
   errors, files or network requests, including credential-source selection involving
@@ -37,8 +38,9 @@ media into Blender, and provides a local MCP server. Relevant reports include:
   with the Blender user's privileges. The Python guard is not a security sandbox.
 - Unsafe downloads or imports of images, video, audio, glTF/GLB, FBX, OBJ, SPZ, PLY
   or other generated content, and cross-scene or cross-account result application.
-- Headless command mode, the local stdio shim, helper scripts,
-  bundled dependencies and the repository's CI or release supply chain.
+- Headless command mode, the local stdio shim, agent configurations written by
+  **Connect**, helper scripts, bundled dependencies and the repository's CI or
+  release supply chain.
 
 Platform vulnerabilities involving `app.scenario.com`, `api.cloud.scenario.com`
 or the remote server at `mcp.scenario.com` use the same private channels above,

@@ -74,11 +74,11 @@ These checks supersede the window-attachment and populated-form evidence gaps.
 Alternate-DPI interaction and IME composition remain unverified: Preferences
 opened, but the attempted scale edit did not change the observed UI scale, and
 Unicode paste is not IME composition. UI scales 1.25 and 1.5 and the IME
-candidate window continue in #440 as acceptance follow-ups. The paid desktop
+candidate window continue in #494 as acceptance follow-ups. The paid desktop
 pass of 2026-10-13 later ran a capture, quote, generation, inspection and
 application journey (see the
 [release evidence](../maintenance/release-acceptance.md#3d-generation-and-imports));
-other-platform desktop interaction continues in #440.
+other-platform desktop interaction continues in #494.
 
 Blur and Studio opening share the same focused-prompt ownership guard.
 A conflicting scene, lane or sidebar prompt keeps both texts and focus intact;
@@ -155,7 +155,7 @@ Installed tests verify synthetic native registration, shared UI/MCP quote use,
 changed-input rejection, view changes, continued work and saved-form reload.
 The desktop regression checks below record prompt editing, exact price refresh,
 cancel/confirm and saved-job visibility with a synthetic service on their named
-candidate. Open DPI, IME and platform checks are in #440.
+candidate. Open DPI, IME and platform checks are in #494.
 Live outputs remain outside this implementation.
 
 ### Waiting workflow steps
@@ -279,7 +279,7 @@ Blender passes `OperatorProperties` to the enum callback, not the Python
 operator carrying the prepared approvals. Installed tests exercise that
 registered callback as well as state and command boundaries. The desktop checks
 below record native browsing and reference confirmation for their named
-candidate. Open Library desktop checks are in #440.
+candidate. Open Library desktop checks are in #494.
 
 ### Library organization
 
@@ -385,7 +385,7 @@ tag changes through local MCP and the native operators in background Blender
 (see the [release evidence](../maintenance/release-acceptance.md#library-organization)).
 The desktop passes made no live collection or tag write. Apply on a desktop,
 Blender 5.0 and 5.2 and other platforms continue in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 ## Workflow reference selection
 
@@ -436,7 +436,7 @@ These desktop checks use synthetic service responses with external sockets
 blocked. They establish native input and popup refresh behavior, not live
 workflow quality, full compact capture-to-apply acceptance, IME composition,
 multiple DPI settings, other OS interaction, sustained GPU/audio behavior or
-human media review. The open ones are in #440.
+human media review. The open ones are in #494.
 
 ## Workflow input uploads
 
@@ -505,4 +505,4 @@ uploaded a local image file and viewport and camera captures into workflow
 inputs, each after its own confirmation (see the
 [release evidence](../maintenance/release-acceptance.md#workflows)). A **Render
 result** upload after F12, audio, video and 3D files and UI scale 2.0 continue
-in #440; IME in these controls is not recorded.
+in #494; IME in these controls is not recorded.

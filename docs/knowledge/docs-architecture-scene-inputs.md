@@ -6,10 +6,11 @@
   "evidence": {
     "path": "docs/architecture/scene-inputs.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
     "limits": "Source-reviewed against the Film, render, upload and mesh application owners it summarizes; detailed contracts are in the linked guides. No live Scenario call, provider output, desktop interaction or native run.",
     "sources": [
+      "scenario/blender/animation_application.py",
       "scenario/blender/capture.py",
       "scenario/blender/film.py",
       "scenario/blender/film_application.py",
@@ -79,6 +80,8 @@
       "scenario/core/scene/film_finish.py",
       "scenario/core/scene/film_plan.py",
       "scenario/core/scene/film_scene_plan.py",
+      "scenario/core/scene/mesh_correspondence.py",
+      "scenario/core/scene/mesh_edit_policy.py",
       "scenario/core/scene/render_prompt.py",
       "scenario/core/schema/forms.py",
       "scenario/core/schema/params.py",

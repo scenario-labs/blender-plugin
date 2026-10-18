@@ -58,8 +58,9 @@ scope, payload and origin before authorizing dispatch.
 Only hashes and exact cost are persisted for payload/quote identity. No prompt,
 credential, raw service response, absolute file path or signed storage URL is stored.
 Result manifests retain portable basenames, asset IDs, media types, optional
-expected size/digest, allowlisted image texture roles, the delivered file's source,
-server-declared projection and verified download receipts.
+expected size/digest, allowlisted image texture roles, the delivered file's
+source, server-declared projection, parent within the job and verified download
+receipts.
 An old stored quote is not reusable spending authorization after restart. The
 store does not itself verify a supplied fingerprint against a live estimate or
 prove ownership of a supplied remote ID; those checks belong to the coordinator.
@@ -412,8 +413,7 @@ model jobs and show the quoted target model. Saved `.blend` properties added by
 later interface work are separate from this database, and the upload database
 keeps its own version.
 
-Three fields deferred here were decided before schema 12 shipped
-([#494](https://github.com/scenario-labs/blender-plugin/issues/494)):
+Of three further fields considered here, schema 12 stores one:
 
 - No intent-level panorama purpose: live skybox results declare the
   `metadata.type` that projection depends on.

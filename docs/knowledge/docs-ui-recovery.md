@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/ui/recovery.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against the Blockout, saved-plan recovery and cloud history code. Recorded installed-test and desktop evidence, including its archive hashes, was not rerun; no live Scenario call or desktop interaction.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Source-reviewed against the Blockout, saved-plan recovery, cloud history and unconfirmed-submission lookup and link code. Recorded installed-test and desktop evidence, including its archive hashes, was not rerun; no live Scenario call or desktop interaction, and the candidate dialog has no desktop check.",
     "sources": [
       "docs/images/blockout-plan-approval.png",
       "docs/images/blockout-plan-built.png",
@@ -32,23 +32,30 @@
       "scenario/blender/model_jobs.py",
       "scenario/blender/operators.py",
       "scenario/blender/panels.py",
+      "scenario/blender/prompt_jobs.py",
       "scenario/blender/props.py",
       "scenario/blender/runtime.py",
       "scenario/core/api/sdk_adapter.py",
       "scenario/core/history.py",
       "scenario/core/jobs/coordinator.py",
+      "scenario/core/jobs/reconcile.py",
       "scenario/core/jobs/results.py",
       "scenario/core/scene/blockout.py",
+      "scenario/core/ui/saved_job_actions.py",
       "scenario/mcp/tools_scenario.py",
       "tests/blender/run_all.py",
       "tests/blender/test_blockout.py",
       "tests/blender/test_blockout_jobs.py",
       "tests/blender/test_mcp_contracts.py",
       "tests/blender/test_model_generation.py",
+      "tests/blender/test_prompt_tools.py",
       "tests/blender/test_sdk_history.py",
+      "tests/blender/test_workflow_commands.py",
       "tests/unit/test_blockout.py",
       "tests/unit/test_history.py",
-      "tests/unit/test_mcp_descriptions.py"
+      "tests/unit/test_job_reconcile.py",
+      "tests/unit/test_mcp_descriptions.py",
+      "tests/unit/test_saved_job_actions.py"
     ]
   }
 }

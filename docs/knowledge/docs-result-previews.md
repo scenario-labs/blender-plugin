@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/RESULT_PREVIEWS.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
     "limits": "Source-reviewed against the preview modules, scheduler, lane commands and Blender owners. No live Scenario preview, workflow review asset or provider audio file; real players, sound output and drawing on Windows, Linux and macOS x64 desktops are not exercised.",
     "sources": [
       ".github/workflows/blender-baseline.yml",

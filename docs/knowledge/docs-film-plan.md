@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/FILM_PLAN.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
     "limits": "Checked against the Film sources by tracing every implementation change since each section was written and spot-checking bounds, labels and MCP tool names; not every sentence was re-derived from code. Desktop and live evidence is cited, not repeated. No live Scenario call, Blender run or desktop interaction.",
     "sources": [
       "scenario/blender/file_state.py",

@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/ui/studio-and-library.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
     "limits": "Source-reviewed against the implementation. Its desktop evidence paragraphs record named earlier candidates and were not repeated. No live Scenario call, native Blender run or desktop interaction.",
     "sources": [
       "docs/UI_STYLE.md",

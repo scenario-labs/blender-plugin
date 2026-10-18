@@ -60,7 +60,7 @@ Make HDRI and World approval in a newly selected scene. A physical desktop pass
 before the lane merged, with free quotes only, covered the tab, modes, settings
 and result lines, World application and restore of saved PNG, OpenEXR and JPEG
 panoramas, and Esc and viewport keys after each dialog. The recheck of the
-merged lane, including its composer tab row, is tracked in #440 (see the
+merged lane, including its composer tab row, is tracked in #494 (see the
 [release evidence](../maintenance/release-acceptance.md#panorama-and-world)).
 No screenshot is committed.
 

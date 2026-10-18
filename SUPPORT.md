@@ -18,8 +18,9 @@ page says where to look and whom to ask.
 Discussions are not enabled. Search the
 [existing issues](https://github.com/scenario-labs/blender-plugin/issues) and
 [known limitations](docs/KNOWN_LIMITATIONS.md) first. For an idea, use the change
-request form when available. For a question, open a blank issue with a title
-starting with "Question:"; a maintainer adds the `question` label.
+request form, or send private feedback from Blender with the heart button in the
+Scenario panel. For a question, open a blank issue with a title starting with
+"Question:"; a maintainer adds the `question` label.
 
 ## Bugs and change requests
 

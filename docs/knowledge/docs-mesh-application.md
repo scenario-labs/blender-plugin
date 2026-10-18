@@ -6,11 +6,12 @@
   "evidence": {
     "path": "docs/MESH_APPLICATION.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Labels, limits, policies, undo checkpoints, splat constants and package ranking were checked against the application modules; OBJ, MTL and glTF rewrite rules were spot-checked. No live Scenario call, provider package or coordinate contract, desktop interaction or native run.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Labels, tolerances, fit thresholds, part, object and bone limits and function names were spot-checked against the application modules; package and reference rewrite rules were not re-read line by line. No live Scenario call, provider package or coordinate contract, desktop interaction or native run.",
     "sources": [
       "pyproject.toml",
+      "scenario/blender/animation_application.py",
       "scenario/blender/file_state.py",
       "scenario/blender/film_scene.py",
       "scenario/blender/job_recovery.py",
@@ -33,6 +34,8 @@
       "scenario/core/jobs/store.py",
       "scenario/core/jobs/workers.py",
       "scenario/core/scene/glb.py",
+      "scenario/core/scene/mesh_correspondence.py",
+      "scenario/core/scene/mesh_edit_policy.py",
       "scenario/core/scene/model_formats.py",
       "scenario/core/scene/model_references.py",
       "scenario/core/scene/splat_ply.py",
@@ -55,6 +58,8 @@
       "tests/unit/test_config.py",
       "tests/unit/test_glb.py",
       "tests/unit/test_job_store.py",
+      "tests/unit/test_mesh_correspondence.py",
+      "tests/unit/test_mesh_edit_policy.py",
       "tests/unit/test_model_formats.py",
       "tests/unit/test_model_references.py"
     ]

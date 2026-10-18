@@ -105,8 +105,8 @@ explicit file verification and reconciliation by the caller.
 
 `JobWorkers` runs storage transfers, meaning result downloads and upload parts, on
 their own lane: two `ScenarioTransfer` threads with a queue of 16. The job workers
-therefore stay free for status polls, remote cancellation and submissions while a
-large result downloads, and preview work keeps its separate lane. A full transfer
+therefore stay free for status polls and submissions while a large result
+downloads, and preview work keeps its separate lane. A full transfer
 queue refuses the command before it starts, as for the job queue.
 
 Each result download gets a cancel event. **Stop download** (`stop_download` in
@@ -144,7 +144,7 @@ also uses up one attempt, keeping the staged bytes. A changed manifest, host,
 size, encoding or digest, revoked Online Access and cancellation stop at once;
 a failure that coincides with cancellation is still reported as that failure. The exact-host
 policy, redirect rules and SHA-256 receipt apply to every attempt. After the
-last failure the job is `download_failed` and Resume works as before.
+last failure the job is `download_failed` and **Resume download** restarts it.
 
 Each attempt's elapsed budget is the larger of 300 seconds and the expected size
 at 256 KiB/s, at most 30 minutes; 256 MiB, the default byte cap, gets 1024

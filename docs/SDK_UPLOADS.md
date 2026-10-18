@@ -321,7 +321,7 @@ storage connections, including the installed extension and shared worker queue.
 No live source is uploaded by these tests. Authoritative account discovery
 remains with [#67](https://github.com/scenario-labs/blender-plugin/issues/67),
 and the open upload checks are in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 ## Explicit finished-upload source cleanup
 
@@ -696,12 +696,13 @@ details are not exposed. Both paths clean the private export before admission.
 
 The durable `mesh_source` records the exact GLB SHA256, each source target ID,
 base-mesh fingerprint and world matrix. Its exporter convention is
-`blender-world-gltf-y-up`, with evaluated modifiers and animations disabled,
-matching the existing GLB exporter settings. One mesh becomes the upload origin's
-explicit target; multiple meshes retain all IDs and leave the primary target
-unset. The metadata is immutable and never added to a Scenario API request.
-Worker staging verifies that its copied bytes match the recorded export hash.
-It cannot substitute a newer export or another source file under that provenance.
+`blender-world-gltf-y-up`: the active scene only, with evaluated modifiers and
+animations disabled, matching the existing GLB exporter settings. One mesh
+becomes the upload origin's explicit target; multiple meshes retain all IDs and
+leave the primary target unset. The metadata is immutable and never added to a
+Scenario API request. Worker staging verifies that its copied bytes match the
+recorded export hash. It cannot substitute a newer export or another source file
+under that provenance.
 
 Capture permits at most 64 distinct meshes. Export fingerprints have their own
 policy, independent of the in-place mesh application's component/type limits.

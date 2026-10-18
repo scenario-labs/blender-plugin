@@ -40,7 +40,7 @@ socket connection/bind attempts occur, and the normal Blender profile is unchang
 
 These synthetic checks do not establish live project permissions, other OS/DPI
 interaction, paid generation or release acceptance; live project permission and
-other platforms continue in #440.
+other platforms continue in #494.
 
 ![Blank Project ID restores the API key default scope](images/project-scope-default.png)
 ![Saved Blender credentials with an explicit project A selection](images/project-scope-project-a.png)
@@ -150,7 +150,7 @@ Blender treats the blur click as handled, so it does not also select in the
 viewport; the next click does. This path is unchanged; the
 [Studio view](ui/studio-and-library.md#explicit-studio-view) records its
 first-click header evidence. Focus after switching to another application and
-back, and the IME candidate window, continue in #440.
+back, and the IME candidate window, continue in #494.
 
 ## The model chooser
 
@@ -450,7 +450,7 @@ maintenance poll sets it. Installed tests on Blender 5.1.2 macOS arm64 draw a
 failed shared job's reason through the real Generations panel, **Generation
 details**, the composer strip and the job card with store reads refused; a
 desktop screenshot of the wrapped reason belongs to the live failed-job reason
-check in #440. The prompt box carries a trash button that deletes its text,
+check in #494. The prompt box carries a trash button that deletes its text,
 greyed out when empty.
 
 ## Jobs status and remote progress
@@ -493,7 +493,7 @@ Generations, finished Prompt Spark, Translate and Blockout jobs inspected with
 online access off and listed only in Generations without an offline line, the
 absence of storage reads and writes during draw, and one redraw per projected or
 online access change. No desktop interaction or screenshot of the bar is claimed
-yet; that check is in #440.
+yet; that check is in #494.
 
 ## Wording
 
@@ -693,7 +693,7 @@ once. Unit tests cover the pairing rule itself. Physical double-clicks on
 Blender 5.1.2 macOS selected nothing and reset nothing before pairing; real
 double-clicks later reset placement and width on a desktop (see the
 [release evidence](maintenance/release-acceptance.md#composer-and-ime)), and a
-physical double-click on the strip's background continues in #440.
+physical double-click on the strip's background continues in #494.
 
 ### Errors and file loads
 
@@ -751,7 +751,7 @@ calling cancel on a file load or a closed window, or keeping the load handler
 across File > Revert in an interface session. The
 [session-ending checklist](https://github.com/scenario-labs/blender-plugin/issues/66#issuecomment-6120385854)
 lists those event-simulated checks and the physical rechecks, with their
-expected results; #440 tracks them.
+expected results; #494 tracks them.
 
 ## Composer text input
 
@@ -814,7 +814,7 @@ A physical pass opened the F2 field at UI scales 1.0 and 2.0, typed dead keys
 and brought a whole composition into the prompt, and the maintainer's check on
 the candidate passed composition, commit and Esc after F2 (see the
 [input method limits](KNOWN_LIMITATIONS.md#interface-and-capture)).
-Candidate-window placement continues in #440; focus after the popover was not
+Candidate-window placement continues in #494; focus after the popover was not
 recorded.
 
 ## Compact job strip
@@ -919,7 +919,7 @@ The paid desktop pass opened the job card and the Reuse and Apply reviews from
 the strip's chips with Esc and viewport focus returning, and the #424 recheck at
 UI scale 1.0 drew the bar's fill to the reported fraction over a dim track (see
 the [release evidence](maintenance/release-acceptance.md#composer-and-ime)).
-UI scale 2.0 continues in #440.
+UI scale 2.0 continues in #494.
 
 ## What Blender cannot do (so we do not fake it)
 

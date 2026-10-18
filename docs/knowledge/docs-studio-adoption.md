@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/STUDIO_ADOPTION.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Implementation claims spot-checked against current code; Film case-study and review details rely on FILM_PLAN.md. Upstream Studio facts were not re-read. No live Scenario call, desktop interaction or issue-tracker check; issue status comes from the release records.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Implementation claims spot-checked against current code; Film case-study and review details rely on FILM_PLAN.md. Upstream Studio facts were not re-read. No live Scenario call or desktop interaction.",
     "sources": [
       ".git-blame-ignore-revs",
       ".github/workflows/python-lint.yml",
@@ -90,6 +90,7 @@
       "scenario/core/jobs/organization.py",
       "scenario/core/jobs/preview_scheduler.py",
       "scenario/core/jobs/progress.py",
+      "scenario/core/jobs/refresh_backoff.py",
       "scenario/core/jobs/result_metadata.py",
       "scenario/core/jobs/result_previews.py",
       "scenario/core/jobs/results.py",

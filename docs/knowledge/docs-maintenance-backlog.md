@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/maintenance/backlog.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against the implementation for each disposition row. Issue, project-board and label states come from the maintained text and were not read from GitHub. No live Scenario call, native Blender run or desktop interaction.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Source-reviewed against the implementation for each disposition row. Issue states were read from GitHub; project-board fields and labels were not. No live Scenario call, native Blender run or desktop interaction.",
     "sources": [
       ".github/workflows/links-scheduled.yml",
       ".github/workflows/links.yml",

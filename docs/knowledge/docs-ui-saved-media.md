@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/ui/saved-media.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
     "limits": "Labels, dialog lines, descriptor rows and sizing rules source-reviewed against the implementation. Desktop passes and screenshots are recorded evidence, not re-run; no live Scenario call, other operating system or physical recheck of the current pager arrows.",
     "sources": [
       "docs/images/prompt-price-approval.png",

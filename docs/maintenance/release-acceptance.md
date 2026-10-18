@@ -3,9 +3,8 @@
 Release [#70](https://github.com/scenario-labs/blender-plugin/pull/70) merged, and
 0.10.0 was [published](#publication) on 2026-10-13. This record identifies the
 accepted candidate, the published release and the evidence still pending, which
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440) tracks since
-[#68](https://github.com/scenario-labs/blender-plugin/issues/68) closed on
-2026-10-13. It does not
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494) now tracks,
+including the checks below owned by #68 or #440. It does not
 replace the [release plan](release-plan.md) or narrow retained-lane acceptance,
 and publication authorizes nothing further. OAuth remains deferred under #67. The
 [0.10.0 evidence by lane](#0100-evidence-by-lane) is the current summary; later
@@ -33,7 +32,7 @@ the first-release administration steps in the
 the tag ruleset no longer lets repository admins bypass it, and immutable
 releases are enabled. This section records which evidence each retained
 capability has, of which kind, and what remains with its owner. #68 closed on
-2026-10-13; the open checks continue in #440.
+2026-10-13; the open checks continue in #494.
 
 ### Release candidate identity
 
@@ -610,11 +609,10 @@ MCP. It remade the sequence for a photoreal look and smoother motion:
   rendered or changed frames, and local MCP did not check required tool
   arguments. Chosen files now keep uploading through scene, frame and render
   updates, and local MCP refuses an incomplete call.
-- **New limitations**, now among the
-  [known limitations](../KNOWN_LIMITATIONS.md#runtime-and-authentication):
-  `job_status` lists no files for ready video results or for images not imported
-  automatically, and several versions in one production are hard to tell apart,
-  export and extract side by side.
+- **New limitations:** `job_status` listed no files for ready video results or
+  for images not imported automatically, which is fixed since; several versions
+  in one production are hard to tell apart, export and extract side by side, a
+  [known limitation](../KNOWN_LIMITATIONS.md#runtime-and-authentication).
 
 ### Pending checks
 
@@ -1209,14 +1207,14 @@ array constraints for both schema spellings. These remain synthetic checks.
 
 GitHub state reviewed on 2026-10-12 and rechecked on 2026-10-13, after 0.10.0
 was published and again after the issue closures that followed it, is separate
-from candidate acceptance. [#440](https://github.com/scenario-labs/blender-plugin/issues/440)
-tracks the 0.11.0 acceptance and the work that closed issues left open:
+from candidate acceptance. [#494](https://github.com/scenario-labs/blender-plugin/issues/494)
+tracks the work that closed issues left open, including what names #440:
 
 | Scope | State and release implication |
 | --- | --- |
 | #64, #65, #66, #68 | Closed on 2026-10-13 after 0.10.0 was published; #64, #65 and #66 as delivered in 0.10.0. The [0.10.0 evidence by lane](#0100-evidence-by-lane) records retained-capability, desktop and live evidence. Their remaining checks, fixes and decisions, including the [pending checks](#pending-checks), continue in #440. Multi-line prompt editing moved to #444, preview clips and 3D turntables to #445, and multi-object material application to #446. |
 | #97 | Closed on 2026-10-13 as delivered in 0.10.0 for using existing trained models; training stays out of scope. The model picker's trained LoRAs and compositions (#409), strengths and project defaults (#410) and MCP trained models and defaults (#411) merged, and the maintainer listed a private LoRA in the picker, applied it with a strength and generated with it on the candidate ZIP, and confirmed its likeness (see [human checks](#human-checks)). A private composition, which the account does not own, project defaults and restart persistence on merged heads, the #411 tools on merged heads, the picker follow-ups and stale base-scan events continue in #440. |
-| #99 | Open. Provider-specific mesh edit, rig and parts contracts remain incomplete. Local schema and application primitives do not close this scope. |
+| #99 | Closed on 2026-10-18 as delivered: in-place mesh edit, rig, animation and parts application merged (#522 to #531). Its remaining checks continue in #494. |
 | #98 | Closed on 2026-10-13 as delivered in 0.10.0. #415's closing reference had closed it on 2026-10-12, and it was reopened the same day. The native Environment lane (#416) and panorama smoke cases (#417) merged on 2026-10-12. A paid HY World run with seam, pole and HDR range review, the desktop recheck of the merged lane, a panorama input left stuck after a failed upload, a desktop check that **Set panorama as World** is no longer offered for images that are not 2:1, and the deferred panorama purpose continue in #440. |
 | #67 | Open and explicitly deferred. Browser OAuth is not required for this API-key release. |
 | #31, #32, #42 | Closed for portable tooling, native baseline CI and weekly platform CI. Their infrastructure is a basis for validation, not proof of every product journey. |

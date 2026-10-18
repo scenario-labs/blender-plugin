@@ -4,7 +4,7 @@ Integration status of Film inputs, render and mesh capture, composition
 preparation and saved 3D edits. The [runtime map](runtime.md) lists the entry
 points and shared components. Physical desktop interaction and live provider
 acceptance of these components continue in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 ## Film input contracts
 
@@ -70,13 +70,15 @@ and [context contract](../BLENDER_JOB_CONTEXT.md#mcp-render-form-commands).
 ## Saved 3D edit application boundary
 
 The [verified saved-mesh command](../MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)
-connects receipt-checked GLB import to explicit remesh/UV/retexture/parts and
-[compatible rig attachment](../MESH_APPLICATION.md#attach-a-returned-rig).
-`JobSession.apply_recovered_mesh` binds one selected asset to a captured source
-object and a durable original or local-reuse claim. It rejects changed
-geometry/context, ambiguous multi-mesh results and uncertain rollback, while
+connects receipt-checked GLB, glTF, FBX or OBJ import to explicit
+remesh/UV/retexture/parts, [compatible rig attachment](../MESH_APPLICATION.md#attach-a-returned-rig)
+and [returned animation](../MESH_APPLICATION.md#apply-returned-animation).
+`JobSession.apply_recovered_mesh` binds one selected asset to one captured source
+object, or several edited together, and a durable original or local-reuse claim.
+It rejects changed geometry/context, unverified results and uncertain rollback, while
 known receipt retry only saves persistence. The caller supplies an explicit
-Blender-imported-scene-to-source-local matrix, edit policy and Keep original choice.
+Blender-imported-scene-to-source-local matrix or a verified fit, edit policy and
+Keep original choice.
 Native **Apply mesh edit** and MCP `purpose: mesh_edit` prepare the same
 captured target, explicit scene/local placement, policy and Keep original review.
 It makes no service request and uses no second executor. The captured-source flow

@@ -6,15 +6,16 @@
   "evidence": {
     "path": "docs/PRIVACY.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against network, storage, opener, player and local MCP code paths. No packet capture, live Scenario call or desktop launch; Scenario's server-side retention and what browsers, players and agents record are outside this review. Online Access gaps remain as described.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Source-reviewed against network, storage, opener, player, telemetry relay and local MCP code paths. No packet capture, live Scenario or relay call or desktop launch; server-side retention by Scenario, Vercel and PostHog, and what browsers, players and agents record, are outside this review. Online Access gaps remain as described.",
     "sources": [
       "docs/MCP.md",
       "scenario/blender/apply_video.py",
       "scenario/blender/audio_player_worker.py",
       "scenario/blender/composer/modal.py",
       "scenario/blender/desktop.py",
+      "scenario/blender/feedback.py",
       "scenario/blender/film.py",
       "scenario/blender/film_capture_controls.py",
       "scenario/blender/film_case_study.py",
@@ -34,6 +35,7 @@
       "scenario/blender/preview_decode.py",
       "scenario/blender/prompt_jobs.py",
       "scenario/blender/prompt_tools.py",
+      "scenario/blender/prompts.py",
       "scenario/blender/props.py",
       "scenario/blender/pump.py",
       "scenario/blender/reference_form.py",
@@ -48,6 +50,7 @@
       "scenario/blender/trained_defaults.py",
       "scenario/blender/trained_models.py",
       "scenario/blender/updates.py",
+      "scenario/blender/usage.py",
       "scenario/blender/waveform_worker.py",
       "scenario/blender/workflow_controls.py",
       "scenario/blender/workflow_steps.py",
@@ -74,6 +77,7 @@
       "scenario/core/jobs/organization.py",
       "scenario/core/jobs/playback.py",
       "scenario/core/jobs/preview_scheduler.py",
+      "scenario/core/jobs/reconcile.py",
       "scenario/core/jobs/records.py",
       "scenario/core/jobs/result_previews.py",
       "scenario/core/jobs/results.py",
@@ -83,7 +87,12 @@
       "scenario/core/jobs/upload_transfers.py",
       "scenario/core/jobs/workers.py",
       "scenario/core/scene/film_case_study.py",
+      "scenario/core/telemetry/feedback.py",
+      "scenario/core/telemetry/prompts.py",
+      "scenario/core/telemetry/relay.py",
+      "scenario/core/telemetry/usage.py",
       "scenario/core/ui/library_organization.py",
+      "scenario/mcp/client_setup.py",
       "scenario/mcp/server.py",
       "scenario/mcp/tools_scenario.py",
       "scenario/mcp/upload_policy.py",
@@ -123,7 +132,8 @@
       "tests/unit/test_sdk_connection.py",
       "tests/unit/test_system_openers.py",
       "tests/unit/test_trained_offers.py",
-      "tests/unit/test_workflow_review_previews.py"
+      "tests/unit/test_workflow_review_previews.py",
+      "tools/site_proxy/middleware.ts"
     ]
   }
 }

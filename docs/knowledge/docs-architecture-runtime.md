@@ -6,10 +6,11 @@
   "evidence": {
     "path": "docs/architecture/runtime.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Source-reviewed against the entry points, prototype-record handling, MCP queue and shared runtime table; component details belong to the linked maps and guides. No live Scenario call, native Blender run or desktop interaction.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Source-reviewed against the entry points, pump duties, prototype-record handling, MCP queue and shared runtime table; component details belong to the linked maps and guides. No live Scenario call, native Blender run or desktop interaction.",
     "sources": [
+      "scenario/blender/feedback.py",
       "scenario/blender/first_frame_handoff.py",
       "scenario/blender/generation.py",
       "scenario/blender/handlers.py",
@@ -26,6 +27,7 @@
       "scenario/blender/result_previews.py",
       "scenario/blender/review_previews.py",
       "scenario/blender/runtime.py",
+      "scenario/blender/usage.py",
       "scenario/blender_manifest.toml",
       "scenario/core/api/sdk_adapter.py",
       "scenario/core/api/sdk_catalog.py",

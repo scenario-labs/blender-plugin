@@ -6,8 +6,8 @@
   "evidence": {
     "path": "tests/smoke/README.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
     "limits": "Source-reviewed against the smoke tools, the shared panorama contract and the workflow. No live quote, upload, paid generation, hosted or scheduled run, or Blender report run; provider acceptance of the committed monthly plan and reference image is not established.",
     "sources": [
       ".github/workflows/smoke.yml",

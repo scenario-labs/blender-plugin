@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/SDK_ADOPTION.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Changed claims reviewed against the SDK adapter, extensions, catalog, coordinator, workflow and upload code and SDK contract tests; not every table row was re-derived. No live Scenario call, paid run or Blender run; live evidence is in the release acceptance record.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Changed claims reviewed against the SDK adapter, extensions, catalog, coordinator, reconciliation, workflow and upload code and SDK contract tests; not every table row was re-derived. No live Scenario call, paid run or Blender run; live evidence is in the release acceptance record.",
     "sources": [
       ".github/workflows/sdk-contracts.yml",
       ".github/workflows/smoke.yml",
@@ -72,6 +72,7 @@
       "scenario/core/jobs/manager.py",
       "scenario/core/jobs/organization.py",
       "scenario/core/jobs/progress.py",
+      "scenario/core/jobs/reconcile.py",
       "scenario/core/jobs/result_metadata.py",
       "scenario/core/jobs/results.py",
       "scenario/core/jobs/store.py",
@@ -172,6 +173,7 @@
       "tests/unit/test_job_coordinator.py",
       "tests/unit/test_job_failures.py",
       "tests/unit/test_job_progress.py",
+      "tests/unit/test_job_reconcile.py",
       "tests/unit/test_job_store.py",
       "tests/unit/test_mcp_deferred.py",
       "tests/unit/test_mcp_descriptions.py",

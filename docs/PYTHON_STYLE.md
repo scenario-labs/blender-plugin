@@ -37,8 +37,8 @@ make test
 
 `make format` attempts safe lint fixes and formatting, then fails if lint
 findings still need manual attention. Review the diff and run the relevant
-tests. Do not enable unsafe fixes as a routine cleanup step. Tests collect only
-the offline unit suite by default; smoke tests require separate authorization.
+tests. Do not enable unsafe fixes as a routine cleanup step. Tests collect the
+offline unit and fuzz-harness tests by default; smoke tests need authorization.
 
 The uv project is not built or installed as a Python package (`package = false`).
 The `blender-plugin-dev` metadata version is a fixed tooling placeholder;

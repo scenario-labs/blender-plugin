@@ -141,8 +141,8 @@ server provides platform-wide collections, training, workflows and usage without
 requiring Blender; connect both when needed.
 
 The default local endpoint is `http://127.0.0.1:9876/mcp`. **Agents (MCP)** shows
-its status and provides client setup for Claude Code, Cursor, Claude Desktop and
-Codex under the name `scenario-blender`. It needs no credential, so any program on
+its status, and its **Connect** buttons add it as `scenario-blender` to Claude
+Code, Codex, Cursor or Claude Desktop. It needs no credential, so any program on
 this computer can connect. Connected agents can read the scene and request paid
 work; arbitrary Python execution is a separate opt-in permission, disabled by default.
 
@@ -167,9 +167,10 @@ Cost previews send prompts and parameters to `https://api.cloud.scenario.com`
 while you edit, before Generate. Upload reference sends files, scene captures or
 exported meshes; generation and prompt tools spend credits. Catalogs, thumbnails
 and result previews load from Scenario; cloud history and Library assets load
-when requested. Saved keys, prompts, job state and media remain in Blender
-preferences, extension storage or output files. Connected local agents can read
-your scene and request paid work using your account. Read
+when requested. Anonymous usage data, off by default, and feedback you send go
+to `blender.scenario.com`. Saved keys, prompts, job state and media remain in
+Blender preferences, extension storage or output files. Connected local agents
+can read your scene and request paid work using your account. Read
 [Privacy and data handling](docs/PRIVACY.md) for destinations, storage, clipboard
 use and current limits.
 

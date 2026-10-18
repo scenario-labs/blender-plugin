@@ -225,7 +225,8 @@ intent and claims `submitting` before the single SDK request. Repeated clicks,
 reused quote handles, changed inputs, stale origins and failed writes cannot
 repeat that submission. Timeouts retain uncertain saved state without retry; an
 [identical request](../JOB_COORDINATOR.md#identical-unconfirmed-requests) in that
-scope is refused until Scenario confirms it or the user marks it reviewed in Blender.
+scope is refused until Scenario confirms it, or the user links it to a cloud job
+or marks it reviewed in Blender.
 An unsuccessful UI attempt clears the ready price and requires explicit repricing;
 it never silently obtains another approval. Retained MCP/UI approvals are not evicted
 to admit new quotes. At capacity, new estimates are rejected until a consumed handle
@@ -285,15 +286,17 @@ main thread, decoded from private snapshots and packed as image datablocks after
 a durable application claim. Automatic import supports bounded 8-/16-bit
 grayscale/RGB/RGBA PNG and scanline OpenEXR; other formats remain saved without
 import. It does not assign textures or replace scene targets. A stale origin,
-read/download error or uncertain application stops automatic delivery without
-another generation. The
+download error, non-transient or
+[repeated status read error](../BLENDER_JOB_CONTEXT.md#status-refresh-failures)
+or uncertain application stops automatic delivery without another generation. The
 [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery) names the
 documented CDN hosts. The Jobs panel's **Inspect saved jobs** button and MCP
 `list_local_jobs` provide saved state. UI recovery buttons and
 `recover_local_job` use the current context token and observed revision to
-refresh, resume polling/download, cancel a known inference job, reconcile
-interrupted download receipts, or save a pending import receipt. These actions
-never submit generation. Resuming after restart does not approve import into the
+refresh, resume polling/download, stop a download, cancel a known inference job,
+reconcile interrupted download receipts, save a pending import receipt or list
+cloud jobs that could belong to an unconfirmed submission. These actions never
+submit generation. Resuming after restart does not approve import into the
 new scene. **Import saved images** captures the selected destination for
 confirmation. MCP uses `prepare_result_application` followed by explicit
 `apply_result_application`. Both reverify local bytes and recheck the approved
@@ -311,8 +314,9 @@ with automatic Spark enabled remains blocked; users can enter a look or disable
 automatic Spark for the default look. Non-image model jobs use the same durable
 submission, polling, download, cancellation and recovery commands. They stop at
 saved `ready` results without automatically assigning materials, importing
-meshes or inserting media strips. Status includes the saved result manifest and
-receipt presence, without returning paths for unverified application. Restarted
+meshes or inserting media strips. Status includes the saved result manifest,
+receipt presence and the paths of only those downloaded files whose bytes match
+their receipts. Restarted
 display records are generic model jobs; the original lane is not persisted, so
 they have no scene/lane binding. Explicit PNG/EXR import remains available by
 result type. For supported video/audio, **Add video/audio strip** and MCP

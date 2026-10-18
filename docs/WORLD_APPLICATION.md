@@ -293,4 +293,4 @@ as do session retirement/restart and file load. Deleted or retired destinations
 do not offer restoration, and maintenance removes their handles without touching
 stale Blender data. Manually select a retained World in Blender when needed.
 No global undo transaction or seam/pole acceptance is claimed; the open
-panorama checks are in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+panorama checks are in [#494](https://github.com/scenario-labs/blender-plugin/issues/494).

@@ -141,7 +141,7 @@ player** rows; on a #440 candidate ZIP the maintainer played, stopped and
 listened through **Play audio** and **Stop audio**. **Open in system player**,
 the waveform's Cancel, Retry and close on the desktop, clicking **Play video** or
 **Play in Blender** at UI scale 2.0, Studio at UI scale 2.0, viewport
-interaction and other platforms are not yet recorded; they continue in #440.
+interaction and other platforms are not yet recorded; they continue in #494.
 
 ## Saved result previews
 
@@ -284,7 +284,7 @@ inside the box with captions whole. Stills removed while idle were prepared
 again after a file reload, without **Retry preview (N)**. Online Access
 disabled, focus and viewport interaction while tiles update, the Studio pages
 at UI scale 2.0 and other platforms are not yet recorded; they continue in
-#440.
+#494.
 
 ## Saved material approval
 
@@ -371,4 +371,4 @@ Desktop passes on pre-merge #377 and #379 heads on Blender 5.1.2, at UI scales
 1.0 and 2.0, checked the button, its confirmations, Esc, focus and one undo step
 with redo (see the
 [release evidence](../maintenance/release-acceptance.md#render-image-and-render-video)).
-Small-window evidence is not recorded, and Blender 5.0 and 5.2 continue in #440.
+Small-window evidence is not recorded, and Blender 5.0 and 5.2 continue in #494.

@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/SDK_BUNDLE.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
     "limits": "Source-reviewed against the wheel lock, manifest, uv.lock, bundle tools and installed-runtime tests. No native Blender run, live Scenario call or macOS execution; CI matrix results must be inspected per run.",
     "sources": [
       ".github/workflows/blender-baseline.yml",

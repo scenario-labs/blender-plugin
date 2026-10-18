@@ -224,11 +224,12 @@ review gate and lints the whole Python tree.
 
 ## GitHub Actions updates
 
-[Dependabot](../../.github/dependabot.yml) checks GitHub Actions weekly and groups
-version updates into one `actions` PR with the `dependencies` and `area:ci` labels.
-It waits seven days after an action's release before proposing it.
-The `ci(deps)` commit prefix produces Conventional Commit titles; do not add
-`include: scope`, which would append a second dependency scope.
+[Dependabot](../../.github/dependabot.yml) checks weekly, waits seven days
+after a release before proposing it, and opens one PR per ecosystem: GitHub
+Actions (`ci(deps)`, `area:ci`), the Node tooling in `package.json`
+(`chore(deps)`, `area:tooling`; `@types/node` stays on the `.nvmrc` major) and
+the ClusterFuzzLite builder image (`ci(deps)`). Do not add `include: scope`,
+which would append a second dependency scope.
 
 Keep third-party action references pinned to a full 40-character commit SHA with
 the release version in a trailing comment, for example
@@ -257,7 +258,7 @@ declarations. This is a line-oriented convention check, not a general YAML
 validator; it does not resolve tags or prove a comment matches its SHA. Review
 upstream release identity and use workflow validation for those separate checks.
 
-This configuration covers GitHub Actions only. Python/SDK updates still require
+Python/SDK updates are not automated and require
 the [dependency bundle procedure](../SDK_BUNDLE.md); adding automatic updates for
 them requires coordinating development pins with the exact packaged wheel bundle.
 The repository's Actions settings also require full-SHA pinning, so GitHub
@@ -376,7 +377,7 @@ require access. These exclusions do not verify those
 destinations.
 Do not silence a new redirect by excluding an entire public host.
 
-The scheduled caller creates or comments on the exact open issue
+The scheduled caller creates or comments on the exact open Task
 `docs: broken or redirected links`, labeled `documentation` and `area:docs`.
 Serialized runs and paginated title matching avoid search-index lag and duplicate
 reports. Fix the links or investigate the scan failure, then close the issue.

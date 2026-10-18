@@ -248,8 +248,7 @@ selected credentials, project and API base. The separate
 [weekly API contract workflow](.github/workflows/api-contract.yml) uses dedicated
 repository test secrets only on canonical `main`, with issue-writing permission
 confined to its downstream reporter. It cannot run on PRs or forks. Maintainers
-can dispatch it from Actions after configuring the intended test scope; actual
-live and issue-deduplication acceptance remain #41. See
+can dispatch it from Actions after configuring the intended test scope. See
 [reports and rerun boundaries](docs/MODEL_PAYLOAD_AUDIT.md#weekly-workflow-and-retained-results).
 The [fixture inventory](tests/fixtures/README.md) documents fixture recording,
 provenance, rights and licence.
@@ -284,8 +283,8 @@ same quote/submit/resume commands through this shared engine; local references
 must first be uploaded explicitly through the native/MCP shared upload path or
 the [reviewed reference-plan command](tests/smoke/README.md#prepare-reference-inputs).
 The [aggregate suite and protected workflow](tests/smoke/README.md#one-aggregate-budget-for-a-suite)
-quote all cases before checking one total cap. Hosted environment setup and live
-acceptance remain #40; none of these scripts runs live in offline verification.
+quote all cases before checking one total cap; hosted runs must also fit the
+[monthly budget](tests/smoke/README.md#monthly-budget). Offline checks run none.
 uv loads every variable in a dotenv file, so keep `SCENARIO_SMOKE=1` on the
 command line only. Credentials, an opt-in flag or a prepared quote alone do not
 authorize spending.
@@ -744,7 +743,7 @@ Review the rendered page at wide and narrow widths after presentation changes.
 Generated HTML and `site/` are ignored; do not commit them or copy old guides into
 snapshot directories. The [publication workflow](docs/RELEASING.md#publish-the-guide-and-repository)
 composes hosting and release attachment; native update controls live in Scenario
-preferences. Production acceptance remains under #37.
+preferences.
 
 ### Complete site snapshots
 
@@ -789,8 +788,7 @@ boundary; they do not establish native runtime or update acceptance.
 
 This builds a local snapshot only. The separate publication workflow handles
 online provenance verification, fresh inventory discovery and Pages deployment.
-Release handbook attachment belongs to the release workflow; production acceptance
-remains under #37. See the
+Release handbook attachment belongs to the release workflow. See the
 [release procedure](docs/RELEASING.md#offline-extension-repository-snapshots)
 for retention and publication requirements.
 
@@ -887,8 +885,8 @@ Pillow is not in the extension's SDK wheel bundle. The generated card is a
 1280 by 640 palette PNG below one megabyte. `make images` leaves this generated
 file alone. Regeneration is byte-identical in the verified environment; inspect
 rendering differences when switching platforms.
-The tagline comes from the extension manifest. The original logo and its separate
-licence remain unchanged; the black background matches that upstream asset.
+The tagline comes from the extension manifest. The original logo remains
+unchanged; the black background matches that upstream asset.
 
 The checked-in [source artwork](tools/assets/social-preview-artwork.png) shows
 an ivory stone and oxidized copper sculpture in a dark architectural environment.
@@ -907,5 +905,5 @@ After the image PR merges, an authorized repository admin uploads the merged
 `docs/images/social-preview.png` under Settings > General > Social preview.
 A committed PNG does not configure GitHub's sharing image. Verify the repository's
 `usesCustomOpenGraphImage` and `openGraphImageUrl` after upload, then check a share
-preview in the intended client. Actual upload and client acceptance remain #19;
-this generator neither changes repository settings nor sends a share message.
+preview in the intended client. This generator neither changes repository
+settings nor sends a share message.

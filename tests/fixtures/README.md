@@ -52,7 +52,7 @@ no test sound is audible. Those signals
 contain no provider output, recording or third-party media; they are
 first-party GPL test code and leave no new committed audio files. They cover
 PCM and compressed, mono and stereo, silent, undecodable, too long, canceled and
-timed-out input. Human listening is a separate check, tracked in #440.
+timed-out input. Human listening is a separate check, tracked in #494.
 
 ## Synthetic video fixture
 

@@ -158,7 +158,7 @@ pixel limits. The `hdri` kind also requires an `image/x-exr` or `image/aces`
 original saved in place of the asset's preview with an OpenEXR container; a
 preview, a Radiance original or PNG/JPEG bytes never qualify. Neither kind
 decodes pixels, measures dynamic range or judges seams; those remain native and
-human review, tracked in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+human review, tracked in [#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 The Environment lane's contract models must use these kinds and their contract;
 see [Panorama contract cases](#panorama-contract-cases). The
 [advisory report](#advisory-panorama-report) measures seams, poles and range.
@@ -189,9 +189,7 @@ construct or apply Blender materials.
 
 Omit `--env-file` and use `--no-env-file` when the shell supplies credentials.
 Keep the spending flag out of dotenv files. Offline tests use synthetic SDK
-responses and never spend. Separate runs have separate approvals and caps; their
-sum is not enforced by an account-wide budget ledger.
-
+responses and never spend.
 
 ## One aggregate budget for a suite
 

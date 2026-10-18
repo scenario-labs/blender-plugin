@@ -494,10 +494,12 @@ error without changing the stored job, including a reopened READY record.
 On the main thread, `load_results`, `download_results`, `recover_downloads` and
 `verify_results` queue
 the corresponding [coordinator commands](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
-with the original stored origin and expected record revision. Metadata and signed
-transfer work run on the existing pool. Like refresh and cancellation, these
-commands remain available after a scene switch, target deletion or restart;
-retrieval does not grant permission to apply into a new Blender context.
+with the original stored origin and expected record revision. Metadata reads run
+on the existing pool, signed transfers on its separate
+[transfer lane](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume). Like
+refresh and cancellation, these commands remain available after a scene switch,
+target deletion or restart; retrieval does not grant permission to apply into a
+new Blender context.
 
 `drain` validates both the record inside `VerifiedResults` and ordinary result
 records against the issuing origin/scope. Verification returns a frozen result
@@ -1528,8 +1530,8 @@ lines.
 See [model import](MESH_APPLICATION.md#explicit-saved-glb-import),
 [package import](MESH_APPLICATION.md#saved-model-package-import) and
 [splat import](MESH_APPLICATION.md#saved-gaussian-splat-import) for formats,
-allocation, placement, rollback and remaining edit-policy limits. In-place mesh
-edits and Film shots still use only `model/gltf-binary` results. Neither this
+allocation, placement, rollback and remaining edit-policy limits. Film shots
+still use only `model/gltf-binary` results. Neither this
 approval nor the importer calls Scenario or submits generation.
 
 ## Recovered panorama destination and restoration

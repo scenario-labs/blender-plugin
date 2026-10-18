@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/ui/saved-3d.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
     "limits": "Labels, dialog lines and interaction rules are source-reviewed against the saved-job controls and application modules. Desktop observations are recorded synthetic macOS checks that this review did not repeat. No live Scenario call, provider output, other platform or DPI.",
     "sources": [
       "docs/images/captured-mesh-source-approval.png",
@@ -33,6 +33,7 @@
       "docs/images/saved-retexture-approval.png",
       "docs/images/saved-retexture-before.png",
       "docs/images/saved-retexture-result.png",
+      "scenario/blender/animation_application.py",
       "scenario/blender/job_recovery.py",
       "scenario/blender/job_session.py",
       "scenario/blender/mesh_application.py",
@@ -45,6 +46,7 @@
       "scenario/blender/runtime.py",
       "scenario/blender/splat_application.py",
       "scenario/core/scene/glb.py",
+      "scenario/core/scene/mesh_edit_policy.py",
       "scenario/core/ui/saved_job_actions.py",
       "scenario/mcp/tools_scenario.py",
       "tests/blender/helpers.py",

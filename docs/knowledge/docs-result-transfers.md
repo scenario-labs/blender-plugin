@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/RESULT_TRANSFERS.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Claims touched by later code commits were checked against the downloader, result commands, metadata, preview and splat decoder code; other sections were spot-checked. No live CDN, HDRi original, WAV original or splat provider check and no desktop interaction; live service observations in the document were not repeated.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Claims touched by later code commits were checked against the downloader, transfer lane, download retries, result commands, metadata, preview and splat decoder code; other sections were spot-checked. No live CDN, HDRi original, WAV original or splat provider check and no desktop interaction; live service observations in the document were not repeated.",
     "sources": [
       "docs/RESULT_TRANSFERS.md",
       "pyproject.toml",
@@ -59,6 +59,7 @@
       "tests/blender/test_session_uploads.py",
       "tests/blender/test_splat_application.py",
       "tests/blender/test_splat_snapshots.py",
+      "tests/blender/test_transfer_lane.py",
       "tests/unit/splat_files.py",
       "tests/unit/test_application_claims.py",
       "tests/unit/test_cloud_job_recovery.py",
@@ -73,6 +74,7 @@
       "tests/unit/test_preview_scheduler.py",
       "tests/unit/test_prompt_results.py",
       "tests/unit/test_result_commands.py",
+      "tests/unit/test_result_download_retries.py",
       "tests/unit/test_result_manifest.py",
       "tests/unit/test_result_metadata.py",
       "tests/unit/test_result_previews.py",

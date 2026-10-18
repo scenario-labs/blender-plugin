@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/SDK_UPLOADS.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
     "limits": "Claims touched by later code commits were checked against the SDK adapter, upload store, staging, transfer, coordinator and form code; other sections were spot-checked. No live Scenario or S3 call, no desktop interaction, and no claim that the service accepts every media kind, size or multipart file.",
     "sources": [
       "docs/SDK_UPLOADS.md",

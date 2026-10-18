@@ -75,7 +75,7 @@ back to a truncated preview. Signed thumbnail byte, URL and retry tests remain.
 This is a source and offline/native wiring inventory, not live provider, OAuth,
 thumbnail transfer hardening or desktop acceptance. Desktop and live evidence is
 in the [release acceptance record](maintenance/release-acceptance.md), and the
-open checks are in #440.
+open checks are in #494.
 
 ## Executable contracts
 
@@ -887,17 +887,17 @@ The periodic status polls are the exception. The automatic `refresh_remote` of
 coordinator, which reads the job once with `SDKAdapter.job(..., retry=False)`.
 `ModelJobs` retries a failed poll later with its own
 [backoff](BLENDER_JOB_CONTEXT.md#status-refresh-failures), which holds no
-worker; Prompt Spark/Translate and Blockout keep their existing failure
-handling, as before this change. Stacking SDK retries under a poll would only
-keep one of the two job workers busy (see #453). A poll therefore holds a job
-worker for one request per read, at most the adapter's 45-second timeout each:
-45 seconds, or 90 seconds when a waiting workflow's definition is read too.
+worker; Prompt Spark/Translate and Blockout keep their own failure handling.
+Stacking SDK retries under a poll would only keep one of the two job workers
+busy. A poll therefore holds a job worker for one request per read, at most
+the adapter's 45-second timeout each: 45 seconds, or 90 seconds when a waiting
+workflow's definition is read too.
 
 A History page's optional per-row reads also make one attempt: up to 24
 workflow step reads with `SDKAdapter.job(..., retry=False)` and up to 30 prompt
 previews with `SDKAdapter.asset(..., retry=False)`. A failed row only leaves a
 run's cost or a prompt unavailable, and the page read itself keeps the retries,
-so a partial outage costs at most one request per row, as before this change.
+so a partial outage costs at most one request per row.
 
 A waiting workflow's step-link definition is always read once, with
 `SDKAdapter.workflow(..., retry=False)`, by any refresh or decision: a failed read
@@ -1092,7 +1092,7 @@ Browser sign-in remains deferred under
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67). The open
 acceptance checks on Blender 5.0, 5.1 and 5.2, including Linux and Windows
 desktop interaction and coexistence with other extensions, are in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 ### Prompt Spark command boundary
 
@@ -1208,8 +1208,8 @@ reference is a 360 panorama; the contract checks that locally. Offline
 against the recorded schemas and the shared form preparation. Paid-run evidence
 is in the
 [release record](maintenance/release-acceptance.md#panorama-and-world); HY World
-output, and whether returned assets carry `metadata.type` and the HDR original's
-host, are open in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+output, including whether its assets carry `metadata.type`, and the HDR
+original's host are open in [#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 No SDK gap was found, so no scenario-sdk-python issue is needed.
 
 ## Verified Film composition quotes
@@ -1399,7 +1399,7 @@ and the native
 prepare, apply and inspect those reviews. Live evidence is in the
 [release record](maintenance/release-acceptance.md#library-organization);
 Apply from the desktop dialog continues in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440). Run the
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494). Run the
 offline contracts with:
 
 ```sh

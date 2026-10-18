@@ -33,8 +33,10 @@ limits of its current controls. It does not replace Scenario's service policies.
   public-model list page with at most one model to verify model access; it does
   not discover account or project identity. Refresh cloud and Older in
   Generations retrieve job history and prompt text; connected agents can request
-  history too. Local MCP `inspect_result_previews` requests the same previews
-  for any downloaded saved job an agent names, with the same reads.
+  history too. Once per session, each saved request whose submission is
+  unconfirmed reads a bounded window of recent cloud jobs to list candidates
+  you can link to it. Local MCP `inspect_result_previews` requests the same
+  previews for any downloaded saved job an agent names, with the same reads.
 - Scenario API requests authenticate with your selected key/secret pair using an
   HTTP Basic `Authorization` header over TLS. They identify the extension with
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;
@@ -147,7 +149,7 @@ the selected permission snapshot. Model picker thumbnail downloads check it, or 
 main-thread mirror of online access when no catalog is selected, only before
 connecting; they do not recheck it during a transfer or retry. Close Blender or
 disconnect the network when you need a complete cutoff. These gaps are tracked in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 ## What is stored on your machine
 
@@ -282,7 +284,9 @@ rebinds its own domain to this computer from reading even the server's version
 status, and the server closes a connection that sends nothing for 60 seconds while
 it waits to read a request. Calls need no credential: any program on this computer,
 under any account, can read the scene, take captures and request generation that
-spends your Scenario credits.
+spends your Scenario credits. **Connect** writes the server's address, without
+any credential, into the chosen agent's own configuration file, after copying
+the previous file beside it.
 An agent can send a local file to your Scenario account only when the extension
 saved it in its own folders or you chose it in Blender during this session, in a
 reference **Upload** file browser, the Render Video first-frame field or a workflow

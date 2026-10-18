@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/WORLD_APPLICATION.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
     "limits": "Source-reviewed against the World primitive, panorama preflight, saved-job World offer, JobSession application and MCP preparation. Decoder timings and Blender color-space behavior are recorded measurements, not rerun; no live Scenario call, Blender run or desktop interaction.",
     "sources": [
       "scenario/blender/file_state.py",

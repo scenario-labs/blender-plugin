@@ -50,14 +50,14 @@ and [compatibility guidance](https://www.gnu.org/licenses/gpl-faq.html#AllCompat
 ## Change inventory and decision gate
 
 For any approved change, review root and packaged `LICENSE`, any component
-`LICENSES/` texts, manifest licence metadata, affected SPDX headers, README
-badge/notice, the user guide, TRADEMARKS code-licence wording, CONTRIBUTING inbound
-terms, the PR template, canonical agent guidance and licence/bundle checks.
-A split needs an explicit per-component licence map; a manifest list or GitHub
-badge is not that map. Verify GitHub's resulting detection rather than promising
-a particular label. The header inventory far exceeds the original issue's 135
-files; no bulk replacement of adopted notices is safe.
-Already published releases retain their original terms and bytes.
+`LICENSES/` texts, manifest licence metadata, SPDX headers and `REUSE.toml`,
+README badge/notice, the user guide, TRADEMARKS code-licence wording,
+CONTRIBUTING inbound terms, the PR template, canonical agent guidance and
+licence/bundle checks. A split needs an explicit per-component licence map; a
+manifest list or GitHub badge is not that map. Verify GitHub's resulting
+detection rather than promising a particular label. The header inventory far
+exceeds the original issue's 135 files; no bulk replacement of adopted notices
+is safe. Already published releases retain their original terms and bytes.
 
 The comparison recommended retaining the current policy unless maintainers
 identified a concrete permissive-reuse requirement and, if they did, evaluating

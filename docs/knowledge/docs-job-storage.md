@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/JOB_STORAGE.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Changed claims were checked against the store, credential binding, schema upgrades and lane-default owners; other sections were spot-checked. No live Scenario call or desktop interaction. File-lock and SQLite durability follow platform documentation; live skybox and audio original metadata are not established.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
+    "limits": "Changed claims were checked against the store, credential binding, schema upgrades through 12, result parents and lane-default owners; other sections were spot-checked. No live Scenario call or desktop interaction. File-lock and SQLite durability follow platform documentation; live skybox and audio original metadata are not established.",
     "sources": [
       "docs/JOB_STORAGE.md",
       "scenario/blender/generation.py",
@@ -61,6 +61,7 @@
       "tests/blender/test_session_uploads.py",
       "tests/blender/test_trained_section.py",
       "tests/fixtures/patina-copper-512/job.json",
+      "tests/fixtures/synthetic/jobs-schema11.sql",
       "tests/fixtures/synthetic/jobs-schema9.sql",
       "tests/unit/test_application_claims.py",
       "tests/unit/test_cloud_job_recovery.py",
@@ -73,6 +74,7 @@
       "tests/unit/test_job_store.py",
       "tests/unit/test_job_store_schema10.py",
       "tests/unit/test_job_store_schema11.py",
+      "tests/unit/test_job_store_schema12.py",
       "tests/unit/test_mcp_descriptions.py",
       "tests/unit/test_mcp_docs.py",
       "tests/unit/test_mcp_server.py",

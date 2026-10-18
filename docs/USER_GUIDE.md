@@ -182,7 +182,9 @@ and, with the GitHub CLI,
   [The floating composer](#the-floating-composer).
 - **Studio**, next to **Scenario** in the header, opens [expanded controls](#expanded-studio-view).
 - The **heart** in the Scenario panel, or **Feedback** in Studio, sends Scenario a
-  rating or a message. **Share anonymous usage data**, in the extension's
+  rating or a message. **Tell us what went wrong**, under an error, and **How's it
+  going?**, after ten generations, open the same dialog; answering or closing
+  either hides both for a week. **Share anonymous usage data**, in the extension's
   preferences, stays off unless you turn it on; see
   [What leaves your machine](#what-leaves-your-machine).
 
@@ -618,7 +620,7 @@ Results stay saved until you apply them. **Set panorama as World (N)**
 [applies one](#apply-a-saved-panorama-to-world), and **Make HDRI (N)** opens the
 HDRI form with it. Review seams and lighting yourself: the extension doesn't
 measure them, and HY World hasn't been checked with a live run yet
-([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+([#494](https://github.com/scenario-labs/blender-plugin/issues/494)).
 
 ## Jobs and results
 

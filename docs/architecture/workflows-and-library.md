@@ -35,7 +35,7 @@ only workflow cancellation. Local MCP `workflow_job_steps` and
 `decide_workflow_step` read the steps again and send one reviewed decision
 through the same entry, as does the native review dialog in Jobs and the Studio
 Workflows page. Cancelling a running step has no documented endpoint; the
-remaining workflow desktop and live checks are in #440.
+remaining workflow desktop and live checks are in #494.
 
 
 ## Explicit expanded native view
@@ -52,7 +52,7 @@ focused prompt only into that unchanged scene/lane/form; navigation itself does
 not change scene data or invalidate a quote. The composer commits on blur and
 passes the same outside click to native controls. UI scales 1.25 and 1.5, the
 IME candidate window and the remaining workflow and Library desktop checks are
-in #440.
+in #494.
 
 ## Native workflow controls
 
@@ -128,7 +128,7 @@ Local MCP tools prepare, apply and inspect these reviews; see
 same owner through the projection described below. Live evidence is in the
 [release record](../maintenance/release-acceptance.md#library-organization);
 Apply from the desktop dialog is in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 
 ## Native Library projection and attachment
 
@@ -230,4 +230,4 @@ removes the marker.
 Selected-mesh uploads gain their captured source binding at quote time. Local MCP
 keeps its existing `upload_reference`, `capture_reference` and `estimate_workflow`
 sequence; no MCP protocol change is needed. The remaining upload checks are in
-#440.
+#494.

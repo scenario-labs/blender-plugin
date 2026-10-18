@@ -3,9 +3,9 @@
 This is the source selection and implementation inventory that
 [#64](https://github.com/scenario-labs/blender-plugin/issues/64) delivered in
 0.10.0. It records what to bring into the canonical extension and which issue
-owns the remaining work. #64, #65, #66 and #68 closed on 2026-10-13; the
-remaining checks for these capabilities are in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+owns the remaining work. #64, #65, #66 and #68 are closed; the remaining
+checks for these capabilities are in
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 It does not establish that Studio has been imported or that its runtime has
 passed the canonical native tests.
 
@@ -62,8 +62,7 @@ and notices. Do not adopt Studio's `Makefile`, `scripts/ci.sh`, `scripts/package
 `scripts/package_plugin.py`, manifest `[build]` table, distribution ZIPs or
 independent release/version tooling.
 
-The canonical release baseline is 0.10.0, published on 2026-10-13. Follow
-[release-please-config.json](../release-please-config.json) and
+Follow [release-please-config.json](../release-please-config.json) and
 [.release-please-manifest.json](../.release-please-manifest.json): release-please
 updates the manifest and `scenario/__init__.py` together. Do not import Studio's
 0.2.0 package version, its `version.py` or its tooling metadata. Releases retain
@@ -82,33 +81,33 @@ Canonical paths are relative to the repository root. Studio module names are
 relative to `src/scenario_studio/`. The decisions were made against 0.1.5 and
 reconciled with 0.2.0 on 2026-10-13; see [Studio 0.2.0 additions](#studio-020-additions).
 #64, #65, #66 and #68 in the owner column are the issues that delivered these
-capabilities in 0.10.0; the acceptance each row still lists continues in #440.
+capabilities in 0.10.0; the acceptance each row still lists continues in #494.
 
 | Capability | Decision and source | Owner and acceptance boundary |
 | --- | --- | --- |
 | Image, video, 3D, audio and material generation | Retain Studio's catalog/form/result flow (`catalog.py`, `schema.py`, `studio.py`); replace both service clients. | #64 adapter; #65 shared commands; #66 views. Preserve all existing generation lanes and verify each through the shared commands. |
-| Catalog and trained/custom models | Retain Studio pagination, deduplication, cursor-loop rejection and `schema.prepare_run` routing. The model picker and local MCP offer existing trained LoRAs and compositions, with routes derived from the base model and checked before quoting, instead of a blanket exclusion; training is out of scope. | #64 mapping; remaining trained-model checks in #440; roadmap#674 G01 for complete trained/custom-model acceptance. A remote-MCP schema wrapper is not proof that REST exposes equivalent routing. |
+| Catalog and trained/custom models | Retain Studio pagination, deduplication, cursor-loop rejection and `schema.prepare_run` routing. The model picker and local MCP offer existing trained LoRAs and compositions, with routes derived from the base model and checked before quoting, instead of a blanket exclusion; training is out of scope. | #64 mapping; remaining trained-model checks in #494; roadmap#674 G01 for complete trained/custom-model acceptance. A remote-MCP schema wrapper is not proof that REST exposes equivalent routing. |
 | Conditional parameters and model switching | Retain `scenario/core/schema/params.py` conditional/one-of rules, default overrides and current-collection lookup in `scenario/blender/params_ui.py`; reconcile with Studio schema normalization. | #64/#66. Preserve `test_params`, `test_param_overrides` and native `test_params_ui` regressions, including callbacks Blender can otherwise swallow. |
 | Compact composer, sidebar and expanded view | Replace the old composer presentation with Studio controls/layout/text input adapted to the compact-default contract; retain a useful native sidebar. | #66. Native focus, Unicode/IME, resizing, DPI, viewport passthrough and view switching remain required. Opening a view must not start another job engine. The compact composer now shows the current job and its explicit result actions; its dialogs opened from the composer still need desktop proof. |
 | Exact estimates and paid submission | Retain Studio quote fingerprint/invalidation and ambiguous-submission behavior; replace transport and spend boundary with shared SDK commands. | #64/#65. Preserve exact decimal quote data, scope and payload; persist request identity before dispatch; no blind retry. |
 | Jobs, cancellation and history | Replace `studio.py`/`tasks.py` lifetime ownership and `scenario/core/jobs/manager.py` with one shared runtime; retain progress, results and recovery capabilities. | #65. Atomic versioned persistence, write failures, cancellation races, restart and UI-close tests are acceptance gates. |
-| API keys, OAuth and project selection | Replace Studio `storage.py` credential/path handling with explicitly selected API-key credentials and scoped adapter configuration. The current preferences expose an optional Project ID. | API-key runtime shipped in 0.10.0 (#65); live project permission and a project switch continue in #440. Browser sign-in is deferred under #67 and roadmap#692; OAuth token acceptance requires separate verification. |
-| Authenticated local MCP | Retain `scenario/mcp/{protocol,server,stdio_shim,sandbox}.py`, scene tools and `scenario/blender/mcp_service.py`; replace service-tool internals with shared commands. | #65; related #15/#17/#43/#44/#52/#53. Main-thread bpy, session auth, opt-in Python and safe captures remain mandatory. Studio's remote-MCP client is not this server. |
+| API keys, OAuth and project selection | Replace Studio `storage.py` credential/path handling with explicitly selected API-key credentials and scoped adapter configuration. The current preferences expose an optional Project ID. | API-key runtime shipped in 0.10.0 (#65); live project permission and a project switch continue in #494. Browser sign-in is deferred under #67 and roadmap#692; OAuth token acceptance requires separate verification. |
+| Authenticated local MCP | Retain `scenario/mcp/{protocol,server,stdio_shim,sandbox}.py`, scene tools and `scenario/blender/mcp_service.py`; replace service-tool internals with shared commands. | #65; related #15/#17/#43/#44/#52/#53. Main-thread bpy, loopback Host and Origin checks, opt-in Python and safe captures remain mandatory. Studio's remote-MCP client is not this server. |
 | Capture and references | Retain viewport/camera stills, selected-mesh export and reference attachment from `scenario/blender/{capture,mesh_export}.py` and Studio `scene.py`/`studio.py`. | #64/#65. Preserve render/selection state, private temporary files, main-thread capture and upload/result scope. |
-| Render Image / Render Video | Retain `scenario/blender/render_lanes.py`, capture duration/frame planning and reference/prompt wiring; combine with Studio background render support. | #64/#65. Preserve first-frame/style inputs and model duration constraints; test encoding failures separately from service failures. The saved-image first-frame handoff is restored as an approved native and MCP action that reuses the result's asset ID; paid render runs passed for 0.10.0, and the handoff and clip capture on Blender 5.0 and 5.2 continue in #440. |
+| Render Image / Render Video | Retain `scenario/blender/render_lanes.py`, capture duration/frame planning and reference/prompt wiring; combine with Studio background render support. | #64/#65. Preserve first-frame/style inputs and model duration constraints; test encoding failures separately from service failures. The saved-image first-frame handoff is restored as an approved native and MCP action that reuses the result's asset ID; paid render runs passed for 0.10.0, and the handoff and clip capture on Blender 5.0 and 5.2 continue in #494. |
 | Camera tools | Retain canonical waypoint/marker editing and camera presets in `scenario/core/scene/shot_plan.py` and `scenario/blender/shot_planner.py`; reconcile Studio `scene.create_camera_path`. | #64. Preserve existing animation protections and camera tests; do not replace the preset library with a smaller unverified subset. |
 | Blockout and scene plans | Retain canonical plan parsing/building and Studio `scene_plan.py`/`scene.py` validation and local planning. | #64; roadmap#674 G15 owns generated-object replacement expansion. Preserve full text-asset retrieval when previews are truncated. Paid plan generation stays behind the shared spend boundary. |
 | Image application | Retain datablock load/pack, image editor, plane and material application from `scenario/blender/apply_image.py`; reconcile Studio `scene.import_asset`. | #64/#65. Explicit origin/target identity and failed-apply recovery; retain native image application tests. |
-| 3D imports and mesh edits | Retain canonical primary-mesh ranking, PBR variant preference, job tagging and placement in `scenario/core/scene/placement.py` and `scenario/blender/apply_3d.py`; reconcile Studio format/import checks. Shared saved jobs now classify GLB, glTF, FBX, OBJ and mesh PLY results into ordered import units with one explicit, receipt-checked import per unit; the prototype **Add to scene** path is unchanged. | #64/#65; roadmap#674 G04 owns full in-place edit acceptance. Preserve mesh export and remesh/retexture/UV/rig/animate/parts routing without importing each variant as another object. Live provider package shapes and desktop review of the new controls remain. |
+| 3D imports and mesh edits | Retain canonical primary-mesh ranking, PBR variant preference, job tagging and placement in `scenario/core/scene/placement.py` and `scenario/blender/apply_3d.py`; reconcile Studio format/import checks. Shared saved jobs now classify GLB, glTF, FBX, OBJ and mesh PLY results into ordered import units with one explicit, receipt-checked import per unit; the prototype **Add to scene** path is unchanged. | #64/#65; in-place edits (roadmap#674 G04) are delivered, and their remaining checks continue in #494. Preserve mesh export and remesh/retexture/UV/rig/animate/parts routing without importing each variant as another object. Live provider package shapes and desktop review of the new controls remain. |
 | Gaussian splats | Retain `scenario/core/scene/spz.py` and `scenario/blender/apply_splat.py`; Studio's generic PLY importer does not replace SPZ decoding or splat presentation. Shared saved jobs now decode SPZ, `.splat` and Gaussian PLY results on a worker and build a new point cloud (mesh plus Geometry Nodes and a new material, never one reused by name) at an approved cursor with reviewed point limits and axes; the prototype SPZ import delegates to the same builder. | #64/#65. Preserve `test_spz`, native `test_splat_and_reload` and `test_splat_application`; live provider files, default axes and desktop review of the splat options remain. |
 | PBR materials | Retain canonical typed-map assignment, color spaces, smoothness inversion, normal/displacement nodes and Studio `materials.py`/`scene.apply_pbr_maps`. | #64. Reconcile map semantics with `test_material_plan`, `test_apply_material` and Studio material tests before removing either path. |
-| HDRI/world application | Retain Studio `scene.apply_world`/`restore_world` and supported HDR image handling. The Environment lane (sidebar, Studio Create, the composer's Generate mode and local MCP) now generates panoramas, HDRIs and upscales through verified skybox model contracts; results wait for explicit World approval and a saved LDR panorama offers a Make HDRI form prefill. | #64, #98; roadmap#674 G03 owns broader skybox work. Paid Flux 360, HDRi Skybox, upscale and Skybox GPT runs passed for 0.10.0; HY World output, seam, pole and HDR range review and the desktop recheck of the merged lane continue in #440. Verify restoration and world-node behavior natively. |
-| Video/audio preview and sequencer | Retain `scenario/blender/apply_video.py`/`apply_audio.py`, Studio media imports and preview controls. Saved shared results add receipt-bound Play video, Play in Blender, in-extension Play audio and waveform controls in `scenario/blender/result_media.py`. | #64; roadmap#674 G06/G22 own deeper sequencer/audio work. Test actual Blender APIs and missing external tools; listening through the system player passed on 2026-10-13; in-extension playback, listening through it and the waveform follow-ups continue in #440. |
+| HDRI/world application | Retain Studio `scene.apply_world`/`restore_world` and supported HDR image handling. The Environment lane (sidebar, Studio Create, the composer's Generate mode and local MCP) now generates panoramas, HDRIs and upscales through verified skybox model contracts; results wait for explicit World approval and a saved LDR panorama offers a Make HDRI form prefill. | #64, #98; roadmap#674 G03 owns broader skybox work. Paid Flux 360, HDRi Skybox, upscale and Skybox GPT runs passed for 0.10.0; HY World output, seam, pole and HDR range review and the desktop recheck of the merged lane continue in #494. Verify restoration and world-node behavior natively. |
+| Video/audio preview and sequencer | Retain `scenario/blender/apply_video.py`/`apply_audio.py`, Studio media imports and preview controls. Saved shared results add receipt-bound Play video, Play in Blender, in-extension Play audio and waveform controls in `scenario/blender/result_media.py`. | #64; roadmap#674 G06/G22 own deeper sequencer/audio work. Test actual Blender APIs and missing external tools; listening through the system player passed on 2026-10-13; in-extension playback, listening through it and the waveform follow-ups continue in #494. |
 | Prompt Spark, rewrite and translation | Retain New, Rewrite and Translate through `scenario/blender/prompt_jobs.py`, shared SDK commands and complete text retrieval in `scenario/core/jobs/results.py`. Obsolete Spark/LLM service modules and automatic paid fallback are removed. | #64/#65. Prompt helpers share explicit quote/approval and durable submission across UI/MCP; live output acceptance remains. |
 | Asset library, search and organization | Retain Studio library/search/result organization (`studio.py`, `organization.py`) through typed adapter operations. Replace generic remote catalog execution. | #64 adapter; #65 scope. Verify collection/tag writes and uncertain outcomes without replaying a write automatically. |
 | Workflows | Retain Studio workflow catalog, input form and estimate/run capabilities. Replace the remote-MCP and public-workflow raw HTTP paths. | #64/#65; roadmap#674 G09 owns broader workflow work. Verify public/private pagination, workflow schema and cancellation independently. |
 | Automatic previews and progress | Retain 0.1.5 progress/result feedback and `previews.py`/`preview_worker.py`; route downloads through shared transfer policy. | #64/#65/#66. Bound resources, isolate child Blender profiles and keep job processing independent of preview/view lifetime. Shared jobs now project validated in-memory remote progress into the sidebar and Studio Jobs views and MCP `job_status`, with the composer strip's words, and the compact composer's job strip shows the current job's status, progress and explicit actions. Automatic result previews show Scenario's preview images for video, 3D and audio and stills decoded from verified saved images in Jobs, Generations and Studio, without Studio's external ffmpeg or child GLB renders. Local MCP `inspect_result_previews` reports the same preview states, still metadata and audio envelopes. Live/desktop acceptance remains. |
-| Film | Retain useful `film*.py` planning, review, scene, finishing and export capabilities in optional expanded Studio, subject to the same adapter/runtime gates. Defer general Film authoring and product acceptance. | #64 import; #65 runtime; #66 view; delivered in 0.10.0 as experimental. The Film desktop rerun, its production gaps and the criteria for lifting its experimental status are in #440. Sample-specific assumptions and media dependencies remain experimental. |
+| Film | Retain useful `film*.py` planning, review, scene, finishing and export capabilities in optional expanded Studio, subject to the same adapter/runtime gates. Defer general Film authoring and product acceptance. | #64 import; #65 runtime; #66 view; delivered in 0.10.0 as experimental. The Film desktop rerun, its production gaps and the criteria for lifting its experimental status are in #494. Sample-specific assumptions and media dependencies remain experimental. |
 | Chat, projection texturing and realtime restyling | Defer; do not infer these from Studio paint/overlay primitives. | roadmap#674 G13/G18/G23, after their prerequisites and scope are resolved. |
 
 Issue numbers refer to
@@ -125,26 +124,26 @@ follows. Upstream test counts, headless checks and its paid run used Studio's ow
 package and remote-MCP client; they are not canonical evidence. Nothing listed
 here is imported. The decisions in the table above still apply where they overlap.
 #64, #65 and #66 closed as delivered in 0.10.0, so their remaining items are tracked
-on #440.
+on #494.
 
 | 0.2.0 capability | Decision | Owner |
 | --- | --- | --- |
-| Agent bridge (`bridge/`): loopback Streamable HTTP, token, typed tools, main-thread queue | Keep the canonical local server, which is stricter on Origin, tokens, captures and errors and also checks `Host`, closes idle connections and accepts agent uploads only of files the extension saved or the user chose. Do not ship a second server. | Adapted |
+| Agent bridge (`bridge/`): loopback Streamable HTTP, token, typed tools, main-thread queue | Keep the canonical local server, which is stricter on Origin, captures and errors and also checks `Host`, closes idle connections and accepts agent uploads only of files the extension saved or the user chose. Do not ship a second server. | Adapted |
 | Agent spending: off by default, per-job and per-session CU limits, reserve/settle ledger | Adapt as a scoped, exact-decimal switch and ledger that covers every paid MCP tool | #447 |
-| Bridge scene binding, action log, guarded `undo_last`, form prefill for the user to submit | Adapt binding, log and prefill. Do not port `undo_last` as is: its scene hash misses mesh data, modifiers and keys. | #440 (roadmap#674 G19) |
-| Native sidebar (`sidebar/`) | Already covered by the canonical panels and shared runtime. Do not add a second registration. | #440 |
-| Text editing and key policy: word-grouped undo, shortcuts while typing, unfocused key blocking | Adapt undo and the typing pass-through set; decide the unfocused policy | #440 |
-| Read retries, poll backoff, control and transfer lanes, resumable downloads | Adapt through SDK per-request retries and the shared transfer policy. Paid and mutating calls stay at zero retries. | #451, #453 |
+| Bridge scene binding, action log, guarded `undo_last`, form prefill for the user to submit | Adapt binding, log and prefill. Do not port `undo_last` as is: its scene hash misses mesh data, modifiers and keys. | #494 (roadmap#674 G19) |
+| Native sidebar (`sidebar/`) | Already covered by the canonical panels and shared runtime. Do not add a second registration. | #494 |
+| Text editing and key policy: word-grouped undo, shortcuts while typing, unfocused key blocking | Adapt undo and the typing pass-through set; decide the unfocused policy | #494 |
+| Read retries, poll backoff, control and transfer lanes, resumable downloads | Adapted: allow-listed reads use SDK per-request retries, a failed status poll backs off, and result downloads run on their own lane with cancel, bounded retry and resume. Paid and mutating calls stay at zero retries. | Adapted |
 | Unclear-submission block for the same request; estimate that returns a job | Adapted per credential scope: a request matching a submitting or uncertain one is refused, and an estimate that returns a job stops automatic pricing | Adapted |
-| No-spend switch for QA runs | Adapt at the shared spend boundary | #440 |
+| No-spend switch for QA runs | Adapt at the shared spend boundary | #494 |
 | macOS Keychain secret, team/project picker, usage display, paste-key onboarding | Adapt with explicit selection and no inferred project; check the usage contract first | #67, roadmap#674 G08 |
-| Library kind filters, newest-first order, thumbnails, job-card time and charged CU | Adapt through SDK filters and the preview lane | #440 |
+| Library kind filters, newest-first order, thumbnails, job-card time and charged CU | Adapt through SDK filters and the preview lane | #494 |
 | Redacted diagnostics export | Adapt with the allowlisted failure text, not regex redaction | #456 |
-| Camera takes and "Back to my camera" | Adapt; first scope the shot camera per scene | #454, #440 |
-| One render service with Blender's built-in H.264, progress and engine choice | Adapt in place of external ffmpeg for local capture | #440 |
-| Asset slots, revisions and refit; appearance states | Defer until blockout replacement and a product decision; appearance states conflict with ownership checks | roadmap#674 G15, #440 |
-| PBR options (DirectX normals, UV repeat, metalness override) | Adapt as explicit choices, never filename inference | #440 |
-| Film hardening: prepare-only arming, ledger, scoped client, model adapter, recipe identity | Already covered by the shared job store and Film task bindings. Adapt the model-neutral duration rule, the recipe canvas size and the 0.2.0 recipe keys; keep text verbatim. | #440, #455 |
+| Camera takes and "Back to my camera" | Adapt; first scope the shot camera per scene | #454, #494 |
+| One render service with Blender's built-in H.264, progress and engine choice | Adapt in place of external ffmpeg for local capture | #494 |
+| Asset slots, revisions and refit; appearance states | Defer until blockout replacement and a product decision; appearance states conflict with ownership checks | roadmap#674 G15, #494 |
+| PBR options (DirectX normals, UV repeat, metalness override) | Adapt as explicit choices, never filename inference | #494 |
+| Film hardening: prepare-only arming, ledger, scoped client, model adapter, recipe identity | Already covered by the shared job store and Film task bindings. Adapt the model-neutral duration rule, the recipe canvas size and the 0.2.0 recipe keys; keep text verbatim. | #494, #455 |
 | Live findings: F12 renders the sequencer after media insertion; PATINA smoothness semantics | Both also apply to canonical | #449, #450 |
 
 ## Source intake and provenance
@@ -336,7 +335,7 @@ retained diagnostic/media files from child scratch cleanup. The
 [shared capture owner](FILM_PLAN.md#shared-capture-and-upload-approval) now
 integrates explicit native/MCP rendering, cancellation and separate upload
 approval on the existing session. Finishing and export are separate steps, and
-native desktop acceptance continues in #440.
+native desktop acceptance continues in #494.
 
 ## Composition planning adaptation
 
@@ -356,7 +355,7 @@ implicit media probe, legacy production storage, organizer client, VSE mutation
 or automatic generation is imported. The [draft contract](FILM_PLAN.md#unpaid-composition-drafts)
 feeds the quoted composition and its
 [native/MCP controls](FILM_PLAN.md#native-and-mcp-composition-controls); live
-acceptance continues in #440. The [verified-media command](FILM_PLAN.md#verified-media-preparation)
+acceptance continues in #494. The [verified-media command](FILM_PLAN.md#verified-media-preparation)
 implements explicit receipt-bound measurement through the shared session and
 workers. It uses an optional installed ffprobe, private copies and current-source
 checks instead of importing the prototype's unchecked file-path or duration cache.
@@ -437,7 +436,7 @@ production storage, media binary or sample media is imported.
 4. The scoped commands, persistence and views shipped in 0.10.0 (#65, #66).
    API-key authentication is the release path; #67 OAuth is deferred. #32
    native baseline CI and #45 required-check administration are closed; the open
-   desktop and live checks are in #440.
+   desktop and live checks are in #494.
 
 This inventory preserves capability decisions and scoped implementation updates.
 The [release acceptance record](maintenance/release-acceptance.md) identifies

@@ -6,8 +6,8 @@
   "evidence": {
     "path": "TRADEMARKS.md",
     "coverage": "policy",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
     "limits": "Policy reviewed against the manifest id, licence files, release asset names, the official extension repository and handbook branding. It is not legal advice and checks no trademark registration or third-party mark.",
     "sources": [
       ".github/workflows/pages.yml",

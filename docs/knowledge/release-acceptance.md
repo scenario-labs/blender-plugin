@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/maintenance/release-acceptance.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
-    "limits": "Recorded 0.10.0 evidence. Statements about current behavior are source-reviewed against the implementation; recorded test counts, hashes, CI runs and desktop, human and live observations were not re-run. No live Scenario call, GitHub read or desktop interaction.",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "limits": "Recorded 0.10.0 evidence with dated status tables. Statements about current behavior are source-reviewed against the implementation; recorded test counts, hashes, CI runs, issue states and desktop, human and live observations were not re-run. No live Scenario call or desktop interaction.",
     "sources": [
       ".github/dependabot.yml",
       ".github/workflows/blender-baseline.yml",

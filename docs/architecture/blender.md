@@ -9,13 +9,17 @@ and native tests. Pure protocol and core modules must remain free of `bpy`.
 
 Keep `bpy` access on Blender's main thread. The GUI timer in the
 [pump](../../scenario/blender/pump.py) runs shared runtime maintenance, local MCP
-requests and catalog worker events; the
+requests, catalog worker events, feedback outcomes and the Online Access checks
+that local MCP and the usage-data sender follow; the
 [MCP service](../../scenario/blender/mcp_service.py) supplies headless queue
 processing. A GUI timer is not proof that background mode delivers work.
 Never mutate properties in `draw()` or keep a worker dependent on a live panel.
 A saved file read with `--background` gives commands and timers a context
 without `selected_objects` or `active_object`; code that local MCP tools reach
 reads them through [`selection.py`](../../scenario/blender/selection.py).
+Iterate its `layer_objects` copy, never the live `view_layer.objects`, while
+selecting: after objects are linked or unlinked, `select_get` and `select_set`
+free the bases that collection walks, which can crash Blender.
 Blender's glTF exporter reads `active_object` and the context window itself, so
 the GLB export supplies both with `temp_override`.
 
@@ -42,9 +46,6 @@ both started with `--offline-mode`, `--factory-startup`, `--disable-autoexec`,
 directories are removed off Blender's main thread: the decoder's on the preview
 lane, and each player's by its own watcher thread. See
 [in-extension audio playback](../RESULT_PREVIEWS.md#in-extension-audio-playback).
-
-Mark the file modified after every main-thread change that no Undo operator
-records; see [marking the file modified](#marking-the-file-modified).
 
 New shared-runtime integration must use explicit account, project, scene and
 target identity. [JobSession](../BLENDER_JOB_CONTEXT.md) captures and validates
@@ -134,9 +135,9 @@ requests on the shared scheduler; no MCP tool calls it directly.
 
 ## Scene application
 
-[Mesh application](../MESH_APPLICATION.md) applies one saved GLB to one captured
-mesh under explicit remesh, UV, retexture, parts or rig policies with guarded
-rollback; [`mesh_result_application.py`](../../scenario/blender/mesh_result_application.py)
+[Mesh application](../MESH_APPLICATION.md) applies one saved GLB, glTF, FBX or OBJ
+result to its captured meshes under explicit remesh, UV, retexture, parts, rig or
+animation policies with guarded rollback; [`mesh_result_application.py`](../../scenario/blender/mesh_result_application.py)
 connects the synchronous `mesh_application.py` primitive to verified saved results.
 Preserve materials, object context and the documented ownership checks; do not
 relax rollback checks merely to make an edited target pass.
@@ -183,7 +184,8 @@ for newly generated shared jobs.
 [`model_application.py`](../../scenario/blender/model_application.py) stages one
 receipt-bound embedded GLB, or one saved GLB, glTF, FBX, OBJ or mesh PLY package
 snapshot rehashed on the main thread before its claim, in a disposable scene, then
-publishes a new collection/group at an approved cursor. It preserves the original
+publishes a new collection/group at an approved cursor, uniformly scaled when an
+approved target size asks for it. It preserves the original
 selection, packs only textures embedded in or read from the package, retains rigs
 and node/morph animation clips, and keeps the destination timeline unchanged. The
 [model guide](../MESH_APPLICATION.md#explicit-saved-glb-import) and its

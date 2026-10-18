@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/UI_STYLE.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-14",
-    "reviewed_revision": "7d3e55cc9ac64e68899fe1adb80a545688701ca9",
+    "reviewed_at": "2026-10-18",
+    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
     "limits": "Sections were checked against implementation changes made after they were written, with spot checks of labels, constants and helpers; not a claim-by-claim review. Recorded installed-test and desktop evidence was not rerun. No live Scenario call or desktop interaction.",
     "sources": [
       "docs/images/project-scope-default.png",

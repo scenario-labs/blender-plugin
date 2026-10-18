@@ -17,7 +17,7 @@ The historical failure and clean reruns are evidence limits, not a claim that
 the current candidate reproduces the crash. The 0.10.0 build later ran 591 s of
 Sequencer playback on macOS without errors (see the
 [release evidence](maintenance/release-acceptance.md#audio)), and the desktop
-checks still open are in [#440](https://github.com/scenario-labs/blender-plugin/issues/440);
+checks still open are in [#494](https://github.com/scenario-labs/blender-plugin/issues/494);
 synthetic probes and passing headless tests do not establish live generation or
 full render-lane desktop acceptance.
 
@@ -115,7 +115,7 @@ full render-lane desktop acceptance.
   they are detected only when the render child fails, with its log retained.
   The desktop rerun of export and the case-study save, human playback review
   and the criteria for lifting Film's experimental status continue in
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+  [#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 - Film captures and exports only the scenes it builds: capture takes one
   matching shot scene per recipe shot and export takes a built review scene, so
   an artist-built multi-shot scene, such as one timeline whose cameras are bound
@@ -126,7 +126,7 @@ full render-lane desktop acceptance.
   The Render Video lane takes its motion reference only from a new camera or
   viewport capture, not from an already-rendered video such as a previz render.
   The end-to-end production run met all three;
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440) tracks them.
+  [#494](https://github.com/scenario-labs/blender-plugin/issues/494) tracks them.
 - Several Film versions in one production are awkward to manage. Each final
   review build adds a scene named after the recipe title,
   `<title> / Final Review`, to which Blender appends `.001`, `.002` and so on;
@@ -136,13 +136,13 @@ full render-lane desktop acceptance.
   ZIP's root folder comes from the recipe title alone, so case studies of
   versions that share a title collide when extracted side by side. A second
   end-to-end run with two versions met all three;
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440) tracks them.
+  [#494](https://github.com/scenario-labs/blender-plugin/issues/494) tracks them.
 - Credentials use one explicitly selected pair (saved Blender preferences by
   default, environment only when selected). UI and MCP model jobs use credential-bound
   local storage. Preferences also allow an explicit optional project ID; changing
   it retires approvals and selects separate saved jobs. Blank uses the API key's
   default scope without discovering its identity. Live project permission and
-  cross-project service acceptance continue in #440; browser sign-in in
+  cross-project service acceptance continue in #494; browser sign-in in
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
 - An uncertain submission is not reconciled automatically: Scenario offers no
   idempotency key or client reference that identifies the job a lost request
@@ -165,9 +165,9 @@ full render-lane desktop acceptance.
   stay recoverable.
 - Existing trained LoRAs and compositions are offered through the model
   picker's Trained chip and local MCP; training is out of scope. A private
-  composition, the desktop recheck of project defaults and restart persistence,
-  and whether lanes beyond Image and Render Image should offer trained LoRAs
-  continue in [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+  composition is unverified. The desktop recheck of project defaults and restart
+  persistence, and whether lanes beyond Image and Render Image should offer
+  trained LoRAs, continue in [#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 - Remote job progress is advisory and kept only in memory. Providers may report
   no fraction, or 0 until completion, so a job may show only `generating`; a
   fraction below 1% shows no bar, and no time estimate is given. Readings and
@@ -178,7 +178,7 @@ full render-lane desktop acceptance.
   queued state; other providers are unobserved. At UI scale 1.0 the composer's
   strip and collapsed pill filled to the reported fraction over a dim track. The
   composer bar at UI scale 2.0 and the Jobs rows' bars still need desktop
-  evidence ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+  evidence ([#494](https://github.com/scenario-labs/blender-plugin/issues/494)).
   See
   [the projection rules](BLENDER_JOB_CONTEXT.md#remote-progress-and-scene-lane-binding).
 - Scenario cannot cancel a running workflow step: rejecting a waiting approval
@@ -202,7 +202,7 @@ full render-lane desktop acceptance.
   decided elsewhere was refused with *The workflow step changed; review it
   again*. Concurrent decisions, omitted project IDs, rejection inside a loop,
   the review assets of other node types and UI scale 2.0 are unverified
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)). See
+  ([#494](https://github.com/scenario-labs/blender-plugin/issues/494)). See
   [waiting workflow steps](ui/studio-and-library.md#waiting-workflow-steps).
 - Installing 0.10.0 from the official extension repository, and its update to
   the next release through Blender, were verified on macOS with Blender 5.0.1,
@@ -216,7 +216,7 @@ full render-lane desktop acceptance.
   prompt decoration and exact approvals. Paid Render Image and Render Video jobs
   ran through local MCP for 0.10.0 (see the
   [release evidence](maintenance/release-acceptance.md#render-image-and-render-video));
-  first-frame handoff and clip capture on Blender 5.0 and 5.2 continue in #440.
+  first-frame handoff and clip capture on Blender 5.0 and 5.2 continue in #494.
   Scene captures require a GUI.
 - Input combinations are checked only where model descriptions state them. No
   schema field marks inputs that cannot be sent together, and a free dry run
@@ -253,7 +253,7 @@ full render-lane desktop acceptance.
   parent's tail, so Apply animation from an FBX refuses a rig with those bones
   unconnected. Provider FBX and OBJ results have been applied only in
   offline tests built with Blender's own exporters; live provider packages still
-  need evidence (#440).
+  need evidence (#494).
 - Parts split from the source need each source face in one part: when a quad's
   two triangles land in different parts, the returned parts are copied without
   the source's UVs and materials. Remeshed parts and remeshes are checked only
@@ -270,7 +270,7 @@ full render-lane desktop acceptance.
   run. A physical desktop pass covered the form, free quotes and World
   application before the lane was rebased onto #394; the rebased composer tab
   row, a local panorama file upload and From image beyond its quote still need
-  desktop evidence (#440). A panorama input takes a
+  desktop evidence (#494). A panorama input takes a
   saved 360 result or a checked local 2:1 file; local MCP accepts only the saved
   result.
 - A saved material result shows **Tiling** whenever the file has a material with
@@ -311,7 +311,7 @@ full render-lane desktop acceptance.
   Snapshot copying and hashing are synchronous on the main thread. A paid
   desktop pass imported the FBX result of Tencent UV Unwrapping, which also
   delivered OBJ alternates; no catalog model was found that delivers glTF JSON,
-  and other provider package shapes need live evidence (#440).
+  and other provider package shapes need live evidence (#494).
 - Saved Gaussian splats (SPZ v2/v3, 3DGS PLY and .splat) import as a coloured
   point cloud, not as rendered Gaussian splats: rotations, anisotropic scales,
   view-dependent colour and sorted alpha blending are not reproduced, and files
@@ -323,7 +323,7 @@ full render-lane desktop acceptance.
   SPZ result imported upright with them on a desktop; other providers' worlds
   still need live visual evidence. Choose the other axes in the review when a
   result is not upright. Viewport performance at 1,000,000 or more points is not
-  established (#440).
+  established (#494).
 - Prompt helpers require their own exact quote and approval. Unusable Spark
   output fails without an automatic paid LLM fallback; complete text can be
   retrieved again without regeneration. Historical prices are not current quotes.
@@ -341,7 +341,7 @@ full render-lane desktop acceptance.
   loads (Open, Revert or File > New) or the extension restarts. A paid desktop
   pass at UI scale 1.0 uploaded a local image file and viewport and camera
   captures into workflow inputs; audio, video and 3D uploads and UI scale 2.0
-  continue in #440.
+  continue in #494.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling. Models
@@ -357,7 +357,7 @@ full render-lane desktop acceptance.
   lane's form stays in the sidebar. Its prompt is one line, and multi-line
   editing is [#444](https://github.com/scenario-labs/blender-plugin/issues/444).
   UI scales 1.25 and 1.5 continue in
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+  [#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 - The model picker is rebuilt when the trained list, base descriptions or new
   thumbnails arrive, and Blender drops a click on **OK** that lands on such a
   rebuild without a message: click again. It is no longer rebuilt on every
@@ -391,7 +391,7 @@ full render-lane desktop acceptance.
   On 2026-10-13 the maintainer composed, committed and cancelled with Esc after
   F2 with an input source they selected, on the candidate ZIP on macOS Blender
   5.1.2. Candidate-window placement was not recorded, and other platforms' input
-  methods remain unverified; both continue in #440.
+  methods remain unverified; both continue in #494.
 - The composer's [job strip](UI_STYLE.md#compact-job-strip) shows only jobs
   submitted from that scene and form in the current Blender session: jobs from
   before a restart, recovered cloud jobs, workflows and Film tasks are not bound
@@ -405,7 +405,7 @@ full render-lane desktop acceptance.
   never reported a queued state, so Waiting was not seen, and Cancel was not
   offered because no job reported `inference`. After a job is applied, the
   collapsed pill keeps a grey done line until the job is dismissed. UI scale 2.0
-  continues in #440.
+  continues in #494.
 - Viewport screenshots and OpenGL capture require a GUI. Automated GUI probes
   can take keyboard focus; follow the isolated-profile validation procedure.
 - Saved shared video and audio results offer **Play video** and **Play in
@@ -424,7 +424,7 @@ full render-lane desktop acceptance.
   candidate ZIP. The waveform's Cancel, Retry and close on the desktop, clicking
   Play at UI scale 2.0, Studio at UI scale 2.0 and other platforms have no
   desktop evidence yet, which remains
-  [#440](https://github.com/scenario-labs/blender-plugin/issues/440) work. Local
+  [#494](https://github.com/scenario-labs/blender-plugin/issues/494) work. Local
   MCP `inspect_result_previews` reads the same envelope as bounded levels,
   without an image, and no MCP tool launches a player or plays audio. See the
   [supported limits](USER_GUIDE.md#audio).
@@ -530,7 +530,7 @@ full render-lane desktop acceptance.
   pager in Jobs, Generations and the Studio Jobs page at UI scales 1.0 and 2.0.
   Server previews with Online Access disabled, Studio's Results page at UI scale
   2.0 and other platforms were not exercised
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+  ([#494](https://github.com/scenario-labs/blender-plugin/issues/494)).
 - Prompt helpers lack an explicit generic/model-contextual Spark preference
   ([#188](https://github.com/scenario-labs/blender-plugin/issues/188)).
 - Capture timing follows scene settings; native dialogs use Blender's theme
@@ -557,7 +557,7 @@ full render-lane desktop acceptance.
   at UI scales 1.0 and 2.0; at 2.0 only the review card's header shows at the
   bottom of the Studio popup until it is scrolled. Apply on a desktop still
   needs a physical check
-  ([#440](https://github.com/scenario-labs/blender-plugin/issues/440)).
+  ([#494](https://github.com/scenario-labs/blender-plugin/issues/494)).
 
 ## Verification
 
@@ -565,7 +565,7 @@ Offline contracts establish the behavior of fixtures and local state machines.
 Browser sign-in remains deferred under
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67); the open
 provider, UI/MCP parity and platform checks are in
-[#440](https://github.com/scenario-labs/blender-plugin/issues/440).
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 Inherited historical reports must be reproduced before being called current
 bugs. Passing a knowledge check establishes structure and freshness signals,
 not prose truth or runtime correctness.

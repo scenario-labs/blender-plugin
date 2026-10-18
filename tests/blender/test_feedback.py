@@ -7,6 +7,7 @@ has no pump, so the operator waits for its worker and applies the outcome itself
 dialog's invoke and draw are called directly, as Blender would.
 """
 
+import json
 import pathlib
 import tempfile
 import threading
@@ -328,6 +329,88 @@ class FeedbackTests(unittest.TestCase):
             _, labels = self.drawn(rating="2")
             self.assertFalse([label for label in labels if label.get("icon") == "ERROR"])
         self.assertEqual(self.feedback.draft()["rating"], "2")  # the text itself stays
+
+    def opened(self):
+        """The operator as Blender holds it while the dialog is open, after invoke."""
+        operator = SimpleNamespace(
+            rating="NONE",
+            message="",
+            email="",
+            properties=SimpleNamespace(is_property_set=lambda name: False),
+        )
+        window_manager = Mock()
+        window_manager.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(window_manager=window_manager)
+        self.assertEqual(self.operator.invoke(operator, context, None), {"RUNNING_MODAL"})
+        return operator
+
+    def test_closing_the_dialog_without_send_keeps_the_text(self):
+        operator = self.opened()
+        operator.rating, operator.message = "4", "Half written"
+        self.assertIsNone(self.operator.cancel(operator, bpy.context))
+        self.assertEqual(self.transport.calls, [])
+        self.assertEqual(
+            self.feedback.draft(),
+            {**self.feedback.EMPTY, **{"rating": "4", "message": "Half written"}},
+        )
+        self.assertEqual((self.opened().rating, self.opened().message), ("4", "Half written"))
+        # A failed send's submission survives a close without edits, not an edit.
+        self.transport.answer = TimeoutError("timed out")
+        self.send(**self.feedback.draft())
+        submission = self.sent()["submission_id"]
+        self.operator.cancel(self.opened(), bpy.context)
+        self.assertEqual(self.feedback._submission, submission)
+        operator = self.opened()
+        operator.message = "Rewritten"
+        self.operator.cancel(operator, bpy.context)
+        self.assertIsNone(self.feedback._submission)
+        self.transport.answer = 202
+        self.send(**self.feedback.draft())
+        self.assertNotEqual(self.sent()["submission_id"], submission)
+
+    def test_usage_data_counts_the_dialog_once_without_its_text(self):
+        directory = tempfile.TemporaryDirectory(prefix="scenario-test-feedback-")
+        self.addCleanup(directory.cleanup)
+        state_dir = patch.object(self.usage, "state_dir", return_value=pathlib.Path(directory.name))
+        state_dir.start()
+        self.addCleanup(state_dir.stop)
+        batches = []
+
+        def usage_send(url, payload, timeout):
+            batches.append(json.loads(json.dumps(payload)))
+            return 202
+
+        self.usage.activate(send=usage_send)
+        self.addCleanup(self.usage.deactivate)
+        self.addCleanup(setattr, self.prefs, "share_usage", False)
+        with online_access(True):
+            self.prefs.share_usage = True
+            self.usage.follow_online_access()
+            # Opened, then closed without Send: one cancelled event, from cancel.
+            operator = self.opened()
+            operator.message, operator.email = "Private words", "me@example.com"
+            self.operator.cancel(operator, bpy.context)
+            # Sent, then refused: one event each.
+            self.assertEqual(self.send(**self.feedback.draft()), {"FINISHED"})
+            self.assertEqual(self.send(message="  "), {"CANCELLED"})
+            self.usage.recorder().flush()
+        events = [
+            (event["event"], event["properties"]) for batch in batches for event in batch["events"]
+        ]
+
+        def used(outcome):
+            return ("operator_used", {"operator": "scenario.send_feedback", "outcome": outcome})
+
+        self.assertEqual(
+            events,
+            [("extension_started", {}), used("cancelled"), used("finished"), used("cancelled")],
+        )
+        self.assertEqual(self.sent()["message"], "Private words")  # only feedback carries it
+        for private in ("Private words", "me@example.com"):
+            self.assertNotIn(private, json.dumps(batches))
+        for name in ("execute", "invoke", "cancel"):
+            method = getattr(self.operator, name)
+            self.assertTrue(hasattr(method, self.usage._ORIGINAL), name)
 
     def test_the_dialog_opens_with_the_kept_text_and_send_button(self):
         self.feedback._draft = {"rating": "3", "message": "Kept", "email": "me@example.com"}

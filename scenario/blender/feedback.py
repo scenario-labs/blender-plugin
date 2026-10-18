@@ -5,14 +5,15 @@
 **Send feedback** opens a dialog with a rating, a message and an optional email; nothing is
 sent until the user presses Send, and usage sharing is not required. What the user typed
 is kept in this module, never in the blend file or the preferences, until a send succeeds,
-so a refused or failed send can be retried with the same text. The text keeps one
-submission ID until it is sent or edited, so a retry after an uncertain failure is grouped
-with the response it may duplicate. One worker thread posts the body through
-core.telemetry.feedback and queues its outcome; the pump applies it on the main thread with
-process(), and background Blender waits for it in the operator, as Test connection does. A
-send still running ABANDON_AFTER seconds after it started (urllib's timeout does not bound
-name resolution) is given up as unanswered, and its late outcome is ignored. Each outcome
-is shown as the status message and, as fresh as that message, in the preferences.
+so a refused or failed send, or a dialog closed without Send, can be retried with the same
+text. The text keeps one submission ID until it is sent or edited, so a retry after an
+uncertain failure is grouped with the response it may duplicate. One worker thread posts
+the body through core.telemetry.feedback and queues its outcome; the pump applies it on the
+main thread with process(), and background Blender waits for it in the operator, as Test
+connection does. A send still running ABANDON_AFTER seconds after it started (urllib's
+timeout does not bound name resolution) is given up as unanswered, and its late outcome is
+ignored. Each outcome is shown as the status message and, as fresh as that message, in the
+preferences.
 """
 
 import queue
@@ -94,6 +95,14 @@ def failure():
     """Why the last send failed, while that is fresh and its text kept; else None."""
     fresh = None if sending() else _fresh()
     return fresh[0] if fresh is not None and not fresh[1] else None
+
+
+def _keep(fields):
+    """Keep the dialog's text; edited text is a new response, with a new submission ID."""
+    global _draft, _submission
+    if fields != _draft:
+        _submission = None
+    _draft = dict(fields)
 
 
 def rating_value(identifier):
@@ -229,19 +238,22 @@ class SCENARIO_OT_send_feedback(bpy.types.Operator):
         for line in NOTE:
             note.label(text=line)
 
+    def cancel(self, context):
+        # Blender calls it when the dialog closes without Send (Esc, Cancel, a click outside).
+        _keep({name: getattr(self, name) for name in FIELDS})
+
     def execute(self, context):
-        global _draft, _submission
+        global _submission
         process()  # a send that ended since the last pump tick
-        fields = {name: getattr(self, name) for name in FIELDS}
-        if fields != _draft or _submission is None:  # new or edited text: a new response
-            _submission = uuid.uuid4().hex
-        _draft = dict(fields)  # kept until a send succeeds, so a refusal keeps the text
+        _keep({name: getattr(self, name) for name in FIELDS})  # until a send succeeds
         if sending():
             self.report({"WARNING"}, BUSY)
             return {"CANCELLED"}
         if not runtime.online():  # access can change after poll
             self.report({"WARNING"}, "Allow Online Access is off; your feedback was not sent")
             return {"CANCELLED"}
+        if _submission is None:
+            _submission = uuid.uuid4().hex
         try:
             payload = core.build(
                 rating_value(self.rating),

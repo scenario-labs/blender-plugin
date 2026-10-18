@@ -299,7 +299,7 @@ const SUBMISSION = "fedcba9876543210fedcba9876543210";
 const SURVEY = "0190f3c4-5c1e-7000-8000-00000000b1e0";
 const CONTEXT = { extension_version: "0.11.0", blender_version: "5.0.1", os: "macos", arch: "arm64" };
 const ANONYMOUS = { plugin: "blender", source: "extension", $process_person_profile: false, $geoip_disable: true };
-const MCP_SERVER = { $mcp_server_name: "Scenario for Blender", $mcp_source: "scenario_blender" };
+const MCP_SERVER = { $mcp_server_name: "Scenario for Blender", $mcp_source: "posthog_mcp_analytics" };
 const QUESTIONS = [
   { id: "q-rating", type: "rating", question: "How would you rate Scenario for Blender?", scale: 5, display: "number" },
   { id: "q-improve", type: "open", question: "What should we improve?" },
@@ -331,7 +331,16 @@ beforeEach(() => {
 
 /** Lists the feedback survey among PostHog's running surveys. */
 function launch(questions: unknown[] = QUESTIONS, extra: Record<string, unknown> = {}) {
-  const survey = { id: SURVEY, name: "Blender feedback", type: "api", questions, current_iteration: null, ...extra };
+  const survey = {
+    id: SURVEY,
+    name: "Blender feedback",
+    type: "api",
+    questions,
+    start_date: "2026-10-18T09:00:00Z",
+    end_date: null,
+    current_iteration: null,
+    ...extra,
+  };
   surveyList = { status: 200, body: { surveys: [{ id: "another", name: "Another", questions: [] }, survey] } };
 }
 
@@ -1182,6 +1191,27 @@ describe("feedback", () => {
     assert.equal(result.status, 503);
     assert.ok(elapsed >= 1900 && elapsed < 3000, `${elapsed} ms`);
     assert.deepEqual(received, []);
+  });
+
+  test("is unavailable while the survey is a draft or stopped, even if PostHog lists it", async () => {
+    const statuses: number[] = [];
+    for (const dates of [
+      { start_date: null },
+      { start_date: "" },
+      { start_date: undefined, end_date: undefined },
+      { end_date: "2026-10-18T10:00:00Z" },
+    ]) {
+      newToken();
+      newAddress();
+      launch(QUESTIONS, dates);
+      statuses.push((await sendFeedback({ rating: 5 })).status);
+    }
+    newToken();
+    launch(QUESTIONS, { end_date: undefined });
+    statuses.push((await sendFeedback({ rating: 5 })).status);
+
+    assert.deepEqual(statuses, [503, 503, 503, 503, 202]);
+    assert.equal(received.length, 1);
   });
 
   test("remembers a failed survey read for 30 seconds when it has nothing to fall back on", async (t) => {

@@ -21,6 +21,8 @@ const FIELDS = ["plugin", "extension_version", "client", "country", "$process_pe
 const SURVEY = {
   id: "0190f3c4-5c1e-7000-8000-00000000b1e0",
   name: "Blender feedback",
+  start_date: "2026-10-18T09:00:00Z",
+  end_date: null,
   current_iteration: 2,
   questions: [
     { id: "rating", type: "rating", question: "Rate", scale: 5 },
@@ -202,7 +204,7 @@ const VERSION = /^\d+\.\d+\.\d+$/;
 const HEX_ID = /^[0-9a-f]{32}$/;
 const DAY_MS = 24 * 3600_000;
 const ANONYMOUS = { plugin: "blender", source: "extension", $process_person_profile: false, $geoip_disable: true };
-const MCP_SERVER = { $mcp_server_name: "Scenario for Blender", $mcp_source: "scenario_blender" };
+const MCP_SERVER = { $mcp_server_name: "Scenario for Blender", $mcp_source: "posthog_mcp_analytics" };
 const OUTCOMES: Record<string, string[]> = {
   operator_used: ["finished", "cancelled", "error"],
   mcp_tool_called: ["ok", "error", "timeout"],

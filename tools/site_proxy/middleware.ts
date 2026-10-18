@@ -168,8 +168,9 @@ const MCP_TOOL = /^[a-z][a-z0-9_]{0,63}$/;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TIMESTAMP =
   /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
-// PostHog's MCP analytics read these names and properties.
-const MCP_SERVER = { $mcp_server_name: "Scenario for Blender", $mcp_source: "scenario_blender" };
+// PostHog's MCP analytics read these names and properties, and its per-tool views
+// count only events with this source; plugin and source say they come from Blender.
+const MCP_SERVER = { $mcp_server_name: "Scenario for Blender", $mcp_source: "posthog_mcp_analytics" };
 
 interface RateWindow {
   start: number;
@@ -499,12 +500,18 @@ function readFeedback(body: Json): Feedback | undefined {
   return feedback.rating === undefined && feedback.message === undefined ? undefined : feedback;
 }
 
-/** The fields of PostHog's running surveys this relay reads, by survey ID. */
+/** Whether a listed survey is running: launched and not stopped, as posthog-js checks too. */
+function isRunning(survey: Json): boolean {
+  const started = typeof survey.start_date === "string" && survey.start_date !== "";
+  return started && (survey.end_date === null || survey.end_date === undefined);
+}
+
+/** The fields this relay reads of the running surveys PostHog lists, by survey ID. */
 function readSurveys(value: unknown): Map<string, Survey> | undefined {
   if (!isObject(value) || !Array.isArray(value.surveys)) return undefined;
   const surveys = new Map<string, Survey>();
   for (const item of value.surveys) {
-    if (!isObject(item) || typeof item.id !== "string") continue;
+    if (!isObject(item) || typeof item.id !== "string" || !isRunning(item)) continue;
     const questions = (Array.isArray(item.questions) ? item.questions : []).filter(isObject).map((q) => ({
       id: typeof q.id === "string" ? q.id : undefined,
       type: typeof q.type === "string" ? q.type : undefined,
@@ -571,7 +578,7 @@ async function relayFeedback(
   const feedback = readFeedback(body);
   if (!feedback) return refuse(400, "bad_request");
   const host = postHogHost();
-  // A survey that is not launched, or is stopped, is not among the running ones.
+  // A draft or stopped survey is left out of the running ones.
   const survey = (await runningSurveys(host, token))?.get(surveyId);
   const answers = survey ? surveyAnswers(survey, feedback) : {};
   if (!survey || Object.keys(answers).length === 0) return refuse(503, "unavailable");

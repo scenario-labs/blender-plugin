@@ -262,7 +262,7 @@ MCP analytics names, `$mcp_tool_call` and `$mcp_initialize`. Feedback needs
 `POSTHOG_FEEDBACK_SURVEY_ID`: a launched API survey whose questions are a rating
 on a scale of 5, then two open questions (what to improve, then a contact
 email). The relay reads running surveys every five minutes, or 30 seconds after a
-failed read, answers 503 while that survey is missing, and answers feedback within
+failed read, answers 503 while that survey is not running, and answers feedback within
 four seconds. Each instance allows an IPv4 address or IPv6 /64 prefix 60 event
 requests and 5 feedback requests a minute; for a durable limit, add a Vercel
 Firewall rate-limit rule on `/telemetry/`, for example 120 requests a minute per IP

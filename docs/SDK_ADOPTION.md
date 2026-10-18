@@ -935,7 +935,7 @@ allow-listed read and each single-attempt operation through the adapter.
 | Inaccessible model detail | `models.retrieve`: HTTP 403 or 404 raises `AdapterUnavailable`, an `AdapterError` carrying the status and fixed text; other reads and statuses keep the generic error |
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
-| Waiting workflow step decision | `workflows.user_approval` through its public raw-response wrapper, or the named [selection extension](#workflow-step-decisions): explicit action, one attempt, project override only, status-carrying errors and a matching `job` acknowledgement; called only by the workflow job decision command |
+| Waiting workflow step decision | `workflows.user_approval` or `workflows.user_selection` through its public raw-response wrapper ([workflow step decisions](#workflow-step-decisions)): explicit action, one attempt, project override only, status-carrying errors and a matching `job` acknowledgement; called only by the workflow job decision command |
 | Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` (`AlreadyMembers` for the exact already-member add refusal) or `WriteUncertain` after dispatch |
@@ -1077,9 +1077,8 @@ When adopting further Studio code:
   multipart upload/finalization, signed downloads, asset search and collection
   operations. Do not infer coverage from a similar method name.
 - Reproduce each uncovered operation and link an upstream SDK issue before a
-  narrow raw API fallback in the shared adapter. The named discovery (#29) and
-  workflow selection (#33) extensions above are the current exceptions, each
-  with its issue and removal condition recorded.
+  narrow raw API fallback in the shared adapter, with its issue and removal
+  condition recorded. SDK 2.3.0 needs none.
 - Bind exact quotes to payload/account/project, persist request identity before
   paid dispatch, and preserve an uncertain state after a lost response. SDK
   retry settings alone do not provide application persistence or prevent a

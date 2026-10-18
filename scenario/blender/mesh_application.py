@@ -423,31 +423,72 @@ class Surface:
         return self.match.polygons if self.match else array("i", range(count))
 
 
-def _hypothesis(source, src, results, base, policy, *, fit, scene, label):
-    """Verify one base mapping, optionally with a uniform scale/offset fit."""
-    pieces = [(obj.data, base @ obj.matrix_world if scene else base) for obj in results]
-    if not fit and len(pieces) == 1 and _same_topology(source.data, *pieces[0]):
-        return Surface((pieces[0][0],), base, None, 1.0, None, None, None, ((0, 0, 0),))
+def _pieces(results, base, scene):
+    """Each result mesh with its matrix into base (source-local) coordinates."""
+    return [(obj.data, base @ obj.matrix_world if scene else base) for obj in results]
+
+
+def _exact(source, pieces, mapping, fitted, scale, fit=None):
+    """The identical-topology surface under `mapping` (with an optional fit), or None."""
+    if len(pieces) != 1:
+        return None
+    mesh, local = pieces[0]
+    if not _same_topology(source.data, mesh, local if fit is None else fit @ local):
+        return None
+    return Surface((mesh,), mapping, fitted, scale, None, None, None, ((0, 0, 0),))
+
+
+def _joined(pieces):
+    """All result meshes' buffers in base coordinates, joined into one surface."""
     parts = []
     for mesh, local in pieces:
         part = _arrays(mesh)
         rows = tuple(tuple(row) for row in local)
         parts.append(replace(part, co=mesh_correspondence.transformed(part.co, rows)))
-    result, offsets = mesh_correspondence.concatenate(parts)
-    mapping, scale, fitted = base, 1.0, None
-    if fit:
-        scale, offset = _transfer(policy, mesh_correspondence.similarity_fit, src, result)
-        result = replace(result, co=mesh_correspondence.scaled(result.co, scale, offset))
-        mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
-        fitted = label
+    return mesh_correspondence.concatenate(parts)
+
+
+def _tolerance(source, src, policy):
     # Far from the scene origin, float32 file transforms round more coarsely.
     inverse = source.matrix_world.inverted(None)
     origin = (inverse @ Vector((0.0, 0.0, 0.0))).length if inverse is not None else 0.0
-    tolerance = _transfer(policy, mesh_correspondence.position_tolerance, src.co, origin)
+    return _transfer(policy, mesh_correspondence.position_tolerance, src.co, origin)
+
+
+def _verified(policy, src, pieces, joined, mapping, fitted, scale, tolerance):
+    result, offsets = joined
     match = _transfer(policy, mesh_correspondence.match, src, result, tolerance)
-    return Surface(
-        tuple(mesh for mesh, _ in pieces), mapping, fitted, scale, src, result, match, offsets
-    )
+    meshes = tuple(mesh for mesh, _ in pieces)
+    return Surface(meshes, mapping, fitted, scale, src, result, match, offsets)
+
+
+def _fitted(source, src, pieces, base, label, policy, tolerance, tried):
+    """Fit one base; a base fitted to positions already tried reuses that outcome."""
+    result, offsets = _joined(pieces)
+    scale, offset = _transfer(policy, mesh_correspondence.similarity_fit, src, result)
+    fit = Matrix.Translation(offset) @ Matrix.Scale(scale, 4)
+    exact = _exact(source, pieces, fit @ base, label, scale, fit)
+    if exact is not None:
+        return exact
+    result = replace(result, co=mesh_correspondence.scaled(result.co, scale, offset))
+    # Positions this close verify alike; their assignments cannot differ.
+    limit = tolerance / 10
+    for co, outcome in tried:
+        if len(co) == len(result.co) and all(
+            abs(a - b) <= limit for a, b in zip(co, result.co, strict=True)
+        ):
+            if isinstance(outcome, MeshApplicationError):
+                raise outcome
+            return outcome
+    try:
+        outcome = _verified(
+            policy, src, pieces, (result, offsets), fit @ base, label, scale, tolerance
+        )
+    except MeshApplicationError as exc:
+        tried.append((result.co, exc))
+        raise
+    tried.append((result.co, outcome))
+    return outcome
 
 
 def match_surface(source, results, result_to_source, policy, *, scene=True):
@@ -465,21 +506,42 @@ def match_surface(source, results, result_to_source, policy, *, scene=True):
         raise MeshApplicationError("Result meshes exceed the synchronous component limit")
     src = _arrays(source.data)
     if not isinstance(result_to_source, FitRequest):
-        return _hypothesis(
-            source, src, results, result_to_source, policy, fit=False, scene=scene, label=None
+        pieces = _pieces(results, result_to_source, scene)
+        exact = _exact(source, pieces, result_to_source, None, 1.0)
+        if exact is not None:
+            return exact
+        tolerance = _tolerance(source, src, policy)
+        return _verified(
+            policy, src, pieces, _joined(pieces), result_to_source, None, 1.0, tolerance
         )
     if policy not in FIT_POLICIES:
         raise MeshApplicationError("Fitted coordinates apply to UV, retexture and rig only")
-    verified, reasons = [], []
+    bases, reasons = [], []
     for label, rows in result_to_source.bases:
         try:
-            verified.append(
-                _hypothesis(
-                    source, src, results, _matrix(rows), policy, fit=True, scene=scene, label=label
-                )
-            )
+            base = _matrix(rows)
+        except MeshApplicationError as exc:
+            reasons.append(f"{label}: {exc}")
+            continue
+        bases.append((label, base, _pieces(results, base, scene)))
+    # Identical topology is exact under any base, unfitted first: it needs no
+    # correspondence, which refuses loose and coincident duplicate geometry.
+    for label, base, pieces in bases:
+        exact = _exact(source, pieces, base, label, 1.0)
+        if exact is not None:
+            return exact
+    tolerance = _tolerance(source, src, policy) if bases else 0.0
+    verified, tried = [], []
+    for label, base, pieces in bases:
+        try:
+            surface = _fitted(source, src, pieces, base, label, policy, tolerance, tried)
         except MeshApplicationError as exc:
             reasons.append(f"{label}: {str(exc).split(': ', 1)[-1]}")
+            continue
+        if surface.match is None:
+            return surface
+        if all(surface is not other for other in verified):
+            verified.append(surface)
     if not verified:
         raise MeshApplicationError(
             f"{policy} result does not match the source mesh after fitting ({'; '.join(reasons)})"

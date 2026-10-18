@@ -566,15 +566,18 @@ layer on each result mesh.
 
 For those three policies the caller may instead pass an approved
 `mesh_application.FitRequest` of base mappings, normally scene (`WORLD`) and
-object-local (`LOCAL`). For each base, the command estimates one uniform scale
-and offset that take the result's axis-aligned bounding box onto the source's,
-with rotation fixed, then runs the full surface match with the usual tolerance.
-Rotation is never searched: a fit changes only size and position.
-One verified base is used; two are used only if they assign every result corner
-and face identically. Otherwise application stops before mutation, naming each
-base's reason. The returned application and `mesh_edit` status report the
-verified mapping (`result_to_source`) and the base it was fitted from
-(`fitted_from`, null for a strict mapping).
+object-local (`LOCAL`). A base under which the result has identical indexed
+topology and equal positions, unfitted or then fitted, is used at once. For each
+base, the command estimates one uniform scale and offset that take the result's
+axis-aligned bounding box onto the source's, with rotation fixed, then runs the
+full surface match with the usual tolerance. Rotation is never searched: a fit
+changes only size and position. A base fitted to within a tenth of the tolerance
+of an earlier one reuses its match. One verified base is used; two are used
+only if they assign every result corner and face identically. Otherwise
+application stops before mutation, naming each base's reason. The returned
+application and `mesh_edit` status report the verified mapping
+(`result_to_source`) and the base it was fitted from (`fitted_from`, null for a
+strict mapping).
 
 The source is revalidated immediately before replacement. Temporary imported
 objects are removed; RIG retains its armature/parent hierarchy and ANIMATE only
@@ -653,7 +656,8 @@ otherwise the review starts on `FIT` when the requested or derived policy is one
 of those three, and on scene coordinates (object-local where required) for the
 others. Choosing one of those policies in the dialog selects it; choosing
 another policy returns to scene coordinates. MCP `mesh_placement` follows the
-same order, and explicit `WORLD` or `LOCAL` stay strict. Singular or
+same order, and explicit `WORLD` or `LOCAL` stay strict; ANIMATE reports a
+requested `FIT` as scene coordinates, which it does not use. Singular or
 orientation-reversing mappings are rejected. The review binds the chosen
 mapping, policy and original-copy choice. For mirrored or zero-scale sources,
 the native dialog starts with object-local coordinates and explains that

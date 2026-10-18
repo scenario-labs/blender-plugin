@@ -90,7 +90,11 @@ def concatenate(parts):
     Offsets are (vertex, loop, polygon) starts per part, so a joined index can be
     attributed back to the result mesh it came from with `part_of`.
     """
-    co, loop_vertices, starts, totals, loop_edges = (array("d"), *(array("i") for _ in range(4)))
+    co = array("d")
+    loop_vertices = array("i")
+    starts = array("i")
+    totals = array("i")
+    loop_edges = array("i")
     offsets = []
     vertices = loops = edges = 0
     for part in parts:

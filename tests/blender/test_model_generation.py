@@ -7071,6 +7071,25 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(approval["mesh_policy"], "ANIMATE")
         self.assertEqual(approval["target"], source.name)
 
+    def test_animate_ignores_a_requested_fit(self):
+        # Like the dialog, a fit request leaves ANIMATE on unused scene coordinates.
+        self.model["id"] = "model_meshy-animation"
+        request_id, _ = self.captured_clip_result()
+        for options in ({}, {"mesh_policy": "ANIMATE"}):
+            with self.subTest(**options):
+                approval = self.prepare_mesh_edit(
+                    request_id, purpose="mesh_source", mesh_placement="FIT", **options
+                )
+                self.assertEqual(
+                    (approval["mesh_policy"], approval["mesh_placement"], approval["fit_bases"]),
+                    ("ANIMATE", "WORLD", None),
+                )
+                identity = [[float(row == column) for column in range(4)] for row in range(4)]
+                self.assertEqual(approval["result_to_source"], identity)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["mesh_edit"]["policy"], "ANIMATE")
+
     def test_animate_on_unskinned_source_is_rejected_by_mcp_and_native_review(self):
         request_id, source = self.captured_source_result()
         before = self.store.get(request_id)

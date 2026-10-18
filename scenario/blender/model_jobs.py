@@ -2357,8 +2357,9 @@ class ModelJobs:
             policy = start.policy
             source = "edit3d_task" if start.derived else "default"
         # An explicit placement wins; surface-preserving edits start on a verified
-        # fit, the others on scene positions.
-        if placement is None:
+        # fit, the others on scene positions. ANIMATE uses no coordinates, so like
+        # the dialog it leaves a requested fit for unused scene positions.
+        if placement is None or (placement == "FIT" and policy == "ANIMATE"):
             placement = "FIT" if policy in FIT_POLICIES else "WORLD"
         # Native review chooses its displayed default from the resolved target,
         # which can differ from the selected object. Explicit MCP options stay strict.

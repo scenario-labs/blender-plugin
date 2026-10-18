@@ -252,6 +252,20 @@ ingestion host from `POSTHOG_HOST` (US cloud by default) and the optional Pages
 address from `SITE_ORIGIN`; without a token it counts nothing. A send that fails
 or takes over two seconds is logged and dropped without changing the response.
 
+The middleware also answers `/telemetry/*` itself, never forwarding it to Pages.
+`POST /telemetry/v1/events` relays the extension's opt-in usage events to
+PostHog's `/batch/` endpoint and `POST /telemetry/v1/feedback` sends user-written
+feedback as a `survey sent` response (#128). Both accept only JSON of at most
+64 KiB from a `ScenarioBlender/` User-Agent, in the allowlisted shapes; an event
+or property outside the allowlist is dropped or refused. MCP events use PostHog's
+MCP analytics names, `$mcp_tool_call` and `$mcp_initialize`. Feedback needs
+`POSTHOG_FEEDBACK_SURVEY_ID`: a launched API survey whose questions are a rating
+on a scale of 5, then two open questions (what to improve, then a contact
+email). The relay reads running surveys every five minutes and answers 503 while
+that survey is missing. Each instance allows an address 60 event requests and 5
+feedback requests a minute; for a durable limit, add a Vercel Firewall rate-limit
+rule on `/telemetry/`, for example 120 requests a minute per IP address.
+
 A Blender download is an install or an update; the request does not say which.
 Index requests are repository additions and manual update checks, not active
 installations, because the extension sets up the repository without startup

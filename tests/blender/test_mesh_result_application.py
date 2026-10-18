@@ -1517,6 +1517,91 @@ class AnimateResultTests(unittest.TestCase):
         # The largest correction is the Head's roll.
         self.assertAlmostEqual(result.rest_correction_deg, 11.5, delta=0.1)
 
+    def test_clips_follow_rigs_rotated_at_object_level(self):
+        import math
+
+        from helpers import CHAIN, clip_deforms, deform_matrices
+        from mathutils import Euler
+
+        # An FBX import turns its armature object 90 degrees on X and its bones
+        # back: either rig may differ that way while both line up in the world.
+        turn = Euler((math.pi / 2, 0, 0))
+        _, spine, head = CHAIN
+        bones = (("Hips", None, (0, 0, 1), (0.025, 0, 1.2)), spine, (*head, 0.2))
+        for rotated in ("result", "destination"):
+            with self.subTest(rotated=rotated):
+                try:
+                    if rotated == "result":
+                        self.use_clips(bones=bones, rotation=turn)
+                    else:
+                        self.use_clips(bones=bones)
+                        self.rig.data.transform(turn.to_matrix().to_4x4().inverted())
+                        self.rig.rotation_euler = turn
+                        bpy.context.view_layer.update()
+                        self.target = self.mesh.capture_target(self.scene, self.source)
+                    result = self.apply(policy="ANIMATE")
+                    frames = range(1, 26, 8)
+                    data = self.rig.animation_data
+                    for index, clip in enumerate(result.clips, 1):
+                        data.action = clip
+                        got = deform_matrices(self.scene, self.rig, frames, world=True)
+                        want = clip_deforms(
+                            self.body,
+                            f"Clip {index}",
+                            frames,
+                            fps=self.scene.render.fps,
+                            world=True,
+                        )
+                        for frame in frames:
+                            for name, matrix in want[frame].items():
+                                mine = got[frame][name]
+                                turned = mine.to_quaternion().rotation_difference(
+                                    matrix.to_quaternion()
+                                )
+                                self.assertLess(_degrees(turned), 0.1, (index, frame, name))
+                                offset = mine.translation - matrix.translation
+                                self.assertLess(offset.length, 1e-4, (index, frame, name))
+                    # The root really moved, so the comparison is not trivial.
+                    self.assertGreater(want[25]["Hips"].translation.length, 0.5)
+                    # The object turn cancels its bones' turn back: only the leans remain.
+                    self.assertAlmostEqual(result.rest_correction_deg, 11.5, delta=0.1)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_constrained_or_driven_animated_bones_fail_without_mutation(self):
+        # Constraints and drivers evaluate after the action and would override the clips.
+        apply_clips = self.animation.apply_clips
+        for kind in ("constraint", "driver"):
+            with self.subTest(kind=kind):
+                try:
+                    if kind == "constraint":
+                        self.rig.pose.bones["Spine"].constraints.new("COPY_ROTATION")
+                    else:
+                        self.rig.pose.bones["Head"].driver_add("rotation_quaternion", 1)
+                    objects, before = set(bpy.data.objects), self.model._snapshot()
+                    animation, errors = _animation(self.rig), []
+
+                    def spy(*args, errors=errors):
+                        try:
+                            return apply_clips(*args)
+                        except Exception as error:
+                            errors.append(str(error))
+                            raise
+
+                    with (
+                        patch.object(self.animation, "apply_clips", side_effect=spy),
+                        self.assertRaises(self.module.MeshResultApplicationError),
+                    ):
+                        self.apply(policy="ANIMATE")
+                    self.assertEqual(errors, ["Constraints or drivers move the animated bones"])
+                    self.assertEqual(self.model._snapshot(), before)
+                    self.assertEqual(_animation(self.rig), animation)
+                    self.assert_unchanged_source(objects)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
     def test_rest_correction_rotates_bezier_keys_exactly(self):
         from mathutils import Euler, Vector
 
@@ -1627,6 +1712,8 @@ class AnimateResultTests(unittest.TestCase):
             ),
             "no clips": dict(clips=()),
             "rotation mode": dict(),
+            # A mirrored armature object has no rest rotation to correct by.
+            "mirrored rig": dict(),
         }
         for kind, options in cases.items():
             with self.subTest(kind=kind):
@@ -1634,6 +1721,10 @@ class AnimateResultTests(unittest.TestCase):
                     self.use_clips(**options)
                     if kind == "rotation mode":
                         self.rig.pose.bones["Spine"].rotation_mode = "XYZ"
+                    if kind == "mirrored rig":
+                        self.rig.scale.x = -1
+                        bpy.context.view_layer.update()
+                        self.target = self.mesh.capture_target(self.scene, self.source)
                     objects, before = set(bpy.data.objects), self.model._snapshot()
                     with self.assertRaises(self.module.MeshResultApplicationError):
                         self.apply(policy="ANIMATE")

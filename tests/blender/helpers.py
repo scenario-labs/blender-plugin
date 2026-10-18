@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from unittest.mock import patch
 
 import bpy
+from mathutils import Matrix
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -447,16 +448,24 @@ def skin_to_chain_rig(scene, source):
 
 
 def clip_glb(
-    bones=CHAIN, *, unit=100.0, scale=0.01, clips=(1.0, 2.0), location=True, stretch=False
+    bones=CHAIN,
+    *,
+    unit=100.0,
+    scale=0.01,
+    clips=(1.0, 2.0),
+    location=True,
+    stretch=False,
+    rotation=None,
 ):
     """Export a returned animated character with Blender's glTF exporter.
 
     The armature has `unit` armature-space units per world unit under object scale
-    `scale`, like a centimetre rig at 0.01. Clip N (one NLA track, `Clip N`) turns
-    every bone about its X axis by half its amount in radians and, with `location`,
-    moves the root bone along its Y axis by its amount in world units, over 24
-    frames; `stretch` also scales the root along its Y axis. A triangle skinned to
-    the root bone is included. All scratch data is removed.
+    `scale`, like a centimetre rig at 0.01. A `rotation` Euler turns the armature
+    object while its bones turn back, so they keep the same world rest. Clip N (one
+    NLA track, `Clip N`) turns every bone about its X axis by half its amount in
+    radians and, with `location`, moves the root bone along its Y axis by its amount
+    in world units, over 24 frames; `stretch` also scales the root along its Y axis.
+    A triangle skinned to the root bone is included. All scratch data is removed.
     """
     import math
 
@@ -474,6 +483,11 @@ def clip_glb(
         mesh = bpy.data.meshes.new("Body")
         root = [value * unit for value in bones[0][2]]
         mesh.from_pydata([root, (root[0] + unit, root[1], root[2]), (0, 0, 0)], [], [(0, 1, 2)])
+        if rotation is not None:
+            back = rotation.to_matrix().to_4x4().inverted()
+            rig.data.transform(back)
+            mesh.transform(back)
+            rig.rotation_euler = rotation
         body = bpy.data.objects.new("Body", mesh)
         scene.collection.objects.link(body)
         body.parent = rig
@@ -520,25 +534,31 @@ def clip_glb(
                 values.remove(value, do_unlink=True)
 
 
-def deform_matrices(scene, rig, frames):
+def deform_matrices(scene, rig, frames, *, world=False):
     """Each bone's armature-space deform matrix, pose times inverted rest, at each frame.
 
     Skinning moves a vertex by this matrix, so equal matrices move a mesh equally
-    whatever each rig's bone orientations. The scene must be the window's scene.
+    whatever each rig's bone orientations. With `world`, the matrices are in world
+    space, so rigs whose objects are turned or scaled differently compare too. The
+    scene must be the window's scene.
     """
     current = scene.frame_current
     deforms = {}
     for frame in frames:
         scene.frame_set(frame)
+        outer = rig.matrix_world if world else Matrix.Identity(4)
         deforms[frame] = {
-            bone.name: rig.pose.bones[bone.name].matrix @ bone.matrix_local.inverted()
+            bone.name: outer
+            @ rig.pose.bones[bone.name].matrix
+            @ bone.matrix_local.inverted()
+            @ outer.inverted()
             for bone in rig.data.bones
         }
     scene.frame_set(current)
     return deforms
 
 
-def clip_deforms(body, clip, frames, *, fps=24):
+def clip_deforms(body, clip, frames, *, fps=24, world=False):
     """`deform_matrices` of a returned GLB's rig playing clip `clip`, imported as staging does.
 
     The rig is imported into a scratch scene at `fps` with the staging import
@@ -583,7 +603,7 @@ def clip_deforms(body, clip, frames, *, fps=24):
         )
         data.action = action
         data.action_slot = action.slots[0]
-        return deform_matrices(scene, rig, frames)
+        return deform_matrices(scene, rig, frames, world=world)
     finally:
         window.scene, window.view_layer = previous
         bpy.data.scenes.remove(scene)

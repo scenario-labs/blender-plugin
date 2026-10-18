@@ -866,19 +866,22 @@ action slot, without F-Curve modifiers. Other animated objects, shape-key or
 armature-data animation and other channels are rejected rather than dropped.
 Every bone a clip animates must exist in the destination rig by name, with the
 same parent name, connection, rotation/scale inheritance and local location
-setting; rotated bones must use the same rotation mode.
+setting; rotated bones must use the same rotation mode. They must have no
+constraints, and no drivers on their location, rotation or scale, which would
+override the clips. Neither armature object may be mirrored.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
-animated bone's rest orientation relative to its parent (or to armature space
-for a root bone) must therefore be within 15 degrees of the destination's. One
-provider re-rigging its own rigged character moved some joint rest orientations
-by up to about 11 degrees, while a skeleton built in another pose or orientation
-differs by tens of degrees, which no correction makes right.
+animated bone's rest orientation relative to its parent (or to world space for
+a root bone, so either armature object may be turned) must therefore be within
+15 degrees of the destination's. One provider re-rigging its own rigged
+character moved some joint rest orientations by up to about 11 degrees, while a
+skeleton built in another pose or orientation differs by tens of degrees, which
+no correction makes right.
 
 Within that limit, copied keys are corrected so that each bone moves the mesh
 as the returned clip moves the returned character. With C the rotation from the
-destination bone's armature-space rest orientation to the result's, each
+destination bone's world-space rest orientation to the result's, each
 quaternion key q becomes C q C⁻¹ and each location vector l becomes C l, in
 every key and handle; automatic Bezier handles become free. The destination's
 rest heads stay, so the mesh bends about its own joints. A corrected bone must
@@ -891,7 +894,7 @@ bone's rest head, every location key and handle is scaled by the ratio of the
 destination's summed parent-relative bone head offsets to the result's, over
 bones whose names and parent names match. A returned rig with 0.01 object scale
 and centimetre bones therefore lands in a metre rig's units; the result's object
-transforms are not used. A ratio that cannot be derived is rejected. Rest-head
+scale is not used. A ratio that cannot be derived is rejected. Rest-head
 location keys, as sampled exports write for every bone, stay unchanged. The
 coordinate mapping and Keep original choice are not used: ANIMATE changes no
 mesh data.

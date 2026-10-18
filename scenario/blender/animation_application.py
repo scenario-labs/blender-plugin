@@ -8,15 +8,17 @@ never modified, and no returned object is kept. Bones are matched by name only;
 retargeting across different skeletons is unsupported.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
-a bone differently on it. Skinning moves a vertex by its bone's armature-space
-deform matrix, the posed matrix times the inverted rest. A bone that inherits
-rotation and scale and keys a local location, as every glTF bone does and so the
-matching destination bone must, with armature-space rest rotation A, pose rotation
-q and pose location l, deforms by A q A^-1 about its rest head and moves by A l,
-after its parent's deform. The destination therefore gets q' = C q C^-1 and
-l' = C l with C = A_destination^-1 A_result, so every bone, and every mesh it
-moves, deforms as in the returned clip. The rest head positions stay the
-destination's: the user's mesh bends about its own joints.
+a bone differently on it, and either armature object can be turned, as FBX
+imports are. Skinning moves a vertex by its bone's armature-space deform matrix,
+the posed matrix times the inverted rest. A bone that inherits rotation and scale
+and keys a local location, as every glTF bone does and so the matching
+destination bone must, with world-space rest rotation A (its armature object's
+rotation times its armature-space rest), pose rotation q and pose location l,
+deforms by A q A^-1 about its rest head and moves by A l in world space, after
+its parent's deform. The destination therefore gets q' = C q C^-1 and l' = C l
+with C = A_destination^-1 A_result, so every bone, and every mesh it moves,
+deforms as in the returned clip. The rest head positions stay the destination's:
+the user's mesh bends about its own joints.
 """
 
 import math
@@ -119,11 +121,16 @@ def _channels(action, slot):
     return bones, moved
 
 
-def _rest(bone):
-    """Rest orientation relative to the parent bone, or to armature space for a root."""
-    matrix = bone.matrix_local
-    if bone.parent is not None:
-        matrix = bone.parent.matrix_local.inverted_safe() @ matrix
+def _world_rest(rig, bone):
+    """Rest orientation in world space; the armature object may be turned."""
+    return (rig.matrix_world.to_quaternion() @ bone.matrix_local.to_quaternion()).normalized()
+
+
+def _rest(rig, bone):
+    """Rest orientation relative to the parent bone, or to world space for a root."""
+    if bone.parent is None:
+        return _world_rest(rig, bone)
+    matrix = bone.parent.matrix_local.inverted_safe() @ bone.matrix_local
     return matrix.to_quaternion().normalized()
 
 
@@ -206,8 +213,8 @@ def _corrections(source, destination, animated, clips):
     """
     corrections, largest = {}, 0.0
     for name in animated:
-        existing = destination.data.bones[name].matrix_local.to_quaternion().normalized()
-        returned = source.data.bones[name].matrix_local.to_quaternion().normalized()
+        existing = _world_rest(destination, destination.data.bones[name])
+        returned = _world_rest(source, source.data.bones[name])
         correction = existing.inverted() @ returned
         angle = _angle(correction)
         largest = max(largest, angle)
@@ -253,7 +260,8 @@ def _scale(source, destination):
     """Destination per result armature-space unit, from shared parent-relative bone offsets.
 
     Location channels are armature-space distances. A returned rig's object scale
-    (for example 0.01 with centimetre bones) does not enter armature space.
+    (for example 0.01 with centimetre bones) does not enter armature space; the
+    rest correction handles object rotation.
     """
     shared = [
         (bone, destination.data.bones[bone.name])
@@ -294,6 +302,9 @@ def validate_clips(target, objects):
     data = destination.animation_data
     if data is not None and data.use_tweak_mode:
         raise mesh.MeshApplicationError("Leave NLA tweak mode on the destination rig")
+    if any(rig.matrix_world.to_3x3().determinant() <= 0 for rig in (source, destination)):
+        # A mirrored or flattened armature object has no rest rotation to correct by.
+        raise mesh.MeshApplicationError("Apply animation needs rigs that are not mirrored")
     clips = _clips(source)
     animated, moved = {}, False
     for action, slot in clips:
@@ -319,9 +330,20 @@ def validate_clips(target, objects):
             source.pose.bones[name].rotation_mode != destination.pose.bones[name].rotation_mode
         ):
             raise mesh.MeshApplicationError("Animated bones must use the same rotation mode")
-        dot = min(1.0, abs(_rest(returned).dot(_rest(existing))))
+        dot = min(1.0, abs(_rest(source, returned).dot(_rest(destination, existing))))
         if 2 * math.acos(dot) > REST_TOLERANCE:
             raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+    # Constraints and drivers evaluate after the action and would override the clips.
+    drivers = data.drivers if data is not None else ()
+    driven = {
+        bpy.utils.unescape_identifier(match.group(1))
+        for curve in drivers
+        if (match := _CHANNEL.fullmatch(curve.data_path))
+    }
+    if driven & animated.keys() or any(
+        destination.pose.bones[name].constraints for name in animated
+    ):
+        raise mesh.MeshApplicationError("Constraints or drivers move the animated bones")
     corrections, largest = _corrections(source, destination, animated, clips)
     # Rest-head location keys stay zero at any scale; sampled exports key every bone.
     ratio = _scale(source, destination) if moved else 1.0

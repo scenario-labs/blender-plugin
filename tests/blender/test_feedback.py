@@ -152,7 +152,7 @@ class FeedbackTests(unittest.TestCase):
         # Switched off in another Blender whose preferences were not saved: the ID file,
         # the opt-in record, is gone while this preference still reads on.
         events = submodule("core.telemetry.usage")
-        events.delete_install_id(state)
+        events.delete_install_id(state, install_id)
         self.assertTrue(self.prefs.share_usage)
         self.send(rating="5")
         self.assertNotIn("install_id", self.sent())
@@ -237,6 +237,34 @@ class FeedbackTests(unittest.TestCase):
         self.send(rating="3", message="Other words", email="nope")
         self.assertEqual(self.feedback._submission, edited)
         self.assertEqual(self.transport.calls, [])
+
+    def test_nothing_is_sent_while_online_access_is_off(self):
+        self.assertFalse(self.operator.poll(bpy.context))
+        with self.assertRaises(RuntimeError) as refused:
+            bpy.ops.scenario.send_feedback(rating="5", message="offline")
+        self.assertIn(self.feedback.OFFLINE, str(refused.exception))
+        # Access can change between poll and execute: execute checks again.
+        operator = SimpleNamespace(rating="5", message="offline", email="", report=Mock())
+        self.assertEqual(self.operator.execute(operator, bpy.context), {"CANCELLED"})
+        operator.report.assert_called_once_with(
+            {"WARNING"}, "Allow Online Access is off; your feedback was not sent"
+        )
+        self.assertEqual(self.transport.calls, [])
+        self.assertEqual(self.feedback.draft()["message"], "offline")
+        with online_access(True):
+            self.assertTrue(self.operator.poll(bpy.context))
+
+    def test_one_send_at_a_time(self):
+        self.feedback._worker, self.feedback._started = object(), self.feedback._clock()
+        with online_access(True):
+            self.assertTrue(self.feedback.sending())
+            self.assertFalse(self.operator.poll(bpy.context))
+            self.assertEqual(self.feedback.status(), (self.feedback.SENDING, "SORTTIME"))
+            operator = SimpleNamespace(rating="5", message="again", email="", report=Mock())
+            self.assertEqual(self.operator.execute(operator, bpy.context), {"CANCELLED"})
+            operator.report.assert_called_once_with({"WARNING"}, self.feedback.BUSY)
+        self.assertEqual(self.transport.calls, [])
+        self.assertEqual(self.feedback.draft()["message"], "again")  # kept for later
 
     def test_the_pump_applies_an_outcome_once(self):
         fields = {"rating": "4", "message": "Pumped", "email": ""}

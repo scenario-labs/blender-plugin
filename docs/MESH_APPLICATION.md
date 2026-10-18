@@ -115,8 +115,10 @@ faces use count. Distances are fractions of the source's bounding-box diagonal:
 
 Copied parts may close each part with hidden contact or cap faces, so a part
 vertex inside the source volume also passes: it lies behind the nearest source
-face by that face's normal, which assumes outward-facing source normals. Every
-sampled source vertex must still lie near a part.
+face by that face's normal. This applies only to a source that encloses a volume,
+every face edge meeting its reverse in one other face and the signed volume
+positive; otherwise part vertices must lie near the surface. Every sampled
+source vertex must still lie near a part.
 
 Provider remeshes measured within 0.7% of a source (1.8% for one delivered in
 object-local coordinates), and remeshed parts with interior caps had 2.2% of
@@ -734,22 +736,21 @@ those imported positions as source-local. Neither fits, centers or rescales a
 provider result. **Fit and verify** (`FIT`), offered for every policy except
 `ANIMATE`, binds both bases as a `FitRequest`: a mirrored or zero-scale source
 offers only the object-local base. An explicitly requested placement wins;
-otherwise the review starts on `FIT`, except for ANIMATE and for a `REMESH` the
-job did not choose (`mesh_policy_source: default`), whose result need not be the
-source surface; those start on scene coordinates (object-local where required).
-Choosing a policy in the dialog selects `FIT`, and choosing ANIMATE returns to
-scene coordinates. MCP `mesh_placement` follows the same order, and explicit
-`WORLD` or `LOCAL` stay strict; ANIMATE reports a requested `FIT` as scene
-coordinates, which it does not use. Singular or orientation-reversing mappings
-are rejected. The review binds the chosen mapping, policy and original-copy
-choice. For mirrored or zero-scale sources, the native dialog starts with
-object-local coordinates and explains that requirement. It still requires
-confirmation; explicit MCP `WORLD` requests remain rejected rather than changing
-their mapping. For captured-source review, the default and explanation use the
-retained captured target's transform, independently of whichever object is
-currently selected. Editing options replaces that approval handle without
-recapturing the target; changed source or scene context requires cancellation
-and fresh review.
+otherwise the review starts on `FIT`, except for ANIMATE and for a `REMESH`
+that is not the job's own Remesh task, even when requested, whose result need not
+be the source surface; those start on scene coordinates (object-local where
+required). Choosing a policy in the dialog selects the same default. MCP
+`mesh_placement` follows the same order, and explicit `WORLD` or `LOCAL` stay
+strict; ANIMATE reports a requested `FIT` as scene coordinates, which it does
+not use. Singular or orientation-reversing mappings are rejected. The review
+binds the chosen mapping, policy and original-copy choice. For mirrored or
+zero-scale sources, the native dialog starts with object-local coordinates and
+explains that requirement. It still requires confirmation; explicit MCP `WORLD`
+requests remain rejected rather than changing their mapping. For captured-source
+review, the default and explanation use the retained captured target's
+transform, independently of whichever object is currently selected. Editing
+options replaces that approval handle without recapturing the target; changed
+source or scene context requires cancellation and fresh review.
 
 Confirmation consumes the handle and verifies saved files on the existing worker.
 Main-thread application revalidates the captured source and calls the shared
@@ -942,18 +943,19 @@ places, reported as `parts_from`:
   providers return the uploaded faces, triangulated, normalized and with UVs and
   materials stripped; each part instead keeps the source's own positions in
   source-local coordinates, UV layers, material slots and face assignments,
-  attributes, seams, sharp edges and smooth flags. Custom normals are set again
-  per corner, since a part boundary changes the corner fans Blender stores them
-  against; without custom normals, smooth shading at a part boundary is computed
-  per part. A provider that also retextures returns parts with their own UVs and
-  materials: when every part carries them, the parts adopt them through the
-  verified correspondence as [RETEXTURE](#surface-matching) does, UV layers with
-  their names and roles and materials per face, each part keeping only the
-  materials its faces use. All result faces on one source face must come from
-  one part, the source must have no loose vertices or edges, and either every
-  part or none must carry UVs or materials; otherwise the result meshes are
-  copied under the verified mapping, and the reason, such as **the result splits
-  4 source faces between parts**, is logged.
+  attributes, seams, sharp edges and smooth flags. A smooth-shaded or
+  custom-normal source's corner normals are set on each part as custom normals,
+  since a part boundary changes the corner fans Blender computes them over, so
+  shading across part boundaries is unchanged. A provider that also retextures
+  returns parts with their own UVs and materials: when every part carries them,
+  the parts adopt them through the verified correspondence as
+  [RETEXTURE](#surface-matching) does, UV layers with their names and roles and
+  materials per face, each part keeping only the materials its faces use. All
+  result faces on one source face must come from one part, the source must have
+  no loose vertices or edges, and either every part or none must carry UVs or
+  materials; otherwise the result meshes are copied under the verified mapping,
+  and the reason, such as **the result splits 4 source faces between parts**, is
+  logged.
 - `result_meshes`: otherwise, such as for remeshed parts, independent copies of
   the imported meshes are staged with their node transforms baked through the
   explicit mapping or a verified

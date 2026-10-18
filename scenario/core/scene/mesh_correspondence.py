@@ -185,6 +185,37 @@ def bounds(mesh):
     return _used_bounds(mesh.co, set(mesh.loop_vertices))
 
 
+def encloses(mesh):
+    """Whether `mesh` bounds a volume with outward faces.
+
+    Every face edge, in winding order, must meet its reverse in exactly one other
+    face (closed and consistently wound), and the signed volume must be positive.
+    Only then does lying behind the nearest face mean lying inside.
+    """
+    loops = mesh.loop_vertices
+    directed = {}
+    volume = 0.0
+    for start, total in zip(mesh.polygon_starts, mesh.polygon_totals, strict=True):
+        ring = loops[start : start + total]
+        for index in range(total):
+            edge = (ring[index], ring[(index + 1) % total])
+            directed[edge] = directed.get(edge, 0) + 1
+        a = mesh.co[3 * ring[0] : 3 * ring[0] + 3]
+        for index in range(1, total - 1):
+            b = mesh.co[3 * ring[index] : 3 * ring[index] + 3]
+            c = mesh.co[3 * ring[index + 1] : 3 * ring[index + 1] + 3]
+            volume += (
+                a[0] * (b[1] * c[2] - b[2] * c[1])
+                - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0])
+            )
+    if not directed or any(
+        count != 1 or directed.get((b, a)) != 1 for (a, b), count in directed.items()
+    ):
+        return False
+    return volume > 0
+
+
 def diagonal(mesh):
     """The bounding-box diagonal of the vertices `mesh` faces use."""
     low, high = bounds(mesh)

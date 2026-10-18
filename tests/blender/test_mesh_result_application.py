@@ -3524,6 +3524,69 @@ class PartsAndRemeshTests(unittest.TestCase):
         cap = [v.co for part in result.parts for v in part.data.vertices if abs(v.co.z) < 1e-3]
         self.assertGreater(len(cap), 400)
 
+    def test_interior_allowance_needs_a_closed_outward_source(self):
+        moved = Matrix.Translation((5, -2, 1)) @ Matrix.Scale(1 / 3, 4)
+        reason = "PARTS result does not match the source surface after fitting"
+        # An open source: its top pole fan is missing, so caps get no allowance.
+        self.use_ellipsoid()
+        mesh = bmesh.new()
+        mesh.from_mesh(self.source.data)
+        top = max(vertex.co.z for vertex in mesh.verts)
+        pole = [face for face in mesh.faces if any(v.co.z == top for v in face.verts)]
+        bmesh.ops.delete(mesh, geom=pole, context="FACES_ONLY")
+        mesh.to_mesh(self.source.data)
+        mesh.free()
+        self.recapture()
+        copy = self.remeshed()
+        parts = self.split(copy, [int(p.center.z > 0) for p in copy.data.polygons])
+        for part in parts:
+            self.cap(part)
+        self.place(parts, moved)
+        self.deliver(parts)
+        self.assert_unchanged(
+            self.model._snapshot(), reason, policy="PARTS", result_to_source=self.fit()
+        )
+        # Inward normals: a part far outside would otherwise count as inside.
+        self.use_ellipsoid()
+        data = self.source.data
+        mesh = bmesh.new()
+        mesh.from_mesh(data)
+        bmesh.ops.reverse_faces(mesh, faces=mesh.faces[:])
+        mesh.to_mesh(data)
+        mesh.free()
+        self.recapture()
+        copy = self.remeshed()
+        parts = self.split(copy, [int(p.center.z > 0) for p in copy.data.polygons])
+        far = self.remeshed((0.05, 0.05, 0.05), subdivisions=1)
+        far.data.transform(Matrix.Translation((1.6, 0, 0)))
+        parts.append(far)
+        self.place(parts, Matrix())
+        self.deliver(parts)
+        self.assert_unchanged(
+            self.model._snapshot(), reason, policy="PARTS", result_to_source=self.fit()
+        )
+
+    def test_split_parts_keep_a_smooth_source_shading_across_boundaries(self):
+        self.use_ellipsoid()
+        data = self.source.data
+        data.polygons.foreach_set("use_smooth", [True] * len(data.polygons))
+        data.update()
+        self.recapture()
+        self.assertFalse(data.has_custom_normals)
+        normals = {
+            key: tuple(item.vector)
+            for key, item in zip(_corner_keys(data), data.corner_normals, strict=True)
+        }
+        self.deliver(self.segment(lambda polygon: int(polygon.center.z > 0)))
+        result = self.apply(policy="PARTS", result_to_source=self.fit())
+        self.assertEqual(result.parts_from, "source_faces")
+        for part in result.parts:
+            mesh = part.data
+            # Custom normals are stored compressed, close to 1e-4.
+            for key, item in zip(_corner_keys(mesh), mesh.corner_normals, strict=True):
+                for a, b in zip(item.vector, normals[key], strict=True):
+                    self.assertAlmostEqual(a, b, places=3)
+
     def test_remesh_with_an_interior_cap_still_fails_its_fit(self):
         self.use_ellipsoid()
         copy = self.remeshed()

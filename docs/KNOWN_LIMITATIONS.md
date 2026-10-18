@@ -259,10 +259,10 @@ full render-lane desktop acceptance.
   two triangles land in different parts, the returned parts are copied without
   the source's UVs and materials. Remeshed parts and remeshes are checked only
   by sampled distance to the source surface (2% of its size), so a small missing
-  or extra detail can pass; copied parts' vertices inside the source also pass,
-  judged by the nearest source face's normal. Several meshes in a remesh result are joined only
-  under Fit and verify; variants that mostly overlap are refused, but ones that
-  only partly overlap are not detected.
+  or extra detail can pass; copied parts' vertices inside a closed source also
+  pass, judged by the nearest source face's normal. Several meshes in a remesh
+  result are joined only under Fit and verify; variants that mostly overlap are
+  refused, but ones that only partly overlap are not detected.
 - The Environment lane (sidebar, Studio, the composer's Generate mode and local
   MCP) generates 360 panoramas, HDRIs and upscales only through verified model
   contracts, and its results wait for explicit World approval. Paid runs

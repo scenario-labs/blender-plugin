@@ -5927,6 +5927,11 @@ class ModelGenerationTests(unittest.TestCase):
                 # for a REMESH fallback the job did not choose.
                 placement = "WORLD" if source == "default" else "FIT"
                 self.assertEqual(approval["mesh_placement"], placement)
+                # A requested REMESH fits only for the job's own Remesh task.
+                requested = self.prepare_mesh_edit(request_id, mesh_policy="REMESH")
+                self.assertEqual(
+                    requested["mesh_placement"], "FIT" if task == "REMESH" else "WORLD"
+                )
                 explicit = self.prepare_mesh_edit(request_id, mesh_policy="UV")
                 self.assertEqual(
                     (explicit["mesh_policy"], explicit["mesh_policy_source"]), ("UV", "requested")
@@ -5944,6 +5949,10 @@ class ModelGenerationTests(unittest.TestCase):
                     note = "Default edit is not from this job's task; check it."
                 self.assertEqual(op.policy_note, note)
                 self.assertEqual(op.result_role, "primary")
+                # Choosing REMESH in the dialog fits only for the job's Remesh task.
+                op.policy = "REMESH"
+                submodule("blender.job_recovery")._mesh_policy_changed(op, None)
+                self.assertEqual(op.placement, "FIT" if task == "REMESH" else "WORLD")
                 op, ticket = self.mesh_dialog(request_id, policy="RETEXTURE")
                 self.assertEqual((op.policy, ticket.policy_source), ("RETEXTURE", "requested"))
                 self.assertEqual(op.policy_note, "")
@@ -6053,8 +6062,9 @@ class ModelGenerationTests(unittest.TestCase):
         request_id = self.recovered_mesh_edit(cube_result_glb(subdivide=2))
         source = bpy.context.view_layer.objects.active
         op, ticket = self.mesh_dialog(request_id, policy="REMESH")
-        self.assertEqual((op.placement, ticket.placement), ("FIT", "FIT"))
-        approval = self.prepare_mesh_edit(request_id, mesh_policy="REMESH")
+        # Not this job's own Remesh task: scene coordinates until a fit is chosen.
+        self.assertEqual((op.placement, ticket.placement), ("WORLD", "WORLD"))
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="REMESH", mesh_placement="FIT")
         # The operator confirms its own reviewed options, as the dialog's OK does.
         args = dict(self.import_args(approval), policy="REMESH", placement="FIT")
         self.assertEqual(bpy.ops.scenario.apply_saved_mesh(**args), {"FINISHED"})
@@ -6122,7 +6132,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(op.placement, "FIT")
         self.assertEqual(jobs._application_approvals[op.application_id].placement, "FIT")
         op._sync_options = lambda op=op: operator._sync_options(op)
-        for policy, placement in (("REMESH", "FIT"), ("RIG", "FIT"), ("PARTS", "FIT")):
+        # This job has no Remesh task, so a chosen REMESH starts on scene coordinates.
+        for policy, placement in (("REMESH", "WORLD"), ("RIG", "FIT"), ("PARTS", "FIT")):
             op.policy = policy
             recovery._mesh_policy_changed(op, context)
             self.assertEqual(op.placement, placement)

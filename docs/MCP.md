@@ -1236,8 +1236,8 @@ alternate result of the job, as in `job_status` `import_units`. See
 ## Mesh coordinates and surface matching
 
 Without `mesh_placement`, the review starts on `FIT`, except on `WORLD` for
-`ANIMATE`, which uses no coordinates, and for a `REMESH` with
-`mesh_policy_source: default`; an explicit value wins. The approval returns
+`ANIMATE`, which uses no coordinates, and for a `REMESH` that is not the job's
+own Remesh task, even when requested; an explicit value wins. The approval returns
 `fit_bases` and a null `result_to_source` for a fit, which is verified only
 during application. `WORLD` and `LOCAL` stay strict. UV, RETEXTURE, RIG and
 PARTS split from the source's faces match every returned result mesh together;

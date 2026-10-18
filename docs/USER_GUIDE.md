@@ -779,8 +779,8 @@ positions. **Fit and verify**, the default for every edit but **Apply
 animation**, also accepts a result that the service resized or moved, but only
 when it then lines up with your mesh: exactly for UVs, textures, rigs and parts
 cut from your mesh, and within a small margin for new geometry and other parts.
-When the dialog says the edit is not from this job's task, **Replace geometry**
-starts on **Scene coordinates**. If a result doesn't match, the job says why and
+**Replace geometry** starts on **Scene coordinates** unless the job was a
+Remesh. If a result doesn't match, the job says why and
 your mesh is unchanged. **Keep original** (on by default) leaves an unselected
 copy. With Global Undo on, Undo and Redo restore the scene before and after the
 edit, but don't refund it. If the outcome is uncertain, inspect it rather than

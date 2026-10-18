@@ -701,8 +701,8 @@ def fit_bounds(source, results, result_to_source, policy):
     sampled vertices of the source and the placed result lie near each other's
     surface both ways (`mesh_correspondence.surface_residual`). Copied PARTS
     may close each part with hidden contact or cap faces, so their vertices
-    inside the source volume also pass; every sampled source vertex must still
-    lie near a part. Two verified bases must place the result alike; otherwise
+    inside a closed, outward source (`mesh_correspondence.encloses`) also pass;
+    every sampled source vertex must still lie near a part. Two verified bases must place the result alike; otherwise
     this fails closed.
     """
     if not isinstance(result_to_source, FitRequest):
@@ -714,6 +714,8 @@ def fit_bounds(source, results, result_to_source, policy):
     src = _arrays(source.data)
     size = mesh_correspondence.diagonal(src)
     source_tree = _tree(src)
+    # Behind the nearest face means inside only for a closed, outward source.
+    inside = policy == "PARTS" and mesh_correspondence.encloses(src)
     pieces = [_arrays(obj.data) for obj in results]
     placed = []
     for label, rows in result_to_source.bases:
@@ -740,7 +742,7 @@ def fit_bounds(source, results, result_to_source, policy):
                     )
                     mapping = Matrix.Translation(offset) @ Matrix.Scale(scale, 4) @ base
                 residual = mesh_correspondence.surface_residual(
-                    _distances(source_tree, result, inside=policy == "PARTS"),
+                    _distances(source_tree, result, inside=inside),
                     _distances(_tree(result), src),
                     size,
                 )

@@ -397,3 +397,23 @@ def test_bounds_and_diagonal_measure_only_vertices_faces_use():
     source = arrays([*SOURCE_POSITIONS, (90, 90, 90)], SOURCE_FACES)
     low, high = mc.bounds(source)
     assert math.dist(low, high) == mc.diagonal(source) == pytest.approx(math.hypot(5.5, 2))
+
+
+CUBE_POSITIONS = [(x, y, z) for x in (0, 1) for y in (0, 1) for z in (0, 1)]
+# Outward winding (counter-clockwise seen from outside).
+CUBE_FACES = [
+    (0, 1, 3, 2),
+    (4, 6, 7, 5),
+    (0, 4, 5, 1),
+    (2, 3, 7, 6),
+    (0, 2, 6, 4),
+    (1, 5, 7, 3),
+]
+
+
+def test_encloses_needs_a_closed_outward_surface():
+    assert mc.encloses(arrays(CUBE_POSITIONS, CUBE_FACES))
+    assert not mc.encloses(arrays(CUBE_POSITIONS, [face[::-1] for face in CUBE_FACES]))
+    assert not mc.encloses(arrays(CUBE_POSITIONS, CUBE_FACES[1:]))
+    flipped = [CUBE_FACES[0][::-1], *CUBE_FACES[1:]]
+    assert not mc.encloses(arrays(CUBE_POSITIONS, flipped))

@@ -244,15 +244,18 @@ def _source_parts(target, meshes, surface, owner, textures=None):
 
     `owner` gives each source polygon's part. Each part keeps the source's own
     positions, attributes and edge and face flags, and its UVs and materials
-    unless `textures` (`_part_textures`) replaces them; custom normals are set
-    again per corner, since splitting changes the corner fans they are stored
-    against. The source is read once and halved by part until
+    unless `textures` (`_part_textures`) replaces them. A smooth-shaded or
+    custom-normal source's corner normals are set on each part as custom
+    normals, since splitting changes the corner fans they are computed over. The source is read once and halved by part until
     each piece holds one part, so the work grows with the source size times the
     logarithm of the part count; deleting faces keeps the rest in source order.
     """
     source = target.mesh
     normals = None
-    if source.has_custom_normals:
+    smooth = [False] * len(source.polygons)
+    source.polygons.foreach_get("use_smooth", smooth)
+    # A part's own faces would otherwise shade its boundary differently.
+    if source.has_custom_normals or any(smooth):
         values = array("f", [0.0]) * (3 * len(source.loops))
         source.corner_normals.foreach_get("vector", values)
         normals = [[] for _ in meshes]

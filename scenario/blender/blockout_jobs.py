@@ -12,7 +12,8 @@ import bpy
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import DuplicateRequestError
-from ..core.jobs.store import JobState
+from ..core.jobs.results import ResultError
+from ..core.jobs.store import JobState, StoreConflict
 from ..core.jobs.upload_store import UploadState
 from ..core.scene import blockout
 from . import file_state
@@ -22,7 +23,7 @@ CANCELED = "Blockout request canceled; nothing was sent to Scenario"
 BUSY = {"QUOTING", "SUBMITTING", "POLLING", "LISTING", "READING"}
 AUTO_QUOTE_DELAY = 0.7  # seconds the design inputs stay unchanged before an automatic price
 # Measured per plan in October 2026; shown as an expectation, never used to bind anything.
-MINUTES = {"best": "about 3 min", "fast": "under a minute"}
+MINUTES = {"best": "3 to 6 min", "fast": "under a minute"}
 
 
 def binding(scene):
@@ -47,6 +48,15 @@ def _design_inputs(snapshot):
 
 def parse_complete_plan(text):
     return blockout.parse_complete_plan(text)
+
+
+def refusal(error):
+    """A known refusal's own text; other failures stay generic so no private detail shows."""
+    if isinstance(error, ScenarioError):
+        return error.reason
+    if isinstance(error, (ResultError, StoreConflict)):
+        return str(error)
+    return ""
 
 
 class PlanUnusable(ScenarioError):
@@ -428,14 +438,14 @@ class BlockoutJobs:
                 item.error = (
                     error.reason
                     if isinstance(error, PlanUnusable)
-                    else self._stopped(item.request_id)
+                    else self._stopped(item.request_id, error)
                     if item.request_id
                     else str(error)
                     if isinstance(error, DuplicateRequestError)
                     else "Blockout price unavailable or inputs changed; request a new price"
                 )
 
-    def _stopped(self, request_id):
+    def _stopped(self, request_id, error=None):
         # Local cancellation makes a queued submission fail its stored-state
         # check before dispatch; a remote job ID means Scenario saw the request.
         try:
@@ -444,4 +454,7 @@ class BlockoutJobs:
             record = None
         if record is not None and record.state == JobState.CANCELED and not record.remote_job_id:
             return CANCELED
-        return "Blockout stopped; inspect the saved job"
+        reason = refusal(error)
+        return (
+            f"Blockout stopped: {reason.rstrip('.')}. " if reason else "Blockout stopped. "
+        ) + "Review it in Inspect saved jobs."

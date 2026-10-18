@@ -405,24 +405,27 @@ class ResultCommands:
         identifiers = metadata.get("assetIds") if isinstance(metadata, dict) else None
         if not isinstance(identifiers, list) or not 1 <= len(identifiers) <= 128:
             raise ResultError("The model job has no supported bounded asset result list")
+        saved = {item.asset.asset_id for item in current.results}
         try:
             for identifier in identifiers:
                 _identity(identifier)
-            if len(set(identifiers)) != len(identifiers) or asset_id not in identifiers:
+            if len(set(identifiers)) != len(identifiers) or (saved and asset_id not in saved):
                 raise ValueError
-            if current.results and asset_id not in {
-                item.asset.asset_id for item in current.results
-            }:
+            # Scenario can replace a finished model job's output list minutes after
+            # success (seen with model_scenario-llm). The output this job saved stays
+            # readable when its own asset record names this job as its parent.
+            replaced = asset_id not in identifiers
+            if replaced and asset_id not in saved:
                 raise ValueError
         except ValueError:
             raise ResultError("The selected text asset does not match this saved job") from None
-        text = self._read_text_asset(asset_id)
+        text = self._read_text_asset(asset_id, job_id=current.remote_job_id if replaced else None)
         with self._guard():
             if self._store.get(request_id) != current:
                 raise StoreConflict("Model result changed; reload before acting")
             return ModelTextResult(current, asset_id, text)
 
-    def _read_text_asset(self, identifier):
+    def _read_text_asset(self, identifier, *, job_id=None):
         asset = self._request(self._adapter.asset, identifier, original_assets=True)
         if (
             asset.get("id") != identifier
@@ -431,6 +434,11 @@ class ResultCommands:
             or asset.get("mimeType") != "text/plain"
         ):
             raise ResultError("Scenario returned an unavailable or unsupported text asset")
+        metadata = asset.get("metadata")
+        if job_id is not None and (
+            not isinstance(metadata, dict) or metadata.get("parentJobId") != job_id
+        ):
+            raise ResultError("The selected text asset does not match this saved job")
         props = asset.get("properties")
         if not isinstance(props, dict):
             raise ResultError("Scenario returned no text asset properties")

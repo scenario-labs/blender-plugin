@@ -52,6 +52,8 @@ class BlockoutJobsTests(unittest.TestCase):
         self.calls, self.paid, self.sessions = [], [], []
         self.lose_response, self.fail_read = False, False
         self.fail_job_read = False  # answer job status reads with HTTP 503
+        # Scenario can replace a finished job's output list; the asset still names its job.
+        self.job_assets, self.asset_parent = ["asset_plan"], None
         self.hold_quotes, self.held_quotes = None, threading.Semaphore(0)
         self.result_text = json.dumps(
             [
@@ -85,7 +87,7 @@ class BlockoutJobsTests(unittest.TestCase):
                                 "jobId": request.url.path.rsplit("/", 1)[-1],
                                 "status": "success",
                                 "jobType": "custom",
-                                "metadata": {"assetIds": ["asset_plan"]},
+                                "metadata": {"assetIds": self.job_assets},
                             }
                         },
                     )
@@ -105,6 +107,7 @@ class BlockoutJobsTests(unittest.TestCase):
                                     "preview": self.result_text,
                                     "hasFullPreview": True,
                                 },
+                                "metadata": {"parentJobId": self.asset_parent},
                             }
                         },
                     )
@@ -668,6 +671,8 @@ class BlockoutJobsTests(unittest.TestCase):
         self.fail_read = True
         self.advance(item)
         self.assertEqual(item.phase, "ERROR")
+        self.assertTrue(item.error.startswith("Blockout stopped"), item.error)
+        self.assertTrue(item.error.endswith("Review it in Inspect saved jobs."), item.error)
         record = self.runtime.state.job_store.get(item.request_id)
         self.assertEqual(record.state, self.storage.JobState.SUCCEEDED)
         self.fail_read = False
@@ -936,6 +941,20 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertEqual(review.phase, "READY", review.error)
         recovery.apply(review.identifier)
         self.assertIn("Recovered tower", self.scene.scenario_blockout.plan_json)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_saved_plan_survives_scenario_replacing_the_job_output_list(self):
+        record = self.saved_plan()
+        self.job_assets = ["asset_rerun"]
+        self.asset_parent = "another-job"
+        recovery, review = self.ready_review(record)
+        self.assertEqual(review.phase, "ERROR")
+        self.assertIn("does not match this saved job", review.error)
+        self.asset_parent = record.remote_job_id
+        recovery, review = self.ready_review(record)
+        self.assertEqual(review.phase, "READY", review.error)
+        recovery.apply(review.identifier)
+        self.assertIn("Test tower", self.scene.scenario_blockout.plan_json)
         self.assertEqual(len(self.paid), 1)
 
     def test_recovered_plan_rejects_stale_revision_and_offline_reads(self):

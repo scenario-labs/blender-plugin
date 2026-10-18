@@ -8,7 +8,14 @@ from dataclasses import dataclass, field
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.store import JobState
-from .blockout_jobs import MODEL, PlanUnusable, binding, parse_complete_plan, unusable_reason
+from .blockout_jobs import (
+    MODEL,
+    PlanUnusable,
+    binding,
+    parse_complete_plan,
+    refusal,
+    unusable_reason,
+)
 
 READABLE = {
     JobState.SUCCEEDED,
@@ -143,8 +150,10 @@ class BlockoutRecovery:
             try:
                 outcomes = self.session.drain(task=review.task)
                 review.task = None
-                if not outcomes or outcomes[0].error is not None:
+                if not outcomes:
                     raise ScenarioError(0, "The complete saved plan could not be read")
+                if outcomes[0].error is not None:
+                    raise outcomes[0].error
                 self._destination(review)
                 result = outcomes[0].result
                 record = result if review.phase == "LISTING" else result.record
@@ -166,9 +175,11 @@ class BlockoutRecovery:
             except Exception as error:
                 review.task, review.phase = None, "ERROR"
                 review.unusable = error.reason if isinstance(error, PlanUnusable) else ""
-                review.error = (
-                    review.unusable
-                    or "Could not review this plan; inspect the saved job and destination"
+                reason = refusal(error).rstrip(".")
+                review.error = review.unusable or (
+                    f"Could not review this plan: {reason}"
+                    if reason
+                    else "Could not review this plan; inspect the saved job and destination"
                 )
 
     def status(self, identifier):

@@ -319,6 +319,15 @@ def test_install_id_lifecycle(tmp_path):
     usage.delete_install_id(directory)  # already gone
 
 
+def test_deleting_a_specific_install_id_never_deletes_a_replacement(tmp_path):
+    saved = usage.create_install_id(tmp_path)
+    usage.delete_install_id(tmp_path, "f" * 32)
+    assert usage.read_install_id(tmp_path) == saved
+    usage.delete_install_id(tmp_path, saved)
+    assert usage.read_install_id(tmp_path) is None
+    usage.delete_install_id(tmp_path, saved)  # already gone
+
+
 @pytest.mark.parametrize("content", ["", "not-an-id", ID.upper(), ID[:-1], ID + "0", "\xff"])
 def test_an_unusable_install_id_reads_as_missing(tmp_path, content):
     (tmp_path / usage.INSTALL_ID_FILE).write_bytes(content.encode("latin-1"))

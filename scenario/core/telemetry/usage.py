@@ -167,9 +167,22 @@ def create_install_id(directory):
     return value
 
 
-def delete_install_id(directory):
-    """Forget the install ID; a later opt-in starts with a new one."""
-    (pathlib.Path(directory) / INSTALL_ID_FILE).unlink(missing_ok=True)
+def delete_install_id(directory, install_id=None):
+    """Forget the install ID; a later opt-in starts with a new one.
+
+    With `install_id`, only while the file still holds that ID: a replacement another
+    Blender saved since is never deleted. An OSError other than a missing file raises,
+    so the caller can try again.
+    """
+    path = pathlib.Path(directory) / INSTALL_ID_FILE
+    if install_id is not None:
+        try:
+            saved = path.read_text(encoding="ascii").strip()
+        except (FileNotFoundError, UnicodeError):
+            return
+        if saved != install_id:
+            return
+    path.unlink(missing_ok=True)
 
 
 # -- queue and sender ---------------------------------------------------------

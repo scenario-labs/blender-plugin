@@ -109,7 +109,8 @@ class UsageTests(unittest.TestCase):
         if method == "execute":
             return SCENARIO_OT_usage_probe.execute(operator, bpy.context)
         if method == "cancel":
-            return SCENARIO_OT_usage_probe.cancel(operator, bpy.context)
+            SCENARIO_OT_usage_probe.cancel(operator, bpy.context)  # called for its effect
+            return None
         event = SimpleNamespace(type=event_type)
         if method == "invoke":
             return SCENARIO_OT_usage_probe.invoke(operator, bpy.context, event)
@@ -339,6 +340,38 @@ class UsageTests(unittest.TestCase):
         self.assertEqual(sync.call_count, passes)  # the catalog context still followed each pass
         self.assertEqual(len(logged.records), 1)  # one report per new failure type
 
+    def test_an_install_id_that_could_not_be_deleted_is_retried_on_later_ticks(self):
+        real = self.events.delete_install_id
+        failures = []
+
+        def locked_once(directory, install_id=None):
+            if not failures:
+                failures.append(install_id)
+                raise PermissionError("locked")  # a transient Windows lock
+            return real(directory, install_id)
+
+        with online_access(True):
+            self.share()
+            first = self.usage.recorder().install_id
+            with patch.object(self.events, "delete_install_id", side_effect=locked_once):
+                self.prefs.share_usage = False
+                self.assertEqual(failures, [first])
+                self.assertEqual(self.events.read_install_id(self.state), first)
+                self.usage.tick()  # still off: the deletion is retried
+            self.assertIsNone(self.events.read_install_id(self.state))
+            # A replacement saved by another Blender meanwhile is never deleted.
+            self.prefs.share_usage = True
+            second = self.usage.recorder().install_id
+            failures.clear()
+            with patch.object(self.events, "delete_install_id", side_effect=locked_once):
+                self.prefs.share_usage = False
+                third = self.events.create_install_id(self.state)
+                self.usage.tick()
+            self.assertEqual(failures, [second])
+            self.assertEqual(self.events.read_install_id(self.state), third)
+            self.usage.tick()  # nothing pending any more
+            self.assertEqual(self.events.read_install_id(self.state), third)
+
     def test_the_tick_turns_sharing_off_when_the_preference_changed_silently(self):
         """Revert to Saved Preferences changes the preference without its update callback."""
         runtime = submodule("blender.runtime")
@@ -425,7 +458,7 @@ class UsageTests(unittest.TestCase):
             self.share()
             # Invoke opens the props dialog; Blender calls cancel when the user closes it.
             self.assertEqual(self.probe("dialog", "invoke"), {"RUNNING_MODAL"})
-            self.assertIsNone(self.probe("dialog", "cancel"))
+            self.probe("dialog", "cancel")
             self.assertEqual(self.sent(), [self.used("cancelled")])
             # An execute that cleans up through its own cancel counts only its outcome.
             self.assertEqual(self.probe("clean_up"), {"CANCELLED"})

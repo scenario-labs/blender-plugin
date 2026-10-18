@@ -66,6 +66,7 @@ _active = False  # a window session, or the scenario_blender command
 _send = None  # tests replace the HTTP POST
 _start_recorded = False  # extension_started queued for this install ID in this process
 _last_id_check = -math.inf  # time.monotonic() of the tick's last install ID comparison
+_pending_delete = None  # an opted-out install ID whose file could not be deleted yet
 _calls = threading.local()  # depth of wrapped operator calls on this thread
 _instrumented = {}  # operator class -> {method: its own original, or None when inherited}
 
@@ -139,8 +140,11 @@ def deactivate(*, wait=None):
 
 def set_sharing(enabled):
     """The preference's update: on saves an ID and starts, off forgets everything."""
-    global _start_recorded
+    global _start_recorded, _pending_delete
     if enabled:
+        if _pending_delete is not None:
+            _forget_install_id(_pending_delete)  # finish the last opt-out first, if it can
+            _pending_delete = None
         try:
             directory = state_dir()
             if events.read_install_id(directory) is None:
@@ -154,11 +158,28 @@ def set_sharing(enabled):
         _sync()
         return
     _sharing.clear()
+    running = _recorder.install_id if _recorder is not None else None
     _stop(discard=True)
+    _forget_install_id(running)
+
+
+def _forget_install_id(install_id=None):
+    """Delete the opted-out ID; if that fails, the tick retries it while sharing stays off.
+
+    The file is what other Blender processes check before each send, so it must go. A
+    retry deletes only that ID, never a replacement saved since.
+    """
+    global _pending_delete
     try:
-        events.delete_install_id(state_dir())
+        directory = state_dir()
+        install_id = install_id or events.read_install_id(directory)
+        events.delete_install_id(directory, install_id)
     except OSError as error:
-        log.warning("The usage install ID was not deleted (%s)", type(error).__name__)
+        if install_id is not None and install_id != _pending_delete:
+            log.warning("The usage install ID was not deleted yet (%s)", type(error).__name__)
+        _pending_delete = install_id
+    else:
+        _pending_delete = None
 
 
 def follow_online_access():
@@ -186,6 +207,8 @@ def tick():
     if not prefs.share_usage:
         if _recorder is not None:
             set_sharing(False)
+        elif _pending_delete is not None:
+            _forget_install_id(_pending_delete)
         return
     now = time.monotonic()
     if _active and now >= _last_id_check + ID_CHECK_INTERVAL:

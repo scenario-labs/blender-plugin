@@ -30,9 +30,9 @@ SPEC = importlib.util.spec_from_file_location("mcp_tool_sizes", ROOT / "tools/mc
 sizer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sizer)
 
-# Measured on main for 87 tools: 125,506 characters in total, about 31,400 tokens
+# Measured for 88 tools with capture_views: 127,775 characters in total, about 31,900 tokens
 # at four characters per token.
-TOTAL_BUDGET = 127_000
+TOTAL_BUDGET = 129_000
 # A budget that the total undercuts by more than this fraction is lowered, so a
 # trim is not silently spent by a later addition.
 TOTAL_SLACK = 0.03

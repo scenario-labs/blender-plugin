@@ -112,6 +112,7 @@ class CaptureViewsTests(unittest.TestCase):
                     "location": tuple(round(v, 3) for v in camera.location),
                     "rotation": tuple(round(v, 3) for v in camera.rotation_euler),
                     "frame": scene.frame_current,
+                    "markers": [marker.camera for marker in scene.timeline_markers],
                 }
             )
             return targa(scene.render.resolution_x, scene.render.resolution_y)
@@ -192,6 +193,69 @@ class CaptureViewsTests(unittest.TestCase):
         self.assertEqual((caption["framed"], caption["objects"]), ("selection", [rig.name]))
         self.assertAlmostEqual(caption["center"][2], 0.5, places=1)
         self.assertGreater(caption["radius"], 0.4)
+
+    def test_marker_cameras_cannot_replace_the_capture_camera_and_frames_report_them(self):
+        shot = self.scene.camera
+        wide = bpy.data.objects.new("Wide", bpy.data.cameras.new("Wide"))
+        self.scene.collection.objects.link(wide)
+        self.scene.timeline_markers.new("Shot", frame=1).camera = shot
+        self.scene.timeline_markers.new("Wide", frame=20).camera = wide
+        self.scene.frame_set(7)
+        before = self.state()
+        seen, patch = self.fake_tiles()
+        with patch:
+            self.capture({"angles": ["front"]})
+            _, frames = self.capture({"mode": "frames", "frames": [1, 24]})
+        # Angles: unbound while rendering, so the render keeps the capture camera.
+        self.assertEqual(seen[0]["markers"], [None, None])
+        self.assertEqual(seen[0]["camera"], "Scenario capture camera")
+        self.assertEqual([m.camera for m in self.scene.timeline_markers], [shot, wide])
+        self.assertEqual([tile["camera"] for tile in seen[1:]], ["Shot", "Wide"])
+        self.assertEqual((frames["camera"], frames["cameras"]), ("Shot", ["Shot", "Wide"]))
+        self.assertEqual(self.state(), before)
+
+    def test_the_scene_frame_leaves_out_what_a_render_does_not_draw(self):
+        seen, patch = self.fake_tiles()
+        far = bpy.data.objects.new("Far backup", self.cube.data)
+        hidden = bpy.data.collections.new("Hidden for render")
+        hidden.hide_render = True
+        excluded = bpy.data.collections.new("Excluded")
+        for collection in (hidden, excluded):
+            self.scene.collection.children.link(collection)
+        hidden.objects.link(far)
+        excluded.objects.link(bpy.data.objects.new("Far reference", self.cube.data))
+        layer = bpy.context.view_layer.layer_collection.children["Excluded"]
+        layer.exclude = True
+        props = bpy.data.collections.new("Prop")
+        props.objects.link(bpy.data.objects.new("Prop mesh", self.cube.data))
+        sun = bpy.data.objects.new("Prop sun", bpy.data.lights.new("Prop sun", "SUN"))
+        sun.location = (0, 0, 300)
+        props.objects.link(sun)
+        instance = bpy.data.objects.new("Prop instance", None)
+        instance.instance_type, instance.instance_collection = "COLLECTION", props
+        self.scene.collection.objects.link(instance)
+        far.location = (500, 0, 0)
+        with patch:
+            _, caption = self.capture({"angles": ["front"]})
+        self.assertEqual(sorted(caption["objects"]), ["Ball", "Crate", "Prop instance"], caption)
+        # The instanced sun 300 m up and the far objects do not stretch the frame.
+        self.assertLess(caption["radius"], 10)
+
+    def test_a_render_error_reaches_the_agent_without_blender_detail(self):
+        def failing(**kwargs):
+            raise RuntimeError("Error: cannot write /private/profile/path/0.tga")
+
+        fake = unittest.mock.Mock()
+        fake.ops.render.render.side_effect = failing
+        with (
+            unittest.mock.patch.object(self.tb, "bpy", fake),
+            self.assertRaises(RuntimeError) as raised,
+            self.assertLogs("scenario.mcp", "WARNING"),
+        ):
+            self.tb._render_tile(self.scene, "/tmp/tile.tga")
+        self.assertEqual(
+            str(raised.exception), "Workbench could not render this view; see the Blender console"
+        )
 
     def test_pixel_aspect_is_square_while_rendering_and_restored(self):
         render = self.scene.render
@@ -290,6 +354,31 @@ class CaptureViewsTests(unittest.TestCase):
                 for x in range(0, tile, 8)
             }
             self.assertGreater(len(colours), 3, (x0, y0))
+
+    @unittest.skipUnless(GPU_RENDERS, GPU_REASON)
+    def test_real_workbench_capture_keeps_the_users_last_render(self):
+        self.scene.render.engine = "BLENDER_WORKBENCH"
+        self.scene.render.resolution_percentage = 10
+        self.assertEqual(bpy.ops.render.render(), {"FINISHED"})
+        result = bpy.data.images["Render Result"]
+        slots = result.render_slots
+        active = slots.active_index
+
+        def saved(name):
+            path = os.path.join(directory, name)
+            result.save_render(path, scene=self.scene)
+            with open(path, "rb") as handle:
+                return handle.read()
+
+        with tempfile.TemporaryDirectory() as directory:
+            before = saved("before.png")
+            self.capture({"angles": ["front"], "max_size": 256})
+            self.capture({"angles": ["top"], "max_size": 256})
+            after = saved("after.png")
+        self.assertEqual(slots.active_index, active)
+        # Repeated captures reuse one slot of their own.
+        self.assertEqual([slot.name for slot in slots].count("Scenario capture views"), 1)
+        self.assertEqual(after, before)
 
     @unittest.skipUnless(GPU_RENDERS, GPU_REASON)
     def test_real_workbench_frames_follow_the_animated_camera(self):

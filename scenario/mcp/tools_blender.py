@@ -5,6 +5,7 @@
 import base64
 import contextlib
 import json
+import logging
 import math
 import os
 import tempfile
@@ -14,6 +15,8 @@ import bpy
 from ..blender import file_state, selection
 from . import sandbox
 from .protocol import ToolSpec
+
+log = logging.getLogger("scenario.mcp")
 
 
 def _vec(v):
@@ -311,6 +314,8 @@ def render_still(args):
 CAPTURE_SIZE, CAPTURE_MIN_SIZE, CAPTURE_MAX_SIZE = 1280, 256, 2048
 CAPTURE_MAX_FRAMES, CAPTURE_FRAME_COUNT = 12, 4
 # Direction from the framed target to the camera, tile label, orthographic.
+# The Render Result slot capture_views renders into, kept apart from the user's renders.
+CAPTURE_SLOT = "Scenario capture views"
 CAPTURE_ANGLES = {
     "front": ((0.0, -1.0, 0.0), "FRONT", True),
     "back": ((0.0, 1.0, 0.0), "BACK", True),
@@ -389,6 +394,18 @@ def _frameable(obj):
     return obj.type in _CAPTURE_BOUNDED or obj.type == "ARMATURE" or bool(_collection_instance(obj))
 
 
+def _render_collections(view_layer):
+    """Collections a render draws: neither excluded from the view layer nor disabled for render."""
+    shown, pending = set(), [view_layer.layer_collection]
+    while pending:
+        layer = pending.pop()
+        if layer.exclude or layer.collection.hide_render:
+            continue
+        shown.add(layer.collection)
+        pending.extend(layer.children)
+    return shown
+
+
 def _capture_targets(args, scene):
     names = args.get("objects")
     if names is not None:
@@ -405,10 +422,14 @@ def _capture_targets(args, scene):
     ]
     if selected:
         return "selection", selected
+    view_layer = bpy.context.view_layer
+    shown = _render_collections(view_layer)
     visible = [
         obj
-        for obj in scene.objects
-        if (obj.type in _CAPTURE_BOUNDED or _collection_instance(obj)) and not obj.hide_render
+        for obj in view_layer.objects
+        if (obj.type in _CAPTURE_BOUNDED or _collection_instance(obj))
+        and not obj.hide_render
+        and any(collection in shown for collection in obj.users_collection)
     ]
     if not visible:
         raise ValueError("The scene has no renderable object to frame")
@@ -422,9 +443,11 @@ def _object_points(obj, matrix, depth=0):
     collection = _collection_instance(obj)
     if collection and depth < 8:
         base = matrix @ Matrix.Translation(-collection.instance_offset)
+        # Lights, cameras and helpers inside the collection draw nothing to frame.
         points = [
             point
             for child in collection.all_objects
+            if _frameable(child) and not child.hide_render
             for point in _object_points(child, base @ child.matrix_world, depth + 1)
         ]
         return points or [matrix.translation.copy()]
@@ -518,8 +541,12 @@ def _render_tile(scene, path):
     scene.render.filepath = path
     try:
         result = bpy.ops.render.render(write_still=True, scene=scene.name)
-    except RuntimeError as error:
-        raise RuntimeError(f"Workbench could not render this view: {error}") from None
+    except RuntimeError:
+        # Blender's text can name local paths or drivers; it stays in the local log.
+        log.warning("capture_views render failed", exc_info=True)
+        raise RuntimeError(
+            "Workbench could not render this view; see the Blender console"
+        ) from None
     if "FINISHED" not in result or not os.path.isfile(path):
         raise RuntimeError(
             "Workbench rendered no image; capture_views needs a GPU context, which some "
@@ -546,12 +573,22 @@ def capture_views(args):
         )
     grid = contact_sheet.layout(len(views), max_size, aspect)
     frame, subframe = scene.frame_current, scene.frame_subframe
-    had_result = bpy.data.images.get("Render Result") is not None
+    result_image = bpy.data.images.get("Render Result")
     saved, tiles, labels, camera, caption = _Saved(), [], [], None, {}
     with tempfile.TemporaryDirectory(prefix="scenario-mcp-") as directory:
         try:
             _capture_settings(scene, saved, grid.tile_width, grid.tile_height)
             saved.set(render, "filepath", render.filepath)
+            if result_image is not None:
+                # Tiles render into their own slot, so the user's last render stays in its
+                # slot, where Render Result shows it again once the active slot is restored.
+                slots = result_image.render_slots
+                saved.set(slots, "active_index", slots.active_index)
+                index = next((i for i, slot in enumerate(slots) if slot.name == CAPTURE_SLOT), None)
+                if index is None:
+                    slots.new(name=CAPTURE_SLOT)
+                    index = len(slots) - 1
+                slots.active_index = index
             with _image_output(render):
                 if mode == "angles":
                     source, objects = targets
@@ -560,6 +597,10 @@ def capture_views(args):
                     camera = bpy.data.objects.new("Scenario capture camera", data)
                     scene.collection.objects.link(camera)
                     saved.set(scene, "camera", camera)
+                    # Rendering switches to the camera a timeline marker binds at this frame.
+                    for marker in scene.timeline_markers:
+                        if marker.camera is not None:
+                            saved.set(marker, "camera", None)
                     for index, name in enumerate(views):
                         direction, label, ortho = CAPTURE_ANGLES[name]
                         direction = Vector(direction).normalized()
@@ -592,11 +633,15 @@ def capture_views(args):
                         "radius": round(radius, 4),
                     }
                 else:
+                    cameras = []
                     for index, number in enumerate(views):
-                        scene.frame_set(number)
+                        scene.frame_set(number)  # also applies timeline marker cameras
+                        cameras.append(scene.camera.name)
                         tiles.append(_render_tile(scene, os.path.join(directory, f"{index}.tga")))
                         labels.append(f"FRAME {number}")
-                    caption = {"mode": "frames", "camera": scene.camera.name, "frames": views}
+                    caption = {"mode": "frames", "camera": cameras[0], "frames": views}
+                    if len(set(cameras)) > 1:
+                        caption["cameras"] = cameras
         finally:
             saved.restore()
             if camera is not None:
@@ -605,9 +650,9 @@ def capture_views(args):
                 bpy.data.cameras.remove(data)
             if (scene.frame_current, scene.frame_subframe) != (frame, subframe):
                 scene.frame_set(frame, subframe=subframe)
-            result_image = bpy.data.images.get("Render Result")
-            if not had_result and result_image is not None:
-                bpy.data.images.remove(result_image)
+            created = bpy.data.images.get("Render Result")
+            if result_image is None and created is not None:
+                bpy.data.images.remove(created)
         png = contact_sheet.compose(grid, tiles, labels)
     caption.update(
         {
@@ -962,9 +1007,9 @@ SPECS = (
             "  - frames: optional array of 1 to 12 frame numbers for mode frames, rendered through the scene camera.\n"
             "  - frame_count: optional integer from 1 to 12 for mode frames instead of frames, spread over the frame range (default 4).\n"
             "  - max_size: optional integer from 256 to 2048, the sheet's longest side in pixels (default 1280).\n"
-            "Returns: one PNG image of the tiles in reading order, each labelled, and a JSON text caption with mode, tiles, layout, size and, for angles, framed (objects, selection or scene), objects, object_count, center and radius, or for frames, camera and frames.\n"
+            "Returns: one PNG image of the tiles in reading order, each labelled, and a JSON text caption with mode, tiles, layout, size and, for angles, framed (objects, selection or scene), objects, object_count, center and radius, or for frames, camera, frames and, when timeline markers switch it, cameras per frame.\n"
             'Example: {"angles": ["front", "right", "top", "three_quarter"], "max_size": 1280}.\n'
-            "Renders with Workbench solid shading (material colours, studio light, object outlines) from a temporary camera; the viewport, scene camera, current frame, render settings and saved state are left as they were. Like render_still it may invalidate a pending generation estimate. Prefer screenshot_viewport to see the viewport as the user sees it.\n"
+            "Renders with Workbench solid shading (material colours, studio light, object outlines) from a temporary camera; the viewport, scene camera, current frame, render settings, last render and saved state are left as they were. Like render_still it may invalidate a pending generation estimate. Prefer screenshot_viewport to see the viewport as the user sees it.\n"
             "No platform equivalent."
         ),
         _schema(

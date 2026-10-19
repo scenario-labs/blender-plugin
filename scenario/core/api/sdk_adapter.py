@@ -644,7 +644,7 @@ def _client(credentials, base_url, timeout, transport):
     class SelectedAccount(Scenario):
         @property
         def default_headers(self):
-            # Public SDK hook: use only adapter-owned headers. SDK 2.2.0 otherwise
+            # Public SDK hook: use only adapter-owned headers. SDK 2.3.0 otherwise
             # merges SCENARIO_CUSTOM_HEADERS and prefers Basic over Bearer.
             # https://github.com/scenario-labs/scenario-sdk-python/issues/26
             # Remove after upstream offers verified environment-isolated config.

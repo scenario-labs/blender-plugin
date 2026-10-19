@@ -1670,11 +1670,10 @@ when it contains a nested `workflow` step or any node carrying a `workflowId`,
 whose definition the quote does not read; or when a node's type is missing, not
 a string or not a known type. The SDK documents `hasFlow` as present even when
 `flow` is not, so an empty list alone does not prove the workflow is empty.
-Known non-loop types are those of the SDK 2.2.0 `WorkflowFlow.type` other than
-`for-each` and `workflow`, plus the `user-selection` type seen in live workflow
-jobs. The server's dry run prices one pass through a loop, so a run that
-iterates more often can be charged more than `cu_cost_exact`. Show the warning
-with the price. It never blocks approval.
+Known non-loop types are those of the SDK 2.3.0 `WorkflowFlow.type` other than
+`for-each` and `workflow`. The server's dry run prices one pass through a loop,
+so a run that iterates more often can be charged more than `cu_cost_exact`. Show
+the warning with the price. It never blocks approval.
 
 `job_status` keeps reporting the approved quote as `cu_cost_exact`, not the
 final charge. For a saved workflow job it also returns the same three fields.

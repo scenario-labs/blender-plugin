@@ -81,7 +81,7 @@ def test_invalid_page_never_reaches_history(page):
     [
         {"page_size": True},
         {"page_size": 0},
-        {"page_size": 201},
+        {"page_size": 101},
         {"pagination_token": 3},
         {"pagination_token": ""},
     ],

@@ -1319,8 +1319,9 @@ class SDKAdapter:
 
     def job_page(self, *, page_size=50, pagination_token=None):
         """One history page with inputs/results, using an opaque service cursor."""
-        if type(page_size) is not int or not 1 <= page_size <= 200:
-            raise ValueError("Job page size must be between 1 and 200")
+        # SDK 2.3.0 documents jobs.list pageSize as 1 to 100.
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("Job page size must be between 1 and 100")
         options = {"page_size": page_size, "hide_results": False}
         if pagination_token is not None:
             if not isinstance(pagination_token, str) or not pagination_token:
@@ -1364,8 +1365,8 @@ class SDKAdapter:
         for value in (page_size, max_pages):
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 raise ValueError("Page size and limit must be positive integers")
-        if page_size > 200:
-            raise ValueError("Job page size cannot exceed 200")
+        if page_size > 100:
+            raise ValueError("Job page size cannot exceed 100")
         statuses = {
             "pending",
             "queued",

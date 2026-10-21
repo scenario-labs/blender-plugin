@@ -168,6 +168,14 @@ def _fields(schema: dict[str, Any]) -> list[dict[str, Any]]:
                     or any(not isinstance(name, str) or not name.strip() for name in siblings)
                 ):
                     raise ValueError("Conditional requirements must name sibling inputs")
+            rule = required.get("conditional")
+            if rule is not None and (
+                not isinstance(rule, dict)
+                or not isinstance(rule.get("values"), dict)
+                or any(not isinstance(name, str) or not name.strip() for name in rule["values"])
+                or rule.get("operator") not in (None, "and", "or")
+            ):
+                raise ValueError("Conditional requirements must name sibling inputs")
     return raw
 
 

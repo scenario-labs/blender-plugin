@@ -269,3 +269,31 @@ def test_conditional_requirement_matches_array_items_and_ignores_undeclared_sibl
     assert validate(schema.specs, {"maps": ["normal", "height"]}) == [
         "mask is required for the chosen maps"
     ]
+
+
+def test_conditional_requirement_compares_values_without_type_coercion():
+    schema = parse_schema(
+        ModelRecord.from_api(
+            {
+                "id": "model_conditional",
+                "type": "custom",
+                "inputs": [
+                    {"name": "tiled", "type": "boolean"},
+                    {"name": "steps", "type": "number"},
+                    {
+                        "name": "mask",
+                        "type": "file",
+                        "required": {
+                            "conditional": {
+                                "values": {"tiled": [1], "steps": ["4"]},
+                                "operator": "or",
+                            }
+                        },
+                    },
+                ],
+            }
+        )
+    )
+    assert validate(schema.specs, {"tiled": True, "steps": 4}) == []
+    assert validate(schema.specs, {"tiled": 1}) == ["mask is required for the chosen tiled"]
+    assert validate(schema.specs, {"steps": "4"}) == ["mask is required for the chosen steps"]

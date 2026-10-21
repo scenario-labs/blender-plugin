@@ -391,8 +391,12 @@ def _holds(value, values):
     if not _defined(value):
         return False
     items = value if isinstance(value, (list, tuple)) else (value,)
-    listed = {str(v) for v in values}
-    return any(item in values or str(item) in listed for item in items)
+    # Python equality matches True with 1; booleans only match booleans, as in forms._equal_enum.
+    return any(
+        isinstance(item, bool) == isinstance(candidate, bool) and item == candidate
+        for item in items
+        for candidate in values
+    )
 
 
 def validate_requirements(specs, body, one_of=(), exclusive=()):

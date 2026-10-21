@@ -339,3 +339,29 @@ def test_reference_edit_accepts_conditional_input_before_sibling_is_complete():
     assert append_file_reference(schema, "image", "asset", "image") == "asset"
     with pytest.raises(ValueError, match="file input"):
         append_file_reference(schema, "prompt", "asset", "image")
+
+
+def test_conditional_requirement_applies_to_defaults_and_rejects_malformed_rules():
+    from scenario.core.schema.forms import validate_parameters
+
+    schema = {
+        "parameters": [
+            {"name": "mode", "type": "string", "allowedValues": ["new", "edit"], "default": "edit"},
+            {
+                "name": "image",
+                "type": "file",
+                "required": {"conditional": {"values": {"mode": ["edit"]}}},
+            },
+        ]
+    }
+    assert validate_parameters(schema, {}) == ["image is required for the chosen mode"]
+    assert validate_parameters(schema, {"mode": "new"}) == []
+    for rule in (
+        [],
+        {"values": []},
+        {"values": {" ": ["edit"]}},
+        {"values": {}, "operator": "xor"},
+    ):
+        schema["parameters"][1]["required"] = {"conditional": rule}
+        with pytest.raises(ValueError, match="sibling inputs"):
+            validate_parameters(schema, {})

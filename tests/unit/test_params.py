@@ -195,3 +195,77 @@ def test_float32_decimal_leaves_whole_exact_and_other_values_alone():
     assert math.isinf(float32_decimal(math.inf))
     assert math.isnan(float32_decimal(math.nan))
     assert float32_decimal(3) == 3.0 and type(float32_decimal(3)) is float
+
+
+def _conditional_schema(operator=None):
+    rule = {"values": {"mode": ["edit", "extend"], "quality": ["high"]}}
+    if operator:
+        rule["operator"] = operator
+    return parse_schema(
+        ModelRecord.from_api(
+            {
+                "id": "model_conditional",
+                "type": "custom",
+                "inputs": [
+                    {"name": "mode", "type": "string", "allowedValues": ["new", "edit", "extend"]},
+                    {"name": "quality", "type": "string", "allowedValues": ["draft", "high"]},
+                    {"name": "image", "type": "file", "required": {"conditional": rule}},
+                ],
+            }
+        )
+    )
+
+
+def test_conditional_requirement_parses_conditions_and_operator():
+    image = spec_by_name(_conditional_schema("or"), "image")
+    assert not image.required_always
+    assert image.required_when == (("mode", ("edit", "extend")), ("quality", ("high",)))
+    assert image.required_when_any
+
+
+def test_conditional_requirement_with_or_needs_one_matching_condition():
+    schema = _conditional_schema("or")
+    assert validate(schema.specs, {"mode": "new", "quality": "draft"}) == []
+    assert validate(schema.specs, {"mode": "edit", "quality": "draft"}) == [
+        "image is required for the chosen mode"
+    ]
+    assert validate(schema.specs, {"mode": "edit", "image": "asset"}) == []
+
+
+def test_conditional_requirement_without_operator_needs_every_condition():
+    # The default operator is undocumented; a local check must not refuse what the service accepts.
+    for operator in (None, "and"):
+        schema = _conditional_schema(operator)
+        assert not schema.specs[2].required_when_any
+        assert validate(schema.specs, {"mode": "extend", "quality": "draft"}) == []
+        assert validate(schema.specs, {"mode": "extend", "quality": "high"}) == [
+            "image is required for the chosen mode and quality"
+        ]
+
+
+def test_conditional_requirement_matches_array_items_and_ignores_undeclared_siblings():
+    schema = parse_schema(
+        ModelRecord.from_api(
+            {
+                "id": "model_conditional",
+                "type": "custom",
+                "inputs": [
+                    {"name": "maps", "type": "string_array"},
+                    {
+                        "name": "mask",
+                        "type": "file",
+                        "required": {
+                            "conditional": {
+                                "values": {"maps": ["height"], "hidden": [1]},
+                                "operator": "or",
+                            }
+                        },
+                    },
+                ],
+            }
+        )
+    )
+    assert validate(schema.specs, {"maps": ["normal"]}) == []
+    assert validate(schema.specs, {"maps": ["normal", "height"]}) == [
+        "mask is required for the chosen maps"
+    ]

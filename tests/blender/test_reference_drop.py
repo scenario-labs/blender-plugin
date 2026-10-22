@@ -32,6 +32,7 @@ class ReferenceDropTests(unittest.TestCase):
                 {"name": "images", "type": "file_array", "kind": "image", "maxLength": 2},
             ],
         }
+        self.model = model
         record = submodule("core.api.catalog").ModelRecord.from_api(model)
         generation.set_catalog([record], [record])
         self.scene = bpy.context.scene
@@ -83,9 +84,16 @@ class ReferenceDropTests(unittest.TestCase):
         self.scene.scenario.three_d_mode = "EDIT"
         self.assertFalse(poll(self.context()))  # Edit mode drives the edit3d form.
         self.scene.scenario.lane = "image"
-        self.lane.model_id = "NONE"
-        self.assertFalse(poll(self.context()))  # No model description to read.
-        self.lane.model_id = MODEL
+        # A listed model whose description has not been read: nothing tells its inputs.
+        generation, runtime = submodule("blender.generation"), submodule("blender.runtime")
+        listed = submodule("core.api.catalog").ModelRecord.from_api(
+            {key: self.model[key] for key in ("id", "name", "type", "capabilities")}
+        )
+        with patch.dict(runtime.state.records, {MODEL: listed}), patch.dict(generation._schemas):
+            generation._schemas.pop(MODEL, None)
+            self.assertIsNone(generation.schema_for(MODEL))
+            self.assertFalse(poll(self.context()))
+        self.assertTrue(poll(self.context()))
         for _ in range(2):
             ref = self.lane.references.add()
             ref.param_name, ref.source = "images", "ASSET"

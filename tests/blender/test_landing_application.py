@@ -55,11 +55,12 @@ class LandingApplicationTests(unittest.TestCase):
         data = self.camera.data
         existing = data.background_images.new()
         existing.alpha, existing.display_depth = 0.9, "FRONT"
+        kept = (existing.alpha, existing.display_depth)  # alpha reads back as a 32-bit float
         data.show_background_images = False
         item, path = self.image()
         result = self.landing.apply_camera_background(self.scene, self.camera, item, path)
         self.assertEqual(len(data.background_images), 2)
-        self.assertEqual((existing.alpha, existing.display_depth), (0.9, "FRONT"))
+        self.assertEqual((existing.alpha, existing.display_depth), kept)
         added = data.background_images[1]
         self.assertEqual((added.source, added.image), ("IMAGE", result.image))
         self.assertAlmostEqual(added.alpha, 0.5)

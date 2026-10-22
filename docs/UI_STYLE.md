@@ -456,12 +456,13 @@ choice, the grid's page and its selected result are unsaved window-manager
 state that only their operators change. The grid draws twelve finished results
 per page as `template_icon` tiles in a `grid_flow` of two to six columns sized
 from the region width: the job's first ranked preview or its kind's icon, and a
-button with the prompt's start. Choosing a tile draws that preview large (at
-most the 256-pixel still) with the prompt, model, kind, saved size, submission
-time and price, then the list row's model row, preview tiles and saved-job
-controls; arrows step to the neighbouring results and **All results** returns
-to the grid. A page or selection that no longer exists draws as the nearest page
-or the grid without being written back.
+button with the prompt's start. Blank cells fill a page with fewer tiles than
+columns, so its tiles keep a full row's width. Choosing a tile draws that
+preview large (at most the 256-pixel still) with the prompt, model, kind, saved
+size, submission time and price, then the list row's model row, preview tiles
+and saved-job controls; arrows step to the neighbouring results and **All
+results** returns to the grid. A page or selection that no longer exists draws
+as the nearest page or the grid without being written back.
 
 In the list, each result collapses on its own; the panel header has a
 **Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose

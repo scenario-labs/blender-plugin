@@ -142,7 +142,8 @@ def _draw_grid(layout, context, rows, surface, index):
         _pager(layout, page)
     columns, scale = grid.tile_layout(_width(context, surface))
     flow = layout.grid_flow(row_major=True, columns=columns, even_columns=True, align=False)
-    for record in grid.visible(rows, index):
+    shown = grid.visible(rows, index)
+    for record in shown:
         cell = flow.column(align=True)
         cell.template_icon(icon_value=_icon(record, result_previews.cover(record)), scale=scale)
         button = cell.row(align=True)
@@ -150,6 +151,10 @@ def _draw_grid(layout, context, rows, surface, index):
         button.operator(
             "scenario.show_result", text=panels._short_prompt(record)
         ).local_id = record.local_id
+    # Blender spreads fewer cells than columns across the whole row; blank cells
+    # keep the tiles of a page shorter than one row as wide as a full row's.
+    for _ in range(columns - len(shown)):
+        flow.column().label(text="")
 
 
 def _draw_detail(layout, context, record, rows, surface):

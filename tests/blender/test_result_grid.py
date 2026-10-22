@@ -300,6 +300,21 @@ class ResultGridTests(unittest.TestCase):
         self.assertEqual(self.page("PREVIOUS"), {"FINISHED"})
         self.assertEqual(self.view.page, 0)
 
+    def test_a_short_page_keeps_its_tiles_as_wide_as_a_full_row(self):
+        for count, page in ((12, 0), (13, 1)):
+            with self.subTest(count=count):
+                rows = self.rows(count)
+                self.view.page = page
+                calls = self.draw_grid(rows)
+                (flow,) = named(calls, "grid_flow")
+                columns = flow.kwargs["columns"]
+                cells = calls[calls.index(flow) + 1 :]
+                tiles = len(self.tiles(calls))
+                # Blender spreads fewer cells than columns across the row: blank ones fill it.
+                self.assertEqual(len(named(cells, "column")), max(columns, tiles))
+                self.assertEqual(labels(cells), [("", "NONE")] * max(0, columns - tiles))
+        self.assertEqual(tiles, 1)
+
     def test_choosing_a_tile_shows_it_large_with_its_facts_and_its_row_actions(self):
         rows = self.rows(30)
         self.assertEqual(self.show("job-14"), {"FINISHED"})

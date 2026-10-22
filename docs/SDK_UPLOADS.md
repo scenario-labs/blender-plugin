@@ -413,8 +413,9 @@ support explicit still captures; video inputs support explicit clips. **Upload
 selected mesh** creates one GLB reference for an empty 3D input. Preparation
 runs on the main thread in private temporary storage retained until asynchronous
 staging finishes or the session retires. Clips use the preview range when
-enabled, otherwise the scene range, at 1280x720 with no audio or implicit
-duration padding. Capture settings/current frame and mesh selection are
+enabled, otherwise the scene range, with no audio or implicit duration padding.
+Stills and clips are 1280 pixels on the long side, shaped like the camera's
+render frame or the viewport. Capture settings/current frame and mesh selection are
 restored. Restoration writes the preview-range toggle only when it changed, and
 a clip keeps an enabled preview range that already equals its span. In the GUI,
 Blender answers any write to that toggle, even an unchanged one, with a

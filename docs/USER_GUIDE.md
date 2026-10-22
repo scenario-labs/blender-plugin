@@ -470,11 +470,12 @@ and other video models, including audio-to-video.
 ![Video lane with Seedance parameters, frame references, Match timeline and Generate controls](images/panel-video.png)
 
 **Using your scene.** Add a **Viewport clip** or **Camera clip** reference and
-choose **Upload reference**. Blender records a silent 1280x720 MP4 over the preview
-range, or the scene range, and restores your settings afterwards. **Grey clay
-capture** replaces viewport shading. The uploaded clip is fixed: it isn't
-trimmed or padded, and later timeline changes don't affect it, so set the range
-first. **Match timeline** helps set the model's duration, but check the model's
+choose **Upload reference**. Blender records a silent MP4 over the preview range,
+or the scene range, and restores your settings afterwards. Captures are 1280
+pixels on the long side and keep the shape of the camera's render frame or of the
+viewport. **Grey clay capture** replaces viewport shading. The uploaded clip is
+fixed: it isn't trimmed or padded, and later timeline changes don't affect it, so
+set the range first. **Match timeline** helps set the model's duration, but check the model's
 own limits.
 
 **Playing a result.** **Play video (N)** opens a private copy in your system player,
@@ -603,7 +604,8 @@ Your view, rendered as a finished still by an image-editing model. The
 **Rendering Style** section holds everything that shapes the look.
 
 - **Scene to render**: choose Viewport or Scene camera (optionally with Grey
-  clay capture), then **Capture and upload scene**.
+  clay capture), then **Capture and upload scene**. The still keeps the shape of
+  the camera's render frame or of the viewport, at the size shown.
 - **Model**: GPT Image 2.5 Sunburst by default, or any other image-to-image model.
 - **Look**: describe the result, for example "weathered steampunk copper,
   overcast light". Left empty, **Prepare look with Prompt Spark** (on by
@@ -629,9 +631,9 @@ takes a reference video. The look, reference frames and first frame are in the
 
 - **Clip to render**: choose Viewport or Scene camera, build a
   [camera path](#camera-path) if you want one, then **Capture and upload
-  scene**. The silent 1280x720 clip covers the range shown, without padding or
-  trimming. **Match timeline** sets the model's duration; it doesn't change a
-  clip already uploaded.
+  scene**. The silent clip covers the range shown, without padding or trimming,
+  at the size shown. **Match timeline** sets the model's duration; it doesn't
+  change a clip already uploaded.
 - **Model**: Seedance, Minimax, Runway Aleph, Gemini, Grok and other
   video-to-video models.
 - **Look** and **Reference frames**: as the look and style images in Render

@@ -305,6 +305,7 @@ def draw_references(
 
 def draw_clip_options(layout, context, lane_state, schema):
     from ..core.scene import capture_plan
+    from . import capture
 
     has_video_input = any(s.is_file and s.kind == "video" for s in schema.specs)
     uses_capture = any(r.source in props.CAPTURE_SOURCES for r in lane_state.references)
@@ -322,7 +323,13 @@ def draw_clip_options(layout, context, lane_state, schema):
         preview_start=scene.frame_preview_start,
         preview_end=scene.frame_preview_end,
     )
-    box.label(text=f"Frames {start} to {end}: {seconds:.1f} s at {fps:g} fps, 1280x720")
+    # Clips still to capture; an uploaded clip keeps the size it was recorded at.
+    sizes = [
+        capture.capture_size(context, r.source)
+        for r in lane_state.references
+        if r.source in props.CLIP_SOURCES
+    ]
+    box.label(text=capture_plan.clip_label(start, end, seconds, fps, sizes))
     if schema.by_name("duration") is not None:
         box.prop(lane_state, "match_timeline")
         if lane_state.match_timeline:

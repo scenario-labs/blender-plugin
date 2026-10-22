@@ -265,10 +265,11 @@ lost response must be reconciled using saved progress instead of starting
 another upload. The same uploads and saved-reference recovery are available in
 generation forms and loaded Studio workflow forms for image, audio, video and 3D
 inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`,
-`CAMERA_CLIP` and `MESH` snapshots. Clips use the preview/scene range at
-1280x720 without audio, trimming or padding; mesh export produces one GLB from
-the selected meshes. Only mesh export works in background mode. `render_form`
-uses the native render form and the same upload session for explicit
+`CAMERA_CLIP` and `MESH` snapshots. Stills and clips are 1280 pixels on the long
+side, shaped like the camera's render frame or the viewport; clips use the
+preview/scene range without audio, trimming or padding; mesh export produces one
+GLB from the selected meshes. Only mesh export works in background mode.
+`render_form` uses the native render form and the same upload session for explicit
 scene/first-frame slots. Its `prepare` action requires a GUI for scene captures;
 first-frame file uploads also work headlessly. Result-specific application
 remains separate.

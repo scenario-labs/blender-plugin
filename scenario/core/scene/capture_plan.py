@@ -1,10 +1,41 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Frame ranges, clip durations and Seedance prompt tagging. No bpy."""
+"""Capture sizes, frame ranges, clip durations and Seedance prompt tagging. No bpy."""
 
 import math
 
 MIN_CLIP_SECONDS = 4.0  # Seedance's minimum output is 4 s; a 0.5 s reference clip failed with an internal error (2026-08-28)
+CAPTURE_LONG_SIDE = 1280  # pixels on the long side of every scene still and clip
+
+
+def capture_size(width, height, pixel_aspect=(1.0, 1.0), long_side=CAPTURE_LONG_SIDE):
+    """(width, height) in square pixels for a capture framed like a width x height frame.
+
+    `pixel_aspect` is the frame's pixel shape (Blender's pixel aspect X and Y), so a
+    frame of non-square pixels keeps the shape it is displayed with. The long side is
+    `long_side` and both sides are even, as H.264 clips require. A frame without a
+    positive size, such as a collapsed viewport, falls back to 16:9.
+    """
+    try:
+        ratio = (width * pixel_aspect[0]) / (height * pixel_aspect[1])
+    except (TypeError, ZeroDivisionError, IndexError):
+        ratio = 0.0
+    if not (math.isfinite(ratio) and ratio > 0):
+        ratio = 16 / 9
+    if ratio >= 1:
+        return long_side, _even(long_side / ratio)
+    return _even(long_side * ratio), long_side
+
+
+def _even(value):
+    return max(2, 2 * round(value / 2))
+
+
+def clip_label(start, end, seconds, fps, sizes=()):
+    """The capture line of a clip form: its frames, length, rate and each capture size."""
+    text = f"Frames {start} to {end}: {seconds:.1f} s at {fps:g} fps"
+    names = dict.fromkeys(f"{width}x{height}" for width, height in sizes)
+    return ", ".join((text, *names))
 
 
 def frame_span(

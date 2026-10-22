@@ -143,13 +143,14 @@ def capture_upload(context, *, source="VIEWPORT", camera=None, force_solid=False
             if bpy.app.background:
                 raise ScenarioError(0, "Viewport and camera captures require the Blender GUI")
             capture_fn = capture.capture_playblast if kind == "video" else capture.capture_still
+            width, height = capture.capture_size(context, source)
             capture_fn(
                 context,
                 path,
                 source=source.removesuffix("_CLIP"),
                 camera=camera,
-                width=1280,
-                height=720,
+                width=width,
+                height=height,
                 force_solid=force_solid,
             )
         admitting = True

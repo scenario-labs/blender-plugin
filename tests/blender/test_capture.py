@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import bpy
 from helpers import FRAME_NOTIFYING, recording_context, reset_scene, submodule
@@ -26,6 +27,7 @@ class CaptureTests(unittest.TestCase):
             {
                 "kind": kind,
                 "res": (r.resolution_x, r.resolution_y, r.resolution_percentage),
+                "pixels": (r.pixel_aspect_x, r.pixel_aspect_y),
                 "fmt": r.image_settings.file_format,
                 "video": _is_video(r),
                 "codec": r.ffmpeg.codec,
@@ -165,6 +167,66 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual(self.calls[-1]["preview"], (False, 10, 20))
         self.assertEqual(self.calls[-1]["range"], (1, 24))
         self.assertEqual(self.capture.RenderSettings.snapshot(scene), before)
+
+    def test_capture_size_follows_the_render_frame_or_the_viewport(self):
+        scene = bpy.context.scene
+        render = scene.render
+        render.resolution_x, render.resolution_y = 1080, 1920
+        for source in ("CAMERA", "CAMERA_CLIP"):
+            self.assertEqual(self.capture.capture_size(bpy.context, source), (720, 1280))
+        render.pixel_aspect_x = 2.0  # the frame is displayed 2160 pixels wide
+        self.assertEqual(self.capture.capture_size(bpy.context, "CAMERA"), (1280, 1138))
+        # Without a 3D viewport, a viewport capture falls back to the render frame.
+        headless = SimpleNamespace(
+            scene=scene, area=None, window_manager=SimpleNamespace(windows=[])
+        )
+        self.assertEqual(self.capture.capture_size(headless, "VIEWPORT"), (1280, 1138))
+        region = SimpleNamespace(type="WINDOW", width=900, height=1200)
+        view = SimpleNamespace(view_perspective="PERSP")
+        area = SimpleNamespace(
+            type="VIEW_3D",
+            regions=[region],
+            spaces=SimpleNamespace(active=SimpleNamespace(region_3d=view)),
+        )
+        context = SimpleNamespace(
+            scene=scene,
+            area=area,
+            region=region,
+            window=object(),
+            window_manager=bpy.context.window_manager,
+        )
+        for source in ("VIEWPORT", "VIEWPORT_CLIP"):
+            self.assertEqual(self.capture.capture_size(context, source), (960, 1280))
+        self.assertEqual(self.capture.capture_size(context, "CAMERA"), (1280, 1138))
+        # A viewport looking through the camera renders the camera's frame.
+        view.view_perspective = "CAMERA"
+        self.assertEqual(self.capture.capture_size(context, "VIEWPORT"), (1280, 1138))
+
+    def test_sized_captures_render_square_pixels_and_restore_the_pixel_aspect(self):
+        bpy.ops.object.camera_add()
+        render = bpy.context.scene.render
+        render.pixel_aspect_x, render.pixel_aspect_y = 2.0, 1.5
+        before = self.capture.RenderSettings.snapshot(bpy.context.scene)
+        self.capture.capture_still(
+            bpy.context,
+            str(self.tmp / "still.png"),
+            source="CAMERA",
+            width=720,
+            height=1280,
+            runner=self.fake_runner,
+        )
+        self.capture.capture_playblast(
+            bpy.context,
+            str(self.tmp / "clip.mp4"),
+            source="CAMERA",
+            width=720,
+            height=1280,
+            runner=self.fake_runner,
+        )
+        self.assertEqual([call["res"] for call in self.calls], [(720, 1280, 100)] * 2)
+        self.assertEqual([call["pixels"] for call in self.calls], [(1.0, 1.0)] * 2)
+        self.assertEqual((render.pixel_aspect_x, render.pixel_aspect_y), (2.0, 1.5))
+        self.assertEqual(self.capture.RenderSettings.snapshot(bpy.context.scene), before)
 
     def test_capture_dir_is_under_cache(self):
         self.assertTrue(str(self.capture.capture_dir()).endswith("captures"))

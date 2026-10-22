@@ -45,6 +45,8 @@ class RenderSettings:
     media_type: str = ""
     frame_current: int = 1
     color_depth: str = ""
+    pixel_aspect_x: float = 1.0
+    pixel_aspect_y: float = 1.0
 
     @classmethod
     def snapshot(cls, scene):
@@ -68,6 +70,8 @@ class RenderSettings:
             getattr(r.image_settings, "media_type", ""),
             scene.frame_current,
             r.image_settings.color_depth,
+            r.pixel_aspect_x,
+            r.pixel_aspect_y,
         )
 
     def restore(self, scene):
@@ -77,6 +81,7 @@ class RenderSettings:
             self.resolution_y,
             self.resolution_percentage,
         )
+        r.pixel_aspect_x, r.pixel_aspect_y = self.pixel_aspect_x, self.pixel_aspect_y
         if self.media_type and hasattr(r.image_settings, "media_type"):
             r.image_settings.media_type = self.media_type
         if self.media_type != "VIDEO":
@@ -254,6 +259,26 @@ class _Overlays:
         return False
 
 
+def capture_size(context, source):
+    """The (width, height) a still or clip from this source records, read without writing.
+
+    Camera captures keep the scene's render frame, pixel aspect included. Viewport
+    captures keep the shape of the 3D viewport they render, or the render frame
+    when that viewport looks through the camera. The long side stays 1280 pixels.
+    """
+    render = context.scene.render
+    if source.removesuffix("_CLIP") != "CAMERA":
+        _, area, region = _view3d(context)
+        r3d = getattr(area.spaces.active, "region_3d", None) if area is not None else None
+        if region is not None and getattr(r3d, "view_perspective", "") != "CAMERA":
+            return capture_plan.capture_size(region.width, region.height)
+    return capture_plan.capture_size(
+        render.resolution_x,
+        render.resolution_y,
+        pixel_aspect=(render.pixel_aspect_x, render.pixel_aspect_y),
+    )
+
+
 def _prepare_source(scene, source, camera):
     if source == "CAMERA":
         cam = camera or scene.camera or next((o for o in scene.objects if o.type == "CAMERA"), None)
@@ -281,6 +306,7 @@ def capture_still(
         r = scene.render
         if width and height:
             r.resolution_x, r.resolution_y = int(width), int(height)
+            r.pixel_aspect_x = r.pixel_aspect_y = 1.0
         r.resolution_percentage = 100
         set_image_output(r, "PNG")
         r.image_settings.color_mode = "RGB"
@@ -321,6 +347,7 @@ def capture_playblast(
         _prepare_source(scene, source, camera)
         r = scene.render
         r.resolution_x, r.resolution_y, r.resolution_percentage = int(width), int(height), 100
+        r.pixel_aspect_x = r.pixel_aspect_y = 1.0
         set_video_output(r)
         r.ffmpeg.format, r.ffmpeg.codec, r.ffmpeg.audio_codec = "MPEG4", "H264", "NONE"
         r.use_stamp = False

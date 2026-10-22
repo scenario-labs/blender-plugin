@@ -77,6 +77,8 @@ for 14 days, including when tests fail. Coverage is measured without a minimum
 threshold. The reports include unexecuted files in those directories; Blender-only
 MCP modules can therefore show zero coverage. These reports do not measure native
 Blender behavior or subprocess execution and do not prove live service acceptance.
+[Coverage CI](../../.github/workflows/coverage.yml) reruns the suite on pushes and uploads
+the 3.13 XML report to GitHub code coverage for `main` and same-repository pull requests.
 
 To generate the same XML and HTML reports locally from the repository root:
 

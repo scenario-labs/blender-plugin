@@ -184,6 +184,69 @@ class OfflineRuntimeTests(unittest.TestCase):
         self.assertIn("HTTP 503", self.runtime.state.trained_error)
         self.assertFalse(self.generation.request_catalog())
 
+    @staticmethod
+    def drawn_strip(panels):
+        from test_model_picker import FakeLayout
+
+        layout = FakeLayout()
+        connected = panels.draw_account_strip(layout, bpy.context)
+        labels = [call[2] for node in layout.walk() for call in node.named("label")]
+        buttons = [call[1:] for node in layout.walk() for call in node.named("operator")]
+        return connected, labels, buttons
+
+    def test_panel_button_turns_on_allow_online_access_and_the_catalog_follows(self):
+        model, _ = self.catalog_client()
+        panels = submodule("blender.panels")
+        connected, labels, buttons = self.drawn_strip(panels)
+        self.assertFalse(connected)
+        # One sentence, wrapped to the sidebar, instead of the raw adapter error.
+        text = " ".join(label["text"] for label in labels)
+        self.assertEqual(text, self.runtime.ONLINE_ACCESS_NEEDED)
+        self.assertEqual(labels[0]["icon"], "INTERNET_OFFLINE")
+        self.assertEqual(buttons, [(("scenario.allow_online_access",), {"icon": "INTERNET"})])
+        self.assertFalse(self.runtime.started_offline())
+        self.assertEqual(bpy.ops.scenario.allow_online_access(), {"FINISHED"})
+        self.assertTrue(bpy.context.preferences.system.use_online_access)
+        self.assertTrue(self.runtime.online())
+        # The next ticks load the catalog without a restart or a Retry.
+        self.pump._process()
+        self.dispatch_workers()
+        self.assertTrue(self.runtime.state.catalog_loaded)
+        self.assertIn(model["id"], self.runtime.state.records)
+        connected, labels, buttons = self.drawn_strip(panels)
+        self.assertTrue(connected)
+        self.assertNotIn(
+            self.runtime.ONLINE_ACCESS_NEEDED, " ".join(label["text"] for label in labels)
+        )
+        self.assertNotIn("scenario.allow_online_access", [b[0][0] for b in buttons])
+
+    def test_command_line_offline_mode_gets_a_restart_hint_instead_of_the_button(self):
+        panels = submodule("blender.panels")
+        with patch.object(self.runtime, "started_offline", return_value=True):
+            connected, labels, buttons = self.drawn_strip(panels)
+            self.assertFalse(bpy.ops.scenario.allow_online_access.poll())
+        self.assertFalse(connected)
+        text = " ".join(label["text"] for label in labels)
+        self.assertEqual(
+            text, f"{self.runtime.ONLINE_ACCESS_NEEDED} {self.runtime.STARTED_OFFLINE}"
+        )
+        self.assertEqual(buttons, [])
+        self.assertFalse(bpy.context.preferences.system.use_online_access)
+
+    def test_catalog_read_cut_off_by_online_access_loads_again_when_it_returns(self):
+        model, _ = self.catalog_client()
+        handlers = submodule("blender.handlers")
+        self.runtime.state.catalog_loading = True
+        handlers.dispatch(("catalog_failed", "Online access is disabled"))
+        self.assertFalse(self.runtime.state.catalog_loading)
+        # Not recorded: a recorded error would wait for Retry and show the raw text.
+        self.assertEqual(self.runtime.state.catalog_error, "")
+        with online_access(True):
+            self.pump._process()
+            self.dispatch_workers()
+            self.assertTrue(self.runtime.state.catalog_loaded)
+            self.assertIn(model["id"], self.runtime.state.records)
+
     def test_headless_mcp_and_ui_deliver_the_same_sdk_catalog_and_schema(self):
         model, calls = self.catalog_client()
         tools = submodule("mcp.tools_scenario")

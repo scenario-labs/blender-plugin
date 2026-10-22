@@ -187,8 +187,21 @@ def prefs():
     return prefs_module.get_prefs()
 
 
+# The panel line and button shown while Blender's network preference is off.
+ONLINE_ACCESS_NEEDED = "Scenario needs Blender's Allow Online Access"
+STARTED_OFFLINE = "Blender started in offline mode (--offline-mode); restart it without that option"
+
+
 def online():
     return bool(getattr(bpy.app, "online_access", True))
+
+
+def started_offline():
+    """Whether Blender's --offline-mode holds Allow Online Access off until a restart.
+
+    Blender then refuses to change the preference, so no button can turn it on.
+    """
+    return bool(getattr(bpy.app, "online_access_override", False)) and not online()
 
 
 def waveform_spec():

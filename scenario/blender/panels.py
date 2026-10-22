@@ -57,10 +57,34 @@ AUDIO_EXTS = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
 SIDEBAR_CHARS = 36  # wrapped status text fits the default sidebar width
 
 
+def draw_online_access(layout):
+    """Why Scenario cannot connect, and the button that turns Allow Online Access on.
+
+    The pump follows the preference, so the catalog loads once it is on. Blender's
+    --offline-mode refuses the change until a restart, so that case gets no button.
+    """
+    # The job box's inset is a little wider than this panel line needs: it wraps, never clips.
+    inset = result_previews.TEXT_INSET
+    column = layout.column(align=True)
+    lines = label_wrap.label_lines(bpy.context, runtime.ONLINE_ACCESS_NEEDED, inset)
+    for index, line in enumerate(lines):
+        column.label(text=line, icon="INTERNET_OFFLINE" if index == 0 else "BLANK1")
+    if runtime.started_offline():
+        for line in label_wrap.label_lines(bpy.context, runtime.STARTED_OFFLINE, inset):
+            column.label(text=line, icon="BLANK1")
+    else:
+        column.operator("scenario.allow_online_access", icon="INTERNET")
+
+
 def draw_account_strip(layout, context):
+    online = runtime.online()
+    if not online:
+        # First: a new Blender profile starts with it off, and without it even
+        # Test connection cannot reach Scenario.
+        draw_online_access(layout)
     creds = runtime.credentials()
-    row = layout.row(align=True)
     if not creds.valid:
+        row = layout.row(align=True)
         source = getattr(runtime.prefs(), "credential_source", "PREFERENCES")
         message = (
             "Environment key/secret missing"
@@ -71,9 +95,9 @@ def draw_account_strip(layout, context):
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
         draw_feedback_heart(row)
         return False
-    if not runtime.online():
-        row.label(text="Online access is disabled", icon="ERROR")
+    if not online:
         return False
+    row = layout.row(align=True)
     label = runtime.state.account_label or (
         "Connected" if runtime.state.catalog_loaded else "Connecting..."
     )

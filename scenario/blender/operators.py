@@ -44,6 +44,30 @@ class SCENARIO_OT_test_connection(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class SCENARIO_OT_allow_online_access(bpy.types.Operator):
+    bl_idname = "scenario.allow_online_access"
+    bl_label = "Allow Online Access"
+    bl_description = (
+        "Turn on Allow Online Access in Blender's System preferences so Scenario can connect"
+    )
+
+    @classmethod
+    def poll(cls, context):
+        if runtime.started_offline():
+            cls.poll_message_set(runtime.STARTED_OFFLINE)
+            return False
+        return True
+
+    def execute(self, context):
+        # The same switch as Blender's own button; the pump follows it on its next tick.
+        context.preferences.system.use_online_access = True
+        if not runtime.online():
+            self.report({"WARNING"}, runtime.STARTED_OFFLINE)
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Allow Online Access is on")
+        return {"FINISHED"}
+
+
 class SCENARIO_OT_refresh_catalog(bpy.types.Operator):
     bl_idname = "scenario.refresh_catalog"
     bl_label = "Refresh models"
@@ -1269,6 +1293,7 @@ CLASSES = (
     SCENARIO_OT_history_older,
     SCENARIO_OT_import_result,
     SCENARIO_OT_test_connection,
+    SCENARIO_OT_allow_online_access,
     SCENARIO_OT_refresh_catalog,
     SCENARIO_OT_retry_model,
     SCENARIO_OT_generate,

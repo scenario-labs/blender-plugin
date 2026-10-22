@@ -1219,6 +1219,9 @@ data is shared. See [Privacy and data handling](PRIVACY.md) for details.
 
 ## Troubleshooting
 
+- **"Scenario needs Blender's Allow Online Access"**: press **Allow Online
+  Access** below it. Blender started with `--offline-mode` must be restarted
+  without it.
 - **"Loading models..." doesn't end**: check your key and secret (Test
   connection) and Allow Online Access. A Retry button appears if the request
   failed.

@@ -95,10 +95,13 @@ so the form is always visible.
   prompt tools are `New`, `Rewrite`, `Translate`.
 - Destructive actions (`Delete`, `Clear path`) ask for confirmation (`invoke_confirm`).
 
-When Blender online access is disabled, the composer shows **Offline** on its
-disabled generation button and **Online access disabled** instead of a loading
-message when no model is available. Pending edits retain their estimate request
-until online access and credentials are available. Only the selected scene is
+When Blender online access is disabled, the sidebar's Scenario panel shows
+**Scenario needs Blender's Allow Online Access** and an **Allow Online Access**
+button, or a restart hint when `--offline-mode` forced it off. The composer
+shows **Offline** on its disabled generation button and **Online access
+disabled** instead of a loading message when no model is available. Pending
+edits retain their estimate request until online access and credentials are
+available. Only the selected scene is
 priced: another scene's pending form shows no price error and is priced once
 that scene is selected. A price that arrives while another scene is selected is
 requested again in the same way. The generation controls

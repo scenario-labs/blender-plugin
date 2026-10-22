@@ -777,3 +777,37 @@ def test_world_size_is_the_preflight_2_to_1_rule(size, expected):
 @pytest.mark.parametrize("size", [(8.0, 4), (8, 4.0), (True, 1), ("8", "4"), (None, 4)])
 def test_world_size_requires_integer_dimensions(size):
     assert panorama.is_world_size(*size) is False
+
+
+def channels(*names):
+    return b"".join(name + b"\0" + struct.pack("<iB3xii", 1, 0, 1, 1) for name in names) + b"\0"
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        (png(color=6), True),
+        (png(color=2), False),
+        (png(color=0), False),
+        # A transparent colour key before the image data is alpha too.
+        (png(color=2, extra=chunk(b"tRNS", b"\0\0\0\0\0\0")), True),
+        (png(color=0, extra=chunk(b"tRNS", b"\0\0")), True),
+        (exr(extra=attribute(b"channels", b"chlist", channels(b"A", b"B", b"G", b"R"))), True),
+        (exr(extra=attribute(b"channels", b"chlist", channels(b"B", b"G", b"R"))), False),
+        (exr(), False),
+        (jpeg(), False),
+        (b"", False),
+        (b"\x89PNG\r\n\x1a\n", False),
+    ],
+)
+def test_alpha_is_read_from_the_header_only(data, expected):
+    assert panorama.image_alpha(data) is expected
+
+
+def test_alpha_reading_follows_an_accepted_preflight():
+    data = png(color=6)
+    assert panorama.inspect_image(data).file_format == "PNG"
+    assert panorama.image_alpha(data)
+    rgb = exr(extra=attribute(b"channels", b"chlist", channels(b"B", b"G", b"R")))
+    assert panorama.inspect_image(rgb).file_format == "OPEN_EXR"
+    assert not panorama.image_alpha(rgb)

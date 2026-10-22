@@ -6,7 +6,7 @@ import os
 import textwrap
 
 import bpy
-from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
+from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
@@ -16,6 +16,7 @@ from . import (
     apply_image,
     desktop,
     generation,
+    image_plane,
     label_wrap,
     panorama_lane,
     params_ui,
@@ -291,13 +292,23 @@ class SCENARIO_OT_add_plane(bpy.types.Operator):
     bl_description = "Add a view-facing plane at the 3D cursor with this image (Object Mode)"
     bl_options = {"REGISTER", "UNDO"}
     filepath: StringProperty()
+    unlit: BoolProperty(
+        name="Unlit",
+        description="Show the image's own colours, unaffected by scene lights",
+    )
 
     @classmethod
     def poll(cls, context):
         return context.mode == "OBJECT"
 
     def execute(self, context):
-        apply_image.add_as_plane(context, apply_image.load_image(self.filepath))
+        # The image's alpha, when its header declares one, makes the plane transparent.
+        apply_image.add_as_plane(
+            context,
+            apply_image.load_image(self.filepath),
+            alpha=image_plane.file_alpha(self.filepath),
+            unlit=self.unlit,
+        )
         return {"FINISHED"}
 
 

@@ -435,3 +435,71 @@ def inspect_image(data, *, jpeg=False):
     raise PanoramaError(
         f"Automatic application supports grayscale/RGB/RGBA {formats} and scanline OpenEXR images"
     )
+
+
+def image_alpha(data):
+    """Whether an image that passed `inspect_image` declares transparency in its header.
+
+    PNG: an RGBA colour type or a tRNS chunk before the image data. OpenEXR: an
+    `A` channel in its channel list. JPEG has no alpha. Malformed headers read
+    as opaque; the decoder still decides what the pixels hold.
+    """
+    if not isinstance(data, bytes):
+        return False
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return _png_alpha(data)
+    if data.startswith(b"\x76\x2f\x31\x01"):
+        return _exr_alpha(data)
+    return False
+
+
+def _png_alpha(data):
+    if len(data) < 26:
+        return False
+    if data[25] == 6:  # IHDR colour type 6: truecolour with alpha
+        return True
+    offset = 8
+    for _ in range(MAX_PNG_CHUNKS):
+        if offset + 8 > len(data):
+            break
+        size = struct.unpack_from(">I", data, offset)[0]
+        kind = data[offset + 4 : offset + 8]
+        if kind == b"tRNS":
+            return True
+        if kind in (b"IDAT", b"IEND"):
+            break
+        offset += 12 + size
+    return False
+
+
+def _exr_alpha(data):
+    # Header attributes follow the version field: name, type, size, value.
+    limit, offset = min(len(data), 1024 * 1024), 8
+    while offset < limit and data[offset] != 0:
+        fields = []
+        for _ in range(2):
+            end = data.find(b"\0", offset, min(offset + 256, limit))
+            if end < 0:
+                return False
+            fields.append(data[offset:end])
+            offset = end + 1
+        if offset + 4 > limit:
+            return False
+        size = struct.unpack_from("<I", data, offset)[0]
+        offset += 4
+        if fields == [b"channels", b"chlist"]:
+            return b"A" in _channel_names(data[offset : min(offset + size, limit)])
+        offset += size
+    return False
+
+
+def _channel_names(payload):
+    """OpenEXR chlist names: each name, then 16 bytes of type and sampling, then a NUL."""
+    names, offset = set(), 0
+    while offset < len(payload) and payload[offset] != 0:
+        end = payload.find(b"\0", offset, offset + 256)
+        if end < 0:
+            break
+        names.add(payload[offset:end])
+        offset = end + 1 + 16
+    return names

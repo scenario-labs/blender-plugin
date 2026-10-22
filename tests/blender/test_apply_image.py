@@ -1,11 +1,40 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
+import struct
+import tempfile
 import unittest
+import zlib
+from pathlib import Path
 
 import bpy
 from helpers import FIXTURES, reset_scene, submodule
 
 ALBEDO = str(FIXTURES / "patina-copper-512" / "albedo.png")
+
+
+def _chunk(tag, data):
+    return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+
+def png(width=4, height=2, *, alpha=True):
+    """A tiny 8-bit PNG, RGBA with half alpha or opaque RGB."""
+    pixel = bytes((255, 64, 0, 128)) if alpha else bytes((255, 64, 0))
+    rows = b"".join(b"\0" + pixel * width for _ in range(height))
+    header = struct.pack(">IIBBBBB", width, height, 8, 6 if alpha else 2, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", header)
+        + _chunk(b"IDAT", zlib.compress(rows))
+        + _chunk(b"IEND", b"")
+    )
+
+
+def linked(tree, node_type, socket):
+    """The node feeding `socket` of the first node of `node_type`, or None."""
+    for link in tree.links:
+        if link.to_node.type == node_type and link.to_socket.name == socket:
+            return link.from_node
+    return None
 
 
 class ApplyImageTests(unittest.TestCase):
@@ -51,3 +80,32 @@ class ApplyImageTests(unittest.TestCase):
         names = self.apply_image.on_image_result(rec)
         self.assertEqual(len(names), 2)
         self.assertTrue(all(name in bpy.data.images for name in names))
+
+
+class PlaneAlphaTests(unittest.TestCase):
+    def setUp(self):
+        reset_scene()
+        self.apply_image = submodule("blender.apply_image")
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def test_add_as_plane_wires_a_files_alpha_and_offers_unlit(self):
+        image_plane = submodule("blender.image_plane")
+        path = self.root / "cutout.png"
+        path.write_bytes(png())
+        self.assertTrue(image_plane.file_alpha(path))
+        self.assertFalse(image_plane.file_alpha(FIXTURES / "patina-copper-512" / "albedo.png"))
+        self.assertFalse(image_plane.file_alpha(self.root / "missing.png"))
+        image = self.apply_image.load_image(str(path))
+        plane = self.apply_image.add_as_plane(bpy.context, image, alpha=True, unlit=True)
+        material = plane.data.materials[0]
+        self.assertEqual(material.surface_render_method, "BLENDED")
+        self.assertEqual(linked(material.node_tree, "MIX_SHADER", "Fac").type, "TEX_IMAGE")
+        self.assertEqual(linked(material.node_tree, "EMISSION", "Color").image, image)
+
+    def test_add_plane_operator_reads_the_files_alpha(self):
+        path = self.root / "cutout.png"
+        path.write_bytes(png())
+        self.assertEqual(bpy.ops.scenario.add_plane(filepath=str(path), unlit=True), {"FINISHED"})
+        material = bpy.context.active_object.data.materials[0]
+        self.assertEqual(material.surface_render_method, "BLENDED")
+        self.assertIsNotNone(linked(material.node_tree, "EMISSION", "Color"))

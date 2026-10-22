@@ -2777,6 +2777,32 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.dry_runs()), dry_runs + 1)
         self.assertEqual(self.runtime.state.reprices, {})
 
+    def test_the_pump_redraws_when_a_requested_price_arrives_and_not_on_idle_ticks(self):
+        pump = submodule("blender.pump")
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.lane.estimate_dirty_at = 0.0  # requested: nothing waits for the debounce
+        # Hold the answered quote back so the ticks before its delivery can be compared.
+        held = dict(self.runtime.state.model_previews)
+        for ticket in held.values():
+            ticket.task.result(5)
+        self.runtime.state.model_previews.clear()
+        with patch.object(pump, "redraw") as redraw:
+            pump._process()
+            redraw.reset_mock()
+            for _ in range(3):
+                pump._process()
+            self.assertEqual(self.lane.estimate_state, "PENDING")
+            redraw.assert_not_called()
+            # The tick delivers the price in context maintenance, outside its own steps;
+            # the Generate button and the composer said "estimating" until something redrew.
+            self.runtime.state.model_previews.update(held)
+            pump._process()
+            self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+            redraw.assert_called_once()
+            for _ in range(3):
+                pump._process()
+            redraw.assert_called_once()
+
     def test_a_price_revoked_while_it_is_requested_is_requested_again(self):
         props = submodule("blender.props")
         refresh = submodule("core.jobs.quote_refresh")

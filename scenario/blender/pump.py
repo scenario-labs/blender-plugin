@@ -16,6 +16,7 @@ ACTIVE_INTERVAL = 0.25
 IDLE_INTERVAL = 0.6
 _running = False
 _job_rows = None  # what job views last drew; compared each tick, never persisted
+_price = None  # what the visible form's price last drew; compared each tick, never persisted
 _failures = {}  # step -> the last exception type it reported
 
 
@@ -137,6 +138,8 @@ def _process():
             changed |= blockout.auto_quote(scene, now)
     if _jobs_changed():
         changed = True
+    if _price_changed(current):
+        changed = True
     # After the jobs' saved states moved: count generations for the rating prompt.
     try:
         changed |= prompts.tick()
@@ -207,6 +210,34 @@ def _jobs_changed():
     if rows == _job_rows:
         return False
     _job_rows = rows
+    return True
+
+
+def _price_changed(scene):
+    """Report whether the selected scene's visible form changed its price since the last tick.
+
+    A requested price arrives in context maintenance, not in a manager event or
+    a step of this tick, so this comparison is what redraws the sidebar's
+    Generate button and the composer when "estimating" turns into a price or an
+    error. Unchanged ticks never redraw.
+    """
+    global _price
+    reading = None
+    if scene is not None:
+        lane = props.active_lane(scene)
+        if lane in props.GENERATION_LANES:
+            lane_state = scene.scenario.lane_state(lane)
+            reading = (
+                scene.session_uid,
+                lane,
+                lane_state.estimate_key,
+                lane_state.estimate_state,
+                lane_state.estimate_cu,
+                lane_state.estimate_error,
+            )
+    if reading == _price:
+        return False
+    _price = reading
     return True
 
 

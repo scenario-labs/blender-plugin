@@ -106,7 +106,9 @@ priced: another scene's pending form shows no price error and is priced once
 that scene is selected. A price that arrives while another scene is selected is
 requested again in the same way. A price the scene changed after is requested
 again once the scene stops changing, under **Scene changed; updating the price**;
-**Generate** meanwhile sends nothing. The generation controls
+**Generate** meanwhile sends nothing. The pump redraws the sidebar and the
+composer when the visible form's price arrives or fails, so **Generate** shows it
+without hovering. The generation controls
 remain disabled until a ready quote handle exists; the submission path still
 rechecks its exact inputs, origin and approval. A model list is only described as
 loading while a catalog request is active.

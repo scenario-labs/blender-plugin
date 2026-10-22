@@ -552,10 +552,12 @@ To put the result back on your mesh, see
 
 ### Materials
 
-Patina turns a prompt or photo into a seamless PBR set: base color, normal,
-roughness, metalness and height. **PATINA Material** works from a prompt,
-**PATINA Image to Maps** from a flat texture or photo, and
-**PATINA Material Extract** isolates one material from a photo.
+The Materials tab lists Scenario's texture models, PATINA first. Patina turns a
+prompt or photo into a seamless PBR set: base color, normal, roughness, metalness
+and height. **PATINA Material** works from a prompt, **PATINA Image to Maps** from
+a flat texture or photo, and **PATINA Material Extract** isolates one material from
+a photo. **Scenario Texture** and the other texture models make one seamless
+texture that applies as base color.
 
 ![Earlier Materials lane layout with a copper prompt, texture map choices and settings](images/panel-materials.png)
 

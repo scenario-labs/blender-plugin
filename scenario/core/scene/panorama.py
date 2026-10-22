@@ -331,13 +331,14 @@ def _exif_orientation(payload):
     return 1
 
 
-def _jpeg(data):
+def _jpeg(data, *, panorama=True):
     # ITU-T T.81 Annex B: marker segments precede the first scan and may sit
     # between later scans. A small file can declare billions of pixels, so read
     # only the frame header before Blender allocates a decoded buffer, and
     # charge every marker segment, before or after the first scan, to one
     # budget. Tables, entropy-coded data, color transforms and APPn metadata
     # other than EXIF orientation stay Blender's.
+    subject = "panorama" if panorama else "image"
     offset, info, exif, marker, segments, scans = 2, None, False, None, 0, 0
     while True:
         if scans:
@@ -379,11 +380,11 @@ def _jpeg(data):
                 raise PanoramaError("JPEG has conflicting EXIF metadata")
             exif = True
             # Blender 5.0-5.2 ignore EXIF orientation, so a rotated or mirrored
-            # panorama would become a World in its stored pixel order.
+            # image would load in its stored pixel order.
             if _exif_orientation(data[offset + 4 : end]) != 1:
-                raise PanoramaError("EXIF-rotated or mirrored JPEG panoramas are unsupported")
+                raise PanoramaError(f"EXIF-rotated or mirrored JPEG {subject}s are unsupported")
         if marker in _JPEG_UNSUPPORTED_FRAMES:
-            raise PanoramaError("Use a baseline or progressive JPEG panorama")
+            raise PanoramaError(f"Use a baseline or progressive JPEG {subject}")
         if marker in _JPEG_FRAMES:
             if info is not None:
                 raise PanoramaError("JPEG has conflicting frame headers")
@@ -393,8 +394,8 @@ def _jpeg(data):
             if size != 8 + 3 * components:
                 raise PanoramaError("JPEG frame header is invalid")
             if precision != 8 or components != 3:
-                raise PanoramaError("Use a standard 8-bit color JPEG panorama")
-            info = _dimensions("JPEG", width, height)
+                raise PanoramaError(f"Use a standard 8-bit color JPEG {subject}")
+            info = _dimensions("JPEG", width, height, panorama=panorama)
         offset = end
 
 
@@ -416,14 +417,21 @@ def inspect_panorama(data):
     raise PanoramaError("Use a supported PNG, JPEG or OpenEXR panorama")
 
 
-def inspect_image(data):
-    """The same bounded PNG/scanline-EXR preflight, without panorama aspect rules."""
+def inspect_image(data, *, jpeg=False):
+    """The same bounded PNG/scanline-EXR preflight, without panorama aspect rules.
+
+    With `jpeg`, an 8-bit color baseline or progressive JPEG passes the World
+    JPEG checks, also without aspect rules.
+    """
     if not isinstance(data, bytes) or not data or len(data) > MAX_FILE_BYTES:
         raise PanoramaError("Image file is empty or exceeds the byte limit")
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return _png(data, panorama=False)
+    if jpeg and data.startswith(b"\xff\xd8"):
+        return _jpeg(data, panorama=False)
     if data.startswith(b"\x76\x2f\x31\x01"):
         return _exr(data, panorama=False)
+    formats = "PNG, color JPEG" if jpeg else "PNG"
     raise PanoramaError(
-        "Automatic application supports grayscale/RGB/RGBA PNG and scanline OpenEXR images"
+        f"Automatic application supports grayscale/RGB/RGBA {formats} and scanline OpenEXR images"
     )

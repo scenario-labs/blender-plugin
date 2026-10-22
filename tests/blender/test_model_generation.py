@@ -5335,7 +5335,7 @@ class ModelGenerationTests(unittest.TestCase):
                 proposed = replace(record, results=(changed,))
                 self.assertEqual(
                     "apply_material" in owner.actions(proposed),
-                    media_type in {"image/png", "image/exr", "image/x-exr"},
+                    media_type in {"image/png", "image/jpeg", "image/exr", "image/x-exr"},
                 )
         invalid_sets = (
             (replace(albedo, receipt=None),),
@@ -5445,6 +5445,29 @@ class ModelGenerationTests(unittest.TestCase):
             self.prepare_saved_world(request_id, "result-map-0")
         self.assertEqual(self.store.get(request_id), before)
         self.assertFalse(owner._application_approvals)
+
+    def test_one_jpeg_base_texture_lands_as_a_material_not_an_image_import(self):
+        # A seamless texture model's single JPEG: Apply saved material is its landing.
+        self.result_bytes = self.image_bytes(4, 4, jpeg=True)
+        self.result_media_type, self.remote_status = "image/jpeg", "success"
+        with patch.object(self, "result_fixture", return_value=None):
+            request_id = self.recovered_material(("inference-txt2img-texture",))
+        owner = self.runtime.state.model_jobs
+        status = owner.status(request_id)
+        self.assertEqual([item["media_type"] for item in status["results"]], ["image/jpeg"])
+        self.assertIn("apply_material", status["actions"])
+        self.assertNotIn("import_images", status["actions"])
+        self.assertNotIn("apply_world", status["actions"])
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_material(request_id)
+        self.assertEqual(approval["roles"], ["base"])
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        tree = bpy.context.active_object.active_material.node_tree
+        (texture,) = [node for node in tree.nodes if node.type == "TEX_IMAGE"]
+        self.assertEqual((texture.label, texture.image.file_format), ("Base", "JPEG"))
 
     def test_material_mcp_applies_to_captured_mesh_without_additional_requests(self):
         request_id = self.recovered_material()

@@ -18,7 +18,17 @@ class ImageApplicationError(RuntimeError):
     """Image decode or rollback failed; no generation retry is implied."""
 
 
-def apply_images(verified, *, pixel_budget=None):
+# The container each saved media type must use, and the snapshot name Blender loads.
+_MEDIA_TYPES = {
+    "PNG": {"image/png"},
+    "JPEG": {"image/jpeg"},
+    "OPEN_EXR": {"image/exr", "image/x-exr"},
+}
+_SNAPSHOTS = {"PNG": "image.png", "JPEG": "image.jpg", "OPEN_EXR": "image.exr"}
+
+
+def apply_images(verified, *, pixel_budget=None, jpeg=False):
+    """Load and pack each verified result; `jpeg` also accepts color JPEG (material maps)."""
     if threading.current_thread() is not threading.main_thread():
         raise ImageApplicationError("Apply images on Blender's main thread")
     if pixel_budget is not None and (type(pixel_budget) is not int or pixel_budget < 1):
@@ -49,19 +59,16 @@ def apply_images(verified, *, pixel_budget=None):
                 or hashlib.sha256(data).hexdigest() != receipt.sha256
             ):
                 raise ImageApplicationError("The saved image no longer matches its receipt")
-            info = inspect_image(data)
+            info = inspect_image(data, jpeg=jpeg)
             total_pixels += info.width * info.height
             if pixel_budget is not None and total_pixels > pixel_budget:
                 raise ImageApplicationError(
                     "Combined image dimensions exceed the application limit"
                 )
-            expected = {"PNG": {"image/png"}, "OPEN_EXR": {"image/exr", "image/x-exr"}}
-            if item.asset.media_type not in expected[info.file_format]:
+            if item.asset.media_type not in _MEDIA_TYPES[info.file_format]:
                 raise ImageApplicationError("Image contents do not match the saved media type")
             with tempfile.TemporaryDirectory(prefix="result-", dir=root) as directory:
-                snapshot = Path(directory) / (
-                    "image.png" if info.file_format == "PNG" else "image.exr"
-                )
+                snapshot = Path(directory) / _SNAPSHOTS[info.file_format]
                 snapshot.write_bytes(data)
                 image = bpy.data.images.load(str(snapshot), check_existing=False)
                 images.append(image)

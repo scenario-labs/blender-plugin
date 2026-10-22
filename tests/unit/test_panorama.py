@@ -603,6 +603,22 @@ def test_general_image_preflight_does_not_accept_jpeg():
         panorama.inspect_image(jpeg())
 
 
+def test_material_map_preflight_accepts_color_jpeg_of_any_aspect():
+    assert panorama.inspect_image(jpeg(3, 5), jpeg=True) == panorama.PanoramaInfo(
+        "JPEG", 3, 5, False
+    )
+    for data, reason in (
+        (jpeg(before=exif(6)), "EXIF-rotated or mirrored JPEG images"),
+        (jpeg(sof=frame(components=1)), "8-bit color JPEG image"),
+        (jpeg(marker=0xC3), "baseline or progressive JPEG image"),
+        (jpeg(8192, 8192), "pixel limit"),
+        (jpeg(tail=b"\0"), "incomplete or has trailing bytes"),
+        (b"GIF89a", "PNG, color JPEG and scanline OpenEXR"),
+    ):
+        with pytest.raises(panorama.PanoramaError, match=reason):
+            panorama.inspect_image(data, jpeg=True)
+
+
 @pytest.mark.parametrize(
     "values,expected",
     [

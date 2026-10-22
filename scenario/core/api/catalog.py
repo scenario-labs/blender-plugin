@@ -32,6 +32,10 @@ LANE_CAPS = {
     },  # a mesh from the scene to a retextured / remeshed / rigged / animated mesh
 }
 PATINA_MODELS = ("model_patina-material", "model_patina", "model_patina-material-extract")
+# Scenario tags its texture models; the base ones that generate images also join the Materials lane,
+# so a new texture model appears there without a plugin release.
+TEXTURE_TAG = "sc:texture"
+TEXTURE_CAPS = {"txt2img", "img2img"}
 DEFAULT_MODELS = {
     "image": [
         "model_openai-gpt-image-2",
@@ -58,7 +62,8 @@ DEFAULT_MODELS = {
         "model_tripo-v3-1-multiview-to-3d",
         "model_hunyuan-3d-pro-3-1-multiview",
     ],
-    "material": list(PATINA_MODELS),
+    # PATINA's PBR sets first, then Scenario Texture; other texture models follow by name.
+    "material": [*PATINA_MODELS, "model_scenario-texture"],
     "audio": [
         "model_elevenlabs-music-v2",
         "model_lyria-3-pro",
@@ -126,7 +131,7 @@ def lane_kind(lane):
     return LANE_KIND.get(lane, "image")
 
 
-# Most specific lane first, so Patina reads as material and a mesh edit as 3d.
+# Most specific lane first, so a texture model reads as material and a mesh edit as 3d.
 _KIND_LANES = (
     "material",
     "3d",
@@ -290,11 +295,25 @@ class ModelRecord:
     def lanes(self):
         caps = set(self.capabilities)
         lanes = {lane for lane, wanted in LANE_CAPS.items() if caps & wanted}
-        if self.id in PATINA_MODELS:
+        if is_texture_model(self):
             lanes.add("material")
         if self.id in PANORAMA_MODELS:
             lanes.add("panorama")
         return lanes
+
+
+def is_texture_model(record):
+    """PATINA, or a base model Scenario tags as a texture model that generates images.
+
+    Trained texture models carry the same tag; they stay out, as in every base lane.
+    """
+    if record.id in PATINA_MODELS:
+        return True
+    return (
+        TEXTURE_TAG in record.tags
+        and bool(TEXTURE_CAPS.intersection(record.capabilities))
+        and not is_trained(record)
+    )
 
 
 def is_utility(record):
@@ -400,12 +419,10 @@ def models_for_lane(lane, records):
         and r.status in ("", "trained")
         and not is_trained(r)
     ]
-    if lane == "material":
-        usable = [r for r in usable if r.id in PATINA_MODELS]
-    elif lane == "panorama":
+    if lane == "panorama":
         usable = [r for r in usable if r.id in PANORAMA_MODELS]
     elif lane == "render_image":
-        usable = [r for r in usable if r.id not in PATINA_MODELS and not is_utility(r)]
+        usable = [r for r in usable if not is_texture_model(r) and not is_utility(r)]
     return sorted(usable, key=lambda r: (rank.get(r.id, len(rank)), r.name.lower()))
 
 

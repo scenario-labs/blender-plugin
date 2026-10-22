@@ -30,7 +30,7 @@ LANE_ITEMS = [
         "3D",
         "Text or images to 3D models; Edit mode runs Scenario's 3D tools on the selected mesh",
     ),
-    ("material", "Materials", "PBR materials with Patina"),
+    ("material", "Materials", "Seamless textures and PBR materials"),
     ("audio", "Audio", "Speech, music and sound effects; results can go on the sequencer"),
     (
         "render_image",

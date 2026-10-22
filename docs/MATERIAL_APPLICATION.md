@@ -2,7 +2,7 @@
 
 The shared saved-job command applies one unambiguous saved texture set to one
 explicitly approved mesh material slot. It creates a new Principled BSDF material,
-loads exact receipt-bound PNG/EXR snapshots as new packed images, and preserves
+loads exact receipt-bound PNG, JPEG or EXR snapshots as new packed images, and preserves
 existing materials and all other slots. It does not regenerate, download again,
 save the blend file or change viewport shading.
 
@@ -16,16 +16,18 @@ the base preview stays saved without being loaded into the material. Base is the
 fallback when no albedo is present. This choice uses stored roles, regardless of
 asset order. Application does not select the first variant, infer roles from
 filenames or combine multiple texture sets. Unclassified assets remain saved and
-unused. Each selected map needs a verified receipt and a supported PNG/EXR media
-type; Blender must decode the same bounded bytes and pack the image before
-assignment. PNG maps may use 8- or 16-bit grayscale, RGB or RGBA samples. Scalar
+unused. Each selected map needs a verified receipt and a supported PNG, JPEG or EXR
+media type; Blender must decode the same bounded bytes and pack the image before
+assignment. PNG maps may use 8- or 16-bit grayscale, RGB or RGBA samples. JPEG maps
+pass the World JPEG checks without the 2:1 rule: 8-bit color, baseline or
+progressive, upright EXIF orientation, bounded segments and scans. Scalar
 maps such as metallic, smoothness and height can therefore retain their
 grayscale encoding; no file conversion or regeneration is required. Palette and
 grayscale-alpha PNGs remain unsupported. Receipt, CRC, byte, pixel and chunk
 limits still apply.
 
 UI and MCP offer material application only when the saved metadata passes the
-same texture-selection check used by approval. An unsupported JPEG/WebP map,
+same texture-selection check used by approval. An unsupported map such as WebP,
 missing receipt, ambiguous role or excessive combined size hides the action;
 the files remain saved. This availability check does not decode images or
 verify file bytes. Worker verification and destination checks still run after

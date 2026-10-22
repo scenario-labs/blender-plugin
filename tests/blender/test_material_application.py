@@ -39,20 +39,23 @@ class MaterialApplicationTests(unittest.TestCase):
         for image in set(bpy.data.images) - self.images:
             bpy.data.images.remove(image, do_unlink=True)
 
-    def fixture(self, roles=("albedo", "normal", "smoothness", "metallic", "height", "ao")):
+    def fixture(
+        self, roles=("albedo", "normal", "smoothness", "metallic", "height", "ao"), *, jpeg=False
+    ):
         items, paths = [], []
+        file_format, media_type = ("JPEG", "image/jpeg") if jpeg else ("PNG", "image/png")
         for index, role in enumerate(roles):
             image = bpy.data.images.new("Synthetic material map", width=2, height=2)
-            path = self.root / f"map-{index}.png"
+            path = self.root / f"map-{index}.{'jpg' if jpeg else 'png'}"
             try:
                 image.pixels[:] = [0.5, 0.5, 1.0, 1.0] * 4
-                image.file_format, image.filepath_raw = "PNG", str(path)
+                image.file_format, image.filepath_raw = file_format, str(path)
                 image.save()
             finally:
                 bpy.data.images.remove(image)
             data = path.read_bytes()
             asset = self.storage.ResultAsset(
-                f"map-{index}", path.name, "image/png", len(data), texture_role=role
+                f"map-{index}", path.name, media_type, len(data), texture_role=role
             )
             receipt = self.transfers.DownloadedResult(
                 path.name, len(data), hashlib.sha256(data).hexdigest()
@@ -184,6 +187,35 @@ class MaterialApplicationTests(unittest.TestCase):
                     )
                     self.assertEqual(tuple(image.pixels[:3]), (image.pixels[0],) * 3)
                 self.assertEqual([path.read_bytes() for path in verified.paths], before)
+
+    def test_single_jpeg_base_texture_applies_as_packed_srgb_base_color(self):
+        # Seamless texture models can return one JPEG base-color map.
+        verified = self.fixture(("base",), jpeg=True)
+        before = verified.paths[0].read_bytes()
+        result = self.module.apply_material(verified, self.target)
+        self.assertEqual(self.obj.data.materials[0], result.material)
+        (image,) = result.images
+        self.assertEqual((image.file_format, tuple(image.size)), ("JPEG", (2, 2)))
+        self.assertTrue(image.packed_file and not image.filepath)
+        self.assertEqual(image.colorspace_settings.name, "sRGB")
+        bsdf = next(n for n in result.material.node_tree.nodes if n.type == "BSDF_PRINCIPLED")
+        self.assertEqual(bsdf.inputs["Base Color"].links[0].from_node.label, "Base")
+        self.assertEqual(verified.paths[0].read_bytes(), before)
+
+    def test_jpeg_needs_its_saved_media_type_and_stays_out_of_image_import(self):
+        verified = self.fixture(("base",), jpeg=True)
+        importer = submodule("blender.image_application")
+        # Image import keeps its PNG/EXR preflight; only material maps accept JPEG.
+        with self.assertRaises(importer.ImageApplicationError):
+            importer.apply_images(verified)
+        (item,) = verified.record.results
+        relabeled = replace(item, asset=replace(item.asset, media_type="image/png"))
+        mismatch = replace(verified, record=replace(verified.record, results=(relabeled,)))
+        with self.assertRaises(self.module.MaterialApplicationError):
+            self.module.apply_material(mismatch, self.target)
+        self.assertEqual(len(self.obj.material_slots), 0)
+        self.assertEqual(set(bpy.data.materials), self.materials)
+        self.assertEqual(set(bpy.data.images), self.images)
 
     def test_shared_mesh_is_rejected_without_changing_either_object(self):
         other = bpy.data.objects.new("Shared data user", self.obj.data)

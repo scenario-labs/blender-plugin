@@ -11,7 +11,7 @@ import bpy
 from ..core.jobs.results import VerifiedResults
 from .image_application import apply_images
 
-_IMAGE_TYPES = {"image/png", "image/exr", "image/x-exr"}
+_IMAGE_TYPES = {"image/png", "image/jpeg", "image/exr", "image/x-exr"}
 _MAX_MAP_BYTES = 256 * 1024 * 1024
 _MAX_POLYGONS = 1_000_000
 
@@ -192,7 +192,7 @@ def apply_material(verified, target):
             ),
             tuple(verified.paths[i] for i in roles.values()),
         )
-        images = apply_images(chosen, pixel_budget=32_000_000)
+        images = apply_images(chosen, pixel_budget=32_000_000, jpeg=True)
         material = _build(dict(zip(roles, images, strict=True)), target.uv_name)
         _assign(target, material)
         return MaterialApplication(material, images, target)

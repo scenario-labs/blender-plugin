@@ -4,7 +4,7 @@ import json
 
 from conftest import FIXTURES
 
-from scenario.core.api.catalog import ModelRecord, model_kind, models_for_lane
+from scenario.core.api.catalog import ModelRecord, is_texture_model, model_kind, models_for_lane
 
 
 def load(name):
@@ -71,6 +71,7 @@ def test_model_kind_names_the_most_specific_lane_of_any_catalog_record():
         return model_kind(ModelRecord.from_api(record))
 
     assert kind("model_patina-material", "txt2img", "img2img") == "material"
+    assert kind("model_scenario-texture", "txt2img", "img2img", tags=("sc:texture",)) == "material"
     assert kind("model_mesh", "img23d", "img2img") == "3d"
     assert kind("model_retexture", "3d23d") == "3d"
     assert kind("model_sfx", "video2audio") == "audio"
@@ -80,3 +81,40 @@ def test_model_kind_names_the_most_specific_lane_of_any_catalog_record():
     # Lane lists drop deprecated and trained records; the kind they produce is unchanged.
     assert kind("model_old", "img23d", tags=("deprecated:model_new",)) == "3d"
     assert kind("model_llm", "txt2txt", "img2txt") is None
+
+
+def test_materials_lane_lists_patina_then_scenario_texture_then_other_texture_models():
+    def record(model_id, name, caps=("txt2img", "img2img"), tags=("sc:texture",), **extra):
+        raw = {"id": model_id, "name": name, "capabilities": list(caps), "tags": list(tags)}
+        return ModelRecord.from_api({**raw, "type": "custom", "status": "trained", **extra})
+
+    records = [
+        record("model_ideogram-v4-tiling", "Ideogram V4 Tiling"),
+        record("model_brick-texture", "Brick Texture"),
+        record("model_scenario-texture", "Scenario Texture"),
+        record("model_patina", "PATINA Image to Maps", caps=("img2img",), tags=()),
+        record("model_patina-material", "PATINA Material"),
+        # Trained texture models carry the tag too, like the "Textures - ..." LoRAs.
+        record("model_textures-moss", "Textures - Moss", type="flux.1-lora"),
+        record("model_texture-upscale", "Texture Upscale", tags=("texture", "tool")),
+        record("model_texture-mesh", "Texture Mesh", caps=("3d23d",)),
+        record("model_old-texture", "Old Texture", tags=("sc:texture", "deprecated:model_x")),
+        record("model_gemini", "Gemini", tags=()),
+    ]
+    material = [r.id for r in models_for_lane("material", records)]
+    assert material == [
+        "model_patina-material",
+        "model_patina",
+        "model_scenario-texture",
+        "model_brick-texture",
+        "model_ideogram-v4-tiling",
+    ]
+    render = [r.id for r in models_for_lane("render_image", records)]
+    assert render == ["model_gemini"]
+    # Like PATINA, texture models stay in the Image lane.
+    assert set(material) <= {r.id for r in models_for_lane("image", records)}
+    by_id = {r.id: r for r in records}
+    assert not is_texture_model(by_id["model_textures-moss"])
+    assert not is_texture_model(by_id["model_texture-mesh"])
+    assert model_kind(by_id["model_textures-moss"]) == "image"
+    assert model_kind(by_id["model_ideogram-v4-tiling"]) == "material"

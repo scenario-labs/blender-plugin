@@ -60,10 +60,43 @@ FORM_REPLACED_TYPING = "The form behind the composer changed. Press Esc to show 
 FORM_REPLACED_GENERATE = "The form behind the composer changed. Check its prompt, then generate"
 # The Environment mode the composer's prompt drives; other modes are sidebar forms.
 PANORAMA_PROMPT_MODE = "GENERATE"
+# Why Enter or Generate sent nothing yet: the form's price is on its way, or a repeat waits.
+PRICE_LOADING = "Getting the price: generate once it shows"
+REPEAT_WAITING = "Generate is available again in a moment"
+# Keys a focused prompt hands to Blender when it does not use them: function keys and Ctrl or Cmd
+# shortcuts (Ctrl+S saves, F12 renders). Undo and redo stay with the prompt, so typing there never
+# undoes the scene behind it; modifier presses and pointer events stay too.
+FUNCTION_KEYS = frozenset(f"F{n}" for n in range(1, 25))
+PROMPT_KEEPS = frozenset({"Z", "Y"})
+MODIFIER_KEYS = frozenset(
+    ("LEFT_CTRL", "RIGHT_CTRL", "LEFT_SHIFT", "RIGHT_SHIFT", "LEFT_ALT", "RIGHT_ALT")
+    + ("OSKEY", "HYPER", "APP")
+)
+NOT_KEYS = ("MOUSE", "TRACKPAD", "NDOF", "TIMER", "WINDOW", "PEN", "ERASER", "XR_", "EVT_")
 
 
 def placeholder_for(lane):
     return PLACEHOLDERS.get(lane, "Type a prompt")
+
+
+def generate_wait(estimate_state, holding):
+    """The status line for Enter or Generate on a form that cannot submit yet, else ""."""
+    if holding:
+        return REPEAT_WAITING
+    if estimate_state in ("IDLE", "PENDING"):
+        return PRICE_LOADING
+    return ""
+
+
+def passes_to_blender(event_type, command):
+    """Whether a focused prompt hands this unhandled key press to Blender's own shortcuts.
+
+    `command` is Ctrl or Cmd held. Keys the prompt handles never reach this question."""
+    if event_type in FUNCTION_KEYS:
+        return True
+    if not command or event_type in PROMPT_KEEPS or event_type in MODIFIER_KEYS:
+        return False
+    return not any(part in event_type for part in NOT_KEYS)
 
 
 def clip_label(text, max_width, measure):

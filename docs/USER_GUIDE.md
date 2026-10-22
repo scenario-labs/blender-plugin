@@ -329,10 +329,12 @@ the minus button collapses it. Narrow cards shorten the tab labels. When there's
 no room for the card, the pill opens the Settings dialog instead.
 
 **Editing the prompt.** Text editing works as usual (selection, double-click,
-Home/End, Ctrl/Cmd+A, C, X, V). Enter generates and Esc leaves. Clicking outside
-saves your edit and passes the click to Blender. If the form changes behind your
-back (for example from another window), your text stays with the old form and
-nothing is sent until you press Esc or click a lane tab.
+Home/End, Ctrl/Cmd+A, C, X, V). Other Ctrl/Cmd shortcuts and function keys, such
+as Ctrl+S or F12, still reach Blender; Ctrl/Cmd+Z and Y don't. Enter generates and
+Esc leaves; while the price is still loading, Enter says so and sends nothing.
+Clicking outside saves your edit and passes the click to Blender. If the form
+changes behind your back (for example from another window), your text stays with
+the old form and nothing is sent until you press Esc or click a lane tab.
 
 **Japanese, Chinese or Korean input.** The composer can't show input-method
 composition. Press F2 in the prompt to open Blender's own text field at the

@@ -9,7 +9,7 @@ import bpy
 
 from ...core.ui import composer_layout as cl
 from ...core.ui import job_strip
-from .. import panels, runtime
+from .. import generation, panels, runtime
 from .state import choose_lane
 
 # shown when a strip click no longer matches what the strip showed
@@ -125,6 +125,13 @@ def _completes_double_click(context, state, geometry, event):
     )
 
 
+def _generate_wait(lane_state):
+    """Why a connected form with a model cannot generate yet, else "" (the button says the rest)."""
+    if not runtime.online() or not runtime.credentials().valid or not lane_state.model_id:
+        return ""
+    return cl.generate_wait(lane_state.estimate_state, generation.repeat_holding(lane_state))
+
+
 def _generate(operator, scene, state):
     """Submit the form the composer shows, only with that form's own ready quote."""
     if not state.owns_form(scene):
@@ -132,7 +139,13 @@ def _generate(operator, scene, state):
         operator.report({"WARNING"}, cl.FORM_REPLACED_GENERATE)
         return
     lane = state.generation_lane(scene)
-    if not panels.generate_enabled(scene.scenario.lane_state(lane), lane):
+    lane_state = scene.scenario.lane_state(lane)
+    if not panels.generate_enabled(lane_state, lane):
+        waiting = _generate_wait(lane_state)
+        if waiting:
+            # The card's note and the status bar say why nothing was sent.
+            runtime.set_message(waiting)
+            operator.report({"INFO"}, waiting)
         return
     try:
         # Its invoke path, as the sidebar's button: a price above the preference asks first.
@@ -676,6 +689,9 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             context.window_manager.clipboard = field.cut()
         elif event.unicode and not (command or event.alt):
             field.insert(event.unicode)
+        elif cl.passes_to_blender(event.type, command):
+            # Ctrl+S, F12 and other shortcuts the prompt does not use keep working while it has focus.
+            return {"PASS_THROUGH"}
         else:
             return {"RUNNING_MODAL"}
         state.commit_to_lane(scene)

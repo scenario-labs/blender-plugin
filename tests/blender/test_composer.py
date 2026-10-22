@@ -1691,6 +1691,7 @@ class ComposerEditFormTests(unittest.TestCase):
         self.panels = submodule("blender.panels")
         self.draw = submodule("blender.composer.draw")
         self.modal = submodule("blender.composer.modal")
+        self.layout = submodule("core.ui.composer_layout")
         self.composer = submodule("blender.composer.state").ComposerState()
         self.composer.expanded = True
         self.runtime.state.composer = self.composer
@@ -1803,6 +1804,7 @@ class ComposerEditFormTests(unittest.TestCase):
         tab=None,
         value="PRESS",
         when=0.0,
+        ctrl=False,
     ):
         """Deliver one composer click (on `kind` or a lane `tab`) or one key press to the real modal handler.
 
@@ -1816,7 +1818,7 @@ class ComposerEditFormTests(unittest.TestCase):
             mouse_region_x=10,
             mouse_region_y=10,
             shift=False,
-            ctrl=False,
+            ctrl=ctrl,
             oskey=False,
             alt=False,
             unicode=text,
@@ -1903,9 +1905,40 @@ class ComposerEditFormTests(unittest.TestCase):
         self.assertEqual(shown.fields, ["Describe the edit to the selected mesh"])
         operator = self.press("generate")
         self.jobs.settle()
-        operator.report.assert_not_called()
+        # The edited form's own price is still on its way: the composer says so and sends nothing.
+        operator.report.assert_called_once_with({"INFO"}, self.layout.PRICE_LOADING)
         self.assertEqual((self.jobs.paid, self.edit3d.last_error), ([], ""))
         self.assertEqual(self.three_d.estimate_state, "READY")
+
+    def test_enter_while_the_price_loads_says_so_and_sends_nothing(self):
+        self.quote("edit3d", "7.25")
+        self.drawn()
+        self.composer.focused = True
+        self.press(key="S", text="s")  # typing reprices the form
+        self.assertEqual(self.edit3d.estimate_state, "PENDING")
+        operator = self.press(key="RET")
+        operator.report.assert_called_once_with({"INFO"}, self.layout.PRICE_LOADING)
+        # The card's status note shows it too, where Enter used to blur without a word.
+        self.assertEqual(self.runtime.message_visible(), self.layout.PRICE_LOADING)
+        self.assertFalse(self.composer.focused)
+        self.jobs.settle()
+        self.assertEqual(self.jobs.paid, [])
+
+    def test_a_focused_prompt_hands_shortcuts_it_does_not_use_to_blender(self):
+        self.quote("edit3d", "7.25")
+        self.drawn()
+        self.composer.focused = True
+        for key, text, ctrl in (("S", "s", True), ("Q", "q", True), ("F12", "", False)):
+            with self.subTest(key=key, ctrl=ctrl):
+                self.press(key=key, text=text, ctrl=ctrl, expect=("PASS_THROUGH",))
+        # Undo, redo and the keys the prompt edits with stay with it.
+        for key in ("Z", "Y", "LEFT_CTRL"):
+            with self.subTest(key=key):
+                self.press(key=key, ctrl=True)
+        self.press(key="A", ctrl=True)
+        self.assertEqual(self.composer.field.selected_text(), "rusty iron plates")
+        self.assertTrue(self.composer.focused)
+        self.assertEqual((self.edit3d.prompt, self.jobs.paid), ("rusty iron plates", []))
 
     def test_rejected_submission_keeps_the_composer_responsive(self):
         self.quote("edit3d", "7.25")

@@ -133,6 +133,12 @@ such a form leaves focus. If another window or a tool loads such a model while
 the prompt is focused, the next text key leaves focus with that warning and
 writes nothing.
 
+A focused prompt keeps the keys it edits with, Ctrl/Cmd+Z and Y, modifier presses
+and pointer events. Other Ctrl/Cmd shortcuts and function keys pass through to
+Blender (`composer_layout.passes_to_blender`). Enter or Generate on a form whose
+price is still loading, or whose repeat delay is running, sets the status line
+and reports it (`composer_layout.generate_wait`) instead of only blurring.
+
 Installed tests on the packaged ZIP run the real composer draw function, with
 recording drawing primitives, and the real modal handler. Run against the previous
 composer, they fail where a 1.5 CU Text price labeled the Generate that the

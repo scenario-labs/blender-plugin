@@ -758,3 +758,52 @@ def test_every_lane_tab_fits_the_card_row_at_default_and_minimum_widths():
         assert tabs[0].x >= layout.card_rect.x and tabs[-1].right < layout.collapse_rect.x
         assert all(left.right < right.x for left, right in zip(tabs, tabs[1:], strict=False))
         assert all(tab.w > 0 for tab in tabs)
+
+
+@pytest.mark.parametrize(
+    ("estimate_state", "holding", "expected"),
+    [
+        ("PENDING", False, cl.PRICE_LOADING),
+        ("IDLE", False, cl.PRICE_LOADING),
+        ("READY", True, cl.REPEAT_WAITING),
+        ("PENDING", True, cl.REPEAT_WAITING),
+        ("READY", False, ""),
+        # the status note already shows a failed or unavailable price's reason
+        ("ERROR", False, ""),
+        ("UNAVAILABLE", False, ""),
+    ],
+)
+def test_generate_wait_explains_a_generate_that_sent_nothing(estimate_state, holding, expected):
+    assert cl.generate_wait(estimate_state, holding) == expected
+
+
+@pytest.mark.parametrize(
+    ("event_type", "command", "passes"),
+    [
+        ("S", True, True),  # Ctrl+S saves
+        ("Q", True, True),
+        ("O", True, True),
+        ("SPACE", True, True),
+        ("F12", False, True),  # renders
+        ("F3", False, True),
+        ("F24", True, True),
+        # undo and redo stay with the prompt
+        ("Z", True, False),
+        ("Y", True, False),
+        # a plain key is the prompt's
+        ("S", False, False),
+        ("SPACE", False, False),
+        # modifier presses and pointer events are never shortcuts
+        ("LEFT_CTRL", True, False),
+        ("OSKEY", True, False),
+        ("WHEELUPMOUSE", True, False),
+        ("RIGHTMOUSE", True, False),
+        ("TRACKPADPAN", True, False),
+        ("NDOF_BUTTON_MENU", True, False),
+        ("TIMER", True, False),
+    ],
+)
+def test_passes_to_blender_hands_back_shortcuts_the_prompt_does_not_use(
+    event_type, command, passes
+):
+    assert cl.passes_to_blender(event_type, command) is passes

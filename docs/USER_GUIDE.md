@@ -784,6 +784,12 @@ and the actions for its kind:
 - **Details** shows everything that was sent and returned.
 - **Select** and **Delete** find the objects a generation created, even after renames.
 
+**Grid** shows the results as preview tiles, twelve at a time; **List** brings the
+rows back. Choose a tile to see its preview large with the prompt, model, kind, file
+size, submission time and price, and the same actions; the arrows move to the next
+result and **All results** goes back. The sidebar starts on the list, **Studio >
+Results** on the grid.
+
 When a generation fails, a red marker shows the reason Scenario gave, including the
 error ID (`error_...`) support asks for; **Copy error** in Details copies it. The
 reason isn't saved, so after a restart only the marker remains.

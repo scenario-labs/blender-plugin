@@ -108,6 +108,7 @@ BASELINE = (
     "test_world_application",
     "test_workflow_commands",
     "test_studio_view",
+    "test_result_grid",
     "test_result_actions",
     "test_workflow_controls",
     "test_asset_library",

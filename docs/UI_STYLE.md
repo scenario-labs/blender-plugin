@@ -447,8 +447,21 @@ message tells users to upload the reference, review the price and choose
 form; reset the old prompt/settings/references and invalidate the previous quote.
 Existing jobs and admitted uploads keep their own lifetime and origin guards.
 
-Each result collapses on its own; the panel header has a **Collapse all / Expand
-all** toggle. A failed result shows a red error control in its header whose
+Generations and Studio's **Results** page each have a **List** / **Grid**
+segmented control; the sidebar starts on the list, Studio on the grid. Each
+choice, the grid's page and its selected result are unsaved window-manager
+state that only their operators change. The grid draws twelve finished results
+per page as `template_icon` tiles in a `grid_flow` of two to six columns sized
+from the region width: the job's first ranked preview or its kind's icon, and a
+button with the prompt's start. Choosing a tile draws that preview large (at
+most the 256-pixel still) with the prompt, model, kind, saved size, submission
+time and price, then the list row's model row, preview tiles and saved-job
+controls; arrows step to the neighbouring results and **All results** returns
+to the grid. A page or selection that no longer exists draws as the nearest page
+or the grid without being written back.
+
+In the list, each result collapses on its own; the panel header has a
+**Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose
 tooltip is the whole message (with the Error ID) and which opens the full text
 with a Copy button on click (a `description()`-driven operator, since Blender
 labels have no per-instance tooltip). Never truncate an error to a single

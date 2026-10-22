@@ -172,7 +172,7 @@ def _draw_page(layout, context, width):
     elif view.page == "LIBRARY":
         library_view.draw(layout, context)
     elif view.page == "RESULTS":
-        draw_panel(layout, context, panels.SCENARIO_PT_generations)
+        panels.draw_generations(layout, context, "STUDIO")
     else:
         draw_connection(layout, context)
 

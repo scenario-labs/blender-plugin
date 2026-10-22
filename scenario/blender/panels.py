@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import bpy
 
 from ..core.ui.costs import format_cu, workflow_loop_warning
+from ..core.ui.result_grid import PAGE_SIZE
 from . import (
     generation,
     history,
@@ -717,13 +718,29 @@ def draw_result(layout, rec, *, collapsible=True):
     header.label(text=result_cost_label(rec))
     if collapsed:
         return
-    row = box.row(align=True)
+    draw_result_model(box, rec)
+    # The composer's job card stays compact, without the error link.
+    draw_result_body(box, rec, error_link=collapsible)
+
+
+def draw_result_model(layout, rec):
+    """A generation's model, with Reload parameters when its lane has a form, and Details."""
+    row = layout.row(align=True)
     row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
     if generation.reload_lane(rec) is not None:
         reload = row.operator("scenario.reload_generation", text="", icon="FILE_REFRESH")
         reload.local_id = rec.local_id
     details = row.operator("scenario.result_details", text="", icon="INFO")
     details.local_id = rec.local_id
+
+
+def draw_result_body(box, rec, *, error_link=True, single_icon=True):
+    """Everything a generation's row draws below its model: asset ID, error, previews and actions.
+
+    The Results grid's large view reuses it, so a result offers the same
+    actions there; ``single_icon=False`` leaves out a preview row of one tile
+    that view already draws large.
+    """
     asset_id = _primary_asset(rec)
     if asset_id:
         row = box.row(align=True)
@@ -733,7 +750,7 @@ def draw_result(layout, rec, *, collapsible=True):
             row.label(text=f"+{len(rec.asset_ids) - 1}")
     if rec.error and not rec.is_success:
         draw_failure(box, f"Failed: {rec.error}")
-        if collapsible:  # the composer's job card stays compact
+        if error_link:
             prompts.draw_error_link(box, rec.error)
     elif rec.error:
         row = box.row(align=True)
@@ -741,7 +758,7 @@ def draw_result(layout, rec, *, collapsible=True):
         row.operator(
             "scenario.error_details", text="", icon="INFO"
         ).local_id = rec.local_id  # tooltip = full message; click = full text + copy
-    result_previews.draw(box, rec)
+    result_previews.draw(box, rec, single_icon=single_icon)
     job_recovery.draw_controls(box, rec)
     if rec.meta.get("download_errors"):
         box.label(
@@ -1155,40 +1172,52 @@ class SCENARIO_PT_generations(bpy.types.Panel):
     bl_order = 2
 
     def draw(self, context):
-        layout = self.layout
-        row = layout.row(align=True)
-        row.operator("scenario.open_output_folder", text="Output folder", icon="FILE_FOLDER")
-        row.operator("scenario.history_refresh", text="Refresh cloud", icon="FILE_REFRESH")
-        terminal = [r for r in runtime.state.jobs_view if r.is_terminal]
-        if terminal:
-            any_open = any(not r.meta.get("collapsed") for r in terminal)
-            row.operator(
-                "scenario.collapse_results",
-                text="Collapse all" if any_open else "Expand all",
-                icon="FULLSCREEN_EXIT" if any_open else "FULLSCREEN_ENTER",
-            )
-        prompts.draw_rating_card(layout, context)
-        shown, shown_ids = 0, set()
-        for rec in runtime.state.jobs_view:
-            if not rec.is_terminal:
-                continue
+        draw_generations(self.layout, context, "SIDEBAR")
+
+
+def draw_generations(layout, context, surface):
+    """This session's results as a list or a grid, then the project's cloud history.
+
+    The sidebar's Generations panel and Studio's Results page (``surface``
+    ``SIDEBAR`` or ``STUDIO``) each keep their own List or Grid choice.
+    """
+    from . import result_grid
+
+    terminal = [r for r in runtime.state.jobs_view if r.is_terminal]
+    as_grid = result_grid.layout_of(context, surface) == "GRID"
+    row = layout.row(align=True)
+    row.operator("scenario.open_output_folder", text="Output folder", icon="FILE_FOLDER")
+    row.operator("scenario.history_refresh", text="Refresh cloud", icon="FILE_REFRESH")
+    if terminal and not as_grid:
+        any_open = any(not r.meta.get("collapsed") for r in terminal)
+        row.operator(
+            "scenario.collapse_results",
+            text="Collapse all" if any_open else "Expand all",
+            icon="FULLSCREEN_EXIT" if any_open else "FULLSCREEN_ENTER",
+        )
+    result_grid.draw_toggle(layout, context, surface)
+    prompts.draw_rating_card(layout, context)
+    if as_grid:
+        result_grid.draw(layout, context, terminal, surface)
+        # Every result is reachable through the grid's pages.
+        shown_ids = {rec.job_id for rec in terminal if rec.meta.get("shared_job")}
+    else:
+        shown_ids = set()
+        for rec in terminal[:PAGE_SIZE]:
             draw_result(layout, rec)
             if rec.meta.get("shared_job"):
                 shown_ids.add(rec.job_id)
-            shown += 1
-            if shown >= 12:
-                break
-        if shown == 0:
+        if not terminal:
             layout.label(text="Nothing generated yet in this session")
-        layout.separator()
-        layout.prop(
-            context.scene.scenario,
-            "show_cloud_history",
-            text="Project history (cloud)",
-            icon="WORLD",
-        )
-        if context.scene.scenario.show_cloud_history:
-            draw_history(layout, context, shown_ids)
+    layout.separator()
+    layout.prop(
+        context.scene.scenario,
+        "show_cloud_history",
+        text="Project history (cloud)",
+        icon="WORLD",
+    )
+    if context.scene.scenario.show_cloud_history:
+        draw_history(layout, context, shown_ids)
 
 
 class SCENARIO_PT_agents(bpy.types.Panel):

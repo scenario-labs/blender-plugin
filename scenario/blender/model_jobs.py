@@ -1062,6 +1062,14 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
+            # The Results grid's large view names a saved file's size and the
+            # submission time without reading storage while drawing.
+            view.meta["result_sizes"] = {
+                item.asset.asset_id: item.receipt.size
+                for item in record.results
+                if item.receipt is not None
+            }
+            view.meta["claimed_at"] = record.claimed_at
             # Drawing reads the World offer here; it has no saved texture roles or sizes.
             view.meta["world_assets"] = self._world_offer(record)
             unread_sizes.extend(self._unread_world_sizes(record))

@@ -46,7 +46,7 @@ from ..core.jobs.store import (
     _identity,
 )
 from ..core.jobs.workers import WorkerError
-from ..core.scene import panorama_contract, placement
+from ..core.scene import landing, panorama_contract, placement
 from ..core.scene.mesh_edit_policy import (
     SEVERAL_SOURCES_FALLBACK,
     animate_policy,
@@ -61,11 +61,17 @@ from . import file_state, first_frame_handoff
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
+    LandingResultUncertain,
     MaterialResultUncertain,
     MediaResultUncertain,
     ModelResultUncertain,
     SessionBusy,
     WorldResultUncertain,
+)
+from .landing_application import (
+    LandingApplicationError,
+    scene_camera,
+    validate_plane_destination,
 )
 from .material_application import MaterialApplicationError, capture_target, selected_maps
 from .material_application import validate_target as validate_material_target
@@ -389,6 +395,29 @@ class MediaApplicationApproval:
 
 
 @dataclass(frozen=True)
+class LandingApplicationApproval:
+    """One reviewed camera background or image plane for a saved image or video.
+
+    A background binds the scene's camera, and a video background the current
+    frame its clip starts at; a plane binds the cursor and its unlit choice.
+    `backgrounds` counts the camera's existing backgrounds, which all stay.
+    """
+
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+    asset_id: str
+    purpose: str
+    kind: str
+    frame: int | None = None
+    cursor: tuple | None = None
+    camera_name: str = ""
+    backgrounds: int = 0
+    unlit: bool = False
+
+
+@dataclass(frozen=True)
 class ModelApplicationApproval:
     """One reviewed import unit; `asset_id` is its key, the primary member's ID.
 
@@ -514,6 +543,7 @@ class ModelJobs:
         self._application_approvals = {}
         self._application_destinations = {}
         self._media_destinations = {}
+        self._landing_destinations = {}
         self._model_destinations = {}
         self._objects = {}
         self._world_destinations = {}
@@ -866,6 +896,7 @@ class ModelJobs:
                 else None
             )
             media = self._media_destinations.pop(request_id, None)
+            placed = self._landing_destinations.pop(request_id, None)
             model = self._model_destinations.pop(request_id, None)
             world = self._world_destinations.pop(request_id, None)
             material = self._material_destinations.pop(request_id, None)
@@ -940,6 +971,18 @@ class ModelJobs:
                         frame=media.frame,
                     )
                     self._paused.discard(request_id)
+                elif command == "verify_landing":
+                    applied = self.session.apply_recovered_landing(
+                        completion,
+                        destination=placed.destination,
+                        asset_id=placed.asset_id,
+                        purpose=placed.purpose,
+                        frame=placed.frame,
+                        cursor=placed.cursor,
+                        unlit=placed.unlit,
+                    )
+                    self._remember_landing(request_id, applied.application)
+                    self._paused.discard(request_id)
                 elif command == "verify_results":
                     self.views[request_id].files = [str(p) for p in completion.result.paths]
                     result = (
@@ -1005,6 +1048,15 @@ class ModelJobs:
                 # Rejected before the claim: the saved job and the scene are unchanged.
                 verb = "applied" if command == "verify_mesh_edit" else "imported"
                 self._pause(request_id, f"Nothing was {verb}: {error}")
+            except LandingResultUncertain as error:
+                if error.application is not None:
+                    self._receipts[request_id] = error
+                    self._remember_landing(request_id, error.application)
+                self._pause(request_id, "Result needs receipt recovery; do not apply it again")
+            except LandingApplicationError:
+                self._pause(
+                    request_id, "Nothing was added; inspect the saved result and its destination"
+                )
             except MediaResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -1091,6 +1143,11 @@ class ModelJobs:
             view.meta["first_frame_assets"] = tuple(
                 item.asset.asset_id for item in first_frame_handoff.eligible_assets(record)
             )
+            # Native background and plane controls name only the results each accepts.
+            for purpose in landing.PURPOSES:
+                view.meta[f"{purpose}_assets"] = tuple(
+                    item.asset.asset_id for item in landing.eligible_assets(record, purpose)
+                )
             view.meta["import_units"] = self._unit_rows(record)
             view.meta["import_notices"] = self._import_notices(request_id)
             view.meta["status_notes"] = self._status_notes(request_id, record, online=online)
@@ -1865,6 +1922,10 @@ class ModelJobs:
             actions.append("import_images")
         if reusable and any(item.asset.media_type in MEDIA_TYPES for item in record.results):
             actions.append("import_media")
+        # Beside media strips: one more camera background, or a new image plane.
+        for purpose in landing.PURPOSES:
+            if reusable and landing.eligible_assets(record, purpose):
+                actions.append(purpose)
         if self._confirmed_cancellable(record):
             actions.append("cancel")
         if reusable and any(importable(unit) for unit in self._units(record)):
@@ -1953,6 +2014,8 @@ class ModelJobs:
                 "cancel_prepared",
                 "import_images",
                 "import_media",
+                "camera_background",
+                "image_plane",
                 "import_model",
                 "apply_world",
                 "restore_world",
@@ -2288,6 +2351,135 @@ class ModelJobs:
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
+
+    def prepare_landing_application(
+        self, request_id, expected_revision, scene, asset_id, *, purpose, unlit=False
+    ):
+        """Review one saved image or video as a camera background, or an image as a plane.
+
+        A background captures the scene camera, refused clearly when the scene
+        has none; a video background also binds the current frame. A plane
+        captures the cursor and whether it is unlit. Nothing changes here.
+        """
+        if purpose not in landing.PURPOSES:
+            raise ScenarioError(0, "Choose camera_background or image_plane")
+        background = purpose == landing.CAMERA_BACKGROUND
+        if type(unlit) is not bool or (unlit and background):
+            raise ScenarioError(0, "Unlit applies only to an image plane")
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or purpose not in self.actions(record)
+        ):
+            raise ScenarioError(0, "The saved result changed; inspect the job again")
+        selected = [
+            item
+            for item in landing.eligible_assets(record, purpose)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise ScenarioError(
+                0,
+                "Choose one downloaded PNG, JPEG or OpenEXR image"
+                + (" or MP4/WebM video" if background else ""),
+            )
+        if len(self._application_approvals) >= 128:
+            raise ScenarioError(0, "Complete or cancel an existing application review first")
+        if scene != bpy.context.scene:
+            raise ScenarioError(0, "Select the destination scene before reviewing it")
+        bpy.context.view_layer.update()
+        kind = landing.kind(selected[0].asset.media_type)
+        try:
+            if background:
+                camera = scene_camera(scene)
+                options = {
+                    "destination": self.session.capture(scene, camera),
+                    "frame": scene.frame_current if kind == "video" else None,
+                    "camera_name": camera.name,
+                    "backgrounds": len(camera.data.background_images),
+                }
+            else:
+                cursor = tuple(scene.cursor.location)
+                validate_plane_destination(scene, cursor)
+                options = {
+                    "destination": self.session.capture(scene),
+                    "cursor": cursor,
+                    "unlit": unlit,
+                }
+        except LandingApplicationError as error:
+            raise ScenarioError(0, str(error)) from None
+        ticket = LandingApplicationApproval(
+            uuid.uuid4().hex,
+            record,
+            scene_name=scene.name,
+            asset_id=asset_id,
+            purpose=purpose,
+            kind=kind,
+            **options,
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def revise_landing_application(self, identifier, *, unlit):
+        """Change a reviewed plane's unlit choice under a new handle; the old one stops working."""
+        ticket = self._application_approvals.get(identifier)
+        if (
+            not isinstance(ticket, LandingApplicationApproval)
+            or ticket.purpose != landing.IMAGE_PLANE
+            or type(unlit) is not bool
+        ):
+            raise ScenarioError(0, "Use an unconsumed image plane review")
+        self._validate_landing(ticket)
+        if self.store.get(ticket.record.intent.request_id) != ticket.record:
+            raise ScenarioError(0, "The saved result changed; start a fresh review")
+        if unlit == ticket.unlit:
+            return ticket
+        revised = replace(ticket, identifier=uuid.uuid4().hex, unlit=unlit)
+        del self._application_approvals[identifier]
+        self._application_approvals[revised.identifier] = revised
+        return revised
+
+    def _validate_landing(self, ticket):
+        """The captured scene, frame or cursor and, for a background, camera are unchanged."""
+        self.session.validate_destination(
+            ticket.destination, frame=ticket.frame, cursor=ticket.cursor
+        )
+        if ticket.purpose == landing.CAMERA_BACKGROUND:
+            scene = bpy.context.scene
+            try:
+                camera = scene_camera(scene)
+            except LandingApplicationError as error:
+                raise ScenarioError(0, str(error)) from None
+            if camera.name != ticket.camera_name:
+                raise ScenarioError(0, "The scene camera changed; review it again")
+
+    def _apply_landing(self, ticket):
+        self._application_approvals.pop(ticket.identifier)
+        if not self.session.active:
+            raise ScenarioError(0, "Review the current connection and destination again")
+        record = self.store.get(ticket.record.intent.request_id)
+        if record != ticket.record or ticket.purpose not in self.actions(record):
+            raise ScenarioError(0, "The saved result changed; inspect the job again")
+        self._validate_landing(ticket)
+        request_id = record.intent.request_id
+        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        self._landing_destinations[request_id] = ticket
+        self._commands[request_id] = ("verify_landing", task)
+        self._automatic_application.discard(request_id)
+        self._paused.add(request_id)
+        view = self._view(record)
+        view.meta["recovery_actions"], view.error = (), None
+        return request_id, task
+
+    def _remember_landing(self, request_id, application):
+        """Report a new plane, its material and image, or a background image, in status."""
+        if application.purpose == landing.IMAGE_PLANE:
+            _remember(self._objects, request_id, (application.target,), bpy.data.objects)
+            _remember(self._materials, request_id, (application.material,), bpy.data.materials)
+        if application.image is not None:
+            _remember(self._images, request_id, (application.image,), bpy.data.images)
 
     def prepare_model_application(
         self,
@@ -2876,6 +3068,8 @@ class ModelJobs:
             return self._apply_saved_mesh(ticket)
         if isinstance(ticket, MaterialApplicationApproval):
             return self._apply_saved_material(ticket)
+        if isinstance(ticket, LandingApplicationApproval):
+            return self._apply_landing(ticket)
         if not isinstance(
             ticket, (MediaApplicationApproval, ModelApplicationApproval, WorldApplicationApproval)
         ):

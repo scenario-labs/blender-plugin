@@ -257,8 +257,9 @@ purpose and selected asset IDs. It stores no extra paths, prompts, credentials,
 URLs or Blender names. Supported purpose labels are images, media, model,
 mesh_edit, World and material; a label does not establish decoder compatibility
 or scene acceptance. New mesh replacements use `mesh_edit`; new static-model
-imports retain `model`. Existing claims keep their recorded labels, including
-older mesh replacements stored as `model`. This adds a validated label without
+imports retain `model`. Camera backgrounds and image planes reuse `images`, or
+`media` for a video background. Existing claims keep their recorded labels,
+including older mesh replacements stored as `model`. This adds a validated label without
 changing schema-5 fields. Older readers reject an unknown label; do not downgrade
 a store containing newer application purposes.
 

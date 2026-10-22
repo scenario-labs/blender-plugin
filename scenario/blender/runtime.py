@@ -613,6 +613,25 @@ def prepare_media_application(context_id, request_id, expected_revision, scene, 
     return jobs, jobs.prepare_media_application(request_id, expected_revision, scene, asset_id)
 
 
+def prepare_landing_application(
+    context_id, request_id, expected_revision, scene, asset_id, **options
+):
+    """Review one saved result as a camera background or image plane (`purpose`)."""
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_landing_application(
+        request_id, expected_revision, scene, asset_id, **options
+    )
+
+
+def revise_landing_application(context_id, application_id, **options):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; review the result again")
+    return jobs.revise_landing_application(application_id, **options)
+
+
 def prepare_model_application(
     context_id, request_id, expected_revision, scene, asset_id, **options
 ):

@@ -1005,6 +1005,8 @@ A new saved-job action adds one descriptor here, not a surface-specific branch.
 `use_first_frame` draws one control per still that `ModelJobs` projects as
 `first_frame_assets`, because eligibility needs texture roles and receipts that
 the view's media types do not carry; its numbering counts every saved asset.
+`camera_background` and `image_plane` likewise draw one control per result in
+`camera_background_assets` and `image_plane_assets`.
 Results whose saved metadata declares a 360 projection add a status row
 (**360 panorama (LDR)**, **360 HDR environment (OpenEXR)** or both) and, once a
 settled job has a downloaded LDR panorama, one **Make HDRI (N)** descriptor in
@@ -1404,6 +1406,31 @@ Film integration are separate from this video/audio path.
 Shutdown releases pending media receipt handles after its workers stop, matching
 image and World ownership. A retained exception cannot persist success after
 shutdown; the saved uncertain record and any existing strip remain unchanged.
+
+## Saved camera background and image plane
+
+`camera_background` and `image_plane` follow the `import_media` gates for a job
+with a downloaded colour result (no texture role, or base): PNG, JPEG, OpenEXR,
+MP4 or WebM for a background, the stills only for a plane. Prompt and translate
+jobs never offer them. `ModelJobs.prepare_landing_application`, reached through
+MCP `prepare_result_application` with that purpose and the `asset_id`, or through
+the native controls, reads no file and changes nothing. A background captures the
+scene, its local scene camera linked to it, and the current frame for a video; a
+scene without a camera is refused before any capture. A plane captures the scene
+in Object Mode, the cursor and `plane_unlit`; the native **Unlit** checkbox
+exchanges the approval for a new handle.
+
+Applying consumes the approval, verifies the receipts and re-checks the scene,
+camera, frame or cursor before the claim, which uses the `images` label, or
+`media` for a video. A background is appended to the camera's list (existing
+backgrounds are never changed) at alpha 0.5, depth `BACK` and fit `FIT`, and
+camera backgrounds are turned on. An image is packed; a video loads as a movie
+clip from a persistent private copy, starting at the captured frame. A plane is
+1 m tall, as wide as the image's aspect, faces -Y with its bottom center at the
+cursor, joins the scene's own collection without changing selection, and uses a
+packed image whose header alpha wires a blended material. A failure removes only
+the data this call added. One undo step covers the change; an uncertain receipt
+offers `retry_receipt` like media.
 
 ## Saved image to Render Video first frame
 

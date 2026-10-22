@@ -401,6 +401,201 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _kept(count):
+    """The review line naming the camera backgrounds that stay."""
+    if count == 0:
+        return "The camera has no other background."
+    noun = "background" if count == 1 else "backgrounds"
+    return f"Keep its {count} existing {noun} unchanged."
+
+
+class SCENARIO_OT_set_saved_camera_background(bpy.types.Operator):
+    bl_idname = "scenario.set_saved_camera_background"
+    bl_label = "Set as camera background"
+    bl_description = "Review one saved image or video as another background of the scene camera"
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    camera_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    media_kind: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    destination_frame: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+    backgrounds: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_landing_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                self.asset_id,
+                purpose="camera_background",
+            )
+        except ScenarioError as error:
+            # A refusal names its cause, such as a scene without a camera.
+            self.report({"ERROR"}, f"No background added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare the background; inspect the saved result")
+            return {"CANCELLED"}
+        self._jobs = jobs
+        self.is_reuse = approval.record.state.value == "applied"
+        self.application_id, self.scene_name = approval.identifier, approval.scene_name
+        self.camera_name, self.media_kind = approval.camera_name, approval.kind
+        self.destination_frame = approval.frame or 0
+        self.backgrounds = approval.backgrounds
+        return context.window_manager.invoke_props_dialog(self, width=480)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        layout.label(text=f"Camera: {self.camera_name}", icon="CAMERA_DATA")
+        layout.label(text=f"Add this saved {self.media_kind} as one more background.")
+        layout.label(text=_kept(self.backgrounds))
+        if self.media_kind == "video":
+            layout.label(text=f"Start the clip at frame {self.destination_frame}.")
+            layout.label(text="Video stays in a local file needed by this blend.")
+        else:
+            layout.label(text="Pack the image into the blend file.")
+        for line in BACKGROUND_REVIEW:
+            layout.label(text=line)
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except ScenarioError as error:
+            self.cancel(context)
+            self.report({"ERROR"}, f"No background added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.cancel(context)
+            self.report({"ERROR"}, "No background added; review the scene camera again")
+            return {"CANCELLED"}
+        runtime.set_message("Verifying the saved result for the approved camera")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_add_saved_image_plane(bpy.types.Operator):
+    bl_idname = "scenario.add_saved_image_plane"
+    bl_label = "Add image plane"
+    bl_description = "Review one saved image as a new upright plane at the 3D cursor"
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    destination_cursor: FloatVectorProperty(size=3, options={"HIDDEN", "SKIP_SAVE"})
+    review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    unlit: BoolProperty(
+        name="Unlit",
+        description="Show the image's own colours, unaffected by scene lights",
+        options={"SKIP_SAVE"},
+    )
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_landing_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                self.asset_id,
+                purpose="image_plane",
+            )
+        except ScenarioError as error:
+            self.report({"ERROR"}, f"No image plane added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare the image plane; inspect the saved result")
+            return {"CANCELLED"}
+        self._jobs = jobs
+        self.is_reuse = approval.record.state.value == "applied"
+        self.application_id, self.scene_name = approval.identifier, approval.scene_name
+        self.destination_cursor, self.unlit = approval.cursor, approval.unlit
+        self.review_error = ""
+        return context.window_manager.invoke_props_dialog(self, width=480)
+
+    def _sync_options(self):
+        """Exchange the approval for one with the shown unlit choice."""
+        approval = runtime.revise_landing_application(
+            self.context_id, self.application_id, unlit=bool(self.unlit)
+        )
+        self.application_id = approval.identifier
+        self.review_error = ""
+
+    def check(self, context):
+        if not self.application_id:
+            return False
+        try:
+            self._sync_options()
+        except Exception:
+            self.review_error = "Destination changed; cancel and review again"
+        return True
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
+        layout.label(text=f"Place plane bottom at cursor: {position}")
+        for line in PLANE_REVIEW:
+            layout.label(text=line)
+        layout.prop(self, "unlit")
+        layout.label(text="Files are checked again first; a change stops it.")
+        if self.review_error:
+            layout.label(text=self.review_error, icon="ERROR")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            if self.unlit:
+                self._sync_options()
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except ScenarioError as error:
+            self.cancel(context)
+            self.report({"ERROR"}, f"No image plane added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.cancel(context)
+            self.report({"ERROR"}, "No image plane added; review its destination again")
+            return {"CANCELLED"}
+        runtime.set_message("Verifying the saved image for the approved scene and cursor")
+        return {"FINISHED"}
+
+
+# Review lines shared by every saved camera background.
+BACKGROUND_REVIEW = (
+    "Half opacity, behind objects, fitted to the camera frame.",
+    "Shown when you look through the camera.",
+    "Files are checked again first; a change stops it.",
+)
+# Review lines of a saved image plane, after its cursor.
+PLANE_REVIEW = (
+    "Add one 1 m tall plane facing the Front view.",
+    "Keep existing objects and selection unchanged.",
+    "Use the image's alpha when it has one; pack the image.",
+)
+
 # Format-specific review lines for the saved model confirmation.
 MODEL_REVIEW = {
     "glb": (
@@ -1211,6 +1406,8 @@ CLASSES = (
     SCENARIO_OT_use_saved_blockout,
     SCENARIO_OT_import_saved_images,
     SCENARIO_OT_import_saved_media,
+    SCENARIO_OT_set_saved_camera_background,
+    SCENARIO_OT_add_saved_image_plane,
     SCENARIO_OT_import_saved_model,
     SCENARIO_OT_apply_saved_world,
     SCENARIO_OT_apply_saved_material,

@@ -3566,10 +3566,14 @@ class ModelGenerationTests(unittest.TestCase):
             self.generation.submit_generation(bpy.context, "render_image")
         self.assertEqual(self.paid, [])
 
-    def recovered_media(self):
+    def recovered_media(self, *, video=False):
         from test_media_application import wav_bytes
 
-        self.result_bytes, self.result_media_type = wav_bytes(), "audio/wav"
+        if video:
+            data = (FIXTURES / "synthetic/video-six-frames.mp4").read_bytes()
+            self.result_bytes, self.result_media_type = data, "video/mp4"
+        else:
+            self.result_bytes, self.result_media_type = wav_bytes(), "audio/wav"
         self.remote_status = "success"
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
@@ -3635,6 +3639,215 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(bpy.context.scene.sequence_editor.strips), 1)
         with self.assertRaisesRegex(RuntimeError, "Media insertion was not started"):
             bpy.ops.scenario.import_saved_media(**args)
+
+    def prepare_landing(self, request_id, purpose, **options):
+        args = self.recovery_args(request_id, purpose)
+        del args["action"]
+        args.update(purpose=purpose, asset_id="result-image", **options)
+        return self.tools.prepare_result_application(args)
+
+    def landing_camera(self, name="Landing camera"):
+        scene = bpy.context.scene
+        camera = bpy.data.objects.new(name, bpy.data.cameras.new(name))
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        return camera
+
+    def test_saved_image_becomes_one_more_camera_background_without_spending(self):
+        request_id = self.recovered_images()
+        camera = self.landing_camera()
+        camera.data.background_images.new().alpha = 0.9
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertIn("camera_background", status["actions"])
+        approval = self.prepare_landing(request_id, "camera_background")
+        self.assertEqual(
+            (approval["purpose"], approval["kind"], approval["camera"]),
+            ("camera_background", "image", camera.name),
+        )
+        self.assertEqual((approval["backgrounds_kept"], approval["frame"]), (1, None))
+        self.assertEqual(len(camera.data.background_images), 1)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        kept, added = camera.data.background_images
+        self.assertAlmostEqual(kept.alpha, 0.9)
+        self.assertEqual(added.source, "IMAGE")
+        self.assertTrue(camera.data.show_background_images)
+        self.assertEqual(status["images"], [added.image.name])
+        self.assertEqual(status["local_applications"][0]["purpose"], "images")
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        # Reuse adds another background after a new review, never another generation.
+        again = self.prepare_landing(request_id, "camera_background")
+        self.assertTrue(again["reuse"])
+        self.assertEqual(self.finish_application(again)["status"], "applied")
+        self.assertEqual(len(camera.data.background_images), 3)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_camera_background_without_a_scene_camera_is_refused_before_any_claim(self):
+        request_id = self.recovered_images()
+        bpy.context.scene.camera = None
+        original = self.store.get(request_id)
+        with self.assertRaisesRegex(self.request_error, "no camera"):
+            self.prepare_landing(request_id, "camera_background")
+        self.assertFalse(self.runtime.state.model_jobs._application_approvals)
+        self.assertEqual(self.store.get(request_id), original)
+        with self.assertRaisesRegex(ValueError, "plane_unlit applies only"):
+            self.prepare_landing(request_id, "camera_background", plane_unlit=True)
+        recovery = submodule("blender.job_recovery")
+        args = self.recovery_args(request_id, "camera_background")
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            report=MagicMock(),
+        )
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=MagicMock())
+        operator = recovery.SCENARIO_OT_set_saved_camera_background
+        self.assertEqual(operator.invoke(fake, context, None), {"CANCELLED"})
+        (kinds, message), _ = fake.report.call_args
+        self.assertEqual(kinds, {"ERROR"})
+        self.assertIn("No background added", message)
+        self.assertIn("no camera", message)
+        context.window_manager.invoke_props_dialog.assert_not_called()
+        self.assertEqual(self.store.get(request_id), original)
+
+    def test_saved_video_background_starts_its_clip_at_the_reviewed_frame(self):
+        request_id = self.recovered_media(video=True)
+        camera = self.landing_camera()
+        bpy.context.scene.frame_set(12)
+        actions = self.tools.job_status({"job_id": request_id})["actions"]
+        self.assertIn("camera_background", actions)
+        self.assertNotIn("image_plane", actions)
+        approval = self.prepare_landing(request_id, "camera_background")
+        self.assertEqual((approval["kind"], approval["frame"]), ("video", 12))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        (background,) = camera.data.background_images
+        self.assertEqual((background.source, background.clip.frame_start), ("MOVIE_CLIP", 12))
+        self.assertEqual(status["local_applications"][0]["purpose"], "media")
+
+    def test_a_camera_change_during_verification_adds_no_background(self):
+        request_id = self.recovered_images()
+        camera = self.landing_camera()
+        approval = self.prepare_landing(request_id, "camera_background")
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        other = self.landing_camera("Other camera")
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertEqual(
+            (len(camera.data.background_images), len(other.data.background_images)), (0, 0)
+        )
+
+    def test_saved_image_plane_uses_its_alpha_unlit_at_the_reviewed_cursor(self):
+        from test_apply_image import linked, png
+
+        request_id = self.recovered_panorama(data=png(alpha=True))
+        bpy.context.scene.cursor.location = (1, 2, 3)
+        objects = set(bpy.data.objects)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        owner = self.runtime.state.model_jobs
+        with self.assertRaisesRegex(self.request_error, "Unlit applies only"):
+            owner.prepare_landing_application(
+                request_id,
+                self.store.get(request_id).revision,
+                bpy.context.scene,
+                "result-image",
+                purpose="camera_background",
+                unlit=True,
+            )
+        approval = self.prepare_landing(request_id, "image_plane", plane_unlit=True)
+        self.assertEqual((approval["cursor"], approval["plane_unlit"]), ([1.0, 2.0, 3.0], True))
+        self.assertEqual(set(bpy.data.objects), objects)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        (plane,) = set(bpy.data.objects) - objects
+        self.assertEqual(status["objects"], [plane.name])
+        self.assertEqual(tuple(plane.location), (1.0, 2.0, 3.0))
+        material = plane.data.materials[0]
+        self.assertEqual(status["materials"], [material.name])
+        self.assertEqual(material.surface_render_method, "BLENDED")
+        self.assertEqual(linked(material.node_tree, "MIX_SHADER", "Fac").type, "TEX_IMAGE")
+        self.assertIsNotNone(linked(material.node_tree, "EMISSION", "Color"))
+        self.assertEqual(status["local_applications"][0]["purpose"], "images")
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_a_cursor_change_during_verification_adds_no_plane(self):
+        request_id = self.recovered_images()
+        objects = set(bpy.data.objects)
+        approval = self.prepare_landing(request_id, "image_plane")
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        bpy.context.scene.cursor.location = (9, 9, 9)
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertEqual(set(bpy.data.objects), objects)
+
+    def test_native_plane_review_revises_unlit_under_a_new_handle(self):
+        request_id = self.recovered_images()
+        args = self.recovery_args(request_id, "image_plane")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_add_saved_image_plane
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        self.assertFalse(owner._application_approvals[fake.application_id].unlit)
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared values.
+        fake.layout.prop.assert_called_once_with(fake, "unlit")
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertTrue(set(recovery.PLANE_REVIEW) <= set(labels))
+        self.assertLessEqual(max(len(label) for label in labels), 66)
+        first = fake.application_id
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(fake.application_id, first)  # Unchanged options keep the handle.
+        fake.unlit = True
+        self.assertTrue(operator.check(fake, context))
+        self.assertNotIn(first, owner._application_approvals)
+        self.assertTrue(owner._application_approvals[fake.application_id].unlit)
+        objects = set(bpy.data.objects)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        (plane,) = set(bpy.data.objects) - objects
+        self.assertIsNotNone(
+            next(
+                node for node in plane.data.materials[0].node_tree.nodes if node.type == "EMISSION"
+            )
+        )
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+
+    def test_a_shared_image_row_drops_the_unbound_plane_button_for_its_reviewed_one(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        view = self.runtime.state.model_jobs.views[request_id]
+        self.assertEqual(view.kind, "image")
+        self.assertIn("image_plane", view.meta["recovery_actions"])
+        _, _, generations, listed = draw_job_panels()
+        self.assertTrue(any(row is view for row in listed))
+        texts = drawn_texts(generations)
+        self.assertIn("Apply as texture", texts)
+        self.assertNotIn("Add as plane", texts)
 
     def recovered_model(self, body=None):
         from helpers import FIXTURES

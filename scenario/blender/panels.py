@@ -786,7 +786,9 @@ def draw_result_body(box, rec, *, error_link=True, single_icon=True):
             ).filepath = path
             sub = col.row(align=True)
             sub.operator("scenario.apply_texture", text="Apply as texture").filepath = path
-            sub.operator("scenario.add_plane", text="Add as plane").filepath = path
+            # A shared row offering its receipt-bound image plane shows only that control.
+            if not (shared and "image_plane" in rec.meta.get("recovery_actions", ())):
+                sub.operator("scenario.add_plane", text="Add as plane").filepath = path
     elif rec.kind == "3d":
         primary = rec.meta.get("primary_mesh") or next(
             (p for p in rec.files if p.lower().endswith(MESH_EXTS)), ""

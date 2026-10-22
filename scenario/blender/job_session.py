@@ -46,9 +46,15 @@ from ..core.jobs.results import (
 from ..core.jobs.session_spend import SessionSpend
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker
+from ..core.scene import landing
 from . import file_state, mesh_result_application, model_application
 from .film_application import FilmShotCommands
 from .image_application import ImageApplicationError, apply_images
+from .landing_application import (
+    LandingApplicationError,
+    apply_camera_background,
+    apply_image_plane,
+)
 from .material_application import (
     MaterialApplicationError,
     apply_material,
@@ -131,6 +137,14 @@ class MediaResultUncertain(RuntimeError):
 
     def __init__(self, application=None):
         super().__init__("Media application needs inspection; do not insert it again")
+        self.application = application
+
+
+class LandingResultUncertain(MediaResultUncertain):
+    """A camera background or image plane may already exist; retry only its receipt."""
+
+    def __init__(self, application=None):
+        RuntimeError.__init__(self, "Result application needs inspection; do not apply it again")
         self.application = application
 
 
@@ -1623,6 +1637,69 @@ class JobSession:
             record = self._coordinator.complete_application(claim)
         except Exception:
             outcome = MediaResultUncertain(application)
+            self._media_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedMedia(record, application)
+
+    def apply_recovered_landing(
+        self, completion, *, destination, asset_id, purpose, frame=None, cursor=None, unlit=False
+    ):
+        """Add one verified image or video as the approved camera's background, or an image plane.
+
+        The destination binds the scene and, for a background, its camera; a video
+        background also binds the current frame and a plane the cursor. A video is
+        claimed as media and an image as images, so stored labels stay unchanged.
+        """
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Verify the saved result and approve its destination")
+        scene, camera = self._resolve(destination)
+        if frame is not None and (type(frame) is not int or scene.frame_current != frame):
+            raise OriginUnavailable("The destination frame changed; review it again")
+        if cursor is not None and tuple(scene.cursor.location) != cursor:
+            raise OriginUnavailable("The destination cursor changed; review it again")
+        background = purpose == landing.CAMERA_BACKGROUND
+        if purpose not in landing.PURPOSES or (
+            background and (camera is None or scene.camera != camera)
+        ):
+            raise OriginUnavailable("The scene camera changed; review it again")
+        if not background and (cursor is None or type(unlit) is not bool):
+            raise OriginUnavailable("Approve the plane's cursor again")
+        selected = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id and landing.accepts(purpose, item.asset.media_type)
+        ]
+        if len(selected) != 1:
+            raise OriginUnavailable("Select one saved image or video")
+        item, path = selected[0]
+        del self._issued[id(completion)]
+        label = "media" if landing.kind(item.asset.media_type) == "video" else "images"
+        claim = self._claim_saved_application(verified, destination, label, (asset_id,))
+        try:
+            if background:
+                application = apply_camera_background(scene, camera, item, path, frame=frame)
+            else:
+                application = apply_image_plane(scene, item, path, cursor=cursor, unlit=unlit)
+        except LandingApplicationError:
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise LandingResultUncertain() from None
+            raise
+        except Exception:
+            _changed("Scenario result application")
+            raise LandingResultUncertain() from None
+        _changed("Scenario result application")
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = LandingResultUncertain(application)
             self._media_receipts[outcome] = (claim, application)
             raise outcome from None
         return AppliedMedia(record, application)

@@ -58,6 +58,20 @@ were unchanged. This is desktop interaction evidence, not human listening,
 paid provider acceptance or other OS desktop coverage.
 Native exact-ZIP tests separately decode synthetic MP4, WebM, MP3, WAV and OGG.
 
+## Saved camera background and image plane confirmation
+
+**Set as camera background (N)** appears for each downloaded colour PNG, JPEG,
+OpenEXR, MP4 or WebM result, and **Add image plane (N)** for each such still. Each
+480 px confirmation names the scene. A background names the camera, how many
+existing backgrounds stay, the start frame for a video and the default display
+(half opacity, behind objects, fitted to the frame). A plane names the cursor, its
+1 m height facing the Front view, unchanged selection and alpha use, with an
+**Unlit** checkbox that exchanges the approval for a new one. A scene without a
+camera is refused as a Blender error before any dialog. A shared image row offering
+**Add image plane (N)** hides the unbound **Add as plane** button; earlier rows keep
+it, with **Unlit** in its redo panel. Drawing only displays prepared fields.
+Desktop evidence is not recorded yet.
+
 ## Saved media playback and waveform
 
 Each downloaded saved video result gets one row of saved-job descriptors:

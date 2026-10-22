@@ -490,6 +490,8 @@ free channel without generating again. The strip leaves out embedded audio and p
 at the scene's frame rate. If the scene or frame changes first, confirm again.
 Select the scene in the Sequencer header to see it. The strip plays a local copy
 kept by the extension, which must stay available if you move or share the file.
+To show it behind the scene instead, see
+[Camera backgrounds and image planes](#camera-backgrounds-and-image-planes).
 
 Results from the earlier prototype offer **Play**, **Play in Blender** and
 **Add video strip** instead.
@@ -775,9 +777,9 @@ and the actions for its kind:
 
 | Result | Actions |
 | --- | --- |
-| Image | View image, Use as reference, Remove background, Apply as texture, Add as plane |
+| Image | View image, Use as reference, Remove background, Apply as texture, Add image plane, Set as camera background |
 | 3D | Add to scene, Select, Delete |
-| Video | Play, Play in Blender, Add video strip |
+| Video | Play, Play in Blender, Add video strip, Set as camera background |
 | Audio | Play audio, Waveform, Open in system player, Add strip |
 
 - **Reload parameters** puts the lane, model, prompt, settings and references
@@ -851,6 +853,20 @@ action spends anything. Save the blend file yourself.
 ![Saved panorama confirmation names the scene and current World before changing environment](images/saved-world-approval.png)
 
 ![Applied panorama offers a separate native confirmation to restore the previous scene World](images/saved-world-restore.png)
+
+### Camera backgrounds and image planes
+
+**Set as camera background (N)** adds a saved PNG, JPEG, OpenEXR, MP4 or WebM
+result as one more background of the scene camera, at half opacity behind objects;
+look through the camera to see it. Existing backgrounds stay. A video starts at the
+current frame and plays from a local copy that must stay available. Without a scene
+camera, Blender says so and adds nothing.
+
+**Add image plane (N)** adds a 1 m tall plane showing a saved PNG, JPEG or OpenEXR
+image, its bottom at the 3D cursor, facing the Front view. Transparent parts of the
+image stay transparent. Check **Unlit** to show the image's own colours, unaffected
+by scene lights. Earlier results keep **Add as plane**, with the same **Unlit**
+option under **Adjust Last Operation**.
 
 ### Apply a saved mesh edit
 

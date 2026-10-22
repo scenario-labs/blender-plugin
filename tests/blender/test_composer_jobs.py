@@ -585,11 +585,14 @@ class ComposerJobStripTests(unittest.TestCase):
         self.assertEqual(job.status.tone, "done")
         # The automatic import stays recorded once applied; the saved state decides the wording.
         self.assertTrue(self.runtime.state.model_jobs.imports_automatically(view.local_id))
-        # A saved PNG can be imported again or handed to Render Video as its first frame: one
-        # choice opens the card. This 3 x 5 image is not 2:1, so it is never offered as a World.
+        # A saved PNG can be imported again, become a camera background or image plane, or be
+        # handed to Render Video as its first frame: one choice opens the card. This 3 x 5
+        # image is not 2:1, so it is never offered as a World.
         reuse = [item.action for item in job.actions if item.group == "apply"]
-        self.assertEqual(reuse, ["import_images", "use_first_frame"])
-        self.assertEqual(shown.chips[-2:], ["Reuse... (2)", "Inspect"])
+        self.assertEqual(
+            reuse, ["import_images", "camera_background", "image_plane", "use_first_frame"]
+        )
+        self.assertEqual(shown.chips[-2:], ["Reuse... (4)", "Inspect"])
         operator = self.press(self.chip_point("choose"))
         self.assertEqual(
             operator.ops.calls,

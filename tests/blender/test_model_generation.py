@@ -3674,14 +3674,17 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(added.source, "IMAGE")
         self.assertTrue(camera.data.show_background_images)
         self.assertEqual(status["images"], [added.image.name])
-        self.assertEqual(status["local_applications"][0]["purpose"], "images")
+        # The first landing applies the waiting job; only a reuse is a labelled claim.
+        self.assertEqual(status["local_applications"], [])
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
         # Reuse adds another background after a new review, never another generation.
         again = self.prepare_landing(request_id, "camera_background")
         self.assertTrue(again["reuse"])
-        self.assertEqual(self.finish_application(again)["status"], "applied")
+        status = self.finish_application(again)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["local_applications"][0]["purpose"], "images")
         self.assertEqual(len(camera.data.background_images), 3)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
 
@@ -3727,7 +3730,14 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(status["status"], "applied", status)
         (background,) = camera.data.background_images
         self.assertEqual((background.source, background.clip.frame_start), ("MOVIE_CLIP", 12))
+        self.assertEqual(status["local_applications"], [])
+        # A reuse of the applied video is claimed under the media label.
+        again = self.prepare_landing(request_id, "camera_background")
+        self.assertTrue(again["reuse"])
+        status = self.finish_application(again)
+        self.assertEqual(status["status"], "applied", status)
         self.assertEqual(status["local_applications"][0]["purpose"], "media")
+        self.assertEqual(len(camera.data.background_images), 2)
 
     def test_a_camera_change_during_verification_adds_no_background(self):
         request_id = self.recovered_images()
@@ -3773,7 +3783,14 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(material.surface_render_method, "BLENDED")
         self.assertEqual(linked(material.node_tree, "MIX_SHADER", "Fac").type, "TEX_IMAGE")
         self.assertIsNotNone(linked(material.node_tree, "EMISSION", "Color"))
+        self.assertEqual(status["local_applications"], [])
+        # A second plane reuses the applied image under the images label.
+        again = self.prepare_landing(request_id, "image_plane", plane_unlit=True)
+        self.assertTrue(again["reuse"])
+        status = self.finish_application(again)
+        self.assertEqual(status["status"], "applied", status)
         self.assertEqual(status["local_applications"][0]["purpose"], "images")
+        self.assertEqual(len(set(bpy.data.objects) - objects), 2)
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
 
     def test_a_cursor_change_during_verification_adds_no_plane(self):

@@ -102,6 +102,7 @@ BASELINE = (
     "test_film_case_study",
     "test_reference_uploads",
     "test_reference_form",
+    "test_reference_drop",
     "test_background_removal",
     "test_sdk_uploads",
     "test_model_payload_validation",

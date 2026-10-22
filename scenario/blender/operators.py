@@ -4,13 +4,22 @@
 
 import os
 import textwrap
+from collections import Counter
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    EnumProperty,
+    FloatProperty,
+    IntProperty,
+    StringProperty,
+)
 
 from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
+from ..core.ui import reference_drop
 from ..core.ui.costs import format_cu, spend_confirmation
 from . import (
     apply_image,
@@ -189,19 +198,110 @@ class SCENARIO_OT_add_reference(bpy.types.Operator):
 
     def execute(self, context):
         lane_state = context.scene.scenario.lane_state(self.lane)
-        ref = lane_state.references.add()
-        ref.param_name, ref.source = self.param_name, self.source
-        if self.source == "FILE":
-            ref.filepath = self.filepath
-            ref.label = os.path.basename(self.filepath)
-            from .reference_uploads import note_chosen_file
-
-            # Chosen in the file browser: local MCP may upload it (an agent's call may not add it).
-            note_chosen_file(self.filepath)
-        else:
-            ref.label = {k: v for k, v, _ in props.REFERENCE_SOURCES}[self.source]
-        props.mark_estimate_dirty(lane_state)
+        add_reference(lane_state, self.param_name, self.source, self.filepath)
         return {"FINISHED"}
+
+
+def add_reference(lane_state, param_name, source, filepath=""):
+    """Add one reference to a lane form, as its Add buttons and a sidebar drop do."""
+    ref = lane_state.references.add()
+    ref.param_name, ref.source = param_name, source
+    if source == "FILE":
+        ref.filepath = filepath
+        ref.label = os.path.basename(filepath)
+        from .reference_uploads import note_chosen_file
+
+        # Chosen in the file browser or dropped: local MCP may upload it (an agent's call may not add it).
+        note_chosen_file(filepath)
+    else:
+        ref.label = {k: v for k, v, _ in props.REFERENCE_SOURCES}[source]
+    props.mark_estimate_dirty(lane_state)
+    return ref
+
+
+def drop_input(scene):
+    """The current form and the image input a dropped file joins, or None."""
+    lane = props.effective_lane(scene)
+    lane_state = scene.scenario.lane_state(lane)
+    if lane_state is None:
+        return None
+    schema = generation.schema_for(lane_state.model_id)
+    if schema is None:
+        return None
+    counts = Counter(ref.param_name for ref in lane_state.references)
+    name = reference_drop.image_input(lane, schema.specs, counts)
+    return None if name is None else (lane_state, name)
+
+
+def drop_target(context):
+    """Where a file dropped in `context` goes: only the Scenario tab of a 3D View sidebar.
+
+    Drops anywhere else, the viewport and the composer included, stay Blender's.
+    Reads the form and the cached model only, so file handlers can poll it while
+    the pointer moves.
+    """
+    area, region = context.area, context.region
+    if (
+        area is None
+        or area.type != "VIEW_3D"
+        or region is None
+        or region.type != "UI"
+        or getattr(region, "active_panel_category", None) != "Scenario"
+    ):
+        return None
+    return drop_input(context.scene)
+
+
+class SCENARIO_OT_drop_reference(bpy.types.Operator):
+    bl_idname = "scenario.drop_reference"
+    bl_label = "Add as Scenario reference"
+    bl_description = "Add dropped images as references of the current Scenario form"
+    bl_options = {"INTERNAL"}
+    directory: StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
+    files: CollectionProperty(
+        type=bpy.types.OperatorFileListElement, options={"HIDDEN", "SKIP_SAVE"}
+    )
+    filepath: StringProperty(subtype="FILE_PATH", options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+    def execute(self, context):
+        paths = [os.path.join(self.directory, item.name) for item in self.files if item.name]
+        if not paths and self.filepath:
+            paths = [self.filepath]
+        added = 0
+        for path in paths:
+            if not reference_drop.is_image_file(path) or not os.path.isfile(path):
+                continue
+            target = drop_input(context.scene)
+            if target is None:
+                break
+            add_reference(*target, "FILE", path)
+            added += 1
+        if not added:
+            self.report({"WARNING"}, "No reference added: no image input of this form has room")
+            return {"CANCELLED"}
+        noun = "reference" if added == 1 else "references"
+        left = len(paths) - added
+        self.report({"INFO"}, f"Added {added} {noun}" + (f"; {left} not added" if left else ""))
+        return {"FINISHED"}
+
+
+class SCENARIO_FH_reference_drop(bpy.types.FileHandler):
+    """Images dropped on the Scenario sidebar join the current form's image input."""
+
+    bl_idname = "SCENARIO_FH_reference_drop"
+    bl_label = "Scenario reference"
+    bl_import_operator = "scenario.drop_reference"
+    bl_file_extensions = ";".join(reference_drop.IMAGE_EXTENSIONS)
+
+    @classmethod
+    def poll_drop(cls, context):
+        try:
+            return drop_target(context) is not None
+        except Exception:
+            return False  # A failed check leaves the drop to Blender.
 
 
 class SCENARIO_OT_remove_reference(bpy.types.Operator):
@@ -1313,6 +1413,8 @@ CLASSES = (
     SCENARIO_OT_retry_model,
     SCENARIO_OT_generate,
     SCENARIO_OT_add_reference,
+    SCENARIO_OT_drop_reference,
+    SCENARIO_FH_reference_drop,
     SCENARIO_OT_remove_reference,
     SCENARIO_OT_toggle_multi,
     SCENARIO_OT_open_output_folder,

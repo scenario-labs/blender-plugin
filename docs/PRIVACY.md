@@ -289,9 +289,10 @@ any credential, into the chosen agent's own configuration file, after copying
 the previous file beside it.
 An agent can send a local file to your Scenario account only when the extension
 saved it in its own folders or you chose it in Blender during this session, in a
-reference **Upload** file browser, the Render Video first-frame field or a workflow
-input's **File** field; any other path, including the Output Folder, is refused
-before the file is read. See [agent file uploads](MCP.md#agent-file-uploads).
+reference **Upload** file browser, by a drop on the Scenario sidebar, in the Render
+Video first-frame field or in a workflow input's **File** field; any other path,
+including the Output Folder, is refused before the file is read. See
+[agent file uploads](MCP.md#agent-file-uploads).
 MCP `generate` requires the unchanged shared quote ID and exact approved cost.
 Prompt, Blockout and Film commands likewise expose separate estimate/approval
 steps. Collection and tag changes need a separate review and apply call; once

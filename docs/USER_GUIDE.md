@@ -267,7 +267,11 @@ From top to bottom:
   with **Upload**, a still with **Render**, **Viewport** or **Camera**, or a
   clip with **Viewport clip** or **Camera clip**; then **Upload reference**
   sends it. For 3D, **Upload selected mesh** exports your selection. Generate
-  never captures or uploads anything by itself.
+  never captures or uploads anything by itself. On the Image, Video, 3D,
+  Materials and Audio tabs, you can also drop PNG, JPEG or WebP files from your
+  file manager onto the Scenario sidebar: they join the first image input with
+  room. If Blender offers more than one action, choose **Add as Scenario
+  reference**. Drops on the viewport or the composer stay Blender's.
 - **Parameters**: built from the model's own settings. Tick an optional
   parameter to send it; unticked, Scenario uses its default. On/off settings are
   always sent. `(cost)` marks parameters that change the price.

@@ -624,9 +624,9 @@ this computer can connect. The server refuses any bind address other than
   Blender's extension user directory that holds saved results, previews, captures
   and staging; or
 - the user chose it in Blender during the current Blender session: a reference file
-  picked with a generation form's **Upload** button, or a file set in the Render
-  Video first-frame field or a workflow input's **File** field, through the file
-  browser or typed into the field.
+  picked with a generation form's **Upload** button or dropped on the Scenario
+  sidebar, or a file set in the Render Video first-frame field or a workflow
+  input's **File** field, through the file browser or typed into the field.
 
 Every other path, including the Output Folder, which can point anywhere, is refused
 with `UploadRefused` before the file is opened, copied or sent. The path is resolved
@@ -640,9 +640,10 @@ outside the allowlist, so a refusal does not reveal which files exist.
 `first_frame_path` an agent set through `configure` is refused until the user
 chooses that file.
 
-Choices are recorded on Blender's main thread when one of those fields changes or
-the **Upload** file browser confirms a file, outside a local MCP tool call: a
-value an agent writes while its tool runs is never a choice. They are kept in
+Choices are recorded on Blender's main thread when one of those fields changes,
+the **Upload** file browser confirms a file or a file is dropped on the Scenario
+sidebar, outside a local MCP tool call: a value an agent writes while its tool
+runs is never a choice. They are kept in
 memory by resolved path, up to the 256 most recent, and forgotten when Blender
 quits or the extension is disabled; a path saved in a blend file in an earlier
 session must be chosen again. This policy does not apply to the user's own

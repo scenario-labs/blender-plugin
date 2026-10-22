@@ -1095,6 +1095,9 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
         layout.operator(
             "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="FILE_REFRESH"
         )
+        spent = runtime.session_spend_label()
+        if spent:
+            layout.label(text=spent, icon="FUND")
         from . import blockout
 
         active = [r for r in runtime.state.jobs_view if not r.is_terminal]

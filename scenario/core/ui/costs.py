@@ -46,6 +46,14 @@ def spend_confirmation(model, cost):
     return f"Generate with {model}?", f"Exact price: {cost} CU"
 
 
+def session_spend_label(total, count):
+    """The Jobs panel's running total of accepted jobs' quotes, or "" before the first one."""
+    if not count:
+        return ""
+    jobs = "1 job" if count == 1 else f"{count:,} jobs"
+    return f"This session: {format_cu(total)} CU across {jobs}"
+
+
 def workflow_loop_warning(loop_steps):
     """Nonblocking text for a workflow quote that may not cover every loop pass.
 

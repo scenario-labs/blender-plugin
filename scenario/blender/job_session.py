@@ -43,6 +43,7 @@ from ..core.jobs.results import (
     PromptResults,
     VerifiedResults,
 )
+from ..core.jobs.session_spend import SessionSpend
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker
 from . import file_state, mesh_result_application, model_application
@@ -226,6 +227,7 @@ class JobSession:
         part_uploader=None,
         preview_root=None,
         preview_waveform=None,
+        spend=None,
     ):
         _main_thread()
         if not _registered:
@@ -233,6 +235,8 @@ class JobSession:
         if type(completion_limit) is not int or completion_limit < 1:
             raise ValueError("Use a positive completion limit")
         self._completion_limit = completion_limit
+        # Accepted jobs' quotes for the Jobs panel; the runtime keeps one per connection.
+        self.spend = SessionSpend(getattr(store, "scope", None)) if spend is None else spend
         self._origins = OriginRevisions()
         self._scenes = {}
         self._synchronizing = ()
@@ -708,6 +712,7 @@ class JobSession:
             payload=payload,
         )
         self._pending.append((task, prepared.intent.origin))
+        self.spend.sent(prepared.intent.request_id, prepared.intent.quote_cost)
         return task
 
     def refresh_remote(self, request_id, *, expected_revision, automatic=False):
@@ -1343,6 +1348,8 @@ class JobSession:
                     local_export=isinstance(task, ExportTask),
                     asset_organization=task in self._organization_tasks,
                 )
+                # A submission, or a later read of a linked one, that carries Scenario's job ID.
+                self.spend.accepted(record)
             finally:
                 self._cloud_reads.pop(task, None)
                 self._workflow_reads.pop(task, None)

@@ -725,6 +725,10 @@ The **Jobs** panel lists what's running, with statuses such as "queued",
 "generating", "finished on Scenario", "downloading results" and "results saved".
 A job stays here until you apply its results.
 
+- **This session: N CU across N jobs** adds up the exact prices of the jobs
+  Scenario accepted from this Blender, agents' included, since you opened it or
+  changed credentials or project. A submission with an unconfirmed outcome counts
+  only once linked. It sums prices, not your bill.
 - A progress bar appears when Scenario reports progress; some models don't.
 - With Online Access off, checking and downloading pause; the job continues on Scenario.
 - If Scenario can't be reached for a moment, the job shows "Status not

@@ -497,6 +497,12 @@ so the bar moves without hovering, but it does not redraw for the brief
 in-flight refresh that hides saved-job controls. Studio Jobs reuses the same
 draw.
 
+Under **Inspect saved jobs**, `This session: N CU across N jobs` sums the exact
+quotes of the job session's submissions once a completion carries Scenario's job
+ID (`core.jobs.session_spend`), kept in memory per connection across file loads.
+It counts sidebar, composer, Blockout, prompt helper and agent requests, and a
+pump redraw follows each change.
+
 Installed tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the drawn
 label, bar factor and text, the offline and stale lines, a finished generation
 drawn through the real Jobs panel with its offline download line and absent from

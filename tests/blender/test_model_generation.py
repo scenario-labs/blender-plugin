@@ -11,6 +11,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call, patch
@@ -2588,6 +2589,27 @@ class ModelGenerationTests(unittest.TestCase):
         message = confirm.call_args.kwargs["message"]
         self.assertEqual(message, "Exact price: 0.1234567890123456789 CU")
         self.assertEqual(self.paid, [])
+
+    def test_jobs_panel_totals_the_exact_quotes_of_accepted_jobs_only(self):
+        # A lost response has no job to count yet, though Scenario may have run it.
+        self.lose_response = True
+        self.mcp_submit(self.mcp_quote(prompt="a lamp"), prompt="a lamp")
+        self.settle()
+        self.lose_response = False
+        self.assertEqual(self.runtime.session_spend_label(), "")
+        self.ui_quote()
+        self.assertEqual(bpy.ops.scenario.generate(lane="image"), {"FINISHED"})
+        self.settle()
+        spend = self.runtime.state.session_spend
+        self.assertEqual(spend.snapshot(), (Decimal("0.1234567890123456789"), 1))
+        _, jobs, _, _ = draw_job_panels()
+        self.assertIn("This session: 0.123 CU across 1 job", drawn_texts(jobs))
+        # An agent's accepted job in this Blender counts too.
+        self.mcp_submit(self.mcp_quote(prompt="a chair"), prompt="a chair")
+        self.settle()
+        self.assertEqual(spend.snapshot(), (Decimal("0.2469135780246913578"), 2))
+        self.assertEqual(self.runtime.session_spend_label(), "This session: 0.247 CU across 2 jobs")
+        self.assertEqual(len(self.paid), 3)
 
     def test_confirmed_receipt_clears_transient_submission_warning(self):
         self.ui_quote()

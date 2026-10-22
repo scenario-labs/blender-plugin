@@ -21,11 +21,13 @@ from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.model_defaults import ModelDefaults
 from ..core.jobs.records import JobRegistry
+from ..core.jobs.session_spend import SessionSpend
 from ..core.jobs.store import StoreError
 from ..core.jobs.transfers import ResultDownloader, StoragePolicy
 from ..core.jobs.upload_sources import UploadSources
 from ..core.jobs.upload_store import UploadStore
 from ..core.jobs.upload_transfers import PartUploader, S3UploadPolicy
+from ..core.ui.costs import session_spend_label as session_spend_text
 from ..mcp.upload_policy import ChosenFiles
 from .job_session import JobSession, OriginUnavailable, reap_retired
 
@@ -40,6 +42,8 @@ class RuntimeState:
         self.job_store = None
         self.model_defaults = None  # Explicit lane defaults of job_store's scope.
         self.job_session = None
+        # Accepted jobs' quotes for the selected connection; kept across file loads.
+        self.session_spend = None
         self.job_context_id = None
         self.model_jobs = None
         self.workflow_controls = None
@@ -351,6 +355,20 @@ def clear_model_default(context_id, lane, *, expected_revision):
     return _current_model_defaults(context_id).clear(lane, expected_revision=expected_revision)
 
 
+def session_spend(scope):
+    """The connection's running spend: kept across file loads, started over for another scope."""
+    spend = state.session_spend
+    if spend is None or spend.scope != scope:
+        spend = state.session_spend = SessionSpend(scope)
+    return spend
+
+
+def session_spend_label():
+    """The Jobs panel's "This session" line, or "" (reads memory only, safe in draw)."""
+    spend = state.session_spend
+    return "" if spend is None else session_spend_text(*spend.snapshot())
+
+
 def ensure_job_session():
     """Select one application-owned job session, independent of open panels."""
     catalog = ensure_catalog()
@@ -383,6 +401,7 @@ def ensure_job_session():
                 part_uploader=PartUploader(S3UploadPolicy(), online_access=catalog.network_allowed),
                 preview_root=preview_root,
                 preview_waveform=waveform_spec(),
+                spend=session_spend(state.job_store.scope),
             )
         except BaseException:
             adapter.close()
@@ -718,6 +737,7 @@ def sync_catalog_context():
             state.retired_catalogs.append(state.catalog)
             state.catalog = None
             state.job_store = None
+            state.session_spend = None  # another account or project starts its own total
             state.catalog_credentials = None
             state.catalog_project_id = None
             state.history = []

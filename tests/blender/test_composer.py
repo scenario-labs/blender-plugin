@@ -1268,7 +1268,8 @@ class ComposerSideRegionTests(unittest.TestCase):
         ):
             operator = self._operator()
             self._clicks(operator, ctx, point, (10.0, 10.0 + quick))
-            generate.assert_called_once_with(lane="image")
+            # Its invoke path, as the sidebar's button: a price above the preference asks first.
+            generate.assert_called_once_with("INVOKE_DEFAULT", lane="image")
             # two separate clicks still submit twice, as two clicks on a button do
             self._clicks(operator, ctx, point, (20.0, 30.0))
         self.assertEqual(generate.call_count, 3)

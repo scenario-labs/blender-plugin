@@ -27,6 +27,7 @@ from ..core.api.errors import ScenarioError
 from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
+from ..core.ui.costs import CONFIRM_ABOVE_DEFAULT, confirms_spend
 from . import model_jobs, params_ui, props, runtime, selection, trained_models
 from .job_session import OriginUnavailable
 
@@ -1070,16 +1071,20 @@ def perform_captures(context, request, runner=None):
     return request
 
 
+def model_name(lane_state):
+    """The form's model as job views name it, with any LoRAs or composition after the base."""
+    record = runtime.state.records.get(lane_state.model_id)
+    name = record.name if record else lane_state.model_id
+    if len(lane_state.trained):
+        # "FLUX.1 Dev · LoRA (+1)"
+        name = trained_models.selection_label(lane_state, name)
+    return name
+
+
 def request_meta(context, lane, request=None):
     lane_state = context.scene.scenario.lane_state(lane)
-    record = runtime.state.records.get(lane_state.model_id)
-    meta = {
-        "prompt": lane_state.prompt,
-        "model_name": record.name if record else lane_state.model_id,
-    }
+    meta = {"prompt": lane_state.prompt, "model_name": model_name(lane_state)}
     if len(lane_state.trained):
-        # Job views name the LoRAs or composition with the base ("FLUX.1 Dev · LoRA (+1)").
-        meta["model_name"] = trained_models.selection_label(lane_state, meta["model_name"])
         meta["trained_models"] = trained_models.selection_meta(lane_state)
     if lane == "material":
         meta["target_objects"] = [
@@ -1297,7 +1302,44 @@ def note_repeat_quote(scene, lane, lane_state):
         entry.key = lane_state.estimate_key
 
 
-def submit_generation(context, lane):
+@dataclass(frozen=True)
+class SpendReview:
+    """The exact quote a Generate confirmation names; only that quote may then be submitted."""
+
+    scene: int  # the scene's session_uid
+    lane: str
+    ticket: object
+    cost: str
+    model: str
+
+
+# Refused when the confirmed quote is no longer the form's: the dialog named another price.
+PRICE_CHANGED = "The price changed; check it and generate again"
+
+
+def confirm_threshold():
+    """The "Confirm generations above" preference in CU (0 confirms every Generate)."""
+    return getattr(runtime.prefs(), "confirm_above_cu", CONFIRM_ABOVE_DEFAULT)
+
+
+def spend_review(scene, lane, threshold):
+    """The confirmation a Generate needs before spending, or None to submit at once.
+
+    Only a ready quote is reviewed; without one, submission refuses as it always has.
+    """
+    lane_state = scene.scenario.lane_state(lane)
+    ticket = runtime.state.estimates.get(lane_state.estimate_key)
+    quote = getattr(ticket, "quote", None)
+    if lane_state.estimate_state != "READY" or quote is None:
+        return None
+    cost = str(quote.estimate.cost)
+    if not confirms_spend(cost, threshold):
+        return None
+    return SpendReview(scene.session_uid, lane, ticket, cost, model_name(lane_state))
+
+
+def submit_generation(context, lane, review=None):
+    """Spend the form's ready quote once; after a confirmation, only the quote it named."""
     runtime.sync_catalog_context()
     scene = context.scene
     lane_state = scene.scenario.lane_state(lane)
@@ -1311,6 +1353,11 @@ def submit_generation(context, lane):
         raise ScenarioError(0, "Wait for a fresh price before generating")
     if repeat_holding(lane_state):
         raise ScenarioError(0, "Generate is available again in a moment")
+    if review is not None and (
+        review.ticket is not ticket or review.lane != lane or review.scene != scene.session_uid
+    ):
+        # Refused before the quote is consumed, so the form keeps its new price to review.
+        raise ScenarioError(0, PRICE_CHANGED)
     # A rejected attempt can consume the handle before storage reports an
     # error. Never keep that price actionable or automatically reprice it.
     lane_state.estimate_state = "IDLE"

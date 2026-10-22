@@ -135,7 +135,8 @@ def _generate(operator, scene, state):
     if not panels.generate_enabled(scene.scenario.lane_state(lane), lane):
         return
     try:
-        bpy.ops.scenario.generate(lane=lane)
+        # Its invoke path, as the sidebar's button: a price above the preference asks first.
+        bpy.ops.scenario.generate("INVOKE_DEFAULT", lane=lane)
     except RuntimeError as error:
         # Operator error reports arrive as exceptions; the form keeps the reason. Keep this handler alive.
         message = str(error).strip()

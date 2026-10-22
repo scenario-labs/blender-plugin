@@ -11,7 +11,7 @@ from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
 from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
-from ..core.ui.costs import format_cu
+from ..core.ui.costs import format_cu, spend_confirmation
 from . import (
     apply_image,
     desktop,
@@ -92,16 +92,34 @@ class SCENARIO_OT_generate(bpy.types.Operator):
     bl_idname = "scenario.generate"
     bl_label = "Generate"
     bl_description = "Submit this generation to Scenario"
+    # Not REGISTER (nor UNDO): Blender keeps only those in the operator history that Repeat
+    # Last and Repeat History run again, which would spend without a click or confirmation.
+    bl_options = set()
     lane: StringProperty(default="image")
 
     @classmethod
     def poll(cls, context):
         return _network_poll(cls, context)
 
+    def invoke(self, context, event):
+        """Above the "Confirm generations above" preference, name the model and exact price first."""
+        lane = props.effective_lane(context.scene, self.lane)
+        review = generation.spend_review(context.scene, lane, generation.confirm_threshold())
+        if review is None:
+            return self.execute(context)
+        self._review = review
+        title, message = spend_confirmation(review.model, review.cost)
+        return context.window_manager.invoke_confirm(
+            self, event, title=title, message=message, confirm_text="Generate"
+        )
+
     def execute(self, context):
         lane = props.effective_lane(context.scene, self.lane)
+        # Set by invoke's confirmation: only the quote it named may be spent.
+        review = getattr(self, "_review", None)
+        self._review = None
         try:
-            rec = generation.submit_generation(context, lane)
+            rec = generation.submit_generation(context, lane, review=review)
         except ScenarioError as err:
             context.scene.scenario.lane_state(lane).last_error = err.reason
             self.report({"ERROR"}, err.reason)

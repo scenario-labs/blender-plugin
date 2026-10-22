@@ -8,6 +8,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from .blender import updates
+from .core.ui.costs import CONFIRM_ABOVE_DEFAULT
 
 PORTAL_KEYS_URL = "https://app.scenario.com/team"
 
@@ -87,6 +88,12 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         subtype="DIR_PATH",
         default="~/Downloads/Scenario",
         description="Generated files are saved here, one subfolder per kind",
+    )
+    confirm_above_cu: IntProperty(
+        name="Confirm generations above",
+        default=CONFIRM_ABOVE_DEFAULT,
+        min=0,
+        description="Ask before a Generate whose exact price is above this many CU; 0 asks every time",
     )
     composer_enabled: BoolProperty(
         name="Floating composer in the viewport",
@@ -176,6 +183,10 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
                 text="Allow Online Access is off in Blender's System preferences", icon="ERROR"
             )
         layout.prop(self, "output_dir")
+        layout.prop(self, "confirm_above_cu", text="Confirm generations above (CU)")
+        layout.label(
+            text="0 asks every time. Agent generations keep their own approval", icon="INFO"
+        )
         layout.prop(self, "composer_enabled")
         row = layout.row(align=True)
         row.enabled = self.composer_enabled

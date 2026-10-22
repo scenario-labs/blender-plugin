@@ -1164,6 +1164,10 @@ save the file yourself.
 Prices are in Creative Units (CU) and depend on the model, settings and references.
 
 - **Generate (N CU)** is the price of the form as it stands.
+- Above **Confirm generations above** in the extension's preferences (200 CU by
+  default; 0 asks every time), Generate and Generate blockout first ask you to
+  confirm the model and exact price. Agent requests keep their own approval.
+  Repeat Last never generates again.
 - After you generate, the button keeps its price and comes back a moment later,
   once Scenario confirms the job. Change anything to price a different request.
 - **from N CU** means the final price may be higher: some references aren't

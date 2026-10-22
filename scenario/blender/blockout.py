@@ -243,6 +243,26 @@ class SCENARIO_OT_blockout_approve(bpy.types.Operator):
 
         return _network_poll(cls, context)
 
+    def invoke(self, context, event):
+        """Above the "Confirm generations above" preference, name the model and exact price first."""
+        from ..core.ui.costs import confirms_spend, spend_confirmation
+        from .generation import confirm_threshold
+
+        jobs = runtime.state.blockout_jobs
+        item = jobs.actions.get(self.quote_id) if jobs is not None else None
+        # A stale or changed quote is refused by execute, without a dialog.
+        if (
+            item is None
+            or item.phase != "READY"
+            or item.cost != self.approved_cost
+            or not confirms_spend(item.cost, confirm_threshold())
+        ):
+            return self.execute(context)
+        title, message = spend_confirmation(core.model_label(item.model), item.cost)
+        return context.window_manager.invoke_confirm(
+            self, event, title=title, message=message, confirm_text="Generate"
+        )
+
     def execute(self, context):
         try:
             runtime.ensure_blockout_jobs().approve(

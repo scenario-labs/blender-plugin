@@ -241,7 +241,8 @@ can pause Blender. There is no automatic blend save.
 
 Native **Import GLB model (N)** or **Import alternate: GLB (N)** and MCP
 `prepare_result_application` with the unit's `asset_id` capture the scene
-revision and exact cursor. MCP can also bind a `target_size_m` to the approval:
+revision and exact cursor. MCP `target_size_m`, or the native review's
+**Longest side** option, binds a length to the approval:
 publication then scales the group root uniformly so the longest side of the mesh
 bounds, measured like the bottom center, has that length, and keeps the bottom
 center at the cursor. A model with no measurable size fails after the claim and
@@ -551,7 +552,7 @@ Splat** or node group named **Scenario Splat Points** is never reused or
 changed. Publication reuses the model group: a new **Scenario Model** collection
 and root with the bottom center of the decoded bounds at the cursor,
 `scenario_asset` and `scenario_assets`, and `scenario_splat_points` and
-`scenario_splat_kept` counts. An MCP `target_size_m` fits the longest side of
+`scenario_splat_kept` counts. A reviewed longest side fits the longest side of
 those decoded centre bounds, so the reported size, which includes point radii,
 can be slightly larger. Selection, the active object and the timeline stay
 unchanged. A failure removes only new objects, collections, meshes, materials

@@ -2368,21 +2368,34 @@ class ModelJobs:
             raise ScenarioError(0, "Choose OPENGL or OPENCV saved splat axes")
         return max_points, axes
 
-    def revise_model_application(self, identifier, *, max_points, axes):
-        """Change reviewed splat options under a new handle; the old one stops working.
+    def revise_model_application(self, identifier, *, max_points=None, axes=None, target_size=None):
+        """Change reviewed options under a new handle; the old one stops working.
 
-        The captured scene, cursor and unit stay the same; nothing is recaptured.
+        Every option is given again: SPZ, PLY and .splat units take splat options,
+        and any unit takes a longest side (None keeps the saved size). The captured
+        scene, cursor and unit stay the same; nothing is recaptured.
         """
         ticket = self._application_approvals.get(identifier)
-        if not isinstance(ticket, ModelApplicationApproval) or not worker_prepared(ticket.unit):
-            raise ScenarioError(0, "Use an unconsumed SPZ, PLY or .splat import review")
+        if not isinstance(ticket, ModelApplicationApproval):
+            raise ScenarioError(0, "Use an unconsumed model import review")
+        try:
+            target_size = placement.target_size(target_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
         max_points, axes = self._splat_options(ticket.unit, max_points, axes)
         self.session.validate_destination(ticket.destination, cursor=ticket.cursor)
         if self.store.get(ticket.record.intent.request_id) != ticket.record:
             raise ScenarioError(0, "The saved model changed; start a fresh review")
-        if (max_points, axes) == (ticket.max_points, ticket.axes):
+        options = (max_points, axes, target_size)
+        if options == (ticket.max_points, ticket.axes, ticket.target_size):
             return ticket
-        revised = replace(ticket, identifier=uuid.uuid4().hex, max_points=max_points, axes=axes)
+        revised = replace(
+            ticket,
+            identifier=uuid.uuid4().hex,
+            max_points=max_points,
+            axes=axes,
+            target_size=target_size,
+        )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised
         return revised

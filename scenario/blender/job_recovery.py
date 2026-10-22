@@ -3,12 +3,20 @@
 """Explicit shared-job recovery controls; drawing never changes stored jobs."""
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    EnumProperty,
+    FloatProperty,
+    FloatVectorProperty,
+    IntProperty,
+    StringProperty,
+)
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.playback import PLAYBACK_TYPES
 from ..core.scene.mesh_edit_policy import task_label
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
+from ..core.scene.placement import MAX_TARGET_SIZE_M, MIN_TARGET_SIZE_M
 from ..core.ui import saved_job_actions
 from . import render_lanes, result_media, review_previews, runtime
 from .media_application import MEDIA_TYPES
@@ -418,6 +426,8 @@ SPLAT_REVIEW = (
     "Denser files are thinned evenly to the point limit.",
     "Default axes follow the file format; check the result is upright.",
 )
+# Shown when the review scales the new group to a longest side.
+TARGET_SIZE_REVIEW = "Scale the group evenly; its bottom stays at the cursor."
 SPLAT_POINT_ITEMS = (
     ("250000", "250,000", "Keep at most 250,000 evenly spaced points"),
     ("500000", "500,000", "Keep at most 500,000 evenly spaced points"),
@@ -469,6 +479,21 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     splat_axes: EnumProperty(
         name="Saved axes", items=SPLAT_AXIS_ITEMS, default="OPENGL", options={"SKIP_SAVE"}
     )
+    use_target_size: BoolProperty(
+        name="Longest side",
+        description="Scale the new group evenly so its longest side has this length",
+        options={"SKIP_SAVE"},
+    )
+    target_size: FloatProperty(
+        name="Longest side",
+        description="Length of the new group's longest side, in scene units",
+        default=1.0,
+        min=MIN_TARGET_SIZE_M,
+        max=MAX_TARGET_SIZE_M,
+        subtype="DISTANCE",
+        unit="LENGTH",
+        options={"SKIP_SAVE"},
+    )
 
     def invoke(self, context, event):
         try:
@@ -492,6 +517,9 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             self.is_splat = approval.max_points is not None
             if self.is_splat:
                 self.splat_points, self.splat_axes = str(approval.max_points), approval.axes
+            self.use_target_size = approval.target_size is not None
+            if self.use_target_size:
+                self.target_size = approval.target_size
             self.review_error = ""
         except Exception:
             self.report({"ERROR"}, "Could not prepare model import; inspect the saved result")
@@ -499,18 +527,17 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
         return context.window_manager.invoke_props_dialog(self, width=480)
 
     def _sync_options(self):
-        """Exchange the approval for one with the shown splat options."""
-        approval = runtime.revise_model_application(
-            self.context_id,
-            self.application_id,
-            max_points=int(self.splat_points),
-            axes=self.splat_axes,
-        )
+        """Exchange the approval for one with the shown splat options and size."""
+        # Rounded to micrometres: the property stores a single-precision float.
+        options = {"target_size": round(self.target_size, 6) if self.use_target_size else None}
+        if self.is_splat:
+            options.update(max_points=int(self.splat_points), axes=self.splat_axes)
+        approval = runtime.revise_model_application(self.context_id, self.application_id, **options)
         self.application_id = approval.identifier
         self.review_error = ""
 
     def check(self, context):
-        if not self.application_id or not self.is_splat:
+        if not self.application_id:
             return False
         try:
             self._sync_options()
@@ -541,6 +568,13 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             layout.prop(self, "splat_axes")
             for line in SPLAT_REVIEW:
                 layout.label(text=line)
+        row = layout.row(align=True)
+        row.prop(self, "use_target_size")
+        size = row.row(align=True)
+        size.active = self.use_target_size
+        size.prop(self, "target_size", text="")
+        if self.use_target_size:
+            layout.label(text=TARGET_SIZE_REVIEW)
         layout.label(text="Files are checked again first; a change stops the import.")
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
@@ -552,7 +586,7 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            if self.is_splat:
+            if self.is_splat or self.use_target_size:
                 self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:

@@ -508,8 +508,9 @@ TripoSplat.
 for another file the provider returned. The review shows the scene, cursor position
 and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
 as a new group at the cursor with its materials and textures packed; your
-objects and selection are untouched. Importing one result uses up the job's
-import: the other files stay saved for
+objects and selection are untouched. Check **Longest side** to scale the new
+group evenly to that length, with its bottom still at the cursor. Importing one
+result uses up the job's import: the other files stay saved for
 [Reuse saved results](#reuse-saved-results). If the cursor or scene changes
 first, confirm again.
 

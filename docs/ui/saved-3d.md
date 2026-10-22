@@ -39,7 +39,11 @@ cursor, the new group, packed textures and preserved selection. Format lines
 follow: GLB and glTF keep scene FPS and the timeline, FBX packs embedded textures,
 rejects external texture files and keeps the file's clip timing, OBJ leaves out
 maps that were not saved, and PLY says a file without splat data imports as a
-mesh. A last line says the files are checked again first. Every line stays
+mesh. A **Longest side** checkbox, off by default, enables a length field; when
+checked, a line says the group is scaled evenly with its bottom at the cursor.
+Changing either calls `check()`, which exchanges the approval for a new handle
+with the same scene, cursor and unit, as for splat options below. A last line
+says the files are checked again first. Every line stays
 within 66 characters, the longest line the earlier 480 px desktop capture
 showed. Drawing only reads the prepared values; cancel discards the approval.
 

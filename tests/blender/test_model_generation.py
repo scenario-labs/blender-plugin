@@ -3790,6 +3790,120 @@ class ModelGenerationTests(unittest.TestCase):
         # A valid review still works afterwards.
         self.assertEqual(self.prepare_model(request_id, target_size_m=2)["target_size_m"], 2.0)
 
+    def test_native_model_review_scales_to_a_longest_side_in_one_undo_step(self):
+        request_id = self.recovered_model()
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+            target_size=1.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        original = owner._application_approvals[fake.application_id]
+        # Off by default: the review keeps the saved size.
+        self.assertEqual((fake.use_target_size, original.target_size), (False, None))
+
+        def drawn():
+            fake.layout = MagicMock()
+            snapshot = dict(vars(fake))
+            operator.draw(fake, context)
+            self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared values.
+            row = fake.layout.row.return_value
+            props = [call.args[1] for call in row.prop.call_args_list]
+            props += [call.args[1] for call in row.row.return_value.prop.call_args_list]
+            self.assertEqual(props, ["use_target_size", "target_size"])
+            labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+            self.assertLessEqual(max(len(label) for label in labels), 66)
+            return labels
+
+        self.assertNotIn(recovery.TARGET_SIZE_REVIEW, drawn())
+        first = fake.application_id
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(fake.application_id, first)  # Unchanged options keep the handle.
+        fake.use_target_size, fake.target_size = True, 0.5
+        self.assertTrue(operator.check(fake, context))
+        self.assertNotIn(first, owner._application_approvals)
+        revised = owner._application_approvals[fake.application_id]
+        self.assertEqual(revised.target_size, 0.5)
+        self.assertEqual(
+            (revised.destination, revised.cursor, revised.unit, revised.max_points),
+            (original.destination, original.cursor, original.unit, None),
+        )
+        self.assertIn(recovery.TARGET_SIZE_REVIEW, drawn())
+        with self.assertRaises(self.request_error):
+            self.runtime.apply_saved_result(args["context_id"], first)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        history = self.model_history()
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+        with history:
+            self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+            self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        root_name = summary["root"]
+        self.assertEqual(tuple(bpy.data.objects[root_name].scale), (0.5, 0.5, 0.5))
+        self.assertEqual((summary["target_size_m"], summary["scale"]), (0.5, 0.5))
+        self.assertEqual(summary["dimensions_m"], [0.5, 0.0, 0.5])
+        self.assertEqual(summary["bottom_z_m"], 6.0)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        # One Undo removes the scaled group; the scaling is not a separate step.
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertNotIn(root_name, {obj.name for obj in bpy.data.objects})
+        self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+        self.assertEqual(tuple(bpy.data.objects[root_name].scale), (0.5, 0.5, 0.5))
+
+    def test_native_model_review_without_a_size_keeps_an_mcp_reviewed_size(self):
+        # Confirming a review prepared elsewhere never rewrites its approved size.
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id, target_size_m=0.5)
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+        )
+        self.assertEqual(bpy.ops.scenario.import_saved_model(**args), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["model_import"]["target_size_m"], 0.5, status)
+
+    def test_revising_a_model_review_checks_the_size_and_unit_options(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        owner = self.runtime.state.model_jobs
+        identifier = approval["application_id"]
+        for options in (
+            {"target_size": 0},
+            {"target_size": 1001},
+            {"target_size": float("nan")},
+            {"max_points": 250000},
+            {"axes": "OPENGL"},
+        ):
+            with self.subTest(options=options), self.assertRaises(self.request_error):
+                owner.revise_model_application(identifier, **options)
+        self.assertIn(identifier, owner._application_approvals)
+        revised = owner.revise_model_application(identifier, target_size=2)
+        self.assertEqual(revised.target_size, 2.0)
+        self.assertNotIn(identifier, owner._application_approvals)
+        # Clearing the size keeps the saved size under another new handle.
+        cleared = owner.revise_model_application(revised.identifier)
+        self.assertIsNone(cleared.target_size)
+        self.assertNotEqual(cleared.identifier, revised.identifier)
+
     def test_shared_animated_model_import_retains_rig_and_clips_without_more_requests(self):
         request_id = self.recovered_model(animated_glb())
         before = len(self.calls), len(self.paid)

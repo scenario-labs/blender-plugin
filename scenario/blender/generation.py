@@ -28,6 +28,7 @@ from ..core.jobs import quote_refresh
 from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
+from ..core.ui.composer_layout import PRICE_LOADING
 from ..core.ui.costs import CONFIRM_ABOVE_DEFAULT, confirms_spend
 from . import model_jobs, params_ui, props, runtime, selection, trained_models
 from .job_session import OriginUnavailable
@@ -1190,6 +1191,9 @@ def process_model_jobs():
             lane_state.estimate_cu = float(estimate.cost)
             lane_state.estimate_state = "READY"
             lane_state.estimate_error = ""
+            # The price an Enter or a Generate click waited for shows now: drop that wait line.
+            if runtime.state.last_message == PRICE_LOADING:
+                runtime.state.last_message = ""
         except Exception as error:
             jobs.quotes.pop(ticket.identifier, None)
             # Source/transport details can contain private inputs. Keep failures

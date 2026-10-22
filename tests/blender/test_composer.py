@@ -1924,6 +1924,22 @@ class ComposerEditFormTests(unittest.TestCase):
         self.jobs.settle()
         self.assertEqual(self.jobs.paid, [])
 
+    def test_the_price_wait_line_goes_once_the_price_shows(self):
+        self.quote("edit3d", "7.25")
+        self.drawn()
+        self.composer.focused = True
+        self.press(key="S", text="s")
+        self.press(key="RET")
+        self.assertEqual(self.runtime.message_visible(), self.layout.PRICE_LOADING)
+        self.quote("edit3d", "7.25")
+        # Generate shows the price; a line saying it is on its way would contradict it.
+        self.assertEqual(self.runtime.message_visible(), "")
+        self.assertIn("7.25 CU", self.drawn().label)
+        # Any other status line stays for its usual time.
+        self.runtime.set_message("Generating with the fixture model")
+        self.quote("edit3d", "7.25")
+        self.assertEqual(self.runtime.message_visible(), "Generating with the fixture model")
+
     def test_a_focused_prompt_hands_shortcuts_it_does_not_use_to_blender(self):
         self.quote("edit3d", "7.25")
         self.drawn()

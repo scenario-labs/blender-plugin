@@ -144,7 +144,8 @@ A focused prompt keeps the keys it edits with, Ctrl/Cmd+Z and Y, modifier presse
 and pointer events. Other Ctrl/Cmd shortcuts and function keys pass through to
 Blender (`composer_layout.passes_to_blender`). Enter or Generate on a form whose
 price is still loading, or whose repeat delay is running, sets the status line
-and reports it (`composer_layout.generate_wait`) instead of only blurring.
+and reports it (`composer_layout.generate_wait`) instead of only blurring. The
+price-loading line goes as soon as a price arrives, so it never sits beside one.
 
 Installed tests on the packaged ZIP run the real composer draw function, with
 recording drawing primitives, and the real modal handler. Run against the previous

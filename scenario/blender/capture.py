@@ -107,6 +107,8 @@ class RenderSettings:
         r.film_transparent = self.film_transparent
         if self.camera_name and bpy.data.objects.get(self.camera_name) is not None:
             scene.camera = bpy.data.objects[self.camera_name]
+        elif not self.camera_name and scene.camera is not None:
+            scene.camera = None  # A camera capture chose the first camera; the scene had none.
         if scene.frame_current != self.frame_current:
             scene.frame_set(self.frame_current)
 

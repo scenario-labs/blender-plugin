@@ -28,6 +28,7 @@ class CaptureTests(unittest.TestCase):
                 "kind": kind,
                 "res": (r.resolution_x, r.resolution_y, r.resolution_percentage),
                 "pixels": (r.pixel_aspect_x, r.pixel_aspect_y),
+                "camera": scene.camera.name if scene.camera else None,
                 "fmt": r.image_settings.file_format,
                 "video": _is_video(r),
                 "codec": r.ffmpeg.codec,
@@ -107,6 +108,20 @@ class CaptureTests(unittest.TestCase):
             self.capture.capture_still(
                 bpy.context, str(self.tmp / "x.png"), source="CAMERA", runner=self.fake_runner
             )
+
+    def test_camera_capture_leaves_a_scene_without_an_active_camera_as_it_was(self):
+        bpy.ops.object.camera_add()
+        scene = bpy.context.scene
+        scene.camera = None
+        camera = bpy.context.active_object
+        for capture, name in (
+            (self.capture.capture_still, "still.png"),
+            (self.capture.capture_playblast, "clip.mp4"),
+        ):
+            capture(bpy.context, str(self.tmp / name), source="CAMERA", runner=self.fake_runner)
+            # The capture looks through the scene's only camera, then unsets it again.
+            self.assertEqual(self.calls[-1]["camera"], camera.name)
+            self.assertIsNone(scene.camera)
 
     def test_still_restores_an_output_bit_depth_that_png_lacks(self):
         bpy.ops.object.camera_add()

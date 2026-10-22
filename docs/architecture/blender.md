@@ -110,8 +110,8 @@ evaluation report updates for the scene, its objects and its collections. The
 JobSession dependency handler then invalidates every origin captured in that
 scene (see
 [origin lifetime](../BLENDER_JOB_CONTEXT.md#origin-and-quote-lifetime)): quotes
-bound to them can no longer be prepared or spent, and completed results wait
-for review instead of automatic application. The temporary block reports no
+bound to them can no longer be prepared or spent, and every form requests a
+new price. The temporary block reports no
 ID updates. Writing the PNG runs the handler with an empty update list, which
 JobSession ignores.
 

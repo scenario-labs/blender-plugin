@@ -1790,7 +1790,8 @@ def generate(args):
         "model_id": record.id,
         "note": "Submission is saved. Poll job_status for remote progress and verified downloads. "
         + (
-            "Image jobs import supported images only into their unchanged original scene. "
+            "Image jobs import supported images into their original scene if it is selected "
+            "when they arrive; Undo, Redo or opening a file stops the import for review. "
             if lane == "image"
             else "Panorama results stay saved; change a scene World only through "
             "prepare_result_application(purpose=world) and explicit approval. "

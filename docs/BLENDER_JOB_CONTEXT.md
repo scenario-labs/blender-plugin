@@ -35,9 +35,10 @@ download/receipt recovery. These recovery tools do not import prototype jobs.
 Model submission creates new durable intents.
 
 Active Image jobs poll and download through this session. `apply_images` requires
-an owned verification completion, resolves the original scene/revision, and claims
-`applying` before loading any image. Every byte snapshot must match its saved
-receipt and supported container before Blender decodes and packs it. Multiple
+an owned verification completion, resolves the destination captured at submission
+(below) or else the original scene/revision, and claims `applying` before loading
+any image; it never claims an `applied` job again. Every byte snapshot must match
+its saved receipt and supported container before Blender decodes and packs it. Multiple
 variants are imported together; failure removes only newly created images.
 Confirmed rollback records `apply_failed`; incomplete rollback or uncertain
 receipt persistence retains `applying`. `retry_image_receipt` can acknowledge a
@@ -383,8 +384,9 @@ across sessions; they never inspect or mutate bpy data. Callers must prepare
 inputs and capture their origin together on the main thread.
 
 A payload that does not come from the scene, such as a file the user chose to
-upload, binds only to the scene it is for. `capture_destination(scene)` records a
-destination-only origin: dependency, frame and render-thread updates keep it, while
+upload or an Image job's results, binds only to the scene it is for.
+`capture_destination(scene)` records a destination-only origin: dependency, frame
+and render-thread updates keep it, while
 removing that scene, Undo/Redo, file loading and deactivation revoke it. Delivery
 still requires that scene to be selected, and callers recheck their own destination,
 such as the form slot or workflow input. Such an origin never vouches for scene
@@ -849,9 +851,13 @@ handles and in-memory display projections for the selected session. UI and MCP
 model generation share its quote and submission commands. Handles bind the
 captured scene, originating lane, exact input snapshot and session-issued SDK
 estimate. Submission validates the current inputs and exact approved cost before
-consuming the handle and persisting intent. The coordinator still checks origin,
-ownership and expiry at dispatch. No handle is reconstructed from a saved
-fingerprint after restart.
+consuming the handle and persisting intent. A handle whose scene revision changed
+is refused before consumption and the form is priced again once the scene keeps one
+revision for 0.7 s ([quote_refresh](../scenario/core/jobs/quote_refresh.py)).
+Session capacity is checked before the intent is saved, and an intent the worker
+queue refuses is canceled locally, so neither leaves a prepared job to review. The
+coordinator still checks origin, ownership and expiry at dispatch. No handle is
+reconstructed from a saved fingerprint after restart.
 
 `drain(task=...)` collects only the requested task, leaving other consumers'
 completions intact. Context maintenance routes each quote back to its originating
@@ -859,7 +865,8 @@ form even after a tab switch and drives receipt delivery in both the GUI and
 actual CLI loop. Model status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
 Active jobs poll and download through this owner. Only Image automatically
-imports supported images; other lanes stop at saved results for explicit application.
+imports supported images, once, into the scene captured at submission; other lanes
+stop at saved results for explicit application.
 
 ## Environment lane delivery
 

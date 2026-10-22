@@ -425,13 +425,19 @@ class JobSession:
         except ReferenceError:
             return False
 
+    def origin_current(self, origin):
+        """Whether a captured origin is still current; reads only, captures nothing new."""
+        _main_thread()
+        return self._active and isinstance(origin, JobOrigin) and self._origins.current(origin)
+
     def capture_destination(self, scene):
         """Capture only the scene a payload is for, when that payload does not come from it.
 
-        A file the user chose keeps its bytes whatever the scene does, so scene,
-        frame and render updates keep this origin. Removing the scene, Undo/Redo,
-        file loading and retirement revoke it, and delivery still requires the
-        selected scene. Never use it to price, submit or apply scene content.
+        A file the user chose keeps its bytes whatever the scene does, and an Image
+        job's results import into the scene it was submitted from, so scene, frame
+        and render updates keep this origin. Removing the scene, Undo/Redo, file
+        loading and retirement revoke it, and delivery still requires the selected
+        scene. Never use it to price, submit or apply scene content.
         """
         return self._origins.capture_destination(self._scene_identity(scene, ()))
 
@@ -677,6 +683,8 @@ class JobSession:
         _main_thread()
         if not isinstance(quote, OriginQuote):
             raise OriginUnavailable("Use a quote from this session")
+        # Refuse before saving an intent that submit() could not queue.
+        self._check_capacity()
         self._resolve(quote.origin)
         return self._coordinator.prepare_quote(quote)
 
@@ -1451,8 +1459,17 @@ class JobSession:
         del self._issued[id(completion)]
         return callback(completion.result, scene, target)
 
-    def apply_images(self, completion):
-        return self._apply_images(completion)
+    def apply_images(self, completion, *, destination=None):
+        """Import an Image job's verified results without another review.
+
+        Into the intent's origin, or into `destination`, the destination-only origin
+        captured when the job was submitted (`capture_destination`). Never imports an
+        applied job again.
+        """
+        _main_thread()
+        if destination is not None and not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture the image import destination at submission")
+        return self._apply_images(completion, destination=destination, reuse=False)
 
     def apply_recovered_images(self, completion, *, destination):
         """Import into an explicitly approved captured destination after recovery."""
@@ -1507,7 +1524,7 @@ class JobSession:
             )
         return self._coordinator.claim_recovered_application(verified, destination)
 
-    def _apply_images(self, completion, *, destination=None):
+    def _apply_images(self, completion, *, destination=None, reuse=True):
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed verification from this session")
@@ -1519,16 +1536,18 @@ class JobSession:
         self._resolve(destination or completion.origin)
         before = set(bpy.data.images)
         del self._issued[id(completion)]
-        claim = (
-            self._coordinator.claim_application(verified)
-            if destination is None
-            else self._claim_saved_application(
+        if destination is None:
+            claim = self._coordinator.claim_application(verified)
+        elif reuse:
+            claim = self._claim_saved_application(
                 verified,
                 destination,
                 "images",
                 tuple(item.asset.asset_id for item in verified.record.results),
             )
-        )
+        else:
+            # Same claim as recovery, without reopening an applied job.
+            claim = self._coordinator.claim_recovered_application(verified, destination)
         try:
             images = apply_images(verified)
         except ImageApplicationError:

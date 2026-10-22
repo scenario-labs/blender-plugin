@@ -127,7 +127,7 @@ class FirstFrameHandoffTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()

@@ -158,7 +158,7 @@ again. Restart recovery polls this state even after a crash before sending;
 there is no lease expiry or explicit reset/reattempt command. Schema 3 retains the
 immutable result manifest and receipts introduced in schema 2 and adds a separate
 `application_origin`. Claiming `applying` atomically saves that destination before
-any Blender mutation. Automatic application uses the original intent origin;
+any Blender mutation. Automatic Image import uses the scene captured at submission;
 explicit recovery may supply a newly approved destination. Neither changes the
 intent. Application receipts preserve the claimed destination. A new destination
 requires a new claim after confirmed rollback, never an interrupted `applying`

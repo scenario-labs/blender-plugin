@@ -104,7 +104,9 @@ edits retain their estimate request until online access and credentials are
 available. Only the selected scene is
 priced: another scene's pending form shows no price error and is priced once
 that scene is selected. A price that arrives while another scene is selected is
-requested again in the same way. The generation controls
+requested again in the same way. A price the scene changed after is requested
+again once the scene stops changing, under **Scene changed; updating the price**;
+**Generate** meanwhile sends nothing. The generation controls
 remain disabled until a ready quote handle exists; the submission path still
 rechecks its exact inputs, origin and approval. A model list is only described as
 loading while a catalog request is active.

@@ -107,10 +107,14 @@ def _process():
             lane_state = scene.scenario.lane_state(lane)
             if generation.rearm_repeat(scene, lane, lane_state, now):
                 changed = True
+            # A price the scene changed after is requested again once the scene settles.
+            if generation.reprice_revoked(scene, lane, lane_state):
+                changed = True
             if (
                 lane_state.estimate_state == "PENDING"
                 and lane_state.estimate_dirty_at
                 and now - lane_state.estimate_dirty_at >= ESTIMATE_DEBOUNCE
+                and generation.scene_settled(scene, lane, now)
             ):
                 if model_jobs.automatic_estimates_stopped():
                     lane_state.estimate_dirty_at = 0.0

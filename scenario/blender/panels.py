@@ -429,6 +429,9 @@ def draw_generate_row(layout, lane_state, lane):
     ).lane = lane
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
         draw_wrapped(layout, lane_state.estimate_error, "INFO")
+    note = generation.repricing_note(lane_state)
+    if note:
+        draw_wrapped(layout, note, "TIME")
     error = generation.lane_error(lane_state)  # a stale saved model-load failure is not drawn
     if error:
         draw_wrapped(layout, error, "ERROR")

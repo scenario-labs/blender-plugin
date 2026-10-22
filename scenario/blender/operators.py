@@ -144,6 +144,10 @@ class SCENARIO_OT_generate(bpy.types.Operator):
         self._review = None
         try:
             rec = generation.submit_generation(context, lane, review=review)
+        except generation.PriceRefreshing as err:
+            # Nothing was sent and the form shows its new price shortly: no error to keep.
+            self.report({"WARNING"}, err.reason)
+            return {"CANCELLED"}
         except ScenarioError as err:
             context.scene.scenario.lane_state(lane).last_error = err.reason
             self.report({"ERROR"}, err.reason)

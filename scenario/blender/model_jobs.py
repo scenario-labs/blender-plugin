@@ -16,7 +16,14 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, AdapterError, EstimateStartedJob
-from ..core.jobs import failures, progress, reconcile, refresh_backoff, workflow_nodes
+from ..core.jobs import (
+    failures,
+    progress,
+    quote_refresh,
+    reconcile,
+    refresh_backoff,
+    workflow_nodes,
+)
 from ..core.jobs.coordinator import (
     UNCONFIRMED,
     CancellationUnsupported,
@@ -57,6 +64,7 @@ from .job_session import (
     MaterialResultUncertain,
     MediaResultUncertain,
     ModelResultUncertain,
+    SessionBusy,
     WorldResultUncertain,
 )
 from .material_application import MaterialApplicationError, capture_target, selected_maps
@@ -145,6 +153,28 @@ class AutomaticEstimatesStopped(ScenarioError):
             f"{error}. Automatic prices are off until Blender restarts; once that job finishes, "
             "save it from history.",
         )
+
+
+class NothingSent(ScenarioError):
+    """Generate was refused before anything could be sent, and nothing needs review.
+
+    Either nothing was saved, or the saved intent was canceled locally because it
+    was never queued. `note` says why the form is priced again.
+    """
+
+    note = quote_refresh.NOT_QUEUED
+
+    def __init__(self, reason):
+        super().__init__(0, reason)
+
+
+class QuoteRevoked(NothingSent):
+    """The scene changed after this price: refused before the quote was consumed."""
+
+    note = quote_refresh.SCENE_CHANGED
+
+    def __init__(self):
+        super().__init__("The scene changed after this estimate; estimate again")
 
 
 def automatic_estimates_stopped():
@@ -291,6 +321,8 @@ class ModelQuote:
     quote: object = field(default=None, repr=False)
     used: bool = False
     operation: str = "model"
+    # The scene revision the inputs were read from; see ModelJobs.quote_current.
+    origin: object = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -474,6 +506,11 @@ class ModelJobs:
         self._images = {}
         self._receipts = {}
         self._automatic_application = set()
+        # request_id -> destination-only origin of the scene an Image job was
+        # submitted from: scene edits keep its automatic import, Undo/Redo, file
+        # loading or removing the scene stop it for review. Read only while the
+        # job is in _automatic_application. Memory only.
+        self._automatic_destinations = {}
         self._application_approvals = {}
         self._application_destinations = {}
         self._media_destinations = {}
@@ -603,7 +640,14 @@ class ModelJobs:
             identifier, json.loads(snapshot), origin=origin
         )
         quote = ModelQuote(
-            uuid.uuid4().hex, identifier, scene, snapshot, task, lane=lane, operation=operation
+            uuid.uuid4().hex,
+            identifier,
+            scene,
+            snapshot,
+            task,
+            lane=lane,
+            operation=operation,
+            origin=origin,
         )
         self.quotes[quote.identifier] = quote
         return quote
@@ -626,6 +670,10 @@ class ModelJobs:
                 raise
         return ticket.quote.estimate
 
+    def quote_current(self, ticket):
+        """Whether the scene this quote's inputs were read from is unchanged; memory only."""
+        return ticket.origin is not None and self.session.origin_current(ticket.origin)
+
     def require_quote(self, quote_id):
         ticket = self.quotes.get(quote_id) if isinstance(quote_id, str) else None
         if ticket is None or ticket.used:
@@ -634,6 +682,10 @@ class ModelJobs:
 
     def submit(self, quote_id, scene, model_id, body, *, approved_cost, meta=None, lane="image"):
         ticket = self.require_quote(quote_id)
+        if not self.quote_current(ticket):
+            # The coordinator would refuse it too; nothing is saved or sent.
+            ticket.used = True
+            raise QuoteRevoked()
         estimate = self.finish_quote(ticket)
         if (
             ticket.operation != "model"
@@ -644,6 +696,9 @@ class ModelJobs:
             or approved_cost != str(estimate.cost)
         ):
             raise ScenarioError(0, "The request or approved cost changed; estimate again")
+        # Image results import into the scene they were generated from, whatever
+        # is edited there meanwhile; the quote itself stays bound to its revision.
+        destination = self.session.capture_destination(scene) if lane == "image" else None
         # Consumption precedes persistence: an error may occur after a committed
         # write. A second click must never prepare another intent from this quote.
         ticket.used = True
@@ -653,6 +708,8 @@ class ModelJobs:
             kind=LANE_KIND[lane],
             meta=meta,
             binding=JobBinding(scene.session_uid, lane),
+            destination=destination,
+            withdraw=True,
         )
 
     def submit_workflow(self, quote_id, scene, workflow_id, body, *, approved_cost):
@@ -691,10 +748,25 @@ class ModelJobs:
             raise ScenarioError(0, "Approve a Film task's unchanged exact price")
         return self._submit_quote(quote, lane="film", kind="film")
 
-    def _submit_quote(self, quote, *, lane, kind, meta=None, binding=None):
+    def _submit_quote(
+        self, quote, *, lane, kind, meta=None, binding=None, destination=None, withdraw=False
+    ):
+        """Save and queue one approved quote.
+
+        With `withdraw`, a refusal that leaves nothing to review raises NothingSent:
+        a full session before anything is saved, or a queue refusal whose saved
+        intent is then canceled locally.
+        """
         estimate = quote.estimate
         model_id = estimate.target_id
-        prepared = self.session.prepare_quote(quote)
+        try:
+            prepared = self.session.prepare_quote(quote)
+        except SessionBusy:
+            if not withdraw:
+                raise
+            raise NothingSent(
+                "Blender is still finishing other job steps; nothing was sent"
+            ) from None
         view = JobRecord(
             local_id=prepared.intent.request_id,
             lane=lane,
@@ -713,15 +785,40 @@ class ModelJobs:
         view.meta["shared_job"] = True
         if lane == "image":
             self._automatic_application.add(view.local_id)
+            if destination is not None:
+                self._automatic_destinations[view.local_id] = destination
         try:
             task = self.session.submit(
                 prepared, operation=estimate.operation, target_id=model_id, payload=estimate.payload
             )
         except Exception:
+            if withdraw and self._withdraw(view.local_id):
+                raise NothingSent(
+                    "Blender could not queue this generation; nothing was sent"
+                ) from None
             view.error = "Submission could not be queued; inspect the saved job before continuing"
             raise
         self.submissions[view.local_id] = task
         return view
+
+    def _withdraw(self, request_id):
+        """Cancel a saved intent that was never queued, so it needs no review.
+
+        Nothing holds it for dispatch, so local cancellation is final. Returns False,
+        leaving the prepared job for review, when the cancellation is not saved.
+        """
+        try:
+            record = self.store.get(request_id)
+            if record is None or record.state != JobState.PREPARED:
+                return False
+            self.session.cancel_prepared(request_id, expected_revision=record.revision)
+        except Exception:
+            return False
+        self.views.pop(request_id, None)
+        self._bindings.pop(request_id, None)
+        self._automatic_application.discard(request_id)
+        self._automatic_destinations.pop(request_id, None)
+        return True
 
     def poll(self):
         """Advance owned jobs through existing commands; never replay paid work."""
@@ -762,6 +859,12 @@ class ModelJobs:
                 self._finish_lookup(request_id, command, task)
                 continue
             destination = self._application_destinations.pop(request_id, None)
+            # One automatic import attempt; a stopped one is paused for explicit review.
+            automatic = (
+                self._automatic_destinations.pop(request_id, None)
+                if command == "verify_results"
+                else None
+            )
             media = self._media_destinations.pop(request_id, None)
             model = self._model_destinations.pop(request_id, None)
             world = self._world_destinations.pop(request_id, None)
@@ -840,7 +943,7 @@ class ModelJobs:
                 elif command == "verify_results":
                     self.views[request_id].files = [str(p) for p in completion.result.paths]
                     result = (
-                        self.session.apply_images(completion)
+                        self.session.apply_images(completion, destination=automatic)
                         if destination is None
                         else self.session.apply_recovered_images(
                             completion, destination=destination

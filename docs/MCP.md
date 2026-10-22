@@ -817,8 +817,10 @@ timeout. Cancellation and interrupted download recovery use the same scoped
 revision guards as Image.
 
 Only the Image lane automatically imports verified PNG/EXR images into its
-unchanged original scene. Other lanes stop at `ready` after saving downloads;
-there is no implicit texture assignment, mesh import or sequencer insertion.
+original scene, if selected; scene edits keep the import, while Undo, Redo, loading
+a file or removing the scene leave the job `ready`. Other lanes stop at `ready`
+after saving downloads; there is no implicit texture assignment, mesh import or
+sequencer insertion.
 `job_status.results` reports asset identity, media type, expected size, `source`,
 `projection` and whether a download receipt was recorded. `source: original` means
 a declared OpenEXR original was saved instead of its preview, or a WAV original

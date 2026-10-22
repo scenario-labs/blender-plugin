@@ -24,6 +24,7 @@ from ..core.api.catalog import (
     trained_kind,
 )
 from ..core.api.errors import ScenarioError
+from ..core.jobs import quote_refresh
 from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
@@ -116,6 +117,7 @@ def clear_catalog():
     runtime.state.estimates.clear()
     runtime.state.estimate_origins.clear()
     runtime.state.repeats.clear()  # a repeat belongs to the retired scope's price
+    runtime.state.reprices.clear()
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -1208,6 +1210,12 @@ def process_model_jobs():
                     # Another scene was selected before this price arrived. The
                     # pump prices the form again once its own scene is selected.
                     props.mark_estimate_dirty(lane_state)
+                elif not isinstance(
+                    error, model_jobs.AutomaticEstimatesStopped
+                ) and not jobs.quote_current(ticket):
+                    # The scene changed while this price was requested: the worker
+                    # or the delivery refused it, so ask again once it settles.
+                    reprice(ticket.scene, ticket.lane, lane_state)
                 else:
                     lane_state.estimate_state = "ERROR"
                     lane_state.estimate_error = message
@@ -1288,11 +1296,12 @@ def rearm_repeat(scene, lane, lane_state, now):
 
 
 def prune_repeats():
-    """Forget repeats of scenes that no longer exist (pump only)."""
-    if runtime.state.repeats:
-        live = {scene.session_uid for scene in bpy.data.scenes}
-        for key in [key for key in runtime.state.repeats if key[0] not in live]:
-            del runtime.state.repeats[key]
+    """Forget repeats and repricings of scenes that no longer exist (pump only)."""
+    for entries in (runtime.state.repeats, runtime.state.reprices):
+        if entries:
+            live = {scene.session_uid for scene in bpy.data.scenes}
+            for key in [key for key in entries if key[0] not in live]:
+                del entries[key]
 
 
 def note_repeat_quote(scene, lane, lane_state):
@@ -1338,6 +1347,80 @@ def spend_review(scene, lane, threshold):
     return SpendReview(scene.session_uid, lane, ticket, cost, model_name(lane_state))
 
 
+@dataclass
+class Reprice:
+    """A form pricing itself again after its price was revoked; main thread, memory only."""
+
+    settle: quote_refresh.Settle
+    note: str = quote_refresh.SCENE_CHANGED
+
+
+class PriceRefreshing(ScenarioError):
+    """Generate sent nothing and the form is being priced again; not an error to keep."""
+
+    def __init__(self, reason):
+        super().__init__(0, reason)
+
+
+def _revision(scene):
+    """The scene's current origin, or None without a job session; reads no inputs."""
+    jobs = runtime.state.model_jobs
+    try:
+        return jobs.session.capture(scene) if jobs is not None else None
+    except Exception:
+        return None
+
+
+def reprice(scene, lane, lane_state, note=quote_refresh.SCENE_CHANGED):
+    """Price this form again once its scene has stopped changing; never spends."""
+    props.mark_estimate_dirty(lane_state)
+    settle = quote_refresh.Settle(_revision(scene), lane_state.estimate_dirty_at)
+    runtime.state.reprices[(scene.session_uid, lane)] = Reprice(settle, note)
+
+
+def repricing_note(lane_state):
+    """Why a pending form is being priced again, or ""; read-only for drawing."""
+    try:
+        key = (lane_state.id_data.session_uid, props.lane_of(lane_state))
+    except (AttributeError, ReferenceError):
+        return ""
+    entry = runtime.state.reprices.get(key)
+    return entry.note if entry is not None and lane_state.estimate_state == "PENDING" else ""
+
+
+def reprice_revoked(scene, lane, lane_state):
+    """Price a form again when the scene changed after its price (pump only).
+
+    Returns True when the form changed. A price the scene no longer backs would
+    only be refused by Generate, so its handle is retired.
+    """
+    key = (scene.session_uid, lane)
+    if lane_state.estimate_state != "PENDING":
+        runtime.state.reprices.pop(key, None)
+    if lane_state.estimate_state != "READY":
+        return False
+    jobs = runtime.state.model_jobs
+    ticket = runtime.state.estimates.get(lane_state.estimate_key)
+    if (
+        jobs is None
+        or not isinstance(ticket, model_jobs.ModelQuote)
+        or ticket.origin is None  # nothing to compare: never a repricing loop
+        or jobs.quote_current(ticket)
+    ):
+        return False
+    del runtime.state.estimates[lane_state.estimate_key]
+    if jobs.quotes.get(ticket.identifier) is ticket:
+        del jobs.quotes[ticket.identifier]
+    reprice(scene, lane, lane_state)
+    return True
+
+
+def scene_settled(scene, lane, now):
+    """Whether a repricing form's scene kept one revision long enough (pump only)."""
+    entry = runtime.state.reprices.get((scene.session_uid, lane))
+    return entry is None or entry.settle.settled(_revision(scene), now)
+
+
 def submit_generation(context, lane, review=None):
     """Spend the form's ready quote once; after a confirmation, only the quote it named."""
     runtime.sync_catalog_context()
@@ -1359,7 +1442,8 @@ def submit_generation(context, lane, review=None):
         # Refused before the quote is consumed, so the form keeps its new price to review.
         raise ScenarioError(0, PRICE_CHANGED)
     # A rejected attempt can consume the handle before storage reports an
-    # error. Never keep that price actionable or automatically reprice it.
+    # error. Never keep that price actionable or automatically reprice it,
+    # unless the refusal is NothingSent: then nothing is saved for review.
     lane_state.estimate_state = "IDLE"
     runtime.state.estimates.pop(lane_state.estimate_key, None)
     try:
@@ -1374,6 +1458,16 @@ def submit_generation(context, lane, review=None):
             lane=lane,
             meta=request_meta(context, lane, request),
         )
+    except model_jobs.NothingSent as error:
+        # Nothing was sent and nothing needs review: price the form again.
+        jobs.quotes.pop(ticket.identifier, None)
+        reprice(scene, lane, lane_state, error.note)
+        reason = (
+            "The scene changed after this price"
+            if isinstance(error, model_jobs.QuoteRevoked)
+            else error.reason
+        )
+        raise PriceRefreshing(f"{reason}; Generate again once the new price shows") from None
     except ScenarioError:
         lane_state.estimate_state = "ERROR"
         lane_state.estimate_error = "Inspect saved jobs and request a fresh price"

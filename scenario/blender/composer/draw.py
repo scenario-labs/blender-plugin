@@ -478,7 +478,7 @@ def _draw_strip(geometry, state, scale):
 
 
 def status_note(lane_state):
-    """The line shown next to the model chip: a failed model description, a quote problem, the lane's error, else the add-on's temporary message."""
+    """The line shown next to the model chip: a failed model description, a quote problem, the lane's error, a price being requested again, else the add-on's temporary message."""
     error = generation.lane_error(lane_state)  # without a stale saved model-load failure
     failure = runtime.state.model_errors.get(lane_state.model_id)
     if failure is not None and generation.schema_for(lane_state.model_id) is None:
@@ -487,6 +487,9 @@ def status_note(lane_state):
         return lane_state.estimate_error
     if error:
         return error
+    note = generation.repricing_note(lane_state)
+    if note:
+        return note
     visible = getattr(runtime, "message_visible", None)
     message = (visible() if callable(visible) else runtime.state.last_message) or ""
     if not message and any(slot.has_scale for slot in lane_state.trained):

@@ -414,7 +414,8 @@ price. Uploading never generates.
   selected mesh** fills a 3D input.
 
 Supported PNG and OpenEXR results import as packed images, which you can find in
-Blender's Image Editor.
+Blender's Image Editor. They import into the scene you generated from, edited or
+not, while it is selected; after Undo, Redo or opening a file they wait in Jobs.
 
 **Remove background** on an image result fills the Image form with a
 background-removal model and that image, replacing the form's previous content. It
@@ -1173,7 +1174,9 @@ save the file yourself.
 
 Prices are in Creative Units (CU) and depend on the model, settings and references.
 
-- **Generate (N CU)** is the price of the form as it stands.
+- **Generate (N CU)** is the price of the form as it stands. After a scene
+  change, such as a selection or a frame change, it is priced again once the
+  scene is still (**Scene changed; updating the price**).
 - Above **Confirm generations above** in the extension's preferences (200 CU by
   default; 0 asks every time), Generate and Generate blockout first ask you to
   confirm the model and exact price. Agent requests keep their own approval.

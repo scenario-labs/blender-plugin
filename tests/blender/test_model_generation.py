@@ -734,12 +734,34 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(owner.status(item.record.intent.request_id)["delivery_paused"])
         self.assertFalse(self.downloads or self.paid)
 
-    def test_stale_origin_downloads_but_does_not_apply_or_resubmit(self):
+    def test_scene_edits_during_an_image_job_keep_its_automatic_import(self):
         self.result_fixture()
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        # A frame change, then any other scene update, revokes the job's scene revision.
+        scene = bpy.context.scene
+        scene.frame_set(scene.frame_current + 1)
+        owner.session.invalidate_scene(scene)
+        before = set(bpy.data.images)
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(set(bpy.data.images) - before), 1)
+        saved = self.store.get(result["local_id"])
+        # The import claimed the scene the job was sent from, not a revision of its content.
+        destination = saved.application_origin
+        self.assertTrue(submodule("core.jobs.origins").destination_only(destination))
+        self.assertEqual(destination.scene_id, saved.intent.origin.scene_id)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.downloads), 1)
+
+    def test_undo_during_an_image_job_downloads_but_does_not_apply_or_resubmit(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_all()  # Undo, Redo or file loading
         before = set(bpy.data.images)
         self.deliver_results()
         status = self.tools.job_status({"job_id": result["local_id"]})
@@ -748,6 +770,24 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.images), before)
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(len(self.downloads), 1)
+
+    def test_an_image_job_whose_scene_is_not_selected_waits_for_review(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        first, window = bpy.context.scene, bpy.context.window
+        other = bpy.data.scenes.new("Selected while the job runs")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        self.addCleanup(setattr, window, "scene", first)
+        window.scene = other
+        before = set(bpy.data.images)
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["status"], "ready")
+        self.assertTrue(status["delivery_paused"])
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.paid), 1)
 
     def test_failed_download_stops_without_automatic_retry_or_paid_replay(self):
         self.result_fixture()
@@ -825,7 +865,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -1718,6 +1758,8 @@ class ModelGenerationTests(unittest.TestCase):
         session = self.runtime.ensure_job_session()
         with (
             patch.object(session, "submit", side_effect=self.origin_error("Fixture origin gone")),
+            # Only a cancellation that is not saved leaves the prepared job for review.
+            patch.object(session, "cancel_prepared", side_effect=self.storemod.StoreError("held")),
             self.assertRaises(self.origin_error),
         ):
             self.mcp_submit(quote)
@@ -1738,6 +1780,42 @@ class ModelGenerationTests(unittest.TestCase):
             ("prepared", False, False, False, ("cancel_prepared",)),
         )
         self.assertEqual(self.paid, [])
+
+    def test_a_generation_blender_could_not_queue_is_canceled_and_priced_again(self):
+        refresh = submodule("core.jobs.quote_refresh")
+        props = submodule("blender.props")
+        workers = submodule("core.jobs.workers")
+        self.ui_quote()
+        owner = self.runtime.state.model_jobs
+        with patch.object(
+            owner.session._workers, "submit", side_effect=workers.WorkerError("Job queue is full")
+        ):
+            with self.assertRaisesRegex(self.generation.PriceRefreshing, "nothing was sent"):
+                self.generation.submit_generation(bpy.context, "image")
+        # The intent was saved, then canceled because nothing could ever send it.
+        (record,) = self.store.records()
+        self.assertEqual(record.state, self.storemod.JobState.CANCELED)
+        self.assertNotIn(record.intent.request_id, owner.views)
+        self.assertFalse(owner.imports_automatically(record.intent.request_id))
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.NOT_QUEUED)
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_full_session_refuses_generate_before_saving_an_intent(self):
+        self.ui_quote()
+        quote = self.mcp_quote()
+        session = self.runtime.state.model_jobs.session
+        with patch.object(session, "_completion_limit", 0):
+            with self.assertRaisesRegex(self.generation.PriceRefreshing, "nothing was sent"):
+                self.generation.submit_generation(bpy.context, "image")
+            with self.assertRaisesRegex(self.request_error, "nothing was sent"):
+                self.mcp_submit(quote)
+        self.assertEqual((self.store.records(), self.paid), ((), []))
+        self.assertEqual(self.lane.estimate_state, "PENDING")
 
     def test_pump_redraws_on_projected_progress_change_and_not_on_idle_ticks(self):
         pump = submodule("blender.pump")
@@ -2641,21 +2719,80 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.records()[0].state, self.storemod.JobState.PREPARED)
         self.assertEqual(self.paid, [])
 
-    def test_rejected_ui_quote_requires_explicit_repricing(self):
+    def test_generate_after_a_scene_change_prices_the_form_again(self):
+        panels = submodule("blender.panels")
+        props = submodule("blender.props")
+        refresh = submodule("core.jobs.quote_refresh")
         self.ui_quote()
+        ticket = self.runtime.state.estimates[self.lane.estimate_key]
         self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
-        with self.assertRaises(self.request_error):
-            self.generation.submit_generation(bpy.context, "image")
-        self.assertEqual(self.lane.estimate_state, "ERROR")
-        self.assertNotIn(self.lane.estimate_key, self.runtime.state.estimates)
+        # Generate before the pump noticed: a warning, not an error the form keeps.
+        self.assertEqual(bpy.ops.scenario.generate(lane="image"), {"CANCELLED"})
+        self.assertEqual(self.lane.last_error, "")
+        self.assertEqual((self.store.records(), self.paid), ((), []))
+        self.assertNotIn(ticket.identifier, self.runtime.state.model_jobs.quotes)
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(panels.generate_button_text(self.lane), "Generate  (estimating...)")
+        self.assertFalse(panels.generate_enabled(self.lane, "image"))
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.SCENE_CHANGED)
+        layout = MagicMock()
+        panels.draw_generate_row(layout, self.lane, "image")
+        layout.label.assert_any_call(text=refresh.SCENE_CHANGED, icon="TIME")
+        self.assertEqual(
+            submodule("blender.composer.draw").status_note(self.lane), refresh.SCENE_CHANGED
+        )
         with self.assertRaisesRegex(self.request_error, "fresh price"):
             self.generation.submit_generation(bpy.context, "image")
-        self.assertEqual(self.store.records(), ())
-        self.assertEqual(self.paid, [])
-        self.ui_quote()
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.assertEqual(self.generation.repricing_note(state), "")
+        self.assertTrue(panels.generate_enabled(state, "image"))
         self.generation.submit_generation(bpy.context, "image")
         self.settle()
         self.assertEqual(len(self.paid), 1)
+
+    def test_the_pump_prices_again_a_price_the_scene_changed_after(self):
+        pump = submodule("blender.pump")
+        props = submodule("blender.props")
+        self.ui_quote()
+        session = self.runtime.state.job_session
+        dry_runs = len(self.dry_runs())
+        start = props.clock()
+        session.invalidate_scene(bpy.context.scene)
+        with patch.object(props, "clock", return_value=start):
+            pump._process()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertFalse(self.runtime.state.estimates)
+        # While the scene keeps changing, as in a drag or playback, nothing is requested.
+        for step in range(1, 6):
+            session.invalidate_scene(bpy.context.scene)
+            with patch.object(props, "clock", return_value=start + step):
+                pump._process()
+            self.assertEqual(self.lane.estimate_key, "")
+        self.assertEqual(len(self.dry_runs()), dry_runs)
+        with patch.object(props, "clock", return_value=start + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.assertEqual(len(self.dry_runs()), dry_runs + 1)
+        self.assertEqual(self.runtime.state.reprices, {})
+
+    def test_a_price_revoked_while_it_is_requested_is_requested_again(self):
+        props = submodule("blender.props")
+        refresh = submodule("core.jobs.quote_refresh")
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The worker may refuse the changed origin itself.
+        self.runtime.sync_catalog_context()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.SCENE_CHANGED)
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
 
     def test_lost_ui_intent_receipt_clears_ready_price_without_replay(self):
         self.ui_quote()
@@ -2790,8 +2927,9 @@ class ModelGenerationTests(unittest.TestCase):
     def test_scene_change_and_retired_credentials_reject_quotes(self):
         quote = self.mcp_quote()
         self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
-        with self.assertRaises((self.request_error, self.origin_error)):
+        with self.assertRaisesRegex(self.request_error, "scene changed after this estimate"):
             self.mcp_submit(quote)
+        self.assertEqual(self.store.records(), ())
         quote = self.mcp_quote()
         self.prefs.api_secret = "other-synthetic-secret"
         with self.assertRaises((self.request_error, self.origin_error)):
@@ -3436,7 +3574,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -3523,7 +3661,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -4037,7 +4175,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()

@@ -194,7 +194,7 @@ def _draw_detail(layout, context, record, rows, surface):
         box.label(text=f"Submitted {submitted}", icon="TIME")
     cost = panels.result_cost_label(record)
     if cost:
-        box.label(text=cost, icon="FUND")
+        box.label(text=cost, icon="INFO")
     panels.draw_result_body(box, record, single_icon=tile is None)
 
 

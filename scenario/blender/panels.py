@@ -1150,7 +1150,7 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
         )
         spent = runtime.session_spend_label()
         if spent:
-            layout.label(text=spent, icon="FUND")
+            layout.label(text=spent, icon="INFO")
         from . import blockout
 
         active = [r for r in runtime.state.jobs_view if not r.is_terminal]

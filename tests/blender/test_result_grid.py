@@ -337,7 +337,7 @@ class ResultGridTests(unittest.TestCase):
         facts = [
             (text, icon)
             for text, icon in labels(calls)
-            if icon in ("TEXT", "NODE_MATERIAL", "IMAGE_DATA", "TIME", "FUND")
+            if icon in ("TEXT", "NODE_MATERIAL", "IMAGE_DATA", "TIME", "INFO")
         ]
         self.assertEqual(
             facts,
@@ -346,7 +346,7 @@ class ResultGridTests(unittest.TestCase):
                 ("Fixture Model", "NODE_MATERIAL"),
                 ("Image, 2.4 MiB", "IMAGE_DATA"),
                 (f"Submitted {self.core.submitted_label(None, CREATED)}", "TIME"),
-                (self.panels.result_cost_label(row), "FUND"),
+                (self.panels.result_cost_label(row), "INFO"),
             ],
         )
         # The same model row and actions a list row draws: Details and the saved-job controls.

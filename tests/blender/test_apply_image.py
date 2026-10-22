@@ -30,9 +30,13 @@ def png(width=4, height=2, *, alpha=True):
 
 
 def linked(tree, node_type, socket):
-    """The node feeding `socket` of the first node of `node_type`, or None."""
+    """The node feeding input `socket` of the first node of `node_type`, or None.
+
+    `socket` is the input's identifier: display names change between Blender
+    versions, such as the Mix Shader's Fac, which Blender 5.2 names Factor.
+    """
     for link in tree.links:
-        if link.to_node.type == node_type and link.to_socket.name == socket:
+        if link.to_node.type == node_type and link.to_socket.identifier == socket:
             return link.from_node
     return None
 

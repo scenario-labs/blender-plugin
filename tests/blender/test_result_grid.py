@@ -9,6 +9,7 @@ Drawing is checked through a recording layout.
 
 import builtins
 import io
+import itertools
 import os
 import unittest
 from collections import namedtuple
@@ -495,6 +496,16 @@ class ResultGridPreviewTests(unittest.TestCase):
         self.studio = submodule("blender.studio")
         self.recovery = submodule("blender.job_recovery")
         self.view = fresh_views(self)
+        # Background Blender assigns no icon IDs; give each preview a distinct
+        # stand-in so a drawn icon still names the tile it came from.
+        controller = self.tiles.controller
+        make, stand_ins = controller._icon, itertools.count(100_000)
+
+        def icon(key, size, pixels):
+            controller._icons[key] = make(key, size, pixels) or next(stand_ins)
+            return controller._icons[key]
+
+        self.enterContext(patch.object(controller, "_icon", side_effect=icon))
 
     def applied(self, assets=None, *, settled=None):
         """A saved job taken on to APPLIED, as Generations lists it; its projected view.

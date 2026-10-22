@@ -715,6 +715,17 @@ class FirstCatalogLoadOriginTests(unittest.TestCase):
         self.records = [
             fixture_record(path.stem) for path in sorted((FIXTURES / "models").glob("*.json"))
         ]
+        # The recorded fixtures predate the current curated image models: rank the
+        # recorded ones as before so each form still seeds GPT Image 2 first.
+        catalog = submodule("core.api.catalog")
+        recorded = ["model_openai-gpt-image-2", "model_google-gemini-3-1-flash"]
+        self.enterContext(
+            patch.object(
+                catalog,
+                "DEFAULT_MODELS",
+                dict(catalog.DEFAULT_MODELS, image=recorded, render_image=recorded),
+            )
+        )
         self.session = self.job_session()
         bpy.context.view_layer.update()
 

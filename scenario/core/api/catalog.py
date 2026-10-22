@@ -38,48 +38,53 @@ TEXTURE_TAG = "sc:texture"
 TEXTURE_CAPS = {"txt2img", "img2img"}
 DEFAULT_MODELS = {
     "image": [
-        "model_openai-gpt-image-2",
+        "model_openai-gpt-image-2-5-sunburst",
+        "model_google-gemini-nano-banana-2-1",
         "model_google-gemini-3-1-flash",
         "model_bytedance-seedream-5-0-pro",
         "model_bytedance-seedream-5-0-lite",
         "model_z-image",
     ],
     "video": [
-        "model_bytedance-seedance-2-0",
         "model_bytedance-seedance-2-5",
         "model_veo3-1",
         "model_kling-v3-omni-video",
     ],
     "3d": [
-        "model_meshy-7-txt23d",
+        "model_meshy-7-1-txt23d",
         "model_rodin-hyper3d-v2-5-text-to-3d",
         "model_tripo-v3-1-image-to-3d",
-        "model_meshy-7-img23d",
+        "model_meshy-7-1-img23d",
         "model_hunyuan-3d-pro-3-1-i23d",
         "model_rodin-hyper3d-v2-5",
-        "model_tripo-p1-image-to-3d",
-        "model_meshy-7-multi-image-to-3d",
+        "model_tripo-p2-image-to-3d",
+        "model_meshy-7-1-multi-image-to-3d",
         "model_tripo-v3-1-multiview-to-3d",
         "model_hunyuan-3d-pro-3-1-multiview",
     ],
     # PATINA's PBR sets first, then Scenario Texture; other texture models follow by name.
     "material": [*PATINA_MODELS, "model_scenario-texture"],
     "audio": [
-        "model_elevenlabs-music-v2",
+        "model_elevenlabs-music-v2-5",
+        "model_lyria-3-5",
         "model_lyria-3-pro",
         "model_ace-step-1-5-quality-text-to-music",
         "model_minimax-music-3-0",
+        "model_elevenlabs-tts-v4",
         "model_elevenlabs-tts-v3",
-        "model_google-gemini-3-1-flash-tts",
+        "model_google-gemini-3-8-flash-tts",
         "model_elevenlabs-sound-effects-v2",
         "model_sonilo-v1-1-text-to-sound-effects",
         "model_sonilo-v1-1-video-to-sound-effects",
     ],
-    # The image edit models take a reference image and a look prompt; GPT Image 2 comes first (product decision).
+    # The image edit models take a reference image and a look prompt; GPT Image 2.5 Sunburst comes first
+    # (product decision).
     "render_image": [
-        "model_openai-gpt-image-2",
+        "model_openai-gpt-image-2-5-sunburst",
+        "model_google-gemini-nano-banana-2-1",
         "model_google-gemini-3-1-flash",
         "model_bytedance-seedream-5-0-pro",
+        "model_bfl-flux-3-image",
         "model_bfl-flux-2-max-editing",
         "model_bfl-flux-2-pro-editing",
         "model_qwen-image-edit-2511",
@@ -87,21 +92,20 @@ DEFAULT_MODELS = {
         "model_xai-grok-imagine-image-2-0",
         "model_z-image",
     ],
-    # the ten video models that accept a reference video (and images) to re-render
+    # the video models that accept a reference video (and images) to re-render
     "render_video": [
-        "model_bytedance-seedance-2-0",
-        "model_minimax-h3",
         "model_bytedance-seedance-2-5",
+        "model_minimax-h3",
         "model_bytedance-seedance-2-0-mini",
         "model_runway-aleph-2",
         "model_alibaba-happy-horse-video-editing",
         "model_google-omni-1-1-flash-edit",
-        "model_google-omni-flash-edit",
         "model_xai-grok-edit-video",
         "model_bfl-flux-3-extend",
     ],
     "edit3d": [
         "model_meshy-7-retexture",
+        "model_tripo-retopology-v3",
         "model_tripo-retopology",
         "model_meshy-rigging",
         "model_meshy-animation",
@@ -164,7 +168,12 @@ EDIT3D_TASKS = (
         "REMESH",
         "Remesh",
         "Clean quad or triangle topology at a target polycount",
-        ("model_tripo-retopology", "model_meshy-remesh", "model_tencent-smarttopology"),
+        (
+            "model_tripo-retopology-v3",
+            "model_tripo-retopology",
+            "model_meshy-remesh",
+            "model_tencent-smarttopology",
+        ),
     ),
     (
         "RETEXTURE",

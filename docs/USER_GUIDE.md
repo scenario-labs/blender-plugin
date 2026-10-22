@@ -604,7 +604,7 @@ Your view, rendered as a finished still by an image-editing model. The
 
 - **Scene to render**: choose Viewport or Scene camera (optionally with Grey
   clay capture), then **Capture and upload scene**.
-- **Model**: GPT Image 2 by default, or any other image-to-image model.
+- **Model**: GPT Image 2.5 Sunburst by default, or any other image-to-image model.
 - **Look**: describe the result, for example "weathered steampunk copper,
   overcast light". Left empty, **Prepare look with Prompt Spark** (on by
   default) writes one, with its own price and approval before the render's; turn

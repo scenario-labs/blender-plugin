@@ -36,7 +36,7 @@ RECORDS = [
     rec("model_patina-material", "PATINA Material", ["txt2img", "img2img"]),
     rec("model_some-lora", "Cartoon Backgrounds 2.0", ["txt2img", "img2img"], ["sc:scenario"]),
     rec("model_scenario-llm", "Scenario LLM", ["txt2txt", "img2txt"], ["tool"]),
-    rec("model_bytedance-seedance-2-0", "Seedance 2.0", ["txt2video", "img2video", "video2video"]),
+    rec("model_bytedance-seedance-2-5", "Seedance 2.5", ["txt2video", "img2video", "video2video"]),
     rec("model_minimax-h3", "Minimax H3", ["txt2video", "img2video", "video2video"]),
     rec("model_kling-v3-i2v-pro", "Kling V3 I2V Pro", ["img2video"]),
     rec(
@@ -79,7 +79,7 @@ def test_render_image_lane_keeps_edit_models_and_drops_utilities_and_patina():
 
 def test_render_video_lane_needs_a_video_input():
     got = ids(catalog.models_for_lane("render_video", RECORDS))
-    assert got[:2] == ["model_bytedance-seedance-2-0", "model_minimax-h3"]
+    assert got[:2] == ["model_bytedance-seedance-2-5", "model_minimax-h3"]
     assert "model_kling-v3-i2v-pro" not in got
 
 
@@ -399,12 +399,36 @@ def test_trained_models_lists_private_scope_then_public_loras_once():
 
 
 def test_audio_lane_lists_speech_music_and_sfx_models():
-    music = rec("model_elevenlabs-music-v2", "ElevenLabs Music v2", ["txt2audio"])
+    music = rec("model_elevenlabs-music-v2-5", "ElevenLabs Music v2.5", ["txt2audio"])
     cover = rec("model_minimax-music-cover", "Minimax Music Cover", ["audio2audio"])
     got = ids(catalog.models_for_lane("audio", RECORDS + [music, cover]))
-    assert got == ["model_elevenlabs-music-v2", "model_minimax-music-cover"]
+    assert got == ["model_elevenlabs-music-v2-5", "model_minimax-music-cover"]
     assert "model_google-gemini-3-1-flash" not in got
-    assert catalog.DEFAULT_MODELS["render_image"][0] == "model_openai-gpt-image-2"
+    assert catalog.DEFAULT_MODELS["render_image"][0] == "model_openai-gpt-image-2-5-sunburst"
+
+
+def test_a_newer_version_takes_the_older_ones_place_and_a_live_older_one_follows():
+    curated = catalog.DEFAULT_MODELS
+    for lane, newer, older in (
+        ("image", "model_google-gemini-nano-banana-2-1", "model_google-gemini-3-1-flash"),
+        ("render_image", "model_google-gemini-nano-banana-2-1", "model_google-gemini-3-1-flash"),
+        ("audio", "model_lyria-3-5", "model_lyria-3-pro"),
+        ("audio", "model_elevenlabs-tts-v4", "model_elevenlabs-tts-v3"),
+        ("edit3d", "model_tripo-retopology-v3", "model_tripo-retopology"),
+    ):
+        assert curated[lane].index(older) == curated[lane].index(newer) + 1, (lane, newer)
+    # Remesh offers Tripo Retopology v3 first; saved jobs on the older model keep their task.
+    retopology_v3 = rec(
+        "model_tripo-retopology-v3",
+        "Tripo Retopology v3",
+        ["3d23d"],
+        inputs=[{"name": "model", "type": "file", "kind": "3d"}],
+    )
+    assert ids(catalog.edit3d_models("REMESH", RECORDS + [retopology_v3])) == [
+        "model_tripo-retopology-v3",
+        "model_tripo-retopology",
+    ]
+    assert catalog.edit3d_task("REMESH")[3][0] == "model_tripo-retopology-v3"
 
 
 def _recorded(model_id):

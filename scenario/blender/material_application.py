@@ -13,7 +13,9 @@ from .image_application import apply_images
 
 _IMAGE_TYPES = {"image/png", "image/jpeg", "image/exr", "image/x-exr"}
 _MAX_MAP_BYTES = 256 * 1024 * 1024
-_MAX_POLYGONS = 1_000_000
+# Bounds the main-thread face-slot copies at capture, validation and rollback. It sits
+# above any triangle-list GLB the import accepts (three accessor entries per triangle).
+_MAX_POLYGONS = 4_000_000
 
 
 class MaterialApplicationError(RuntimeError):

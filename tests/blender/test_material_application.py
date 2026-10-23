@@ -217,6 +217,32 @@ class MaterialApplicationTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.materials), self.materials)
         self.assertEqual(set(bpy.data.images), self.images)
 
+    def test_dense_generated_mesh_takes_a_material_and_rolls_back(self):
+        # Image-to-3D results commonly exceed one million triangles.
+        bpy.ops.mesh.primitive_grid_add(x_subdivisions=1100, y_subdivisions=1100)
+        obj = bpy.context.active_object
+        self.assertGreater(len(obj.data.polygons), 1_000_000)
+        obj.data.polygons[-1].material_index = 3
+        target = self.module.capture_target(self.scene, obj)
+        original = self.module._assign
+
+        def fail(*args):
+            original(*args)
+            raise RuntimeError("synthetic assignment failure")
+
+        with patch.object(self.module, "_assign", side_effect=fail):
+            with self.assertRaises(self.module.MaterialApplicationError):
+                self.module.apply_material(self.fixture(("base",)), target)
+        self.assertEqual(self.module.capture_target(self.scene, obj), target)
+        result = self.module.apply_material(self.fixture(("base",)), target)
+        self.assertEqual(tuple(obj.data.materials), (result.material,))
+        self.assertEqual(obj.data.polygons[-1].material_index, 3)
+        with (
+            patch.object(self.module, "_MAX_POLYGONS", len(obj.data.polygons) - 1),
+            self.assertRaisesRegex(self.module.MaterialApplicationError, "polygon limit"),
+        ):
+            self.module.capture_target(self.scene, obj)
+
     def test_shared_mesh_is_rejected_without_changing_either_object(self):
         other = bpy.data.objects.new("Shared data user", self.obj.data)
         self.scene.collection.objects.link(other)

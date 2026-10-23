@@ -57,7 +57,7 @@ synchronously on Blender's main thread.
 capture the current scene, active mesh identity, data pointer, active slot,
 slot bindings, face-to-slot indices and active UV name. The target must be local,
 non-overridden, in Object Mode, have UVs, and own a single-user mesh. An object
-shared between scenes is rejected. At most 128 slots and one million polygons
+shared between scenes is rejected. At most 128 slots and four million polygons
 bound synchronous destination checks. Nothing is chosen again from selection
 after confirmation; a late result cannot attach to a different active object.
 

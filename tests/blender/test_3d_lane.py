@@ -85,6 +85,11 @@ class ThreeDLaneTests(unittest.TestCase):
         multi_ids = [r.id for r in generation.three_d_models("MULTI", records)]
         self.assertIn("model_meshy-7-img23d", multi_ids)
         self.assertNotIn("model_meshy-7-txt23d", multi_ids)
+        # Cartwheel animates the character it is given, from Edit 3D > Animate only.
+        motion = [rec("model_uthana-text-to-motion-3.0"), rec("model_cartwheel-text-to-motion")]
+        text_ids = [r.id for r in generation.three_d_models("TEXT", records + motion)]
+        self.assertIn("model_uthana-text-to-motion-3.0", text_ids)
+        self.assertNotIn("model_cartwheel-text-to-motion", text_ids)
 
     def test_mode_change_refreshes_model_enum(self):
         runtime = submodule("blender.runtime")

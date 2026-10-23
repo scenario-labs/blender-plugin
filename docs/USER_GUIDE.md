@@ -579,6 +579,8 @@ instead plays a motion from Meshy's library on your uploaded character: pick it 
 name (**Walk**, **Run**, **Wave hello**, **Jump** and others), or choose **Other ID**
 and type any ID from
 [Meshy's animation library](https://docs.meshy.ai/en/api/animation-library).
+**Cartwheel Text to Motion** also animates your uploaded character from a prompt;
+it is listed here, not in Text mode.
 
 A mesh too dense to take edits in place shows its triangle count and suggests
 remeshing it first; its results still import as new objects.

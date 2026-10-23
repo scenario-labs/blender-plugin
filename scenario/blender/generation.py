@@ -386,14 +386,15 @@ def three_d_models(mode, records):
     """Bucket 3D models by how they are driven: TEXT (txt23d), IMAGE (one picture), MULTI (several views).
 
     With a schema, a file_array image input that accepts more than one file means multi-view. Without a schema
-    (list entries), the model id and name decide ("multi", "multiview"). Models taking 1 to N images appear in both."""
+    (list entries), the model id and name decide ("multi", "multiview"). Models taking 1 to N images appear in both.
+    A model that animates a character mesh it is given stays in Edit 3D > Animate, out of TEXT."""
     out = []
     for record in records:
         caps = set(record.capabilities)
         if record.deprecated_successor:
             continue
         if mode == "TEXT":
-            if "txt23d" in caps:
+            if "txt23d" in caps and not model_filter.animates_given_character(record):
                 out.append(record)
             continue
         if "img23d" not in caps:

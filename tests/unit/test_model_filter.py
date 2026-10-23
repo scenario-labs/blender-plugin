@@ -279,6 +279,19 @@ def test_3d_categories_need_a_mesh_input_for_edit_tasks():
     assert mf.categories_of(LLM) == set()
 
 
+def test_only_motion_models_that_animate_a_given_character_leave_3d_text():
+    cartwheel = rec(
+        "model_cartwheel-text-to-motion",
+        "Cartwheel Text to Motion",
+        ("txt23d", "3d23d"),
+        ("3D", "Cartwheel", "Motion", "animate", "sc:third-party"),
+    )
+    assert mf.animates_given_character(cartwheel)
+    # Text to motion returning its own character, a mesh editor and a generator stay.
+    for record in (MOTION, BANG, MESHY7):
+        assert not mf.animates_given_character(record)
+
+
 def test_loras_deprecated_and_text_models_are_never_visible():
     assert not mf.visible(LORA)
     assert not mf.visible(COMPOSITION)

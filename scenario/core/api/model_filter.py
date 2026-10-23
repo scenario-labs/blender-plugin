@@ -246,6 +246,16 @@ def categories_of(record):
     return out
 
 
+def animates_given_character(record):
+    """Whether a model animates a character mesh it is given, such as Cartwheel Text to Motion.
+
+    Edit 3D > Animate lists it with the motion models; the 3D lane's Text list,
+    which makes new models from a prompt, does not.
+    """
+    caps = {str(c).lower() for c in (record.capabilities or ())}
+    return "3d23d" in caps and "animate" in categories_of(record)
+
+
 # A music model's length input, by the names the live models use.
 MUSIC_LENGTH_INPUTS = ("durationSeconds", "duration")
 

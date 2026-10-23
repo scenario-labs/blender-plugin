@@ -10,10 +10,11 @@ import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
 
+from ...core.api.catalog import RENDER_LANES
 from ...core.ui import composer_layout as cl
 from ...core.ui import job_strip
 from ...core.ui.costs import format_cu
-from .. import generation, job_recovery, panels, runtime
+from .. import generation, job_recovery, panels, render_references, runtime
 
 _batches = {}
 _shader = None
@@ -173,6 +174,14 @@ def card_fits_with_sidebar(context):
     return cl.card_fits(region.width, region.height, scale, (left, right))
 
 
+def shows_capture(context, state):
+    """Whether the card offers its capture chip: the form it shows is a Render Image or Render Video form."""
+    scene = getattr(context, "scene", None)
+    if scene is None or not hasattr(scene, "scenario"):
+        return False
+    return state.shown_form(scene)[1] in RENDER_LANES
+
+
 def composer_layout(context, state):
     """Geometry of the composer in `context.region`: the one layout drawing and hit testing share."""
     region = context.region
@@ -184,6 +193,7 @@ def composer_layout(context, state):
         offset=state.offset,
         width=state.width if state.expanded else None,
         insets=overlap_insets(getattr(context, "area", None), region),
+        capture=shows_capture(context, state),
     )
 
 
@@ -648,6 +658,18 @@ def draw_composer():
                 centered=True,
             )
             note_x = layout.settings_rect.right + 10 * scale
+        if layout.capture_rect is not None:
+            label, wait = render_references.chip(lane_state)
+            _chip(
+                layout.capture_rect,
+                label,
+                scale,
+                font_px,
+                hovered=(state.hover == ("capture",)) and not wait,
+                color=MUTED if wait else TEXT,
+                centered=True,
+            )
+            note_x = layout.capture_rect.right + 10 * scale
         gr = layout.generate_rect
         rect(gr.x, gr.y, gr.w, gr.h, ACCENT if enabled else TAB, 6 * scale)
         label = panels.generate_button_text(lane_state)

@@ -1274,6 +1274,52 @@ class ComposerSideRegionTests(unittest.TestCase):
             self._clicks(operator, ctx, point, (20.0, 30.0))
         self.assertEqual(generate.call_count, 3)
 
+    def test_the_capture_chip_is_a_render_lane_control_that_starts_the_capture_action(self):
+        scene = bpy.context.scene
+        ctx = self._context(sidebar=False)
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        for lane, offered in (("image", False), ("video", False), ("render_image", True)):
+            with self.subTest(lane=lane):
+                scene.scenario.lane = lane
+                state.sync_from_lane(scene)
+                self.assertEqual(self.modal._layout(ctx, state).capture_rect is not None, offered)
+        scene.scenario.lane = "render_video"
+        state.sync_from_lane(scene)
+        layout = self.modal._layout(ctx, state)
+        point = self._centre(layout.capture_rect)
+        self.assertEqual(layout.hit(*point), ("capture",))
+        # Settings and Generate keep their own targets beside it.
+        for rect, kind in ((layout.settings_rect, "settings"), (layout.generate_rect, "generate")):
+            self.assertEqual(layout.hit(*self._centre(rect)), (kind,))
+        references = self.modal.render_references
+        capture = mock.Mock()
+        ops = SimpleNamespace(scenario=SimpleNamespace(prepare_render_reference=capture))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            operator = self._operator()
+            with mock.patch.object(references, "chip", return_value=("Capture", "")):
+                self._clicks(operator, ctx, point, (10.0,))
+            capture.assert_called_once_with("EXEC_DEFAULT", lane="render_video", role="all")
+            operator.report.assert_not_called()
+            # An upload under way, no connection or an upload to review: the click says why, starts nothing.
+            capture.reset_mock()
+            wait = "Uploading the scene capture; the price follows"
+            with mock.patch.object(references, "chip", return_value=("Uploading...", wait)):
+                self._clicks(operator, ctx, point, (20.0,))
+            capture.assert_not_called()
+            operator.report.assert_called_once_with({"INFO"}, wait)
+            # A refused action keeps the composer and shows the reason the operator gave.
+            operator.report.reset_mock()
+            capture.side_effect = RuntimeError("Error: Open a 3D viewport to capture the scene")
+            with mock.patch.object(references, "chip", return_value=("Capture", "")):
+                self._clicks(operator, ctx, point, (30.0,))
+            operator.report.assert_called_once_with(
+                {"WARNING"}, "Open a 3D viewport to capture the scene"
+            )
+
     def test_a_double_click_value_from_a_direct_caller_still_resets(self):
         ctx = self._context(sidebar=False)
         state = self.state_mod.ComposerState()

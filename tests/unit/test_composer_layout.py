@@ -239,6 +239,46 @@ def _center(rect):
     return rect.x + rect.w / 2, rect.y + rect.h / 2
 
 
+def test_the_capture_chip_exists_only_when_asked_and_fits_beside_settings():
+    plain = cl.pill_placement(1600, 900, expanded=True, scale=1.0)
+    assert plain.capture_rect is None
+    asked = cl.pill_placement(1600, 900, expanded=True, scale=1.0, capture=True)
+    chip, settings, generate = asked.capture_rect, asked.settings_rect, asked.generate_rect
+    assert chip is not None and settings is not None
+    assert chip.x >= settings.right and chip.right <= generate.x
+    assert chip.y == settings.y and chip.h == settings.h
+    assert asked.hit(*_center(chip)) == ("capture",)
+    assert asked.hit(*_center(settings)) == ("settings",)
+    assert asked.hit(*_center(generate)) == ("generate",)
+    # a collapsed pill has no controls, and a card too narrow for the whole chip drops it
+    assert (
+        cl.pill_placement(1600, 900, expanded=False, scale=1.0, capture=True).capture_rect is None
+    )
+    for width in (cl.MIN_CARD_WIDTH, 520):
+        narrow = cl.pill_placement(1600, 900, expanded=True, scale=1.0, width=width, capture=True)
+        assert narrow.capture_rect is None
+        assert narrow.generate_rect.x > narrow.model_rect.right
+
+
+@pytest.mark.parametrize("scale", [0.75, 1.0, 1.5])
+def test_the_capture_chip_never_overlaps_another_control_at_any_scale(scale):
+    layout = cl.pill_placement(2400, 1200, expanded=True, scale=scale, capture=True)
+    chip = layout.capture_rect
+    assert chip is not None
+    for other in (
+        layout.model_rect,
+        layout.settings_rect,
+        layout.generate_rect,
+        layout.prompt_rect,
+    ):
+        assert (
+            chip.right <= other.x
+            or other.right <= chip.x
+            or chip.top <= other.y
+            or other.top <= chip.y
+        )
+
+
 def test_offset_moves_the_composer_and_is_clamped_to_keep_it_reachable():
     base = cl.pill_placement(1600, 900, expanded=True)
     moved = cl.pill_placement(1600, 900, expanded=True, offset=(120.0, 300.0))

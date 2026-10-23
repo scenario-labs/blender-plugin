@@ -418,8 +418,11 @@ uploads the first frame a Render Video form uses, and once uploaded it is offere
 again as **Capture again**, which replaces the snapshot (never one still
 uploading, and a failed capture keeps the old one). It sends no paid request:
 each upload that attaches marks the form dirty, so the pump prices the shown form
-and **Generate** shows the price without another click. A form waiting for the
-capture or an upload says so in its status line. Render Video's optional
+and **Generate** shows the price without another click. The composer's
+**Capture** chip (**Recapture** once uploaded, **Uploading...** while it runs)
+sits after **Settings** in the two render lanes, only where the card has room for
+it, and starts the same action. A form waiting for the capture or an upload says
+so in its status line. Render Video's optional
 first frame always exposes a file field and native folder picker, followed by a
 separate **Upload first frame** action after choosing an image. Do not draw
 these slots again as style references. The scene snapshot precedes styles; a

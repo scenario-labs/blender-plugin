@@ -624,7 +624,7 @@ Your view, rendered as a finished still by an image-editing model. The
   the camera's render frame or of the viewport, at the size shown. The price
   appears on **Generate** when the upload finishes; nothing is sent until you
   press it. **Capture again** replaces an uploaded capture after you move the
-  camera.
+  camera. The floating composer has the same button, **Capture**.
 - **Model**: GPT Image 2.5 Sunburst by default, or any other image-to-image model.
 - **Look**: describe the result, for example "weathered steampunk copper,
   overcast light". Left empty, **Prepare look with Prompt Spark** (on by

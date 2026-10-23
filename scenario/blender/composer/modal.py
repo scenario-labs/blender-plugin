@@ -7,9 +7,10 @@ import time
 
 import bpy
 
+from ...core.api.catalog import RENDER_LANES
 from ...core.ui import composer_layout as cl
 from ...core.ui import job_strip
-from .. import generation, panels, runtime
+from .. import generation, panels, render_references, runtime
 from .state import choose_lane
 
 # shown when a strip click no longer matches what the strip showed
@@ -155,6 +156,31 @@ def _generate(operator, scene, state):
         message = str(error).strip()
         reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
         operator.report({"WARNING"}, reason or "Generation is not available right now")
+
+
+def _capture(operator, scene, state):
+    """Capture the render form's scene, upload it and let the price follow; Generate stays a click.
+
+    The sidebar button's operator does the work through its own poll and error reports. Only a
+    free capture and upload start here, never a generation."""
+    if not state.owns_form(scene):
+        operator.report({"WARNING"}, cl.FORM_REPLACED_NOTE)
+        return
+    lane = state.generation_lane(scene)
+    if lane not in RENDER_LANES:
+        return
+    _, wait = render_references.chip(scene.scenario.lane_state(lane))
+    if wait:
+        runtime.set_message(wait)
+        operator.report({"INFO"}, wait)
+        return
+    try:
+        bpy.ops.scenario.prepare_render_reference("EXEC_DEFAULT", lane=lane, role="all")
+    except RuntimeError as error:
+        # The operator's report arrives as an exception; keep its reason and this handler alive.
+        message = str(error).strip()
+        reason = message.removeprefix("Error:").strip() if message.startswith("Error:") else ""
+        operator.report({"WARNING"}, reason or "The scene could not be captured right now")
 
 
 def _invoke(operator, idname, **properties):
@@ -625,6 +651,9 @@ class SCENARIO_OT_composer_modal(bpy.types.Operator):
             elif kind == "generate":
                 state.leave_focus(scene)
                 _generate(self, scene, state)
+            elif kind == "capture":
+                state.leave_focus(scene)
+                _capture(self, scene, state)
             elif kind == "job":
                 _job_click(self, context, scene, state, geometry, hit[1])
             elif kind == "job_dismiss":

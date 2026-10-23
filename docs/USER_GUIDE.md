@@ -555,6 +555,9 @@ again once it finishes. See
    edits don't change the snapshot; remove the reference and upload again to
    replace it.
 
+A mesh too dense to take edits in place shows its triangle count and suggests
+remeshing it first; its results still import as new objects.
+
 To put the result back on your mesh, see
 [Apply a saved mesh edit](#apply-a-saved-mesh-edit).
 

@@ -160,6 +160,14 @@ def _components(mesh):
     return size + sum(len(attribute.data) for attribute in mesh.attributes)
 
 
+def within_component_limit(meshes):
+    """Whether these meshes together stay within the synchronous application work cap.
+
+    Counting reads only sizes, so the Edit lane can check it while drawing.
+    """
+    return sum(_components(mesh) for mesh in meshes) <= MAX_COMPONENTS
+
+
 def _fingerprint(mesh):
     """Guard geometry, generic attributes, UV roles, material slots and custom properties."""
     if _components(mesh) > MAX_COMPONENTS:

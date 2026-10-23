@@ -575,6 +575,35 @@ def draw_panorama_lane(layout, context):
     draw_generate_row(layout, lane_state, "panorama")
 
 
+def draw_dense_mesh_hint(layout, objects, task_id):
+    """Name a mesh too dense for in-place edits, and the Remesh task that lightens it.
+
+    The bound is the plugin's own application work cap, not a model's limit:
+    Generate stays available and a result still imports as a new object.
+    """
+    from ..core.api.catalog import edit3d_models
+    from . import mesh_application
+
+    meshes = [obj.data for obj in objects]
+    if mesh_application.within_component_limit(meshes):
+        return
+    triangles = sum(len(mesh.loops) - 2 * len(mesh.polygons) for mesh in meshes)
+    draw_wrapped(
+        layout,
+        f"Dense mesh: {triangles:,} triangles. Edits of it import as new objects; "
+        "they can't be applied to it in place.",
+        "INFO",
+    )
+    if task_id != "REMESH":
+        remesh = edit3d_models("REMESH", list(runtime.state.records.values()))
+        example = f", for example with {remesh[0].name}," if remesh else ""
+        draw_wrapped(
+            layout,
+            f"Consider remeshing it first{example} and editing the lighter copy.",
+            "MOD_REMESH",
+        )
+
+
 def draw_edit3d_lane(layout, context):
     """The 3D tab in Edit mode: Scenario's 3D tools on the selected mesh."""
     from ..core.api.catalog import edit3d_task, mesh_param
@@ -590,6 +619,7 @@ def draw_edit3d_lane(layout, context):
         )
         box.label(text=f"Mesh: {names}", icon="MESH_DATA")
         box.label(text="Upload a GLB snapshot before requesting a generation price", icon="INFO")
+        draw_dense_mesh_hint(box, objects, scene.scenario.edit3d_task)
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")
     tasks = [t[0] for t in props.EDIT3D_TASK_ITEMS]

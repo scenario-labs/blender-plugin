@@ -430,6 +430,7 @@ def draw_generate_row(layout, lane_state, lane):
     ).lane = lane
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
         draw_wrapped(layout, lane_state.estimate_error, "INFO")
+        draw_price_retry(layout, lane_state, lane)
     note = generation.repricing_note(lane_state)
     if note:
         draw_wrapped(layout, note, "TIME")
@@ -437,6 +438,20 @@ def draw_generate_row(layout, lane_state, lane):
     if error:
         draw_wrapped(layout, error, "ERROR")
         prompts.draw_error_link(layout, error)
+
+
+def draw_price_retry(layout, lane_state, lane):
+    """A failed price offers one fix: drop a conflicting captured source, else ask again."""
+    if not generation.estimate_again_offered(lane_state):
+        return
+    if generation.capture_conflict(lane_state):
+        layout.operator(
+            "scenario.price_without_capture", text="Price without captured source", icon="UNLINKED"
+        ).lane = lane
+    else:
+        layout.operator(
+            "scenario.estimate_again", text="Estimate again", icon="FILE_REFRESH"
+        ).lane = lane
 
 
 def draw_wrapped(layout, message, icon):

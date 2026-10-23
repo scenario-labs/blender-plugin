@@ -122,6 +122,47 @@ class SCENARIO_OT_retry_model(bpy.types.Operator):
         return {"CANCELLED"}
 
 
+class SCENARIO_OT_estimate_again(bpy.types.Operator):
+    bl_idname = "scenario.estimate_again"
+    bl_label = "Estimate again"
+    bl_description = "Request a new price for this form after a failed one; pricing never spends"
+    lane: StringProperty(default="image", options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        return _network_poll(cls, context)
+
+    def execute(self, context):
+        lane_state = context.scene.scenario.lane_state(self.lane)
+        if not generation.estimate_again_offered(lane_state):
+            return {"CANCELLED"}  # already priced, being priced or not priceable now
+        props.mark_estimate_dirty(lane_state)
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_price_without_capture(bpy.types.Operator):
+    bl_idname = "scenario.price_without_capture"
+    bl_label = "Price without captured source"
+    bl_description = (
+        "Price this uploaded mesh for this session without the Blender objects it came from. "
+        "Its result then has no Apply to captured source"
+    )
+    lane: StringProperty(default="image", options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        return _network_poll(cls, context)
+
+    def execute(self, context):
+        try:
+            generation.price_without_capture(context.scene, self.lane)
+        except ScenarioError as error:
+            self.report({"WARNING"}, error.reason)
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Pricing without the captured source")
+        return {"FINISHED"}
+
+
 class SCENARIO_OT_generate(bpy.types.Operator):
     bl_idname = "scenario.generate"
     bl_label = "Generate"
@@ -1411,6 +1452,8 @@ CLASSES = (
     SCENARIO_OT_allow_online_access,
     SCENARIO_OT_refresh_catalog,
     SCENARIO_OT_retry_model,
+    SCENARIO_OT_estimate_again,
+    SCENARIO_OT_price_without_capture,
     SCENARIO_OT_generate,
     SCENARIO_OT_add_reference,
     SCENARIO_OT_drop_reference,

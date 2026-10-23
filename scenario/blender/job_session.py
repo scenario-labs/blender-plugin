@@ -739,6 +739,11 @@ class JobSession:
     def unconfirmed_reviewed(self, request_id):
         return self._coordinator.unconfirmed_reviewed(request_id)
 
+    def price_without_capture(self, asset_id):
+        """Quote a conflicting captured asset with no captured source this session; sends nothing."""
+        _main_thread()
+        self._coordinator.price_without_capture(asset_id)
+
     def _check_capacity(self):
         if len(self._pending) >= self._completion_limit:
             raise SessionBusy("Drain completed job outcomes before adding more commands")

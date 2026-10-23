@@ -60,6 +60,9 @@ class RuntimeState:
         self.repeats = {}
         # (scene session_uid, lane) -> generation.Reprice while a revoked price is requested again.
         self.reprices = {}
+        # (scene session_uid, lane) -> (estimate key, asset ID) of a failed price whose
+        # captured meshes conflict; see generation.capture_conflict.
+        self.capture_conflicts = {}
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
         self.model_errors = {}  # model_id -> sanitized lane error of its last failed detail read

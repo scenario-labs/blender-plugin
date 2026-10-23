@@ -1219,6 +1219,9 @@ Prices are in Creative Units (CU) and depend on the model, settings and referenc
 - **from N CU** means the final price may be higher: some references aren't
   uploaded yet, or a workflow loops or can't be checked for loops.
 - **Price shown after the upload** means a required mesh or capture is still missing.
+- When a price fails, the sidebar offers **Estimate again**. If Scenario reports
+  two different uploaded meshes as one asset, it offers **Price without captured
+  source** instead: the result then has no **Apply to captured source**.
 - Prompt helpers and Blockout designs are paid separately.
 - If a price check ever starts a job on Scenario, prices stop until you restart
   Blender and nothing is sent again.

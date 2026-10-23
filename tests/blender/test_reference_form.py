@@ -792,6 +792,7 @@ class ReferenceFormTests(unittest.TestCase):
             {"name": "prompt", "type": "string", "prompt": True},
             {"name": "input", "type": "file", "kind": kind},
         ]
+        self.typed_model = model
         record = submodule("core.api.catalog").ModelRecord.from_api(model)
         base = submodule("core.api.catalog").ModelRecord.from_api(self.model)
         self.generation.set_catalog([base, record], [base, record])
@@ -1048,6 +1049,107 @@ class ReferenceFormTests(unittest.TestCase):
         self.fixture.settle()
         self.assertEqual(lane.references[0].source, "ASSET")
         self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 1)
+
+    def upload_mesh(self, lane, content, number):
+        """Upload the selected mesh exported as `content`; Scenario names one asset for all."""
+        lane.references.clear()
+        self.fixture.fixture.remote.update(id=f"mesh-upload-{number}", status="pending")
+
+        def export_file(context, objects, *, path):
+            Path(path).write_bytes(content)
+
+        with patch.object(submodule("blender.mesh_export"), "export_glb", side_effect=export_file):
+            self.assertEqual(
+                bpy.ops.scenario.upload_selected_mesh(lane="edit3d", param_name="input"),
+                {"FINISHED"},
+            )
+        self.fixture.settle()
+        self.assertEqual(lane.references[0].source, "ASSET")
+        self.assertEqual(lane.references[0].asset_id, "reference-asset")
+
+    def price(self, lane):
+        self.generation.request_estimate(self.scene, "edit3d")
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The main-thread delivery reports a failed price.
+        self.runtime.sync_catalog_context()
+        return self.runtime.state.estimates.get(lane.estimate_key)
+
+    def price_actions(self, lane):
+        drawn = []
+
+        def operator(name, **kwargs):
+            drawn.append(name)
+            return SimpleNamespace()
+
+        layout = SimpleNamespace(operator=operator)
+        submodule("blender.panels").draw_price_retry(layout, lane, "edit3d")
+        return drawn
+
+    def test_reuploaded_mesh_prices_and_a_changed_one_can_drop_its_captured_source(self):
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        lane, _ = self.configure_typed_input("edit3d", "3d")
+        lane.prompt = "weathered stone"
+        self.fixture.fixture.remote["originalFileName"] = "reference.glb"
+        self.enterContext(
+            patch.object(submodule("blender.mesh_export"), "source_objects", return_value=[cube])
+        )
+        transfer = submodule("core.jobs.upload_transfers")
+        # The fixture's part upload accepts only b"data"; a changed mesh sends other bytes.
+        self.fixture.fixture.uploader.upload.side_effect = (
+            lambda url, data, *, number, content_type, expected_sha256: transfer.UploadedPart(
+                number, len(data), expected_sha256
+            )
+        )
+        original, quotes = self.fixture.fixture.handler, []
+        self.response = b'{"creativeUnitsCost":2}'
+
+        def respond(request):
+            if "/uploads" in request.url.path:
+                return original(request)
+            if request.method == "GET":
+                return httpx.Response(200, json={"model": self.typed_model})
+            self.assertEqual(request.url.params.get("dryRun"), "true")  # pricing never spends
+            quotes.append(json.loads(request.content))
+            return httpx.Response(269, content=self.response)
+
+        self.fixture.fixture.handler = respond
+        # Uploading an unchanged mesh again: Scenario names the same asset.
+        self.upload_mesh(lane, b"data", 1)
+        self.upload_mesh(lane, b"data", 2)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+        ticket = self.price(lane)
+        self.assertEqual(lane.estimate_state, "READY", lane.estimate_error)
+        self.assertEqual(len(ticket.quote.mesh_sources), 1)
+        self.assertEqual(self.price_actions(lane), [])
+        # A failed price offers to ask again.
+        self.response = b"{}"
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertEqual(lane.estimate_error, "Could not confirm this price; estimate again")
+        self.assertEqual(self.price_actions(lane), ["scenario.estimate_again"])
+        self.assertEqual(bpy.ops.scenario.estimate_again(lane="edit3d"), {"FINISHED"})
+        self.assertEqual(lane.estimate_state, "PENDING")
+        self.response = b'{"creativeUnitsCost":2}'
+        # Changed bytes that Scenario reports as the same asset have no known source.
+        self.upload_mesh(lane, b"abcd", 3)
+        self.assertIsNone(self.price(lane))
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertTrue(lane.estimate_error.startswith("Different captured meshes"))
+        self.assertEqual(self.price_actions(lane), ["scenario.price_without_capture"])
+        self.assertEqual(bpy.ops.scenario.price_without_capture(lane="edit3d"), {"FINISHED"})
+        self.assertEqual(lane.estimate_state, "PENDING")
+        ticket = self.price(lane)
+        self.assertEqual(lane.estimate_state, "READY", lane.estimate_error)
+        self.assertEqual(ticket.quote.mesh_sources, ())
+        # Nothing is left to resolve.
+        self.assertEqual(bpy.ops.scenario.price_without_capture(lane="edit3d"), {"CANCELLED"})
+        self.assertEqual(len(quotes), 4)
+        self.assertTrue(all(body["input"] == "reference-asset" for body in quotes))
 
     def test_typed_uploads_attach_to_originating_lane_after_tab_switch(self):
         image_refs = len(self.lane.references)

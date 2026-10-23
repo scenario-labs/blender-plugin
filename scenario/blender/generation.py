@@ -26,7 +26,12 @@ from ..core.api.catalog import (
 )
 from ..core.api.errors import ScenarioError
 from ..core.jobs import quote_refresh
-from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
+from ..core.jobs.coordinator import (
+    CaptureConflictError,
+    DuplicateRequestError,
+    QuoteError,
+    RouteQuoteError,
+)
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
 from ..core.ui.composer_layout import PRICE_LOADING
@@ -121,6 +126,7 @@ def clear_catalog():
     runtime.state.estimate_origins.clear()
     runtime.state.repeats.clear()  # a repeat belongs to the retired scope's price
     runtime.state.reprices.clear()
+    runtime.state.capture_conflicts.clear()
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -1294,8 +1300,8 @@ def process_model_jobs():
             # Source/transport details can contain private inputs. Keep failures
             # actionable without copying arbitrary exception text into the UI.
             # A refused LoRA or composition carries fixed text naming only
-            # input labels and positions.
-            if isinstance(error, (RouteQuoteError, DuplicateRequestError)):
+            # input labels and positions; a capture conflict's text is fixed.
+            if isinstance(error, (RouteQuoteError, DuplicateRequestError, CaptureConflictError)):
                 message = str(error)
             elif isinstance(error, model_jobs.AutomaticEstimatesStopped):
                 message = error.reason
@@ -1318,6 +1324,12 @@ def process_model_jobs():
                 else:
                     lane_state.estimate_state = "ERROR"
                     lane_state.estimate_error = message
+                    if isinstance(error, CaptureConflictError):
+                        # The form offers to price this asset without its captured source.
+                        runtime.state.capture_conflicts[(ticket.scene.session_uid, ticket.lane)] = (
+                            key,
+                            error.asset_id,
+                        )
             except ReferenceError:
                 pass  # A removed scene cannot receive its old quote.
 
@@ -1395,8 +1407,12 @@ def rearm_repeat(scene, lane, lane_state, now):
 
 
 def prune_repeats():
-    """Forget repeats and repricings of scenes that no longer exist (pump only)."""
-    for entries in (runtime.state.repeats, runtime.state.reprices):
+    """Forget repeats, repricings and capture conflicts of removed scenes (pump only)."""
+    for entries in (
+        runtime.state.repeats,
+        runtime.state.reprices,
+        runtime.state.capture_conflicts,
+    ):
         if entries:
             live = {scene.session_uid for scene in bpy.data.scenes}
             for key in [key for key in entries if key[0] not in live]:
@@ -1512,6 +1528,51 @@ def reprice_revoked(scene, lane, lane_state):
         del jobs.quotes[ticket.identifier]
     reprice(scene, lane, lane_state)
     return True
+
+
+def estimate_again_offered(lane_state):
+    """Whether a failed price can be requested again from its form; read-only for drawing."""
+    return lane_state.estimate_state == "ERROR" and not model_jobs.automatic_estimates_stopped()
+
+
+def capture_conflict(lane_state):
+    """The asset whose captured meshes conflict in this form's failed price, or "".
+
+    Read-only for drawing; only the form's current failed price counts.
+    """
+    try:
+        key = (lane_state.id_data.session_uid, props.lane_of(lane_state))
+    except (AttributeError, ReferenceError):
+        return ""
+    entry = runtime.state.capture_conflicts.get(key)
+    if entry is None or lane_state.estimate_state != "ERROR":
+        return ""
+    estimate_key, asset_id = entry
+    return asset_id if estimate_key == lane_state.estimate_key else ""
+
+
+def price_without_capture(scene, lane):
+    """Price the form's conflicting captured asset with no captured source this session.
+
+    Saves and sends nothing, then prices the form again. A refusal raises
+    ScenarioError with fixed text.
+    """
+    lane_state = scene.scenario.lane_state(lane)
+    asset_id = capture_conflict(lane_state)
+    jobs = runtime.state.model_jobs
+    if not asset_id or jobs is None:
+        raise ScenarioError(0, "This price has no conflicting captured mesh; estimate again")
+    runtime.state.capture_conflicts.pop((scene.session_uid, lane), None)
+    try:
+        jobs.session.price_without_capture(asset_id)
+    except QuoteError as error:
+        props.mark_estimate_dirty(lane_state)  # its text is fixed and asks for a new price
+        raise ScenarioError(0, str(error)) from None
+    except Exception:
+        raise ScenarioError(
+            0, "Could not read saved uploads; inspect them and estimate again"
+        ) from None
+    props.mark_estimate_dirty(lane_state)
 
 
 def scene_settled(scene, lane, now):

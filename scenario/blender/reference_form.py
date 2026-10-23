@@ -550,15 +550,25 @@ class SCENARIO_OT_prepare_render_reference(bpy.types.Operator):
     bl_idname = "scenario.prepare_render_reference"
     bl_label = "Prepare render reference"
     bl_description = (
-        "Capture or upload this render input snapshot before requesting a generation price"
+        "Capture the scene and upload it with the chosen first frame; the price follows"
     )
     lane: StringProperty(default="render_image", options={"HIDDEN"})
     role: EnumProperty(
         items=[
+            ("all", "Scene and first frame", "Capture the scene, upload the first frame it uses"),
             ("scene", "Scene", "Scene capture"),
             ("first_frame", "First frame", "First-frame image"),
-        ]
+        ],
+        default="all",
     )
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.role == "first_frame":
+            return "Upload the chosen first-frame image before requesting a generation price"
+        if properties.role == "scene":
+            return "Capture the scene and upload it before requesting a generation price"
+        return cls.bl_description
 
     @classmethod
     def poll(cls, context):
@@ -568,7 +578,10 @@ class SCENARIO_OT_prepare_render_reference(bpy.types.Operator):
         from . import render_references
 
         try:
-            render_references.prepare(context, self.lane, self.role)
+            if self.role == render_references.ALL:
+                render_references.capture_form(context, self.lane)
+            else:
+                render_references.prepare(context, self.lane, self.role)
         except Exception as error:
             reason = (
                 error.reason

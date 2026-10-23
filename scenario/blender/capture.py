@@ -319,6 +319,20 @@ def capture_size(context, source):
     )
 
 
+def unavailable_reason(context, source, camera=None):
+    """Why this source cannot be captured now, in words for the user, else None; reads, never captures."""
+    if bpy.app.background:
+        return "Viewport and camera captures require the Blender GUI"
+    if source.removesuffix("_CLIP") == "CAMERA":
+        scene = context.scene
+        if camera or scene.camera or any(o.type == "CAMERA" for o in scene.objects):
+            return None
+        return "Add a camera to capture the scene, or capture the viewport"
+    if _view3d(context)[0] is None:
+        return "Open a 3D viewport to capture the scene"
+    return None
+
+
 def _prepare_source(scene, source, camera):
     if source == "CAMERA":
         cam = camera or scene.camera or next((o for o in scene.objects if o.type == "CAMERA"), None)

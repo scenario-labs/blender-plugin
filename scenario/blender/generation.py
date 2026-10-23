@@ -804,8 +804,11 @@ def build_request(scene, lane, for_estimate=False):
             )
     references = lane_state.references
     if lane in RENDER_LANES:
-        from .render_references import active_references
+        from .render_references import active_references, uploading_note
 
+        if note := uploading_note(lane_state):
+            # A capture or first frame on its way: say so instead of a saved-upload instruction.
+            return Request(lane, lane_kind(lane), model_id, {}, errors=[note])
         references = active_references(lane_state)
     if error := scope_error(lane_state, references=references):
         return Request(lane, lane_kind(lane), model_id, {}, errors=[error])

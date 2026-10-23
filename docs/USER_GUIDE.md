@@ -621,7 +621,10 @@ Your view, rendered as a finished still by an image-editing model. The
 
 - **Scene to render**: choose Viewport or Scene camera (optionally with Grey
   clay capture), then **Capture and upload scene**. The still keeps the shape of
-  the camera's render frame or of the viewport, at the size shown.
+  the camera's render frame or of the viewport, at the size shown. The price
+  appears on **Generate** when the upload finishes; nothing is sent until you
+  press it. **Capture again** replaces an uploaded capture after you move the
+  camera.
 - **Model**: GPT Image 2.5 Sunburst by default, or any other image-to-image model.
 - **Look**: describe the result, for example "weathered steampunk copper,
   overcast light". Left empty, **Prepare look with Prompt Spark** (on by
@@ -648,8 +651,9 @@ takes a reference video. The look, reference frames and first frame are in the
 - **Clip to render**: choose Viewport or Scene camera, build a
   [camera path](#camera-path) if you want one, then **Capture and upload
   scene**. The silent clip covers the range shown, without padding or trimming,
-  at the size shown. **Match timeline** sets the model's duration; it doesn't
-  change a clip already uploaded.
+  at the size shown, and a chosen [first frame](#first-frame) uploads with it.
+  **Match timeline** sets the model's duration; it doesn't change a clip already
+  uploaded.
 - **Model**: Seedance, Minimax, Runway Aleph, Gemini, Grok and other
   video-to-video models.
 - **Look** and **Reference frames**: as the look and style images in Render
@@ -671,7 +675,8 @@ exactly that move.
 
 #### First frame
 
-Choose an image and **Upload first frame**. To use a generated image instead,
+Choose an image: **Capture and upload scene** uploads it with the clip, or
+**Upload first frame** uploads it alone. To use a generated image instead,
 choose **Use as video first frame (N)** on a PNG, JPEG or WebP result: it reuses
 the image on Scenario without uploading or generating, and the slot shows **From
 a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and

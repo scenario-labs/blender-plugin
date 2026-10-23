@@ -413,7 +413,13 @@ confirmation, keep drawing read-only and invalidate the prior generation price
 after attachment.
 
 Render forms show **Capture and upload scene** in their scene/clip section, with
-that slot's progress, inspection and removal controls. Render Video's optional
+that slot's progress, inspection and removal controls. It is one action: it also
+uploads the first frame a Render Video form uses, and once uploaded it is offered
+again as **Capture again**, which replaces the snapshot (never one still
+uploading, and a failed capture keeps the old one). It sends no paid request:
+each upload that attaches marks the form dirty, so the pump prices the shown form
+and **Generate** shows the price without another click. A form waiting for the
+capture or an upload says so in its status line. Render Video's optional
 first frame always exposes a file field and native folder picker, followed by a
 separate **Upload first frame** action after choosing an image. Do not draw
 these slots again as style references. The scene snapshot precedes styles; a

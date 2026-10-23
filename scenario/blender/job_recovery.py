@@ -568,8 +568,8 @@ class SCENARIO_OT_add_saved_image_plane(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            if self.unlit:
-                self._sync_options()
+            # A failed check() can leave an earlier choice on the approval.
+            self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:
             self.cancel(context)
@@ -816,8 +816,8 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            if self.is_splat or self.use_target_size or self.source_name:
-                self._sync_options()
+            # A failed check() can leave an earlier size or match on the approval.
+            self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:
             # A sanitized refusal, such as a busy local-operation slot, names its cause.

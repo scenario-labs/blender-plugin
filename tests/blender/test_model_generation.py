@@ -3931,6 +3931,84 @@ class ModelGenerationTests(unittest.TestCase):
         )
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
 
+    def test_native_plane_ok_adds_the_unlit_choice_shown_after_a_failed_check(self):
+        request_id = self.recovered_images()
+        args = self.recovery_args(request_id, "image_plane")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_add_saved_image_plane
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        fake.unlit = True
+        self.assertTrue(operator.check(fake, context))
+        self.assertTrue(owner._application_approvals[fake.application_id].unlit)
+        # Turning Unlit off again while the exchange fails leaves the unlit approval.
+        fake.unlit = False
+        with patch.object(
+            self.runtime, "revise_landing_application", side_effect=RuntimeError("synthetic")
+        ):
+            self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertTrue(owner._application_approvals[fake.application_id].unlit)
+        objects = set(bpy.data.objects)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        (plane,) = set(bpy.data.objects) - objects
+        nodes = plane.data.materials[0].node_tree.nodes
+        self.assertFalse(any(node.type == "EMISSION" for node in nodes))
+
+    def test_native_model_ok_keeps_the_saved_size_shown_after_a_failed_check(self):
+        request_id = self.recovered_model()
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+            target_size=1.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        fake.use_target_size, fake.target_size = True, 0.5
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(owner._application_approvals[fake.application_id].target_size, 0.5)
+        # Turning the longest side off while the exchange fails leaves 0.5 m approved.
+        fake.use_target_size = False
+        with patch.object(
+            self.runtime, "revise_model_application", side_effect=RuntimeError("synthetic")
+        ):
+            self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertEqual(owner._application_approvals[fake.application_id].target_size, 0.5)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        self.assertEqual(tuple(bpy.data.objects[summary["root"]].scale), (1.0, 1.0, 1.0))
+        self.assertIsNone(summary["target_size_m"])
+
     def test_a_shared_image_row_drops_the_unbound_plane_button_for_its_reviewed_one(self):
         self.result_fixture()
         result = self.mcp_submit(self.mcp_quote())

@@ -1817,6 +1817,60 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((self.store.records(), self.paid), ((), []))
         self.assertEqual(self.lane.estimate_state, "PENDING")
 
+    def test_an_expired_price_says_so_and_is_priced_again_without_saving(self):
+        refresh = submodule("core.jobs.quote_refresh")
+        props = submodule("blender.props")
+        self.ui_quote()
+        ticket = self.runtime.state.estimates[self.lane.estimate_key]
+        coordinator = self.runtime.state.model_jobs.session._coordinator
+        # Generate after the quote's two minutes, as when a ready price is left waiting.
+        with patch.object(
+            coordinator, "_clock", return_value=ticket.quote.estimate.issued_at + 121
+        ):
+            with self.assertRaisesRegex(
+                self.generation.PriceRefreshing,
+                "^This price expired; nothing was sent; Generate again once the new price shows$",
+            ):
+                self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual((self.store.records(), self.paid), ((), []))
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.EXPIRED)
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_refused_price_names_its_cause_and_saves_nothing(self):
+        coordinator_module = submodule("core.jobs.coordinator")
+        changed = coordinator_module.QuoteError(
+            "A captured input changed; inspect the upload and estimate again"
+        )
+        twin = coordinator_module.DuplicateRequestError("0123456789abcdef" * 2)
+        for name, error in (
+            ("_validate_mesh_bindings", changed),
+            ("_refuse_unconfirmed_twin", twin),
+        ):
+            with self.subTest(refusal=name):
+                self.ui_quote()
+                coordinator = self.runtime.state.model_jobs.session._coordinator
+                with patch.object(coordinator, name, side_effect=error):
+                    if error is changed:
+                        with self.assertRaisesRegex(
+                            self.generation.PriceRefreshing,
+                            "^This price no longer applies; nothing was sent",
+                        ):
+                            self.generation.submit_generation(bpy.context, "image")
+                        self.assertEqual(self.lane.estimate_state, "PENDING")
+                    else:
+                        # A new price cannot clear an unconfirmed twin: the form names it.
+                        with self.assertRaisesRegex(self.request_error, "^An identical request"):
+                            self.generation.submit_generation(bpy.context, "image")
+                        self.assertEqual(self.lane.estimate_state, "ERROR")
+                        self.assertEqual(self.lane.estimate_error, str(twin))
+                self.assertEqual((self.store.records(), self.paid), ((), []))
+
     def test_pump_redraws_on_projected_progress_change_and_not_on_idle_ticks(self):
         pump = submodule("blender.pump")
         self.remote_progress = 0.1

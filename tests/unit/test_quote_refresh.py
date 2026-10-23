@@ -3,7 +3,7 @@
 """A price revoked by a scene change is requested again once the scene settles."""
 
 from scenario.core.jobs.origins import OriginRevisions
-from scenario.core.jobs.quote_refresh import NOT_QUEUED, SCENE_CHANGED, SETTLE, Settle
+from scenario.core.jobs.quote_refresh import EXPIRED, NOT_QUEUED, SCENE_CHANGED, SETTLE, Settle
 
 
 def test_a_revoked_price_stays_revoked_until_a_new_one_is_captured():
@@ -48,5 +48,5 @@ def test_an_unknown_revision_waits_like_any_other():
 
 
 def test_status_lines_fit_one_sidebar_line():
-    for note in (SCENE_CHANGED, NOT_QUEUED):
+    for note in (SCENE_CHANGED, NOT_QUEUED, EXPIRED):
         assert len(note) <= 36  # panels.SIDEBAR_CHARS

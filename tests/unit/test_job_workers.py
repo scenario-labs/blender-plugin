@@ -15,6 +15,7 @@ from scenario.core.jobs.coordinator import (
     DuplicateRequestError,
     JobCoordinator,
     QuoteError,
+    QuoteExpired,
     SubmissionUncertain,
 )
 from scenario.core.jobs.store import (
@@ -214,7 +215,7 @@ def test_queued_quote_is_revalidated_at_dispatch(setup):
     coordinator._clock = lambda: second.expires_at
     release.set()
     one.result(2)
-    with pytest.raises(QuoteError, match="expired"):
+    with pytest.raises(QuoteExpired, match="expired"):
         two.result(2)
     assert store.get(second.intent.request_id).state == JobState.PREPARED
     assert len(calls) == 1

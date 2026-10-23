@@ -855,7 +855,10 @@ consuming the handle and persisting intent. A handle whose scene revision change
 is refused before consumption and the form is priced again once the scene keeps one
 revision for 0.7 s ([quote_refresh](../scenario/core/jobs/quote_refresh.py)).
 Session capacity is checked before the intent is saved, and an intent the worker
-queue refuses is canceled locally, so neither leaves a prepared job to review. The
+queue refuses is canceled locally, so neither leaves a prepared job to review. A
+quote that expired or no longer applies when it is prepared saves nothing either:
+the form says so and is priced again. An unconfirmed identical request is named
+instead. The
 coordinator still checks origin, ownership and expiry at dispatch. No handle is
 reconstructed from a saved fingerprint after restart.
 

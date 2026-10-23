@@ -15,7 +15,12 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
-from scenario.core.jobs.coordinator import CaptureConflictError, JobCoordinator, QuoteError
+from scenario.core.jobs.coordinator import (
+    CaptureConflictError,
+    JobCoordinator,
+    QuoteError,
+    QuoteExpired,
+)
 from scenario.core.jobs.mesh_source import MeshSource, MeshSourceObject
 from scenario.core.jobs.origins import OriginRevisions
 from scenario.core.jobs.store import JobScope, JobState, JobStore
@@ -251,7 +256,7 @@ def test_deactivated_context_discards_late_catalog_and_quote_results(env):
 def test_expired_bound_quote_cannot_persist_fresh_intent(env):
     quote = env.coordinator.quote_model("model-one", {"prompt": "fixture"}, origin=env.origin)
     env.coordinator._clock = lambda: quote.estimate.issued_at + 121
-    with pytest.raises(QuoteError, match="expired"):
+    with pytest.raises(QuoteExpired, match="expired"):
         env.coordinator.prepare_quote(quote)
     assert env.store.records() == ()
 

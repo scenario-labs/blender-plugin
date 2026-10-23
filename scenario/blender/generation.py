@@ -1628,6 +1628,11 @@ def submit_generation(context, lane, review=None):
             else error.reason
         )
         raise PriceRefreshing(f"{reason}; Generate again once the new price shows") from None
+    except DuplicateRequestError as error:
+        # Refused before anything was saved; its fixed text names the request to check.
+        lane_state.estimate_state = "ERROR"
+        lane_state.estimate_error = str(error)
+        raise ScenarioError(0, str(error)) from None
     except ScenarioError:
         lane_state.estimate_state = "ERROR"
         lane_state.estimate_error = "Inspect saved jobs and request a fresh price"

@@ -29,6 +29,9 @@ from ..core.jobs.coordinator import (
     CancellationUnsupported,
     DecisionRefused,
     DecisionUncertain,
+    DuplicateRequestError,
+    QuoteError,
+    QuoteExpired,
     RecoveryError,
     RemoteSnapshot,
     cancellable_job,
@@ -66,6 +69,7 @@ from .job_session import (
     MaterialResultUncertain,
     MediaResultUncertain,
     ModelResultUncertain,
+    OriginUnavailable,
     SessionBusy,
     WorldResultUncertain,
 )
@@ -183,6 +187,15 @@ class QuoteRevoked(NothingSent):
 
     def __init__(self):
         super().__init__("The scene changed after this estimate; estimate again")
+
+
+class PriceExpired(NothingSent):
+    """The price expired before Generate could save it: nothing was saved or sent."""
+
+    note = quote_refresh.EXPIRED
+
+    def __init__(self):
+        super().__init__("This price expired; nothing was sent")
 
 
 def automatic_estimates_stopped():
@@ -829,8 +842,8 @@ class ModelJobs:
         """Save and queue one approved quote.
 
         With `withdraw`, a refusal that leaves nothing to review raises NothingSent:
-        a full session before anything is saved, or a queue refusal whose saved
-        intent is then canceled locally.
+        a full session or a refused quote before anything is saved, or a queue
+        refusal whose saved intent is then canceled locally.
         """
         estimate = quote.estimate
         model_id = estimate.target_id
@@ -842,6 +855,14 @@ class ModelJobs:
             raise NothingSent(
                 "Blender is still finishing other job steps; nothing was sent"
             ) from None
+        except (QuoteError, OriginUnavailable) as error:
+            # Both are raised before an intent is saved, so nothing needs review.
+            # An unconfirmed twin stays itself: a new price cannot clear it.
+            if not withdraw or isinstance(error, DuplicateRequestError):
+                raise
+            if isinstance(error, QuoteExpired):
+                raise PriceExpired() from None
+            raise NothingSent("This price no longer applies; nothing was sent") from None
         view = JobRecord(
             local_id=prepared.intent.request_id,
             lane=lane,

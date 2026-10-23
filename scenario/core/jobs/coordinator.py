@@ -63,6 +63,16 @@ class QuoteError(ValueError):
     """The current request no longer matches an active, unexpired quote."""
 
 
+class QuoteExpired(QuoteError):
+    """The quote's validity window ended before preparation or the paid claim; nothing was sent."""
+
+    def __init__(self):
+        super().__init__("Quote expired; request a fresh estimate")
+
+    def __reduce__(self):
+        return type(self), ()
+
+
 class DuplicateRequestError(QuoteError):
     """An identical paid request in this scope has no confirmed outcome yet.
 
@@ -1562,7 +1572,7 @@ class JobCoordinator:
             expires_at = estimate.issued_at + self._ttl
             now = self._clock()
             if not math.isfinite(now) or now < estimate.issued_at or now >= expires_at:
-                raise QuoteError("Quote expired; request a fresh estimate")
+                raise QuoteExpired()
             prepared = PreparedJob(intent, expires_at, estimate, composition)
             self._store.create(intent)
             self._prepared[id(prepared)] = prepared
@@ -1588,7 +1598,7 @@ class JobCoordinator:
                     or now < prepared.estimate.issued_at
                     or now >= prepared.expires_at
                 ):
-                    raise QuoteError("Quote expired; request a fresh estimate")
+                    raise QuoteExpired()
                 intent = prepared.intent
                 if (
                     origin != intent.origin

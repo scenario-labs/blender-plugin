@@ -15,6 +15,7 @@ SETTLE = 0.7  # seconds one scene revision must last; the form's own debounce
 # Status lines while a form is priced again; each fits one sidebar line (36 characters).
 SCENE_CHANGED = "Scene changed; updating the price"
 NOT_QUEUED = "Nothing sent; updating the price"
+EXPIRED = "Price expired; updating the price"
 
 
 class Settle:

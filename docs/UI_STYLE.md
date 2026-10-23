@@ -352,8 +352,8 @@ it keeps opening the picker on All, since **Add LoRA or composition** sits in
 the Trained models box below. Drawing it reads the form's slots only. Strengths are
 edited in the sidebar or Studio, and the composer note says so (**Edit LoRA
 strength in the sidebar or Studio**) when nothing more urgent is shown. Job views
-name the base with its trained choice the same way while the session that
-submitted them lasts; a recovered saved job names its base model only.
+name the base with its trained choice the same way until Blender restarts, across
+file loads; a saved job recovered after a restart names its base model only.
 
 ## Duration and Match timeline
 

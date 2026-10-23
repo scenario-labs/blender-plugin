@@ -90,6 +90,11 @@ class RuntimeState:
         self.enum_cache = {}  # key -> list of (id, name, desc) tuples kept alive for EnumProperty
         self.previews = None  # bpy.utils.previews collection, created lazily
         self.jobs_view = []  # JobRecord list shown in the panel (active + recent)
+        # Prompts and model names of this connection's saved jobs shown this session,
+        # by request ID; kept across file loads so inspected jobs show them again.
+        self.job_labels = {}
+        # (credentials, project, job context) whose saved jobs show_saved_jobs listed.
+        self.saved_jobs_listed = None
         self.history = []
         self.history_token = None
         self.history_request = None
@@ -159,7 +164,10 @@ class RuntimeState:
             self.job_session = None
         self.job_context_id = None
         if self.model_jobs is not None:
+            from .model_jobs import labels
+
             views = tuple(self.model_jobs.views.values())
+            self.job_labels.update(labels(views))
             self.jobs_view[:] = [
                 view for view in self.jobs_view if all(view is not v for v in views)
             ]
@@ -437,7 +445,9 @@ def ensure_model_jobs():
 
     session = ensure_job_session()
     if state.model_jobs is None:
-        state.model_jobs = ModelJobs(session, state.job_store, online=online)
+        state.model_jobs = ModelJobs(
+            session, state.job_store, online=online, labels=state.job_labels
+        )
     return state.model_jobs
 
 
@@ -523,6 +533,38 @@ def inspect_model_jobs():
     jobs = ensure_model_jobs()
     show_job_views(jobs.inspect())
     return jobs
+
+
+def show_saved_jobs():
+    """List the selected connection's saved jobs once per job context (GUI pump).
+
+    The read Inspect saved jobs makes: saved jobs show paused for review, never
+    resumed, applied or submitted again. Starting Blender, opening a file or
+    changing credentials leaves no listed context, so the Jobs list and the
+    Results grid show them again without a click. The pump calls it after its
+    context check this tick, which retires a session a file load deactivated.
+    It lists only a connection the catalog step already selected, never
+    selecting or switching one itself. Returns whether rows changed.
+    """
+    selection = (credentials(), project_id(), state.job_context_id)
+    if (
+        not selection[0].valid
+        or state.catalog is None
+        or not catalog_selection_matches()
+        or selection == state.saved_jobs_listed
+    ):
+        return False
+    state.saved_jobs_listed = selection  # one attempt per context, even when it fails
+    try:
+        store = ensure_job_store()
+        if state.job_session is None and not store.records():
+            return False  # nothing saved: no session is started for an empty list
+        inspect_model_jobs()
+    except Exception:
+        log.warning("Could not list saved jobs; Inspect saved jobs reads them again")
+        return False
+    state.saved_jobs_listed = (credentials(), project_id(), state.job_context_id)
+    return True
 
 
 def control_model_job(context_id, request_id, expected_revision, action):
@@ -772,6 +814,7 @@ def sync_catalog_context():
             state.catalog = None
             state.job_store = None
             state.session_spend = None  # another account or project starts its own total
+            state.job_labels = {}
             state.catalog_credentials = None
             state.catalog_project_id = None
             state.history = []

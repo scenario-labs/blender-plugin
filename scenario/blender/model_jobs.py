@@ -503,15 +503,34 @@ class MeshApplicationApproval:
         return self.target if isinstance(self.target, tuple) else (self.target,)
 
 
+# The prompt line of an inspected saved job whose prompt this session never showed.
+RECOVERED = "Recovered saved job"
+LABELS = ("prompt", "model_name")
+
+
+def labels(views):
+    """The prompts and model names these saved-job views show, by request ID."""
+    found = {}
+    for view in views:
+        label = {key: view.meta[key] for key in LABELS if view.meta.get(key)}
+        if view.meta.get("shared_job") and label and label.get("prompt") != RECOVERED:
+            found[view.local_id] = label
+    return found
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
-    def __init__(self, session, store, *, online=lambda: True):
+    def __init__(self, session, store, *, online=lambda: True, labels=None):
         self.session = session
         self.store = store
         self.quotes = {}
         self.submissions = {}
         self.views = {}
+        # request_id -> the prompt and model name an earlier owner of this scope
+        # showed this session. The store keeps no prompt, so only they replace
+        # RECOVERED on an inspected job. Memory only.
+        self._labels = {} if labels is None else labels
         self._bindings = {}
         self._online = online
         # Online Access as the main thread last saw it. `wait` runs on the MCP
@@ -1820,6 +1839,7 @@ class ModelJobs:
     def _view(self, record):
         request_id = record.intent.request_id
         if request_id not in self.views:
+            label = self._labels.get(request_id) or {"prompt": RECOVERED}
             self.views[request_id] = JobRecord(
                 local_id=request_id,
                 lane="workflow" if record.intent.operation == "workflow" else "model",
@@ -1829,7 +1849,7 @@ class ModelJobs:
                 cu_cost=float(record.intent.quote_cost)
                 if record.intent.quote_cost is not None
                 else None,
-                meta={"shared_job": True, "prompt": "Recovered saved job"},
+                meta={"shared_job": True, **label},
             )
             self._paused.add(request_id)
         return self.views[request_id]

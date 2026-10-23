@@ -352,8 +352,8 @@ the price and how many other jobs are unfinished. **Inspect** opens the job's
 details and actions. A second chip offers the next step, such as
 **Cancel generation**, **Resume download** or **Add video strip**, and asks for the
 same confirmation as the sidebar. The cross hides the tray for that job only. Jobs
-from before a restart, workflows and Film tasks aren't shown there; use
-**Inspect saved jobs** in the Jobs panel. When collapsed, a thin line in the pill
+from before a restart, workflows and Film tasks aren't shown there; find them in
+the Jobs panel. When collapsed, a thin line in the pill
 shows the job's status and progress.
 
 If the composer keeps failing, it switches itself off: turn it back on with
@@ -754,8 +754,8 @@ A job stays here until you apply its results.
   up checking other jobs.
 - **Stop download** stops a download in progress without keeping a partial
   file. **Resume download** starts it again later.
-- After a restart, choose **Inspect saved jobs**, then **Refresh status** or
-  **Resume download**.
+- After a restart or opening a file, saved jobs show again in the Jobs panel;
+  choose **Refresh status** or **Resume download**.
 - **Cancel prepared job** drops an approved request that hasn't been sent yet;
   nothing reaches Scenario. A canceled Film task keeps its name, so use a new
   take name to retry.

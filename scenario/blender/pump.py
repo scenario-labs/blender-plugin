@@ -82,6 +82,8 @@ def _process():
         and runtime.credentials().valid
     ):
         generation.request_catalog()
+    # After process_catalog_events retired a session that a file load ended.
+    changed |= runtime.show_saved_jobs()
     from . import trained_defaults
 
     # Forms without an explicit choice take the scope's project default before any price.

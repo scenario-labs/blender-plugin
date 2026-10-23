@@ -72,6 +72,8 @@ class LandingApplicationTests(unittest.TestCase):
     def test_video_background_plays_a_persistent_private_copy_from_the_frame(self):
         item, path = self.video()
         result = self.landing.apply_camera_background(self.scene, self.camera, item, path, frame=12)
+        # The clip keeps its file open on Windows; free it before the temporary folder.
+        self.addCleanup(bpy.data.movieclips.remove, result.clip)
         added = self.camera.data.background_images[0]
         self.assertEqual((added.source, added.clip), ("MOVIE_CLIP", result.clip))
         self.assertFalse(added.use_camera_clip)

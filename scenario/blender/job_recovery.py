@@ -568,8 +568,10 @@ class SCENARIO_OT_add_saved_image_plane(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            # A failed check() can leave an earlier choice on the approval.
-            self._sync_options()
+            # A failed check() can leave an earlier choice on the approval; a review
+            # confirmed without this dialog keeps its own options.
+            if getattr(self, "_jobs", None) is not None:
+                self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:
             self.cancel(context)
@@ -816,8 +818,10 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            # A failed check() can leave an earlier size or match on the approval.
-            self._sync_options()
+            # A failed check() can leave an earlier size or match on the approval; a
+            # review confirmed without this dialog keeps its own size.
+            if getattr(self, "_jobs", None) is not None:
+                self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:
             # A sanitized refusal, such as a busy local-operation slot, names its cause.

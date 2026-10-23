@@ -723,6 +723,7 @@ def clip_glb(
     turn_object=True,
     still=(),
     carry=False,
+    prop=None,
 ):
     """Export a returned animated character with Blender's glTF exporter.
 
@@ -737,8 +738,8 @@ def clip_glb(
     `still` bones stay unkeyed in the export. With `carry`, Clip N also moves the
     armature object by its amount along world X and turns it by a quarter of it
     in radians about Z, as files whose skin leaves the moving scene root out of
-    its joints do. A triangle skinned to the first bone is included. All scratch
-    data is removed.
+    its joints do. A triangle skinned to the first bone is included, and with
+    `prop` an Empty hangs from that bone's tail. All scratch data is removed.
     """
     import math
 
@@ -767,6 +768,10 @@ def clip_glb(
         body.parent = rig
         body.vertex_groups.new(name=bones[0][0]).add([0, 1, 2], 1.0, "REPLACE")
         body.modifiers.new("Armature", "ARMATURE").object = rig
+        if prop is not None:
+            held = bpy.data.objects.new("Prop", None)
+            scene.collection.objects.link(held)
+            held.parent, held.parent_type, held.parent_bone = rig, "BONE", prop
         data = rig.animation_data_create()
         for index, amount in enumerate(clips, 1):
             action = bpy.data.actions.new(f"Clip {index}")

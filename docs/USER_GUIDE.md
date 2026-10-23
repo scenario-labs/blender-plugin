@@ -943,7 +943,9 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   skin is the same surface. If the mesh already has a rig, its weights are
   replaced and the old rig is left as it was; **Keep original** keeps a copy
   that still follows the old rig. A mesh with a rig can only use Attach rig or
-  Apply animation. Move the new rig group with the mesh afterwards.
+  Apply animation. Move the new rig group with the mesh afterwards. The bones
+  are drawn inside the character at its size, not In Front, so the mesh stays
+  visible; turn on In Front in the armature's Viewport Display to see them.
 - **Apply animation**: for a mesh that already has a rig, adds the returned
   animation to that rig and keeps your mesh, weights and rig as they are. When
   the bones have the same names, parents and rest pose as the returned

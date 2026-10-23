@@ -317,6 +317,15 @@ humanoid skeleton). Moving the new parent group moves the imported character tog
 Armature construction requires the staging scene to own the active window and
 view layer while Blender's importer runs. The importer restores both afterward,
 including on failure, and disables generated bone-display helper geometry.
+Blender's glTF importer divides its guessed bone lengths by the armature object's
+scale, so a centimetre skeleton under a 0.01 scale, as Meshy Rigging returns,
+would draw bones a hundred times too long, In Front of the character.
+Each imported armature is redrawn at the character's size instead: a bone reaches
+its nearest child, a leaf takes its parent's length, none passes half the
+skeleton, and In Front is off. Only lengths change, never heads, directions or
+rolls, so rest matrices, weights, poses, clips and retargeting stay as imported;
+a bone with a connected child or B-Bone segments keeps its length. An object
+parented to a bone lands where the file puts it.
 Ordinary background Blender sessions retain an off-screen window and support
 that path. An explicitly windowless caller can import static models or apply a
 saved static mesh using its scene and view layer; rigged models are rejected

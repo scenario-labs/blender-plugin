@@ -77,3 +77,46 @@ def test_tripo_p2_is_the_first_image_to_3d_default_and_3_1_stays_available():
     got = [r.id for r in catalog.models_for_lane("3d", records)]
     assert got[0] == P2
     assert "model_tripo-v3-1-image-to-3d" in got
+
+
+P2_TEXT = "model_tripo-p2-text-to-3d"
+
+
+def p2_text_schema():
+    record = ModelRecord.from_api(
+        {
+            "id": P2_TEXT,
+            "name": "Tripo P2 Text to 3D",
+            "capabilities": ["txt23d"],
+            "inputs": [
+                {"name": "prompt", "type": "string", "required": True},
+                *P2_INPUTS[1:],
+            ],
+        }
+    )
+    return parse_schema(record)
+
+
+def test_tripo_p2_text_starts_a_prop_at_real_size_with_a_light_mesh():
+    schema = p2_text_schema()
+    assert starting_value(P2_TEXT, schema.by_name("autoSize")) is True
+    assert starting_value(P2_TEXT, schema.by_name("faceLimit")) == 50000
+    assert schema.by_name("faceLimit").max == catalog.PARAM_OVERRIDES[P2_TEXT]["faceLimit"]
+    # PBR is already the schema's own start; the prompt and quad mesh keep theirs.
+    assert starting_value(P2_TEXT, schema.by_name("pbr")) is None
+    assert starting_value(P2_TEXT, schema.by_name("quad")) is None
+    assert starting_value(P2_TEXT, schema.by_name("prompt")) is None
+
+
+def test_tripo_p2_text_is_the_first_text_to_3d_default_and_the_others_stay_listed():
+    others = ("model_meshy-7-1-txt23d", "model_rodin-hyper3d-v2-5-text-to-3d")
+    curated = catalog.DEFAULT_MODELS["3d"]
+    assert curated[0] == P2_TEXT
+    records = [
+        ModelRecord.from_api(
+            {"id": model_id, "name": model_id, "capabilities": ["txt23d"], "status": "trained"}
+        )
+        for model_id in (*others, P2_TEXT)
+    ]
+    got = [r.id for r in catalog.models_for_lane("3d", records)]
+    assert got == [P2_TEXT, *others]

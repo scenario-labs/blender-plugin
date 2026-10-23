@@ -51,6 +51,7 @@ DEFAULT_MODELS = {
         "model_kling-v3-omni-video",
     ],
     "3d": [
+        "model_tripo-p2-text-to-3d",
         "model_meshy-7-1-txt23d",
         "model_rodin-hyper3d-v2-5-text-to-3d",
         "model_tripo-p2-image-to-3d",
@@ -294,12 +295,14 @@ def choice_items(model_id, name):
 # Rodin's "All" material returns two meshes (a baked Shaded GLB and a PBR GLB); one PBR mesh is what a Blender user expects.
 # Tripo P2 picks its own face count, which leaves a character's face soft, and an arbitrary size. 50,000 faces is its
 # maximum and keeps the likeness in a file of a few MB; Auto Size returns a character at its real height in meters.
+# Tripo P2 Text to 3D starts the same way: a game prop of about 50,000 faces in a 5 MB GLB, at its real size.
 PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-text-to-3d": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-text-to-3d-fast": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-fast": {"material": "PBR"},
     "model_tripo-p2-image-to-3d": {"autoSize": True, "faceLimit": 50000},
+    "model_tripo-p2-text-to-3d": {"autoSize": True, "faceLimit": 50000},
 }
 MULTIVIEW_HINTS = ("multi", "multiview")
 

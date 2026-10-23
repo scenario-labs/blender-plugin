@@ -288,7 +288,7 @@ def strip_job(scene, state, lane):
     actions, held = state.shown_actions(
         view.local_id, revision, job_recovery.result_actions(view), busy
     )
-    chips = job_strip.strip_chips(actions, saved, automatic=automatic, error=view.error)
+    chips = job_strip.strip_chips(actions, saved, automatic=automatic, error=view.error, lane=lane)
     price = f"{format_cu(view.cu_cost)} CU" if view.cu_cost is not None else ""
     more = sum(1 for other in views[1:] if other.meta.get("saved_state") not in SETTLED_STATES)
     title = panels._short_prompt(view, STRIP_TITLE)

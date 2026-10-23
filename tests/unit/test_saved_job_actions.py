@@ -806,6 +806,25 @@ def test_first_frame_controls_follow_the_projected_stills_and_number_every_asset
     assert "use_first_frame offers" in description
 
 
+def test_a_render_image_result_leads_with_the_first_frame_handoff():
+    assets = (("still", "image/png"),)
+    actions = ("import_images", "camera_background", "use_first_frame", "image_plane")
+
+    def controls(lane):
+        candidate = view(actions, "ready", assets, **FIRST_FRAME, **LANDING)
+        if lane:
+            candidate.lane = lane
+        return [item.key for item in sja.describe(candidate, CONTEXT, TYPES) if item.operator]
+
+    other = controls("image")
+    assert other == controls(None)
+    assert other[0] == "import_images"
+    leading = controls("render_image")
+    assert leading[0] == "use_first_frame:still"
+    # the same controls, in another order
+    assert sorted(leading) == sorted(other)
+
+
 def test_camera_background_and_image_plane_controls_follow_their_projected_results():
     assets = (
         ("clip", "video/mp4"),

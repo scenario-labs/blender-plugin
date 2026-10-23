@@ -677,9 +677,10 @@ exactly that move.
 
 Choose an image: **Capture and upload scene** uploads it with the clip, or
 **Upload first frame** uploads it alone. To use a generated image instead,
-choose **Use as video first frame (N)** on a PNG, JPEG or WebP result: it reuses
-the image on Scenario without uploading or generating, and the slot shows **From
-a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and
+choose **Use as video first frame (N)** on a PNG, JPEG or WebP result (first in
+the list on Render Image results, and **Use as first frame** on the composer's
+job strip): it reuses the image on Scenario without uploading or generating, and
+the slot shows **From a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and
 2.0 Mini, Minimax H3 and Wan 3.0) can't take a first frame together with the clip;
 for them, the image guides the opening look instead, and the form says so.
 

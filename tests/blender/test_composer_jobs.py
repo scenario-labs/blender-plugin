@@ -611,6 +611,41 @@ class ComposerJobStripTests(unittest.TestCase):
         )
         self.assertEqual(len(self.jobs.paid), 1)
 
+    def test_the_strip_hands_its_lane_to_the_chip_choice(self):
+        # A Render Image job leads with its first-frame action; the strip only knows its lane.
+        self.submit_image()
+        seen = []
+        real = self.draw.job_strip.strip_chips
+
+        def spy(*args, **kwargs):
+            seen.append(kwargs.get("lane"))
+            return real(*args, **kwargs)
+
+        with patch.object(self.draw.job_strip, "strip_chips", spy):
+            self.drawn()
+        self.assertEqual(set(seen), {"image"})
+
+    def test_a_render_image_job_offers_its_still_as_a_first_frame_from_one_chip(self):
+        self.jobs.result_fixture()
+        view = self.submit_image(progress=None, status="success")
+        recovery = submodule("blender.job_recovery")
+        view.lane = "render_image"  # as a job submitted from the Render Image form is stamped
+        self.scene.scenario.lane = "render_image"
+        owner = self.runtime.state.model_jobs
+        binding = type(next(iter(owner._bindings.values())))(self.scene.session_uid, "render_image")
+        owner._bindings[view.local_id] = binding
+        order = [item.action for item in recovery.result_actions(view) if item.group == "apply"]
+        self.assertEqual(order[0], "use_first_frame")
+        shown = self.drawn()
+        self.assertEqual(shown.chips[-2:], ["Use as first frame", "Inspect"])
+        key = shown.geometry.job.chips[0].key
+        self.assertTrue(key.startswith("use_first_frame:"))
+        operator = self.press(self.chip_point(key))
+        self.assertEqual(
+            [(name, args) for name, args, _ in operator.ops.calls],
+            [("scenario.use_saved_first_frame", ("INVOKE_DEFAULT",))],
+        )
+
     def test_a_click_on_a_job_that_changed_since_drawing_is_consumed(self):
         view = self.submit_image()
         self.drawn()

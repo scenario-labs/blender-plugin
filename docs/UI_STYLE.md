@@ -899,7 +899,9 @@ shows its own job or no tray.
   [saved-job action descriptors](BLENDER_JOB_CONTEXT.md#active-saved-job-controls):
   **Inspect**, which is never dropped, and at most one primary action before it:
   a receipt retry, a cancellation, download recovery, the single result action,
-  or **Apply... (N)** / **Reuse... (N)**, which opens the job card to choose.
+  or **Apply... (N)** / **Reuse... (N)**, which opens the job card to choose. A
+  Render Image result with one first-frame action leads with **Use as first
+  frame** instead, and lists that action first in Jobs and the job card.
   As in Jobs, **Cancel generation** appears only once a poll confirmed an
   inference job, the only type Scenario documents as cancellable.
   A submission in flight or unconfirmed, and an Image result being imported

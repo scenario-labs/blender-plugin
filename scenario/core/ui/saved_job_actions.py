@@ -107,6 +107,8 @@ SINGLE_APPLY = {
 NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
 # The Render Video first-frame review; ModelJobs projects its accepted assets.
 FIRST_FRAME_OPERATOR = "scenario.use_saved_first_frame"
+# The lane whose results lead with the first-frame handoff.
+FIRST_FRAME_LANE = "render_image"
 # One more background for the scene camera, or a new image plane, from one saved
 # result; ModelJobs projects the assets each accepts as `<action>_assets`.
 LANDINGS = {
@@ -684,6 +686,9 @@ def describe(
         items.extend(
             _note("cloud_lookup", meta["cloud_lookup"], meta.get("cloud_lookup_icon", "INFO"))
         )
+    if getattr(view, "lane", None) == FIRST_FRAME_LANE and "use_first_frame" in actions:
+        # An approved Render Image still most often starts a Render Video: that control leads.
+        actions = ("use_first_frame", *(a for a in actions if a != "use_first_frame"))
     for action in actions:
         items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
     items.extend(_hdri_prefills(view, job))

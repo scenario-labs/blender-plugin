@@ -211,7 +211,10 @@ claim.
 [`glb.inspect_glb`](../scenario/core/scene/glb.py) checks the
 [GLB 2.0 container](https://github.com/KhronosGroup/glTF/blob/98015344c6a5f5a3a96686cbd77960a8b09f6276/specification/2.0/Specification.adoc)
 and the supported import policy before Blender runs. It requires one scene,
-one embedded binary buffer and no URI references. New-group imports retain skins
+one embedded binary buffer and no URI references. The buffer's `byteLength` may
+be shorter than its binary chunk: Viggle Text to Motion leaves unused bytes after
+the buffer, which glTF validators only warn about and importers never read; a
+buffer longer than its chunk is refused. New-group imports retain skins
 and node transform/morph-weight animations. Limits are 256 MiB of file bytes,
 8 MiB of JSON, 10,000 nodes, 10 million accessor entries, 128 skins, 128 animation
 clips and 10,000 total joints or animation channels. This is a bounded policy

@@ -737,9 +737,10 @@ their typed 3D input parameters and persists them before spending; see
 [generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 Quotes look up only selected asset IDs within the credential scope, using a
 partial SQLite index of imported captured meshes. Each unique input needs one
-query and at most two decoded records; two matches still reject an ambiguous
-source. Repeated array entries keep their original positions without repeating
-the lookup, and absent optional inputs do not read upload storage. External
+query and at most two decoded records: the latest capture, then one of other
+bytes, which still rejects an ambiguous source. Repeated array entries keep
+their original positions without repeating the lookup, and absent optional
+inputs do not read upload storage. External
 assets and ordinary uploads do not gain an inferred source. Each quote allows at
 most 128 distinct 3D input asset IDs across all parameters, including unmatched
 external assets. A 129th identity fails before another lookup; repeated IDs share

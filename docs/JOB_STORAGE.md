@@ -312,10 +312,11 @@ The shared quote path matches only declared 3D file inputs to completed captured
 uploads in the selected credential/project scope. Prompt strings, unknown assets
 and ordinary file uploads acquire no inferred source. Repeated array values keep
 their positions for both `type: file_array` and `type: file` with `array: true`,
-matching payload validation. Ambiguous captured records for the same asset
-reject the quote. The coordinator rechecks every binding before preparation and
-again before the paid claim. A missing or changed upload stops dispatch while
-preserving the job.
+matching payload validation. Byte-identical captures of one asset are one
+source and bind the latest; captures of different bytes reject the quote unless
+the user prices that asset without a captured source for the session. The
+coordinator rechecks every binding before preparation and again before the paid
+claim. A missing or changed upload stops dispatch while preserving the job.
 
 Bindings describe the immutable uploaded snapshot, not the current geometry of
 an object. Their origin may differ from the generation's current scene context.

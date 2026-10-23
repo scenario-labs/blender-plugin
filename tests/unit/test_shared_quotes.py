@@ -4,6 +4,7 @@
 
 import hashlib
 import json
+import pickle
 import sqlite3
 import threading
 from dataclasses import replace
@@ -14,7 +15,7 @@ import httpx
 import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
-from scenario.core.jobs.coordinator import JobCoordinator, QuoteError
+from scenario.core.jobs.coordinator import CaptureConflictError, JobCoordinator, QuoteError
 from scenario.core.jobs.mesh_source import MeshSource, MeshSourceObject
 from scenario.core.jobs.origins import OriginRevisions
 from scenario.core.jobs.store import JobScope, JobState, JobStore
@@ -385,10 +386,13 @@ def test_preparation_overlapping_submission_does_not_invert_locks(env, monkeypat
     )
 
 
-def captured_upload(env, *, request_id="capture", asset_id="mesh-asset", scope=None):
+def captured_upload(
+    env, *, request_id="capture", asset_id="mesh-asset", scope=None, content=b"fixture GLB"
+):
     scope = scope or env.scope
     store = UploadStore(env.upload_store._path, scope)
-    digest = hashlib.sha256(b"fixture GLB").hexdigest()
+    digest = hashlib.sha256(content).hexdigest()
+    size = len(content)
     source = MeshSource(
         digest,
         (
@@ -406,9 +410,9 @@ def captured_upload(env, *, request_id="capture", asset_id="mesh-asset", scope=N
         "3d",
         "source.glb",
         "model/gltf-binary",
-        11,
+        size,
         digest,
-        11,
+        size,
         (digest,),
         source,
     )
@@ -424,7 +428,7 @@ def captured_upload(env, *, request_id="capture", asset_id="mesh-asset", scope=N
     advance(UploadState.UPLOADING, upload_id="remote-upload-" + request_id)
     record = store.claim_part(request_id, expected_revision=record.revision)
     record = store.record_part(
-        request_id, UploadedPart(1, 11, digest), expected_revision=record.revision
+        request_id, UploadedPart(1, size, digest), expected_revision=record.revision
     )
     advance(UploadState.FINALIZING)
     advance(UploadState.PROCESSING)
@@ -617,13 +621,51 @@ def test_prompt_text_and_different_scope_cannot_claim_mesh_provenance(env):
     assert quote.mesh_sources == ()
 
 
-def test_ambiguous_export_asset_never_selects_the_first_origin(env):
+def test_reuploaded_unchanged_mesh_binds_its_latest_capture(env):
+    # Scenario imports a re-upload of the same bytes as the same asset.
     captured_upload(env)
-    captured_upload(env, request_id="second-source")
-    with pytest.raises(QuoteError, match="Several captured"):
+    latest = captured_upload(env, request_id="second-source")
+    quote = mesh_quote(env)
+    assert [source.upload_id for source in quote.mesh_sources] == ["second-source"]
+    assert quote.mesh_sources[0].upload_revision == latest.revision
+    prepared = env.coordinator.prepare_quote(quote)
+    assert prepared.intent.mesh_sources == quote.mesh_sources
+
+
+def test_captures_of_different_bytes_for_one_asset_never_select_a_source(env):
+    captured_upload(env)
+    captured_upload(env, request_id="second-source", content=b"changed GLB")
+    with pytest.raises(CaptureConflictError, match="Different captured meshes") as raised:
         mesh_quote(env)
+    assert raised.value.asset_id == "mesh-asset"
+    assert pickle.loads(pickle.dumps(raised.value)).asset_id == "mesh-asset"
     assert env.store.records() == ()
     assert all("dryRun" in request.url.params for request in env.calls if request.method == "POST")
+
+
+def test_conflicting_asset_can_be_priced_without_a_captured_source(env):
+    captured_upload(env)
+    captured_upload(env, request_id="second-source", content=b"changed GLB")
+    with pytest.raises(CaptureConflictError):
+        mesh_quote(env)
+    calls = len(env.calls)
+    env.coordinator.price_without_capture("mesh-asset")
+    assert len(env.calls) == calls and env.store.records() == ()
+    payload = {"prompt": "fixture", "mesh": "mesh-asset"}
+    quote = env.coordinator.quote_model("model-one", payload, origin=env.origin)
+    assert quote.mesh_sources == ()
+    assert quote.estimate.payload["mesh"] == "mesh-asset"
+    assert env.coordinator.prepare_quote(quote).intent.mesh_sources == ()
+
+
+@pytest.mark.parametrize("captures", [0, 1, 2])
+def test_price_without_capture_requires_a_current_conflict(env, captures):
+    for index in range(captures):
+        captured_upload(env, request_id=f"capture-{index}")
+    with pytest.raises(QuoteError, match="no longer conflict"):
+        env.coordinator.price_without_capture("mesh-asset")
+    if captures:
+        assert len(mesh_quote(env).mesh_sources) == 1
 
 
 @pytest.mark.parametrize("phase", ["prepare", "submit"])

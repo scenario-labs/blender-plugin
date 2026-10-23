@@ -47,6 +47,10 @@ class RenderSettings:
     color_depth: str = ""
     pixel_aspect_x: float = 1.0
     pixel_aspect_y: float = 1.0
+    ffmpeg_crf: str = ""
+    ffmpeg_gop: int = 0
+    ffmpeg_lossless: bool = False
+    ffmpeg_split: bool = False
 
     @classmethod
     def snapshot(cls, scene):
@@ -72,6 +76,10 @@ class RenderSettings:
             r.image_settings.color_depth,
             r.pixel_aspect_x,
             r.pixel_aspect_y,
+            r.ffmpeg.constant_rate_factor,
+            r.ffmpeg.gopsize,
+            r.ffmpeg.use_lossless_output,
+            r.ffmpeg.use_autosplit,
         )
 
     def restore(self, scene):
@@ -104,6 +112,10 @@ class RenderSettings:
             self.ffmpeg_codec,
             self.ffmpeg_audio,
         )
+        _assign(r.ffmpeg, "constant_rate_factor", self.ffmpeg_crf)
+        _assign(r.ffmpeg, "gopsize", self.ffmpeg_gop)
+        _assign(r.ffmpeg, "use_lossless_output", self.ffmpeg_lossless)
+        _assign(r.ffmpeg, "use_autosplit", self.ffmpeg_split)
         r.film_transparent = self.film_transparent
         if self.camera_name and bpy.data.objects.get(self.camera_name) is not None:
             scene.camera = bpy.data.objects[self.camera_name]
@@ -111,6 +123,15 @@ class RenderSettings:
             scene.camera = None  # A camera capture chose the first camera; the scene had none.
         if scene.frame_current != self.frame_current:
             scene.frame_set(self.frame_current)
+
+
+def _assign(owner, name, value):
+    """Write a property only when it differs, so restoring an unchanged setting notifies nothing.
+
+    An enum whose stored value is outside its items reads as "" and cannot be written back by
+    name; it keeps what the capture set."""
+    if value != "" and getattr(owner, name) != value:
+        setattr(owner, name, value)
 
 
 def _set_preview_range(scene, enabled):
@@ -132,6 +153,23 @@ def set_video_output(render):
         settings.media_type = "VIDEO"
     else:
         settings.file_format = "FFMPEG"
+
+
+# Playblast encoding: H.264 at Blender's Medium quality, whatever the scene's own output uses.
+# A scene set to lossless or a high bitrate would upload a clip tens of times larger for the same
+# frames (a 1280x720 clip of 120 frames: about 0.5 MB at Medium, 30 MB lossless). The encoder
+# preset stays the scene's: it moves the size by a factor of two at most.
+PLAYBLAST_CRF = "MEDIUM"
+PLAYBLAST_GOP = 18
+
+
+def set_playblast_encoding(ffmpeg):
+    """Encode a playblast as a small H.264 MP4 without audio; the caller restores the scene's settings."""
+    ffmpeg.format, ffmpeg.codec, ffmpeg.audio_codec = "MPEG4", "H264", "NONE"
+    ffmpeg.constant_rate_factor = PLAYBLAST_CRF
+    ffmpeg.gopsize = PLAYBLAST_GOP
+    ffmpeg.use_lossless_output = False
+    ffmpeg.use_autosplit = False
 
 
 def set_image_output(render, file_format):
@@ -351,7 +389,7 @@ def capture_playblast(
         r.resolution_x, r.resolution_y, r.resolution_percentage = int(width), int(height), 100
         r.pixel_aspect_x = r.pixel_aspect_y = 1.0
         set_video_output(r)
-        r.ffmpeg.format, r.ffmpeg.codec, r.ffmpeg.audio_codec = "MPEG4", "H264", "NONE"
+        set_playblast_encoding(r.ffmpeg)
         r.use_stamp = False
         # Blender renders an enabled preview range. Keep it when it is the span.
         if (start, end) != (scene.frame_preview_start, scene.frame_preview_end):

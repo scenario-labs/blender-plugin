@@ -689,7 +689,7 @@ coloured primitives, grouped in a `Blockout` collection.
    image** and press **Upload**; the description is then optional.
 2. Choose a **Density** (Simple, Medium, Advanced or Expert: more primitives and
    finer detail) and a model: **Best** (Claude Opus, a few minutes) or **Fast**
-   (Gemini Flash, under a minute, cheaper).
+   (Gemini Flash, under a minute, cheaper). **Colours, camera and light** is on by default.
 3. The price appears on **Generate blockout**; choose it to pay once and design
    the plan, which Jobs lists until it arrives. **New plan** prices another one
    from the same fields. Changing the fields, scene or credentials first cancels
@@ -699,11 +699,14 @@ coloured primitives, grouped in a `Blockout` collection.
 5. **Clear** removes the collection and plan after asking. Build and Clear
    support Undo.
 
-Colours mark categories such as Floor, Wall, Prop, Furniture and Vegetation. Swap
-blocks for generated 3D assets as your scene develops. Rebuilding replaces only this
-scene's Blockout collection, and manual edits to its objects are lost. Move any
-objects you added to that collection elsewhere first: they block rebuilding and
-clearing.
+Each group has its own colour and a shared material. With **Colours, camera and
+light** on, a build also adds a camera that frames the whole blockout and one sun
+light when the scene has none; your own cameras and lights are never moved, and
+Undo reverts all of it. With it off, colours mark categories such as Floor, Wall,
+Prop, Furniture and Vegetation. Swap blocks for generated 3D assets as your scene
+develops. Rebuilding replaces only this scene's Blockout collection (the camera and
+light stay), and manual edits to its objects are lost. Move any objects you added to
+that collection elsewhere first: they block rebuilding and clearing.
 
 If a request's outcome is uncertain, don't generate again: select the scene, choose
 **Inspect saved jobs**, **Read saved Blockout plan**, then

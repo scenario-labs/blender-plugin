@@ -599,6 +599,11 @@ class ScenarioBlockoutProps(bpy.types.PropertyGroup):
         default=blockout_core.DEFAULT_TIER,
         description="Which Scenario LLM designs the plan; the price is on the Generate button",
     )
+    dress_scene: BoolProperty(
+        name="Colours, camera and light",
+        default=True,
+        description="Give each group its own colour and material, and add a camera framing the blockout and a sun light when the scene has none. Your own cameras and lights are never moved",
+    )
     image_path: StringProperty(
         name="Reference image",
         subtype="FILE_PATH",

@@ -1027,6 +1027,7 @@ def draw_blockout_tab(layout, context):
     box.prop(props, "density")
     row = box.row(align=True)
     row.prop(props, "tier", expand=True)
+    box.prop(props, "dress_scene")
     if item is None or item.action == "DESIGN":
         bo.draw_status(box, scene)
     bo.draw_price(box, scene)

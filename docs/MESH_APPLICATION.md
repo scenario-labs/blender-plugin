@@ -136,9 +136,11 @@ unchanged; a later user change requires explicit review.
 
 Only local, non-overridden meshes in Object Mode are supported. Modifiers,
 constraints, vertex groups, shape keys, animation, armature/bone/vertex parenting,
-vertex-parented children, object material overrides and custom mesh properties are
-rejected. Generic attributes are limited to boolean, scalar float/integer, integer
-2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
+vertex-parented children, object material overrides and custom mesh properties that
+reference other data are rejected. Other custom mesh properties, such as the glTF
+extras Blender imports, stay on the edited mesh under every policy; a result's own
+are never adopted. Generic attributes are limited to boolean, scalar float/integer,
+integer 2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
 command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policies
 cover segmented parts and compatible skins; RIG also accepts a source
 [already skinned to an armature](#replace-an-existing-skin), and
@@ -177,12 +179,12 @@ targets by name.
 Rollback rechecks the supported object structure as well as source/scene membership,
 the applied mesh pointer, active material selection and fingerprints of both original
 and applied meshes. Adding modifiers, constraints, vertex groups, shape keys,
-animation, incompatible parenting, object material overrides or mesh custom properties
-requires explicit review before rollback. These guards protect topology-dependent
-data and metadata outside the fingerprint. A refusal leaves the receipt open;
-removing the added structure allows retry if the remaining guards still pass.
-The fingerprints cover geometry, supported generic attributes, UV layer roles
-and material slot bindings, so editing the applied mesh in place cannot silently
+animation, incompatible parenting or object material overrides requires explicit
+review before rollback. These guards protect topology-dependent data and metadata
+outside the fingerprint. A refusal leaves the receipt open; removing the added
+structure allows retry if the remaining guards still pass. The fingerprints cover
+geometry, supported generic attributes, UV layer roles, material slot bindings and
+custom mesh properties, so editing the applied mesh in place cannot silently
 lose user work. Shader node graph edits are outside that fingerprint and are
 never reverted. Rollback removes its unchanged staged mesh only when no other
 user owns it; it never removes the imported result or a mesh adopted by another

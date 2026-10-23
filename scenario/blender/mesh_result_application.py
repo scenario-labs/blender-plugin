@@ -310,13 +310,14 @@ def _source_parts(target, meshes, surface, owner, textures=None):
 def _copied_parts(target, meshes, mapping):
     """Copy result part meshes into source-local coordinates."""
     for obj in meshes:
-        # Copies keep their own data, so custom mesh properties stay unsupported.
         mesh_application._validate_object(obj.users_scene[0], obj)
         mesh_application._matrix(mapping @ obj.matrix_world)
     parts = []
     for index, obj in enumerate(meshes, 1):
         mesh = obj.data.copy()
         mesh.use_fake_user = False
+        # Like parts split from the source's faces, each keeps the source's properties.
+        mesh_application._carry_properties(target.mesh, mesh)
         mesh.transform(mapping @ obj.matrix_world)
         mesh.update()
         mesh_application._fingerprint(mesh)
@@ -337,7 +338,7 @@ def _stage_parts(target, meshes, mapping):
         raise MeshResultApplicationError("Choose a static result containing 2 to 128 mesh parts")
     components = 0
     for obj in meshes:
-        mesh_application._validate_object(obj.users_scene[0], obj, read_only=True)
+        mesh_application._validate_object(obj.users_scene[0], obj)
         data = obj.data
         components += len(data.vertices) + len(data.edges) + len(data.loops) + len(data.polygons)
         components += sum(len(attribute.data) for attribute in data.attributes)

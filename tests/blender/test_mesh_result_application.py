@@ -78,13 +78,19 @@ class MeshResultTests(unittest.TestCase):
             snapshot.cleanup()
 
     def morph_result(self):
+        def change(mesh):
+            primitive = mesh["primitives"][0]
+            primitive["targets"] = [{"POSITION": primitive["attributes"]["POSITION"]}]
+            mesh["weights"] = [0.0]
+            mesh["extras"] = {"targetNames": ["Fixture morph"]}
+
+        self.rewrite_mesh(change)
+
+    def rewrite_mesh(self, change):
+        """Save the result again with `change` applied to its first glTF mesh."""
         length = struct.unpack_from("<I", self.body, 12)[0]
         document = json.loads(self.body[20 : 20 + length])
-        mesh = document["meshes"][0]
-        primitive = mesh["primitives"][0]
-        primitive["targets"] = [{"POSITION": primitive["attributes"]["POSITION"]}]
-        mesh["weights"] = [0.0]
-        mesh["extras"] = {"targetNames": ["Fixture morph"]}
+        change(document["meshes"][0])
         value = json.dumps(document).encode()
         value += b" " * (-len(value) % 4)
         tail = self.body[20 + length :]
@@ -375,6 +381,26 @@ class MeshResultTests(unittest.TestCase):
         ]
         self.assertTrue(images)
         self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
+
+    def test_plugin_import_with_glb_mesh_extras_takes_in_place_edits(self):
+        # Providers name meshes in glTF extras, which Blender imports as custom properties.
+        self.rewrite_mesh(lambda mesh: mesh.update(extras={"name": "provider mesh"}))
+        imported = self.model.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        source = next(obj for obj in imported.objects if obj.type == "MESH")
+        self.assertEqual(source.data["name"], "provider mesh")
+        self.source = source
+        # The fixture node translates +2 on X; the explicit scene mapping undoes it.
+        mapping = Matrix.Translation((-2, 0, 0))
+        for policy in ("RETEXTURE", "REMESH"):
+            with self.subTest(policy=policy):
+                before = source.data
+                self.target = self.mesh.capture_target(self.scene, source)
+                result = self.apply(policy=policy, result_to_source=mapping)
+                self.assertEqual(result.policy, policy)
+                self.assertIsNot(source.data, before)
+                self.assertEqual(result.original.data, before)
+                self.assertEqual(dict(source.data.items()), {"name": "provider mesh"})
+                self.assertEqual(source["scenario_asset"], "mesh")
 
     def test_retexture_topology_failure_preserves_source_and_saved_file(self):
         before = self.model._snapshot()

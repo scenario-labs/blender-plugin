@@ -525,7 +525,7 @@ class MeshApplicationTests(unittest.TestCase):
         self.assertFalse(receipt._closed)
         self.source.modifiers.remove(modifier)
         applied["user_metadata"] = "retain"
-        with self.assertRaisesRegex(self.module.MeshApplicationError, "Target structure changed"):
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "Mesh data changed"):
             receipt.rollback()
         self.assertEqual(applied["user_metadata"], "retain")
         self.assertIs(self.source.data, applied)
@@ -603,14 +603,47 @@ class MeshApplicationTests(unittest.TestCase):
         with self.assertRaises(self.module.MeshApplicationError):
             self.apply()
 
-    def test_unsupported_generic_attributes_and_custom_mesh_properties_fail_closed(self):
+    def test_unsupported_generic_attributes_and_data_references_fail_closed(self):
+        before = self.source.data
         attribute = self.result.data.attributes.new("Unsupported", "STRING", "POINT")
         with self.assertRaises(self.module.MeshApplicationError):
             self.apply()
         self.result.data.attributes.remove(attribute)
-        self.source.data["user_metadata"] = "preserve"
-        with self.assertRaises(self.module.MeshApplicationError):
+        self.source.data["user_reference"] = self.result_material
+        with self.assertRaisesRegex(self.module.MeshApplicationError, "reference data"):
             self.apply()
+        self.assertIs(self.source.data, before)
+
+    def test_edits_keep_the_source_custom_mesh_properties_never_a_results(self):
+        # Blender's glTF importer turns mesh extras into custom properties.
+        self.source.data["name"] = "provider mesh"
+        self.source.data["user_weight"] = 0.5
+        self.source.data.id_properties_ui("user_weight").update(min=0.0, max=2.0)
+        self.source.data["user_group"] = {"tags": [1, 2]}
+        self.result.data["name"] = "result mesh"
+        self.result.data["result_only"] = True
+        expected = self.module._properties(self.source.data)
+        for policy in ("REMESH", "UV", "RETEXTURE"):
+            with self.subTest(policy=policy):
+                before = self.source.data
+                if policy != "REMESH":
+                    # The result must be the source's surface, with one UV layer.
+                    self.result.data = before.copy()
+                    self.result.data["name"] = "result mesh"
+                    self.result.data["result_only"] = True
+                receipt = self.apply(policy=policy)
+                applied = self.source.data
+                self.assertIsNot(applied, before)
+                self.assertEqual(self.module._properties(applied), expected)
+                self.assertEqual(applied.id_properties_ui("user_weight").as_dict()["max"], 2.0)
+                self.assertNotIn("result_only", applied)
+                # Properties are guarded like geometry: a later change needs review.
+                applied["user_added"] = 1
+                with self.assertRaisesRegex(self.module.MeshApplicationError, "Mesh data changed"):
+                    receipt.rollback()
+                del applied["user_added"]
+                receipt.rollback()
+                self.assertIs(self.source.data, before)
 
     def test_rollback_restores_clamped_active_material_selection(self):
         self.source.data.materials.append(self.result_material)

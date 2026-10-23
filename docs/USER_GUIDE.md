@@ -778,8 +778,9 @@ A job stays here until you apply its results.
   up checking other jobs.
 - **Stop download** stops a download in progress without keeping a partial
   file. **Resume download** starts it again later.
-- After a restart or opening a file, saved jobs show again in the Jobs panel;
-  choose **Refresh status** or **Resume download**. They keep their result
+- After a restart or opening a file, saved jobs show again in the Jobs panel,
+  also while Online Access is off; nothing is sent to Scenario to list them.
+  Choose **Refresh status** or **Resume download**. They keep their result
   tools, such as **Use as reference** on an image whose saved file is unchanged.
   Prompts aren't saved, so such a job shows its model's name and offers no
   **Reload parameters**.

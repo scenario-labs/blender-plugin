@@ -301,6 +301,42 @@ class RestoredJobTests(unittest.TestCase):
         self.assertNotIn("scenario.use_as_reference", operators)
         self.assertEqual(self.requests, [])
 
+    def forget(self):
+        """A restart with no catalog step: Online Access is off, so none runs."""
+        self.runtime.state.reset()
+        self.module.reap_retired()
+        self.assertIsNone(self.runtime.state.catalog)
+
+    def test_an_offline_start_lists_saved_jobs_without_the_catalog_step(self):
+        files = {request_id: self.save(request_id, lane=JOBS[request_id][0]) for request_id in JOBS}
+        self.forget()
+        self.assertTrue(self.runtime.show_saved_jobs())
+        restored = self.runtime.state.model_jobs
+        self.assertEqual(set(restored.views), set(JOBS))
+        self.assertTrue(self.settle(lambda: restored.views["still"].files))
+        self.assertEqual(restored.views["still"].files, [files["still"]])
+        self.assertEqual(restored.views["render"].lane, "render_image")
+        # Listed once per job context, as an online start lists them.
+        self.assertFalse(self.runtime.show_saved_jobs())
+        self.assertEqual(self.requests, [])
+
+    def test_an_online_start_still_waits_for_the_catalog_step(self):
+        self.save("still", lane="image")
+        self.forget()
+        with online_access(True):
+            self.assertFalse(self.runtime.show_saved_jobs())
+        self.assertIsNone(self.runtime.state.catalog)
+        self.assertEqual(self.requests, [])
+
+    def test_an_offline_start_without_a_job_database_selects_nothing(self):
+        database = self.root / "shared-jobs" / "jobs.sqlite3"
+        self.assertFalse(database.exists())
+        self.assertFalse(self.runtime.show_saved_jobs())
+        # No connection is selected and no storage is created before anything is saved.
+        self.assertIsNone(self.runtime.state.catalog)
+        self.assertFalse((self.root / "shared-jobs").exists())
+        self.assertEqual(self.requests, [])
+
 
 if __name__ == "__main__":
     unittest.main()

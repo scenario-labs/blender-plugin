@@ -549,17 +549,19 @@ def show_saved_jobs():
     changing credentials leaves no listed context, so the Jobs list and the
     Results grid show them again without a click. The pump calls it after its
     context check this tick, which retires a session a file load deactivated.
-    It lists only a connection the catalog step already selected, never
-    selecting or switching one itself. Returns whether rows changed.
+    Online it lists only a connection the catalog step already selected, never
+    selecting or switching one itself. Offline no catalog step runs, so once a
+    job database exists it selects the saved credentials' connection the way
+    Inspect saved jobs does: locally, sending nothing. Returns whether rows changed.
     """
     selection = (credentials(), project_id(), state.job_context_id)
-    if (
-        not selection[0].valid
-        or state.catalog is None
-        or not catalog_selection_matches()
-        or selection == state.saved_jobs_listed
-    ):
+    if not selection[0].valid or selection == state.saved_jobs_listed:
         return False
+    if state.catalog is not None:
+        if not catalog_selection_matches():
+            return False
+    elif online() or not (paths().state_dir / "shared-jobs" / "jobs.sqlite3").is_file():
+        return False  # the catalog step selects it, or nothing was ever saved here
     state.saved_jobs_listed = selection  # one attempt per context, even when it fails
     try:
         store = ensure_job_store()

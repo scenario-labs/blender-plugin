@@ -150,7 +150,7 @@ class RuntimeJobTests(unittest.TestCase):
         self.assertEqual(self.requests, [])
 
     def test_saved_jobs_are_listed_once_per_context_with_the_prompts_shown(self):
-        # Until the catalog step selects a connection, listing selects none itself.
+        # With no saved job database, listing selects no connection itself.
         self.assertFalse(self.runtime.show_saved_jobs())
         self.assertIsNone(self.runtime.state.catalog)
         self.seed(lane="render_image")

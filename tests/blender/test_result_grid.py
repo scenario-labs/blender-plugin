@@ -359,6 +359,24 @@ class ResultGridTests(unittest.TestCase):
         self.assertFalse(named(calls, "operator", "scenario.page_results"))
         self.assertFalse(named(calls, "grid_flow"))
 
+    def test_a_job_without_a_saved_model_name_shows_the_catalog_name(self):
+        # A saved job listed after a restart keeps only its model ID.
+        (row,) = self.rows(1, shared=True, active=1)
+        running = self.runtime.state.jobs_view[0]
+        del row.meta["model_name"]
+        self.runtime.state.records["fixture-model"] = SimpleNamespace(name="Catalog Model")
+        self.assertEqual(self.show("job-0"), {"FINISHED"})
+        active = Recorder()
+        self.panels.draw_active_job(active, running)
+        for surface, calls in (("large view", self.draw_studio()), ("Jobs", active.calls)):
+            with self.subTest(surface=surface):
+                texts = [text for text, _icon in labels(calls)]
+                self.assertTrue(any("Catalog Model" in text for text in texts), texts)
+                self.assertFalse(any("fixture-model" in text for text in texts), texts)
+        # A model the catalog does not list keeps its ID.
+        del self.runtime.state.records["fixture-model"]
+        self.assertIn(("fixture-model", "NODE_MATERIAL"), labels(self.draw_studio()))
+
     def test_neighbors_stop_at_either_end_and_all_results_returns_to_its_page(self):
         rows = self.rows(30)
         self.assertEqual(self.show("job-0"), {"FINISHED"})

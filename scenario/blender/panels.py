@@ -711,12 +711,25 @@ def draw_mcp_lane(layout, context):
 # -- results ------------------------------------------------------------------
 
 
+def result_model_name(rec):
+    """The model a generation names: its saved label, else the loaded catalog's name.
+
+    A saved job listed after a restart keeps only its model ID; the catalog is
+    in memory, so drawing never shows an internal ID for a model it lists.
+    """
+    name = rec.meta.get("model_name")
+    if name:
+        return name
+    record = runtime.state.records.get(rec.model_id)
+    return record.name if record is not None and record.name else rec.model_id
+
+
 def _short_prompt(rec, limit=40):
     text = (
         rec.meta.get("prompt") or rec.meta.get("spark_look") or rec.meta.get("look") or ""
     ).strip()
     if not text:
-        text = rec.meta.get("model_name") or rec.model_id
+        text = result_model_name(rec)
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
@@ -771,7 +784,7 @@ def draw_result(layout, rec, *, collapsible=True):
 def draw_result_model(layout, rec):
     """A generation's model, with Reload parameters when its lane has a form, and Details."""
     row = layout.row(align=True)
-    row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
+    row.label(text=result_model_name(rec), icon="NODE_MATERIAL")
     if generation.reload_lane(rec) is not None:
         reload = row.operator("scenario.reload_generation", text="", icon="FILE_REFRESH")
         reload.local_id = rec.local_id
@@ -1160,7 +1173,7 @@ def draw_active_job(layout, rec):
     box = layout.box()
     row = box.row(align=True)
     row.label(text=_short_prompt(rec, 44), icon=KIND_ICON.get(rec.kind, "TIME"))
-    model = rec.meta.get("model_name", rec.model_id)
+    model = result_model_name(rec)
     if rec.meta.get("shared_job"):
         draw_shared_status(box, rec, model)
     else:

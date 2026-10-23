@@ -704,7 +704,7 @@ class SCENARIO_OT_result_details(bpy.types.Operator):
         row.label(text=panels._short_prompt(rec, 60), icon=panels.KIND_ICON.get(rec.kind, "FILE"))
         row.label(text=f"{format_cu(rec.cu_cost)} CU" if rec.cu_cost is not None else rec.status)
         row = header.row(align=True)
-        row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
+        row.label(text=panels.result_model_name(rec), icon="NODE_MATERIAL")
         row.label(text=rec.status, icon="CHECKMARK" if rec.is_success else "ERROR")
         if rec.meta.get("prompt"):
             op = row.operator("scenario.copy_text", text="", icon="COPYDOWN")

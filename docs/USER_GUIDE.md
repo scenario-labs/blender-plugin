@@ -933,8 +933,8 @@ when it then lines up with your mesh: exactly for UVs, textures, rigs and parts
 cut from your mesh, and within a small margin for new geometry and other parts.
 **Replace geometry** starts on **Scene coordinates** unless the job was a
 Remesh. If a result doesn't match, the job says why and
-your mesh is unchanged. **Keep original** (on by default) leaves an unselected
-copy. With Global Undo on, Undo and Redo restore the scene before and after the
+your mesh is unchanged. **Keep original** (on by default) leaves a hidden copy
+named after your mesh. With Global Undo on, Undo and Redo restore the scene before and after the
 edit, but don't refund it. If the outcome is uncertain, inspect it rather than
 applying again. See [mesh application](MESH_APPLICATION.md#supported-policies)
 for requirements.

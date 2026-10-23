@@ -159,7 +159,8 @@ imported result and downloaded files remain available for a local retry without
 rerunning generation.
 
 With **Keep original**, a duplicate object using the original mesh is linked into
-the source's collections with the same parenting/transforms. It becomes user-owned
+the source's collections with the same parenting/transforms, hidden in the viewport
+and renders so the edited mesh is what shows. It becomes user-owned
 once returned, remains accessible as `receipt.original`, and survives both accept
 and rollback. It shares the old mesh with any existing users; subsequent edits to
 that old mesh prevent automatic rollback.
@@ -668,7 +669,7 @@ The source is revalidated immediately before replacement. Temporary imported
 objects are removed; RIG retains its armature/parent hierarchy and ANIMATE only
 its copied clips. Replacement
 material/image dependencies remain packed. Keep original
-retains a separate unselected copy, preserving the previous selection and active
+retains a separate hidden, unselected copy, preserving the previous selection and active
 object. Without it, the primitive may release the unchanged, unused original mesh.
 A returned result is finalized and contains the source, optional original and
 policy and whether a desktop undo checkpoint was recorded; it is not a persistent
@@ -854,7 +855,7 @@ to none. **Apply mesh edit** still reviews only the active mesh.
   before any is published; a failed publication or binding restores the objects
   already changed only once every one is proven restorable, and otherwise
   restores none and reports the outcome uncertain. Keep original makes one
-  unselected copy per object. One pair of native undo checkpoints covers the
+  hidden copy per object. One pair of native undo checkpoints covers the
   whole application, and receipt-only recovery never applies it again.
 
 The approval's `target` is null and `targets` lists every object; after
@@ -979,7 +980,7 @@ components above the existing synchronous limit. The source must have surface
 geometry; an empty parts anchor cannot receive another parts group. Select a
 child or the retained original for further mesh operations.
 
-Keep original retains an unselected copy of the previous source geometry. The
+Keep original retains a hidden copy of the previous source geometry. The
 shared guarded replacement swaps in empty geometry only after all parts pass
 validation; part publication and imported-data cleanup stay inside the same
 rollback boundary. A verified failure restores the captured source and removes

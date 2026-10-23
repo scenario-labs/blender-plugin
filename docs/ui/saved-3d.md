@@ -232,7 +232,7 @@ quality or indexing.
 
 ## Saved mesh undo interaction
 
-The approval dialog explains that Keep original retains an unselected copy,
+The approval dialog explains that Keep original retains a hidden copy,
 Blender settings control undo, and history changes leave jobs and spending
 recorded. The shared command uses native history for every mesh policy;
 see [the contract](../MESH_APPLICATION.md#native-undo-for-saved-mesh-edits).

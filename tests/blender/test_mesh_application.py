@@ -150,9 +150,24 @@ class MeshApplicationTests(unittest.TestCase):
         self.assertEqual(original.matrix_world, self.source.matrix_world)
         self.assertEqual(original.users_collection, self.source.users_collection)
         self.assertNotEqual(original.name, self.source.name)
+        # Left visible at the same transform it would cover the edited mesh.
+        self.assertTrue(original.hide_get())
+        self.assertTrue(original.hide_render)
+        self.assertFalse(self.source.hide_get())
         receipt.rollback()
         self.assertIs(original.data, self.source.data)
         self.assertIn(original, tuple(bpy.data.objects))
+
+    def test_keep_original_in_a_collection_excluded_from_one_view_layer_is_still_hidden(self):
+        collection = bpy.data.collections.new("Excluded elsewhere")
+        self.scene.collection.children.link(collection)
+        collection.objects.link(self.source)
+        self.scene.collection.objects.unlink(self.source)
+        other = self.scene.view_layers.new("Other layer")
+        other.layer_collection.children[collection.name].exclude = True
+        receipt = self.apply(keep_original=True)
+        self.assertTrue(receipt.original.hide_render)
+        self.assertTrue(receipt.original.hide_get())
 
     def test_uv_replaces_only_active_coordinates_and_preserves_materials_attributes(self):
         extra = self.uv(self.source, "Other UV", 0.5)

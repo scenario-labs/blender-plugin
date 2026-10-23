@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Synchronous, explicit-target mesh application; no import, jobs or selection lookup."""
 
+import contextlib
 import hashlib
 import math
 import threading
@@ -1044,8 +1045,8 @@ def _publish(source, staged):
 class MeshApplication:
     """Caller-owned rollback boundary. Call accept() or rollback() on the main thread.
 
-    A visible Keep original object is user-owned once returned and survives both
-    methods. Without Keep original, an unlinked holder retains the original mesh
+    A Keep original object, hidden in the viewport and renders, is user-owned once
+    returned and survives both methods. Without Keep original, an unlinked holder retains the original mesh
     until this receipt is finalized. No destructor touches Blender data.
     """
 
@@ -1325,6 +1326,18 @@ def _replace_meshes(scene, sources, staged, *, keep_original):
     return tuple(receipts)
 
 
+def _hide(obj, scene):
+    """Hide a Keep original copy in the viewport and renders, so the edit is what shows.
+
+    It sits at the source's transform; left visible it covers the edited mesh.
+    """
+    obj.hide_render = True
+    for view_layer in scene.view_layers:
+        # A collection excluded from a view layer has no base there to hide.
+        with contextlib.suppress(RuntimeError):
+            obj.hide_set(True, view_layer=view_layer)
+
+
 def _replace_mesh(scene, source, staged, *, keep_original, skin=False):
     """Publish an already validated private mesh; caller owns non-mesh changes.
 
@@ -1345,6 +1358,7 @@ def _replace_mesh(scene, source, staged, *, keep_original, skin=False):
             holder.name = f"{source.name} Original"
             for collection in source.users_collection:
                 collection.objects.link(holder)
+            _hide(holder, scene)
         holder_state = _holder_state(holder) if not keep_original else ()
         _publish(source, staged)
         return MeshApplication(

@@ -1300,9 +1300,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             else "All result meshes form one surface. No fitting or scale adjustment."
         )
         layout.label(
-            text="Keep original copies each object, unselected. Undo follows Blender settings."
+            text="Keep original hides a copy of each object. Undo follows Blender settings."
             if several
-            else "Keep original makes an unselected copy. Undo follows Blender settings."
+            else "Keep original hides a copy of the mesh. Undo follows Blender settings."
         )
         layout.label(
             text="Undo/redo changes the scene only; saved jobs and spending stay recorded."

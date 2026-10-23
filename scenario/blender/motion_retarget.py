@@ -15,11 +15,20 @@ copies its bone's world orientation from the returned clip, frame by frame:
 - The clip's first frame defines the source facing on the floor: posed
   orientations and root motion are mapped through level character frames, so
   the character moves in its own facing, wherever it stands in the scene.
+- Feet keep their own pitch: both rest poses stand flat on the floor, however
+  high each ankle sits over the ball of its foot, so a foot only turns on the
+  floor to meet the returned one at rest, and then follows its turns from there.
 - Root motion moves the destination hips by the returned hips' travel since the
   first frame, scaled by the ratio of the two legs' lengths. Some files carry that
   travel on the returned armature object instead, when the skin leaves their
   scene root out of its joints: those object keys move the returned skeleton in
   the world each frame, and so reach the hips the same way.
+- The hips then move up or down by one height for the whole clip, which puts the
+  feet on the floor the rest pose stands on: a clip can start with soft knees or
+  raised heels, so its first frame does not fix the hips' height. Each frame
+  measures how far the lowest ankle or ball joint stands over its rest height on
+  the destination, and over its lowest height in the clip on the returned
+  skeleton, scaled like the travel; the median difference is the height.
 
 Every frame of the clip is sampled and keyed linearly: the hips get location and
 rotation keys, the other slots rotation keys in their own rotation mode. Bones
@@ -27,6 +36,7 @@ outside the slots, such as fingers, keep their current pose.
 """
 
 import math
+import statistics
 from dataclasses import dataclass, field
 
 import bpy
@@ -37,6 +47,20 @@ from . import mesh_application as mesh
 
 _UP = Vector((0, 0, 1))
 _SMALL = 1e-6
+# Slots whose rest direction only turns on the floor: both rests stand flat on it.
+_FEET = frozenset({"l_foot", "r_foot"})
+# The joints a standing foot rests on: the ankles and the balls of the feet.
+_SOLES = ("l_foot", "r_foot", "l_toe", "r_toe")
+# Imported keys land on whole frames only up to float rounding, such as 89.000004.
+_FRAME_NOISE = 1e-3
+
+
+def whole_frames(frame_range):
+    """The first and last whole frames covering `frame_range`, past float rounding of its ends."""
+    start, end = (
+        round(frame) if abs(frame - round(frame)) < _FRAME_NOISE else frame for frame in frame_range
+    )
+    return math.floor(start), math.ceil(end)
 
 
 def _parents(rig):
@@ -88,6 +112,12 @@ def _frame(points, level):
         raise mesh.MeshApplicationError("Cannot retarget a skeleton without hip width")
     left.normalize()
     return Matrix((left, up.cross(left), up)).transposed()
+
+
+def _flat(direction):
+    """A direction's heading on the floor, or the direction itself when it points straight down."""
+    level = direction - direction.dot(_UP) * _UP
+    return level if level.length > _SMALL else direction
 
 
 def _leg(points):
@@ -183,12 +213,15 @@ class Retarget:
         self._level = _frame(destination_rest, True)
         self._leg = _leg(destination_rest)
         self._hips = destination_rest["hips"]
+        self._soles = [destination_rest[item].z for item in _SOLES]
         swings = {}
         for slot, child in humanoid.CHILDREN.items():
             returned = aligned @ (source_rest[child] - source_rest[slot])
             existing = destination_rest[child] - destination_rest[slot]
             if returned.length < _SMALL or existing.length < _SMALL:
                 raise mesh.MeshApplicationError("Cannot retarget bones of zero length")
+            if slot in _FEET:
+                returned, existing = _flat(returned), _flat(existing)
             swings[slot] = existing.rotation_difference(returned).to_matrix()
         # P_destination = P_source' @ offset, with P_source' the returned bone's world
         # orientation mapped into the destination's frame.
@@ -227,6 +260,18 @@ class Retarget:
         )
         return parent @ _local(source, carried, frame)
 
+    def _lift(self, feet, ratio):
+        """The world height added to the hips' keys so the feet stand on the rest floor.
+
+        `feet` holds, for each frame, the returned and destination sole joint heights.
+        """
+        lowest = [min(heights) for heights in zip(*(returned for returned, _ in feet), strict=True)]
+        return statistics.median(
+            ratio * min(z - low for z, low in zip(returned, lowest, strict=True))
+            - min(z - rest for z, rest in zip(mine, self._soles, strict=True))
+            for returned, mine in feet
+        )
+
     def clip(self, action, slot, curves, name, carried=None):
         """A new action named `name` playing the clip on the destination rig, and its slot.
 
@@ -234,8 +279,8 @@ class Retarget:
         curves by index, as `curves` does for each bone.
         """
         rig = self.destination
-        start, end = action.frame_range
-        frames = range(math.floor(start), math.ceil(end) + 1)
+        start, end = whole_frames(action.frame_range)
+        frames = range(start, end + 1)
         world = self._world(carried, frames[0])
         first = self._source_pose(curves, frames[0])
         posed = {item: world @ first[bone].translation for item, bone in self.source_bones.items()}
@@ -249,7 +294,8 @@ class Retarget:
         inverse = rig.matrix_world.inverted_safe()
         hips = self.source_bones["hips"]
         keys = {bone: [] for bone in self._slots}
-        locations = []
+        # The hips' inverted rest and head each frame, and both rigs' sole heights.
+        heads, feet = [], []
         # Unmapped bones on the way keep their current pose.
         held = {
             bone.name: rig.pose.bones[bone.name].matrix_basis.copy()
@@ -279,7 +325,18 @@ class Retarget:
                 basis = rest.inverted_safe() @ target
                 keys[bone.name].append(basis.to_quaternion().normalized())
                 if item == "hips":
-                    locations.append(basis.translation.copy())
+                    heads.append((rest.inverted_safe(), head))
+            feet.append(
+                (
+                    [(world @ pose[self.source_bones[item]].translation).z for item in _SOLES],
+                    [
+                        (rig.matrix_world @ mine[self.destination_bones[item]].translation).z
+                        for item in _SOLES
+                    ],
+                )
+            )
+        lift = inverse.to_3x3() @ (_UP * self._lift(feet, ratio))
+        locations = [inverted @ (head + lift) for inverted, head in heads]
         new = bpy.data.actions.new(name)
         try:
             bound = new.slots.new(id_type="OBJECT", name=rig.name)

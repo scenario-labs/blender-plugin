@@ -1335,13 +1335,14 @@ within 15 degrees, which the copied keys are corrected for, and location keys ar
 scaled to the rig's units. Otherwise, when both rigs are humanoid skeletons with
 Meshy, Mixamo, SMPL or Unreal bone names, as for a text-to-motion clip on a Meshy
 rig, the clips are [retargeted](MESH_APPLICATION.md#retarget-a-humanoid-clip) with
-root motion scaled by leg length. Clips that also key the returned armature
-object, as files whose skin leaves the moving scene root out of its joints do, are
-only retargeted, that motion reaching the hips. The first clip becomes the active
-action; it, the other clips and the previous action stay in muted NLA tracks, and
-a scene frame range still at Blender's default 1 to 250 becomes the first clip's.
-`mesh_placement` and `keep_original` are not used. A skinned source too dense for
-other in-place edits still takes ANIMATE. An unskinned source, another
+root motion scaled by leg length and the feet kept on the rig's rest floor. Clips
+that also key the returned armature object, as files whose skin leaves the moving
+scene root out of its joints do, are only retargeted, that motion reaching the
+hips. The first clip becomes the active action; it, the other clips and the
+previous action stay in muted NLA tracks, and a scene frame range still at
+Blender's default 1 to 250 becomes the first clip's. `mesh_placement` and
+`keep_original` are not used. A skinned source too dense for other in-place edits
+still takes ANIMATE. An unskinned source, another
 skeleton that is not humanoid or a result without clips is rejected, leaving the
 job reviewable and the rig unchanged; `job_status` `error` then starts with
 "Animation not applied; the rig is unchanged" and says what to change, such as

@@ -955,7 +955,8 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   character, for example a rig you attached earlier from the same service, the
   keys are copied. Otherwise a humanoid motion, such as a text-to-motion result,
   is retargeted onto a humanoid rig (Meshy, Mixamo, SMPL or Unreal bone names),
-  root motion included; fingers keep their pose. Other skeletons are refused.
+  root motion included, the feet on the floor your rig's rest pose stands on;
+  fingers keep their pose. Other skeletons are refused.
   The first clip plays, and the others and your previous animation stay in
   muted NLA tracks. If your scene still has Blender's default frame range, it
   becomes the clip's; a range you set stays.

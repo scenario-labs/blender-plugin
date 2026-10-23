@@ -1190,9 +1190,10 @@ NLA tracks and the extrapolation stay as they were. GLB and glTF clip timing
 follows the destination's effective frame rate through the
 [shared staging scene](#rigged-and-animated-model-import); FBX clips keep the
 file's. A scene frame range still at Blender's default, 1 to 250 without a
-preview range, becomes the first clip's, rounded out to whole frames, so the
-clip plays in full; a range the user set stays. The current frame and frame rate
-stay unchanged, and rollback restores the range.
+preview range, becomes the first clip's, rounded out to whole frames (ends
+within 0.001 of a frame count as on it), so the clip plays in full; a range the
+user set stays. The current frame and frame rate stay unchanged, and rollback
+restores the range.
 
 The captured target guards the rig's identity, bones, rest and transform, so a
 changed rig is stale before import; posing or animating it is not. Animation
@@ -1230,15 +1231,21 @@ a character frame built from their rest heads (up from the hips to the head,
 left from the right thigh to the left one), and each destination bone turns by
 the swing that takes its rest direction, head to child slot head, onto the
 returned one, so a T-pose clip plays on an A-pose rig. Hands, the head and toes
-follow their parent slot's swing. The clip's first frame gives the returned
-character's facing on the floor: orientations and root motion go through level
-character frames, so the character moves in its own facing wherever it stands.
-The hips move by the returned hips' travel since that first frame, scaled by the
-ratio of the two rigs' mean thigh plus shin lengths; the first frame is taken as
-standing at the rig's rest height. When the clip also keys the returned armature
-object, its world transform is evaluated from those keys every frame, so its
-travel and turns reach the hips the same way; the destination rig object itself
-is never keyed.
+follow their parent slot's swing. Feet only turn on the floor to meet the
+returned ones at rest, since both rests stand flat, so each foot keeps its own
+pitch however high its ankle sits, then follows the returned foot's turns. The
+clip's first frame gives the returned character's facing on the floor:
+orientations and root motion go through level character frames, so the
+character moves in its own facing wherever it stands. The hips move by the
+returned hips' travel since that first frame, scaled by the ratio of the two
+rigs' mean thigh plus shin lengths. One height for the whole clip then puts the
+feet on the rest floor, whether the clip starts with soft knees or raised heels:
+the median over frames of how far the lowest ankle or ball joint stands over its
+rest height on the rig, against how far it stands over its lowest height in the
+clip on the returned skeleton, scaled like the travel. When the clip also keys
+the returned armature object, its world transform is evaluated from those keys
+every frame, so its travel and turns reach the hips the same way; the destination
+rig object itself is never keyed.
 
 Every frame of the clip is sampled and keyed linearly into a new action: hips
 location and rotation, and every other slot's rotation in its bone's rotation

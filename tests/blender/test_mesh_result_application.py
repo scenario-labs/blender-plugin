@@ -2038,33 +2038,41 @@ class RetargetResultTests(unittest.TestCase):
     timing = AnimateResultTests.timing
 
     def setUp(self):
-        from helpers import chain_rig, humanoid_bones
+        from helpers import humanoid_bones
 
         MeshResultTests.setUp(self)
         self.animation = submodule("blender.animation_application")
         self.humanoid = submodule("core.scene.humanoid")
         # The user's rig: Meshy names, in an A-pose, a tenth smaller, every bone rolled.
-        rig = humanoid_bones(self.names("meshy"), height=0.9, arms_down=0.7, roll=0.4)
-        self.rig = chain_rig(self.scene, "Character rig", rig)
-        for index, name in enumerate(("Hips", "Spine02", "Head")):
-            self.source.vertex_groups.new(name=name).add([index], 1.0, "REPLACE")
-        self.source.modifiers.new("Character skin", "ARMATURE").object = self.rig
-        bpy.context.view_layer.update()
+        self.use_rig(height=0.9, arms_down=0.7, roll=0.4)
         # The returned clip: a Mixamo skeleton in a T-pose, in centimetres at 0.01.
         self.bones = humanoid_bones(self.names("mixamo"), prefix="mixamorig:")
         self.use_clips(bones=self.bones, clips=(1.0,))
         self.target = self.mesh.capture_target(self.scene, self.source)
 
+    def use_rig(self, **options):
+        """Skin the source to a new rig of Meshy-named `humanoid_bones(**options)`."""
+        from helpers import chain_rig, humanoid_bones
+
+        rig = humanoid_bones(self.names("meshy"), **options)
+        self.rig = chain_rig(self.scene, "Character rig", rig)
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        for index, name in enumerate(("Hips", "Spine02", "Head")):
+            self.source.vertex_groups.new(name=name).add([index], 1.0, "REPLACE")
+        self.source.modifiers.new("Character skin", "ARMATURE").object = self.rig
+        bpy.context.view_layer.update()
+
     def names(self, family):
         return self.humanoid.FAMILIES[family][1]
 
     def poses(self, clip):
-        """Each frame's slot heads in world space, on this rig and on the returned one."""
-        from helpers import clip_heads
+        """Each frame's slot world pose matrices, on this rig and on the returned one."""
+        from helpers import clip_poses
 
         start, end = (round(frame) for frame in clip.frame_range)
         frames = range(start, end + 1, 6)
-        heads = clip_heads(self.body, "Clip 1", frames, fps=self.scene.render.fps)
+        theirs = clip_poses(self.body, "Clip 1", frames, fps=self.scene.render.fps)
         returned = dict(zip(self.humanoid.SLOTS, (bone[0] for bone in self.bones), strict=True))
         mine = dict(zip(self.humanoid.SLOTS, self.names("meshy"), strict=True))
         poses = {}
@@ -2072,28 +2080,47 @@ class RetargetResultTests(unittest.TestCase):
             self.scene.frame_set(frame)
             poses[frame] = {
                 slot: (
-                    self.rig.matrix_world @ self.rig.pose.bones[mine[slot]].head,
-                    heads[frame][returned[slot]],
+                    self.rig.matrix_world @ self.rig.pose.bones[mine[slot]].matrix,
+                    theirs[frame][returned[slot]],
                 )
                 for slot in self.humanoid.SLOTS
             }
         self.scene.frame_set(start)
         return poses
 
+    def assert_turns(self, poses):
+        """Every slot turns in the world as the returned bone did since the first frame.
+
+        The whole rotation counts, twist about the bone included.
+        """
+
+        def turn(matrix):
+            return matrix.to_3x3().normalized().to_quaternion()
+
+        first = poses[min(poses)]
+        for frame, slots in poses.items():
+            for slot, (mine, theirs) in slots.items():
+                got = turn(mine) @ turn(first[slot][0]).inverted()
+                want = turn(theirs) @ turn(first[slot][1]).inverted()
+                self.assertLess(_degrees(got.rotation_difference(want)), 0.5, (frame, slot))
+
     def assert_follows(self, clip):
-        """Every limb points as on the returned skeleton; the hips travel 0.9 times as far.
+        """Every limb points and turns as returned; the hips travel 0.9 times as far.
 
         Return the returned hips' last sampled world position.
         """
         from mathutils import Vector
 
-        for frame, slots in self.poses(clip).items():
+        poses = self.poses(clip)
+        self.assert_turns(poses)
+        for frame, slots in poses.items():
+            heads = {slot: tuple(m.translation for m in pair) for slot, pair in slots.items()}
             for slot, child in self.humanoid.CHILDREN.items():
-                got = slots[child][0] - slots[slot][0]
-                want = slots[child][1] - slots[slot][1]
+                got = heads[child][0] - heads[slot][0]
+                want = heads[child][1] - heads[slot][1]
                 self.assertLess(math.degrees(got.angle(want)), 0.5, (frame, slot))
             # Legs of 0.81 m on this rig and 0.9 m returned: 0.9 times the travel.
-            hips, returned = slots["hips"]
+            hips, returned = heads["hips"]
             travel = (returned - Vector((0, 0, 1.0))) * 0.9
             self.assertLess((hips - Vector((0, 0, 0.9)) - travel).length, 1e-3, frame)
         return returned
@@ -2142,6 +2169,50 @@ class RetargetResultTests(unittest.TestCase):
         # The returned armature moved 1 m along X and turned while its hips rose 1 m.
         self.assertAlmostEqual(returned.x, 1.0, places=3)
         self.assertAlmostEqual(returned.z, 2.0, places=3)
+
+    def test_a_crouched_clip_stands_on_the_rest_floor_with_feet_at_their_own_pitch(self):
+        # Ankles 16 cm over the floor on this rig and 10 cm on the returned skeleton,
+        # over balls 2 cm up on both: the feet point down more steeply here.
+        self.use_rig(height=0.9, ankle=0.16)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        theirs = dict(zip(self.humanoid.SLOTS, (bone[0] for bone in self.bones), strict=True))
+        mine = dict(zip(self.humanoid.SLOTS, self.names("meshy"), strict=True))
+        # Soft knees all through the clip: thighs forward, shins upright again, feet flat,
+        # and the hips that much lower, so the returned feet start on their floor.
+        bend = 0.6
+        held = {theirs["hips"]: (0.0, 0.45 * (1 - math.cos(bend)))}
+        for side in "lr":
+            held[theirs[f"{side}_upleg"]] = (bend, 0.0)
+            held[theirs[f"{side}_leg"]] = (-bend, 0.0)
+            held[theirs[f"{side}_foot"]] = (0.0, 0.0)
+        self.use_clips(bones=self.bones, clips=(1.0,), held=held)
+        world = self.rig.matrix_world
+        rest = {slot: world @ self.rig.data.bones[name].head_local for slot, name in mine.items()}
+        result = self.apply(policy="ANIMATE")
+        (clip,) = result.clips
+        poses = self.poses(clip)
+        self.assert_turns(poses)
+        # The hips start below their rest height, by this rig's own thighs' bend.
+        start = poses[min(poses)]["hips"][0].translation.z
+        self.assertAlmostEqual(start, 0.9 - 0.405 * (1 - math.cos(bend)), delta=1e-3)
+        for frame, slots in poses.items():
+            # The ankles and balls stand at rest height, then rise as the hips jump.
+            rise = slots["hips"][0].translation.z - start
+            for side in "lr":
+                ankle, ball = (slots[f"{side}_{part}"][0].translation for part in ("foot", "toe"))
+                for slot, head in ((f"{side}_foot", ankle), (f"{side}_toe", ball)):
+                    self.assertAlmostEqual(head.z - rest[slot].z, rise, delta=1e-3, msg=frame)
+                # Each foot keeps its rest pitch, as steep as before.
+                want = rest[f"{side}_toe"] - rest[f"{side}_foot"]
+                self.assertLess(math.degrees((ball - ankle).angle(want)), 0.5, (frame, side))
+
+    def test_clip_ends_rounded_by_float_keys_stay_on_their_whole_frames(self):
+        retarget = submodule("blender.motion_retarget")
+        # glTF keys times in float32: the last key of a 239-frame clip can land past it.
+        self.assertEqual(retarget.whole_frames((0.0, 239.00001525878906)), (0, 239))
+        self.assertEqual(retarget.whole_frames((0.9999996, 89.0)), (1, 89))
+        # Keys between frames still widen the range to the whole frames around them.
+        self.assertEqual(retarget.whole_frames((0.5, 191.04)), (0, 192))
 
     def test_a_carried_clip_on_a_rig_that_is_no_humanoid_says_what_to_do(self):
         from helpers import CHAIN, skin_to_chain_rig

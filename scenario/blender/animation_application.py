@@ -509,7 +509,7 @@ def _track(data, name, action, slot):
     track = data.nla_tracks.new()
     try:
         track.name = name
-        strip = track.strips.new(name, math.floor(action.frame_range[0]), action)
+        strip = track.strips.new(name, motion_retarget.whole_frames(action.frame_range)[0], action)
         strip.action_slot = slot
         track.mute = True
         if strip.action_slot != slot:
@@ -607,9 +607,7 @@ def _fit_timeline(scene, clip):
     previous = (scene.frame_start, scene.frame_end)
     if not default_range(scene):
         return None
-    start, end = clip.frame_range
-    scene.frame_start = math.floor(start)
-    scene.frame_end = math.ceil(end)
+    scene.frame_start, scene.frame_end = motion_retarget.whole_frames(clip.frame_range)
     return scene, previous
 
 

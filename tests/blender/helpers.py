@@ -661,13 +661,14 @@ def skin_to_chain_rig(scene, source):
     return rig
 
 
-def humanoid_bones(names, *, prefix="", height=1.0, arms_down=0.0, roll=0.0):
+def humanoid_bones(names, *, prefix="", height=1.0, arms_down=0.0, roll=0.0, ankle=0.1):
     """A standing humanoid facing -Y with the 22 slot bones of `names`, in slot order.
 
     Bones follow `scenario.core.scene.humanoid`: (name, parent, head, tail, roll)
     as `chain_rig` and `clip_glb` take them, at `height` times a 1.8 m figure,
     the arms lowered by `arms_down` radians from a T-pose and every bone rolled
-    by `roll` radians.
+    by `roll` radians. The ankles stand `ankle` times `height` over the floor, and
+    the balls of the feet 0.02 times it.
     """
     import math
 
@@ -690,8 +691,8 @@ def humanoid_bones(names, *, prefix="", height=1.0, arms_down=0.0, roll=0.0):
             start = end
         x = sign * 0.1
         joints[f"{side}_upleg"] = ((x, 0, 1.0), (x, 0, 0.55))
-        joints[f"{side}_leg"] = ((x, 0, 0.55), (x, 0, 0.1))
-        joints[f"{side}_foot"] = ((x, 0, 0.1), (x, -0.12, 0.02))
+        joints[f"{side}_leg"] = ((x, 0, 0.55), (x, 0, ankle))
+        joints[f"{side}_foot"] = ((x, 0, ankle), (x, -0.12, 0.02))
         joints[f"{side}_toe"] = ((x, -0.12, 0.02), (x, -0.18, 0.02))
     humanoid = submodule("core.scene.humanoid")
     mapped = dict(zip(humanoid.SLOTS, names, strict=True))
@@ -724,6 +725,7 @@ def clip_glb(
     still=(),
     carry=False,
     prop=None,
+    held=None,
 ):
     """Export a returned animated character with Blender's glTF exporter.
 
@@ -738,8 +740,11 @@ def clip_glb(
     `still` bones stay unkeyed in the export. With `carry`, Clip N also moves the
     armature object by its amount along world X and turns it by a quarter of it
     in radians about Z, as files whose skin leaves the moving scene root out of
-    its joints do. A triangle skinned to the first bone is included, and with
-    `prop` an Empty hangs from that bone's tail. All scratch data is removed.
+    its joints do. `held` maps bone names to (angle, drop): such a bone turns by
+    `angle` radians about its X axis in every key instead, and the first bone also
+    moves `drop` world units back along its Y axis, as a crouch held through the
+    clip. A triangle skinned to the first bone is included, and with `prop` an
+    Empty hangs from that bone's tail. All scratch data is removed.
     """
     import math
 
@@ -780,10 +785,11 @@ def clip_glb(
                 keyed = (bone for bone in bones if bone[0] not in still)
                 for number, (name, *_) in enumerate(keyed):
                     pose = rig.pose.bones[name]
-                    pose.rotation_quaternion = (math.cos(factor / 4), math.sin(factor / 4), 0, 0)
+                    angle, drop = (held or {}).get(name, (factor / 2, 0.0))
+                    pose.rotation_quaternion = (math.cos(angle / 2), math.sin(angle / 2), 0, 0)
                     pose.keyframe_insert("rotation_quaternion", frame=frame)
                     if location and number == 0:
-                        pose.location = (0, factor * unit, 0)
+                        pose.location = (0, (factor - drop) * unit, 0)
                         pose.keyframe_insert("location", frame=frame)
                     if stretch and number == 0:
                         rates = (0, 0.5, 0) if stretch is True else stretch
@@ -863,12 +869,21 @@ def clip_heads(body, clip, frames, *, fps=24):
 
     Imported like `clip_deforms`, so a clip that also moves the armature object counts.
     """
+    poses = clip_poses(body, clip, frames, fps=fps)
+    return {
+        frame: {name: matrix.translation for name, matrix in bones.items()}
+        for frame, bones in poses.items()
+    }
+
+
+def clip_poses(body, clip, frames, *, fps=24):
+    """World pose matrices of a returned GLB's bones playing clip `clip`, by frame and bone."""
     with _played_clip(body, clip, fps) as (scene, rig):
-        heads = {}
+        poses = {}
         for frame in frames:
             scene.frame_set(frame)
-            heads[frame] = {bone.name: rig.matrix_world @ bone.head for bone in rig.pose.bones}
-        return heads
+            poses[frame] = {bone.name: rig.matrix_world @ bone.matrix for bone in rig.pose.bones}
+        return poses
 
 
 @contextmanager

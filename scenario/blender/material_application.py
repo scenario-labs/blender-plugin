@@ -151,7 +151,8 @@ def _build(images, uv_name, mapping):
     output = tree.nodes.new("ShaderNodeOutputMaterial")
     bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
     tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
-    output.location = (600, 0)
+    # Columns left to right: coordinates, Tiling, maps, converters, shader, output.
+    bsdf.location, output.location = (200, 0), (600, 0)
     box = mapping.projection == tiling.BOX
     # Box projection reads object-space coordinates, so the mesh needs no UVs.
     if box:
@@ -188,16 +189,19 @@ def _build(images, uv_name, mapping):
     if "smoothness" in textures:
         invert = tree.nodes.new("ShaderNodeInvert")
         invert.label = "Smoothness to roughness"
+        invert.location = (-350, textures["smoothness"].location.y)
         tree.links.new(textures["smoothness"].outputs["Color"], invert.inputs["Color"])
         tree.links.new(invert.outputs["Color"], bsdf.inputs["Roughness"])
     normal = None
     if "normal" in textures:
         normal = tree.nodes.new("ShaderNodeNormalMap")
         normal.uv_map = uv_name
+        normal.location = (-350, textures["normal"].location.y)
         tree.links.new(textures["normal"].outputs["Color"], normal.inputs["Color"])
     if "height" in textures:
         bump = tree.nodes.new("ShaderNodeBump")
         bump.inputs["Distance"].default_value = 0.05
+        bump.location = (-120, textures["height"].location.y)
         tree.links.new(textures["height"].outputs["Color"], bump.inputs["Height"])
         if normal:
             tree.links.new(normal.outputs["Normal"], bump.inputs["Normal"])

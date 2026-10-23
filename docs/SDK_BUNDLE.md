@@ -92,7 +92,7 @@ from a successful isolated installation.
 | scenario-sdk | 2.3.0 | MIT |
 | annotated-types | 0.8.0 | MIT |
 | anyio | 4.15.1 | MIT |
-| certifi | 2026.7.22 | MPL-2.0 |
+| certifi | 2026.10.19 | MPL-2.0 |
 | distro | 1.9.0 | Apache-2.0 |
 | h11 | 0.16.0 | MIT |
 | httpcore | 1.0.9 | BSD-3-Clause |

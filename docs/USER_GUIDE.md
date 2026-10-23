@@ -1212,7 +1212,7 @@ Prices are in Creative Units (CU) and depend on the model, settings and referenc
 - **Generate (N CU)** is the price of the form as it stands. After a scene
   change, such as a selection or a frame change, it is priced again once the
   scene is still (**Scene changed; updating the price**).
-- Above **Confirm generations above** in the extension's preferences (200 CU by
+- Above **Confirm generations above** in the extension's preferences (500 CU by
   default; 0 asks every time), Generate and Generate blockout first ask you to
   confirm the model and exact price. Agent requests keep their own approval.
   Repeat Last never generates again.

@@ -83,7 +83,7 @@ def test_confirms_spend_compares_the_exact_quote_with_the_threshold(cost, thresh
 def test_spend_confirmation_names_the_model_and_the_unrounded_price():
     from scenario.core.ui.costs import CONFIRM_ABOVE_DEFAULT, spend_confirmation
 
-    assert CONFIRM_ABOVE_DEFAULT == 200
+    assert CONFIRM_ABOVE_DEFAULT == 500
     assert spend_confirmation("Shared image", "0.1234567890123456789") == (
         "Generate with Shared image?",
         "Exact price: 0.1234567890123456789 CU",

@@ -85,7 +85,7 @@ so the form is always visible.
   s) has passed. Meanwhile it fetches a fresh free quote, because each send
   consumes its own; a different price replaces the old one before Generate
   re-enables. Any edit prices the form normally instead.
-- Above the **Confirm generations above** preference (200 CU, 0 asks every
+- Above the **Confirm generations above** preference (500 CU, 0 asks every
   time), Generate (sidebar, Settings and composer, all through its invoke path)
   and Generate blockout ask with `invoke_confirm`, naming the model and exact
   price. Execute then submits only the quote that dialog named. Generate has no

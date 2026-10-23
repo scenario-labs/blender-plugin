@@ -5,7 +5,7 @@
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
 # The "Confirm generations above" preference's default, in CU.
-CONFIRM_ABOVE_DEFAULT = 200
+CONFIRM_ABOVE_DEFAULT = 500
 
 
 def format_cu(value):

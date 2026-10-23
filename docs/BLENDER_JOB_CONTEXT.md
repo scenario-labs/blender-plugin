@@ -270,8 +270,10 @@ prototype rows; it never drops shared recovery rows or changes durable records.
 worker or store. Design and Refine capture the original scene revision plus
 prompt, refinement, density, model tier, uploaded reference image and previous
 plan before quoting. The tier resolves to the newest Claude Opus (Best) or Gemini
-Flash (Fast) that the loaded Scenario LLM schema allows, else a fixed fallback. Refine includes
-the complete bounded prior plan, without text truncation, using an explicit
+Flash (Fast) that the loaded Scenario LLM schema allows, else a fixed fallback. The model
+writes grouped rows, a group label then one ten-value array per element: under half the
+text of keyed objects, so plans and above all refinements arrive sooner. Refine includes
+the complete bounded prior plan in the same rows, without text truncation, using an explicit
 update instruction rather than describing the refinement note as a new scene.
 An absent, malformed or incomplete prior plan is rejected with a guided error
 before a quote request, including through MCP.
@@ -286,8 +288,9 @@ The application pump polls the known job, lists its single plain-text output and
 reads the complete body through `JobSession.read_model_text`. Delivery validates
 scope, original scene/revision and unchanged inputs before storing a normalized
 array of 1–400 elements. Complete arrays may have Markdown fences, surrounding
-prose or the Scenario LLM `{"results": [{"text": ...}]}` answer wrapper;
-malformed/truncated arrays are rejected without recovering a partial prefix, and
+prose or the Scenario LLM `{"results": [{"text": ...}]}` answer wrapper, and keyed
+element objects from earlier answers still parse; malformed/truncated arrays and rows
+with a missing or extra value are rejected without recovering a partial prefix, and
 the error names the unusable answer. Delivery never creates geometry. A scene
 switch, edited plan, file load or retired owner cannot redirect a late result to
 the current scene.

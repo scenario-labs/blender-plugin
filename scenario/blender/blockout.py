@@ -330,7 +330,7 @@ def _wrapped(layout, text, icon, width=36):
 def draw_status(layout, scene):
     """The current action: its exact-price approval, progress or outcome. Never mutates."""
     from ..core.ui.costs import format_cu
-    from .blockout_jobs import CANCELED, MINUTES, binding
+    from .blockout_jobs import CANCELED, binding, expected_time
 
     jobs = runtime.state.blockout_jobs
     item = jobs.current(scene) if jobs is not None else None
@@ -349,13 +349,14 @@ def draw_status(layout, scene):
             icon="PLAY",
         )
         op.quote_id, op.approved_cost = item.identifier, item.cost
-        layout.label(text=f"{model}, {MINUTES.get(item.tier, 'a few minutes')}", icon="INFO")
+        layout.label(text=f"{model}, {expected_time(item)}", icon="INFO")
     elif item.phase == "QUOTING":
         layout.label(text="Getting the price...", icon="TIME")
     elif item.phase in {"SUBMITTING", "POLLING", "LISTING", "READING"}:
         _wrapped(
             layout,
-            f"{model} is designing the plan, {MINUTES.get(item.tier, 'a few minutes')}...",
+            f"{model} is {'refining' if item.action == 'REFINE' else 'designing'} the plan, "
+            f"{expected_time(item)}...",
             "TIME",
         )
     elif item.phase == "DONE":
@@ -430,13 +431,13 @@ def draw_price(layout, scene):
 
 def running_plans(shown=()):
     """Blockout plans Scenario is designing, as Jobs rows; `shown` lists saved jobs drawn already."""
-    from .blockout_jobs import MINUTES
+    from .blockout_jobs import expected_time
 
     jobs = runtime.state.blockout_jobs
     if jobs is None:
         return []
     return [
-        f"{core.model_label(item.model)}, {MINUTES.get(item.tier, 'a few minutes')}"
+        f"{core.model_label(item.model)}, {expected_time(item)}"
         for item in tuple(jobs.actions.values())
         if item.phase in {"SUBMITTING", "POLLING", "LISTING", "READING"}
         and item.request_id not in shown

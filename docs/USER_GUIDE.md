@@ -725,8 +725,9 @@ coloured primitives, grouped in a `Blockout` collection.
 1. Describe the scene. To follow a picture or concept, choose a **Reference
    image** and press **Upload**; the description is then optional.
 2. Choose a **Density** (Simple, Medium, Advanced or Expert: more primitives and
-   finer detail) and a model: **Best** (Claude Opus, a few minutes) or **Fast**
-   (Gemini Flash, under a minute, cheaper). **Colours, camera and light** is on by default.
+   finer detail) and a model: **Best** (Claude Opus, the richest plans: 3 to 4 minutes,
+   1 to 2 for a refinement) or **Fast** (Gemini Flash, a rougher plan in under a minute,
+   cheaper). **Colours, camera and light** is on by default.
 3. The price appears on **Generate blockout**; choose it to pay once and design
    the plan, which Jobs lists until it arrives. **New plan** prices another one
    from the same fields. Changing the fields, scene or credentials first cancels

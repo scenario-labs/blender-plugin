@@ -174,6 +174,25 @@ def _bottom_center(objects, bounds=None):
     return Vector(((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]))
 
 
+def source_fit(objects):
+    """The bottom center and longest side of the meshes' world bounds, or None.
+
+    An import that takes these meshes' place lands its own bottom center there,
+    scaled to that longest side. None when they have no size an import can take.
+    """
+    bounds = _bounds(objects)
+    if bounds is None:
+        return None
+    low, high = bounds
+    try:
+        size = placement.target_size(
+            max(top - bottom for bottom, top in zip(low, high, strict=True))
+        )
+    except ValueError:
+        return None
+    return tuple(_bottom_center(objects, bounds)), size
+
+
 def _fit(bounds, target_size):
     """The root scale for a reviewed longest side; 1.0 keeps the saved size."""
     try:

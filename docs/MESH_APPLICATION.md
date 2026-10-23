@@ -247,9 +247,12 @@ revision and exact cursor. MCP `target_size_m`, or the native review's
 **Longest side** option, binds a length to the approval:
 publication then scales the group root uniformly so the longest side of the mesh
 bounds, measured like the bottom center, has that length, and keeps the bottom
-center at the cursor. A model with no measurable size fails after the claim and
-is rolled back. Every import reports the group's measured world size and bottom
-height in MCP `model_import`. Approval is consumed once; worker verification,
+center at the cursor. The native review of a mesh unit from a job with one
+uploaded mesh source still live in the scene can instead match it: the length
+is that source's longest side and the bottom center lands on its bottom center.
+A model with no measurable size fails after the claim and is rolled back. Every
+import reports the group's measured world size and bottom height in MCP
+`model_import`. Approval is consumed once; worker verification,
 destination revalidation and the main-thread snapshot preflight precede the
 durable claim. The current scene must be local and in Object Mode both at
 preparation and after verification. Rejection before the claim, including a

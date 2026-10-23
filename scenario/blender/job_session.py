@@ -561,6 +561,29 @@ class JobSession:
                 raise OriginUnavailable("The captured source context was replaced")
         return targets
 
+    def mesh_source_objects(self, binding, scene):
+        """The live objects of one uploaded mesh source in `scene`, in export order, or None.
+
+        Reads only, for where an import of the edit may land: unlike
+        `mesh_source_targets`, it grants no in-place edit, so the source may have
+        changed since export. Undo, file loading and retirement forget the
+        identities, and an object removed or out of `scene` gives None.
+        """
+        _main_thread()
+        objects = []
+        try:
+            if not self._active or self._scenes.get(binding.origin.scene_id) != scene:
+                return None
+            members = tuple(scene.objects)
+            for exported in binding.mesh_source.objects:
+                obj = self._targets.get(exported.target_id)
+                if obj is None or obj not in members or obj.type != "MESH":
+                    return None
+                objects.append(obj)
+        except ReferenceError:
+            return None
+        return tuple(objects)
+
     def mesh_source_target(self, binding):
         """Resolve a retained single-object export; see `mesh_source_targets`."""
         targets = self.mesh_source_targets(binding)
@@ -1717,7 +1740,15 @@ class JobSession:
         return AppliedMedia(record, application)
 
     def apply_recovered_model(
-        self, completion, *, destination, asset_id, cursor, options=None, target_size=None
+        self,
+        completion,
+        *,
+        destination,
+        asset_id,
+        cursor,
+        options=None,
+        target_size=None,
+        placement=None,
     ):
         """Import one saved model unit at the approved scene/cursor after worker preparation.
 
@@ -1731,6 +1762,8 @@ class JobSession:
         `verify_results` when the local-operation slot was busy; it then imports
         only as a mesh. A reuse claim of a completed job names every member read.
         `target_size` is the approved longest side in metres, or None for the saved size.
+        `placement` is where the bottom center lands when it is not the approved
+        cursor, such as on the source mesh an edit replaces; the cursor is checked either way.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1745,6 +1778,9 @@ class JobSession:
         validate_model_destination(scene, cursor)
         if tuple(scene.cursor.location) != cursor:
             raise OriginUnavailable("The destination cursor changed; review it again")
+        if placement is None:
+            placement = cursor
+        validate_model_destination(scene, placement)
         try:
             unit = import_plan(verified.record).unit(asset_id)
         except ValueError:
@@ -1776,7 +1812,7 @@ class JobSession:
                 lambda: import_splat(
                     scene,
                     prepared.splat,
-                    cursor=cursor,
+                    cursor=placement,
                     unit_key=unit.key,
                     members=unit.members,
                     fmt=unit.format.value,
@@ -1790,7 +1826,7 @@ class JobSession:
             return self._finish_model(
                 claim,
                 lambda: import_snapshot(
-                    scene, snapshot, cursor=cursor, history=True, target_size=target_size
+                    scene, snapshot, cursor=placement, history=True, target_size=target_size
                 ),
             )
         finally:

@@ -516,9 +516,11 @@ for another file the provider returned. The review shows the scene, cursor posit
 and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
 as a new group at the cursor with its materials and textures packed; your
 objects and selection are untouched. Check **Longest side** to scale the new
-group evenly to that length, with its bottom still at the cursor. Importing one
-result uses up the job's import: the other files stay saved for
-[Reuse saved results](#reuse-saved-results). If the cursor or scene changes
+group evenly to that length, with its bottom still at the cursor. For an Edit
+job whose mesh is still in the scene, **Match <mesh>** lands the result on that
+mesh at its size instead; it starts on for Remesh, Retexture, UV Unwrap and
+Parts. Importing one result uses up the job's import: the other files stay saved
+for [Reuse saved results](#reuse-saved-results). If the cursor or scene changes
 first, confirm again.
 
 - Supported: GLB, glTF, FBX, OBJ and mesh PLY, up to 256 MiB per file. Large

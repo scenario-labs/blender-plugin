@@ -49,6 +49,7 @@ from ..core.jobs.workers import WorkerError
 from ..core.scene import landing, panorama_contract, placement
 from ..core.scene.mesh_edit_policy import (
     SEVERAL_SOURCES_FALLBACK,
+    TASK_POLICIES,
     animate_policy,
     default_policy,
 )
@@ -91,6 +92,7 @@ from .model_application import (
     ModelPreflightError,
     import_plan,
     importable,
+    source_fit,
     worker_prepared,
 )
 from .model_application import validate_destination as validate_model_destination
@@ -418,12 +420,29 @@ class LandingApplicationApproval:
 
 
 @dataclass(frozen=True)
+class SourceFit:
+    """Where the live mesh a job edited stands, measured when its import is reviewed.
+
+    `bottom` is its world bounds' bottom center and `size` their longest side.
+    `suggested` marks a shape-keeping edit (Remesh, Retexture, UV Unwrap, Parts),
+    whose import starts out matching it.
+    """
+
+    name: str
+    bottom: tuple
+    size: float
+    suggested: bool = False
+
+
+@dataclass(frozen=True)
 class ModelApplicationApproval:
     """One reviewed import unit; `asset_id` is its key, the primary member's ID.
 
     SPZ, .splat and PLY units also carry the reviewed point limit and saved axes;
     mesh units leave both None. `target_size` is the reviewed longest side in
-    Blender units, or None to keep the saved size.
+    Blender units, or None to keep the saved size. A mesh unit of a job that
+    edited a live mesh carries that `source`; with `match_source` the import
+    lands on it at its size instead of at the cursor.
     """
 
     identifier: str
@@ -437,10 +456,17 @@ class ModelApplicationApproval:
     max_points: int | None = None
     axes: str | None = None
     target_size: float | None = None
+    source: SourceFit | None = None
+    match_source: bool = False
 
     @property
     def splat_options(self):
         return None if self.max_points is None else SplatOptions(self.max_points, self.axes)
+
+    @property
+    def placement(self):
+        """Where the group's bottom center lands: the source's when matching it, else the cursor."""
+        return self.source.bottom if self.match_source else self.cursor
 
 
 @dataclass(frozen=True)
@@ -979,6 +1005,7 @@ class ModelJobs:
                         cursor=model.cursor,
                         options=model.splat_options,
                         target_size=model.target_size,
+                        placement=model.placement,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
@@ -2511,6 +2538,7 @@ class ModelJobs:
         max_points=None,
         axes=None,
         target_size=None,
+        match_source=False,
     ):
         """Capture one import unit's destination; `asset_id` is the unit key.
 
@@ -2518,6 +2546,8 @@ class ModelJobs:
         axes (default: the file format's convention); mesh units take neither.
         Any unit takes an optional `target_size`, the longest side in Blender units that
         the new group is scaled to; it is checked here, before anything is captured.
+        A mesh unit of a job that edited a live mesh in this scene measures it as
+        `source`; `match_source` lands the import on it at its longest side.
         """
         try:
             target_size = placement.target_size(target_size)
@@ -2548,6 +2578,8 @@ class ModelJobs:
             raise ScenarioError(0, "Select the destination scene before reviewing insertion")
         bpy.context.view_layer.update()
         validate_model_destination(scene, tuple(scene.cursor.location))
+        source = None if worker_prepared(unit) else self._source_fit(record, scene)
+        target_size = self._matched_size(source, match_source, target_size)
         ticket = ModelApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2559,9 +2591,40 @@ class ModelJobs:
             max_points=max_points,
             axes=axes,
             target_size=target_size,
+            source=source,
+            match_source=match_source,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
+
+    def _source_fit(self, record, scene):
+        """The live mesh this job edited, when it was its only mesh input and is in `scene`."""
+        if len(record.intent.mesh_sources) != 1:
+            return None
+        objects = self.session.mesh_source_objects(record.intent.mesh_sources[0], scene)
+        fit = source_fit(objects) if objects else None
+        if fit is None:
+            return None
+        view = self.views.get(record.intent.request_id)
+        task = default_policy(
+            record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
+        ).task
+        name = objects[0].name + (f" +{len(objects) - 1}" if len(objects) > 1 else "")
+        # Rigging and Animate may resize or repose the character on purpose.
+        return SourceFit(name, *fit, suggested=task in TASK_POLICIES and task != "RIG")
+
+    @staticmethod
+    def _matched_size(source, match_source, target_size):
+        """The longest side to import at: the source's when matching it."""
+        if type(match_source) is not bool:
+            raise ScenarioError(0, "Match the source mesh or not")
+        if not match_source:
+            return target_size
+        if source is None:
+            raise ScenarioError(0, "This result has no live source mesh in this scene to match")
+        if target_size is not None:
+            raise ScenarioError(0, "Match the source mesh or choose a longest side, not both")
+        return source.size
 
     @staticmethod
     def _splat_options(unit, max_points, axes):
@@ -2580,12 +2643,15 @@ class ModelJobs:
             raise ScenarioError(0, "Choose OPENGL or OPENCV saved splat axes")
         return max_points, axes
 
-    def revise_model_application(self, identifier, *, max_points=None, axes=None, target_size=None):
+    def revise_model_application(
+        self, identifier, *, max_points=None, axes=None, target_size=None, match_source=False
+    ):
         """Change reviewed options under a new handle; the old one stops working.
 
         Every option is given again: SPZ, PLY and .splat units take splat options,
-        and any unit takes a longest side (None keeps the saved size). The captured
-        scene, cursor and unit stay the same; nothing is recaptured.
+        and any unit takes a longest side (None keeps the saved size) or, with a
+        measured source, `match_source`. The captured scene, cursor, unit and
+        source stay the same; nothing is recaptured.
         """
         ticket = self._application_approvals.get(identifier)
         if not isinstance(ticket, ModelApplicationApproval):
@@ -2595,11 +2661,12 @@ class ModelJobs:
         except ValueError as error:
             raise ScenarioError(0, str(error)) from None
         max_points, axes = self._splat_options(ticket.unit, max_points, axes)
+        target_size = self._matched_size(ticket.source, match_source, target_size)
         self.session.validate_destination(ticket.destination, cursor=ticket.cursor)
         if self.store.get(ticket.record.intent.request_id) != ticket.record:
             raise ScenarioError(0, "The saved model changed; start a fresh review")
-        options = (max_points, axes, target_size)
-        if options == (ticket.max_points, ticket.axes, ticket.target_size):
+        options = (max_points, axes, target_size, match_source)
+        if options == (ticket.max_points, ticket.axes, ticket.target_size, ticket.match_source):
             return ticket
         revised = replace(
             ticket,
@@ -2607,6 +2674,7 @@ class ModelJobs:
             max_points=max_points,
             axes=axes,
             target_size=target_size,
+            match_source=match_source,
         )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised

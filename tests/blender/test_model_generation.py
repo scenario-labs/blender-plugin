@@ -4122,6 +4122,87 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
         self.assertEqual(tuple(bpy.data.objects[root_name].scale), (0.5, 0.5, 0.5))
 
+    def test_native_import_of_an_edit_lands_on_its_source_at_its_size(self):
+        # Providers normalize sizes; a retexture of a 3 m mesh should still be 3 m.
+        self.model["id"] = "model_meshy-7-retexture"
+        bpy.context.scene.scenario.edit3d_task = "RETEXTURE"
+        request_id, source = self.captured_source_result(scale=(1.5, 1.5, 1.5))
+        source.location = (3, -2, 1)
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        bpy.context.view_layer.update()
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+            target_size=1.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+
+        def approval():
+            return owner._application_approvals[fake.application_id]
+
+        def drawn():
+            fake.layout = MagicMock()
+            operator.draw(fake, context)
+            return [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+
+        # On by default for a shape-keeping edit, showing where and how large.
+        self.assertTrue(fake.match_source)
+        self.assertEqual(approval().source.name, source.name)
+        self.assertEqual((approval().match_source, approval().target_size), (True, 3.0))
+        for value, expected in zip(approval().placement, (3, -2, -0.5), strict=True):
+            self.assertAlmostEqual(value, expected, places=5)
+        labels = drawn()
+        self.assertIn("Place model bottom on the edited mesh: 3.000, -2.000, -0.500", labels)
+        self.assertIn("Longest side: 3.000, like the edited mesh.", labels)
+        self.assertLessEqual(max(len(label) for label in labels), 66)
+        # Turning it off goes back to the cursor and the saved size.
+        fake.match_source = False
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual((approval().match_source, approval().target_size), (False, None))
+        self.assertEqual(approval().placement, (4, 5, 6))
+        self.assertIn("Place model bottom at cursor: 4.000, 5.000, 6.000", drawn())
+        with self.assertRaises(self.request_error):
+            owner.revise_model_application(fake.application_id, target_size=2, match_source=True)
+        fake.match_source = True
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        self.assertEqual((summary["target_size_m"], summary["scale"]), (3.0, 3.0))
+        low, high = self.group_bounds(status["objects"])
+        for value, expected in zip(
+            ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]), (3, -2, -0.5), strict=True
+        ):
+            self.assertAlmostEqual(value, expected, places=4)
+        self.assertAlmostEqual(max(b - a for a, b in zip(low, high, strict=True)), 3.0, places=4)
+        # The cursor and the source stay where they were.
+        self.assertEqual(tuple(bpy.context.scene.cursor.location), (4, 5, 6))
+        self.assertEqual(tuple(source.location), (3, -2, 1))
+
+    def test_import_without_a_live_source_offers_no_match(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        owner = self.runtime.state.model_jobs
+        ticket = owner._application_approvals[approval["application_id"]]
+        self.assertIsNone(ticket.source)
+        with self.assertRaises(self.request_error):
+            owner.revise_model_application(ticket.identifier, match_source=True)
+        self.assertIn(ticket.identifier, owner._application_approvals)
+
     def test_native_model_review_without_a_size_keeps_an_mcp_reviewed_size(self):
         # Confirming a review prepared elsewhere never rewrites its approved size.
         request_id = self.recovered_model()

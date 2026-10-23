@@ -623,6 +623,8 @@ SPLAT_REVIEW = (
 )
 # Shown when the review scales the new group to a longest side.
 TARGET_SIZE_REVIEW = "Scale the group evenly; its bottom stays at the cursor."
+# Shown when the import takes the place and size of the mesh the job edited.
+MATCH_SOURCE_REVIEW = "Scale the group evenly to the longest side of the mesh it edits."
 SPLAT_POINT_ITEMS = (
     ("250000", "250,000", "Keep at most 250,000 evenly spaced points"),
     ("500000", "500,000", "Keep at most 500,000 evenly spaced points"),
@@ -679,6 +681,14 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
         description="Scale the new group evenly so its longest side has this length",
         options={"SKIP_SAVE"},
     )
+    match_source: BoolProperty(
+        name="Match the edited mesh",
+        description="Land the new group on the mesh this job edited, at that mesh's size",
+        options={"SKIP_SAVE"},
+    )
+    source_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    source_bottom: FloatVectorProperty(size=3, options={"HIDDEN", "SKIP_SAVE"})
+    source_size: FloatProperty(options={"HIDDEN", "SKIP_SAVE"})
     target_size: FloatProperty(
         name="Longest side",
         description="Length of the new group's longest side, in scene units",
@@ -715,7 +725,15 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             self.use_target_size = approval.target_size is not None
             if self.use_target_size:
                 self.target_size = approval.target_size
+            source = approval.source
+            self.source_name = "" if source is None else source.name
+            if source is not None:
+                self.source_bottom, self.source_size = source.bottom, source.size
+            # An edit that keeps the shape lands where and as large as its source.
+            self.match_source = source is not None and source.suggested
             self.review_error = ""
+            if self.match_source:
+                self._sync_options()
         except Exception:
             self.report({"ERROR"}, "Could not prepare model import; inspect the saved result")
             return {"CANCELLED"}
@@ -724,7 +742,14 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     def _sync_options(self):
         """Exchange the approval for one with the shown splat options and size."""
         # Rounded to micrometres: the property stores a single-precision float.
-        options = {"target_size": round(self.target_size, 6) if self.use_target_size else None}
+        options = {
+            "target_size": (
+                round(self.target_size, 6)
+                if self.use_target_size and not self.match_source
+                else None
+            ),
+            "match_source": self.match_source,
+        }
         if self.is_splat:
             options.update(max_points=int(self.splat_points), axes=self.splat_axes)
         approval = runtime.revise_model_application(self.context_id, self.application_id, **options)
@@ -747,10 +772,16 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             layout.label(text="Use saved results again; no new generation.", icon="INFO")
         choice = "primary result" if self.is_primary else "alternate result"
         layout.label(text=f"Selected: {self.model_summary} ({choice})")
-        position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
         splats_only = self.model_format in ("spz", "splat")
         noun = "splats" if splats_only else "model"
-        layout.label(text=f"Place {noun} bottom at cursor: {position}")
+        if self.source_name:
+            layout.prop(self, "match_source", text=f"Match {self.source_name}")
+        if self.match_source:
+            position = ", ".join(f"{value:.3f}" for value in self.source_bottom)
+            layout.label(text=f"Place model bottom on the edited mesh: {position}")
+        else:
+            position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
+            layout.label(text=f"Place {noun} bottom at cursor: {position}")
         if splats_only:
             layout.label(text="Import into a new group with its own new material.")
         else:
@@ -763,13 +794,17 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             layout.prop(self, "splat_axes")
             for line in SPLAT_REVIEW:
                 layout.label(text=line)
-        row = layout.row(align=True)
-        row.prop(self, "use_target_size")
-        size = row.row(align=True)
-        size.active = self.use_target_size
-        size.prop(self, "target_size", text="")
-        if self.use_target_size:
-            layout.label(text=TARGET_SIZE_REVIEW)
+        if self.match_source:
+            layout.label(text=f"Longest side: {self.source_size:.3f}, like the edited mesh.")
+            layout.label(text=MATCH_SOURCE_REVIEW)
+        else:
+            row = layout.row(align=True)
+            row.prop(self, "use_target_size")
+            size = row.row(align=True)
+            size.active = self.use_target_size
+            size.prop(self, "target_size", text="")
+            if self.use_target_size:
+                layout.label(text=TARGET_SIZE_REVIEW)
         layout.label(text="Files are checked again first; a change stops the import.")
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
@@ -781,7 +816,7 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            if self.is_splat or self.use_target_size:
+            if self.is_splat or self.use_target_size or self.source_name:
                 self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:

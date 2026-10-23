@@ -41,6 +41,9 @@ rejects external texture files and keeps the file's clip timing, OBJ leaves out
 maps that were not saved, and PLY says a file without splat data imports as a
 mesh. A **Longest side** checkbox, off by default, enables a length field; when
 checked, a line says the group is scaled evenly with its bottom at the cursor.
+When the job edited a mesh still in the scene, a **Match <mesh>** checkbox comes
+first, on for shape-keeping tasks; it replaces the cursor and length lines with
+the mesh's bottom center and longest side.
 Changing either calls `check()`, which exchanges the approval for a new handle
 with the same scene, cursor and unit, as for splat options below. A last line
 says the files are checked again first. Every line stays

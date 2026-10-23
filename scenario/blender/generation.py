@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 import bpy
 from bpy.app.handlers import persistent
 
-from ..core.api import trained_offers
+from ..core.api import model_filter, trained_offers
 from ..core.api.catalog import (
     DEFAULT_MODELS,
     LANE_KIND,
@@ -569,7 +569,12 @@ def sync_shown_forms(context=None):
         return False
     lane_state = scene.scenario.lane_state(lane)
     schema = schema_for(lane_state.model_id)
-    if schema is None or not params_ui.unsynced(lane_state, schema, lane_state.model_id):
+    if schema is None:
+        return False
+    if not params_ui.unsynced(lane_state, schema, lane_state.model_id):
+        if lane == "audio" and follow_scene_length(lane_state, schema):
+            props.mark_estimate_dirty(lane_state)  # the scene's range moved the music length
+            return True
         return False
     on_model_changed(context, lane_state, mark_dirty=False)
     return True
@@ -713,6 +718,8 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     seeded = params_ui.sync_params(lane_state, schema, model_id)
     if props.lane_of(lane_state) == "panorama":
         seeded |= _apply_contract_settings(lane_state, schema, model_id, previous)
+    elif props.lane_of(lane_state) == "audio":
+        seeded |= follow_scene_length(lane_state, schema, seeded)
     trained_models.sync_bounds(lane_state)  # strength fields follow the base's declared range
     # Seeded values skip their RNA callbacks: re-arm this form's price and let a
     # seeded model duration drive the camera path, as an edit would.
@@ -812,6 +819,10 @@ def build_request(scene, lane, for_estimate=False):
         apply_match_timeline(
             scene, lane_state, schema
         )  # base Video: the model duration follows the timeline
+    if lane == "audio":
+        follow_scene_length(
+            lane_state, schema
+        )  # a music length still at its start follows the scene
     values, enabled = params_ui.collect_values(lane_state, schema)
     record = runtime.state.records.get(model_id)
     refs = {
@@ -1068,6 +1079,52 @@ def timeline_sync_info(scene, lane_state, schema):
     else:
         return seconds, None, ""
     return seconds, value, note
+
+
+def scene_length(scene):
+    """The seconds of the scene's frame range, or its preview range when that is on."""
+    fps = scene.render.fps / (scene.render.fps_base or 1.0)
+    return capture_plan.frame_span(
+        scene.frame_start,
+        scene.frame_end,
+        fps,
+        use_preview=scene.use_preview_range,
+        preview_start=scene.frame_preview_start,
+        preview_end=scene.frame_preview_end,
+    )[2]
+
+
+def follow_scene_length(lane_state, schema, created=()):
+    """Start a music model's length at the scene's, and keep it there until the user edits it.
+
+    A length the form just created (`created` names it) takes the scene's. One that still
+    follows the scene (`follows_scene`, which any edit clears) is moved when the scene's
+    range changed. The value is clamped to the input's range and stored without its RNA
+    update, which would count as the user's edit; the caller re-arms the price for the
+    returned names. Runs on the main thread, never while drawing.
+    """
+    record = runtime.state.records.get(lane_state.model_id)
+    spec = None if record is None else model_filter.music_length_spec(record, schema)
+    index = lane_state.params.find(spec.name) if spec is not None else -1
+    if index < 0:
+        return set()
+    item = lane_state.params[index]
+    if spec.name not in created and not item.follows_scene:
+        return set()
+    value, _ = capture_plan.clamp_duration(
+        scene_length(lane_state.id_data), spec.min, spec.max, integer=spec.is_integer
+    )
+    attr = "int_value" if spec.is_integer else "float_value"
+    changed = False
+    if getattr(item, attr) != value:
+        item[attr] = value
+        changed = True
+    if not item.enabled:
+        item["enabled"] = True  # the model would otherwise choose its own length
+        changed = True
+    if not item.follows_scene:
+        item["follows_scene"] = True
+    return {spec.name} if changed else set()
 
 
 def perform_captures(context, request, runner=None):

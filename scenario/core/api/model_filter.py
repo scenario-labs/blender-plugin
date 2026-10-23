@@ -246,6 +246,21 @@ def categories_of(record):
     return out
 
 
+# A music model's length input, by the names the live models use.
+MUSIC_LENGTH_INPUTS = ("durationSeconds", "duration")
+
+
+def music_length_spec(record, schema):
+    """The length input of a music model's schema, or None for any other model or no such input."""
+    if "music" not in categories_of(record):
+        return None
+    for name in MUSIC_LENGTH_INPUTS:
+        spec = schema.by_name(name)
+        if spec is not None and spec.ptype == "number" and not spec.allowed_values:
+            return spec
+    return None
+
+
 def visible(record):
     """Shown in the picker: not trained, not deprecated, of a modality that has a tab."""
     return (

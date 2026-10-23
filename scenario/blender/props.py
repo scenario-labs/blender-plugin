@@ -282,6 +282,8 @@ def clamp_param(item, assign=setattr):
 
 def _on_param_update(self, context):
     clamp_param(self)
+    if self.follows_scene:
+        self.follows_scene = False  # an edit makes the value the user's own
     lane_state = _find_lane_state(context, self.lane, self)
     if lane_state is not None:
         mark_estimate_dirty(lane_state)
@@ -307,6 +309,10 @@ class ScenarioParamValue(bpy.types.PropertyGroup):
     fmin: FloatProperty(default=-1e9)
     fmax: FloatProperty(default=1e9)
     has_range: BoolProperty(default=False)
+    follows_scene: BoolProperty(
+        default=False,
+        description="The value was set from the scene (a music length) and follows it until edited",
+    )
 
 
 # The RNA default of every LoRA strength field (the form's and the picker's), which

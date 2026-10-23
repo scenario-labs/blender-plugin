@@ -595,7 +595,8 @@ to restore and save the blend file yourself. See
 
 Speech, music and sound effects with ElevenLabs, Google Lyria, ACE-Step, Minimax,
 Gemini TTS, Sonilo and other audio models. When a model makes WAV audio, you get
-that WAV file, not Scenario's compressed MP3 copy.
+that WAV file, not Scenario's compressed MP3 copy. A music model's duration starts at
+your scene's length, from its frame range and frame rate, until you change it.
 
 ![Audio lane with ElevenLabs Music v2, a prompt with the Spark, Rewrite and Translate buttons, duration and format settings](images/panel-audio.png)
 

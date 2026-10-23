@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Saved jobs listed after a restart offer the result tools they offered before it.
 
-Finished Image, Render Image, Video and 3D jobs are saved through the real store
-with private offline bytes. Their views are first projected as a submission
-leaves them in its session, an Image job after its automatic import listed its
-files, and drawn through a recording layout. The runtime is then reset as a
+Finished Image, Render Image, Environment, Video and 3D jobs are saved through
+the real store with private offline bytes. Their views are first projected as a
+submission leaves them in its session, an Image job after its automatic import
+listed its files and the other stills once a preview-lane check listed theirs,
+and drawn through a recording layout. The runtime is then reset as a
 restart would, the store lists the same jobs again and they are drawn again.
 Nothing contacts Scenario.
 """
@@ -35,6 +36,7 @@ JOBS = {
         "000-render.png",
         "image/png",
     ),
+    "pano": ("panorama", "model_fixture-pano", "Fixture Panorama", "000-pano.png", "image/png"),
     "clip": ("video", "model_fixture-video", "Fixture Video", "000-clip.mp4", "video/mp4"),
     "mesh": ("3d", "model_fixture-mesh", "Fixture Mesh", "000-mesh.glb", "model/gltf-binary"),
 }
@@ -50,6 +52,14 @@ IDENTITY = frozenset(
         "scenario.page_result_previews",
         "scenario.retry_result_preview",
     }
+)
+# Results whose rows offer the image file tools, whatever lane made them.
+STILLS = ("still", "render", "pano")
+FILE_TOOLS = (
+    "scenario.show_image",
+    "scenario.use_as_reference",
+    "scenario.remove_background",
+    "scenario.apply_texture",
 )
 WAIT_SECONDS = 10
 
@@ -229,6 +239,19 @@ class RestoredJobTests(unittest.TestCase):
         ]
         return (header.kwargs["text"], header.kwargs["icon"]), controls
 
+    def reference(self, view):
+        """The properties Use as reference carries on the row, or None without it."""
+        layout = Recorder()
+        self.panels.draw_result(layout, view)
+        return next(
+            (
+                call.properties
+                for call in layout.calls
+                if call.name.startswith("operator") and call.args[0] == "scenario.use_as_reference"
+            ),
+            None,
+        )
+
     def test_restarted_jobs_offer_the_tools_they_offered_before(self):
         self.catalog()
         files = {
@@ -241,10 +264,11 @@ class RestoredJobTests(unittest.TestCase):
         views = {
             request_id: self.submitted(jobs, request_id, [files[request_id]]) for request_id in JOBS
         }
-        jobs.poll()
+        # Render Image and Environment stills list their files once a check verified them.
+        self.assertTrue(self.settle(lambda: all(views[key].files for key in STILLS)))
         before = {request_id: self.tools(view) for request_id, view in views.items()}
         restored = self.restart()
-        self.assertTrue(self.settle(lambda: restored.views["still"].files))
+        self.assertTrue(self.settle(lambda: all(restored.views[key].files for key in STILLS)))
         for request_id, (lane, _, name, *_) in JOBS.items():
             with self.subTest(job=request_id):
                 view = restored.views[request_id]
@@ -258,15 +282,26 @@ class RestoredJobTests(unittest.TestCase):
                 expected = [c for c in controls if c[0] != "scenario.reload_generation"]
                 self.assertIn(("scenario.reload_generation", ""), controls)
                 self.assertEqual(self.tools(view), ((name, icon), expected))
-        # The Image result keeps its file tools, and its saved asset is reused.
-        self.assertEqual(restored.views["still"].files, [files["still"]])
-        controls = dict(before["still"][1])
-        for operator in ("scenario.show_image", "scenario.use_as_reference"):
-            self.assertIn(operator, controls)
-        record, item = self.handoff.saved_reference(
-            self.runtime.state.job_store, "still", files["still"]
-        )
-        self.assertEqual((record.intent.request_id, item.asset.asset_id), ("still", "asset-still"))
+        # Every still keeps its file tools, and Use as reference reuses its saved asset.
+        for request_id in STILLS:
+            with self.subTest(still=request_id):
+                view = restored.views[request_id]
+                self.assertEqual(view.files, [files[request_id]])
+                operators = [operator for operator, _ in self.tools(view)[1]]
+                for operator in FILE_TOOLS:
+                    self.assertIn(operator, operators)
+                self.assertEqual(
+                    self.reference(view), {"filepath": files[request_id], "local_id": request_id}
+                )
+                record, item = self.handoff.saved_reference(
+                    self.runtime.state.job_store, request_id, files[request_id]
+                )
+                self.assertEqual(
+                    (record.intent.request_id, item.asset.asset_id),
+                    (request_id, f"asset-{request_id}"),
+                )
+        # A 3D row imports through its saved-job action, never a direct file path.
+        self.assertEqual(restored.views["mesh"].files, [])
         # A Render Image still leads with its handoff to Render Video, as before.
         _, render = self.tools(restored.views["render"])
         self.assertEqual(render[0][0], "scenario.use_saved_first_frame")

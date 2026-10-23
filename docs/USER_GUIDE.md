@@ -822,7 +822,7 @@ and the actions for its kind:
 
 | Result | Actions |
 | --- | --- |
-| Image | View image, Use as reference, Remove background, Apply as texture, Add image plane, Set as camera background |
+| Image, Render Image, Environment | View image, Use as reference, Remove background, Apply as texture, Add image plane, Set as camera background |
 | 3D | Add to scene, Select, Delete |
 | Video | Play, Play in Blender, Add video strip, Set as camera background |
 | Audio | Play audio, Waveform, Open in system player, Add strip |

@@ -668,8 +668,8 @@ class ModelJobs:
         # again for the same receipt. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
-        # Verified local files of the jobs MCP job_status asked about and of listed
-        # Image rows, checked on the preview lane against their saved receipts.
+        # Verified local files of the jobs MCP job_status asked about and of image
+        # rows, checked on the preview lane against their saved receipts.
         # Memory only; it follows the saved store, so a restarted job is checked
         # like a current one.
         self._files = ResultFiles()
@@ -1970,19 +1970,16 @@ class ModelJobs:
         return self.views[request_id]
 
     def _lists_files(self, request_id, view):
-        """Whether a view lists its verified saved images for the Image row's file tools.
+        """Whether a view lists its verified saved images for the image row's file tools.
 
-        An Image lane job lists the files its automatic import verified while
-        that import owns it. Otherwise, as when listed from the store, it and a
-        job saved without a lane whose results are images list the files a
-        preview-lane check verified. Other lanes list none, as in the session
-        that submitted them.
+        Every image kind does: the Image, Render Image and Environment lanes and
+        a job saved without a lane whose results are images. An Image lane job
+        lists the files its automatic import verified while that import owns
+        it; the others list the files a preview-lane check verified, in the
+        submitting session and after a restart alike. A 3D row lists none: it
+        imports through its receipt-bound saved-job action, never a direct path.
         """
-        return (
-            view.kind == "image"
-            and view.lane in ("image", "model")
-            and request_id not in self._automatic_application
-        )
+        return view.kind == "image" and request_id not in self._automatic_application
 
     def _plan(self, record):
         """Classify saved results once per saved revision; reads no files."""

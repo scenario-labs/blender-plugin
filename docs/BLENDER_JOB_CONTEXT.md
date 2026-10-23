@@ -604,15 +604,16 @@ job's sizes once it leaves them, and stops offering an image whose size is not
 
 `result_files` queues the coordinator's receipt rehash of saved results on the
 same lane, again not a session completion. The model job owner checks only the
-jobs a local MCP status read asked about and listed Image rows whose files no
-automatic import of this session lists, at most one preview batch at a time,
-whether this session imported them or not and including after a restart. Such a
-row lists only verified files, so its file tools come back after a restart. A
-file the session already hashed while downloading or importing it is not checked
-again: the coordinator keeps that identity in memory (`verified_files`), and the
-status read uses it once. Each check is kept with the file's identity as hashed;
-a later status read compares that identity and checks the file again when it
-differs.
+jobs a local MCP status read asked about and image rows (Image, Render Image and
+Environment jobs, or results that are images) whose files no automatic import of
+this session lists, at most one preview batch at a time, whether this session
+imported them or not and including after a restart. Such a row lists only
+verified files, so its file tools show in the submitting session and after a
+restart alike. A file the session already hashed while downloading or importing
+it is not checked again: the coordinator keeps that identity in memory
+(`verified_files`), and the status read uses it once. Each check is kept with
+the file's identity as hashed; a later status read compares that identity and
+checks the file again when it differs.
 
 The main-thread [preview controller](../scenario/blender/result_previews.py)
 is the scheduler's Blender-side owner for

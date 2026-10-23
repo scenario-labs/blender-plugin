@@ -1453,7 +1453,12 @@ def estimate_blockout(args):
         jobs.poll()
         if item.phase != "READY":
             raise ScenarioError(0, item.error or "The Blockout price is unavailable")
-        return {"quote_id": item.identifier, "action": item.action, "cu_cost_exact": item.cost}
+        return {
+            "quote_id": item.identifier,
+            "action": item.action,
+            "model": item.model,
+            "cu_cost_exact": item.cost,
+        }
 
     return DeferredTool(item.task.result, finish)
 
@@ -3646,7 +3651,7 @@ SPECS = (
     ),
     ToolSpec(
         "estimate_blockout",
-        'Get the exact free estimate for the current scene\'s Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact.\nExample: {"action": "DESIGN"}.\nPlatform equivalent: model_estimate for the Scenario LLM.',
+        'Get the exact free estimate for the current scene\'s Blockout description or refinement. This reads the native Blockout fields (description, density, Best or Fast model, uploaded reference image) and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, model (the Scenario LLM model the tier resolved to), cu_cost_exact.\nExample: {"action": "DESIGN"}.\nPlatform equivalent: model_estimate for the Scenario LLM.',
         _schema({"action": {"type": "string", "enum": ["DESIGN", "REFINE"]}}, []),
         estimate_blockout,
         {"readOnlyHint": True},
@@ -3690,7 +3695,7 @@ SPECS = (
     ),
     ToolSpec(
         "apply_blockout_plan",
-        'Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build plan separately. Never spends or builds geometry.\nExample: {"context_id": "current-context", "review_id": "saved-review"}.\nPlatform equivalent: local plan application.',
+        'Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build blockout separately. Never spends or builds geometry.\nExample: {"context_id": "current-context", "review_id": "saved-review"}.\nPlatform equivalent: local plan application.',
         _schema(
             {"context_id": {"type": "string"}, "review_id": {"type": "string"}},
             ["context_id", "review_id"],

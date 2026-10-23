@@ -16,6 +16,7 @@ from bpy.props import (
 )
 
 from ..core.api.catalog import EDIT3D_TASKS
+from ..core.scene import blockout as blockout_core
 from ..core.scene import panorama_contract
 from . import runtime
 
@@ -564,16 +565,13 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
         return getattr(self, attr)
 
 
-def _blockout_scene_types(self, context):
-    from ..core.scene import blockout
+def _blockout_image_chosen(self, context):
+    from .reference_uploads import note_chosen_file
 
-    return [(k, label, desc) for k, label, desc in blockout.SCENE_TYPES]
-
-
-def _blockout_scales(self, context):
-    from ..core.scene import blockout
-
-    return [(k, label, desc) for k, label, desc in blockout.SCALES]
+    note_chosen_file(self.image_path)
+    # An uploaded asset belongs to the file it came from; another choice needs a new upload.
+    self.image_asset_id = ""
+    self.image_scope = ""
 
 
 class ScenarioBlockoutProps(bpy.types.PropertyGroup):
@@ -581,13 +579,30 @@ class ScenarioBlockoutProps(bpy.types.PropertyGroup):
         name="Scene",
         description="Describe the scene to block out, e.g. 'a medieval market square: a central well, a stone gate, stalls around the edge, a watchtower'",
     )
-    scene_type: EnumProperty(
-        name="Type",
-        items=_blockout_scene_types,
-        description="What kind of scene, to steer the layout",
+    density: EnumProperty(
+        name="Density",
+        items=[(k, label, desc) for k, label, desc, _range in blockout_core.DENSITIES],
+        default=blockout_core.DEFAULT_DENSITY,
+        description="How many primitives the plan uses: more means finer, more recognisable detail",
     )
-    scale: EnumProperty(
-        name="Scale", items=_blockout_scales, description="The overall size, to steer the layout"
+    tier: EnumProperty(
+        name="Model",
+        items=blockout_core.TIERS,
+        default=blockout_core.DEFAULT_TIER,
+        description="Which Scenario LLM designs the plan; the price is on the Generate button",
+    )
+    image_path: StringProperty(
+        name="Reference image",
+        subtype="FILE_PATH",
+        description="Optional picture or concept to block out; upload it before getting the price",
+        update=_blockout_image_chosen,
+    )
+    image_asset_id: StringProperty(
+        description="The uploaded reference image asset (internal)", options={"HIDDEN"}
+    )
+    image_scope: StringProperty(
+        description="The connection the reference image was uploaded with (internal)",
+        options={"HIDDEN"},
     )
     refine: StringProperty(
         name="Refine",

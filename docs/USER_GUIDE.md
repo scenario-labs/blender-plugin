@@ -660,16 +660,21 @@ for them, the image guides the opening look instead, and the form says so.
 
 ![Blockout tab with Scene, Type and Scale controls above a stored example layout and Rebuild, Clear and Refine actions](images/panel-blockout.png)
 
-Turn a scene description into a greybox layout of coloured primitives, grouped
-in a `Blockout` collection.
+Turn a scene description or a reference picture into a greybox layout of
+coloured primitives, grouped in a `Blockout` collection.
 
-1. Describe the scene, choose its **Type** and **Scale**, and press **Get design
-   price**.
-2. Review the price and choose **Generate plan**. Changing the fields, scene or
-   credentials first cancels the approval.
-3. Choose **Build plan** to create the geometry. To refine, describe the change,
-   choose **Get refinement price**, approve it, then build again.
-4. **Clear** removes the collection and plan after asking. Build and Clear
+1. Describe the scene. To follow a picture or concept, choose a **Reference
+   image** and press **Upload**; the description is then optional.
+2. Choose a **Density** (Simple, Medium, Advanced or Expert: more primitives and
+   finer detail) and a model: **Best** (Claude Opus, a few minutes) or **Fast**
+   (Gemini Flash, under a minute, cheaper).
+3. The price appears on **Generate blockout**; choose it to pay once and design
+   the plan, which Jobs lists until it arrives. **New plan** prices another one
+   from the same fields. Changing the fields, scene or credentials first cancels
+   the approval.
+4. Choose **Build blockout** to create the geometry. To refine, describe the
+   change, choose **Get refinement price**, approve it, then build again.
+5. **Clear** removes the collection and plan after asking. Build and Clear
    support Undo.
 
 Colours mark categories such as Floor, Wall, Prop, Furniture and Vegetation. Swap
@@ -681,7 +686,7 @@ clearing.
 If a request's outcome is uncertain, don't generate again: select the scene, choose
 **Inspect saved jobs**, **Read saved Blockout plan**, then
 **Use saved Blockout plan**, and confirm. This updates only the stored plan (Undo
-reverts it); choose **Build plan** to update the geometry.
+reverts it); choose **Build blockout** to update the geometry.
 
 ### Environment
 

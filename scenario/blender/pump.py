@@ -122,6 +122,15 @@ def _process():
                     generation.request_estimate(scene, lane)
                     generation.note_repeat_quote(scene, lane, lane_state)
                     changed = True
+        if (
+            visible == "blockout"
+            and not model_jobs.automatic_estimates_stopped()
+            and runtime.credentials().valid
+            and runtime.online()
+        ):
+            from . import blockout
+
+            changed |= blockout.auto_quote(scene, now)
     if _jobs_changed():
         changed = True
     # After the jobs' saved states moved: count generations for the rating prompt.

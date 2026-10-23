@@ -338,17 +338,21 @@ def _body_for(model_id, parameters, *, lane="image"):
     if requested is not None and requested.picks and lane not in trained_models.LANES:
         raise ValueError("Trained models run in the image and render_image lanes")
     for spec in schema.specs:
-        # A form starts each number field at its declared default and sends it in the
-        # field's own type (0.0 in a decimal field, 1 in a whole one); do the same so an
-        # unchanged form and this request serialize alike. null still leaves it out.
+        # A form starts a setting at the model's curated starting value, else each number
+        # field at its declared default, and sends it in the field's own type (0.0 in a
+        # decimal field, 1 in a whole one); do the same so an unchanged form and this
+        # request serialize alike. null still leaves it out.
         # A panorama contract applies its own lane defaults and 2:1 sizes instead;
         # the Environment lane has no native form to match.
+        if contract is not None or spec.is_file or spec.name in parameters:
+            continue
         default = spec.default
-        if (
-            contract is None
-            and spec.ptype == "number"
+        curated = catalog.starting_value(record.id, spec)
+        if curated is not None:
+            parameters[spec.name] = curated
+        elif (
+            spec.ptype == "number"
             and not spec.allowed_values
-            and spec.name not in parameters
             and isinstance(default, int | float)
             and not isinstance(default, bool)
         ):

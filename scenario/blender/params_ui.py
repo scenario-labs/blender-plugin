@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bridge between ParamSpec schemas and the ScenarioParamValue collection, plus drawing."""
 
-from ..core.api.catalog import param_override
+from ..core.api.catalog import param_override, starting_value
 from ..core.schema.params import float32_decimal
 from . import props, runtime
 
@@ -161,7 +161,9 @@ def _apply_default(item, spec, schema=None):
     item.has_range = spec.min is not None or spec.max is not None
     item.fmin = float(spec.min) if spec.min is not None else -1e9
     item.fmax = float(spec.max) if spec.max is not None else 1e9
-    default = spec.default
+    # A curated start replaces the schema default and switches an optional setting on, like a declared default.
+    curated = starting_value(item.model_id, spec)
+    default = spec.default if curated is None else curated
     if spec.ptype == "number":
         value = default if isinstance(default, (int, float)) else _numeric_fallback(spec, schema)
         if spec.is_integer:

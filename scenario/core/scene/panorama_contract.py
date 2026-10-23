@@ -245,23 +245,6 @@ def _number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _allowed(spec, value):
-    """Whether the current schema still accepts a forced or default value of this type."""
-    if isinstance(value, bool):
-        expected = "boolean"
-    elif _number(value):
-        expected = "number"
-    else:
-        expected = "string"
-    if spec.ptype != expected:
-        return False
-    if spec.allowed_values:
-        return value in spec.allowed_values
-    if expected == "number":
-        return (spec.min is None or value >= spec.min) and (spec.max is None or value <= spec.max)
-    return True
-
-
 def _drifted(contract, by_name):
     if contract.required_fields - by_name.keys():
         return True
@@ -271,7 +254,7 @@ def _drifted(contract, by_name):
         if spec.ptype != expected or (spec.kind or "image") != "image":
             return True
     for name, value in (*contract.locked, *contract.defaults):
-        if not _allowed(by_name[name], value):
+        if not by_name[name].accepts(value):
             return True
     for name in (*contract.size_params, contract.factor_param):
         if name and by_name[name].ptype != "number":
@@ -279,7 +262,7 @@ def _drifted(contract, by_name):
     for size in contract.sizes:
         for name, value in zip(contract.size_params, size, strict=True):
             spec = by_name[name]
-            if not _allowed(spec, value) or (spec.step and value % spec.step):
+            if not spec.accepts(value) or (spec.step and value % spec.step):
                 return True
     return False
 

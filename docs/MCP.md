@@ -942,7 +942,9 @@ a form sends each decimal field as the shortest decimal its 32-bit storage holds
 (`0.8`, not `0.800000011920929`). `estimate_cost` and `generate` start
 each number parameter that is not given at its declared default, in the field's
 own type (`0.0` in a decimal field), as a form does. `null` still leaves an
-optional parameter to the service, like a field switched off in the form. The
+optional parameter to the service, like a field switched off in the form. A few
+models start at the curated value their form shows instead: Tripo P2 with Auto Size on
+and Face Limit 50000, Rodin with the PBR material. The
 [Environment lane](#environment-lane-360-panoramas) has no form; its requests
 apply their panorama contract's lane defaults and sizes instead.
 Approval is unchanged: `generate` needs the same parameters and the exact

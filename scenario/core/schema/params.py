@@ -79,6 +79,24 @@ class ParamSpec:
     def label_for(self, value):
         return self.allowed_labels.get(value, str(value))
 
+    def accepts(self, value):
+        """Whether the schema still takes this value: its type, allowed values and range."""
+        if isinstance(value, bool):
+            expected = "boolean"
+        elif isinstance(value, (int, float)):
+            expected = "number"
+        else:
+            expected = "string"
+        if self.ptype != expected:
+            return False
+        if self.allowed_values:
+            return value in self.allowed_values
+        if expected == "number":
+            return (self.min is None or value >= self.min) and (
+                self.max is None or value <= self.max
+            )
+        return True
+
 
 @dataclass
 class Schema:

@@ -53,11 +53,11 @@ DEFAULT_MODELS = {
     "3d": [
         "model_meshy-7-1-txt23d",
         "model_rodin-hyper3d-v2-5-text-to-3d",
+        "model_tripo-p2-image-to-3d",
         "model_tripo-v3-1-image-to-3d",
         "model_meshy-7-1-img23d",
         "model_hunyuan-3d-pro-3-1-i23d",
         "model_rodin-hyper3d-v2-5",
-        "model_tripo-p2-image-to-3d",
         "model_meshy-7-1-multi-image-to-3d",
         "model_tripo-v3-1-multiview-to-3d",
         "model_hunyuan-3d-pro-3-1-multiview",
@@ -237,19 +237,32 @@ UTILITY_HINTS = (
 )
 
 
-# Schema defaults that produce surprising results in Blender. Applied when the value is among the allowed ones.
+# Starting values for a model's settings where its schema default gives surprising results in Blender. The
+# sidebar, the composer and local MCP all start from them, and only while the schema still accepts the value.
 # Rodin's "All" material returns two meshes (a baked Shaded GLB and a PBR GLB); one PBR mesh is what a Blender user expects.
+# Tripo P2 picks its own face count, which leaves a character's face soft, and an arbitrary size. 50,000 faces is its
+# maximum and keeps the likeness in a file of a few MB; Auto Size returns a character at its real height in meters.
 PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-text-to-3d": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-text-to-3d-fast": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-fast": {"material": "PBR"},
+    "model_tripo-p2-image-to-3d": {"autoSize": True, "faceLimit": 50000},
 }
 MULTIVIEW_HINTS = ("multi", "multiview")
 
 
 def param_override(model_id, name):
     return (PARAM_OVERRIDES.get(model_id) or {}).get(name)
+
+
+def starting_value(model_id, spec):
+    """The curated starting value of one setting of this model, or None.
+
+    None when the table names none, or when the model's current schema no longer accepts it.
+    """
+    value = param_override(model_id, spec.name)
+    return value if value is not None and spec.accepts(value) else None
 
 
 @dataclass

@@ -506,7 +506,8 @@ Results from the earlier prototype offer **Play**, **Play in Blender** and
 Four modes: **Text**, **Image**, **Multi-view** (several views of one object, front
 first) and **Edit** (Scenario's 3D tools on your selected mesh). Models include
 Meshy, Rodin, Tripo and Hunyuan, plus worlds such as Marble, HY World and
-TripoSplat.
+TripoSplat. Image mode starts with Tripo P2 at real-world size (**Auto Size**) and
+50,000 faces; change either in the form.
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 

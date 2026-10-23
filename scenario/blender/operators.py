@@ -1118,6 +1118,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             item = lane_state.params[index]
             if spec.name not in rec.body:
                 item.enabled = bool(spec.required_always)
+                if spec.ptype == "boolean":
+                    # The job left it to the service, whatever a curated start gave the form.
+                    item.bool_value = bool(spec.default)
                 continue
             value = rec.body[spec.name]
             item.enabled = True

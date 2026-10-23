@@ -1359,6 +1359,21 @@ def test_failed_fetch_keeps_the_job_ready_and_a_retry_completes_it(setup):
     assert _saved(fetched) == ["mesh-glb", "mesh-obj", "mesh-mtl"]
 
 
+def test_a_copy_saved_without_its_receipt_is_fetched_again(setup):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    downloader.state = JobState.READY
+    # A fetch that wrote its file but never recorded the receipt left it behind.
+    name = next(item.asset.name for item in ready.results if item.asset.asset_id == "mesh-obj")
+    (downloader.calls[0][1] / name).write_bytes(b"unverified bytes")
+    fetched = coordinator.fetch_results(
+        "request", expected_revision=ready.revision, asset_ids=("mesh-obj",)
+    )
+    assert _saved(fetched) == ["mesh-glb", "mesh-obj"]
+    assert (downloader.calls[0][1] / name).read_bytes() == DATA
+
+
 def test_stopped_fetch_saves_nothing_and_says_so(setup, monkeypatch):
     from scenario.core.jobs.results import DownloadCanceled
     from scenario.core.jobs.transfers import TransferInterrupted

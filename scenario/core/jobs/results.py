@@ -664,6 +664,11 @@ class ResultCommands:
                     if item.receipt is not None:
                         self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
                         continue
+                    # A copy saved without its receipt (Blender quit, or another process
+                    # changed the job first) was never trusted: fetch it again over it.
+                    orphan = directory / item.asset.name
+                    if orphan.is_symlink() or orphan.exists():
+                        orphan.unlink()
                     receipt = self._transfer(item, directory, cancel)
                     self._verify_saved(current, directory, item.asset.asset_id, receipt)
                     with self._guard():

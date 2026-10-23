@@ -7,7 +7,7 @@ below come from the commits that first added each file, not a recent API refresh
 
 | Path | Contents and source | Recorded |
 | --- | --- | --- |
-| `models/*.json` | Twenty-four model records from `GET /models/{id}`, including the five [panorama contract models](#panorama-contract-models) | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini and the five panorama contract models 2026-10-10 |
+| `models/*.json` | Twenty-five model records from `GET /models/{id}`, including the five [panorama contract models](#panorama-contract-models) | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini and the five panorama contract models 2026-10-10; Claude Opus 5.5 3D 2026-10-23 |
 | `models_list_page1.json` | Five public models from `GET /models?privacy=public&pageSize=5` | 2026-08-28 |
 | `models/trained/bases/*.json` | Five public LoRA-capable base model records from `GET /models/{id}`; see [trained-model contracts](#trained-model-contracts) | 2026-10-09 |
 | `models/trained/public/*.json` | Routing-field projections of six public Scenario LoRA and composition records from `GET /models/{id}` | 2026-10-09 |

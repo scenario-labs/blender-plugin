@@ -104,6 +104,7 @@ DEFAULT_MODELS = {
         "model_bfl-flux-3-extend",
     ],
     "edit3d": [
+        "model_scenario-claude-opus-5-5-3d",
         "model_meshy-7-retexture",
         "model_tripo-retopology-v3",
         "model_tripo-retopology",
@@ -179,7 +180,10 @@ EDIT3D_TASKS = (
         "RETEXTURE",
         "Retexture",
         "New textures and materials for the mesh, from a prompt or a style image",
+        # The scene-edit models repaint only what the prompt names: a character keeps its face, mesh, UVs and size.
         (
+            "model_scenario-claude-opus-5-5-3d",
+            "model_scenario-gpt6-astra-3d",
             "model_meshy-7-retexture",
             "model_tripo-v3-0-texturing",
             "model_trellis-2-retexture",

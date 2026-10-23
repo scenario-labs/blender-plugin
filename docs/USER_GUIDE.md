@@ -558,6 +558,11 @@ again once it finishes. See
    edits don't change the snapshot; remove the reference and upload again to
    replace it.
 
+Retexture starts on Claude Opus 5.5 3D, which repaints what your prompt names and
+leaves the rest of the textures, such as a character's face, as they were, on the
+same mesh, UVs and size. It can take several minutes; Meshy 7 Retexture, further
+down the list, is quicker and repaints the whole surface.
+
 A mesh too dense to take edits in place shows its triangle count and suggests
 remeshing it first; its results still import as new objects.
 

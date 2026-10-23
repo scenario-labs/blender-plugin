@@ -15,6 +15,8 @@ ROTATING = "model_rodin-hyper3d-bang"  # listed by RETEXTURE and PARTS
     [
         ("model_tripo-retopology", "REMESH"),
         ("model_meshy-7-retexture", "RETEXTURE"),
+        ("model_scenario-claude-opus-5-5-3d", "RETEXTURE"),
+        ("model_scenario-gpt6-astra-3d", "RETEXTURE"),
         ("model_meshy-uv-unwrap", "UV"),
         ("model_meshy-rigging", "RIG"),
         ("model_tripo-segmentation-v2", "PARTS"),

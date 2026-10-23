@@ -26,6 +26,7 @@ class Edit3DLaneTests(unittest.TestCase):
         handlers = submodule("blender.handlers")
         self.runtime.state.reset()
         records = [
+            rec("model_scenario-claude-opus-5-5-3d"),
             rec("model_meshy-7-retexture"),
             rec("model_tripo-retopology"),
             rec("model_meshy-rigging"),
@@ -43,7 +44,7 @@ class Edit3DLaneTests(unittest.TestCase):
         self.scene.scenario.edit3d_task = "RETEXTURE"
         self.assertEqual(
             [i[0] for i in self.runtime.enum_items(("models", "edit3d"))],
-            ["model_meshy-7-retexture"],
+            ["model_scenario-claude-opus-5-5-3d", "model_meshy-7-retexture"],
         )
         self.scene.scenario.edit3d_task = "REMESH"
         self.assertEqual(
@@ -51,7 +52,26 @@ class Edit3DLaneTests(unittest.TestCase):
             ["model_tripo-retopology"],
         )
         self.scene.scenario.edit3d_task = "ALL"
-        self.assertEqual(len(self.runtime.enum_items(("models", "edit3d"))), 3)
+        self.assertEqual(len(self.runtime.enum_items(("models", "edit3d"))), 4)
+
+    def test_retexture_starts_on_claude_opus_5_5_3d_with_the_mesh_as_its_scene_file(self):
+        # It repaints what the prompt names and keeps the rest, a character's face included.
+        self.scene.scenario.edit3d_task = "REMESH"
+        self.scene.scenario.edit3d_task = "RETEXTURE"
+        lane = self.scene.scenario.lane_state("edit3d")
+        self.assertEqual(lane.model_id, "model_scenario-claude-opus-5-5-3d")
+        lane.prompt = "red and gold royal guard uniform"
+        request = self.generation.build_request(self.scene, "edit3d")
+        self.assertEqual(request.errors, [])
+        self.assertEqual(
+            request.captures[0],
+            {"param": "sceneFile", "source": "MESH", "camera": None, "first": True},
+        )
+        self.assertEqual(request.body.get("prompt"), "red and gold royal guard uniform")
+        # The schema's own High effort: Standard can add parts that Replace textures refuses.
+        self.assertEqual(request.body.get("buildEffort"), "high")
+        policy = submodule("core.scene.mesh_edit_policy")
+        self.assertEqual(policy.default_policy(lane.model_id).policy, "RETEXTURE")
 
     def test_request_sends_the_selected_mesh_as_the_model_input(self):
         self.scene.scenario.edit3d_task = "RETEXTURE"
@@ -151,6 +171,7 @@ class Edit3DLaneTests(unittest.TestCase):
     def test_mesh_param_for_the_curated_models(self):
         catalog = submodule("core.api.catalog")
         self.assertEqual(catalog.mesh_param(rec("model_meshy-7-retexture")), "model")
+        self.assertEqual(catalog.mesh_param(rec("model_scenario-claude-opus-5-5-3d")), "sceneFile")
         self.assertEqual(catalog.mesh_param(rec("model_tripo-retopology")), "model")
         self.assertIsNone(catalog.mesh_param(rec("model_meshy-7-txt23d")))
 

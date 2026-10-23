@@ -602,6 +602,11 @@ def draw_dense_mesh_hint(layout, objects, task_id):
     meshes = [obj.data for obj in objects]
     if mesh_application.within_component_limit(meshes):
         return
+    if task_id == "ANIMATE" and all(
+        any(m.type == "ARMATURE" and m.object for m in obj.modifiers) for obj in objects
+    ):
+        # Apply animation changes only the rig, so a dense rigged mesh still takes it.
+        return
     triangles = sum(len(mesh.loops) - 2 * len(mesh.polygons) for mesh in meshes)
     draw_wrapped(
         layout,

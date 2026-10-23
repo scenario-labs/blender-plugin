@@ -1507,6 +1507,45 @@ class AnimateResultTests(unittest.TestCase):
         self.scene.frame_set(self.timeline[2])
         return heads[1] - heads[0], rotation
 
+    def test_a_rigged_mesh_over_the_work_cap_takes_only_animation(self):
+        self.ready_session()
+        provenance = submodule("blender.mesh_provenance")
+        geometry = bmesh.new()
+        bmesh.ops.create_grid(geometry, x_segments=12, y_segments=12, size=1.0)
+        geometry.to_mesh(self.source.data)
+        geometry.free()
+        limit = self.mesh._components(self.source.data) - 1
+        self.enterContext(patch.object(self.mesh, "MAX_COMPONENTS", limit))
+        fingerprint = self.enterContext(
+            patch.object(self.mesh, "_fingerprint", wraps=self.mesh._fingerprint)
+        )
+        # Its export keeps the source for ANIMATE, which reads neither geometry nor weights.
+        origin, source = provenance.export_with_source(
+            bpy.context, (self.source,), self.root / "dense.glb", self.session
+        )
+        binding = self.storage.JobMeshSource("mesh", None, "asset", "upload", 0, origin, source)
+        (self.target,) = self.session.mesh_source_targets(binding)
+        self.assertTrue(self.target.dense)
+        fingerprint.assert_not_called()
+        for policy in ("RIG", "REMESH"):
+            with self.subTest(policy=policy):
+                with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+                    self.apply(policy=policy)
+                self.assertEqual(
+                    str(caught.exception),
+                    "Mesh exceeds the synchronous application component limit; only ANIMATE, "
+                    "which applies returned clips to its rig, takes it",
+                )
+        result = self.apply(policy="ANIMATE")
+        self.assertIs(result.rig, self.rig)
+        self.assertEqual(len(result.clips), 2)
+        self.assertIs(self.rig.animation_data.action, result.clips[0])
+        # Without a skin, a mesh that large still cannot be captured.
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        with self.assertRaisesRegex(self.mesh.MeshApplicationError, "component limit"):
+            self.mesh.capture_target(self.scene, self.source)
+
     def test_clips_play_on_the_existing_rig_keeping_mesh_and_skin(self):
         import math
 

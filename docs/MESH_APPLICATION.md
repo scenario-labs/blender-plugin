@@ -194,7 +194,9 @@ object.
 Fingerprinting is linear and runs on the main thread. A limit of 2,000,000 combined
 vertices, edges, loops, polygons and generic-attribute entries bounds each pass;
 this is a work cap, not a latency guarantee. Large meshes and unsupported data
-require another application path.
+require another application path. A [skinned](#replace-an-existing-skin) mesh over
+the cap is captured without its geometry and weights, and only ANIMATE, which
+changes neither, applies to it.
 
 ## Explicit saved GLB import
 
@@ -808,7 +810,8 @@ Export, static or [skinned](#replace-an-existing-skin), retains a live
 and keys them by the exact upload origin and export metadata. Several objects
 are retained together only when every one can be captured and their meshes
 total at most 2,000,000 components; larger uploads are never fingerprinted for
-this guard. The action appears only while the guard is retained. Shared quotes
+this guard. One skinned object over that bound is retained for ANIMATE alone. The
+action appears only while the guard is retained. Shared quotes
 persist that upload binding in the generation intent. Review resolves only this
 retained guard, never an object name or a reconstructed match from disk. Retention
 compares the stored export digest with a fresh export fingerprint of the live
@@ -1067,7 +1070,8 @@ modifier are rejected.
 The captured target adds the modifier's settings, vertex group names and lock
 flags, a digest of every vertex's weights, and the armature's identity, names,
 bone names, parents, rest matrices, lengths and deform flags and its world
-matrix. Weight entries and bones share the 2,000,000-component work cap. Any
+matrix. Weight entries and bones share the 2,000,000-component work cap; over it,
+or on a mesh over it, the weights are not captured and only ANIMATE applies. Any
 change makes the target stale before import. Posing or animating the bones does
 not: the glTF export excludes Armature modifiers when it applies modifiers, so
 the provider receives the unposed source mesh data without the old skin, and

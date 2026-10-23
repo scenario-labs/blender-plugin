@@ -115,6 +115,13 @@ class Edit3DLaneTests(unittest.TestCase):
         drawn = hints("REMESH")
         self.assertIn("Dense mesh: 81,920 triangles.", drawn)
         self.assertNotIn("remeshing", drawn)
+        # Apply animation changes only the rig: a rigged dense mesh still takes it.
+        self.assertIn("Dense mesh", hints("ANIMATE"))
+        rig = bpy.data.objects.new("Dense rig", bpy.data.armatures.new("Dense rig"))
+        self.scene.collection.objects.link(rig)
+        bpy.context.active_object.modifiers.new("Skin", "ARMATURE").object = rig
+        self.assertNotIn("Dense mesh", hints("ANIMATE"))
+        self.assertIn("Dense mesh", hints("RIG"))
         # A hint only: the Edit form still builds its request.
         self.scene.scenario.edit3d_task = "RETEXTURE"
         lane = self.scene.scenario.lane_state("edit3d")

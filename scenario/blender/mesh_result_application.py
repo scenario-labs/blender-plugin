@@ -132,6 +132,11 @@ def validate_request(target, *, policy, result_to_source, keep_original):
         )
     if isinstance(target, tuple):
         _validate_sources(sources, policy, result_to_source)
+    if any(item.dense for item in sources) and policy != "ANIMATE":
+        raise MeshResultApplicationError(
+            "Mesh exceeds the synchronous application component limit; only ANIMATE, which "
+            "applies returned clips to its rig, takes it"
+        )
     if any(item.skin is not None for item in sources) and policy not in _RIGGED:
         # Static policies would silently drop the source's skin and rig binding.
         raise MeshResultApplicationError(

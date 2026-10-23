@@ -583,7 +583,8 @@ and type any ID from
 it is listed here, not in Text mode.
 
 A mesh too dense to take edits in place shows its triangle count and suggests
-remeshing it first; its results still import as new objects.
+remeshing it first; its results still import as new objects. **Apply animation**
+still works on a rigged mesh that dense, since it changes only the rig.
 
 To put the result back on your mesh, see
 [Apply a saved mesh edit](#apply-a-saved-mesh-edit).

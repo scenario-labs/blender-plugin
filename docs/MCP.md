@@ -1340,7 +1340,8 @@ object, as files whose skin leaves the moving scene root out of its joints do, a
 only retargeted, that motion reaching the hips. The first clip becomes the active
 action; it, the other clips and the previous action stay in muted NLA tracks, and
 a scene frame range still at Blender's default 1 to 250 becomes the first clip's.
-`mesh_placement` and `keep_original` are not used. An unskinned source, another
+`mesh_placement` and `keep_original` are not used. A skinned source too dense for
+other in-place edits still takes ANIMATE. An unskinned source, another
 skeleton that is not humanoid or a result without clips is rejected, leaving the
 job reviewable and the rig unchanged; `job_status` `error` then starts with
 "Animation not applied; the rig is unchanged" and says what to change, such as

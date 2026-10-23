@@ -452,6 +452,10 @@ def _deliver_binding(owner, token, binding):
     ref.label = (ref.label or "Reference") + " (uploaded snapshot)"
     binding.attached = True
     props.mark_estimate_dirty(_lane(binding.scene, binding.lane_name))
+    from . import generation
+
+    # Scenario may not price the asset it just imported yet; the form retries a few times.
+    generation.note_fresh_upload(binding.scene, binding.lane_name)
     # Delivered by maintenance, after the upload operator or tool has returned.
     file_state.mark_modified("Scenario reference upload")
 

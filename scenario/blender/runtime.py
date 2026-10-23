@@ -63,6 +63,9 @@ class RuntimeState:
         # (scene session_uid, lane) -> (estimate key, asset ID) of a failed price whose
         # captured meshes conflict; see generation.capture_conflict.
         self.capture_conflicts = {}
+        # (scene session_uid, lane) -> generation.FreshUpload while a just-attached
+        # upload's price may still be refused; see generation.retry_fresh_upload.
+        self.fresh_uploads = {}
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
         self.model_errors = {}  # model_id -> sanitized lane error of its last failed detail read

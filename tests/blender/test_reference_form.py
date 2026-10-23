@@ -1088,7 +1088,8 @@ class ReferenceFormTests(unittest.TestCase):
         submodule("blender.panels").draw_price_retry(layout, lane, "edit3d")
         return drawn
 
-    def test_reuploaded_mesh_prices_and_a_changed_one_can_drop_its_captured_source(self):
+    def mesh_form(self):
+        """An Edit 3D form on a selected cube; Scenario names every upload one asset."""
         bpy.ops.mesh.primitive_cube_add()
         cube = bpy.context.active_object
         self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
@@ -1106,7 +1107,7 @@ class ReferenceFormTests(unittest.TestCase):
             )
         )
         original, quotes = self.fixture.fixture.handler, []
-        self.response = b'{"creativeUnitsCost":2}'
+        self.status, self.response = 269, b'{"creativeUnitsCost":2}'
 
         def respond(request):
             if "/uploads" in request.url.path:
@@ -1115,9 +1116,13 @@ class ReferenceFormTests(unittest.TestCase):
                 return httpx.Response(200, json={"model": self.typed_model})
             self.assertEqual(request.url.params.get("dryRun"), "true")  # pricing never spends
             quotes.append(json.loads(request.content))
-            return httpx.Response(269, content=self.response)
+            return httpx.Response(self.status, content=self.response)
 
         self.fixture.fixture.handler = respond
+        return lane, quotes
+
+    def test_reuploaded_mesh_prices_and_a_changed_one_can_drop_its_captured_source(self):
+        lane, quotes = self.mesh_form()
         # Uploading an unchanged mesh again: Scenario names the same asset.
         self.upload_mesh(lane, b"data", 1)
         self.upload_mesh(lane, b"data", 2)
@@ -1150,6 +1155,43 @@ class ReferenceFormTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.price_without_capture(lane="edit3d"), {"CANCELLED"})
         self.assertEqual(len(quotes), 4)
         self.assertTrue(all(body["input"] == "reference-asset" for body in quotes))
+
+    def test_a_fresh_upload_refused_at_first_is_priced_again_on_its_own(self):
+        lane, quotes = self.mesh_form()
+        key = (self.scene.session_uid, "edit3d")
+        delays = self.generation.UPLOAD_RETRY_DELAYS
+        # Scenario refuses the price of the asset it has just imported.
+        self.status, self.response = 400, b'{"reason":"fixture refusal"}'
+        self.upload_mesh(lane, b"data", 1)
+        for delay in delays:
+            self.assertIsNone(self.price(lane))
+            self.assertEqual(lane.estimate_state, "PENDING")
+            self.assertEqual(self.generation.repricing_note(lane), self.generation.UPLOAD_NOT_READY)
+            entry = self.runtime.state.reprices[key]
+            self.assertEqual(entry.settle.delay, delay)
+            # The pump asks again only after the delay.
+            since = entry.settle.since
+            self.assertFalse(self.generation.scene_settled(self.scene, "edit3d", since + delay - 1))
+            self.assertTrue(self.generation.scene_settled(self.scene, "edit3d", since + delay))
+        # Retries are bounded: then the refusal shows, with Estimate again.
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertEqual(lane.estimate_error, "Could not confirm this price; estimate again")
+        self.assertEqual(self.price_actions(lane), ["scenario.estimate_again"])
+        self.assertNotIn(key, self.runtime.state.fresh_uploads)
+        # Another upload that Scenario prices once its first refusal has passed.
+        self.upload_mesh(lane, b"data", 2)
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "PENDING")
+        self.status, self.response = 269, b'{"creativeUnitsCost":2}'
+        self.assertIsNotNone(self.price(lane))
+        self.assertEqual(lane.estimate_state, "READY", lane.estimate_error)
+        self.assertNotIn(key, self.runtime.state.fresh_uploads)
+        # A later refusal of a form whose upload was priced shows at once.
+        self.status = 400
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertEqual(len(quotes), len(delays) + 4)
 
     def test_typed_uploads_attach_to_originating_lane_after_tab_switch(self):
         image_refs = len(self.lane.references)

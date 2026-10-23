@@ -25,6 +25,7 @@ from ..core.api.catalog import (
     trained_kind,
 )
 from ..core.api.errors import ScenarioError
+from ..core.api.sdk_adapter import AdapterError, AdapterUnavailable, EstimateStartedJob
 from ..core.jobs import quote_refresh
 from ..core.jobs.coordinator import (
     CaptureConflictError,
@@ -127,6 +128,7 @@ def clear_catalog():
     runtime.state.repeats.clear()  # a repeat belongs to the retired scope's price
     runtime.state.reprices.clear()
     runtime.state.capture_conflicts.clear()
+    runtime.state.fresh_uploads.clear()
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -1292,6 +1294,7 @@ def process_model_jobs():
             lane_state.estimate_cu = float(estimate.cost)
             lane_state.estimate_state = "READY"
             lane_state.estimate_error = ""
+            runtime.state.fresh_uploads.pop((ticket.scene.session_uid, ticket.lane), None)
             # The price an Enter or a Generate click waited for shows now: drop that wait line.
             if runtime.state.last_message == PRICE_LOADING:
                 runtime.state.last_message = ""
@@ -1321,6 +1324,8 @@ def process_model_jobs():
                     # The scene changed while this price was requested: the worker
                     # or the delivery refused it, so ask again once it settles.
                     reprice(ticket.scene, ticket.lane, lane_state)
+                elif retry_fresh_upload(ticket.scene, ticket.lane, lane_state, error):
+                    pass  # A just-uploaded asset may still be processing: asked again later.
                 else:
                     lane_state.estimate_state = "ERROR"
                     lane_state.estimate_error = message
@@ -1407,11 +1412,19 @@ def rearm_repeat(scene, lane, lane_state, now):
 
 
 def prune_repeats():
-    """Forget repeats, repricings and capture conflicts of removed scenes (pump only)."""
+    """Forget repeats, repricings, capture conflicts and fresh uploads of removed scenes.
+
+    Pump only; fresh uploads are also forgotten once their retry window has passed.
+    """
+    now = props.clock()
+    fresh = runtime.state.fresh_uploads
+    for key in [key for key, entry in fresh.items() if now - entry.attached_at > UPLOAD_WINDOW]:
+        del fresh[key]
     for entries in (
         runtime.state.repeats,
         runtime.state.reprices,
         runtime.state.capture_conflicts,
+        fresh,
     ):
         if entries:
             live = {scene.session_uid for scene in bpy.data.scenes}
@@ -1486,11 +1499,55 @@ def _revision(scene):
         return None
 
 
-def reprice(scene, lane, lane_state, note=quote_refresh.SCENE_CHANGED):
-    """Price this form again once its scene has stopped changing; never spends."""
+def reprice(scene, lane, lane_state, note=quote_refresh.SCENE_CHANGED, delay=quote_refresh.SETTLE):
+    """Price this form again once its scene has kept one revision for `delay`; never spends."""
     props.mark_estimate_dirty(lane_state)
-    settle = quote_refresh.Settle(_revision(scene), lane_state.estimate_dirty_at)
+    settle = quote_refresh.Settle(_revision(scene), lane_state.estimate_dirty_at, delay)
     runtime.state.reprices[(scene.session_uid, lane)] = Reprice(settle, note)
+
+
+# Scenario can refuse the first price of an asset it has only just imported, then
+# price it a few seconds later. A form whose upload was just attached asks again on
+# its own after these delays, within UPLOAD_WINDOW seconds of the attachment.
+UPLOAD_RETRY_DELAYS = (5.0, 10.0, 20.0, 40.0)
+UPLOAD_WINDOW = 120.0
+UPLOAD_NOT_READY = "Upload not ready yet; retrying"  # one sidebar line
+
+
+@dataclass
+class FreshUpload:
+    """A form whose uploaded asset was just attached; main thread, memory only."""
+
+    attached_at: float
+    tries: int = 0
+
+
+def note_fresh_upload(scene, lane):
+    """Remember that an upload was just attached to this form (main thread)."""
+    runtime.state.fresh_uploads[(scene.session_uid, lane)] = FreshUpload(props.clock())
+
+
+def retry_fresh_upload(scene, lane, lane_state, error):
+    """Price a fresh upload's form again after Scenario refused or lost its price.
+
+    Returns True when a retry was scheduled. Only service replies and lost
+    responses qualify, a bounded number of times; a dry run never spends.
+    """
+    key = (scene.session_uid, lane)
+    entry = runtime.state.fresh_uploads.get(key)
+    if (
+        entry is None
+        or not isinstance(error, AdapterError)
+        or isinstance(error, (EstimateStartedJob, AdapterUnavailable))
+    ):
+        return False
+    if entry.tries >= len(UPLOAD_RETRY_DELAYS) or props.clock() - entry.attached_at > UPLOAD_WINDOW:
+        del runtime.state.fresh_uploads[key]
+        return False
+    delay = UPLOAD_RETRY_DELAYS[entry.tries]
+    entry.tries += 1
+    reprice(scene, lane, lane_state, UPLOAD_NOT_READY, delay)
+    return True
 
 
 def repricing_note(lane_state):

@@ -42,6 +42,11 @@ MODEL_BULK_LIMIT = 200
 # it may read, so it holds a job worker for single attempts only.
 READ_RETRIES = 2
 _RETRIED_RESOURCES = frozenset({"jobs", "assets", "models", "workflows"})
+# A new connection tries the DNS answer's addresses one after another, each for
+# the whole connect timeout. The API host's answer can list an address that never
+# accepts, so the request timeout must not apply here: one such address would
+# cost every new connection 45 seconds. 5 seconds is the SDK's own default.
+CONNECT_TIMEOUT = 5.0
 
 
 class AdapterError(RuntimeError):
@@ -656,6 +661,7 @@ def _client(credentials, base_url, timeout, transport):
                 "User-Agent": user_agent_string(),
             }
 
+    timeout = httpx.Timeout(timeout, connect=min(timeout, CONNECT_TIMEOUT))
     http = httpx.Client(
         transport=transport, follow_redirects=False, trust_env=False, timeout=timeout
     )

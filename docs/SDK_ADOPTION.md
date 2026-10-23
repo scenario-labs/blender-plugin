@@ -842,6 +842,10 @@ expected failure until the SDK itself fixes #26, and remove the configuration
 workaround only after a verified environment-isolation interface replaces it.
 Token serialization does not establish browser OAuth acceptance by REST.
 
+Requests time out after 45 seconds, but connecting, the TLS handshake included,
+after 5 seconds (`CONNECT_TIMEOUT`, the SDK's own default). A new connection tries
+the DNS answer's addresses in turn, so an address that never accepts costs 5 seconds.
+
 ## Adapter coverage
 
 The adapter provides reads/estimates, a coordinator-only submission hook and

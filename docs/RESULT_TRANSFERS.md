@@ -130,8 +130,10 @@ small stream that calls `recv_into` directly; a timed-out read consumes nothing,
 on plain and TLS sockets alike. Nothing touches the socket from another thread,
 so this behaves the same on every operating system and cannot reach a reused
 descriptor. A cancellation is final and never retryable, whether it is seen
-after a timeout or between chunks. DNS resolution, the TLS handshake and waiting
-for response headers still use the full socket timeout.
+after a timeout or between chunks. DNS resolution and waiting for response
+headers still use the full socket timeout. Connecting, the TLS handshake included,
+takes at most 5 seconds (`StoragePolicy.connect_timeout`) for each address of the
+DNS answer in turn, for downloads and upload parts alike.
 
 A download makes at most three attempts, waiting 1 second before the second and
 3 seconds before the third. Before every

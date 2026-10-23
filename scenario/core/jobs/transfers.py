@@ -78,6 +78,9 @@ class StoragePolicy:
     hosts: frozenset[str]
     max_bytes: int = 256 * 1024 * 1024
     timeout: float = 30.0
+    # A new connection tries each address of the DNS answer in turn for this long,
+    # so an address that never accepts delays it by this much, not by ``timeout``.
+    connect_timeout: float = 5.0
     # Each attempt's elapsed budget scales with its size: the larger of this
     # floor and the size at ``min_rate`` bytes per second, at most the ceiling.
     total_timeout: float = 300.0
@@ -99,6 +102,7 @@ class StoragePolicy:
             raise ValueError("Configure a positive byte limit")
         if (
             not _positive(self.timeout)
+            or not _positive(self.connect_timeout)
             or not _positive(self.total_timeout)
             or not _positive(self.max_total_timeout)
             or self.max_total_timeout < self.total_timeout
@@ -435,7 +439,9 @@ class ResultDownloader:
             for redirects in range(3):
                 remaining = check_permission_and_deadline()
                 connection = http.client.HTTPSConnection(
-                    host, timeout=min(self._policy.timeout, remaining), context=context
+                    host,
+                    timeout=min(self._policy.connect_timeout, self._policy.timeout, remaining),
+                    context=context,
                 )
                 connection.set_debuglevel(0)
                 # Its body reads can time out briefly without ending the transfer.

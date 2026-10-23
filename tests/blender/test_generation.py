@@ -864,7 +864,7 @@ class FirstCatalogLoadOriginTests(unittest.TestCase):
 
 
 class FileLoadFormTests(unittest.TestCase):
-    """A file read after the catalog loaded gets its forms' rows and mode lists back."""
+    """A file read or a scene selected after the catalog loaded gets its forms' rows and lists."""
 
     def setUp(self):
         reset_scene()
@@ -953,6 +953,49 @@ class FileLoadFormTests(unittest.TestCase):
         for lane in ("3d", "panorama"):
             with self.subTest(lane=lane):
                 self.assert_synced(scene.scenario.lane_state(lane))
+
+    def test_a_new_scene_gets_its_rows_and_mode_lists_from_the_pump(self):
+        pump = submodule("blender.pump")
+        window = bpy.context.window
+        first = window.scene
+        first.scenario.three_d_mode = "IMAGE"
+        image_models = self.model_ids("3d")
+        first.scenario.lane_state("3d").model_id = image_models[-1]
+        chosen = first.scenario.lane_state("3d").model_key
+        pump._process()
+        self.assertFalse(self.generation.sync_shown_forms())  # already synchronized
+        bpy.ops.scene.new(type="NEW")
+        scene = window.scene
+        self.assertNotEqual(scene, first)
+        # The new form shows its lane's curated default but has no rows yet.
+        material = scene.scenario.lane_state("material")
+        self.assertEqual(material.model_id, "model_patina-material")
+        material.prompt = "mossy cobblestones"
+        request = self.generation.build_request(scene, "material", for_estimate=True)
+        self.assertEqual(request.errors, [self.generation.SETTINGS_NOT_LOADED])
+        pump._process()
+        for lane in self.props.GENERATION_LANES:
+            state = scene.scenario.lane_state(lane)
+            if state.model_id not in ("", "NONE"):
+                with self.subTest(lane=lane):
+                    self.assert_synced(state)
+        request = self.generation.build_request(scene, "material", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        self.assertEqual((request.body["width"], request.body["height"]), (1024, 1024))
+        # Each selected scene lists its own 3D mode and keeps its choice.
+        self.assertEqual(scene.scenario.three_d_mode, "TEXT")
+        self.assertNotIn(chosen, self.model_ids("3d"))
+        window.scene = first
+        pump._process()
+        self.assertEqual(self.model_ids("3d"), image_models)
+        self.assertEqual(first.scenario.lane_state("3d").model_id, chosen)
+        # A visible form left without rows, as by an undo, gets them on a later tick.
+        first.scenario.lane = "material"
+        material = first.scenario.lane_state("material")
+        material.params.clear()
+        self.assertTrue(self.generation.sync_shown_forms())
+        self.assert_synced(material)
+        self.assertFalse(self.generation.sync_shown_forms())
 
     def test_a_form_without_its_settings_rows_is_never_priced(self):
         scene = bpy.context.scene

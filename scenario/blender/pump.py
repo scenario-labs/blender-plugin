@@ -84,6 +84,15 @@ def _process():
         generation.request_catalog()
     # After process_catalog_events retired a session that a file load ended.
     changed |= runtime.show_saved_jobs()
+    # Scene > New or another selected scene: its forms and mode lists, before any default.
+    try:
+        changed |= generation.sync_shown_forms()
+        _failures.pop("forms", None)
+    except Exception as error:  # never let it stop pricing; report each new failure once
+        changed = True
+        if type(error).__name__ != _failures.get("forms"):
+            _failures["forms"] = type(error).__name__
+            log.exception("synchronizing the selected scene's forms failed")
     from . import trained_defaults
 
     # Forms without an explicit choice take the scope's project default before any price.

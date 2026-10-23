@@ -193,6 +193,7 @@ def set_catalog(records, detailed, *, warmup=False):
             on_model_changed(
                 bpy.context, lane_state, mark_dirty=_trained_inputs_changed(lane_state, changed)
             )
+    _note_shown(bpy.context.scene)  # the pump need not synchronize it again
     if bpy.context.scene is not None:
         refresh_3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
         refresh_edit3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
@@ -493,32 +494,77 @@ _MODE_LISTS = {
 }
 
 
+_shown_scene = None  # session_uid of the selected scene whose forms were last synchronized
+
+
+def _sync_forms(context, scenes, *, mark_dirty):
+    """Give these scenes' forms their saved models and rows; the mode lists follow the selected one.
+
+    sync_params keeps the saved values the schema still has. The shared 3D,
+    Edit and Environment lists are rebuilt for the selected scene, with its
+    forms of those lanes; another scene's are synchronized once it is selected.
+    """
+    for scene in scenes:
+        for lane in props.GENERATION_LANES:
+            lane_state = scene.scenario.lane_state(lane)
+            if lane in _MODE_LISTS:
+                if mark_dirty:
+                    props.mark_estimate_dirty(lane_state)
+                continue
+            restore_model_key(lane_state)
+            on_model_changed(context, lane_state, mark_dirty=mark_dirty)
+    _note_shown(context.scene)
+    if context.scene is not None:
+        for refresh in _MODE_LISTS.values():
+            refresh(context, mark_dirty=mark_dirty)
+
+
+def _note_shown(scene):
+    global _shown_scene
+    _shown_scene = None if scene is None else scene.session_uid
+
+
 def reload_forms(context=None):
     """Rebuild the forms of a file just read from their saved models (main thread).
 
     A file brings its forms' saved models and values, but not the rows of a
-    model this session never synchronized, and the shared 3D, Edit and
-    Environment lists still follow the previous file's modes. Each form takes
-    its saved model again and the rows of its schema; sync_params keeps the
-    saved values the schema still has. The mode lists are rebuilt for the
-    file's scene; other scenes' forms of those lanes keep their rows until
-    shown. A price never survives a file load, so every form is priced again
-    when shown. Before the catalog loads, set_catalog does this on delivery.
+    model this session never synchronized, and the shared mode lists still
+    follow the previous file's modes. A price never survives a file load, so
+    every form is priced again when shown. Before the catalog loads,
+    set_catalog does this on delivery.
     """
-    if not runtime.state.catalog_loaded:
-        return
+    if runtime.state.catalog_loaded:
+        context = context or bpy.context
+        _sync_forms(context, bpy.data.scenes, mark_dirty=True)
+
+
+def sync_shown_forms(context=None):
+    """Synchronize the selected scene's forms when it changes (GUI pump, never in draw).
+
+    Scene > New and selecting another scene show forms this session may never
+    have synchronized, and mode lists built for another scene's modes. Such a
+    change synchronizes the scene's forms and lists once, keeping the prices
+    they have; a form without an explicit model shows its lane's first, curated
+    one, as in a new file. Other ticks check only the visible form, which an
+    undo or a script can leave without rows. Returns whether a form was
+    synchronized.
+    """
     context = context or bpy.context
-    for scene in bpy.data.scenes:
-        for lane in props.GENERATION_LANES:
-            lane_state = scene.scenario.lane_state(lane)
-            if lane in _MODE_LISTS:
-                props.mark_estimate_dirty(lane_state)
-                continue
-            restore_model_key(lane_state)
-            on_model_changed(context, lane_state)
-    if context.scene is not None:
-        for refresh in _MODE_LISTS.values():
-            refresh(context)
+    scene = context.scene
+    if not runtime.state.catalog_loaded or scene is None or scene.library is not None:
+        return False
+    if scene.session_uid != _shown_scene:
+        _sync_forms(context, (scene,), mark_dirty=False)
+        return True
+    lane = props.active_lane(scene)
+    if lane not in props.GENERATION_LANES:
+        return False
+    lane_state = scene.scenario.lane_state(lane)
+    schema = schema_for(lane_state.model_id)
+    if schema is None or not params_ui.unsynced(lane_state, schema, lane_state.model_id):
+        return False
+    on_model_changed(context, lane_state, mark_dirty=False)
+    return True
 
 
 @persistent

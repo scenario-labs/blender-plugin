@@ -686,7 +686,10 @@ def describe(
         items.extend(
             _note("cloud_lookup", meta["cloud_lookup"], meta.get("cloud_lookup_icon", "INFO"))
         )
-    if getattr(view, "lane", None) == FIRST_FRAME_LANE and "use_first_frame" in actions:
+    shown_lane = getattr(view, "lane", None)
+    if shown_lane in ("model", "workflow"):
+        shown_lane = meta.get("shown_lane")  # a job listed again after File > Open
+    if shown_lane == FIRST_FRAME_LANE and "use_first_frame" in actions:
         # An approved Render Image still most often starts a Render Video: that control leads.
         actions = ("use_first_frame", *(a for a in actions if a != "use_first_frame"))
     for action in actions:

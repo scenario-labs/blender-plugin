@@ -823,6 +823,12 @@ def test_a_render_image_result_leads_with_the_first_frame_handoff():
     assert leading[0] == "use_first_frame:still"
     # the same controls, in another order
     assert sorted(leading) == sorted(other)
+    # Listed again after File > Open, the job is a generic model view that remembers its form.
+    reopened = view(actions, "ready", assets, **FIRST_FRAME, **LANDING)
+    reopened.lane = "model"
+    reopened.meta["shown_lane"] = "render_image"
+    keys = [item.key for item in sja.describe(reopened, CONTEXT, TYPES) if item.operator]
+    assert keys == leading
 
 
 def test_camera_background_and_image_plane_controls_follow_their_projected_results():

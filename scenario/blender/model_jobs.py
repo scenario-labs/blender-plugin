@@ -561,6 +561,9 @@ def labels(views):
     for view in views:
         label = {key: view.meta[key] for key in LABELS if view.meta.get(key)}
         if view.meta.get("shared_job") and label and label.get("prompt") != RECOVERED:
+            lane = view.meta.get("shown_lane") or view.lane
+            if lane not in ("model", "workflow"):
+                label["shown_lane"] = lane  # the form it came from, for its actions' order only
             found[view.local_id] = label
     return found
 

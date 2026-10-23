@@ -159,6 +159,7 @@ class RuntimeJobTests(unittest.TestCase):
         self.assertFalse(self.runtime.show_saved_jobs())
         # What a job this session submitted shows; the store keeps no prompt.
         view.meta.update(prompt="Café 雪 dome", model_name="Fixture model")
+        view.lane = "render_image"  # as a Render Image submission shows it
         context = self.runtime.state.job_context_id
         filepath = str(self.root / "listed.blend")
         bpy.ops.wm.save_as_mainfile(filepath=filepath)
@@ -172,6 +173,8 @@ class RuntimeJobTests(unittest.TestCase):
             (view.local_id, view.meta["prompt"], view.meta["model_name"]),
             ("request", "Café 雪 dome", "Fixture model"),
         )
+        # A generic view again, which still knows the form it came from.
+        self.assertEqual((view.lane, view.meta["shown_lane"]), ("model", "render_image"))
         self.assertEqual(self.requests, [])
         # Another connection lists only its own jobs; with none saved, no session starts.
         self.prefs.api_secret = "other-fixture-secret"

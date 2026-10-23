@@ -4,8 +4,9 @@
 
 A returned armature's clips are copied onto the armature that the captured
 source's Armature skin uses. The source mesh, its skin and the rig's rest data are
-never modified, and no returned object is kept. Bones are matched by name only;
-retargeting across different skeletons is unsupported.
+never modified, and no returned object is kept. Bones are matched by name; when
+the names, hierarchy or rest pose do not match and both rigs are recognized
+humanoids, the clips are retargeted instead (see `motion_retarget`).
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it. Skinning moves a vertex by its bone's armature-space
@@ -32,7 +33,9 @@ from dataclasses import dataclass, field
 import bpy
 from mathutils import Vector
 
+from ..core.scene import humanoid
 from . import mesh_application as mesh
+from . import motion_retarget
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -46,6 +49,8 @@ REST_TOLERANCE = math.radians(15)
 _NEGLIGIBLE = 1e-5
 # Exported uniform scale keys can differ between axes by a few 1e-5.
 _UNIFORM = 1e-4
+# A new scene's frame range: one the user has not set, which the first clip replaces.
+_DEFAULT_RANGE = (1, 250)
 _CHANNEL = re.compile(
     r'pose\.bones\["((?:[^"\\]|\\.)*)"\]\.'
     r"(location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale)"
@@ -311,11 +316,52 @@ def _scale(source, destination):
     return ratio
 
 
+def _match(source, destination, animated):
+    """The space in which every animated bone matches the destination by name and rest."""
+    for name, properties in animated.items():
+        returned = source.data.bones.get(name)
+        existing = destination.data.bones.get(name)
+        if returned is None or existing is None:
+            raise mesh.MeshApplicationError("The destination rig lacks a bone the clips animate")
+        if (
+            (returned.parent.name if returned.parent else None)
+            != (existing.parent.name if existing.parent else None)
+            or returned.use_connect != existing.use_connect
+            or returned.use_inherit_rotation != existing.use_inherit_rotation
+            or returned.inherit_scale != existing.inherit_scale
+            or returned.use_local_location != existing.use_local_location
+        ):
+            raise mesh.MeshApplicationError("Animated bones must keep the same hierarchy")
+        if properties & _ROTATIONS and (
+            source.pose.bones[name].rotation_mode != destination.pose.bones[name].rotation_mode
+        ):
+            raise mesh.MeshApplicationError("Animated bones must use the same rotation mode")
+    # Armature space first: a turned character keeps the clip in its own facing.
+    for world in (False, True):
+        if _within(source, destination, animated, world):
+            return world
+    raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+
+
+def _check_free(destination, names):
+    """Constraints and drivers evaluate after the action and would override the clips."""
+    data = destination.animation_data
+    drivers = data.drivers if data is not None else ()
+    driven = {
+        bpy.utils.unescape_identifier(match.group(1))
+        for curve in drivers
+        if (match := _CHANNEL.fullmatch(curve.data_path))
+    }
+    if driven & names or any(destination.pose.bones[name].constraints for name in names):
+        raise mesh.MeshApplicationError("Constraints or drivers move the animated bones")
+
+
 def validate_clips(target, objects):
     """Require one armature whose clips key bones the destination rig has with a close rest.
 
-    Return the destination rig, the clips, the location scale, the rest corrections
-    and the largest correction angle.
+    Return the destination rig, the clips, the location scale, the rest corrections,
+    the largest correction angle and, for another humanoid skeleton, the retarget
+    that replaces them (None when bones match by name).
     """
     mesh.validate_target(target)
     if target.skin is None:
@@ -347,46 +393,22 @@ def validate_clips(target, objects):
         moved = moved or offset
         for name, properties in bones.items():
             animated.setdefault(name, set()).update(properties)
-    for name, properties in animated.items():
-        returned = source.data.bones.get(name)
-        existing = destination.data.bones.get(name)
-        if returned is None or existing is None:
-            raise mesh.MeshApplicationError("The destination rig lacks a bone the clips animate")
-        if (
-            (returned.parent.name if returned.parent else None)
-            != (existing.parent.name if existing.parent else None)
-            or returned.use_connect != existing.use_connect
-            or returned.use_inherit_rotation != existing.use_inherit_rotation
-            or returned.inherit_scale != existing.inherit_scale
-            or returned.use_local_location != existing.use_local_location
-        ):
-            raise mesh.MeshApplicationError("Animated bones must keep the same hierarchy")
-        if properties & _ROTATIONS and (
-            source.pose.bones[name].rotation_mode != destination.pose.bones[name].rotation_mode
-        ):
-            raise mesh.MeshApplicationError("Animated bones must use the same rotation mode")
-    # Armature space first: a turned character keeps the clip in its own facing.
-    for world in (False, True):
-        if _within(source, destination, animated, world):
-            break
-    else:
-        raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+    try:
+        world = _match(source, destination, animated)
+    except mesh.MeshApplicationError:
+        # Another skeleton, such as a text-to-motion model's: retarget humanoids only.
+        retarget = motion_retarget.plan(source, destination)
+        if retarget is None:
+            raise
+        _log.info("Clips retargeted from a %s skeleton", retarget.family)
+        _check_free(destination, set(retarget.destination_bones.values()))
+        return destination, clips, 1.0, {}, 0.0, retarget
     _log.info("Clip rests compared in %s space", "world" if world else "armature")
-    # Constraints and drivers evaluate after the action and would override the clips.
-    drivers = data.drivers if data is not None else ()
-    driven = {
-        bpy.utils.unescape_identifier(match.group(1))
-        for curve in drivers
-        if (match := _CHANNEL.fullmatch(curve.data_path))
-    }
-    if driven & animated.keys() or any(
-        destination.pose.bones[name].constraints for name in animated
-    ):
-        raise mesh.MeshApplicationError("Constraints or drivers move the animated bones")
+    _check_free(destination, animated.keys())
     corrections, largest = _corrections(source, destination, animated, clips, world)
     # Rest-head location keys stay zero at any scale; sampled exports key every bone.
     ratio = _scale(source, destination) if moved else 1.0
-    return destination, clips, ratio, corrections, largest
+    return destination, clips, ratio, corrections, largest, None
 
 
 def _state(rig):
@@ -500,11 +522,18 @@ class AnimationApplication:
     source: object
     rig: object
     actions: tuple
-    # The largest rest correction applied to an animated bone, in degrees.
-    rest_correction_deg: float
+    # The largest rest correction applied to an animated bone, in degrees; None
+    # when the clips were retargeted from another skeleton.
+    rest_correction_deg: float | None
     _tracks: tuple = field(repr=False)
     _before: tuple | None = field(repr=False)
     _applied: tuple = field(repr=False)
+    # The returned skeleton's family name, such as "Mixamo", when retargeted.
+    retargeted_from: str | None = None
+    # The scene frame range the first clip set, or None when the user's range stayed.
+    frame_range: tuple | None = None
+    # The scene and its previous frame range, when the first clip replaced it.
+    _timeline: tuple | None = field(default=None, repr=False)
     _closed: bool = field(default=False, repr=False)
     # ANIMATE leaves mesh data alone, so there is no Keep original copy.
     original = None
@@ -526,6 +555,7 @@ class AnimationApplication:
             _restore(self.rig, self._before, self._tracks)
             if _state(self.rig) != self._before:
                 raise mesh.MeshApplicationError("Could not restore the rig's previous animation")
+            _restore_timeline(self._timeline)
         except ReferenceError:
             raise mesh.MeshApplicationError(
                 "Application data was removed; rollback is unavailable"
@@ -533,19 +563,44 @@ class AnimationApplication:
         self._closed = True
 
 
+def _fit_timeline(scene, clip):
+    """Play `clip` over a scene frame range still at Blender's default; return what changed.
+
+    A range the user set, or a preview range in use, is left alone.
+    """
+    previous = (scene.frame_start, scene.frame_end)
+    if previous != _DEFAULT_RANGE or scene.use_preview_range:
+        return None
+    start, end = clip.frame_range
+    scene.frame_start = math.floor(start)
+    scene.frame_end = math.ceil(end)
+    return scene, previous
+
+
+def _restore_timeline(timeline):
+    if timeline is not None:
+        scene, (start, end) = timeline
+        scene.frame_start, scene.frame_end = start, end
+
+
 def apply_clips(target, objects):
     """Assign the first returned clip; keep it, the others and any previous action in muted NLA.
 
-    The rig's action blending becomes Replace at full influence. Timeline settings
-    stay unchanged. GLB and glTF clip timing follows the destination frame rate
-    through the shared staging scene; FBX clips keep the file's.
+    The rig's action blending becomes Replace at full influence. A scene frame range
+    still at Blender's default becomes the first clip's; the current frame and frame
+    rate stay. GLB and glTF clip timing follows the destination frame rate through
+    the shared staging scene; FBX clips keep the file's.
     """
-    rig, clips, ratio, corrections, largest = validate_clips(target, objects)
+    rig, clips, ratio, corrections, largest, retarget = validate_clips(target, objects)
     before = _state(rig)
-    actions, tracks = [], []
+    actions, tracks, timeline = [], [], None
     try:
         for action, slot in clips:
-            actions.append(_copy(action, slot, rig, ratio, corrections))
+            if retarget is None:
+                actions.append(_copy(action, slot, rig, ratio, corrections))
+            else:
+                name = f"{rig.name} {action.name}"
+                actions.append(retarget.clip(action, slot, _curves(action, slot), name))
         data = rig.animation_data or rig.animation_data_create()
         if data.action is not None:
             tracks.append(_track(data, data.action.name, data.action, data.action_slot))
@@ -559,16 +614,21 @@ def apply_clips(target, objects):
         data.action_influence = 1.0
         if (data.action, data.action_slot) != (clip, slot):
             raise mesh.MeshApplicationError("Blender did not assign the returned clip")
+        timeline = _fit_timeline(target.scene, clip)
         return AnimationApplication(
             target.obj,
             rig,
             tuple(clip for clip, _ in actions),
-            round(math.degrees(largest), 1),
+            None if retarget else round(math.degrees(largest), 1),
             tuple(tracks),
             before,
             _state(rig),
+            retargeted_from=humanoid.label(retarget.family) if retarget else None,
+            frame_range=(target.scene.frame_start, target.scene.frame_end) if timeline else None,
+            _timeline=timeline,
         )
     except BaseException:
+        _restore_timeline(timeline)
         _restore(rig, before, tracks)
         for clip, _ in actions:
             bpy.data.actions.remove(clip)

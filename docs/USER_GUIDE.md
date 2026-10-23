@@ -563,6 +563,15 @@ leaves the rest of the textures, such as a character's face, as they were, on th
 same mesh, UVs and size. It can take several minutes; Meshy 7 Retexture, further
 down the list, is quicker and repaints the whole surface.
 
+**Animate** starts with text-to-motion models, Uthana Text to Motion 3.0 and Viggle
+Text to Motion: describe the motion, such as "walks forward four steps then
+waves", and generate. They upload nothing and need a mesh that already has a rig
+(use **Rigging** first); **Apply animation** then moves your rig with the motion,
+including its walk across the floor. **Meshy Animation** instead plays a motion
+from Meshy's library on your uploaded character: pick it by name (**Walk**,
+**Run**, **Wave hello**, **Jump** and others), or choose **Other ID** and type any
+ID from [Meshy's animation library](https://docs.meshy.ai/en/api/animation-library).
+
 A mesh too dense to take edits in place shows its triangle count and suggests
 remeshing it first; its results still import as new objects.
 
@@ -928,12 +937,15 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   that still follows the old rig. A mesh with a rig can only use Attach rig or
   Apply animation. Move the new rig group with the mesh afterwards.
 - **Apply animation**: for a mesh that already has a rig, adds the returned
-  animation to that rig and keeps your mesh, weights and rig as they are. The
-  bones must have the same names, parents and rest pose as the returned
-  character, for example a rig you attached earlier from the same service;
-  animation made for a different skeleton is refused. The first clip plays, and
-  the others and your previous animation stay in muted NLA tracks. Your timeline
-  doesn't change.
+  animation to that rig and keeps your mesh, weights and rig as they are. When
+  the bones have the same names, parents and rest pose as the returned
+  character, for example a rig you attached earlier from the same service, the
+  keys are copied. Otherwise a humanoid motion, such as a text-to-motion result,
+  is retargeted onto a humanoid rig (Meshy, Mixamo, SMPL or Unreal bone names),
+  root motion included; fingers keep their pose. Other skeletons are refused.
+  The first clip plays, and the others and your previous animation stay in
+  muted NLA tracks. If your scene still has Blender's default frame range, it
+  becomes the clip's; a range you set stays.
 
 Choose **Scene coordinates** or **Object local coordinates** for the result's
 positions. **Fit and verify**, the default for every edit but **Apply
@@ -1298,6 +1310,8 @@ data is shared. See [Privacy and data handling](PRIVACY.md) for details.
 - **"Prompt is required" / "Add a reference to see the cost"**: fill in the
   prompt or add the required reference.
 - **"Select the mesh to edit"**: the 3D tab's Edit mode needs a selected mesh.
+- **"Rig the selected mesh first"**: a text-to-motion model in **Animate** plays
+  on your mesh's armature; give it one with **Rigging** first.
 - **"This model takes no image/video input"**: choose another model in the
   Render lane.
 - **The result doesn't appear**: check Generations for an error. Use **Inspect

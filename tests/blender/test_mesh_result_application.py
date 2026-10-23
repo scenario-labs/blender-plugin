@@ -1484,11 +1484,11 @@ class AnimateResultTests(unittest.TestCase):
             render.fps_base,
         )
 
-    def assert_unchanged_source(self, objects):
+    def assert_unchanged_source(self, objects, timeline=None):
         self.assertEqual(set(bpy.data.objects), objects)
         self.assertEqual(_skin(self.source, self.mesh), self.skin)
         self.assertIs(self.source.modifiers[0].object, self.rig)
-        self.assertEqual(self.timing(), self.timeline)
+        self.assertEqual(self.timing(), timeline or self.timeline)
         self.mesh.validate_target(self.target)
 
     def head_rise(self, clip):
@@ -1502,7 +1502,7 @@ class AnimateResultTests(unittest.TestCase):
         self.scene.frame_set(self.timeline[2])
         return heads[1] - heads[0], rotation
 
-    def test_clips_play_on_the_existing_rig_keeping_mesh_skin_and_timeline(self):
+    def test_clips_play_on_the_existing_rig_keeping_mesh_and_skin(self):
         import math
 
         objects, mesh, rest = set(bpy.data.objects), self.source.data, _rest(self.rig)
@@ -1516,8 +1516,12 @@ class AnimateResultTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.armatures), armatures)
         # Only the copied clips stay; the returned character is never added.
         self.assertEqual(set(bpy.data.actions) - self.before["actions"], set(result.clips))
-        self.assert_unchanged_source(objects)
         first, second = result.clips
+        # Blender's default range becomes the first clip's; the rest of the timeline stays.
+        start, end = (round(frame) for frame in first.frame_range)
+        self.assertNotEqual((start, end), self.timeline[:2])
+        self.assertEqual(result.frame_range, (start, end))
+        self.assert_unchanged_source(objects, (start, end, *self.timeline[2:]))
         self.assertEqual(first.name, "Chain rig Clip 1")
         data = self.rig.animation_data
         self.assertEqual((data.action, data.action_slot.identifier), (first, "OBChain rig"))
@@ -1531,7 +1535,7 @@ class AnimateResultTests(unittest.TestCase):
         expected = (math.cos(0.25), math.sin(0.25), 0, 0)
         for got, want in zip(rotation, expected, strict=True):
             self.assertAlmostEqual(got, want, places=3)
-        self.assertEqual(self.timing(), self.timeline)
+        self.assertIsNone(result.retargeted_from)
         # Matching rests need no correction: the keys are copied unchanged.
         self.assertEqual(result.rest_correction_deg, 0.0)
 
@@ -1835,6 +1839,8 @@ class AnimateResultTests(unittest.TestCase):
                 self.assertEqual(self.model._snapshot(), snapshot)
                 self.assertEqual(_animation(self.rig), before)
                 self.assertEqual((data.action_influence, data.action_blend_type), (0.0, "ADD"))
+                # Rollback also gives back Blender's default frame range.
+                self.assertEqual(self.timing(), self.timeline)
                 self.assertTrue(self.path.exists())
         result = self.apply(policy="ANIMATE")
         self.assertEqual((data.action_influence, data.action_blend_type), (1.0, "REPLACE"))
@@ -1976,6 +1982,157 @@ class AnimateResultTests(unittest.TestCase):
             result = self.session.retry_model_receipt(caught.exception)
         self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
         self.assertEqual((_animation(self.rig), set(bpy.data.actions)), (state, actions))
+
+
+class RetargetResultTests(unittest.TestCase):
+    """A text-to-motion clip on another humanoid skeleton, retargeted onto the source's rig."""
+
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
+    use_clips = AnimateResultTests.use_clips
+    timing = AnimateResultTests.timing
+
+    def setUp(self):
+        from helpers import chain_rig, humanoid_bones
+
+        MeshResultTests.setUp(self)
+        self.animation = submodule("blender.animation_application")
+        self.humanoid = submodule("core.scene.humanoid")
+        # The user's rig: Meshy names, in an A-pose, a tenth smaller, every bone rolled.
+        rig = humanoid_bones(self.names("meshy"), height=0.9, arms_down=0.7, roll=0.4)
+        self.rig = chain_rig(self.scene, "Character rig", rig)
+        for index, name in enumerate(("Hips", "Spine02", "Head")):
+            self.source.vertex_groups.new(name=name).add([index], 1.0, "REPLACE")
+        self.source.modifiers.new("Character skin", "ARMATURE").object = self.rig
+        bpy.context.view_layer.update()
+        # The returned clip: a Mixamo skeleton in a T-pose, in centimetres at 0.01.
+        self.bones = humanoid_bones(self.names("mixamo"), prefix="mixamorig:")
+        self.use_clips(bones=self.bones, clips=(1.0,))
+        self.target = self.mesh.capture_target(self.scene, self.source)
+
+    def names(self, family):
+        return self.humanoid.FAMILIES[family][1]
+
+    def poses(self, clip):
+        """Each frame's slot heads in world space, on this rig and on the returned one."""
+        from helpers import clip_deforms
+        from mathutils import Vector
+
+        start, end = (round(frame) for frame in clip.frame_range)
+        frames = range(start, end + 1, 6)
+        deforms = clip_deforms(self.body, "Clip 1", frames, fps=self.scene.render.fps, world=True)
+        rest = {name: Vector(head) for name, _parent, head, *_ in self.bones}
+        returned = dict(zip(self.humanoid.SLOTS, (bone[0] for bone in self.bones), strict=True))
+        mine = dict(zip(self.humanoid.SLOTS, self.names("meshy"), strict=True))
+        poses = {}
+        for frame in frames:
+            self.scene.frame_set(frame)
+            poses[frame] = {
+                slot: (
+                    self.rig.matrix_world @ self.rig.pose.bones[mine[slot]].head,
+                    deforms[frame][returned[slot]] @ rest[returned[slot]],
+                )
+                for slot in self.humanoid.SLOTS
+            }
+        self.scene.frame_set(start)
+        return poses
+
+    def test_limbs_follow_the_returned_skeleton_and_the_hips_carry_scaled_root_motion(self):
+        from mathutils import Vector
+
+        for mode in ("QUATERNION", "YXZ"):
+            with self.subTest(rotation_mode=mode):
+                try:
+                    for bone in self.rig.pose.bones:
+                        bone.rotation_mode = mode
+                    self.target = self.mesh.capture_target(self.scene, self.source)
+                    objects, rest = set(bpy.data.objects), _rest(self.rig)
+                    timeline = self.timing()
+                    result = self.apply(policy="ANIMATE")
+                    self.assertEqual(result.retargeted_from, "Mixamo")
+                    self.assertIsNone(result.rest_correction_deg)
+                    self.assertEqual((_rest(self.rig), set(bpy.data.objects)), (rest, objects))
+                    (clip,) = result.clips
+                    self.assertEqual(clip.name, "Character rig Clip 1")
+                    self.assertIs(self.rig.animation_data.action, clip)
+                    keyed = {curve.data_path.rsplit(".", 1)[1] for curve in _fcurves(clip)}
+                    rotation = "rotation_quaternion" if mode == "QUATERNION" else "rotation_euler"
+                    self.assertEqual(keyed, {"location", rotation})
+                    # Blender's default range became the clip's; the rest of the timeline stays.
+                    start, end = (round(frame) for frame in clip.frame_range)
+                    self.assertEqual(result.frame_range, (start, end))
+                    self.assertEqual(self.timing(), (start, end, *timeline[2:]))
+                    for frame, slots in self.poses(clip).items():
+                        for slot, child in self.humanoid.CHILDREN.items():
+                            got = slots[child][0] - slots[slot][0]
+                            want = slots[child][1] - slots[slot][1]
+                            angle = math.degrees(got.angle(want))
+                            self.assertLess(angle, 0.5, (frame, slot))
+                        # Legs of 0.81 m on this rig and 0.9 m returned: 0.9 times the travel.
+                        hips, returned = slots["hips"]
+                        travel = (returned - Vector((0, 0, 1.0))) * 0.9
+                        self.assertLess((hips - Vector((0, 0, 0.9)) - travel).length, 1e-3)
+                    # The returned hips rise 1 m over the clip.
+                    self.assertAlmostEqual(returned.z, 2.0, places=3)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_a_frame_range_the_user_set_stays(self):
+        self.scene.frame_start, self.scene.frame_end = 10, 90
+        result = self.apply(policy="ANIMATE")
+        self.assertIsNone(result.frame_range)
+        self.assertEqual((self.scene.frame_start, self.scene.frame_end), (10, 90))
+        self.assertEqual(result.retargeted_from, "Mixamo")
+
+    def test_rigs_whose_retargeted_bones_cannot_play_fail_without_mutation(self):
+        cases = {
+            "axis_angle": "Retargeted bones must use quaternion or Euler rotation",
+            "constraint": "Constraints or drivers move the animated bones",
+        }
+        for kind, message in cases.items():
+            with self.subTest(kind=kind):
+                try:
+                    bone = self.rig.pose.bones["LeftForeArm"]
+                    if kind == "axis_angle":
+                        bone.rotation_mode = "AXIS_ANGLE"
+                    else:
+                        bone.constraints.new("COPY_ROTATION")
+                    self.target = self.mesh.capture_target(self.scene, self.source)
+                    before, animation = self.model._snapshot(), _animation(self.rig)
+                    with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+                        self.apply(policy="ANIMATE")
+                    self.assertEqual(caught.exception.reason, message)
+                    self.assertEqual(self.model._snapshot(), before)
+                    self.assertEqual(_animation(self.rig), animation)
+                    self.assertEqual(self.timing()[:2], (1, 250))
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_another_skeleton_on_a_rig_that_is_no_humanoid_keeps_the_name_error(self):
+        from helpers import skin_to_chain_rig
+
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        self.rig = skin_to_chain_rig(self.scene, self.source)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+            self.apply(policy="ANIMATE")
+        self.assertEqual(
+            caught.exception.reason, "The destination rig lacks a bone the clips animate"
+        )
+
+
+def _fcurves(action):
+    return [
+        curve
+        for layer in action.layers
+        for strip in layer.strips
+        for bag in strip.channelbags
+        for curve in bag.fcurves
+    ]
 
 
 def _rounded(vector):
@@ -3172,6 +3329,8 @@ class FbxAnimateTests(unittest.TestCase):
     def test_fbx_clip_at_another_frame_rate_is_reported_without_retiming(self):
         # A 30 fps file in this 24 fps scene: the clip keeps the file's frames.
         self.use_fbx(None, fps=30)
+        # A frame range the user set stays too.
+        self.scene.frame_start, self.scene.frame_end = 1, 120
         timeline = self.timing()
         result = self.apply(policy="ANIMATE")
         self.assertTrue(result.frame_rate_mismatch)

@@ -1035,9 +1035,9 @@ def _draw_animate(layout, review_error):
     # Clips are pose data on the mesh's own rig: coordinates and Keep original
     # do not apply, so the review does not offer them.
     layout.label(text="Add the returned clips to this mesh's rig; keep its mesh and skin.")
-    layout.label(text="Bone names, parents and rest pose must match; clips scale to the rig.")
+    layout.label(text="Matching bones take the keys; a humanoid clip is retargeted to the rig.")
     layout.label(text="The first clip plays; it, the others and the previous action stay in NLA.")
-    layout.label(text="The returned character is not added. Timeline settings stay unchanged.")
+    layout.label(text="The returned character is not added. A default frame range fits the clip.")
     layout.label(text="Undo follows Blender settings; saved jobs and spending stay recorded.")
     if review_error:
         layout.label(text=review_error, icon="ERROR")

@@ -64,6 +64,10 @@ class MeshEditApplication:
     joined_meshes: int | None = None
     # A bounds fit's (worst distance, fraction beyond tolerance) of the source size.
     fit_residual: tuple = ()
+    # ANIMATE: the returned skeleton's family when its clips were retargeted, and
+    # the scene frame range the first clip set in place of Blender's default.
+    retargeted_from: str | None = None
+    frame_range: tuple | None = None
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
@@ -603,6 +607,8 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 parts_from,
                 joined,
                 getattr(fit, "residual", ()),
+                getattr(receipt, "retargeted_from", None),
+                getattr(receipt, "frame_range", None),
             )
     except Exception as error:
         if receipt is not None:

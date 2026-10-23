@@ -210,7 +210,12 @@ EDIT3D_TASKS = (
         "ANIMATE",
         "Animate",
         "An animated version of a rigged character",
-        ("model_meshy-animation", "model_cartwheel-text-to-motion"),
+        (
+            "model_uthana-text-to-motion-3.0",
+            "model_viggle-text-to-motion",
+            "model_meshy-animation",
+            "model_cartwheel-text-to-motion",
+        ),
     ),
     (
         "PARTS",
@@ -239,6 +244,49 @@ UTILITY_HINTS = (
     "layerize",
     "image sequence",
 )
+
+
+# Text-to-motion models that join the Animate task without a mesh input: they animate their
+# own humanoid skeleton from the prompt alone, and applying the result retargets the clip
+# onto the selected character's rig, so nothing is uploaded.
+MOTION_MODELS = ("model_uthana-text-to-motion-3.0", "model_viggle-text-to-motion")
+# Named choices for a numeric setting whose schema gives only a range, shown in the native
+# form with an Other entry that keeps any number. Meshy Animation's actionId picks one of
+# 600+ library motions (https://docs.meshy.ai/en/api/animation-library); a few common ones.
+PARAM_CHOICES = {
+    "model_meshy-animation": {
+        "actionId": (
+            (0, "Idle", "Idle"),
+            (30, "Walk", "Casual_Walk"),
+            (341, "Walk and look around", "Walk_Slowly_and_Look_Around"),
+            (14, "Run", "Run_02"),
+            (16, "Run fast", "RunFast"),
+            (509, "Sprint", "Lean_Forward_Sprint"),
+            (466, "Jump", "Regular_Jump"),
+            (28, "Wave hello", "Big_Wave_Hello"),
+            (290, "Wave one hand", "Wave_One_Hand"),
+            (298, "Cheer", "Cheer_with_Both_Hands_Up"),
+            (41, "Bow", "Formal_Bow"),
+            (313, "Talk", "Talk_with_Hands_Open"),
+            (22, "Dance", "FunnyDancing_01"),
+            (198, "Punch combo", "Punch_Combo"),
+            (207, "Roundhouse kick", "Roundhouse_Kick"),
+            (60, "Sit down", "Walk_to_Sit"),
+            (366, "Fall down", "falling_down"),
+        ),
+    },
+}
+OTHER_CHOICE = "OTHER"
+
+
+def choice_items(model_id, name):
+    """Enum items for a setting's named choices, Other last; empty when it has none."""
+    choices = (PARAM_CHOICES.get(model_id) or {}).get(name)
+    if not choices:
+        return []
+    return [
+        (str(value), label, f"{source} (library ID {value})") for value, label, source in choices
+    ] + [(OTHER_CHOICE, "Other ID", "Any library ID, typed in the field beside")]
 
 
 # Starting values for a model's settings where its schema default gives surprising results in Blender. The
@@ -325,6 +373,8 @@ class ModelRecord:
             lanes.add("material")
         if self.id in PANORAMA_MODELS:
             lanes.add("panorama")
+        if self.id in MOTION_MODELS:
+            lanes.add("edit3d")
         return lanes
 
 
@@ -457,7 +507,7 @@ def edit3d_task(task_id):
 
 
 def edit3d_models(task_id, records):
-    """Mesh-to-mesh models for one task, best first; ALL lists every 3d23d model with the curated ones first."""
+    """Models for one task, best first; ALL lists every 3d23d and text-to-motion model, curated first."""
     usable = models_for_lane("edit3d", records)
     if task_id == "ALL":
         return usable

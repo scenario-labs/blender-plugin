@@ -15,6 +15,7 @@ from ..core.api import model_filter, trained_offers
 from ..core.api.catalog import (
     DEFAULT_MODELS,
     LANE_KIND,
+    MOTION_MODELS,
     MULTIVIEW_HINTS,
     RENDER_LANES,
     USABLE_TRAINED_KINDS,
@@ -841,7 +842,11 @@ def build_request(scene, lane, for_estimate=False):
     # elsewhere (a text-to-motion model's character mesh) it is optional but still used when something is selected.
     # Skip it only when the user attached an explicit file/asset for that input.
     mesh_name = mesh_param(record) if record is not None else None
-    if lane == "edit3d" and mesh_name is None:
+    # Text-to-motion in Edit 3D sends no mesh: its clip is retargeted onto the selected rig.
+    motion = lane == "edit3d" and model_id in MOTION_MODELS
+    if motion:
+        mesh_name = None
+    elif lane == "edit3d" and mesh_name is None:
         return Request(
             lane, lane_kind(lane), model_id, {}, errors=["This model takes no mesh input"]
         )
@@ -916,8 +921,15 @@ def build_request(scene, lane, for_estimate=False):
     if lane == "edit3d":
         from . import mesh_export
 
-        if not mesh_export.source_objects(bpy.context):
+        objects = mesh_export.source_objects(bpy.context)
+        if not objects:
             errors.append("Select the mesh to edit")
+        elif motion and not any(
+            modifier.type == "ARMATURE" and modifier.object is not None
+            for obj in objects
+            for modifier in obj.modifiers
+        ):
+            errors.append("Rig the selected mesh first: the motion plays on its armature")
     if for_estimate:
         # The dry run rejects unknown asset ids (404), so files still to be uploaded are left out of the quote.
         if missing_required_files(schema.specs, check):

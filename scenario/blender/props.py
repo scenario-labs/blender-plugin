@@ -243,6 +243,12 @@ def _param_items(self, context):
 
     schema = generation.schema_for(self.model_id)
     spec = schema.by_name(self.name) if schema is not None else None
+    if spec is not None and not spec.allowed_values:
+        from ..core.api.catalog import choice_items
+
+        if options := choice_items(self.model_id, self.name):
+            runtime.set_enum_items(key, options)
+            return runtime.state.enum_cache[key]
     if spec is not None and spec.allowed_values and spec.ptype != "string_array":
         options = [
             (str(v), spec.label_for(v), spec.description)

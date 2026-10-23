@@ -661,6 +661,56 @@ def skin_to_chain_rig(scene, source):
     return rig
 
 
+def humanoid_bones(names, *, prefix="", height=1.0, arms_down=0.0, roll=0.0):
+    """A standing humanoid facing -Y with the 22 slot bones of `names`, in slot order.
+
+    Bones follow `scenario.core.scene.humanoid`: (name, parent, head, tail, roll)
+    as `chain_rig` and `clip_glb` take them, at `height` times a 1.8 m figure,
+    the arms lowered by `arms_down` radians from a T-pose and every bone rolled
+    by `roll` radians.
+    """
+    import math
+
+    h = height
+    sag = (math.cos(arms_down), 0, -math.sin(arms_down))
+    joints = {
+        "hips": ((0, 0, 1.0), (0, 0, 1.1)),
+        "spine": ((0, 0, 1.1), (0, 0, 1.25)),
+        "chest": ((0, 0, 1.25), (0, 0, 1.4)),
+        "upper_chest": ((0, 0, 1.4), (0, 0, 1.5)),
+        "neck": ((0, 0, 1.5), (0, 0, 1.6)),
+        "head": ((0, 0, 1.6), (0, 0, 1.8)),
+    }
+    for side, sign in (("l", 1), ("r", -1)):
+        start = (sign * 0.18, 0, 1.45)
+        joints[f"{side}_shoulder"] = ((sign * 0.05, 0, 1.45), start)
+        for slot, length in (("arm", 0.27), ("forearm", 0.25), ("hand", 0.08)):
+            end = (start[0] + sign * sag[0] * length, 0, start[2] + sag[2] * length)
+            joints[f"{side}_{slot}"] = (start, end)
+            start = end
+        x = sign * 0.1
+        joints[f"{side}_upleg"] = ((x, 0, 1.0), (x, 0, 0.55))
+        joints[f"{side}_leg"] = ((x, 0, 0.55), (x, 0, 0.1))
+        joints[f"{side}_foot"] = ((x, 0, 0.1), (x, -0.12, 0.02))
+        joints[f"{side}_toe"] = ((x, -0.12, 0.02), (x, -0.18, 0.02))
+    humanoid = submodule("core.scene.humanoid")
+    mapped = dict(zip(humanoid.SLOTS, names, strict=True))
+    bones = []
+    for slot in humanoid.SLOTS:
+        head, tail = joints[slot]
+        parent = humanoid.PARENTS.get(slot)
+        bones.append(
+            (
+                prefix + mapped[slot],
+                prefix + mapped[parent] if parent else None,
+                tuple(value * h for value in head),
+                tuple(value * h for value in tail),
+                roll,
+            )
+        )
+    return tuple(bones)
+
+
 def clip_glb(
     bones=CHAIN,
     *,

@@ -3430,6 +3430,8 @@ class ModelJobs:
             "rig": application.rig.name if application.rig in objects else None,
             "clips": tuple(clip.name for clip in application.clips if clip in actions),
             "rest_correction_deg": application.rest_correction_deg,
+            "retargeted_from": application.retargeted_from,
+            "frame_range": list(application.frame_range) if application.frame_range else None,
             "result_to_source": [list(row) for row in application.mapping],
             "fitted_from": application.fitted_from,
             "frame_rate_mismatch": application.frame_rate_mismatch,
@@ -3458,6 +3460,8 @@ class ModelJobs:
         # The receipt rounds to 0.1 degrees; smaller corrections are not shown.
         if edit is not None and (correction := edit.rest_correction_deg):
             notices.append(f"Clips adjusted to this rig's rest pose by up to {correction:g}°")
+        if edit is not None and edit.retargeted_from:
+            notices.append(f"Clips retargeted from a {edit.retargeted_from} skeleton")
         status = self._model_import_status(request_id)
         if (edit is not None and edit.frame_rate_mismatch) or (
             status and status["frame_rate_mismatch"]

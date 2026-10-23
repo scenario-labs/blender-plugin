@@ -340,10 +340,10 @@ establish provider compatibility or existing-rig retargeting.
 
 The saved-mesh review offers **Apply animation**. It names the captured source
 and explains that the returned clips go onto this mesh's rig while its mesh and
-skin stay, that bone names, parents and rest pose must match and clips are
-scaled to the rig, that the first clip plays while it, the others and the
-previous action stay in NLA, that the returned character is not added and the
-timeline stays unchanged, and how Undo behaves. **Result coordinates** and
+skin stay, that matching bones take the keys and a humanoid clip is retargeted
+to the rig, that the first clip plays while it, the others and the previous
+action stay in NLA, that the returned character is not added and a default frame
+range fits the clip, and how Undo behaves. **Result coordinates** and
 **Keep original** are not shown because ANIMATE changes no mesh data. A skinned
 source starts on Apply animation for an Animate job or when it was requested,
 otherwise on Attach rig; choosing Apply animation for an unskinned mesh shows
@@ -351,4 +351,6 @@ otherwise on Attach rig; choosing Apply animation for an unskinned mesh shows
 read-only; the shared UI/MCP command implements the
 [animation contract](../MESH_APPLICATION.md#apply-returned-animation). When the
 keys were corrected for a rest difference, the job row then shows **Clips
-adjusted to this rig's rest pose by up to N°** until undo history changes.
+adjusted to this rig's rest pose by up to N°**, and for a retargeted clip
+**Clips retargeted from a Mixamo skeleton** (or another skeleton name), until
+undo history changes.

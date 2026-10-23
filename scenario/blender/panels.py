@@ -621,11 +621,12 @@ def draw_dense_mesh_hint(layout, objects, task_id):
 
 def draw_edit3d_lane(layout, context):
     """The 3D tab in Edit mode: Scenario's 3D tools on the selected mesh."""
-    from ..core.api.catalog import edit3d_task, mesh_param
+    from ..core.api.catalog import MOTION_MODELS, edit3d_task, mesh_param
     from . import mesh_export
 
     scene = context.scene
     lane_state = scene.scenario.lane_state("edit3d")
+    motion = lane_state.model_id in MOTION_MODELS
     box = layout.box()
     objects = mesh_export.source_objects(context)
     if objects:
@@ -633,7 +634,12 @@ def draw_edit3d_lane(layout, context):
             f" +{len(objects) - 3}" if len(objects) > 3 else ""
         )
         box.label(text=f"Mesh: {names}", icon="MESH_DATA")
-        box.label(text="Upload a GLB snapshot before requesting a generation price", icon="INFO")
+        if motion:
+            box.label(text="Nothing is uploaded: the motion is retargeted to its rig", icon="INFO")
+        else:
+            box.label(
+                text="Upload a GLB snapshot before requesting a generation price", icon="INFO"
+            )
         draw_dense_mesh_hint(box, objects, scene.scenario.edit3d_task)
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")
@@ -653,7 +659,7 @@ def draw_edit3d_lane(layout, context):
     if schema.prompt_name:
         draw_prompt_row(layout, lane_state, "edit3d")
     record = runtime.state.records.get(lane_state.model_id)
-    mesh_name = mesh_param(record) if record is not None else None
+    mesh_name = mesh_param(record) if record is not None and not motion else None
     draw_references(
         layout,
         lane_state,

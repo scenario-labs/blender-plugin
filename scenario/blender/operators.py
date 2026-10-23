@@ -1136,6 +1136,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                     item.int_value = int(value)
                 else:
                     item.float_value = float(value)
+                choices = [i[0] for i in catalog.choice_items(rec.model_id, spec.name)]
+                if choices:
+                    item.enum_value = str(value) if str(value) in choices else catalog.OTHER_CHOICE
             elif spec.ptype == "boolean":
                 item.bool_value = bool(value)
             else:

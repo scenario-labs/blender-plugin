@@ -1,0 +1,303 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
+"""Returned humanoid clips retargeted onto a rig with another skeleton.
+
+Text-to-motion models animate their own skeleton, such as Mixamo or Unreal,
+which neither names nor orients bones like the user's rig. When both rigs are
+recognized humanoids (see `core.scene.humanoid`), each of the 22 body slots
+copies its bone's world orientation from the returned clip, frame by frame:
+
+- The rest skeletons are aligned through a character frame built from the rest
+  heads (left from the right to the left thigh, up from the hips to the head).
+  Each destination bone then turns by the swing that takes its rest direction,
+  head to child slot head, onto the returned bone's, so a T-pose clip plays on
+  an A-pose rig and bone axis conventions do not matter.
+- The clip's first frame defines the source facing on the floor: posed
+  orientations and root motion are mapped through level character frames, so
+  the character moves in its own facing, wherever it stands in the scene.
+- Root motion moves the destination hips by the returned hips' travel since the
+  first frame, scaled by the ratio of the two legs' lengths.
+
+Every frame of the clip is sampled and keyed linearly: the hips get location and
+rotation keys, the other slots rotation keys in their own rotation mode. Bones
+outside the slots, such as fingers, keep their current pose.
+"""
+
+import math
+from dataclasses import dataclass, field
+
+import bpy
+from mathutils import Euler, Matrix, Quaternion, Vector
+
+from ..core.scene import humanoid
+from . import mesh_application as mesh
+
+_UP = Vector((0, 0, 1))
+_SMALL = 1e-6
+
+
+def _parents(rig):
+    return {bone.name: bone.parent.name if bone.parent else None for bone in rig.data.bones}
+
+
+def _path(rig, names):
+    """The named bones and their ancestors, parents first."""
+    bones = {}
+    for name in names:
+        bone = rig.data.bones[name]
+        for item in (bone, *bone.parent_recursive):
+            bones[item.name] = item
+    return sorted(bones.values(), key=lambda bone: len(bone.parent_recursive))
+
+
+def _standard(bones):
+    """Whether every bone inherits its parent's full transform, which the sampling assumes."""
+    return all(
+        bone.use_inherit_rotation and bone.inherit_scale == "FULL" and bone.use_local_location
+        for bone in bones
+    )
+
+
+def _relative(bone):
+    """A bone's rest matrix relative to its parent, or in armature space for a root."""
+    if bone.parent is None:
+        return bone.matrix_local.copy()
+    return bone.parent.matrix_local.inverted_safe() @ bone.matrix_local
+
+
+def _turn(matrix):
+    return matrix.to_3x3().normalized()
+
+
+def _frame(points, level):
+    """A character's axes as matrix columns, from world joint heads by slot.
+
+    Up runs from the hips to the head, or along world Z when `level`; left runs
+    from the right thigh to the left one, square to up.
+    """
+    up = _UP if level else points["head"] - points["hips"]
+    left = points["l_upleg"] - points["r_upleg"]
+    if up.length < _SMALL:
+        raise mesh.MeshApplicationError("Cannot retarget a skeleton without height")
+    up = up.normalized()
+    left -= left.dot(up) * up
+    if left.length < _SMALL:
+        raise mesh.MeshApplicationError("Cannot retarget a skeleton without hip width")
+    left.normalize()
+    return Matrix((left, up.cross(left), up)).transposed()
+
+
+def _leg(points):
+    """The mean thigh plus shin length."""
+    return (
+        sum(
+            (points[f"{side}_leg"] - points[f"{side}_upleg"]).length
+            + (points[f"{side}_foot"] - points[f"{side}_leg"]).length
+            for side in "lr"
+        )
+        / 2
+    )
+
+
+def _basis(pose_bone, curves, frame):
+    """A bone's local pose at `frame`: its keyed channels, else its current values."""
+    keyed = curves.get(pose_bone.name, {})
+
+    def values(name, current):
+        channel = keyed.get(name, {})
+        return [
+            channel[index].evaluate(frame) if index in channel else value
+            for index, value in enumerate(current)
+        ]
+
+    mode = pose_bone.rotation_mode
+    if mode == "QUATERNION":
+        rotation = Quaternion(values("rotation_quaternion", pose_bone.rotation_quaternion))
+        rotation = rotation.normalized().to_matrix()
+    elif mode == "AXIS_ANGLE":
+        angle, *axis = values("rotation_axis_angle", pose_bone.rotation_axis_angle)
+        axis = Vector(axis)
+        rotation = Matrix.Rotation(angle, 3, axis) if axis.length > _SMALL else Matrix()
+    else:
+        rotation = Euler(values("rotation_euler", pose_bone.rotation_euler), mode).to_matrix()
+    # Blender ignores a connected bone's location.
+    location = (
+        Vector() if pose_bone.bone.use_connect else Vector(values("location", pose_bone.location))
+    )
+    scale = Vector(values("scale", pose_bone.scale))
+    return Matrix.LocRotScale(location, rotation, scale)
+
+
+@dataclass(eq=False)
+class Retarget:
+    """A validated slot mapping between a returned skeleton and the destination rig."""
+
+    source: object
+    destination: object
+    # The returned skeleton's family, such as "mixamo".
+    family: str
+    # Slot to bone name, on each rig.
+    source_bones: dict = field(repr=False)
+    destination_bones: dict = field(repr=False)
+
+    def __post_init__(self):
+        source, destination = self.source, self.destination
+        self._source_path = _path(source, self.source_bones.values())
+        self._destination_path = _path(destination, self.destination_bones.values())
+        if not _standard(self._source_path):
+            raise mesh.MeshApplicationError(
+                "The returned skeleton's bones must inherit rotation and scale"
+            )
+        if not _standard(self._destination_path):
+            raise mesh.MeshApplicationError("Retargeted bones must inherit rotation and scale")
+        if any(
+            destination.pose.bones[name].rotation_mode == "AXIS_ANGLE"
+            for name in self.destination_bones.values()
+        ):
+            raise mesh.MeshApplicationError(
+                "Retargeted bones must use quaternion or Euler rotation"
+            )
+        self._slots = {name: slot for slot, name in self.destination_bones.items()}
+        self._relative = {
+            (rig, bone.name): _relative(bone)
+            for rig, path in ((source, self._source_path), (destination, self._destination_path))
+            for bone in path
+        }
+
+        def rest(rig, bones):
+            world = rig.matrix_world
+            return {slot: world @ rig.data.bones[name].head_local for slot, name in bones.items()}
+
+        source_rest = rest(source, self.source_bones)
+        destination_rest = rest(destination, self.destination_bones)
+        # Source rest world to destination rest world, for bone directions.
+        aligned = _frame(destination_rest, False) @ _frame(source_rest, False).transposed()
+        self._level = _frame(destination_rest, True)
+        self._leg = _leg(destination_rest)
+        self._hips = destination_rest["hips"]
+        swings = {}
+        for slot, child in humanoid.CHILDREN.items():
+            returned = aligned @ (source_rest[child] - source_rest[slot])
+            existing = destination_rest[child] - destination_rest[slot]
+            if returned.length < _SMALL or existing.length < _SMALL:
+                raise mesh.MeshApplicationError("Cannot retarget bones of zero length")
+            swings[slot] = existing.rotation_difference(returned).to_matrix()
+        # P_destination = P_source' @ offset, with P_source' the returned bone's world
+        # orientation mapped into the destination's frame.
+        self._offsets = {}
+        for slot in humanoid.SLOTS:
+            swing = swings[humanoid.LEAVES.get(slot, slot)]
+            returned = (
+                aligned
+                @ _turn(source.matrix_world)
+                @ _turn(source.data.bones[self.source_bones[slot]].matrix_local)
+            )
+            existing = _turn(destination.matrix_world) @ _turn(
+                destination.data.bones[self.destination_bones[slot]].matrix_local
+            )
+            self._offsets[slot] = returned.inverted() @ swing @ existing
+
+    def _source_pose(self, curves, frame):
+        """Armature-space pose matrices of the mapped returned bones and their ancestors."""
+        poses = {}
+        for bone in self._source_path:
+            basis = _basis(self.source.pose.bones[bone.name], curves, frame)
+            parent = poses.get(bone.parent.name) if bone.parent else None
+            relative = self._relative[self.source, bone.name]
+            poses[bone.name] = (relative if parent is None else parent @ relative) @ basis
+        return poses
+
+    def clip(self, action, slot, curves, name):
+        """A new action named `name` playing the clip on the destination rig, and its slot."""
+        source, rig = self.source, self.destination
+        start, end = action.frame_range
+        frames = range(math.floor(start), math.ceil(end) + 1)
+        world = source.matrix_world
+        first = self._source_pose(curves, frames[0])
+        posed = {item: world @ first[bone].translation for item, bone in self.source_bones.items()}
+        # Source world to destination world, both levelled on the floor.
+        mapping = self._level @ _frame(posed, True).transposed()
+        leg = _leg(posed)
+        if leg < _SMALL:
+            raise mesh.MeshApplicationError("Cannot retarget a skeleton without legs")
+        ratio = self._leg / leg
+        into = mapping @ _turn(world)
+        back = _turn(rig.matrix_world).inverted()
+        inverse = rig.matrix_world.inverted_safe()
+        hips = self.source_bones["hips"]
+        keys = {bone: [] for bone in self._slots}
+        locations = []
+        # Unmapped bones on the way keep their current pose.
+        held = {
+            bone.name: rig.pose.bones[bone.name].matrix_basis.copy()
+            for bone in self._destination_path
+            if bone.name not in self._slots
+        }
+        for frame in frames:
+            pose = self._source_pose(curves, frame)
+            mine = {}
+            for bone in self._destination_path:
+                parent = mine.get(bone.parent.name) if bone.parent else None
+                relative = self._relative[rig, bone.name]
+                rest = relative if parent is None else parent @ relative
+                item = self._slots.get(bone.name)
+                if item is None:
+                    mine[bone.name] = rest @ held[bone.name]
+                    continue
+                turn = back @ into @ _turn(pose[self.source_bones[item]]) @ self._offsets[item]
+                head = rest.translation
+                if item == "hips":
+                    travel = world @ pose[hips].translation - posed["hips"]
+                    head = inverse @ (self._hips + mapping @ travel * ratio)
+                target = Matrix.Translation(head) @ turn.to_4x4()
+                mine[bone.name] = target
+                basis = rest.inverted_safe() @ target
+                keys[bone.name].append(basis.to_quaternion().normalized())
+                if item == "hips":
+                    locations.append(basis.translation.copy())
+        new = bpy.data.actions.new(name)
+        try:
+            bound = new.slots.new(id_type="OBJECT", name=rig.name)
+            bag = new.layers.new("Layer").strips.new(type="KEYFRAME").channelbags.new(bound)
+            for bone, rotations in keys.items():
+                mode = rig.pose.bones[bone].rotation_mode
+                if mode == "QUATERNION":
+                    for index in range(1, len(rotations)):
+                        # Neighbouring keys take the shorter way round.
+                        if rotations[index].dot(rotations[index - 1]) < 0:
+                            rotations[index].negate()
+                    _keys(bag, bone, "rotation_quaternion", frames, rotations)
+                else:
+                    eulers = []
+                    for rotation in rotations:
+                        eulers.append(rotation.to_euler(mode, *eulers[-1:]))
+                    _keys(bag, bone, "rotation_euler", frames, eulers)
+            _keys(bag, self.destination_bones["hips"], "location", frames, locations)
+        except BaseException:
+            # The caller removes only the clips returned to it.
+            bpy.data.actions.remove(new)
+            raise
+        return new, bound
+
+
+def _keys(bag, bone, prop, frames, rows):
+    path = f'pose.bones["{bpy.utils.escape_identifier(bone)}"].{prop}'
+    for index, values in enumerate(zip(*rows, strict=True)):
+        curve = bag.fcurves.new(path, index=index, group_name=bone)
+        points = curve.keyframe_points
+        points.add(len(frames))
+        points.foreach_set(
+            "co", [item for pair in zip(frames, values, strict=True) for item in pair]
+        )
+        for point in points:
+            point.interpolation = "LINEAR"
+        curve.update()
+
+
+def plan(source, destination):
+    """A retarget between two recognized humanoid rigs, or None when either is not one."""
+    found = humanoid.detect(_parents(source)), humanoid.detect(_parents(destination))
+    if None in found:
+        return None
+    (family, source_bones), (_family, destination_bones) = found
+    return Retarget(source, destination, family, source_bones, destination_bones)

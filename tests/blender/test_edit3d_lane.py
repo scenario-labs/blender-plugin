@@ -176,6 +176,129 @@ class Edit3DLaneTests(unittest.TestCase):
         self.assertIsNone(catalog.mesh_param(rec("model_meshy-7-txt23d")))
 
 
+class AnimateTaskTests(unittest.TestCase):
+    """Text-to-motion models and Meshy's named library motions in the Animate task."""
+
+    def setUp(self):
+        from helpers import chain_rig
+
+        reset_scene()
+        self.generation = submodule("blender.generation")
+        self.runtime = submodule("blender.runtime")
+        catalog = submodule("core.api.catalog")
+        self.runtime.state.reset()
+        records = [
+            rec("model_uthana-text-to-motion-3.0"),
+            catalog.ModelRecord.from_api(
+                {
+                    "id": "model_viggle-text-to-motion",
+                    "name": "Viggle Text to Motion",
+                    "capabilities": ["txt23d"],
+                    "status": "trained",
+                    "inputs": [
+                        {
+                            "name": "prompt",
+                            "type": "string",
+                            "prompt": True,
+                            "required": {"always": True},
+                        },
+                        {"name": "duration", "type": "number", "default": 5, "min": 3, "max": 60},
+                    ],
+                }
+            ),
+            catalog.ModelRecord.from_api(
+                {
+                    "id": "model_meshy-animation",
+                    "name": "Meshy Animation",
+                    "capabilities": ["3d23d"],
+                    "status": "trained",
+                    "inputs": [
+                        {"name": "model", "type": "file", "kind": "3d"},
+                        {
+                            "name": "actionId",
+                            "type": "number",
+                            "label": "Action ID",
+                            "default": 0,
+                            "min": 0,
+                            "step": 1,
+                            "required": {"always": True},
+                        },
+                    ],
+                }
+            ),
+        ]
+        handlers = submodule("blender.handlers")
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        self.scene = bpy.context.scene
+        self.scene.scenario.edit3d_task = "ANIMATE"
+        self.lane = self.scene.scenario.lane_state("edit3d")
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=(0, 0, 1))
+        self.cube = bpy.context.active_object
+        self.rig = chain_rig(self.scene, "Character rig")
+
+    def skin(self):
+        self.cube.modifiers.new("Skin", "ARMATURE").object = self.rig
+
+    def drawn(self):
+        panels = submodule("blender.panels")
+        layout = MagicMock()
+        panels.draw_edit3d_lane(layout, bpy.context)
+        return " ".join(
+            call.kwargs["text"] for call in layout.box.return_value.label.call_args_list
+        )
+
+    def test_text_to_motion_comes_first_and_sends_no_mesh(self):
+        self.assertEqual(
+            [i[0] for i in self.runtime.enum_items(("models", "edit3d"))],
+            [
+                "model_uthana-text-to-motion-3.0",
+                "model_viggle-text-to-motion",
+                "model_meshy-animation",
+            ],
+        )
+        self.skin()
+        for model_id in ("model_viggle-text-to-motion", "model_uthana-text-to-motion-3.0"):
+            with self.subTest(model=model_id):
+                self.lane.model_id = model_id
+                self.lane.prompt = "walks forward four steps then waves"
+                request = self.generation.build_request(self.scene, "edit3d")
+                self.assertEqual(request.errors, [])
+                # Uthana's optional character input stays empty: nothing is uploaded.
+                self.assertEqual((request.captures, request.files), ([], {}))
+                self.assertEqual(request.body["prompt"], "walks forward four steps then waves")
+                self.assertIn("Nothing is uploaded", self.drawn())
+
+    def test_text_to_motion_needs_a_rigged_selection(self):
+        self.lane.model_id = "model_viggle-text-to-motion"
+        self.lane.prompt = "waves"
+        errors = self.generation.build_request(self.scene, "edit3d").errors
+        self.assertEqual(errors, ["Rig the selected mesh first: the motion plays on its armature"])
+
+    def test_meshy_library_motions_are_picked_by_name_or_by_any_id(self):
+        self.lane.model_id = "model_meshy-animation"
+        schema = self.generation.schema_for("model_meshy-animation")
+        params_ui = submodule("blender.params_ui")
+        params_ui.sync_params(self.lane, schema, "model_meshy-animation")
+        item = self.lane.params["actionId"]
+        labels = {i[0]: i[1] for i in self.runtime.enum_items(item_key(item))}
+        self.assertEqual((item.enum_value, labels["30"], labels["28"]), ("0", "Walk", "Wave hello"))
+        item.enum_value = "28"
+        self.assertEqual(params_ui.collect_values(self.lane, schema)[0]["actionId"], 28)
+        item.enum_value, item.int_value = "OTHER", 455
+        self.assertEqual(params_ui.collect_values(self.lane, schema)[0]["actionId"], 455)
+        # Other shows the number field beside the choice; a named motion hides it.
+        layout = MagicMock()
+        params_ui.draw_params(layout, self.lane, schema)
+        row = layout.box.return_value.row.return_value.row.return_value
+        self.assertEqual([c.args[1] for c in row.prop.call_args_list], ["enum_value", "int_value"])
+
+
+def item_key(item):
+    return ("param", item.model_id, item.name)
+
+
 class ResultObjectTagTests(unittest.TestCase):
     def setUp(self):
         reset_scene()

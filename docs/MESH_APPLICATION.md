@@ -308,8 +308,8 @@ disposable staging scene before publication. The destination's current animated
 pose does not change that anchor. Import leaves the
 current frame/subframe, frame range and frame rate unchanged. It does not shift
 clips to the current frame, extend the timeline or retarget animation to an
-existing rig ([ANIMATE](#apply-returned-animation) does that for a matching
-skeleton). Moving the new parent group moves the imported character together.
+existing rig ([ANIMATE](#apply-returned-animation) does that for a matching or
+humanoid skeleton). Moving the new parent group moves the imported character together.
 
 Armature construction requires the staging scene to own the active window and
 view layer while Blender's importer runs. The importer restores both afterward,
@@ -700,8 +700,8 @@ Several captured sources claim their scene instead; the job's saved mesh-source
 binding lists those objects in order. `retry_model_receipt` records only known
 success, never another replacement. See [session
 ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement). The command
-makes no service request. Retargeting across different skeletons is roadmap#674
-G14 work.
+makes no service request. ANIMATE retargets clips between
+[humanoid skeletons](#retarget-a-humanoid-clip) only.
 
 ## Saved mesh edit approval
 
@@ -1039,8 +1039,7 @@ captured target and optional original-export target guards. Session status
 exposes `mesh_edit.rig`; history invalidation retires that status before
 dereferencing stale Blender data.
 [Apply returned animation](#apply-returned-animation) copies clips onto a
-matching existing rig; retargeting across different skeletons is roadmap#674 G14
-work.
+matching existing rig, or retargets a humanoid clip onto it.
 
 ### Replace an existing skin
 
@@ -1089,7 +1088,9 @@ instead.
 The explicit `ANIMATE` policy applies the clips of an Edit 3D **Animate** result
 to the rig of a source [skinned to an armature](#replace-an-existing-skin).
 Animate providers return a complete re-rigged character: one armature with its
-clips, usually with a skinned mesh. ANIMATE keeps the user's mesh, skin,
+clips, usually with a skinned mesh. Text-to-motion providers return a clip on
+their own humanoid skeleton instead, which is
+[retargeted](#retarget-a-humanoid-clip). ANIMATE keeps the user's mesh, skin,
 armature and object context, copies only the clips onto the armature that the
 source's Armature modifier uses, and adds none of the returned objects. Every
 mesh that armature deforms follows the clips. An unskinned source is rejected
@@ -1108,7 +1109,10 @@ same parent name, connection, rotation/scale inheritance and local location
 setting; rotated bones must use the same rotation mode. They must have no
 constraints, and no drivers on their location, rotation or scale, which would
 override the clips. Neither armature object may be mirrored, and the
-destination may not solo an NLA track, which keeps the clip from playing.
+destination may not solo an NLA track, which keeps the clip from playing. When
+names, hierarchy, rotation mode or rest pose do not match, the clips are
+[retargeted](#retarget-a-humanoid-clip) if both rigs are humanoid skeletons, and
+rejected with the first mismatch otherwise.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
@@ -1160,7 +1164,10 @@ none of them. The active action blends as Replace at full influence; existing
 NLA tracks and the extrapolation stay as they were. GLB and glTF clip timing
 follows the destination's effective frame rate through the
 [shared staging scene](#rigged-and-animated-model-import); FBX clips keep the
-file's. Frame range, current frame and frame rate stay unchanged.
+file's. A scene frame range still at Blender's default, 1 to 250 without a
+preview range, becomes the first clip's, rounded out to whole frames, so the
+clip plays in full; a range the user set stays. The current frame and frame rate
+stay unchanged, and rollback restores the range.
 
 The captured target guards the rig's identity, bones, rest and transform, so a
 changed rig is stale before import; posing or animating it is not. Animation
@@ -1173,10 +1180,47 @@ follow the [saved mesh history](#native-undo-for-saved-mesh-edits). Session
 status reports the rig in `mesh_edit.rig`, the new clip names in
 `mesh_edit.clips` and the largest rest correction applied to an animated bone,
 in degrees rounded to 0.1, in `mesh_edit.rest_correction_deg` (null for other
-policies). A nonzero correction also shows **Clips adjusted to this rig's rest
-pose by up to N°** in the job row until undo history changes.
+policies and for retargeted clips). A nonzero correction also shows **Clips
+adjusted to this rig's rest pose by up to N°** in the job row until undo history
+changes. `mesh_edit.frame_range` gives the frame range the first clip set, or
+null when the scene kept its own. UI **Apply animation** and MCP
+`mesh_policy: ANIMATE` use the same captured target guards.
 
-Bones are matched by name only. Clips from a different skeleton, such as another
-provider's or a rig whose rest pose differs by more than 15 degrees, are
-rejected; retargeting them is roadmap#674 G14 work. UI **Apply animation** and
-MCP `mesh_policy: ANIMATE` use the same captured target guards.
+### Retarget a humanoid clip
+
+Text-to-motion models such as Uthana and Viggle animate their own skeleton, an
+Unreal or Mixamo one, and Meshy's text-to-motion an SMPL one. When bones do not
+match by name, [`motion_retarget.py`](../scenario/blender/motion_retarget.py)
+retargets the clips if both rigs are recognized humanoids:
+[`humanoid.py`](../scenario/core/scene/humanoid.py) names 22 body slots (hips,
+four spine and neck bones, head, shoulders, arms, forearms, hands, thighs, shins,
+feet and toes) for the Meshy, Mixamo, SMPL and Unreal bone conventions, after
+any `namespace:` prefix. Every slot bone must exist and descend from its parent
+slot's bone; two bones with the same name under different prefixes make a rig
+unrecognized. Other skeletons keep the name-matching error.
+
+Each slot bone takes the returned bone's world orientation, frame by frame,
+whatever the bone axes or rest pose. The two rest skeletons are aligned through
+a character frame built from their rest heads (up from the hips to the head,
+left from the right thigh to the left one), and each destination bone turns by
+the swing that takes its rest direction, head to child slot head, onto the
+returned one, so a T-pose clip plays on an A-pose rig. Hands, the head and toes
+follow their parent slot's swing. The clip's first frame gives the returned
+character's facing on the floor: orientations and root motion go through level
+character frames, so the character moves in its own facing wherever it stands.
+The hips move by the returned hips' travel since that first frame, scaled by the
+ratio of the two rigs' mean thigh plus shin lengths; the first frame is taken as
+standing at the rig's rest height.
+
+Every frame of the clip is sampled and keyed linearly into a new action: hips
+location and rotation, and every other slot's rotation in its bone's rotation
+mode, quaternion with sign continuity or Euler. Bones outside the slots, such as
+fingers, twist and face bones, keep their current pose, as does an extra rig
+bone between two slot bones. Slot bones and their ancestors
+must inherit rotation and scale with local location, on both rigs; slot bones
+may not use axis-angle rotation and, as above, may carry no constraints or
+drivers. Keys are not rest-corrected, so `mesh_edit.rest_correction_deg` is null
+and `mesh_edit.retargeted_from` names the returned skeleton (Meshy, Mixamo, SMPL
+or Unreal); the job row shows **Clips retargeted from a Mixamo skeleton**, for
+example. A rig whose own rest pose is wrong for its mesh, such as a forearm bone
+pointing away from the forearm, plays the clip wrong there too.

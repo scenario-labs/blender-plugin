@@ -1325,13 +1325,20 @@ armature. The returned armature's clips are copied onto that existing rig; the
 source's mesh, skin, rig and object context stay, and no returned object is
 added. Every animated bone needs the same name and parent as the rig and a rest
 pose within 15 degrees, which the copied keys are corrected for, and location
-keys are scaled to the rig's units. The first clip becomes the active action;
-it, the other clips and the previous action stay in muted NLA tracks.
-`mesh_placement` and `keep_original` are not used. An unskinned source, a
-different skeleton or a result without clips is rejected, leaving the job
-reviewable. `mesh_edit.rig` names the animated rig, `mesh_edit.clips` the new
-actions and `mesh_edit.rest_correction_deg` the largest rest correction in
-degrees while the status is current. FBX clips, for RIG too, keep the file's
+keys are scaled to the rig's units. Otherwise, when both rigs are humanoid
+skeletons with Meshy, Mixamo, SMPL or Unreal bone names, as for a text-to-motion
+clip on a Meshy rig, the clips are
+[retargeted](MESH_APPLICATION.md#retarget-a-humanoid-clip) with root motion
+scaled by leg length. The first clip becomes the active action;
+it, the other clips and the previous action stay in muted NLA tracks, and a
+scene frame range still at Blender's default 1 to 250 becomes the first clip's.
+`mesh_placement` and `keep_original` are not used. An unskinned source, another
+skeleton that is not humanoid or a result without clips is rejected, leaving the
+job reviewable. `mesh_edit.rig` names the animated rig, `mesh_edit.clips` the
+new actions, `mesh_edit.rest_correction_deg` the largest rest correction in
+degrees (null when retargeted), `mesh_edit.retargeted_from` the returned
+skeleton when retargeted and `mesh_edit.frame_range` the range the first clip
+set, while the status is current. FBX clips, for RIG too, keep the file's
 frame rate and `mesh_edit.frame_rate_mismatch` reports a different scene FPS.
 The shared native history and receipt-only recovery rules apply. See [the
 ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).

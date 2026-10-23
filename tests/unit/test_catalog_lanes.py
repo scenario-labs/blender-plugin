@@ -149,6 +149,46 @@ def test_retexture_starts_on_claude_opus_5_5_3d_then_its_peer_and_meshy_7():
     assert opus.id in ids(catalog.models_for_lane("3d", shuffled))
 
 
+def test_text_to_motion_models_join_the_animate_task_first_and_stay_3d_results():
+    motion = [
+        rec(
+            "model_uthana-text-to-motion-3.0",
+            "Uthana Text to Motion 3.0",
+            ["txt23d"],
+            inputs=[{"name": "characterFile", "type": "file", "kind": "3d"}],
+        ),
+        rec("model_viggle-text-to-motion", "Viggle Text to Motion", ["txt23d"]),
+        rec("model_meshy-text-to-motion", "Meshy Text to Motion", ["txt23d"]),
+        rec(
+            "model_meshy-animation",
+            "Meshy Animation",
+            ["3d23d"],
+            inputs=[{"name": "model", "type": "file", "kind": "3d"}],
+        ),
+    ]
+    records = RECORDS + motion
+    assert ids(catalog.edit3d_models("ANIMATE", records)) == [
+        "model_uthana-text-to-motion-3.0",
+        "model_viggle-text-to-motion",
+        "model_meshy-animation",
+    ]
+    # Only the curated text-to-motion models join Edit 3D; they still generate in 3D.
+    assert "model_meshy-text-to-motion" not in ids(catalog.edit3d_models("ALL", records))
+    assert motion[1].lanes == {"3d", "edit3d"}
+    assert catalog.model_kind(motion[1]) == "3d"
+
+
+def test_meshy_library_motions_are_named_with_an_other_id_escape():
+    items = catalog.choice_items("model_meshy-animation", "actionId")
+    assert items[1][:2] == ("30", "Walk")
+    assert items[1][2] == "Casual_Walk (library ID 30)"
+    assert items[-1][0] == catalog.OTHER_CHOICE
+    assert {"Idle", "Run", "Wave hello", "Jump"} <= {label for _id, label, _d in items}
+    assert len(items) == len({value for value, _label, _d in items}) <= 20
+    assert catalog.choice_items("model_meshy-animation", "heightMeters") == []
+    assert catalog.choice_items("model_other", "actionId") == []
+
+
 def test_mesh_param_and_tagged_models():
     assert catalog.mesh_param(RECORDS[8]) == "model"
     assert catalog.mesh_param(RECORDS[10]) == "file3d"

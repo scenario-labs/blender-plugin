@@ -332,6 +332,31 @@ def cube_result_glb(*, parts=1, subdivide=0, scale=0.5, location=(0, 0, 3)):
     return body
 
 
+def centered_figure_glb(height=1.85, width=0.6, depth=0.4):
+    """A box as tall as a person, centred on the origin as a provider delivers a real-size character.
+
+    The feet are at -height / 2 in the file, so an import must still ground them.
+    """
+    import bmesh
+
+    mesh = bmesh.new()
+    bmesh.ops.create_cube(mesh, size=1.0)
+    bmesh.ops.scale(mesh, vec=(width, depth, height), verts=mesh.verts)
+    data = bpy.data.meshes.new("Figure")
+    mesh.to_mesh(data)
+    mesh.free()
+    obj = bpy.data.objects.new("Figure", data)
+    bpy.context.scene.collection.objects.link(obj)
+    bpy.context.view_layer.update()
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "figure.glb"
+        submodule("blender.mesh_export").export_glb(bpy.context, [obj], str(path))
+        body = path.read_bytes()
+    bpy.data.objects.remove(obj)
+    bpy.data.meshes.remove(data)
+    return body
+
+
 def animated_glb(*, clips=2, morph=True, node_transform=False):
     """Add a two-bone skin, morph target and node clips to our first-party triangle."""
     original = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()

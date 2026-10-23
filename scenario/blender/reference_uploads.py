@@ -239,6 +239,22 @@ def _next_command(record):
     return None
 
 
+# The pump's idle tick: a processing check ticks it faster only from this long before it is due.
+_POLL_LEAD = 0.6
+
+
+def _ready_command(ticket, now):
+    """The ticket's next command if the pump should tick fast for it.
+
+    A processing check counts only from one idle tick before it is due, so a long wait
+    keeps the slow tick.
+    """
+    command = _next_command(ticket.record)
+    if command == "refresh_upload" and now + _POLL_LEAD < ticket.next_poll:
+        return None
+    return command
+
+
 class ReferenceUploads:
     """Keep transient progress handles; durable state belongs to the shared store."""
 
@@ -419,6 +435,7 @@ class ReferenceUploads:
             return False
         scene = bpy.context.scene
         online = self._online()
+        now = time.monotonic()
         return any(
             ticket.task is not None
             or (
@@ -426,7 +443,7 @@ class ReferenceUploads:
                 and not ticket.error
                 and ticket.record is not None
                 and ticket.scene == scene
-                and _next_command(ticket.record) is not None
+                and _ready_command(ticket, now) is not None
             )
             for ticket in self.references.values()
         )

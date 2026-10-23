@@ -201,14 +201,20 @@ def _fit_bones(rig):
     bpy.ops.object.mode_set(mode="EDIT")
     try:
         lengths = {}
+        # EditBone.children scans every bone, so map children once: rigs reach thousands of joints.
+        children = {bone.name: [] for bone in data.edit_bones}
+        for bone in data.edit_bones:
+            if bone.parent is not None:
+                children[bone.parent.name].append(bone)
         stack = [bone for bone in data.edit_bones if bone.parent is None]
         while stack:
             bone = stack.pop()
-            stack.extend(bone.children)
-            if bone.bbone_segments > 1 or any(child.use_connect for child in bone.children):
+            kids = children[bone.name]
+            stack.extend(kids)
+            if bone.bbone_segments > 1 or any(child.use_connect for child in kids):
                 lengths[bone.name] = bone.length
                 continue
-            reach = [(child.head - bone.head).length for child in bone.children]
+            reach = [(child.head - bone.head).length for child in kids]
             reach = [value for value in reach if value > size * _SHORTEST_REACH]
             if reach:
                 length = min(reach)

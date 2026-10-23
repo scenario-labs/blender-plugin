@@ -136,7 +136,10 @@ class ReferenceUploadTests(unittest.TestCase):
             if ticket.record is not None and ticket.record.state.value == "imported":
                 break
             if ticket.task is None and ticket.record.state.value == "processing":
-                delays.append(ticket.next_poll - clock[0])
+                delay = ticket.next_poll - clock[0]
+                # The pump ticks faster only from one idle tick before the next check.
+                self.assertEqual(self.owner.advancing(), delay <= self.module._POLL_LEAD)
+                delays.append(delay)
                 clock[0] = ticket.next_poll
         self.assertEqual(ticket.record.state.value, "imported")
         self.assertEqual(delays, [0.5, 0.5, 1.0, 2.0, 2.0])

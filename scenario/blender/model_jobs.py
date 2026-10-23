@@ -1223,12 +1223,14 @@ class ModelJobs:
                 self._observe(request_id, observed)
         online = self._online_seen = self._online()
         unread_sizes = []
+        polled = {}
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
                 raise ScenarioError(
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
+            polled[request_id] = record
             if record.state != JobState.REMOTE:
                 self._cancellable.pop(request_id, None)
             view.job_id = record.remote_job_id
@@ -1331,19 +1333,21 @@ class ModelJobs:
                     self._pause(request_id, "Result delivery could not start; inspect saved jobs")
         self._prune_world_sizes()
         self._read_world_sizes(unread_sizes)
-        self._check_files()
+        self._check_files(polled)
 
-    def _check_files(self):
+    def _check_files(self, polled=None):
         """Queue one preview-lane check of the watched jobs' unchecked result files.
 
         Files this session verified are settled even while a batch is in flight,
-        so a wait on them does not wait for another job's check.
+        so a wait on them does not wait for another job's check. `polled` holds
+        the records this tick already read, so a watched job is read once per tick.
         """
         busy = self._files.busy
         targets = []
+        polled = polled or {}
         for request_id in self._files.watched:
             try:
-                record = self.store.get(request_id)
+                record = polled.get(request_id) or self.store.get(request_id)
             except Exception:
                 # An unreadable record is reported by status; it is checked later.
                 continue

@@ -43,9 +43,17 @@ explicit approval.
 | Height | Non-Color image through Bump, with distance 0.05; no geometric displacement |
 | AO/edge | Named packed texture nodes retained for deliberate artist wiring |
 
-All textures use the approved active UV map by name. This wiring does not prove
-provider normal-map handedness, channel layout, real-world scale, seamlessness or
-color fidelity. There is no automatic alpha, emission or ambient-occlusion blend.
+Every map reads one shared Mapping node, so they stay aligned. A mesh with UVs feeds it
+the approved active UV map by name. A mesh without UVs feeds it object-space coordinates
+and each image uses box projection with a 0.1 blend; the mesh data stays unchanged.
+**Tile size** (MCP `tile_size_m`, 0.01 to 1000, default 2) sets one repeat per that many
+metres. Box scale includes the object's scale at application, and later transform changes
+do not retile. A UV mesh scales its layout by its measured metres per UV unit, the median
+of up to 512 faces, and keeps tiling 1 with the Mapping node labelled when none can be
+measured. This wiring does not prove provider normal-map handedness, channel layout,
+seamlessness or color fidelity. Box projection has no tangent frame: a tangent-space
+normal map on a mesh without UVs uses Blender's fallback tangents, not the projected
+axes. There is no automatic alpha, emission or ambient-occlusion blend.
 The local operation is bounded to 256 MiB of combined map bytes and 32 million
 combined decoded pixels, plus the existing per-image format limits. These bounds
 do not guarantee decoder latency; copying, decoding and graph construction run
@@ -55,8 +63,8 @@ synchronously on Blender's main thread.
 
 **Apply saved material** and MCP `prepare_result_application(purpose: material)`
 capture the current scene, active mesh identity, data pointer, active slot,
-slot bindings, face-to-slot indices and active UV name. The target must be local,
-non-overridden, in Object Mode, have UVs, and own a single-user mesh. An object
+slot bindings, face-to-slot indices and active UV name, if any. The target must be local,
+non-overridden, in Object Mode and own a single-user mesh. An object
 shared between scenes is rejected. At most 128 slots and four million polygons
 bound synchronous destination checks. Nothing is chosen again from selection
 after confirmation; a late result cannot attach to a different active object.

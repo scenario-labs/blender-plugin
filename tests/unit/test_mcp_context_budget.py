@@ -40,7 +40,7 @@ TOTAL_SLACK = 0.03
 DEFAULT_TOOL_BUDGET = 2_500
 TOOL_BUDGETS = {
     "job_status": 9_600,
-    "prepare_result_application": 6_500,
+    "prepare_result_application": 6_800,
     "render_form": 4_500,
     "inspect_result_previews": 3_200,
     "decide_workflow_step": 3_000,

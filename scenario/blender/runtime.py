@@ -717,11 +717,21 @@ def revise_mesh_application(context_id, application_id, **options):
     return jobs.revise_mesh_application(application_id, **options)
 
 
-def prepare_material_application(context_id, request_id, expected_revision, scene, obj):
+def prepare_material_application(context_id, request_id, expected_revision, scene, obj, **options):
+    """Review one material slot; `tile_size` is the metres one texture repeat spans."""
     jobs = ensure_model_jobs()
     if context_id != state.job_context_id:
         raise ScenarioError(0, "Inspect the current connection's jobs before applying a material")
-    return jobs, jobs.prepare_material_application(request_id, expected_revision, scene, obj)
+    return jobs, jobs.prepare_material_application(
+        request_id, expected_revision, scene, obj, **options
+    )
+
+
+def revise_material_application(context_id, application_id, **options):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; review the material again")
+    return jobs.revise_material_application(application_id, **options)
 
 
 def prepare_world_application(

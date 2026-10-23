@@ -580,8 +580,10 @@ texture that applies as base color.
 Describe the material, choose the maps and size, and generate. The texture set is
 saved without touching your scene.
 
-To apply it, select a mesh with UVs and choose **Apply saved material** on the job.
-Confirm the mesh, material slot and maps. Only that slot changes; nothing is
+To apply it, select a mesh and choose **Apply saved material** on the job.
+Confirm the mesh, material slot, maps and **Tile size**, the length one texture
+repeat covers (2 m by default). A mesh without UVs is mapped by box projection and
+keeps its geometry. Only that slot changes; nothing is
 regenerated or spent. Height is wired as bump, and AO and edge maps are kept for
 you to connect by hand. Undo doesn't cover this, so keep any material you want
 to restore and save the blend file yourself. See

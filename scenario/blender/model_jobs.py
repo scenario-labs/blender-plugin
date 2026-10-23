@@ -49,7 +49,7 @@ from ..core.jobs.store import (
     _identity,
 )
 from ..core.jobs.workers import WorkerError
-from ..core.scene import landing, panorama_contract, placement
+from ..core.scene import landing, material_tiling, panorama_contract, placement
 from ..core.scene.mesh_edit_policy import (
     SEVERAL_SOURCES_FALLBACK,
     TASK_POLICIES,
@@ -498,6 +498,8 @@ class WorldApplicationApproval:
 
 @dataclass(frozen=True)
 class MaterialApplicationApproval:
+    """One reviewed material slot; `tile_size` is the metres one texture repeat spans."""
+
     identifier: str
     record: StoredJob
     destination: JobOrigin
@@ -506,6 +508,12 @@ class MaterialApplicationApproval:
     target: object = field(repr=False)
     roles: tuple
     kind: str = "material"
+    tile_size: float = material_tiling.DEFAULT_TILE_SIZE_M
+
+    @property
+    def projection(self):
+        """Box projection for a mesh without UVs, else the mesh's active UV map."""
+        return material_tiling.UV if self.target.uv_name else material_tiling.BOX
 
 
 @dataclass(frozen=True)
@@ -1002,7 +1010,10 @@ class ModelJobs:
                     self._paused.discard(request_id)
                 elif command == "verify_material":
                     applied = self.session.apply_recovered_material(
-                        completion, destination=material.destination, target=material.target
+                        completion,
+                        destination=material.destination,
+                        target=material.target,
+                        tile_size=material.tile_size,
                     )
                     _remember(
                         self._materials,
@@ -2938,7 +2949,9 @@ class ModelJobs:
         view.meta["recovery_actions"], view.error = (), None
         return request_id, task
 
-    def prepare_material_application(self, request_id, expected_revision, scene, obj):
+    def prepare_material_application(
+        self, request_id, expected_revision, scene, obj, *, tile_size=None
+    ):
         record = self.store.get(request_id)
         if (
             type(expected_revision) is not int
@@ -2948,6 +2961,10 @@ class ModelJobs:
             or len(self._application_approvals) >= 128
         ):
             raise ScenarioError(0, "Inspect the saved material and finish existing reviews first")
+        try:
+            tile_size = material_tiling.tile_size(tile_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
         bpy.context.view_layer.update()
         target = capture_target(scene, obj)
         roles = selected_maps(record)
@@ -2959,9 +2976,30 @@ class ModelJobs:
             obj.name,
             target,
             tuple(roles),
+            tile_size=tile_size,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
+
+    def revise_material_application(self, identifier, *, tile_size):
+        """Change a reviewed material's tile size under a new handle; the old one stops working."""
+        ticket = self._application_approvals.get(identifier)
+        if not isinstance(ticket, MaterialApplicationApproval):
+            raise ScenarioError(0, "Use an unconsumed material review")
+        try:
+            tile_size = material_tiling.tile_size(tile_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
+        self.session.validate_destination(ticket.destination)
+        validate_material_target(ticket.target)
+        if self.store.get(ticket.record.intent.request_id) != ticket.record:
+            raise ScenarioError(0, "The saved material changed; start a fresh review")
+        if tile_size == ticket.tile_size:
+            return ticket
+        revised = replace(ticket, identifier=uuid.uuid4().hex, tile_size=tile_size)
+        del self._application_approvals[identifier]
+        self._application_approvals[revised.identifier] = revised
+        return revised
 
     def _apply_saved_material(self, ticket):
         self._application_approvals.pop(ticket.identifier)

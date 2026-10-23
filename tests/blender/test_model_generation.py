@@ -6038,11 +6038,24 @@ class ModelGenerationTests(unittest.TestCase):
         bpy.ops.mesh.primitive_cube_add()
         return self.recovered_images()
 
-    def prepare_material(self, request_id):
+    def prepare_material(self, request_id, **options):
         args = self.recovery_args(request_id, "apply_material")
         del args["action"]
         args["purpose"] = "material"
+        args.update(options)
         return self.tools.prepare_result_application(args)
+
+    @staticmethod
+    def plane_without_uvs(size=40.0):
+        bpy.ops.mesh.primitive_plane_add(size=size, calc_uvs=False)
+        plane = bpy.context.active_object
+        bpy.context.view_layer.update()
+        return plane
+
+    @staticmethod
+    def mapping_scale(material):
+        (mapping,) = [node for node in material.node_tree.nodes if node.type == "MAPPING"]
+        return tuple(round(value, 5) for value in mapping.inputs["Scale"].default_value)
 
     def test_material_actions_require_the_same_supported_texture_set_as_approval(self):
         request_id = self.recovered_material()
@@ -6340,6 +6353,145 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
         with self.assertRaisesRegex(RuntimeError, "Material assignment was not started"):
             bpy.ops.scenario.apply_saved_material(**args)
+
+    def test_mcp_material_review_names_the_projection_and_applies_box_mapping(self):
+        request_id = self.recovered_material()
+        cube = bpy.context.active_object
+        uv_approval = self.prepare_material(request_id)
+        self.assertEqual((uv_approval["projection"], uv_approval["tile_size_m"]), ("UV", 2.0))
+        plane = self.plane_without_uvs()
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_material(request_id)
+        self.assertEqual((approval["projection"], approval["tile_size_m"]), ("BOX", 2.0))
+        self.assertEqual(approval["target"], plane.name)
+        self.assertIn("box projection", approval["note"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        # A 40 m plane at the default 2 m tiles: 20 repeats over its 40 object units.
+        self.assertEqual(self.mapping_scale(plane.active_material), (0.5, 0.5, 0.5))
+        self.assertFalse(plane.data.uv_layers)
+        self.assertIsNone(cube.active_material)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_mcp_material_tile_size_sets_the_repeat_length(self):
+        request_id = self.recovered_material()
+        plane = self.plane_without_uvs()
+        approval = self.prepare_material(request_id, tile_size_m=5)
+        self.assertEqual(approval["tile_size_m"], 5.0)
+        self.finish_application(approval)
+        self.assertEqual(self.mapping_scale(plane.active_material), (0.2, 0.2, 0.2))
+        # The tile size follows the object's scale: the same 40 m plane, scaled, tiles alike.
+        scaled = self.plane_without_uvs(2.0)
+        scaled.scale = (20.0, 20.0, 1.0)
+        bpy.context.view_layer.update()
+        self.finish_application(self.prepare_material(request_id, tile_size_m=2))
+        self.assertEqual(self.mapping_scale(scaled.active_material), (10.0, 10.0, 0.5))
+
+    def test_mcp_material_tile_size_is_refused_before_any_capture_and_only_for_materials(self):
+        request_id = self.recovered_material()
+        self.plane_without_uvs()
+        record, owner = self.store.get(request_id), self.runtime.state.model_jobs
+        approvals, materials = dict(owner._application_approvals), set(bpy.data.materials)
+        for value in (0, -1, 0.001, 1000.5, float("inf"), float("nan"), True, "2"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(self.request_error, "tile_size_m must be"):
+                    self.prepare_material(request_id, tile_size_m=value)
+        args = self.recovery_args(request_id, "import_images")
+        del args["action"]
+        with self.assertRaisesRegex(ValueError, "tile_size_m applies only to purpose material"):
+            self.tools.prepare_result_application(dict(args, tile_size_m=2.0))
+        self.assertEqual(owner._application_approvals, approvals)
+        self.assertEqual((self.store.get(request_id), set(bpy.data.materials)), (record, materials))
+        self.assertEqual(self.prepare_material(request_id, tile_size_m=0.01)["tile_size_m"], 0.01)
+
+    def native_material_dialog(self, request_id):
+        """An operator stand-in the dialog's own methods run on, as the plane test does."""
+        args = self.recovery_args(request_id, "apply_material")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_material
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            layout=MagicMock(),
+            report=MagicMock(),
+            tile_size=2.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(
+            scene=bpy.context.scene, view_layer=bpy.context.view_layer, window_manager=wm
+        )
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        return operator, fake, context
+
+    def test_native_material_dialog_draw_does_not_change_properties_or_approvals(self):
+        request_id = self.recovered_material()
+        owner = self.runtime.state.model_jobs
+        for projection, make_target in (
+            ("UV", lambda: bpy.context.active_object),
+            ("BOX", self.plane_without_uvs),
+        ):
+            with self.subTest(projection=projection):
+                make_target()
+                operator, fake, context = self.native_material_dialog(request_id)
+                self.assertEqual((fake.projection, fake.tile_size), (projection, 2.0))
+                fake.tile_size = 7.5
+                properties = dict(vars(fake))
+                approvals = dict(owner._application_approvals)
+                materials, images = set(bpy.data.materials), set(bpy.data.images)
+                with patch.object(
+                    self.runtime, "revise_material_application", side_effect=AssertionError
+                ):
+                    operator.draw(fake, context)
+                    operator.draw(fake, context)
+                self.assertEqual(vars(fake), properties)
+                self.assertEqual(owner._application_approvals, approvals)
+                self.assertEqual(
+                    (set(bpy.data.materials), set(bpy.data.images)), (materials, images)
+                )
+                fake.layout.prop.assert_called_with(fake, "tile_size")
+                texts = [call.kwargs.get("text", "") for call in fake.layout.label.call_args_list]
+                self.assertEqual(
+                    any("box projection" in text for text in texts), projection == "BOX"
+                )
+                self.assertTrue(any("tile size" in text for text in texts))
+                operator.cancel(fake, context)
+
+    def test_native_material_dialog_ok_applies_the_tile_size_shown_after_a_failed_check(self):
+        request_id = self.recovered_material()
+        plane = self.plane_without_uvs()
+        operator, fake, context = self.native_material_dialog(request_id)
+        owner = self.runtime.state.model_jobs
+        fake.tile_size = 5.0
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(owner._application_approvals[fake.application_id].tile_size, 5.0)
+        # Changing the size back to 3 m while the exchange fails leaves 5 m approved.
+        fake.tile_size = 3.0
+        with patch.object(
+            self.runtime, "revise_material_application", side_effect=RuntimeError("synthetic")
+        ):
+            self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertEqual(owner._application_approvals[fake.application_id].tile_size, 5.0)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(self.mapping_scale(plane.active_material), (0.33333,) * 3)
+
+    def test_native_material_dialog_ok_is_refused_after_the_mesh_changed_under_review(self):
+        request_id = self.recovered_material()
+        plane = self.plane_without_uvs()
+        operator, fake, context = self.native_material_dialog(request_id)
+        plane.data.materials.append(bpy.data.materials.new("Added during review"))
+        fake.tile_size = 4.0
+        self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertEqual(operator.execute(fake, context), {"CANCELLED"})
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(plane.active_material.name, "Added during review")
 
     def test_material_scene_edit_during_verification_keeps_job_ready(self):
         request_id = self.recovered_material()

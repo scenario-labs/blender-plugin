@@ -1940,6 +1940,8 @@ def prepare_result_application(args):
     unlit = args.get("plane_unlit", False)
     if unlit and purpose != "image_plane":
         raise ValueError("plane_unlit applies only to purpose image_plane")
+    if args.get("tile_size_m") is not None and purpose != "material":
+        raise ValueError("tile_size_m applies only to purpose material")
     if purpose in {"mesh_edit", "mesh_source"}:
         _, approval = runtime.prepare_mesh_application(
             args["context_id"],
@@ -2042,6 +2044,7 @@ def prepare_result_application(args):
             args["expected_revision"],
             bpy.context.scene,
             bpy.context.view_layer.objects.active,
+            tile_size=args.get("tile_size_m"),
         )
         return {
             "context_id": args["context_id"],
@@ -2054,11 +2057,17 @@ def prepare_result_application(args):
             "target": approval.target_name,
             "slot": approval.target.active + 1,
             "roles": list(approval.roles),
+            "projection": approval.projection,
+            "tile_size_m": approval.tile_size,
             "kind": "material",
             "purpose": purpose,
             "note": "Approve one saved texture set for this mesh's active material slot. "
             "Images are packed; old materials and other slots are untouched. "
-            "Only a local single-user mesh with UVs in Object Mode is supported. "
+            "Only a local single-user mesh in Object Mode is supported. projection BOX means the "
+            "mesh has no UVs: box projection from object space, mesh unchanged; UV uses its active "
+            "UV map. One Mapping node repeats every map once per tile_size_m world metres, using "
+            "the object's scale at application; a UV mesh's size in metres is read from its UV "
+            "layout, and tiling stays 1 when that cannot be measured. "
             "Normals use Blender tangent space; height uses bump only. AO/edge nodes stay unconnected. "
             "This does not regenerate or save the blend file, and has no global undo transaction.",
         }
@@ -3568,12 +3577,13 @@ SPECS = (
             "  - splat_max_points: optional integer 250000, 500000, 1000000 (default) or 2000000 for an SPZ, PLY or .splat unit; denser files are thinned evenly.\n"
             "  - splat_axes: optional OPENGL (saved right/up/back) or OPENCV (saved right/down/forward) for an SPZ, PLY or .splat unit; the default is the file format's convention (OPENGL for SPZ, OPENCV for PLY and .splat), which providers may not follow.\n"
             "  - target_size_m: optional length in Blender units (metres at the default unit scale) from 0.01 to 1000 for a model import unit; the new group is scaled uniformly so its longest side has this length, with its bottom center still at the cursor. The longest side does not depend on how the provider oriented the model; read the height from dimensions_m after the import. Omit to keep the saved size.\n"
+            "  - tile_size_m: optional, 0.01 to 1000 (default 2), for purpose material: world metres per texture repeat. The approval reports it with projection BOX (a mesh without UVs: box projection, scaled by its object scale) or UV.\n"
             "  - mesh_policy: REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE; omit to start from the job's Edit 3D task (Animate: ANIMATE for a source skinned to an armature, else RIG), or RIG for another skinned source, which accepts only RIG or ANIMATE (see mesh_policy_source). ANIMATE ignores mesh_placement and keep_original. The approval note explains the chosen edit.\n"
             "  - mesh_placement: WORLD, LOCAL or FIT; FIT (not ANIMATE) applies one uniform scale and offset only if the result verifiably matches the source. Default: FIT, except WORLD for ANIMATE and the REMESH fallback.\n"
             "  - keep_original: boolean, default true; keep an unselected copy of the original mesh. mesh_edit and mesh_source need the asset_id of a GLB, glTF, FBX or OBJ unit; mesh_source uses the unchanged source exported for the single captured input (every exported object), ignores selection and ends with undo, load or restart.\n"
             "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target (null for several objects), targets, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, format, primary, mesh_placement, keep_original, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why. camera_background also returns camera, backgrounds_kept and frame; image_plane cursor and plane_unlit.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model format, files, cursor, target size and splat options, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. Splats are shown as a coloured point cloud, not rendered as Gaussian splats; to change splat options or the target size, prepare again and show the new approval. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model format, files, cursor, target size and splat options, material target/slot/roles/tile size, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. Splats are shown as a coloured point cloud, not rendered as Gaussian splats; to change splat options or the target size, prepare again and show the new approval. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -3609,6 +3619,7 @@ SPECS = (
                 },
                 "splat_axes": {"type": "string", "enum": ["OPENGL", "OPENCV"]},
                 "target_size_m": {"type": "number", "minimum": 0.01, "maximum": 1000},
+                "tile_size_m": {"type": "number", "minimum": 0.01, "maximum": 1000},
             },
             ["context_id", "request_id", "expected_revision"],
         ),

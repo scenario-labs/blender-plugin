@@ -242,8 +242,11 @@ For one unapplied saved texture set, `purpose: material` captures the active mes
 its active material slot and unambiguous stored map roles. Show that destination
 and map list before consuming the shared application approval. It packs new
 images, creates a material and changes only that slot. It does not reuse a new
-selection after confirmation. See [material application](MATERIAL_APPLICATION.md)
-for single-user/UV restrictions, supported maps, rollback and no-global-undo limits.
+selection after confirmation. The approval returns `projection` (`BOX` for a mesh
+without UVs, else `UV`) and `tile_size_m`, the metres one texture repeat spans; pass
+`tile_size_m` (0.01 to 1000, default 2) to change it. See
+[material application](MATERIAL_APPLICATION.md) for single-user restrictions, supported
+maps, tiling, rollback and no-global-undo limits.
 
 ## Typed local references
 
@@ -467,7 +470,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame', 'camera_background', 'image_plane'])<br>`plane_unlit`: boolean<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame', 'camera_background', 'image_plane'])<br>`plane_unlit`: boolean<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number<br>`tile_size_m`: number | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'stop_download', 'retry_receipt', 'find_cloud_job']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |

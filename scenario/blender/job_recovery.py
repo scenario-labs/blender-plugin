@@ -14,6 +14,12 @@ from bpy.props import (
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.playback import PLAYBACK_TYPES
+from ..core.scene.material_tiling import (
+    BOX,
+    DEFAULT_TILE_SIZE_M,
+    MAX_TILE_SIZE_M,
+    MIN_TILE_SIZE_M,
+)
 from ..core.scene.mesh_edit_policy import task_label
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
 from ..core.scene.placement import MAX_TARGET_SIZE_M, MIN_TARGET_SIZE_M
@@ -929,6 +935,18 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
     target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     slot: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
     roles: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    projection: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    tile_size: FloatProperty(
+        name="Tile size",
+        description="Length one texture repeat spans in the scene",
+        default=DEFAULT_TILE_SIZE_M,
+        min=MIN_TILE_SIZE_M,
+        max=MAX_TILE_SIZE_M,
+        subtype="DISTANCE",
+        unit="LENGTH",
+        options={"SKIP_SAVE"},
+    )
 
     def invoke(self, context, event):
         try:
@@ -946,23 +964,53 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.target_name, self.slot = approval.target_name, approval.target.active + 1
             self.roles = ", ".join(approval.roles)
+            self.projection, self.tile_size = approval.projection, approval.tile_size
+            self.review_error = ""
         except Exception:
-            self.report(
-                {"ERROR"}, "Choose a local single-user UV mesh and inspect saved texture maps"
-            )
+            self.report({"ERROR"}, "Choose a local single-user mesh and inspect saved texture maps")
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=540)
 
+    def _sync_options(self):
+        """Exchange the approval for one with the shown tile size."""
+        # Rounded to micrometres: the property stores a single-precision float.
+        approval = runtime.revise_material_application(
+            self.context_id, self.application_id, tile_size=round(self.tile_size, 6)
+        )
+        self.application_id = approval.identifier
+        self.review_error = ""
+
+    def check(self, context):
+        if not self.application_id:
+            return False
+        try:
+            self._sync_options()
+        except Exception:
+            self.review_error = "Destination changed; cancel and review again"
+        return True
+
     def draw(self, context):
-        self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
         if self.is_reuse:
-            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
-        self.layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
-        self.layout.label(text=f"Maps: {self.roles}")
-        self.layout.label(text="Create a packed material using this mesh's active UV map.")
-        self.layout.label(text="Replace this slot only; existing materials remain unchanged.")
-        self.layout.label(text="Height uses bump; AO/edge maps remain available for wiring.")
-        self.layout.label(text="Normal maps use Blender tangent space. No global undo entry.")
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
+        layout.label(text=f"Maps: {self.roles}")
+        if self.projection == BOX:
+            layout.label(text="No UVs: box projection from object space; the mesh is unchanged.")
+        else:
+            layout.label(text="Create a packed material using this mesh's active UV map.")
+        layout.prop(self, "tile_size")
+        layout.label(text="One Mapping node repeats every map once per tile size.")
+        if self.projection == BOX:
+            layout.label(text="The object's scale at application is included.")
+        else:
+            layout.label(text="Size comes from the UV layout; without a reading, tiling stays 1.")
+        layout.label(text="Replace this slot only; existing materials remain unchanged.")
+        layout.label(text="Height uses bump; AO/edge maps remain available for wiring.")
+        layout.label(text="Normal maps use Blender tangent space. No global undo entry.")
+        if self.review_error:
+            layout.label(text=self.review_error, icon="ERROR")
 
     def cancel(self, context):
         jobs = getattr(self, "_jobs", None)
@@ -971,8 +1019,12 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
 
     def execute(self, context):
         try:
+            if getattr(self, "_jobs", None) is not None:
+                # A failed check() can leave an earlier tile size on the approval.
+                self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except Exception:
+            self.cancel(context)
             self.report({"ERROR"}, "Material assignment was not started; review the destination")
             return {"CANCELLED"}
         runtime.set_message("Verifying saved maps for the approved material slot")

@@ -47,6 +47,7 @@ from ..core.jobs.session_spend import SessionSpend
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker
 from ..core.scene import landing
+from ..core.scene.material_tiling import DEFAULT_TILE_SIZE_M
 from . import file_state, mesh_result_application, model_application
 from .film_application import FilmShotCommands
 from .image_application import ImageApplicationError, apply_images
@@ -1971,7 +1972,9 @@ class JobSession:
         del self._model_receipts[outcome]
         return AppliedModel(record, application)
 
-    def apply_recovered_material(self, completion, *, destination, target):
+    def apply_recovered_material(
+        self, completion, *, destination, target, tile_size=DEFAULT_TILE_SIZE_M
+    ):
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed material verification from this session")
@@ -1993,7 +1996,7 @@ class JobSession:
             tuple(verified.record.results[index].asset.asset_id for index in roles.values()),
         )
         try:
-            application = apply_material(verified, target)
+            application = apply_material(verified, target, tile_size)
         except MaterialApplicationError:
             try:
                 self._coordinator.fail_application(claim)

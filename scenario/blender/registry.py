@@ -23,6 +23,7 @@ def _modules():
         feedback,
         file_state,
         film,
+        generation,
         job_recovery,
         library_view,
         model_picker,
@@ -49,6 +50,7 @@ def _modules():
 
     modules = [
         props,
+        generation,
         file_state,
         desktop,
         apply_video,

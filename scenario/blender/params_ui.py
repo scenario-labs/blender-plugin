@@ -117,6 +117,23 @@ def sync_params(lane_state, schema, model_id):
     return seeded
 
 
+def unsynced(lane_state, schema, model_id):
+    """Whether a drawable setting of `model_id` has no row of that model; read-only.
+
+    sync_params gives every drawable setting a row of the form's model. A form
+    read from a file that this session has not synchronized can lack them, and a
+    request built from it would send only the server's defaults.
+    """
+    hidden = _hidden(model_id)
+    for spec in schema.specs:
+        if not _drawable(spec, hidden):
+            continue
+        item = lane_state.params.get(spec.name)
+        if item is None or item.model_id != model_id:
+            return True
+    return False
+
+
 def _numeric_fallback(spec, schema=None):
     """A sensible value when the schema has no default: preset, then 1024 for sizes, then the range."""
     lo = spec.min if spec.min is not None else 0

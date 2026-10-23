@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import bpy
+from bpy.app.handlers import persistent
 
 from ..core.api import trained_offers
 from ..core.api.catalog import (
@@ -38,6 +39,7 @@ log = logging.getLogger("scenario.generation")
 _schemas = {}
 MODEL_OFFLINE = "Online access is disabled; the model description cannot load"
 _MODEL_FAILED = "Could not load this model: "
+SETTINGS_NOT_LOADED = "This form's settings are not loaded; choose its model again"
 
 
 class ModelLoading(ScenarioError):
@@ -483,6 +485,50 @@ def select_panorama_mode(context, mode):
         refresh_panorama_models(context)
 
 
+# Lanes whose shared model list follows one scene's mode tab, with their refresh.
+_MODE_LISTS = {
+    "3d": refresh_3d_models,
+    "edit3d": refresh_edit3d_models,
+    "panorama": refresh_panorama_models,
+}
+
+
+def reload_forms(context=None):
+    """Rebuild the forms of a file just read from their saved models (main thread).
+
+    A file brings its forms' saved models and values, but not the rows of a
+    model this session never synchronized, and the shared 3D, Edit and
+    Environment lists still follow the previous file's modes. Each form takes
+    its saved model again and the rows of its schema; sync_params keeps the
+    saved values the schema still has. The mode lists are rebuilt for the
+    file's scene; other scenes' forms of those lanes keep their rows until
+    shown. A price never survives a file load, so every form is priced again
+    when shown. Before the catalog loads, set_catalog does this on delivery.
+    """
+    if not runtime.state.catalog_loaded:
+        return
+    context = context or bpy.context
+    for scene in bpy.data.scenes:
+        for lane in props.GENERATION_LANES:
+            lane_state = scene.scenario.lane_state(lane)
+            if lane in _MODE_LISTS:
+                props.mark_estimate_dirty(lane_state)
+                continue
+            restore_model_key(lane_state)
+            on_model_changed(context, lane_state)
+    if context.scene is not None:
+        for refresh in _MODE_LISTS.values():
+            refresh(context)
+
+
+@persistent
+def _load_post(*_):
+    try:
+        reload_forms()
+    except Exception:  # never let one form stop the file from opening cleanly
+        log.exception("Could not rebuild the forms of the opened file")
+
+
 def request_models(model_ids, *, mark_dirty=True):
     runtime.sync_catalog_context()
     if not runtime.online():
@@ -705,6 +751,9 @@ def build_request(scene, lane, for_estimate=False):
     schema = schema_for(model_id)
     if schema is None:
         return Request(lane, lane_kind(lane), model_id, {}, errors=["Model not loaded yet"])
+    if params_ui.unsynced(lane_state, schema, model_id):
+        # Never price or send a form whose settings would fall back to server defaults.
+        return Request(lane, lane_kind(lane), model_id, {}, errors=[SETTINGS_NOT_LOADED])
     if lane == "video" and schema.by_name("duration") is not None and lane_state.match_timeline:
         apply_match_timeline(
             scene, lane_state, schema
@@ -1504,3 +1553,13 @@ def _save_render_result(scene):
         log.warning("no render result to save: %s", err)
         return None
     return str(path)
+
+
+def register():
+    if _load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_load_post)
+
+
+def unregister():
+    if _load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_load_post)

@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
 import json
+import tempfile
 import types
 import unittest
 from ctypes import c_float
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import bpy
@@ -859,3 +861,106 @@ class FirstCatalogLoadOriginTests(unittest.TestCase):
             edit()
             bpy.context.view_layer.update()
             self.assertFalse(self.session._origins.current(origin))
+
+
+class FileLoadFormTests(unittest.TestCase):
+    """A file read after the catalog loaded gets its forms' rows and mode lists back."""
+
+    def setUp(self):
+        reset_scene()
+        self.generation = submodule("blender.generation")
+        self.runtime = submodule("blender.runtime")
+        self.params_ui = submodule("blender.params_ui")
+        self.props = submodule("blender.props")
+        self.runtime.state.reset()
+        self.addCleanup(self.runtime.state.reset)
+        self.enterContext(isolated_manager())
+        records = [
+            fixture_record(path.stem) for path in sorted((FIXTURES / "models").glob("*.json"))
+        ]
+        submodule("blender.handlers").dispatch(
+            ("catalog", {"records": records, "detailed": records})
+        )
+        self.root = Path(
+            self.enterContext(tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")))
+        )
+
+    def save(self, name):
+        path = str(self.root / name)
+        bpy.ops.wm.save_as_mainfile(filepath=path, check_existing=False)
+        return path
+
+    def model_ids(self, lane):
+        return [item[0] for item in self.runtime.enum_items(("models", lane))]
+
+    def assert_synced(self, state):
+        schema = self.generation.schema_for(state.model_id)
+        self.assertIsNotNone(schema)
+        self.assertFalse(self.params_ui.unsynced(state, schema, state.model_id))
+
+    def test_opened_file_gets_its_settings_rows_and_keeps_saved_values(self):
+        scene = bpy.context.scene
+        material = scene.scenario.lane_state("material")
+        self.assertEqual(material.model_id, "model_patina-material")
+        material.params["width"].int_value = 2048
+        saved = self.save("saved.blend")
+        # A file whose forms no session synchronized, such as one a script wrote.
+        for lane in self.props.GENERATION_LANES:
+            scene.scenario.lane_state(lane).params.clear()
+        material.estimate_key, material.estimate_state, material.estimate_cu = "old", "READY", 17
+        unsynced = self.save("unsynced.blend")
+        bpy.ops.wm.open_mainfile(filepath=unsynced)
+        scene = bpy.context.scene
+        for lane in self.props.GENERATION_LANES:
+            state = scene.scenario.lane_state(lane)
+            if state.model_id not in ("", "NONE"):
+                with self.subTest(lane=lane):
+                    self.assert_synced(state)
+        material = scene.scenario.lane_state("material")
+        self.assertEqual(material.params["width"].int_value, 1024)
+        # A price never outlives the file load: the form is priced again when shown.
+        self.assertEqual((material.estimate_key, material.estimate_state), ("", "PENDING"))
+        material.prompt = "mossy cobblestones"
+        request = self.generation.build_request(scene, "material", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        self.assertEqual((request.body["width"], request.body["height"]), (1024, 1024))
+        # A file whose form was synchronized keeps the value the user set.
+        bpy.ops.wm.open_mainfile(filepath=saved)
+        material = bpy.context.scene.scenario.lane_state("material")
+        self.assertEqual(material.params["width"].int_value, 2048)
+        self.assert_synced(material)
+
+    def test_opened_file_lists_the_models_of_its_own_modes(self):
+        scene = bpy.context.scene
+        scene.scenario.three_d_mode = "TEXT"
+        text_models = self.model_ids("3d")
+        three_d = scene.scenario.lane_state("3d")
+        three_d.model_id = text_models[-1]
+        chosen = three_d.model_key
+        scene.scenario.panorama_mode = "UPSCALE"
+        upscale_models = self.model_ids("panorama")
+        path = self.save("modes.blend")
+        # Another file listed other modes since; the shared lists follow it.
+        scene.scenario.three_d_mode = "IMAGE"
+        scene.scenario.panorama_mode = "GENERATE"
+        self.assertNotIn(chosen, self.model_ids("3d"))
+        self.assertNotEqual(self.model_ids("panorama"), upscale_models)
+        bpy.ops.wm.open_mainfile(filepath=path)
+        scene = bpy.context.scene
+        self.assertEqual(self.model_ids("3d"), text_models)
+        self.assertEqual(self.model_ids("panorama"), upscale_models)
+        self.assertEqual(scene.scenario.lane_state("3d").model_id, chosen)
+        for lane in ("3d", "panorama"):
+            with self.subTest(lane=lane):
+                self.assert_synced(scene.scenario.lane_state(lane))
+
+    def test_a_form_without_its_settings_rows_is_never_priced(self):
+        scene = bpy.context.scene
+        material = scene.scenario.lane_state("material")
+        material.prompt = "mossy cobblestones"
+        request = self.generation.build_request(scene, "material", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        material.params.remove(material.params.find("width"))
+        request = self.generation.build_request(scene, "material", for_estimate=True)
+        self.assertEqual(request.errors, [self.generation.SETTINGS_NOT_LOADED])
+        self.assertEqual(request.body, {})

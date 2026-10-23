@@ -2668,7 +2668,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertFalse({"REGISTER", "UNDO"} & set(cls.bl_options), cls.bl_options)
 
     def test_generate_at_or_below_the_threshold_submits_without_a_dialog(self):
-        self.dry_run_costs[self.model["id"]] = "200"
+        self.dry_run_costs[self.model["id"]] = "500"
         self.ui_quote()
         cls, operator, context, confirm = self.generate_operator()
         self.assertEqual(cls.invoke(operator, context, None), {"FINISHED"})
@@ -2677,7 +2677,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
 
     def test_generate_above_the_threshold_names_the_model_and_exact_price_first(self):
-        self.dry_run_costs[self.model["id"]] = "250.5"
+        self.dry_run_costs[self.model["id"]] = "500.5"
         self.ui_quote()
         cls, operator, context, confirm = self.generate_operator()
         self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
@@ -2685,7 +2685,7 @@ class ModelGenerationTests(unittest.TestCase):
             operator,
             None,
             title="Generate with Shared image?",
-            message="Exact price: 250.5 CU",
+            message="Exact price: 500.5 CU",
             confirm_text="Generate",
         )
         self.settle()
@@ -2696,12 +2696,12 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(len(self.paid), 1)
 
     def test_a_price_that_changed_under_the_dialog_is_refused_without_spending(self):
-        self.dry_run_costs[self.model["id"]] = "250.5"
+        self.dry_run_costs[self.model["id"]] = "500.5"
         self.ui_quote()
         cls, operator, context, confirm = self.generate_operator()
         self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
         # Repriced while the dialog is open: the dialog names a price the form no longer offers.
-        self.dry_run_costs[self.model["id"]] = "300"
+        self.dry_run_costs[self.model["id"]] = "600"
         self.ui_quote()
         self.assertEqual(cls.execute(operator, context), {"CANCELLED"})
         operator.report.assert_called_once_with({"ERROR"}, self.generation.PRICE_CHANGED)
@@ -2709,7 +2709,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.paid, [])
         # The new price stays on the form to review and generate again.
         self.assertEqual(self.lane.estimate_state, "READY")
-        self.assertEqual(self.lane.estimate_cu, 300.0)
+        self.assertEqual(self.lane.estimate_cu, 600.0)
 
     def test_a_zero_threshold_confirms_every_generate(self):
         saved = self.prefs.confirm_above_cu

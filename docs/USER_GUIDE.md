@@ -562,10 +562,14 @@ again once it finishes. See
    edits don't change the snapshot; remove the reference and upload again to
    replace it.
 
-Retexture starts on Claude Opus 5.5 3D, which repaints what your prompt names and
-leaves the rest of the textures, such as a character's face, as they were, on the
-same mesh, UVs and size. It can take several minutes; Meshy 7 Retexture, further
-down the list, is quicker and repaints the whole surface.
+Retexture starts on Meshy 7 Retexture, which repaints the whole surface in about a
+minute on your mesh's own UVs, with normal, roughness and metallic maps. When you
+apply it to your mesh, the faces you selected in Edit Mode keep their own texture.
+With no faces selected, a standing character keeps its head, so its face stays as
+it was; turn off **Keep the head's texture**, under the model, to repaint the head
+too. Claude Opus 5.5 3D and GPT-6 Astra 3D, next in the list, repaint only what
+your prompt names and keep the rest themselves, but take 10 to 16 minutes on a
+typical character; the form shows the expected wait.
 
 **Animate** starts with text-to-motion models, Uthana Text to Motion 3.0 and Viggle
 Text to Motion: describe the motion, such as "walks forward four steps then
@@ -937,7 +941,13 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   result that comes back in several pieces is joined into one mesh.
 - **Replace active UVs** or **Replace textures**: only when the result is the
   same surface as your mesh. Triangulated, split or reordered results are fine;
-  changed shapes are refused.
+  changed shapes are refused. **Replace textures** also shows **Keep texture**:
+  **Selected faces** (select them in Edit Mode, then return to Object Mode),
+  **Head** or **Nothing**. It starts on your selection, else on the head of a mesh
+  that stands like a character, 0.5 to 3 m tall, while **Keep the head's
+  texture** is on, and the line below says how many faces keep their texture.
+  They get your mesh's own colour, roughness, metallic and normal maps back,
+  blended into the new texture over a short band so no seam shows.
 - **Replace with parts**: replaces the mesh with the result's named parts, under
   an empty parent. When the parts are cut from your mesh's own surface, your
   mesh is split along them and every part keeps your UVs and materials, or the

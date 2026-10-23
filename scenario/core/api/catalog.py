@@ -105,8 +105,8 @@ DEFAULT_MODELS = {
         "model_bfl-flux-3-extend",
     ],
     "edit3d": [
-        "model_scenario-claude-opus-5-5-3d",
         "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
         "model_tripo-retopology-v3",
         "model_tripo-retopology",
         "model_meshy-rigging",
@@ -181,11 +181,13 @@ EDIT3D_TASKS = (
         "RETEXTURE",
         "Retexture",
         "New textures and materials for the mesh, from a prompt or a style image",
-        # The scene-edit models repaint only what the prompt names: a character keeps its face, mesh, UVs and size.
+        # Meshy 7 repaints the whole surface in about a minute on the source's own UVs; applying it in place
+        # paints the source's texture back on the head (or the faces selected in Edit Mode). The scene-edit
+        # models after it repaint only what the prompt names and keep the face themselves, in 10 to 16 minutes.
         (
+            "model_meshy-7-retexture",
             "model_scenario-claude-opus-5-5-3d",
             "model_scenario-gpt6-astra-3d",
-            "model_meshy-7-retexture",
             "model_tripo-v3-0-texturing",
             "model_trellis-2-retexture",
             "model_tencent-texture-edit",
@@ -298,6 +300,8 @@ def choice_items(model_id, name):
 # Tripo P2 Text to 3D starts the same way: a game prop of about 50,000 faces in a 5 MB GLB, at its real size.
 # Uthana Text to Motion 3.0 returns only its skeleton and clip: Apply animation keeps none of its mannequin mesh, and
 # with the mesh its skin leaves the scene root, which carries the walk, out of the joints.
+# Meshy 7 Retexture keeps the source's UVs and returns normal and metallic-roughness maps with its colour, so a kept
+# head gets all its own maps back, normals included, at the same 40 CU.
 PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-text-to-3d": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-text-to-3d-fast": {"material": "PBR"},
@@ -306,7 +310,26 @@ PARAM_OVERRIDES = {
     "model_tripo-p2-image-to-3d": {"autoSize": True, "faceLimit": 50000},
     "model_tripo-p2-text-to-3d": {"autoSize": True, "faceLimit": 50000},
     "model_uthana-text-to-motion-3.0": {"animationOnly": True},
+    "model_meshy-7-retexture": {"enableOriginalUv": True, "enablePbr": True},
 }
+# Server minutes the slow Edit 3D models took on a 55,000-triangle character: Claude Opus 5.5 3D at high effort 12
+# and 16, GPT-6 Astra 3D 10. The form shows them; the quick models need no warning.
+EXPECTED_MINUTES = {
+    "model_scenario-claude-opus-5-5-3d": (12, 16),
+    "model_scenario-gpt6-astra-3d": (10, 10),
+}
+
+
+def expected_wait(model_id):
+    """How long a slow model usually takes, as the form says it, or None."""
+    span = EXPECTED_MINUTES.get(model_id)
+    if span is None:
+        return None
+    low, high = span
+    minutes = f"{low}" if low == high else f"{low} to {high}"
+    return f"Slow: about {minutes} minutes on a 55,000-triangle character"
+
+
 MULTIVIEW_HINTS = ("multi", "multiview")
 
 

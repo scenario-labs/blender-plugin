@@ -1,9 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
+import json
+from pathlib import Path
+
 from scenario.core.api import catalog
 from scenario.core.api.catalog import ModelRecord, param_override, starting_value
 from scenario.core.schema.params import parse_schema
 
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "models"
 P2 = "model_tripo-p2-image-to-3d"
 # The inputs of the live model description that the starting values touch, as REST sends them.
 P2_INPUTS = [
@@ -138,3 +142,14 @@ def test_uthana_text_to_motion_returns_only_its_skeleton_and_clip():
     schema = parse_schema(record)
     assert starting_value(record.id, schema.by_name("animationOnly")) is True
     assert starting_value(record.id, schema.by_name("rewritePrompt")) is None
+
+
+def test_meshy_7_retexture_keeps_the_source_uvs_and_returns_pbr_maps():
+    # On the source's own UVs a kept head gets its colour, normal and packed maps back in place.
+    record = ModelRecord.from_api(
+        json.loads((FIXTURES / "model_meshy-7-retexture.json").read_text())["model"]
+    )
+    schema = parse_schema(record)
+    assert starting_value(record.id, schema.by_name("enableOriginalUv")) is True
+    assert starting_value(record.id, schema.by_name("enablePbr")) is True
+    assert starting_value(record.id, schema.by_name("textureResolution")) is None

@@ -123,8 +123,9 @@ def test_edit3d_lane_and_tasks():
     assert catalog.edit3d_task("nope")[0] == "ALL"
 
 
-def test_retexture_starts_on_claude_opus_5_5_3d_then_its_peer_and_meshy_7():
-    # The scene-edit models repaint what the prompt names and keep a character's face.
+def test_retexture_starts_on_meshy_7_then_the_scene_edit_models():
+    # Meshy 7 repaints the whole outfit in about a minute; applying it in place keeps the
+    # source's head. The scene-edit models keep the face themselves, in 10 to 16 minutes.
     inputs = [
         {"name": "images", "type": "file_array", "kind": "image"},
         {"name": "sceneFile", "type": "file", "kind": "3d"},
@@ -135,18 +136,32 @@ def test_retexture_starts_on_claude_opus_5_5_3d_then_its_peer_and_meshy_7():
     astra = rec("model_scenario-gpt6-astra-3d", "GPT-6 Astra 3D", caps, inputs=inputs)
     shuffled = [astra, *reversed(RECORDS), opus]
     assert ids(catalog.edit3d_models("RETEXTURE", shuffled)) == [
+        "model_meshy-7-retexture",
         "model_scenario-claude-opus-5-5-3d",
         "model_scenario-gpt6-astra-3d",
-        "model_meshy-7-retexture",
     ]
-    assert catalog.DEFAULT_MODELS["edit3d"][0] == "model_scenario-claude-opus-5-5-3d"
-    assert ids(catalog.models_for_lane("edit3d", shuffled))[0] == opus.id
+    assert catalog.DEFAULT_MODELS["edit3d"][:2] == [
+        "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
+    ]
+    assert ids(catalog.models_for_lane("edit3d", shuffled))[0] == "model_meshy-7-retexture"
     # The selected mesh goes to the scene file, not to the reference images listed first.
     assert catalog.mesh_param(opus) == "sceneFile"
     # Retexture is their only Edit 3D task, and they still build in the 3D lane.
     tasks = [task for task, _label, _desc, models in catalog.EDIT3D_TASKS if opus.id in models]
     assert tasks == ["RETEXTURE"]
     assert opus.id in ids(catalog.models_for_lane("3d", shuffled))
+
+
+def test_only_the_slow_scene_edit_models_show_an_expected_wait():
+    assert catalog.expected_wait("model_scenario-claude-opus-5-5-3d") == (
+        "Slow: about 12 to 16 minutes on a 55,000-triangle character"
+    )
+    assert catalog.expected_wait("model_scenario-gpt6-astra-3d") == (
+        "Slow: about 10 minutes on a 55,000-triangle character"
+    )
+    assert catalog.expected_wait("model_meshy-7-retexture") is None
+    assert catalog.expected_wait("model_unknown") is None
 
 
 def test_text_to_motion_models_join_the_animate_task_first_and_stay_3d_results():

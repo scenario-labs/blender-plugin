@@ -565,6 +565,15 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
         description="The 2:1 output size; free sizes are not offered",
         update=_on_panorama_size_change,
     )
+    retexture_keep_head: BoolProperty(
+        name="Keep the head's texture",
+        default=True,
+        description=(
+            "On a mesh that reads as a standing character, Replace textures paints its "
+            "original texture back on the head, so the face stays as it was. Faces selected "
+            "in Edit Mode are kept instead"
+        ),
+    )
     show_cloud_history: BoolProperty(
         name="Cloud history",
         default=True,

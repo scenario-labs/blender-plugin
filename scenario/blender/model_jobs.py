@@ -51,6 +51,9 @@ from ..core.jobs.store import (
 )
 from ..core.jobs.workers import WorkerError
 from ..core.scene import landing, material_tiling, panorama_contract, placement
+from ..core.scene.kept_texture import AUTO as KEEP_AUTO
+from ..core.scene.kept_texture import MODES as KEEP_MODES
+from ..core.scene.kept_texture import NONE as KEEP_NONE
 from ..core.scene.mesh_edit_policy import (
     SEVERAL_SOURCES_FALLBACK,
     TASK_POLICIES,
@@ -62,7 +65,7 @@ from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
 from ..core.ui.saved_job_actions import NATIVE_ONLY, WorkflowSteps
-from . import file_state, first_frame_handoff
+from . import file_state, first_frame_handoff, kept_texture
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
@@ -560,6 +563,10 @@ class MeshApplicationApproval:
     format: str = "glb"
     # Every target object's name, in capture order.
     target_names: tuple = ()
+    # Where RETEXTURE keeps the source's own texture: SELECTED, HEAD or NONE, and
+    # the region resolved on the captured sources (None for other policies).
+    keep_texture: str = KEEP_NONE
+    kept: object = field(default=None, repr=False)
 
     @property
     def targets(self):
@@ -1038,6 +1045,7 @@ class ModelJobs:
                         policy=mesh.policy,
                         result_to_source=mesh.mapping,
                         keep_original=mesh.keep_original,
+                        keep_texture=mesh.kept,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
@@ -2903,6 +2911,28 @@ class ModelJobs:
             policy = SEVERAL_SOURCES_FALLBACK
         return start, policy, source
 
+    @staticmethod
+    def _kept_texture(targets, policy, requested):
+        """RETEXTURE's kept region on the captured sources: (mode, region or None).
+
+        AUTO, or None, starts on the selected faces, else on a standing
+        character's head while the Edit form's Keep head option is on. Other
+        policies keep no texture; they report the mode a retexture would start on.
+        """
+        if requested is None:
+            requested = KEEP_AUTO
+        if requested not in (KEEP_AUTO, *KEEP_MODES):
+            raise ScenarioError(0, "Keep texture on SELECTED faces, the HEAD or NONE")
+        scene = targets[0].scene
+        keep_head = scene.scenario.retexture_keep_head
+        if policy != "RETEXTURE":
+            if requested not in (KEEP_AUTO, KEEP_NONE):
+                raise ScenarioError(0, "Keep texture applies only to Replace textures")
+            objects = [target.obj for target in targets]
+            return kept_texture.starting_mode(objects, scene, keep_head), None
+        region = kept_texture.review(targets, requested, keep_head=keep_head)
+        return region.mode, region
+
     def prepare_mesh_application(
         self,
         request_id,
@@ -2916,6 +2946,7 @@ class ModelJobs:
         keep_original=True,
         original_source=False,
         review_placement=False,
+        keep_texture=None,
     ):
         """Capture one reviewed mesh destination; return its single-use approval.
 
@@ -2930,6 +2961,9 @@ class ModelJobs:
         (`MeshApplicationApproval.target` is then a tuple) and accepts only UV,
         RETEXTURE or RIG, in scene coordinates or fitted from them; a job with
         no derived task starts those on UV instead of REMESH.
+
+        RETEXTURE resolves where the source keeps its own texture (`keep_texture`:
+        AUTO, SELECTED, HEAD or NONE) on the captured sources now, and binds it.
         """
         record = self.store.get(request_id)
         if (
@@ -2979,6 +3013,7 @@ class ModelJobs:
         ):
             placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
+        mode, kept = self._kept_texture(targets, policy, keep_texture)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2999,12 +3034,20 @@ class ModelJobs:
             primary=unit.primary,
             format=unit.format.value,
             target_names=tuple(item.name for item in targets),
+            keep_texture=mode,
+            kept=kept,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
-    def revise_mesh_application(self, identifier, *, policy, placement, keep_original):
-        """Change reviewed options without recapturing or retargeting the source."""
+    def revise_mesh_application(
+        self, identifier, *, policy, placement, keep_original, keep_texture=None
+    ):
+        """Change reviewed options without recapturing or retargeting the source.
+
+        `keep_texture` None keeps the reviewed choice; a RETEXTURE region is
+        resolved again only when the choice or the policy changes.
+        """
         ticket = self._application_approvals.get(identifier)
         if not isinstance(ticket, MeshApplicationApproval):
             raise ScenarioError(0, "Use an unconsumed mesh destination review")
@@ -3012,12 +3055,20 @@ class ModelJobs:
         self.session.validate_destination(ticket.destination)
         if self.store.get(ticket.record.intent.request_id) != ticket.record:
             raise ScenarioError(0, "The saved mesh changed; start a fresh review")
-        if (policy, placement, keep_original) == (
+        keep_texture = ticket.keep_texture if keep_texture is None else keep_texture
+        if (policy, placement, keep_original, keep_texture) == (
             ticket.policy,
             ticket.placement,
             ticket.keep_original,
+            ticket.keep_texture,
         ):
             return ticket
+        if policy == ticket.policy and keep_texture == ticket.keep_texture:
+            mode, kept = ticket.keep_texture, ticket.kept
+        else:
+            # Other policies keep no texture: they only report a retexture's start.
+            requested = keep_texture if policy == "RETEXTURE" else None
+            mode, kept = self._kept_texture(ticket.targets, policy, requested)
         revised = replace(
             ticket,
             identifier=uuid.uuid4().hex,
@@ -3026,6 +3077,8 @@ class ModelJobs:
             mapping=mapping,
             keep_original=keep_original,
             policy_source=ticket.policy_source if policy == ticket.policy else "requested",
+            keep_texture=mode,
+            kept=kept,
         )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised
@@ -3041,6 +3094,7 @@ class ModelJobs:
             policy=ticket.policy,
             result_to_source=ticket.mapping,
             keep_original=ticket.keep_original,
+            keep_texture=ticket.kept,
         )
         self.session.validate_destination(ticket.destination)
         request_id = record.intent.request_id
@@ -3512,6 +3566,7 @@ class ModelJobs:
             else None,
             "parts_from": application.parts_from,
             "joined_meshes": application.joined_meshes,
+            "kept_texture": application.kept_texture,
         }
 
     def _model_import_status(self, request_id):

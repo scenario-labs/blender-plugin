@@ -1954,6 +1954,7 @@ def prepare_result_application(args):
             placement=args.get("mesh_placement"),
             keep_original=args.get("keep_original", True),
             original_source=purpose == "mesh_source",
+            keep_texture=args.get("keep_texture"),
         )
         return {
             "context_id": args["context_id"],
@@ -1977,6 +1978,10 @@ def prepare_result_application(args):
             "primary": approval.primary,
             "mesh_placement": approval.placement,
             "keep_original": approval.keep_original,
+            # RETEXTURE paints the source's texture back on these faces after the result lands.
+            "keep_texture": approval.keep_texture if approval.kept is not None else None,
+            "kept_faces": approval.kept.faces if approval.kept is not None else 0,
+            "kept_note": approval.kept.note if approval.kept is not None else None,
             # FIT binds candidate bases; the verified mapping is reported after application.
             "result_to_source": None
             if approval.placement == "FIT"
@@ -1996,7 +2001,8 @@ def prepare_result_application(args):
             "REMESH replaces geometry, UVs and mesh materials, joining several meshes in the "
             "result into one only under FIT; UV replaces only active UVs. "
             "RETEXTURE preserves geometry and non-UV attributes, replacing all UV layers and "
-            "mesh materials. UV, RETEXTURE and RIG require the source surface: every returned "
+            "mesh materials, then paints the source's texture back on keep_texture faces. "
+            "UV, RETEXTURE and RIG require the source surface: every returned "
             "result mesh together may be triangulated, split at seams or reordered, but must "
             "match the source positions and faces, or fail with the reason. "
             "PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts; "
@@ -3591,8 +3597,9 @@ SPECS = (
             "  - tile_size_m: optional, 0.01 to 1000 (default 2), for purpose material: world metres per texture repeat. The approval reports it with projection BOX (a mesh without UVs: box projection, scaled by its object scale) or UV.\n"
             "  - mesh_policy: REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE; omit to start from the job's Edit 3D task (Animate: ANIMATE for a source skinned to an armature, else RIG), or RIG for another skinned source, which accepts only RIG or ANIMATE (see mesh_policy_source). ANIMATE ignores mesh_placement and keep_original. The approval note explains the chosen edit.\n"
             "  - mesh_placement: WORLD, LOCAL or FIT; FIT (not ANIMATE) applies one uniform scale and offset only if the result verifiably matches the source. Default: FIT, except WORLD for ANIMATE and the REMESH fallback.\n"
+            "  - keep_texture: SELECTED, HEAD or NONE for RETEXTURE; omit to start on faces selected in Edit Mode, else a standing character's head; kept_note says what keeps its texture.\n"
             "  - keep_original: boolean, default true; keep a hidden copy of the original mesh. mesh_edit and mesh_source need the asset_id of a GLB, glTF, FBX or OBJ unit; mesh_source uses the unchanged source exported for the single captured input (every exported object), ignores selection and ends with undo, load or restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target (null for several objects), targets, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, format, primary, mesh_placement, keep_original, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why. camera_background also returns camera, backgrounds_kept and frame; image_plane cursor and plane_unlit.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target (null for several objects), targets, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, format, primary, mesh_placement, keep_original, keep_texture, kept_faces, kept_note, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why. camera_background also returns camera, backgrounds_kept and frame; image_plane cursor and plane_unlit.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
             "Show the destination, selected assets and media frame, model format, files, cursor, target size and splat options, material target/slot/roles/tile size, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. Splats are shown as a coloured point cloud, not rendered as Gaussian splats; to change splat options or the target size, prepare again and show the new approval. It spends no credits and imports nothing but may fetch missing files first. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
@@ -3624,6 +3631,7 @@ SPECS = (
                 },
                 "mesh_placement": {"type": "string", "enum": ["WORLD", "LOCAL", "FIT"]},
                 "keep_original": {"type": "boolean"},
+                "keep_texture": {"type": "string", "enum": ["SELECTED", "HEAD", "NONE"]},
                 "splat_max_points": {
                     "type": "integer",
                     "enum": [250000, 500000, 1000000, 2000000],

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import MagicMock
 
 import bpy
-from helpers import FIXTURES, reset_scene, submodule
+from helpers import FIXTURES, drawn_texts, reset_scene, submodule
 
 
 def rec(name):
@@ -44,7 +44,7 @@ class Edit3DLaneTests(unittest.TestCase):
         self.scene.scenario.edit3d_task = "RETEXTURE"
         self.assertEqual(
             [i[0] for i in self.runtime.enum_items(("models", "edit3d"))],
-            ["model_scenario-claude-opus-5-5-3d", "model_meshy-7-retexture"],
+            ["model_meshy-7-retexture", "model_scenario-claude-opus-5-5-3d"],
         )
         self.scene.scenario.edit3d_task = "REMESH"
         self.assertEqual(
@@ -54,12 +54,26 @@ class Edit3DLaneTests(unittest.TestCase):
         self.scene.scenario.edit3d_task = "ALL"
         self.assertEqual(len(self.runtime.enum_items(("models", "edit3d"))), 4)
 
-    def test_retexture_starts_on_claude_opus_5_5_3d_with_the_mesh_as_its_scene_file(self):
-        # It repaints what the prompt names and keeps the rest, a character's face included.
+    def test_retexture_starts_on_meshy_7_on_the_source_uvs_with_pbr_maps(self):
+        # About a minute; Replace textures then paints the source's head back in place.
         self.scene.scenario.edit3d_task = "REMESH"
         self.scene.scenario.edit3d_task = "RETEXTURE"
         lane = self.scene.scenario.lane_state("edit3d")
-        self.assertEqual(lane.model_id, "model_scenario-claude-opus-5-5-3d")
+        self.assertEqual(lane.model_id, "model_meshy-7-retexture")
+        lane.prompt = "red and gold royal guard uniform"
+        self.generation.on_model_changed(bpy.context, lane)
+        request = self.generation.build_request(self.scene, "edit3d")
+        self.assertEqual(request.errors, [])
+        self.assertIs(request.body.get("enableOriginalUv"), True)
+        self.assertIs(request.body.get("enablePbr"), True)
+        policy = submodule("core.scene.mesh_edit_policy")
+        self.assertEqual(policy.default_policy(lane.model_id).policy, "RETEXTURE")
+
+    def test_claude_opus_5_5_3d_takes_the_mesh_as_its_scene_file(self):
+        # It repaints what the prompt names and keeps the rest, a character's face included.
+        self.scene.scenario.edit3d_task = "RETEXTURE"
+        lane = self.scene.scenario.lane_state("edit3d")
+        lane.model_id = "model_scenario-claude-opus-5-5-3d"
         lane.prompt = "red and gold royal guard uniform"
         request = self.generation.build_request(self.scene, "edit3d")
         self.assertEqual(request.errors, [])
@@ -128,6 +142,37 @@ class Edit3DLaneTests(unittest.TestCase):
         lane.model_id = "model_meshy-7-retexture"
         lane.prompt = "rusty iron plates"
         self.assertEqual(self.generation.build_request(self.scene, "edit3d").errors, [])
+
+    def test_retexture_form_says_what_keeps_its_texture_and_how_long_slow_models_take(self):
+        panels = submodule("blender.panels")
+        self.scene.scenario.edit3d_task = "RETEXTURE"
+        lane = self.scene.scenario.lane_state("edit3d")
+
+        def drawn():
+            layout = MagicMock()
+            panels.draw_edit3d_lane(layout, bpy.context)
+            props = [call.args[1] for call in layout.prop.call_args_list if len(call.args) > 1]
+            return " ".join(drawn_texts(layout)), props
+
+        # A 2 m cube is no standing character, and Meshy 7 needs no wait warning.
+        text, shown = drawn()
+        self.assertIn("Select faces in Edit Mode to keep their texture.", text)
+        self.assertNotIn("retexture_keep_head", shown)
+        self.assertNotIn("Slow:", text)
+        # Stood up like a person, it offers to keep the head, on by default.
+        self.cube.scale = (0.3, 0.2, 0.9)
+        bpy.context.view_layer.update()
+        text, shown = drawn()
+        self.assertIn("retexture_keep_head", shown)
+        self.assertIn("The head keeps its texture.", text)
+        self.scene.scenario.retexture_keep_head = False
+        self.assertNotIn("The head keeps its texture.", drawn()[0])
+        # Faces selected in Edit Mode win.
+        for polygon in self.cube.data.polygons:
+            polygon.select = polygon.index == 0
+        self.assertIn("Faces selected in Edit Mode keep their texture (1);", drawn()[0])
+        lane.model_id = "model_scenario-claude-opus-5-5-3d"
+        self.assertIn("Slow: about 12 to 16 minutes", drawn()[0])
 
     def test_export_and_result_placed_next_to_the_source(self):
         mesh_export = submodule("blender.mesh_export")

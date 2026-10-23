@@ -7392,6 +7392,40 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
 
+    def test_retexture_review_keeps_the_selected_faces_and_says_when_no_head_is_found(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        # A cube is no standing character: the review starts on keeping nothing.
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE")
+        self.assertEqual(
+            (approval["keep_texture"], approval["kept_faces"], approval["kept_note"]),
+            ("NONE", 0, "The whole surface takes the new texture"),
+        )
+        head = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE", keep_texture="HEAD")
+        self.assertEqual((head["keep_texture"], head["kept_faces"]), ("HEAD", 0))
+        self.assertTrue(head["kept_note"].startswith("No head found on this mesh"))
+        for polygon in source.data.polygons:
+            polygon.select = polygon.index < 2
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE")
+        self.assertEqual((approval["keep_texture"], approval["kept_faces"]), ("SELECTED", 2))
+        # Other edits keep no texture.
+        remesh = self.prepare_mesh_edit(request_id, mesh_policy="REMESH")
+        self.assertEqual(
+            (remesh["keep_texture"], remesh["kept_faces"], remesh["kept_note"]), (None, 0, None)
+        )
+        with self.assertRaises(self.request_error):
+            self.prepare_mesh_edit(request_id, mesh_policy="REMESH", keep_texture="HEAD")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        op, ticket = self.mesh_dialog(request_id, policy="RETEXTURE")
+        self.assertEqual((op.keep_texture, ticket.keep_texture), ("SELECTED", "SELECTED"))
+        self.assertEqual(op.kept_note, "The selected faces keep their texture (2)")
+        op.keep_texture = "NONE"
+        operator._sync_options(op)
+        ticket = self.runtime.state.model_jobs._application_approvals[op.application_id]
+        self.assertEqual(ticket.keep_texture, "NONE")
+        self.assertFalse(ticket.kept.kept)
+        self.assertEqual(op.kept_note, "The whole surface takes the new texture")
+
     def mesh_native_history(self, policy, *, keep_original):
         from helpers import parts_glb
 

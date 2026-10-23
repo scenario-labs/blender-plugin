@@ -1878,6 +1878,7 @@ class JobSession:
         policy,
         result_to_source,
         keep_original,
+        keep_texture=None,
     ):
         """Apply one saved import unit to an explicitly captured mesh, never current selection.
 
@@ -1889,6 +1890,7 @@ class JobSession:
 
         `target` may be a tuple of captured sources edited together; the claim's
         destination is then their scene, and the job's mesh source lists them.
+        `keep_texture` is RETEXTURE's reviewed kept region of those sources, or None.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1906,7 +1908,11 @@ class JobSession:
         elif target.scene != scene or target.obj != obj:
             raise OriginUnavailable("Use the exact captured mesh target")
         validate_mesh_request(
-            target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
+            target,
+            policy=policy,
+            result_to_source=result_to_source,
+            keep_original=keep_original,
+            keep_texture=keep_texture,
         )
         try:
             unit = import_plan(verified.record).unit(asset_id)
@@ -1926,6 +1932,7 @@ class JobSession:
             policy=policy,
             result_to_source=result_to_source,
             keep_original=keep_original,
+            keep_texture=keep_texture,
         )
         try:
             claim = self._claim_saved_application(
@@ -1939,6 +1946,7 @@ class JobSession:
                     policy=policy,
                     result_to_source=result_to_source,
                     keep_original=keep_original,
+                    keep_texture=keep_texture,
                 ),
             )
         finally:

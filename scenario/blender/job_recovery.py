@@ -1069,6 +1069,11 @@ def _source_names(names):
     return f"{shown} and {hidden} more" if hidden > 0 else shown
 
 
+def _kept_note(approval):
+    """The review's sentence on what keeps its texture; empty for other policies."""
+    return approval.kept.note if approval.kept is not None else ""
+
+
 def _mesh_policy_changed(self, _context):
     # A property update, never draw(): mesh edits default to a verified fit;
     # ANIMATE uses no coordinates, and a REMESH that is not the job's own Remesh
@@ -1158,6 +1163,23 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         options={"SKIP_SAVE"},
         description="Keep the mesh as it was in a hidden copy named after it, to compare or go back",
     )
+    keep_texture: EnumProperty(
+        name="Keep texture",
+        description="Which faces keep the mesh's own texture under the retexture",
+        items=(
+            (
+                "SELECTED",
+                "Selected faces",
+                "Paint the original texture back on the faces selected in Edit Mode",
+            ),
+            ("HEAD", "Head", "Paint the original texture back on the head of a character"),
+            ("NONE", "Nothing", "Use the result's texture everywhere"),
+        ),
+        default="NONE",
+        options={"SKIP_SAVE"},
+    )
+    # The review's sentence on what keeps its texture.
+    kept_note: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         try:
@@ -1180,10 +1202,15 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 keep_original=self.keep_original,
                 original_source=self.original_source,
                 review_placement=True,
+                # Unset, Replace textures starts on the selected faces, else a character's head.
+                keep_texture=(
+                    self.keep_texture if self.properties.is_property_set("keep_texture") else None
+                ),
             )
             self._jobs = jobs
             self.application_id = approval.identifier
             self.policy, self.placement = approval.policy, approval.placement
+            self.keep_texture, self.kept_note = approval.keep_texture, _kept_note(approval)
             self.remesh_task = approval.remesh_task
             self.policy_note = _policy_note(approval)
             self.result_role = {True: "primary", False: "alternate"}.get(approval.primary, "")
@@ -1226,8 +1253,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             policy=self.policy,
             placement=self.placement,
             keep_original=self.keep_original,
+            keep_texture=self.keep_texture,
         )
         self.application_id = approval.identifier
+        self.keep_texture, self.kept_note = approval.keep_texture, _kept_note(approval)
         self.review_error = ""
 
     def check(self, context):
@@ -1308,6 +1337,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
             layout.label(text="The result must match this surface; triangles and seams are fine.")
+            layout.prop(self, "keep_texture")
+            if self.kept_note:
+                layout.label(text=self.kept_note, icon="FACESEL")
         else:
             layout.label(text="Replace active UVs only; the result must match this surface.")
         layout.label(

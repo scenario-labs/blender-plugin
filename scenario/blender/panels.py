@@ -624,9 +624,41 @@ def draw_dense_mesh_hint(layout, objects, task_id):
         )
 
 
+def draw_kept_texture(layout, scene, objects):
+    """Say which faces Replace textures keeps, and offer the head of a standing character.
+
+    The review resolves the faces when the result is applied; this only reads
+    selection counts and bounds, so drawing stays cheap.
+    """
+    from . import kept_texture
+
+    chosen = total = 0
+    for obj in objects:
+        count, faces = kept_texture.selected_faces(obj)
+        chosen, total = chosen + count, total + faces
+    if 0 < chosen < total:
+        draw_wrapped(
+            layout,
+            f"Faces selected in Edit Mode keep their texture ({chosen:,}); the rest is repainted.",
+            "FACESEL",
+        )
+        return
+    if kept_texture.standing(objects, scene):
+        layout.prop(scene.scenario, "retexture_keep_head")
+        if scene.scenario.retexture_keep_head:
+            draw_wrapped(
+                layout,
+                "The head keeps its texture. Select faces in Edit Mode to choose what keeps "
+                "its texture instead.",
+                "INFO",
+            )
+        return
+    draw_wrapped(layout, "Select faces in Edit Mode to keep their texture.", "FACESEL")
+
+
 def draw_edit3d_lane(layout, context):
     """The 3D tab in Edit mode: Scenario's 3D tools on the selected mesh."""
-    from ..core.api.catalog import MOTION_MODELS, edit3d_task, mesh_param
+    from ..core.api.catalog import MOTION_MODELS, edit3d_task, expected_wait, mesh_param
     from . import mesh_export
 
     scene = context.scene
@@ -655,6 +687,11 @@ def draw_edit3d_lane(layout, context):
         layout.label(text="No model for this task in the catalog", icon="ERROR")
         return
     draw_model_row(layout, lane_state, "edit3d")
+    wait = expected_wait(lane_state.model_id)
+    if wait:
+        draw_wrapped(layout, wait, "TIME")
+    if task[0] == "RETEXTURE" and objects and not motion:
+        draw_kept_texture(layout, scene, objects)
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
         draw_schema_status(layout, lane_state, "edit3d")

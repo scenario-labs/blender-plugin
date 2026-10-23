@@ -911,6 +911,59 @@ acceptance remain outside this policy;
 Explicit remesh remains a separate reviewed choice when geometry replacement is
 intended.
 
+### Keep the source's texture on chosen faces
+
+A retexture model repaints the whole surface, and a character's face drifts with
+it. Replace textures can paint the source's own maps back on some faces after the
+result lands: **Keep texture** in the native review, `keep_texture` over MCP.
+
+- `SELECTED`: the faces selected in Edit Mode, read from the captured mesh in
+  Object Mode. Selecting every face, as an import does, is no selection.
+- `HEAD`: a character's head, found from the shape alone
+  (`core/scene/kept_texture.py`). Positions are welded so a mesh split at UV seams
+  is one surface again, and connected pieces are told apart: the piece that holds
+  the top and reaches lowest is the body. Its horizontal sections, read down from
+  the widest one in the top quarter, narrow to a neck and open again at the
+  shoulders or a collar within 30% of the height; the neck must be at most 0.85
+  of the head's widest section. Other pieces mostly above the neck, such as hair,
+  are kept whole and pieces mostly below it, such as a jacket and its collar, are
+  not. The body piece is kept whole when it is a head-and-neck shell, and is
+  otherwise cut at the neck with a band of 2% of the height. A mesh with no such
+  neck keeps nothing, and the review says so.
+- `NONE`: the result's texture everywhere.
+
+The review starts on `SELECTED` when some but not all faces are selected, else on
+`HEAD` when the captured sources stand like a character (0.5 to 3 m tall at the
+scene's unit scale and taller than their widest horizontal extent) and the Edit 3D
+form's **Keep the head's texture** is on, else on `NONE`, so a prop or a building
+never starts on `HEAD`; chosen explicitly, `HEAD` still needs a neck. The review's
+note names the kept faces, and the region is bound to the approval like the policy
+and coordinates: changing it reviews again.
+
+After the result's UVs and materials replace the source's, and before the edit is
+accepted, each new result image used by a kept face is painted: every texel under
+a kept face takes the source's map at the same surface point, sampled through the
+source's UVs (bilinear, repeating), and blended by a per-vertex weight interpolated
+across each face: 1 on kept faces, falling to 0 over 1% of the bounding-box
+diagonal along the surface around a selection, or over 2% of the height across a
+neck cut. Empty texels within 8 texels per
+2048 of a painted one take its colour, so mipmaps and filtering show no seam.
+Maps pair by their role in each material's Principled BSDF: base colour (same
+colour space only), tangent-space normal (only where the result keeps the source's
+UV layout, since the tangent frame follows it), and roughness and metallic, read
+from a Separate Color channel as glTF packs them or directly as a grey value. Only
+images this application created change; they are repacked losslessly as PNG, or
+OpenEXR for float images. Source materials and images are never written.
+`job_status` `mesh_edit.kept_texture` reports `mode`, `source` (`selection`,
+`head` or null), `faces`, the `maps` painted and the roles `skipped` with a reason.
+A failure rolls the whole application back.
+
+Results on the source's own UV layout, such as Meshy 7 Retexture with
+`enableOriginalUv`, which the Edit 3D form turns on, give every map back,
+normals included. A face whose result UVs overlap a repainted face's shares its
+texels, and the last one painted wins; a texture repeated outside 0 to 1 is
+painted at the wrapped texel.
+
 
 ## Native undo for saved mesh edits
 

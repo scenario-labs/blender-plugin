@@ -27,6 +27,7 @@ from ..core.ui import saved_job_actions
 from . import render_lanes, result_media, review_previews, runtime
 from .media_application import MEDIA_TYPES
 from .mesh_result_application import MeshResultApplicationError
+from .model_jobs import FilesDownloading
 
 # Saved media types offered per application; describe() owns no media policy.
 RESULT_TYPES = saved_job_actions.ResultTypes(
@@ -742,6 +743,9 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             self.review_error = ""
             if self.match_source:
                 self._sync_options()
+        except FilesDownloading as note:
+            self.report({"INFO"}, str(note))
+            return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Could not prepare model import; inspect the saved result")
             return {"CANCELLED"}
@@ -966,6 +970,9 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
             self.roles = ", ".join(approval.roles)
             self.projection, self.tile_size = approval.projection, approval.tile_size
             self.review_error = ""
+        except FilesDownloading as note:
+            self.report({"INFO"}, str(note))
+            return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Choose a local single-user mesh and inspect saved texture maps")
             return {"CANCELLED"}
@@ -1183,6 +1190,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             # A policy the captured sources cannot take, such as Replace geometry
             # for several objects, names its own reason.
             self.report({"ERROR"}, str(error))
+            return {"CANCELLED"}
+        except FilesDownloading as note:
+            self.report({"INFO"}, str(note))
             return {"CANCELLED"}
         except Exception:
             self.report(

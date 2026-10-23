@@ -32,14 +32,27 @@ def _main_thread():
         raise MaterialApplicationError("Apply materials on Blender's main thread")
 
 
+def _size(item):
+    if item.receipt is not None:
+        return item.receipt.size
+    return item.asset.expected_size or 0
+
+
 def selected_maps(record):
-    """Require unambiguous saved roles; never choose a texture by name or array order."""
+    """Require unambiguous saved roles; never choose a texture by name or array order.
+
+    A map that waits for an explicit fetch counts at its declared size until it is saved.
+    """
     result = {}
     for index, item in enumerate(record.results):
         role = item.asset.texture_role
         if role is None:
             continue
-        if role in result or item.asset.media_type not in _IMAGE_TYPES or item.receipt is None:
+        if (
+            role in result
+            or item.asset.media_type not in _IMAGE_TYPES
+            or (item.receipt is None and not item.asset.on_demand)
+        ):
             raise MaterialApplicationError("Choose one supported, unambiguous saved texture set")
         result[role] = index
     if "albedo" in result:
@@ -49,7 +62,7 @@ def selected_maps(record):
         raise MaterialApplicationError("A material needs a base-color or albedo map")
     if "roughness" in result and "smoothness" in result:
         raise MaterialApplicationError("Choose roughness or smoothness, not both")
-    if sum(record.results[index].receipt.size for index in result.values()) > _MAX_MAP_BYTES:
+    if sum(_size(record.results[index]) for index in result.values()) > _MAX_MAP_BYTES:
         raise MaterialApplicationError("Saved material maps exceed the combined byte limit")
     return result
 
@@ -247,6 +260,8 @@ def apply_material(verified, target, tile_size=tiling.DEFAULT_TILE_SIZE_M):
     _main_thread()
     validate_target(target)
     roles = selected_maps(verified.record)
+    if any(verified.paths[index] is None for index in roles.values()):
+        raise MaterialApplicationError("Download the saved maps before applying them")
     try:
         tile_size = tiling.tile_size(tile_size)
     except ValueError as error:

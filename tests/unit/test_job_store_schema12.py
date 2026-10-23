@@ -74,12 +74,15 @@ def _uncertain(store, request_id="request", **changes):
 
 
 def _upgraded(raw):
-    """A schema 11 row as the upgrade rewrites it: unknown claim time, parents and lane."""
+    """A schema 11 row as the upgrade rewrites it: unknown claim time, parents and lane.
+
+    Schema 13 also marks no result as an on-demand copy.
+    """
     expected = json.loads(raw) | {"claimed_at": None}
     if expected["intent"].get("source") != "cloud":
         expected["intent"]["lane"] = None
     for item in expected["results"]:
-        item["asset"]["parent_id"] = None
+        item["asset"].update(parent_id=None, on_demand=False)
     return expected
 
 

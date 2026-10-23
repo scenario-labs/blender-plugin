@@ -92,8 +92,8 @@ def test_real_schema_nine_store_upgrades_every_row_without_guessing(schema9):
         if expected["intent"].get("source") != "cloud":
             expected["intent"]["lane"] = None
         for item in expected["results"]:
-            # Earlier stores never declared an original, projection or parent.
-            item["asset"].update(source="asset", projection=None, parent_id=None)
+            # Earlier stores never declared an original, projection, parent or fetch.
+            item["asset"].update(source="asset", projection=None, parent_id=None, on_demand=False)
         assert json.loads(migrated) == expected
         record = stores[key].get(request_id)
         assert json.loads(json.dumps(asdict(record))) == expected

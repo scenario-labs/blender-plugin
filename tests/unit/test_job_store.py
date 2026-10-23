@@ -413,8 +413,11 @@ def legacy_store(path, version):
             "SELECT scope, request_id, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
-            if version < 13 and "lane" in value["intent"]:
-                del value["intent"]["lane"]
+            if version < 13:
+                if "lane" in value["intent"]:
+                    del value["intent"]["lane"]
+                for item in value["results"]:
+                    del item["asset"]["on_demand"]
             if version < 12:
                 del value["claimed_at"]
                 for item in value["results"]:

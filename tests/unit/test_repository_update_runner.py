@@ -687,6 +687,7 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
         "source": "asset",
         "projection": None,
         "parent_id": None,
+        "on_demand": False,
     }
     binding = {"production_id": "production", "task_id": "take", "task_sha256": "a" * 64}
     bound = Record({"film_task": binding})
@@ -701,6 +702,7 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
         "source": "original",
         "projection": "equirectangular",
         "parent_id": "a",
+        "on_demand": True,
     }
     current = Record({"request_id": "new"}, [{"asset": dict(saved), "receipt": None}])
     assert package_probe.job_snapshot(current)["results"][0]["asset"] == saved

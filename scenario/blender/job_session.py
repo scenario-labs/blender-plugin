@@ -843,11 +843,18 @@ class JobSession:
         """Queue an explicit download on the transfer lane under the private storage policy."""
         return self._record_command("download_results", request_id, expected_revision)
 
+    def fetch_results(self, request_id, *, expected_revision, asset_ids):
+        """Queue the on-demand copies a chosen result needs on the transfer lane."""
+        return self._record_command(
+            "fetch_results", request_id, expected_revision, asset_ids=tuple(asset_ids)
+        )
+
     def cancel_download(self, task):
         """Stop one of this session's downloads at its next chunk, without a receipt.
 
         The job then reads `download_failed`; its completed receipts stay and a
-        later explicit download resumes the rest. Retirement cancels them all.
+        later explicit download resumes the rest. A stopped fetch keeps the job's
+        state. Retirement cancels them all.
         """
         _main_thread()
         if any(pending is task for pending, _ in self._pending):

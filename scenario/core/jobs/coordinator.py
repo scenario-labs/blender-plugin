@@ -777,6 +777,12 @@ class JobCoordinator:
             request_id, expected_revision=expected_revision, cancel=cancel
         )
 
+    def fetch_results(self, request_id, *, expected_revision, asset_ids, cancel=None):
+        """Download a completed job's on-demand copies; a set ``cancel`` stops the transfer."""
+        return self._results.fetch(
+            request_id, expected_revision=expected_revision, asset_ids=asset_ids, cancel=cancel
+        )
+
     def recover_downloads(self, request_id, *, expected_revision):
         """Explicitly reconcile an interrupted download without network or scene work."""
         return self._results.recover_download(request_id, expected_revision=expected_revision)

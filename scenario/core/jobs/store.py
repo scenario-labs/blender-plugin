@@ -534,6 +534,8 @@ class ResultAsset:
     metadata from the server, never a decoder guarantee or a filename inference.
     `parent_id` is another result of the same job that this one was generated from,
     such as the GLB behind a model's OBJ and maps; it is recorded, never inferred.
+    `on_demand` marks such a copy of another result: the job's download leaves it
+    for an explicit fetch, so a completed job may hold it without a receipt.
     """
 
     asset_id: str
@@ -545,11 +547,14 @@ class ResultAsset:
     source: str = "asset"
     projection: str | None = None
     parent_id: str | None = None
+    on_demand: bool = False
 
     def __post_init__(self):
         _identity(self.asset_id)
         if self.parent_id is not None and _identity(self.parent_id) == self.asset_id:
             raise ValueError("A result cannot be its own parent")
+        if type(self.on_demand) is not bool or (self.on_demand and self.parent_id is None):
+            raise ValueError("Only a copy of another result can wait for an explicit fetch")
         try:
             validate_result_name(self.name)
         except TransferError:
@@ -602,6 +607,11 @@ class StoredResult:
                 or self.asset.expected_sha256 not in (None, self.receipt.sha256)
             ):
                 raise ValueError("Download receipt does not match the result manifest")
+
+
+def _awaited(item):
+    """A result the job's download must save before the job is ready."""
+    return item.receipt is None and not item.asset.on_demand
 
 
 def _validate_results(results):
@@ -689,24 +699,34 @@ def _validate_local_applications(record):
         raise ValueError("Only completed jobs can have local reuse records")
     identifiers = set()
     assets = {item.asset.asset_id for item in record.results}
+    # Each fetched copy saved one revision, possibly between two reuses; nothing
+    # else may, and never while a reuse is unfinished.
+    fetches = sum(item.asset.on_demand and item.receipt is not None for item in record.results)
     revision = -1
     for index, item in enumerate(items):
         if not isinstance(item, LocalApplication):
             raise ValueError("Invalid local application record")
+        gap = item.source_revision - revision - 2
         if (
             item.application_id in identifiers
             or not revision < item.source_revision < record.revision
-            or (index > 0 and item.source_revision != revision + 2)
+            or (index > 0 and not 0 <= gap <= fetches)
             or not set(item.asset_ids) <= assets
             or (item.state == LocalApplicationState.APPLYING and index != len(items) - 1)
         ):
             raise ValueError("Local application identity, revision or assets are inconsistent")
+        if index > 0:
+            fetches -= gap
         identifiers.add(item.application_id)
         revision = item.source_revision
-    if items and record.revision != revision + (
-        1 if items[-1].state == LocalApplicationState.APPLYING else 2
-    ):
-        raise ValueError("Local application outcome and saved revision are inconsistent")
+    if items:
+        gap = record.revision - revision - 2
+        if (
+            record.revision != revision + 1
+            if items[-1].state == LocalApplicationState.APPLYING
+            else not 0 <= gap <= fetches
+        ):
+            raise ValueError("Local application outcome and saved revision are inconsistent")
 
 
 def _json(value):
@@ -797,6 +817,8 @@ def _decode(raw, scope, *, version=_VERSION):
             absent.update(source="asset", projection=None)
         if version < 12:
             absent["parent_id"] = None
+        if version < 13:
+            absent["on_demand"] = False
         if version in {2, 3}:
             absent["texture_role"] = None
         for item in raw_results:
@@ -893,7 +915,7 @@ def _decode(raw, scope, *, version=_VERSION):
         if (
             (record.results and not has_results)
             or (needs_results and not record.results)
-            or (needs_receipts and any(item.receipt is None for item in record.results))
+            or (needs_receipts and any(_awaited(item) for item in record.results))
         ):
             raise ValueError
         if state == JobState.SUCCEEDED and any(item.receipt for item in record.results):
@@ -901,6 +923,17 @@ def _decode(raw, scope, *, version=_VERSION):
         return replace(record, state=state)
     except (ValueError, TypeError, KeyError, AttributeError, TransferError):
         raise StoreError("Stored job data is invalid; preserve the database for recovery") from None
+
+
+def _received(record, found, receipt, allow_mesh_size_correction):
+    """The record's results with `found` saved under `receipt`."""
+    asset = found.asset
+    if allow_mesh_size_correction:
+        if asset.media_type not in REWRITTEN_MESH_TYPES:
+            raise ValueError("Only rewritten OBJ/MTL results accept a size correction")
+        asset = replace(asset, expected_size=receipt.size)
+    recorded = StoredResult(asset, receipt)
+    return tuple(recorded if item is found else item for item in record.results)
 
 
 class JobStore:
@@ -974,7 +1007,8 @@ class JobStore:
         Every row is decoded and rewritten in the current shape; one invalid row
         rolls back the whole upgrade and keeps the old version. A concurrent opener
         waits on the same immediate transaction and then sees the current version.
-        Missing roles, originals, projections, claim times and lanes are never guessed.
+        Missing roles, originals, projections, claim times and lanes are never guessed,
+        and no earlier result waits for a fetch.
         """
         film_tasks = set()
         for key, request_id, revision, raw in connection.execute(
@@ -1415,7 +1449,7 @@ class JobStore:
                 raise ValueError("Only remote acknowledgement can bind a remote job identity")
             if state == JobState.DOWNLOADING and not previous.results:
                 raise ValueError("Persist the result manifest before downloading")
-            if state == JobState.READY and any(item.receipt is None for item in previous.results):
+            if state == JobState.READY and any(_awaited(item) for item in previous.results):
                 raise ValueError("Every result needs a verified download receipt")
             updated = replace(
                 previous,
@@ -1504,6 +1538,7 @@ class JobStore:
             results = update(previous)
             _validate_results(results)
             updated = replace(previous, results=results, revision=previous.revision + 1)
+            _validate_local_applications(updated)
             connection.execute(
                 "UPDATE jobs SET revision=?, record=? WHERE scope=? AND request_id=? AND revision=?",
                 (
@@ -1626,14 +1661,46 @@ class JobStore:
             found = next(
                 (item for item in previous.results if item.asset.asset_id == asset_id), None
             )
-            if found is None or found.receipt is not None:
-                raise ValueError("Result is absent or already has a receipt")
-            asset = found.asset
-            if allow_mesh_size_correction:
-                if asset.media_type not in REWRITTEN_MESH_TYPES:
-                    raise ValueError("Only rewritten OBJ/MTL results accept a size correction")
-                asset = replace(asset, expected_size=receipt.size)
-            recorded = StoredResult(asset, receipt)
-            return tuple(recorded if item is found else item for item in previous.results)
+            if found is None or found.receipt is not None or found.asset.on_demand:
+                raise ValueError("Result is absent, already has a receipt or waits for a fetch")
+            return _received(previous, found, receipt, allow_mesh_size_correction)
+
+        return self._update_results(request_id, expected_revision, update)
+
+    def record_fetch(
+        self,
+        request_id,
+        asset_id,
+        receipt,
+        *,
+        expected_revision,
+        allow_mesh_size_correction=False,
+    ):
+        """Save the receipt of one on-demand copy that a completed job fetched later.
+
+        The job keeps its state and reuse history. Never while it or a reuse of it
+        applies: that claim's revision must still finish it.
+        """
+        _identity(asset_id)
+        if not isinstance(receipt, DownloadedResult):
+            raise ValueError("A verified download receipt is required")
+        if type(allow_mesh_size_correction) is not bool:
+            raise ValueError("Choose an explicit mesh size policy")
+
+        def update(previous):
+            if previous.state not in {
+                JobState.READY,
+                JobState.APPLY_FAILED,
+                JobState.APPLIED,
+            } or any(
+                item.state == LocalApplicationState.APPLYING for item in previous.local_applications
+            ):
+                raise StoreConflict("Fetch a copy only while the job is not being applied")
+            found = next(
+                (item for item in previous.results if item.asset.asset_id == asset_id), None
+            )
+            if found is None or found.receipt is not None or not found.asset.on_demand:
+                raise ValueError("Result is absent, already has a receipt or is not on demand")
+            return _received(previous, found, receipt, allow_mesh_size_correction)
 
         return self._update_results(request_id, expected_revision, update)

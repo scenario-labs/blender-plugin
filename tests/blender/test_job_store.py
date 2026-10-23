@@ -128,7 +128,7 @@ class JobStoreTests(unittest.TestCase):
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
                 del raw["intent"]["lane"]
-                for key in ("texture_role", "source", "projection", "parent_id"):
+                for key in ("texture_role", "source", "projection", "parent_id", "on_demand"):
                     del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
@@ -161,7 +161,7 @@ class JobStoreTests(unittest.TestCase):
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
                 del raw["intent"]["lane"]
-                for key in ("source", "projection", "parent_id"):
+                for key in ("source", "projection", "parent_id", "on_demand"):
                     del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
@@ -232,7 +232,9 @@ class JobStoreTests(unittest.TestCase):
                 if expected["intent"].get("source") != "cloud":
                     expected["intent"]["lane"] = None
                 for item in expected["results"]:
-                    item["asset"].update(source="asset", projection=None, parent_id=None)
+                    item["asset"].update(
+                        source="asset", projection=None, parent_id=None, on_demand=False
+                    )
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
@@ -277,7 +279,7 @@ class JobStoreTests(unittest.TestCase):
                 if expected["intent"].get("source") != "cloud":
                     expected["intent"]["lane"] = None
                 for item in expected["results"]:
-                    item["asset"]["parent_id"] = None
+                    item["asset"].update(parent_id=None, on_demand=False)
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
@@ -312,11 +314,14 @@ class JobStoreTests(unittest.TestCase):
             for key, request_id, revision, raw in rows:
                 record = stores[key].get(request_id)
                 self.assertEqual(record.revision, revision)
-                # Earlier stores never saved the submitting lane: it is not guessed.
+                # Earlier stores never saved the submitting lane: it is not guessed,
+                # and no earlier result waits for a fetch.
                 self.assertIsNone(record.intent.lane)
                 expected = json.loads(raw)
                 if expected["intent"].get("source") != "cloud":
                     expected["intent"]["lane"] = None
+                for item in expected["results"]:
+                    item["asset"]["on_demand"] = False
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
                 self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)

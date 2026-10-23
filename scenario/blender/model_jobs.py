@@ -112,6 +112,12 @@ CANCEL_UNSUPPORTED = (
 )
 # A download the user stopped: nothing partial was saved and Resume starts it again.
 DOWNLOAD_STOPPED = "Download stopped; nothing partial was saved. Resume download starts it again"
+# A chosen result whose OBJ, MTL or maps wait for an explicit fetch (FilesDownloading).
+FILES_DOWNLOADING = (
+    "Downloading the {count} this result needs. Choose it again when the download finishes"
+)
+FETCH_STOPPED = "Download stopped; nothing partial was saved. Choose the result again to restart it"
+FETCH_FAILED = "The files this result needs did not download; choose it again to retry"
 # Shared by the native World operator and MCP prepare_result_application.
 NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
 # Native review notes for a submission Scenario never confirmed; MCP keeps the error.
@@ -129,6 +135,7 @@ REFRESH_RETRYING = "Status not refreshed; retrying"
 # FBX clips keep the file's frame rate in a model import or a RIG/ANIMATE edit.
 FRAME_RATE_NOTICE = "Clips keep the file's frame rate, which differs from the scene's"
 CANCEL_NOT_SENT = "Cancel not sent; the job keeps running"
+FILES_FETCHING = "Downloading the files a chosen result needs"
 CANCEL_UNCONFIRMED = "Cancel not confirmed yet; checking the job's status"
 # Delivery pauses with this once refresh_backoff.FAILURE_CEILING refreshes in a row failed.
 REFRESH_STOPPED = (
@@ -166,6 +173,14 @@ class AutomaticEstimatesStopped(ScenarioError):
             f"{error}. Automatic prices are off until Blender restarts; once that job finishes, "
             "save it from history.",
         )
+
+
+class FilesDownloading(ScenarioError):
+    """A chosen result needs on-demand copies: their download started, nothing was reviewed."""
+
+    def __init__(self, count):
+        files = "file" if count == 1 else f"{count} files"
+        super().__init__(0, FILES_DOWNLOADING.format(count=files))
 
 
 class NothingSent(ScenarioError):
@@ -1095,6 +1110,8 @@ class ModelJobs:
                     self._refresh_failures.pop(request_id, None)
                 elif command == "read_prompt_results":
                     self._prompt_texts[request_id] = tuple(completion.result.prompts)
+                elif command == "fetch_results":
+                    self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except first_frame_handoff.FirstFrameHandoffError as error:
                 self._remember_first_frame(request_id, first_frame, error=error.reason)
@@ -1169,7 +1186,15 @@ class ModelJobs:
                 self._cancellable.pop(request_id, None)
                 self._pause(request_id, CANCEL_UNSUPPORTED)
             except Exception as error:
-                if command == "verify_first_frame":
+                if command == "fetch_results":
+                    # The job stays complete; only this download stopped.
+                    self._pause(
+                        request_id,
+                        FETCH_STOPPED
+                        if stopped and isinstance(error, DownloadCanceled)
+                        else FETCH_FAILED,
+                    )
+                elif command == "verify_first_frame":
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
@@ -1453,7 +1478,8 @@ class ModelJobs:
         return True
 
     def _status_notes(self, request_id, record, *, online):
-        """Information lines for a job whose status or cancellation is not confirmed.
+        """Information lines for a job whose status or cancellation is not confirmed,
+        or that downloads the files a chosen result needs.
 
         A cancel note lasts while the saved revision it was written for is
         unchanged. REFRESH_RETRYING shows while transient failures delay an
@@ -1472,6 +1498,9 @@ class ModelJobs:
                 del self._refresh_failures[request_id]
             elif online and request_id not in self._paused:
                 notes.append(REFRESH_RETRYING)
+        command = self._commands.get(request_id)
+        if command is not None and command[0] == "fetch_results":
+            notes.append(FILES_FETCHING)
         return tuple(notes)
 
     def _observe_cancellation(self, request_id, snapshot):
@@ -1972,6 +2001,32 @@ class ModelJobs:
         plan = self._plan(record)
         return plan.units if plan is not None else ()
 
+    def _fetch_first(self, record, asset_ids):
+        """Start downloading the on-demand copies among `asset_ids` that are not saved yet.
+
+        Raises FilesDownloading once that download is queued, so nothing is reviewed
+        before every file the result needs is saved; returns when none is missing.
+        """
+        wanted = set(asset_ids)
+        missing = tuple(
+            item.asset.asset_id
+            for item in record.results
+            if item.asset.asset_id in wanted and item.receipt is None
+        )
+        if not missing:
+            return
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access to download the files this result needs")
+        request_id = record.intent.request_id
+        task = self.session.fetch_results(
+            request_id, expected_revision=record.revision, asset_ids=missing
+        )
+        self._commands[request_id] = ("fetch_results", task)
+        view = self._view(record)
+        view.meta["recovery_actions"] = ()
+        view.error = None
+        raise FilesDownloading(len(missing))
+
     def _unit_rows(self, record):
         """Importable units for drawing: (key, format, primary) in classified order."""
         return tuple(
@@ -2094,9 +2149,11 @@ class ModelJobs:
         request_id = record.intent.request_id
         command = self._commands.get(request_id)
         return (
-            record.state == JobState.DOWNLOADING
-            and command is not None
-            and command[0] == "download_results"
+            command is not None
+            and (
+                (record.state == JobState.DOWNLOADING and command[0] == "download_results")
+                or command[0] == "fetch_results"
+            )
             and not command[1].done()
             and request_id not in self._stopping
         )
@@ -2646,6 +2703,7 @@ class ModelJobs:
             )
         unit = selected[0]
         max_points, axes = self._splat_options(unit, max_points, axes)
+        self._fetch_first(record, (*unit.members, *unit.resources))
         if len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Complete or cancel an existing application review first")
         if scene != bpy.context.scene:
@@ -2882,6 +2940,7 @@ class ModelJobs:
         unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
         if unit is None or not mesh_applicable(unit):
             raise ScenarioError(0, "Choose one saved GLB, glTF, FBX or OBJ mesh result")
+        self._fetch_first(record, (*unit.members, *unit.resources))
         if type(original_source) is not bool:
             raise ScenarioError(0, "Choose whether to use the captured source")
         if original_source:
@@ -3010,6 +3069,9 @@ class ModelJobs:
         bpy.context.view_layer.update()
         target = capture_target(scene, obj)
         roles = selected_maps(record)
+        self._fetch_first(
+            record, (record.results[index].asset.asset_id for index in roles.values())
+        )
         ticket = MaterialApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -3368,9 +3430,13 @@ class ModelJobs:
 
         False once it is settled, including a finished job whose results
         ModelJobs never downloads, paused for review, prepared but never
-        queued, or not owned by this session. `wait` calls this on the HTTP
+        queued, or not owned by this session. A completed job advances while it
+        downloads the files a chosen result needs. `wait` calls this on the HTTP
         worker, so it reads only in-memory state, never bpy.
         """
+        command = self._commands.get(request_id)
+        if command is not None and command[0] == "fetch_results":
+            return request_id in self.views
         return (
             request_id in self.views
             and request_id not in self._paused

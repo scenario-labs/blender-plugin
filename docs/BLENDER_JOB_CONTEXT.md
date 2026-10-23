@@ -936,6 +936,9 @@ revision. Queued commands retain their original scope.
   without a confirmation, since nothing is lost: the job becomes
   `download_failed` with no receipt for the unfinished asset, delivery pauses
   with a note that nothing partial was saved, and `resume` downloads it again.
+  It also stops this owner's download of the
+  [format copies](RESULT_TRANSFERS.md#glb-format-copies-on-demand) a chosen result
+  needs; the job keeps its state and choosing the result again starts it again.
 - `retry_receipt` saves an already completed local application's outcome without
   any scene mutation. The exact pending owner-local handle must still exist.
 - `mark_reviewed` is offered for a `submitting` or `uncertain` record with no
@@ -1137,7 +1140,7 @@ only through their own approvals and origin checks. Workflow and Film
 submissions are unbound. Bindings and readings retire with their owner on a
 credential, project or file change. Bindings are not persisted: restarted and
 recovered jobs are unbound. The submitted lane itself is saved with the job,
-display only ([schema 13](JOB_STORAGE.md#schema-13-generation-lane)), so a listed
+display only ([schema 13](JOB_STORAGE.md#generation-lane)), so a listed
 job keeps its form's kind and result controls and MCP reports its `lane`; jobs
 saved without one are generic `model` views of the kind their results establish.
 

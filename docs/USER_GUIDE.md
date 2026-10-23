@@ -513,8 +513,12 @@ TripoSplat. Text and Image modes start with Tripo P2 at real-world size
 
 **Importing a model.** Choose **Import <format> model (N)**, such as
 **Import GLB model (1)**, for the main model, or **Import alternate: <format> (N)**
-for another file the provider returned. The review shows the scene, cursor position
-and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
+for another file the provider returned. When a model also returns its GLB as an OBJ
+with an MTL and texture maps, only the GLB downloads with the job. Choosing
+**Import alternate: OBJ**, **Apply alternate mesh edit: OBJ** or **Apply saved material**
+downloads the files it needs first; choose it again when the download finishes. This
+needs Online Access, and **Stop download** stops it. The review shows the scene, cursor
+position and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
 as a new group at the cursor with its materials and textures packed; your
 objects and selection are untouched. Check **Longest side** to scale the new
 group evenly to that length, with its bottom still at the cursor. For an Edit

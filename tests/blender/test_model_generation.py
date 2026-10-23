@@ -4772,26 +4772,31 @@ class ModelGenerationTests(unittest.TestCase):
     def package_exports(self):
         return textured_model_exports(Path(self.enterContext(tempfile.TemporaryDirectory())))
 
-    def obj_package(self):
-        """A legacy OBJ package beside a GLB alias: OBJ, MTL with a missing map, albedo."""
+    def obj_package(self, *, copies=False):
+        """A legacy OBJ package beside a GLB alias: OBJ, MTL with a missing map, albedo.
+
+        With `copies`, the OBJ, MTL and albedo name the GLB as their parent, like the
+        format copies Meshy returns, so the job's download leaves them for a fetch.
+        """
         from helpers import FIXTURES
 
         exports = self.package_exports()
         obj = exports["obj"].read_text().replace("mtllib cube.mtl", "mtllib result-obj.mtl")
         mtl = exports["mtl"].read_text().replace("map_Kd tex.png", "map_Kd result-obj_albedo.png")
         glb = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        lineage = {"parentId": "result-glb"} if copies else {}
         return self.recovered_package(
             {
-                "result-obj": ("model/obj", obj.encode(), {"type": "txt23d"}),
+                "result-obj": ("model/obj", obj.encode(), {"type": "txt23d", **lineage}),
                 "result-mtl": (
                     "model/mtl",
                     (mtl + "map_Pm result-obj_metallic.png\n").encode(),
-                    {"type": "3d-texture-mtl"},
+                    {"type": "3d-texture-mtl", **lineage},
                 ),
                 "result-albedo": (
                     "image/png",
                     exports["png"].read_bytes(),
-                    {"type": "3d-texture-albedo"},
+                    {"type": "3d-texture-albedo", **lineage},
                 ),
                 "result-glb": ("model/glb", glb, {"type": "txt23d"}),
             }
@@ -4888,6 +4893,56 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def test_glb_format_copies_download_when_a_result_needs_them(self):
+        request_id = self.obj_package(copies=True)
+        saved = {
+            item.asset.asset_id: (item.asset.on_demand, item.receipt is not None)
+            for item in self.store.get(request_id).results
+        }
+        self.assertEqual(
+            saved,
+            {
+                "result-obj": (True, False),
+                "result-mtl": (True, False),
+                "result-albedo": (True, False),
+                "result-glb": (False, True),
+            },
+        )
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "ready")
+        self.assertEqual(
+            [unit["key"] for unit in status["import_units"]], ["result-glb", "result-obj"]
+        )
+        for action in ("import_model", "apply_mesh", "apply_material"):
+            self.assertIn(action, status["actions"])
+        jobs = submodule("blender.model_jobs")
+        # The material needs its one map, then the OBJ unit its OBJ and MTL.
+        bpy.ops.mesh.primitive_cube_add()
+        steps = (
+            (lambda: self.prepare_material(request_id), "file", 1),
+            (lambda: self.prepare_package(request_id, "result-obj"), "2 files", 2),
+        )
+        for prepare, files, count in steps:
+            before = len(self.downloads)
+            with self.assertRaises(jobs.FilesDownloading) as caught:
+                prepare()
+            self.assertIn(f"Downloading the {files} this result needs", str(caught.exception))
+            self.deliver_results()
+            self.assertEqual(len(self.downloads), before + count)
+            status = self.tools.job_status({"job_id": request_id})
+            self.assertEqual((status["status"], status["error"]), ("ready", None), status)
+            self.assertNotIn(jobs.FILES_FETCHING, status["status_notes"])
+        self.assertTrue(all(item["downloaded"] for item in status["results"]), status)
+        before = len(self.downloads)
+        approval = self.prepare_package(request_id, "result-obj")
+        self.assertEqual((approval["kind"], approval["format"]), ("model", "obj"))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(
+            status["model_import"]["members"], ["result-obj", "result-mtl", "result-albedo"]
+        )
+        self.assertEqual(len(self.downloads), before)
 
     def test_package_member_changed_after_verification_keeps_the_job_unclaimed(self):
         request_id = self.obj_package()

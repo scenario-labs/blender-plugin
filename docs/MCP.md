@@ -53,10 +53,16 @@ resume/download, known model-job cancellation, interrupted-download reconciliati
 stopping a running download or pending import-receipt retry. `stop_download`
 appears in `actions` only while this Blender session downloads the job's results;
 it stops the transfer without saving a partial file, the job becomes
-`download_failed` and `resume` downloads it again. `cancel` appears in `actions` only after a refresh
-in the current context reported a running `inference` job, the only type Scenario
-documents as cancellable; for any other job it is refused without a request and
-the job keeps running, matching the native Jobs panel. A running workflow job
+`download_failed` and `resume` downloads it again. It is also listed while a
+`prepare_result_application` downloads the OBJ, MTL or map
+[copies of a GLB](RESULT_TRANSFERS.md#glb-format-copies-on-demand) that a model unit,
+mesh edit or material needs; that prepare call refuses with a note, `wait_for_job`
+waits for the download and preparing again reviews the result. Meanwhile `job_status`
+reports `delivery_active` true and the status note "Downloading the files a chosen
+result needs"; stopping keeps the job `ready`. `cancel` appears in `actions` only after
+a refresh in the current context reported a running `inference` job, the only type
+Scenario documents as cancellable; for any other job it is refused without a request
+and the job keeps running, matching the native Jobs panel. A running workflow job
 cannot be canceled: `cancel` returns that explanation and sends nothing, while an
 unsent prepared one keeps `cancel_prepared_job`. Resuming a restarted job does
 not import it into the current scene. Shared `wait_for_job` waits without

@@ -83,8 +83,9 @@ def job_snapshot(record):
         # Schema 10 gives earlier results the asset's own file and no projection.
         item["asset"].setdefault("source", "asset")
         item["asset"].setdefault("projection", None)
-        # Schema 12 gives earlier results an unknown parent.
+        # Schema 12 gives earlier results an unknown parent, schema 13 no fetch.
         item["asset"].setdefault("parent_id", None)
+        item["asset"].setdefault("on_demand", False)
     return value
 
 

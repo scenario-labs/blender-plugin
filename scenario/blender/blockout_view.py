@@ -107,6 +107,7 @@ def add_camera(scene, low, high, staging):
     data.sensor_width = view.SENSOR
     frame = view.frame_camera(low, high, aspect, lens=view.LENS, sensor=view.SENSOR)
     data.lens = frame["lens"]
+    data.shift_x, data.shift_y = frame["shift"]
     data.clip_start, data.clip_end = frame["clip_start"], frame["clip_end"]
     camera = bpy.data.objects.new(CAMERA_NAME, data)
     camera.location = frame["location"]

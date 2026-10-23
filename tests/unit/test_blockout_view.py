@@ -39,14 +39,16 @@ def _basis(camera):
 
 
 def _project(camera, aspect, point):
-    """Normalised (0..1) frame position and depth of a point, for a pinhole camera."""
+    """Normalised (0..1) frame position and depth of a point, with the camera's lens shift."""
     right, up, forward = _basis(camera)
     offset = _sub(point, camera["location"])
     depth = _dot(offset, forward)
     tan_h, tan_v = view.view_tangents(aspect, camera["lens"])
+    longer = 2 * max(tan_h, tan_v)  # the shift's unit: the longer side of the frame
+    shift_x, shift_y = camera["shift"]
     return (
-        0.5 + _dot(offset, right) / (2 * tan_h * depth),
-        0.5 + _dot(offset, up) / (2 * tan_v * depth),
+        0.5 + (_dot(offset, right) / depth - shift_x * longer) / (2 * tan_h),
+        0.5 + (_dot(offset, up) / depth - shift_y * longer) / (2 * tan_v),
         depth,
     )
 
@@ -157,8 +159,20 @@ def test_the_camera_keeps_every_corner_in_frame_with_room_to_spare(aspect, bound
         for axis in (x, y):
             assert 0.0 <= axis <= 1.0
             worst = max(worst, abs(axis - 0.5))
-    # The distance is the smallest that fits: some corner sits on the margin, none outside it.
+    # The framing is the tightest that fits: some corner sits on the margin, none outside it.
     assert worst == pytest.approx(0.5 / (1 + margin), abs=1e-6)
+
+
+@pytest.mark.parametrize("aspect", [16 / 9, 9 / 16])
+def test_a_flat_plan_seen_from_above_is_centred_in_the_frame(aspect):
+    bounds = ((-20, -12, -0.1), (20, 12, 0.5))
+    camera = view.frame_camera(*bounds, aspect)
+    projected = [_project(camera, aspect, corner) for corner in _corners(*bounds)]
+    for axis in (0, 1):
+        values = [point[axis] for point in projected]
+        assert (min(values) + max(values)) / 2 == pytest.approx(0.5, abs=1e-6)
+    assert camera["shift"][1] < 0  # the frame moves down to the ground
+    assert camera["lens"] >= view.LENS
 
 
 def test_the_camera_looks_at_the_middle_from_the_side_and_slightly_above():

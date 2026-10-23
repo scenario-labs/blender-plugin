@@ -127,9 +127,11 @@ def _dot(a, b):
 def frame_camera(low, high, aspect, *, lens=LENS, sensor=SENSOR, margin=MARGIN):
     """A three-quarter camera, slightly above, that keeps the whole box low..high in frame.
 
-    Returns {"location", "rotation", "lens", "clip_start", "clip_end"} for a camera that looks at the box's
-    centre. The distance is the smallest that puts all eight corners inside the frame with `margin` to spare
-    for a render of this `aspect`, for a pinhole camera (no lens shift).
+    Returns {"location", "rotation", "lens", "shift", "clip_start", "clip_end"} for a camera that looks at the
+    box's centre. The distance is the smallest that puts all eight corners inside the frame with `margin` to
+    spare for a render of this `aspect`. Seen from above, a flat plan fills only the lower part of that frame,
+    so a lens shift (in Blender's units, a share of the frame's longer side) centres the corners' outline and
+    the focal length tightens until the outline meets the margin; the view direction stays the same.
     """
     centre = tuple((a + b) / 2.0 for a, b in zip(low, high, strict=True))
     toward = _direction(AZIMUTH, ELEVATION)
@@ -158,10 +160,26 @@ def frame_camera(low, high, aspect, *, lens=LENS, sensor=SENSOR, margin=MARGIN):
             1e-3 - depth,
         )
     depths = [distance + _dot(offset, forward) for offset in offsets]
+    # Each corner's position in the image plane, in tangent units: the outline to centre and fit.
+    across = [_dot(o, right) / d for o, d in zip(offsets, depths, strict=True)]
+    upward = [_dot(o, up) / d for o, d in zip(offsets, depths, strict=True)]
+    full_h, full_v = view_tangents(aspect, lens, sensor)
+    # The distance fit leaves every corner within the margin, so this never widens the lens.
+    fill = max(
+        (max(across) - min(across)) / (2.0 * full_h),
+        (max(upward) - min(upward)) / (2.0 * full_v),
+        0.25,  # at most four times the base focal length
+    )
+    fill = min(1.0, fill * (1.0 + margin))
+    longer = 2.0 * max(full_h, full_v) * fill  # the longer side of the frame, in tangent units
     return {
         "location": tuple(c + t * distance for c, t in zip(centre, toward, strict=True)),
         "rotation": look_euler(forward),
-        "lens": lens,
+        "lens": lens / fill,
+        "shift": (
+            (max(across) + min(across)) / 2.0 / longer,
+            (max(upward) + min(upward)) / 2.0 / longer,
+        ),
         "clip_start": max(0.001, 0.02 * min(depths)),
         "clip_end": max(100.0, 2.0 * max(depths)),
     }

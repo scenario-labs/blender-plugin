@@ -566,8 +566,8 @@ class SCENARIO_OT_prepare_render_reference(bpy.types.Operator):
     def description(cls, context, properties):
         if properties.role == "first_frame":
             return "Upload the chosen first-frame image before requesting a generation price"
-        if properties.role == "scene":
-            return "Capture the scene and upload it before requesting a generation price"
+        if properties.role == "scene" or properties.lane != "render_video":
+            return "Capture the scene and upload it; the price follows"
         return cls.bl_description
 
     @classmethod

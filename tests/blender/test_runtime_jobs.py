@@ -78,7 +78,7 @@ class RuntimeJobTests(unittest.TestCase):
         for session in self.sessions:
             session.shutdown()
 
-    def seed(self, state=None):
+    def seed(self, state=None, *, lane=None):
         m = self.storemod
         store = self.runtime.ensure_job_store()
         rec = store.create(
@@ -91,6 +91,7 @@ class RuntimeJobTests(unittest.TestCase):
                 "a" * 64,
                 "b" * 64,
                 "0.10000000000000001",
+                lane=lane,
             )
         )
         if state is not None:
@@ -152,14 +153,17 @@ class RuntimeJobTests(unittest.TestCase):
         # Until the catalog step selects a connection, listing selects none itself.
         self.assertFalse(self.runtime.show_saved_jobs())
         self.assertIsNone(self.runtime.state.catalog)
-        self.seed()
+        self.seed(lane="render_image")
         self.assertTrue(self.runtime.show_saved_jobs())
         (view,) = self.runtime.state.jobs_view
-        self.assertEqual((view.local_id, view.meta["prompt"]), ("request", "Recovered saved job"))
+        # The form it came from is saved; its prompt is not, so the row names its model.
+        self.assertEqual(
+            (view.local_id, view.lane, view.kind), ("request", "render_image", "image")
+        )
+        self.assertNotIn("prompt", view.meta)
         self.assertFalse(self.runtime.show_saved_jobs())
         # What a job this session submitted shows; the store keeps no prompt.
         view.meta.update(prompt="Café 雪 dome", model_name="Fixture model")
-        view.lane = "render_image"  # as a Render Image submission shows it
         context = self.runtime.state.job_context_id
         filepath = str(self.root / "listed.blend")
         bpy.ops.wm.save_as_mainfile(filepath=filepath)
@@ -173,8 +177,7 @@ class RuntimeJobTests(unittest.TestCase):
             (view.local_id, view.meta["prompt"], view.meta["model_name"]),
             ("request", "Café 雪 dome", "Fixture model"),
         )
-        # A generic view again, which still knows the form it came from.
-        self.assertEqual((view.lane, view.meta["shown_lane"]), ("model", "render_image"))
+        self.assertEqual((view.lane, view.kind), ("render_image", "image"))
         self.assertEqual(self.requests, [])
         # Another connection lists only its own jobs; with none saved, no session starts.
         self.prefs.api_secret = "other-fixture-secret"

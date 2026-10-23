@@ -604,8 +604,10 @@ job's sizes once it leaves them, and stops offering an image whose size is not
 
 `result_files` queues the coordinator's receipt rehash of saved results on the
 same lane, again not a session completion. The model job owner checks only the
-jobs a local MCP status read asked about, at most one preview batch at a time,
-whether this session imported them or not and including after a restart. A
+jobs a local MCP status read asked about and listed Image rows whose files no
+automatic import of this session lists, at most one preview batch at a time,
+whether this session imported them or not and including after a restart. Such a
+row lists only verified files, so its file tools come back after a restart. A
 file the session already hashed while downloading or importing it is not checked
 again: the coordinator keeps that identity in memory (`verified_files`), and the
 status read uses it once. Each check is kept with the file's identity as hashed;
@@ -1133,8 +1135,11 @@ job strip finds the current job of the form it shows without guessing. A binding
 grants no destination, origin or application authority; results still apply
 only through their own approvals and origin checks. Workflow and Film
 submissions are unbound. Bindings and readings retire with their owner on a
-credential, project or file change. Lanes are not persisted: restarted and
-recovered jobs are unbound, and MCP reports `lane: null` for them.
+credential, project or file change. Bindings are not persisted: restarted and
+recovered jobs are unbound. The submitted lane itself is saved with the job,
+display only ([schema 13](JOB_STORAGE.md#schema-13-generation-lane)), so a listed
+job keeps its form's kind and result controls and MCP reports its `lane`; jobs
+saved without one are generic `model` views of the kind their results establish.
 
 ### Failure reasons
 

@@ -774,7 +774,10 @@ A job stays here until you apply its results.
 - **Stop download** stops a download in progress without keeping a partial
   file. **Resume download** starts it again later.
 - After a restart or opening a file, saved jobs show again in the Jobs panel;
-  choose **Refresh status** or **Resume download**.
+  choose **Refresh status** or **Resume download**. They keep their result
+  tools, such as **Use as reference** on an image whose saved file is unchanged.
+  Prompts aren't saved, so such a job shows its model's name and offers no
+  **Reload parameters**.
 - **Cancel prepared job** drops an approved request that hasn't been sent yet;
   nothing reaches Scenario. A canceled Film task keeps its name, so use a new
   take name to retry.

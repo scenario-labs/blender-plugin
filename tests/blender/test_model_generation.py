@@ -1517,7 +1517,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.runtime.state.reset()
         calls = len(self.calls)
         owner = self.runtime.inspect_model_jobs()
-        unbound = {"lane": None, "remote_status": None, "progress": None, "remote_stale": None}
+        # The saved lane is display only: the job is unbound and has no reading.
+        unbound = {"lane": "image", "remote_status": None, "progress": None, "remote_stale": None}
         self.assertEqual(
             self.remote_fields(result["local_id"])[0],
             dict(unbound, status="remote", delivery_active=False),
@@ -1558,7 +1559,7 @@ class ModelGenerationTests(unittest.TestCase):
         # An explicit refresh is one reading; nothing keeps it current afterwards.
         self.assertEqual(
             (status["lane"], status["remote_status"], status["progress"], status["remote_stale"]),
-            (None, "in-progress", 0.25, True),
+            ("image", "in-progress", 0.25, True),
         )
         self.assertEqual(len(self.paid), 1)
 
@@ -1586,9 +1587,10 @@ class ModelGenerationTests(unittest.TestCase):
                 restarted = self.runtime.inspect_model_jobs()
                 self.assertEqual(restarted.bound_views(bpy.context.scene, "image"), ())
                 fields = self.remote_fields(result["local_id"])[0]
+                # Only the saved lane remains, for display.
                 self.assertEqual(
                     (fields["lane"], fields["remote_status"], fields["progress"]),
-                    (None, None, None),
+                    ("image", None, None),
                 )
         self.assertEqual(len(self.paid), 2)
 
@@ -3268,7 +3270,7 @@ class ModelGenerationTests(unittest.TestCase):
                 self.remote_status = "success"
                 result = self.mcp_submit(self.mcp_quote(lane))
                 reference = result["local_id"]
-                references.append((reference, media_type))
+                references.append((reference, media_type, lane))
                 self.deliver_results()
                 status = self.tools.job_status({"job_id": reference})
                 self.assertEqual(status["status"], "ready", status)
@@ -3297,10 +3299,12 @@ class ModelGenerationTests(unittest.TestCase):
         self.runtime.state.reset()
         calls = len(self.calls)
         self.runtime.inspect_model_jobs()
-        for reference, media_type in references:
+        lane_kind = submodule("core.api.catalog").LANE_KIND
+        for reference, media_type, lane in references:
             status = self.tools.job_status({"job_id": reference})
             self.assertEqual(status["status"], "ready")
-            self.assertEqual(status["kind"], "model")
+            # The saved lane keeps the kind its form gave the job before the restart.
+            self.assertEqual((status["lane"], status["kind"]), (lane, lane_kind[lane]))
             self.assertEqual(status["results"][0]["media_type"], media_type)
         self.assertEqual(len(self.calls), calls)
         self.assertEqual(len(self.paid), len(references))

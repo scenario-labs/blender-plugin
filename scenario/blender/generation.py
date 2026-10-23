@@ -66,7 +66,10 @@ def reload_lane(record):
 
     A catalog lane without a native form never falls back to its asset kind's
     form, which would drop that lane's own rules; only generic jobs use the kind.
+    A job listed from the store has no request to reload: it keeps only its hash.
     """
+    if record.meta.get("listed"):
+        return None
     if record.lane in props.GENERATION_LANES:
         return record.lane
     if record.lane in LANE_KIND:

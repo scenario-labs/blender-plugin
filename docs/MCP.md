@@ -65,10 +65,11 @@ is held by disabled Online Access, or reaches its timeout. See
 [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
 Shared `job_status` and `wait_for_job` results add the native Jobs projection as
-flat fields. `lane` is the model lane that submitted the job in this Blender
-session, or `null` for workflow, Film, restarted and recovered jobs; it never
-selects a destination. While a known remote job is active, `remote_status` is its
-latest validated Scenario status, `progress` its reported fraction from 0 to 1
+flat fields. `lane` is the model lane that submitted the job, saved with it, so a
+restart keeps it; it is `null` for workflow, Film and recovered cloud jobs and for
+jobs saved by releases before job schema 13, and it never selects a destination.
+While a known remote job is active, `remote_status` is its latest validated
+Scenario status, `progress` its reported fraction from 0 to 1
 (`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
 `remote_stale` whether automatic polling has stopped keeping it current, also
 while a failed refresh is being retried. They are
@@ -830,10 +831,11 @@ sequencer insertion.
 a declared OpenEXR original was saved instead of its preview, or a WAV original
 instead of Scenario's MP3 copy, with unknown size;
 `projection: equirectangular` appears only when Scenario declares a 360 image.
-Neither is an application approval, and neither is a listed file. Recovered
-display records use generic `kind: model`; original lane metadata is not
-persisted. PNG/EXR results can use the explicit image import approval above,
-without inferring a material or World assignment from their media type.
+Neither is an application approval, and neither is a listed file. A job listed after
+a restart reports the `kind` of its saved lane; one saved without a lane reports the
+kind its saved results establish, or `model` until they are known. PNG/EXR results
+can use the explicit image import approval above, without inferring a material or
+World assignment from their media type.
 Supported video/audio uses the explicit asset and scene/frame approval above.
 Saved model `import_units` use the scene/cursor approval above; in-place mesh
 editing is separate. `import_result` rejects direct cached-file import,

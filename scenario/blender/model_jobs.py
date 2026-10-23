@@ -16,6 +16,7 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, AdapterError, EstimateStartedJob
+from ..core.history import result_kind
 from ..core.jobs import (
     failures,
     progress,
@@ -550,8 +551,6 @@ class MeshApplicationApproval:
         return self.target if isinstance(self.target, tuple) else (self.target,)
 
 
-# The prompt line of an inspected saved job whose prompt this session never showed.
-RECOVERED = "Recovered saved job"
 LABELS = ("prompt", "model_name")
 
 
@@ -560,12 +559,27 @@ def labels(views):
     found = {}
     for view in views:
         label = {key: view.meta[key] for key in LABELS if view.meta.get(key)}
-        if view.meta.get("shared_job") and label and label.get("prompt") != RECOVERED:
-            lane = view.meta.get("shown_lane") or view.lane
-            if lane not in ("model", "workflow"):
-                label["shown_lane"] = lane  # the form it came from, for its actions' order only
+        if view.meta.get("shared_job") and label:
             found[view.local_id] = label
     return found
+
+
+def listed_lane(record):
+    """The lane and kind of a saved job's view when the store lists it.
+
+    A job saved with its lane (schema 13) shows that form's kind, so its row
+    offers what the submitting session's row did. One saved without a lane, by
+    an earlier schema or as a cloud read, is a generic model view of the kind its
+    saved results establish, or of none before they are known.
+    """
+    if record.intent.operation == "workflow":
+        return "workflow", "workflow"
+    lane = record.intent.lane
+    if lane in LANE_KIND:
+        return lane, LANE_KIND[lane]
+    if lane == "film":
+        return lane, lane
+    return "model", result_kind(tuple(item.asset for item in record.results)) or "model"
 
 
 class ModelJobs:
@@ -578,8 +592,8 @@ class ModelJobs:
         self.submissions = {}
         self.views = {}
         # request_id -> the prompt and model name an earlier owner of this scope
-        # showed this session. The store keeps no prompt, so only they replace
-        # RECOVERED on an inspected job. Memory only.
+        # showed this session. The store keeps no prompt, so an inspected job
+        # shows one only from here; otherwise its row names its model. Memory only.
         self._labels = {} if labels is None else labels
         self._bindings = {}
         self._online = online
@@ -639,9 +653,10 @@ class ModelJobs:
         # again for the same receipt. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
-        # Verified local files of the jobs MCP job_status asked about, checked on
-        # the preview lane against their saved receipts. Memory only; it follows
-        # the saved store, so a restarted job is checked like a current one.
+        # Verified local files of the jobs MCP job_status asked about and of listed
+        # Image rows, checked on the preview lane against their saved receipts.
+        # Memory only; it follows the saved store, so a restarted job is checked
+        # like a current one.
         self._files = ResultFiles()
         # request_id -> number of `wait` calls on MCP HTTP workers waiting for it.
         self._file_waits = {}
@@ -859,7 +874,7 @@ class ModelJobs:
         estimate = quote.estimate
         model_id = estimate.target_id
         try:
-            prepared = self.session.prepare_quote(quote)
+            prepared = self.session.prepare_quote(quote, lane=lane)
         except SessionBusy:
             if not withdraw:
                 raise
@@ -1195,6 +1210,13 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
+            if view.lane == "model":
+                # Saved without its lane: the kind its saved results establish.
+                view.kind = listed_lane(record)[1]
+            if self._lists_files(request_id, view):
+                view.files = [
+                    row.file for row in self._watched_rows(record) if row.state == VERIFIED
+                ]
             # The Results grid's large view names a saved file's size and the
             # submission time without reading storage while drawing.
             view.meta["result_sizes"] = {
@@ -1901,20 +1923,37 @@ class ModelJobs:
     def _view(self, record):
         request_id = record.intent.request_id
         if request_id not in self.views:
-            label = self._labels.get(request_id) or {"prompt": RECOVERED}
+            lane, kind = listed_lane(record)
             self.views[request_id] = JobRecord(
                 local_id=request_id,
-                lane="workflow" if record.intent.operation == "workflow" else "model",
-                kind="workflow" if record.intent.operation == "workflow" else "model",
+                lane=lane,
+                kind=kind,
                 model_id=record.intent.target_id,
                 body={},
                 cu_cost=float(record.intent.quote_cost)
                 if record.intent.quote_cost is not None
                 else None,
-                meta={"shared_job": True, **label},
+                # Listed from the store, which keeps only the request's hash:
+                # its row offers no Reload parameters.
+                meta={"shared_job": True, "listed": True, **self._labels.get(request_id, {})},
             )
             self._paused.add(request_id)
         return self.views[request_id]
+
+    def _lists_files(self, request_id, view):
+        """Whether a view lists its verified saved images for the Image row's file tools.
+
+        An Image lane job lists the files its automatic import verified while
+        that import owns it. Otherwise, as when listed from the store, it and a
+        job saved without a lane whose results are images list the files a
+        preview-lane check verified. Other lanes list none, as in the session
+        that submitted them.
+        """
+        return (
+            view.kind == "image"
+            and view.lane in ("image", "model")
+            and request_id not in self._automatic_application
+        )
 
     def _plan(self, record):
         """Classify saved results once per saved revision; reads no files."""
@@ -3468,13 +3507,17 @@ class ModelJobs:
 
     def _file_rows(self, record):
         """This status read's file rows; it asks a worker to check what is unchecked."""
-        self._files.watch(record.intent.request_id)
-        # Files this session just downloaded or imported are listed at once.
-        self._files.seed(record, self.session.verified_files(record.intent.request_id))
-        rows = self._files.project(record)
+        rows = self._watched_rows(record)
         if self.session.active:
             self._check_files()
         return rows
+
+    def _watched_rows(self, record):
+        """A job's file rows; watching it lets the next poll queue its checks."""
+        self._files.watch(record.intent.request_id)
+        # Files this session just downloaded or imported are listed at once.
+        self._files.seed(record, self.session.verified_files(record.intent.request_id))
+        return self._files.project(record)
 
     def status(self, reference):
         self.poll()
@@ -3495,7 +3538,6 @@ class ModelJobs:
         reading = view.meta.get("remote") if view is not None else None
         steps = self._current_steps(record.intent.request_id, record)
         failed = self._step_errors.get(record.intent.request_id)
-        binding = self._bindings.get(record.intent.request_id)
         units, findings = self._import_units_status(record)
         files = self._file_rows(record)
         return {
@@ -3504,8 +3546,8 @@ class ModelJobs:
             "job_id": record.remote_job_id,
             "status": record.state.value,
             "revision": record.revision,
-            # In-memory projection shared with the Jobs views; never persisted.
-            "lane": binding.lane if binding is not None else None,
+            # The generation lane saved with the job; display only, never a destination.
+            "lane": record.intent.lane if record.intent.lane in GENERATION_LANES else None,
             "remote_status": reading.status if reading is not None else None,
             "progress": reading.fraction if reading is not None else None,
             "remote_observed_at": reading.observed_utc if reading is not None else None,
@@ -3518,7 +3560,7 @@ class ModelJobs:
             "source": getattr(record.intent, "source", "generation"),
             "kind": self.views[record.intent.request_id].kind
             if record.intent.request_id in self.views
-            else "model",
+            else listed_lane(record)[1],
             # Downloaded results whose local bytes a worker matched to their saved
             # receipts, whatever their kind, import or restart; see result_files.
             "files": [row.file for row in files if row.state == VERIFIED],

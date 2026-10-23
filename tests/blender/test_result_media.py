@@ -308,7 +308,8 @@ class ResultMediaTests(unittest.TestCase):
                 ("sound", "sound.wav", "audio/wav", tone()),
             ]
         )
-        self.assertEqual(view.kind, "model")  # A restarted generic row, not a lane kind.
+        # Saved without a lane: a generic row of the kind its results establish.
+        self.assertEqual((view.lane, view.kind), ("model", "video"))
         labels = [item.label for item in self.recovery.result_actions(view)]
         self.assertEqual(
             labels,

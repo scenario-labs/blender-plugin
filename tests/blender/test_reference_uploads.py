@@ -106,6 +106,72 @@ class ReferenceUploadTests(unittest.TestCase):
         self.assertEqual(self.fixture.uploader.upload.call_args.args[1], b"data")
         self.assertEqual(ticket.record.state.value, "imported")
 
+    def test_processing_upload_is_read_soon_after_completion_then_every_two_seconds(self):
+        # Scenario usually imports a reference within seconds of its completion.
+        fixture, clock, reads = self.fixture, [100.0], []
+        imported_at_completion = fixture.handler
+
+        def still_processing(request):
+            if request.method == "GET" and fixture.remote["status"] == "validating":
+                reads.append(clock[0])
+                if len(reads) == 5:
+                    fixture.remote.update(status="imported", entityId="reference-asset")
+            result = imported_at_completion(request)
+            if request.url.path.endswith("/action"):
+                fixture.remote["status"] = "validating"
+            return result
+
+        fixture.handler = still_processing
+        self.enterContext(
+            patch.object(self.module, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        )
+        self.assertFalse(self.owner.advancing())
+        ticket = self.owner.start(fixture.scene, fixture.source)
+        delays = []
+        for _ in range(30):
+            self.assertTrue(self.owner.advancing())
+            if ticket.task is not None:
+                ticket.task.result(5)
+            self.owner.poll()
+            if ticket.record is not None and ticket.record.state.value == "imported":
+                break
+            if ticket.task is None and ticket.record.state.value == "processing":
+                delays.append(ticket.next_poll - clock[0])
+                clock[0] = ticket.next_poll
+        self.assertEqual(ticket.record.state.value, "imported")
+        self.assertEqual(delays, [0.5, 0.5, 1.0, 2.0, 2.0])
+        self.assertEqual(len(reads), 5)
+        self.assertFalse(self.owner.advancing())
+
+    def test_the_pump_ticks_sooner_only_while_an_upload_has_a_step_to_take(self):
+        pump = submodule("blender.pump")
+        fixture = self.fixture
+        self.assertFalse(pump._busy())
+        ticket = self.owner.start(fixture.scene, fixture.source)
+        self.assertTrue(pump._busy())  # Staging runs.
+        ticket.task.result(5)
+        self.owner.poll()  # Initialization starts.
+        ticket.task.result(5)
+        self.owner.poll()  # The part transfer starts.
+        ticket.task.result(5)
+        self.owner.poll()  # Completion starts.
+        ticket.task.result(5)
+        self.owner.poll()  # Processing: the next read waits for its time.
+        self.assertIsNone(ticket.task)
+        self.assertEqual(ticket.record.state.value, "processing")
+        self.assertTrue(pump._busy())
+        other = bpy.data.scenes.new("Another selected scene")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        bpy.context.window.scene = other
+        self.assertFalse(pump._busy())  # poll() takes no step for an unselected scene.
+        bpy.context.window.scene = fixture.scene
+        with patch.object(self.owner, "_online", return_value=False):
+            self.assertFalse(pump._busy())
+        with patch.object(self.owner, "advancing", side_effect=RuntimeError):
+            self.assertFalse(pump._busy())  # The timer must keep running.
+        ticket.error = "Upload stopped; inspect saved progress before trying again"
+        self.assertFalse(pump._busy())
+
     def scene_updates(self):
         """Scene updates that leave a file reference's bytes and destination unchanged."""
         job_session = submodule("blender.job_session")

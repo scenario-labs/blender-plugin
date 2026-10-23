@@ -492,8 +492,9 @@ gets your credentials, and both work offline.
 scene and current frame, then places the video (MP4 or WebM, up to 512 MiB) on a
 free channel without generating again. The strip leaves out embedded audio and plays
 at the scene's frame rate. If the scene or frame changes first, confirm again.
-Select the scene in the Sequencer header to see it. The strip plays a local copy
-kept by the extension, which must stay available if you move or share the file.
+If the Sequencer shows another scene, select this one in its header. The strip
+plays a local copy kept by the extension, which must stay available if you move or
+share the file.
 To show it behind the scene instead, see
 [Camera backgrounds and image planes](#camera-backgrounds-and-image-planes).
 

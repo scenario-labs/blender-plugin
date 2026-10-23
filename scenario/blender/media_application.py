@@ -136,7 +136,7 @@ def apply_media(scene, item, path, *, frame):
         editor = editor or scene.sequence_editor_create()
         strip = _insert(editor, copy, kind, frame)
         strip["scenario_asset"] = item.asset.asset_id
-        return MediaApplication(strip, copy, kind, frame)
+        application = MediaApplication(strip, copy, kind, frame)
     except Exception:
         # Rollback failures deliberately escape as uncertainty: do not delete a
         # snapshot that might still be referenced by a partially inserted strip.
@@ -154,3 +154,24 @@ def apply_media(scene, item, path, *, frame):
         raise MediaApplicationError(
             "Could not insert verified media; saved downloads are preserved"
         ) from None
+    _show_in_sequencers(scene)
+    return application
+
+
+def _show_in_sequencers(scene):
+    """Let the Sequencer of each open workspace show `scene` when it shows none.
+
+    From Blender 5.0 a Sequencer shows its workspace's sequencer scene, not the
+    window's scene; an unset one draws an empty editor that hides the new strip.
+    A sequencer scene already chosen is kept, as the video strip operator does.
+    """
+    workspaces = [bpy.context.workspace]
+    if bpy.context.window_manager is not None:
+        workspaces += [window.workspace for window in bpy.context.window_manager.windows]
+    for workspace in workspaces:
+        if (
+            workspace is not None
+            and workspace.library is None
+            and workspace.sequencer_scene is None
+        ):
+            workspace.sequencer_scene = scene

@@ -83,6 +83,27 @@ def test_render_video_lane_needs_a_video_input():
     assert "model_kling-v3-i2v-pro" not in got
 
 
+def test_render_video_default_is_seedance_2_5_whatever_else_the_catalog_lists():
+    # The first model is what a new Render Video form shows. A deprecated predecessor never
+    # appears, and an unranked relative (video-to-video only) follows the curated models.
+    older = rec(
+        "model_bytedance-seedance-2-0",
+        "Seedance 2.0",
+        ["txt2video", "img2video", "video2video"],
+        ["deprecated:model_bytedance-seedance-2-5"],
+    )
+    draft = rec(
+        "model_bytedance-seedance-2-5-draft-complete",
+        "Seedance 2.5 Draft Complete",
+        ["video2video"],
+    )
+    shuffled = [draft, older, *reversed(RECORDS)]
+    got = ids(catalog.models_for_lane("render_video", shuffled))
+    assert got[0] == "model_bytedance-seedance-2-5" == catalog.DEFAULT_MODELS["render_video"][0]
+    assert "model_bytedance-seedance-2-0" not in got
+    assert got.index("model_bytedance-seedance-2-5-draft-complete") > got.index("model_minimax-h3")
+
+
 def test_edit3d_lane_and_tasks():
     assert ids(catalog.models_for_lane("edit3d", RECORDS)) == [
         "model_meshy-7-retexture",

@@ -468,9 +468,9 @@ class SCENARIO_OT_set_saved_camera_background(bpy.types.Operator):
         layout.label(text=_kept(self.backgrounds))
         if self.media_kind == "video":
             layout.label(text=f"Start the clip at frame {self.destination_frame}.")
-            layout.label(text="Video stays in a local file needed by this blend.")
+            layout.label(text="The video stays a separate file: keep it with this .blend.")
         else:
-            layout.label(text="Pack the image into the blend file.")
+            layout.label(text="The image is packed into this .blend.")
         for line in BACKGROUND_REVIEW:
             layout.label(text=line)
 
@@ -564,7 +564,7 @@ class SCENARIO_OT_add_saved_image_plane(bpy.types.Operator):
         for line in PLANE_REVIEW:
             layout.label(text=line)
         layout.prop(self, "unlit")
-        layout.label(text="Files are checked again first; a change stops it.")
+        layout.label(text="Saved files are verified first; if one changed, nothing is added.")
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
 
@@ -596,7 +596,7 @@ class SCENARIO_OT_add_saved_image_plane(bpy.types.Operator):
 BACKGROUND_REVIEW = (
     "Half opacity, behind objects, fitted to the camera frame.",
     "Shown when you look through the camera.",
-    "Files are checked again first; a change stops it.",
+    "Saved files are verified first; if one changed, nothing is added.",
 )
 # Review lines of a saved image plane, after its cursor.
 PLANE_REVIEW = (
@@ -1004,18 +1004,22 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
         layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
         layout.label(text=f"Maps: {self.roles}")
         if self.projection == BOX:
-            layout.label(text="No UVs: box projection from object space; the mesh is unchanged.")
+            layout.label(
+                text="This mesh has no UVs: the maps use box projection; the mesh is unchanged."
+            )
         else:
             layout.label(text="Create a packed material using this mesh's active UV map.")
         layout.prop(self, "tile_size")
-        layout.label(text="One Mapping node repeats every map once per tile size.")
+        layout.label(text="Every map repeats once per tile size.")
         if self.projection == BOX:
-            layout.label(text="The object's scale at application is included.")
+            layout.label(text="The tile size counts the object's current scale.")
         else:
-            layout.label(text="Size comes from the UV layout; without a reading, tiling stays 1.")
-        layout.label(text="Replace this slot only; existing materials remain unchanged.")
-        layout.label(text="Height uses bump; AO/edge maps remain available for wiring.")
-        layout.label(text="Normal maps use Blender tangent space. No global undo entry.")
+            layout.label(
+                text="The size is read from the UVs; if it cannot be, each map covers the UVs once."
+            )
+        layout.label(text="Only this slot changes; your other materials stay as they are.")
+        layout.label(text="Height drives a Bump node; AO and edge maps load unconnected.")
+        layout.label(text="Normal maps use Blender's tangent space. Undo has no step for this.")
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
 
@@ -1042,9 +1046,11 @@ def _draw_animate(layout, review_error):
     # Clips are pose data on the mesh's own rig: coordinates and Keep original
     # do not apply, so the review does not offer them.
     layout.label(text="Add the returned clips to this mesh's rig; keep its mesh and skin.")
-    layout.label(text="Matching bones take the keys; a humanoid clip is retargeted to the rig.")
-    layout.label(text="The first clip plays; it, the others and the previous action stay in NLA.")
-    layout.label(text="The returned character is not added. A default frame range fits the clip.")
+    layout.label(text="Bones with matching names play the clip; a humanoid clip is retargeted.")
+    layout.label(text="The first clip plays; other clips and the previous action stay in the NLA.")
+    layout.label(
+        text="The returned character is not added. A default frame range takes the clip's."
+    )
     layout.label(text="Undo follows Blender settings; saved jobs and spending stay recorded.")
     if review_error:
         layout.label(text=review_error, icon="ERROR")
@@ -1098,6 +1104,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     source_count: IntProperty(default=1, options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
         name="Edit",
+        description="What the result replaces on the selected mesh",
         items=(
             ("REMESH", "Replace geometry", "Adopt result geometry, UVs and mesh materials"),
             ("UV", "Replace active UVs", "Keep geometry; the result must be the same surface"),
@@ -1128,6 +1135,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     )
     placement: EnumProperty(
         name="Result coordinates",
+        description="How the result's positions are read before it lands on the source",
         items=(
             ("WORLD", "Scene coordinates", "Preserve imported result positions in the scene"),
             (
@@ -1144,7 +1152,12 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         default="WORLD",
         options={"SKIP_SAVE"},
     )
-    keep_original: BoolProperty(name="Keep original", default=True, options={"SKIP_SAVE"})
+    keep_original: BoolProperty(
+        name="Keep original",
+        default=True,
+        options={"SKIP_SAVE"},
+        description="Keep the mesh as it was in a hidden copy named after it, to compare or go back",
+    )
 
     def invoke(self, context, event):
         try:

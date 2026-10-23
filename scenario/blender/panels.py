@@ -637,9 +637,7 @@ def draw_edit3d_lane(layout, context):
         if motion:
             box.label(text="Nothing is uploaded: the motion is retargeted to its rig", icon="INFO")
         else:
-            box.label(
-                text="Upload a GLB snapshot before requesting a generation price", icon="INFO"
-            )
+            box.label(text="Upload a copy of the selected mesh to get the price", icon="INFO")
         draw_dense_mesh_hint(box, objects, scene.scenario.edit3d_task)
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")

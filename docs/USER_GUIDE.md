@@ -716,7 +716,7 @@ reverts it); choose **Build blockout** to update the geometry.
 
 Generate a 360 panorama for the scene World. Modes:
 
-- **Generate**: from a prompt, with Scenario Skybox Flux or GPT.
+- **Generate**: from a prompt, with Scenario Skybox GPT (3840 x 1920 by default) or Flux.
 - **From image**: from one image of a place, with HY World.
 - **HDRI**: convert a saved panorama or a local 2:1 image into an HDR OpenEXR environment.
 - **Upscale**: upscale a saved panorama or a local 2:1 image. To stay within the

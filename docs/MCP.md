@@ -1099,7 +1099,7 @@ same contract to the parameters before the exact quote:
 - Lane defaults apply when a parameter is unset: the Flux model makes one
   panorama (`numOutputs` 1) instead of the schema's two. The Image lane keeps
   the schema defaults of the same models.
-- The GPT model takes only 2048x1024 (default), 3072x1536 or 3840x1920.
+- The GPT model takes only 2048x1024, 3072x1536 or 3840x1920 (default).
 - A panorama-kind reference must be the `asset_id` of a saved, downloaded result
   of this account and project whose `job_status` result shows
   `projection: equirectangular` and `source: asset`. Other asset IDs, OpenEXR

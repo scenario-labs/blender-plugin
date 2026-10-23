@@ -146,7 +146,8 @@ THREE_D_MODES = [
     ("EDIT", "Edit", "Remesh, retexture, unwrap, rig, animate or split the selected mesh"),
 ]
 # Environment modes, each listing only its verified panorama contract models. A
-# saved blend stores the mode and size as item indexes: append, never reorder.
+# saved blend stores the mode and size as item indexes: append, never reorder; the
+# size a new scene starts at is the contract's default, not the first item.
 PANORAMA_MODES = [
     (mode, panorama_contract.MODE_LABELS[mode], panorama_contract.MODE_DESCRIPTIONS[mode])
     for mode in panorama_contract.PANORAMA_MODES
@@ -155,6 +156,7 @@ PANORAMA_SIZES = [
     (f"{width}x{height}", f"{width} x {height}", f"A {width} x {height} pixel 2:1 panorama")
     for width, height in panorama_contract.SIZE_PRESETS
 ]
+PANORAMA_DEFAULT_SIZE = "{}x{}".format(*panorama_contract.DEFAULT_SIZE)
 
 
 def panorama_size(scene):
@@ -553,7 +555,7 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
     panorama_size: EnumProperty(
         name="Size",
         items=PANORAMA_SIZES,
-        default=PANORAMA_SIZES[0][0],
+        default=PANORAMA_DEFAULT_SIZE,
         description="The 2:1 output size; free sizes are not offered",
         update=_on_panorama_size_change,
     )

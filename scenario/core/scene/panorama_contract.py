@@ -75,10 +75,15 @@ class PanoramaContract:
     references: tuple = ()
     locked: tuple = ()  # (input, value) pairs forced on every request
     defaults: tuple = ()  # (input, value) pairs used when the caller sets none
-    sizes: tuple = ()  # allowed (width, height) presets; the first is the default
+    sizes: tuple = ()  # allowed (width, height) presets, in the order a saved blend indexes them
+    default_size: tuple = ()  # the preset used when none is chosen; the first when empty
     size_params: tuple = ()  # (width input, height input)
     factor_param: str = ""
     extra_fields: tuple = ()  # other inputs the contract assumes
+
+    @property
+    def starting_size(self):
+        return self.default_size or self.sizes[0]
 
     @property
     def required_fields(self):
@@ -95,6 +100,21 @@ class PanoramaContract:
 CONTRACTS = {
     contract.model_id: contract
     for contract in (
+        # The first Generate model is the lane's default: the GPT model makes the
+        # largest 2:1 output, which Flux (fixed at 1536x768) cannot.
+        PanoramaContract(
+            "model_scenario-skybox-gpt",
+            GENERATE,
+            "ldr",
+            references=(ReferenceRule("referenceImages", STILL, max_count=10),),
+            # Free width and height accept any ratio, and the schema's presets
+            # include cubemap layouts; only these 2:1 sizes are offered. A saved
+            # blend stores the size as an index into this order: append only.
+            sizes=((2048, 1024), (3072, 1536), (3840, 1920)),
+            default_size=(3840, 1920),
+            size_params=("width", "height"),
+            extra_fields=("prompt",),
+        ),
         PanoramaContract(
             "model_scenario-skybox-flux",
             GENERATE,
@@ -102,17 +122,6 @@ CONTRACTS = {
             references=(ReferenceRule("image", PANORAMA),),
             # The schema default makes two panoramas and doubles the quote.
             defaults=(("numOutputs", 1),),
-            extra_fields=("prompt",),
-        ),
-        PanoramaContract(
-            "model_scenario-skybox-gpt",
-            GENERATE,
-            "ldr",
-            references=(ReferenceRule("referenceImages", STILL, max_count=10),),
-            # Free width and height accept any ratio, and the schema's presets
-            # include cubemap layouts; only these 2:1 sizes are offered.
-            sizes=((2048, 1024), (3072, 1536), (3840, 1920)),
-            size_params=("width", "height"),
             extra_fields=("prompt",),
         ),
         PanoramaContract(
@@ -148,8 +157,9 @@ CONTRACTS = {
     )
 }
 PANORAMA_MODELS = tuple(CONTRACTS)
-# Every 2:1 size preset a contract offers, in order; the first is the default.
+# Every 2:1 size preset a contract offers, in order, and the one the lane starts at.
 SIZE_PRESETS = tuple(dict.fromkeys(size for c in CONTRACTS.values() for size in c.sizes))
+DEFAULT_SIZE = next(c.starting_size for c in CONTRACTS.values() if c.sizes)
 
 
 def contract_for(model_id):
@@ -235,6 +245,7 @@ def summary(contract):
             for rule in contract.references
         ],
         "sizes": [f"{width}x{height}" for width, height in contract.sizes],
+        "default_size": "{}x{}".format(*contract.starting_size) if contract.sizes else None,
         "locked": dict(contract.locked),
         "defaults": dict(contract.defaults),
         "factor_parameter": contract.factor_param or None,
@@ -322,7 +333,7 @@ def prepare(contract, specs, body, *, panorama_refs=None):
         width_name, height_name = contract.size_params
         chosen = (body.get(width_name), body.get(height_name))
         if chosen == (None, None):
-            chosen = contract.sizes[0]
+            chosen = contract.starting_size
         preset = next((size for size in contract.sizes if size == chosen), None)
         if preset is None:
             options = ", ".join(f"{w}x{h}" for w, h in contract.sizes)

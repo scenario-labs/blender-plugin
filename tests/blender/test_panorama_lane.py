@@ -21,7 +21,7 @@ WORLD = "model_hunyuan-world-image-to-skybox"
 HDRI = "model_hdri-skybox"
 UPSCALE = "model_sc-upscale-flux-skybox"
 MODE_MODELS = {
-    "GENERATE": [FLUX, GPT],
+    "GENERATE": [GPT, FLUX],
     "FROM_IMAGE": [WORLD],
     "HDRI": [HDRI],
     "UPSCALE": [UPSCALE],
@@ -151,7 +151,7 @@ class EnvironmentFormTests(unittest.TestCase):
 
     def test_modes_list_only_their_contract_models_and_invalidate_the_price(self):
         self.assertEqual(self.models(), MODE_MODELS["GENERATE"])
-        self.assertEqual(self.lane.model_id, FLUX)
+        self.assertEqual(self.lane.model_id, GPT)
         for mode, expected in MODE_MODELS.items():
             with self.subTest(mode=mode):
                 self.lane.estimate_state, self.lane.estimate_key = "READY", "old-price"
@@ -167,6 +167,7 @@ class EnvironmentFormTests(unittest.TestCase):
         self.assertIn(FLUX, image)
 
     def test_contract_values_are_forced_and_defaults_fill_only_new_settings(self):
+        self.lane.model_id = FLUX
         params = self.lane.params
         self.assertEqual(params["numOutputs"].int_value, 1)
         params["numOutputs"].int_value = 3
@@ -177,6 +178,8 @@ class EnvironmentFormTests(unittest.TestCase):
         )
         self.assertFalse(params["conversionCubemapCross"].bool_value)
         self.scene.scenario.panorama_mode = "GENERATE"
+        self.assertEqual(self.lane.model_id, GPT)  # the mode lists its default model again
+        self.lane.model_id = FLUX
         self.assertEqual(params["numOutputs"].int_value, 1)  # a new form gets the lane default
         params["numOutputs"].int_value = 3
         self.lane.estimate_state, self.lane.estimate_key = "READY", "kept-price"
@@ -227,7 +230,28 @@ class EnvironmentFormTests(unittest.TestCase):
         tabs = [call.args[2] for call in layout.mock_calls if call[0].endswith("prop_enum")]
         self.assertIn("panorama", tabs)
 
+    def test_new_scene_generates_the_largest_two_to_one_gpt_skybox(self):
+        scenario = self.scene.scenario
+        self.assertEqual((self.lane.model_id, scenario.panorama_size), (GPT, "3840x1920"))
+        # A blend stores the size as an item index: the presets keep their order.
+        self.assertEqual(
+            [item[0] for item in self.props.PANORAMA_SIZES], ["2048x1024", "3072x1536", "3840x1920"]
+        )
+        self.lane.prompt = "a misty valley"
+        request = self.request()
+        self.assertEqual(request.errors, [])
+        self.assertEqual(
+            (request.body["prompt"], request.body["width"], request.body["height"]),
+            ("a misty valley", 3840, 1920),
+        )
+        # An edited size is the user's own and survives a mode round trip.
+        scenario.panorama_size = "2048x1024"
+        scenario.panorama_mode = "HDRI"
+        scenario.panorama_mode = "GENERATE"
+        self.assertEqual(scenario.panorama_size, "2048x1024")
+
     def test_native_request_applies_the_shared_contract(self):
+        self.lane.model_id = FLUX
         self.lane.prompt = "a misty valley"
         request = self.request()
         self.assertEqual(request.errors, [])
@@ -268,8 +292,8 @@ class EnvironmentFormTests(unittest.TestCase):
         picker = submodule("blender.model_picker")
         items = picker.prepare(bpy.context, "panorama")
         self.assertEqual([item.model_id for item in items], MODE_MODELS["GENERATE"])
-        self.assertEqual(picker.apply_choice(bpy.context, "panorama", 1), (GPT, "panorama"))
-        self.assertEqual((self.scene.scenario.lane, self.lane.model_id), ("panorama", GPT))
+        self.assertEqual(picker.apply_choice(bpy.context, "panorama", 1), (FLUX, "panorama"))
+        self.assertEqual((self.scene.scenario.lane, self.lane.model_id), ("panorama", FLUX))
         self.scene.scenario.panorama_mode = "HDRI"
         items = picker.prepare(bpy.context, "panorama")
         self.assertEqual([item.model_id for item in items], [HDRI])
@@ -347,6 +371,8 @@ class EnvironmentJobTests(unittest.TestCase):
         self.scene.scenario.lane = "panorama"
         self.generation.refresh_panorama_models(bpy.context)
         self.lane = self.scene.scenario.lane_state("panorama")
+        # These tests run the Flux contract; the lane's default model has its own test.
+        self.lane.model_id = FLUX
         self.before_worlds = set(bpy.data.worlds)
         self.addCleanup(self.remove_worlds)
 
@@ -474,7 +500,7 @@ class EnvironmentJobTests(unittest.TestCase):
         # The list is shared by scenes: another scene's refresh lists its Generate mode.
         self.generation.refresh_panorama_models(SimpleNamespace(scene=other))
         listed = [entry[0] for entry in self.runtime.enum_items(("models", "panorama"))]
-        self.assertEqual(listed, [FLUX, GPT])
+        self.assertEqual(listed, MODE_MODELS["GENERATE"])
         self.assertEqual(bpy.ops.scenario.panorama_to_hdri(**dict(item.properties)), {"FINISHED"})
         scenario = self.scene.scenario
         self.assertEqual((scenario.lane, scenario.panorama_mode), ("panorama", "HDRI"))
@@ -738,12 +764,13 @@ class EnvironmentJobTests(unittest.TestCase):
         fixture = self.fixture
         self.lane.model_id = GPT
         self.lane.prompt = "a canyon at noon"
-        self.scene.scenario.panorama_size = "3840x1920"
         fixture.ui_quote("panorama")
         native = fixture.dry_runs()[-1]
+        # Neither side names a size: both start at the same largest 2:1 preset.
         self.assertEqual((native["width"], native["height"]), (3840, 1920))
         request = self.generation.build_request(self.scene, "panorama", for_estimate=True)
-        fixture.panorama_estimate(GPT, request.body)
+        unsized = {k: v for k, v in request.body.items() if k not in ("width", "height")}
+        fixture.panorama_estimate(GPT, unsized)
         self.assertEqual(fixture.dry_runs()[-1], native)
         self.assertEqual(fixture.paid, [])
 

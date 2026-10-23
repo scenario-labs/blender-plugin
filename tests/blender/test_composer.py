@@ -1320,6 +1320,19 @@ class ComposerSideRegionTests(unittest.TestCase):
                 {"WARNING"}, "Open a 3D viewport to capture the scene"
             )
 
+    def test_an_offline_render_form_names_online_access_instead_of_the_capture(self):
+        lane = bpy.context.scene.scenario.lane_state("render_image")
+        references = submodule("blender.render_references")
+        status_note = submodule("blender.composer.draw").status_note
+        lane.estimate_state, lane.estimate_error = "UNAVAILABLE", references.CAPTURE_SCENE
+        with mock.patch.object(self.runtime, "online", return_value=True):
+            self.assertEqual(status_note(lane), references.CAPTURE_SCENE)
+        with mock.patch.object(self.runtime, "online", return_value=False):
+            self.assertEqual(status_note(lane), references.CAPTURE_OFFLINE)
+            # Other price problems keep their own words.
+            lane.estimate_error = "The price changed"
+            self.assertEqual(status_note(lane), "The price changed")
+
     def test_a_double_click_value_from_a_direct_caller_still_resets(self):
         ctx = self._context(sidebar=False)
         state = self.state_mod.ComposerState()

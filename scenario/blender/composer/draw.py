@@ -494,6 +494,9 @@ def status_note(lane_state):
     if failure is not None and generation.schema_for(lane_state.model_id) is None:
         return error or failure  # explains why the quote is unavailable
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
+        waiting = (render_references.CAPTURE_SCENE, render_references.NEEDS_FIRST_FRAME)
+        if lane_state.estimate_error in waiting and not runtime.online():
+            return render_references.CAPTURE_OFFLINE  # what the muted Capture chip needs first
         return lane_state.estimate_error
     if error:
         return error

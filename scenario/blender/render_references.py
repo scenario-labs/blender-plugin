@@ -13,6 +13,7 @@ CAPTURE_SCENE = "Capture the scene to see the price"
 NEEDS_FIRST_FRAME = "Upload the first frame to see the price"
 UPLOADING_SCENE = "Uploading the scene capture; the price follows"
 UPLOADING_FIRST_FRAME = "Uploading the first frame; the price follows"
+CAPTURE_OFFLINE = "Allow Online Access to capture the scene"
 UPLOADING = "uploading"
 READY = "ready"
 REVIEW = "review"
@@ -81,7 +82,7 @@ def chip(lane):
     state = slot_state(lane, SCENE)
     label = "Recapture" if state == READY else "Capture"
     if not runtime.online():
-        return label, "Allow Online Access to capture the scene"
+        return label, CAPTURE_OFFLINE
     if not runtime.credentials().valid:
         return label, "Set up credentials to capture the scene"
     if note := uploading_note(lane):

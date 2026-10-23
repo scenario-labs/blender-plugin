@@ -807,8 +807,12 @@ def _first_image_spec(schema):
     return (arrays or specs or [None])[0]
 
 
-def _add_file_reference(context, lane, filepath, param_name=None):
-    """Attach a local image to the first image input of the lane's current model; returns the parameter name or None."""
+def _add_file_reference(context, lane, filepath, param_name=None, saved=None):
+    """Attach a local image to the first image input of the lane's current model; returns the parameter name or None.
+
+    With `saved`, the (record, result) of a verified saved image, the slot holds that result's
+    own Scenario asset instead of the file, so nothing is uploaded again.
+    """
     scene = context.scene
     lane_state = scene.scenario.lane_state(lane)
     schema = generation.schema_for(lane_state.model_id)
@@ -830,13 +834,31 @@ def _add_file_reference(context, lane, filepath, param_name=None):
         for index in range(len(lane_state.references) - 1, -1, -1):
             if lane_state.references[index].param_name == spec.name:
                 lane_state.references.remove(index)  # a single input holds one file
+    from . import first_frame_handoff, reference_form
+
     ref = lane_state.references.add()
-    ref.param_name, ref.source, ref.filepath, ref.label = (
-        spec.name,
-        "FILE",
-        filepath,
-        os.path.basename(filepath),
-    )
+    store = runtime.state.job_store
+    if (
+        saved is not None
+        and store is not None
+        and reference_form.input_kind(lane_state, spec.name) == "image"
+    ):
+        record, item = saved
+        ref.param_name, ref.source, ref.asset_id, ref.filepath = (
+            spec.name,
+            "ASSET",
+            item.asset.asset_id,
+            "",
+        )
+        ref.label = f"{item.asset.name} (saved result)"
+        first_frame_handoff.mark_saved_result(ref, store.scope, record, item)
+    else:
+        ref.param_name, ref.source, ref.filepath, ref.label = (
+            spec.name,
+            "FILE",
+            filepath,
+            os.path.basename(filepath),
+        )
     props.mark_estimate_dirty(lane_state)
     return spec.name
 
@@ -864,18 +886,25 @@ class SCENARIO_OT_use_as_reference(bpy.types.Operator):
     bl_description = "Send this image to another lane as a reference and open that lane"
     filepath: StringProperty()
     target: EnumProperty(items=REFERENCE_TARGETS, default="3d")
+    # The saved job the image came from: its verified asset is reused instead of an upload.
+    local_id: StringProperty(options={"HIDDEN"})
 
     def execute(self, context):
         if not os.path.exists(self.filepath):
             self.report({"ERROR"}, "File not found")
             return {"CANCELLED"}
+        from . import first_frame_handoff
+
+        saved = first_frame_handoff.saved_reference(
+            runtime.state.job_store, self.local_id, self.filepath
+        )
         scene = context.scene
         lane = self.target
         if lane == "3d":
             scene.scenario.three_d_mode = "IMAGE"
         scene.scenario.lane = lane
         try:
-            name = _add_file_reference(context, lane, self.filepath)
+            name = _add_file_reference(context, lane, self.filepath, saved=saved)
         except ScenarioError as error:
             self.report({"ERROR"}, error.reason)
             return {"CANCELLED"}

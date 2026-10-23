@@ -795,6 +795,8 @@ and the actions for its kind:
 - **Reload parameters** puts the lane, model, prompt, settings and references
   back into the form.
 - **Details** shows everything that was sent and returned.
+- **Use as reference** on an image this session saved reuses its Scenario asset
+  when the file still matches, so nothing is uploaded again.
 - **Select** and **Delete** find the objects a generation created, even after renames.
 
 **Grid** shows the results as preview tiles, twelve at a time; **List** brings the

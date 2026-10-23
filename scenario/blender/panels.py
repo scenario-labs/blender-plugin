@@ -820,12 +820,15 @@ def draw_result_body(box, rec, *, error_link=True, single_icon=True):
                 row.template_icon(icon_value=icon_id, scale=3.0)
             col = row.column(align=True)
             col.operator("scenario.show_image", text="View image", icon="ZOOM_ALL").filepath = path
-            col.operator_menu_enum(
+            use = col.operator_menu_enum(
                 "scenario.use_as_reference",
                 "target",
                 text="Use as reference",
                 icon="IMAGE_REFERENCE",
-            ).filepath = path
+            )
+            use.filepath = path
+            if shared:
+                use.local_id = rec.local_id  # its verified saved asset is reused, not uploaded
             col.operator(
                 "scenario.remove_background", text="Remove background", icon="MOD_MASK"
             ).filepath = path

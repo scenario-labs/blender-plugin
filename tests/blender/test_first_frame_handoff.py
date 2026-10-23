@@ -888,6 +888,60 @@ class FirstFrameHandoffTests(unittest.TestCase):
         del ref[self.form._RESULT]
         self.assertNotIn(saved, drawn_labels())
 
+    def test_use_as_reference_reuses_a_verified_saved_asset_instead_of_a_file(self):
+        request_id = self.saved_image()
+        receipt = self.store.get(request_id).results[0].receipt
+        root = self.runtime.paths().state_dir / "shared-results"
+        (path,) = [item for item in root.rglob(receipt.name) if item.is_file()]
+        original = path.read_bytes()
+        self.addCleanup(path.write_bytes, original)
+        # The Generations row of this session's Image job hands it to Use as reference.
+        view = replace(
+            self.runtime.state.model_jobs.views[request_id], kind="image", files=[str(path)]
+        )
+        layout = MagicMock()
+        layout.row.return_value = layout.column.return_value = layout
+        with (
+            patch.object(submodule("blender.result_previews"), "draw"),
+            patch.object(submodule("blender.job_recovery"), "draw_controls"),
+        ):
+            submodule("blender.panels").draw_result_body(layout, view)
+        menu = layout.operator_menu_enum.return_value
+        self.assertEqual((menu.filepath, menu.local_id), (str(path), request_id))
+        lane = self.render_video(FRAME_AND_CLIP)
+
+        def use(local_id):
+            for index in range(len(lane.references) - 1, -1, -1):
+                if lane.references[index].param_name == "referenceImages":
+                    lane.references.remove(index)
+            before = self.network()
+            self.assertEqual(
+                bpy.ops.scenario.use_as_reference(
+                    filepath=str(path), target="render_video", local_id=local_id
+                ),
+                {"FINISHED"},
+            )
+            self.assertEqual(self.network(), before)  # nothing read, uploaded or sent
+            ref = lane.references[-1]
+            self.assertEqual(ref.param_name, "referenceImages")
+            return ref
+
+        ref = use(request_id)
+        self.assertEqual((ref.source, ref.asset_id, ref.filepath), ("ASSET", "result-image", ""))
+        self.assertEqual(
+            self.handoff.provenance(ref),
+            {"request_id": request_id, "asset_id": "result-image", "sha256": receipt.sha256},
+        )
+        self.assertIsNotNone(self.handoff.saved_source(self.store, ref))
+        self.assertIsNone(self.form.scope_error(lane))
+        # Without the saved job, or with other bytes, the file is attached as before.
+        for local_id, data in ((request_id, original[:-1] + b"\x00"), ("", original)):
+            with self.subTest(local_id=local_id):
+                path.write_bytes(data)
+                ref = use(local_id)
+                self.assertEqual((ref.source, ref.filepath), ("FILE", str(path)))
+                self.assertIsNone(self.handoff.provenance(ref))
+
     def test_bound_first_frame_records_one_native_undo_step(self):
         """Headless memfile history; the desktop timer context needs separate proof."""
         request_id = self.saved_image()

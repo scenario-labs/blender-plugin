@@ -77,6 +77,8 @@ def job_snapshot(record):
     value.setdefault("claimed_at", None)
     if value["intent"].get("source") != "cloud":
         value["intent"].setdefault("film_task", None)
+        # Schema 13 gives earlier local intents an unknown lane.
+        value["intent"].setdefault("lane", None)
     for item in value["results"]:
         # Schema 10 gives earlier results the asset's own file and no projection.
         item["asset"].setdefault("source", "asset")

@@ -48,9 +48,10 @@ records are not imported.
 
 `JobIntent` freezes the local request ID, model/workflow target (or the fixed
 `prompt`/`translate` target for prompt helpers), payload SHA-256, server quote
-SHA-256, exact quoted cost as a decimal string, and originating
-file/scene/target/revision IDs. IDs describe the captured origin, never current
-selection. Generate a fresh request ID for an intentional new operation and hash
+SHA-256, exact quoted cost as a decimal string, originating
+file/scene/target/revision IDs and, from schema 13, the submitting generation lane
+([schema 13](#schema-13-generation-lane)). IDs describe the captured origin, never
+current selection. Generate a fresh request ID for an intentional new operation and hash
 the exact immutable payload/quote bytes held by the SDK estimate. The caller must
 still verify the estimate belongs to the current adapter and matches the current
 scope, payload and origin before authorizing dispatch.
@@ -78,7 +79,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **12**. SQLite transactions
+The database has an application ID and schema version **13**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +95,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 11 upgrade in one
+its database disappears. Previous shared schemas 2 through 12 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -110,7 +111,8 @@ receive the asset's own file and no projection (see
 [schema 10](#schema-10-declared-originals-and-lane-defaults)). Schema 10 rows keep
 their exact bytes ([schema 11](#schema-11-wav-originals)). Schemas before 12 receive
 an unknown submission claim time and no result parents
-([schema 12](#schema-12-submission-claim-time)). Older extension builds
+([schema 12](#schema-12-submission-claim-time)). Schemas before 13 receive no
+lane ([schema 13](#schema-13-generation-lane)). Older extension builds
 reject a newer schema; stop older Blender processes before upgrading and do not
 expect an older build to open the upgraded store.
 
@@ -623,3 +625,24 @@ outside the job, such as an input asset, one on a parent cycle or an unusable va
 stored as `null`. The store refuses a parent outside the manifest, the result itself or
 a cycle. A later retrieval keeps the saved value, so lineage never refuses a download.
 Nothing reads it yet; 3D import does not bind files by parent.
+
+## Schema 13: generation lane
+
+A job listed again after a restart or file load showed only that it ran a model: its
+Image results lost their file tools and a Render Image still its first-frame lead.
+Schema 13 adds `lane` to each local intent: the generation lane that submitted it, such
+as `image`, `render_image`, `3d`, `workflow` or `film`, a bounded lowercase identifier
+validated like a lane default's, or `null` for jobs other owners save, such as Blockout
+and prompt helper jobs. It is display data for the listed row's kind and controls; it is
+never a destination, origin or application authority, which still come from the job's own
+approvals. Cloud records have no lane. The prompt is still not saved, so a listed job
+names its model instead.
+
+Opening a schema 12 store upgrades it in one immediate transaction like earlier schemas:
+every local intent is rewritten with `lane: null`, an unknown value that is never
+guessed, and cloud records, Film upload associations and lane defaults are preserved
+byte for byte. A row that already names a lane, one invalid row or a failed commit leaves
+the schema 12 file unchanged, and a schema 12 build refuses the upgraded store as an
+unsupported format. The unit and installed tests rebuild
+`tests/fixtures/synthetic/jobs-schema12.sql`, a store written by the schema 12 release's
+storage code, and check the upgrade, its rollback and refusal by a schema 12 reader.

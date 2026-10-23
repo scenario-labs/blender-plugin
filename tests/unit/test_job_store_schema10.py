@@ -87,8 +87,10 @@ def test_real_schema_nine_store_upgrades_every_row_without_guessing(schema9):
     after = _rows(schema9, "jobs", "scope, request_id, revision, record")
     assert [row[:3] for row in after] == [row[:3] for row in before]
     for (key, request_id, _, raw), (_, _, _, migrated) in zip(before, after, strict=True):
-        # Earlier stores never saved a submission claim time (schema 12).
+        # Earlier stores never saved a submission claim time (schema 12) or lane (13).
         expected = json.loads(raw) | {"claimed_at": None}
+        if expected["intent"].get("source") != "cloud":
+            expected["intent"]["lane"] = None
         for item in expected["results"]:
             # Earlier stores never declared an original, projection or parent.
             item["asset"].update(source="asset", projection=None, parent_id=None)

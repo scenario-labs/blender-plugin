@@ -62,11 +62,13 @@ def schema10(tmp_path):
         expected_revision=0,
     )
     with closing(sqlite3.connect(path)) as connection:
-        # Schema 12 added the claim time and result parents; a schema 10 row has neither.
+        # Schema 12 added the claim time and result parents, schema 13 the lane; a
+        # schema 10 row has none of them.
         for request_id, scope_key, raw in connection.execute(
             "SELECT request_id, scope, record FROM jobs"
         ).fetchall():
             value = json.loads(raw)
+            value["intent"].pop("lane", None)
             del value["claimed_at"]
             for item in value["results"]:
                 del item["asset"]["parent_id"]
@@ -86,11 +88,14 @@ def test_schema_ten_store_upgrades_without_changing_any_row(schema10):
     assert defaults
     stores = {key: JobStore(schema10, scope) for key, scope in _scopes(schema10).items()}
     assert _pragma(schema10, "user_version") == storage._VERSION
-    # Only schema 12's unknown claim time and result parents are added to each row.
+    # Only schema 12's unknown claim time and result parents and schema 13's
+    # unknown lane are added to each row.
     upgraded = _rows(schema10, "jobs", "scope, request_id, revision, record")
     assert [row[:3] for row in upgraded] == [row[:3] for row in jobs]
     for (*_, raw), (*_, migrated) in zip(jobs, upgraded, strict=True):
         expected = json.loads(raw) | {"claimed_at": None}
+        if expected["intent"].get("source") != "cloud":
+            expected["intent"]["lane"] = None
         for item in expected["results"]:
             item["asset"]["parent_id"] = None
         assert json.loads(migrated) == expected

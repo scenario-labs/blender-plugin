@@ -717,14 +717,14 @@ class JobSession:
         self._pending.append((task, origin))
         return task
 
-    def prepare_quote(self, quote):
+    def prepare_quote(self, quote, *, lane=None):
         _main_thread()
         if not isinstance(quote, OriginQuote):
             raise OriginUnavailable("Use a quote from this session")
         # Refuse before saving an intent that submit() could not queue.
         self._check_capacity()
         self._resolve(quote.origin)
-        return self._coordinator.prepare_quote(quote)
+        return self._coordinator.prepare_quote(quote, lane=lane)
 
     def prepare(self, estimate, *, origin):
         """Use the origin captured with inputs before requesting the estimate."""

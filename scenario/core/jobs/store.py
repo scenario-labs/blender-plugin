@@ -28,7 +28,7 @@ from .transfers import DownloadedResult, TransferError, _root, validate_result_n
 if TYPE_CHECKING:
     from .mesh_source import MeshSource
 
-_VERSION = 12
+_VERSION = 13
 _APPLICATION_ID = 0x53434A42
 _FILM_TASK_FILTER = "json_valid(record) AND json_extract(record, '$.intent.film_task') IS NOT NULL"
 # A bounded identifier, not the current catalog: "3d" is a lane, and a renamed or
@@ -396,12 +396,18 @@ class JobIntent:
     quote_cost: str
     mesh_sources: tuple[JobMeshSource, ...] = ()
     film_task: FilmTaskBinding | None = None
+    # The generation lane that submitted it (schema 13), so a listed job shows
+    # its form's kind and controls. Display only: never a destination. None for
+    # other submissions and for rows saved by earlier schemas.
+    lane: str | None = None
 
     def __post_init__(self):
         _identity(self.request_id)
         _identity(self.target_id)
         if not isinstance(self.scope, JobScope) or not isinstance(self.origin, JobOrigin):
             raise ValueError("A scope and origin are required")
+        if self.lane is not None:
+            _lane(self.lane)
         if not isinstance(self.operation, str) or self.operation not in {
             "model",
             "workflow",
@@ -474,6 +480,10 @@ class CloudJobIntent:
 
     @property
     def film_task(self):
+        return None
+
+    @property
+    def lane(self):
         return None
 
 
@@ -742,6 +752,10 @@ def _decode(raw, scope, *, version=_VERSION):
             if not isinstance(intent, dict) or "mesh_sources" in intent:
                 raise ValueError
             intent["mesh_sources"] = []
+        if version < 13 and intent_type is JobIntent:
+            if not isinstance(intent, dict) or "lane" in intent:
+                raise ValueError
+            intent["lane"] = None
         for fields, cls in (
             (intent, intent_type),
             (intent["scope"], JobScope),
@@ -932,7 +946,10 @@ class JobStore:
                     _create_trained_defaults(connection)
                     connection.execute(f"PRAGMA application_id = {_APPLICATION_ID}")
                     connection.execute(f"PRAGMA user_version = {_VERSION}")
-                elif version in {2, 3, 4, 5, 6, 7, 8, 9, 10, 11} and application == _APPLICATION_ID:
+                elif (
+                    version in {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}
+                    and application == _APPLICATION_ID
+                ):
                     self._upgrade_previous(connection, version)
                 else:
                     self._check_version(connection)
@@ -957,7 +974,7 @@ class JobStore:
         Every row is decoded and rewritten in the current shape; one invalid row
         rolls back the whole upgrade and keeps the old version. A concurrent opener
         waits on the same immediate transaction and then sees the current version.
-        Missing roles, originals, projections and claim times are never guessed.
+        Missing roles, originals, projections, claim times and lanes are never guessed.
         """
         film_tasks = set()
         for key, request_id, revision, raw in connection.execute(

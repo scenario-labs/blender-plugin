@@ -11,7 +11,7 @@ stays visible."""
 import json
 import pathlib
 
-from .catalog import is_trained
+from .catalog import MOTION_MODELS, is_trained
 
 MODALITIES = (
     ("image", "Image", "image"),
@@ -259,6 +259,40 @@ def music_length_spec(record, schema):
         if spec is not None and spec.ptype == "number" and not spec.allowed_values:
             return spec
     return None
+
+
+# A text-to-motion model's clip length and frame rate inputs, by the names the live models use.
+MOTION_LENGTH_INPUTS = ("length", "duration")
+MOTION_RATE_INPUT = "fps"
+
+
+def motion_length_spec(record, schema):
+    """The clip length input of a text-to-motion model's schema, or None."""
+    if record.id not in MOTION_MODELS:
+        return None
+    for name in MOTION_LENGTH_INPUTS:
+        spec = schema.by_name(name)
+        if spec is not None and spec.ptype == "number" and not spec.allowed_values:
+            return spec
+    return None
+
+
+def motion_rate_spec(record, schema):
+    """The frame rate choice of a text-to-motion model's schema, or None."""
+    spec = schema.by_name(MOTION_RATE_INPUT) if record.id in MOTION_MODELS else None
+    return spec if spec is not None and spec.allowed_values else None
+
+
+def rate_choice(spec, fps):
+    """The choice of a frame rate input that equals `fps`, or None when it offers no such rate."""
+    return next(
+        (
+            value
+            for value in spec.allowed_values
+            if isinstance(value, (int, float)) and abs(value - fps) < 1e-6
+        ),
+        None,
+    )
 
 
 def visible(record):

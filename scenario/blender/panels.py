@@ -659,13 +659,18 @@ def draw_edit3d_lane(layout, context):
     if schema.prompt_name:
         draw_prompt_row(layout, lane_state, "edit3d")
     record = runtime.state.records.get(lane_state.model_id)
-    mesh_name = mesh_param(record) if record is not None and not motion else None
-    draw_references(
-        layout,
-        lane_state,
-        schema,
-        fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
-    )
+    mesh_name = mesh_param(record) if record is not None else None
+    if motion:
+        # The clip is retargeted onto the selected rig: no character is uploaded.
+        hide = {s.name for s in schema.specs if s.is_file and (s.kind or "").lower() == "3d"}
+        draw_references(layout, lane_state, schema, hide=hide)
+    else:
+        draw_references(
+            layout,
+            lane_state,
+            schema,
+            fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
+        )
     params_ui.draw_params(layout, lane_state, schema)
     # Enablement and submission use the Edit form's own lane-bound quote.
     draw_generate_row(layout, lane_state, "edit3d")

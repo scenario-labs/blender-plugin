@@ -8190,6 +8190,20 @@ class ModelGenerationTests(unittest.TestCase):
         finally:
             prefs.use_global_undo, prefs.undo_steps = settings
 
+    def test_a_refused_clip_says_the_rig_is_unchanged_and_what_to_do_next(self):
+        request_id, source = self.captured_clip_result()
+        rig = source.modifiers[0].object
+        rig.pose.bones[0].constraints.new("COPY_ROTATION")
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(
+            status["error"],
+            "Animation not applied; the rig is unchanged. Constraints or drivers move the "
+            "animated bones: remove or mute them, then apply the animation again",
+        )
+        self.assertIsNone(rig.animation_data and rig.animation_data.action)
+
     def test_clips_at_another_frame_rate_are_reported_in_status_and_the_job_row(self):
         request_id, _ = self.captured_clip_result()
         approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")

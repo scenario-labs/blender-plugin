@@ -120,3 +120,21 @@ def test_tripo_p2_text_is_the_first_text_to_3d_default_and_the_others_stay_liste
     ]
     got = [r.id for r in catalog.models_for_lane("3d", records)]
     assert got == [P2_TEXT, *others]
+
+
+def test_uthana_text_to_motion_returns_only_its_skeleton_and_clip():
+    record = ModelRecord.from_api(
+        {
+            "id": "model_uthana-text-to-motion-3.0",
+            "name": "Uthana Text to Motion 3.0",
+            "capabilities": ["txt23d"],
+            "inputs": [
+                {"name": "prompt", "type": "string", "required": True},
+                {"name": "animationOnly", "type": "boolean", "default": False},
+                {"name": "rewritePrompt", "type": "boolean", "default": True},
+            ],
+        }
+    )
+    schema = parse_schema(record)
+    assert starting_value(record.id, schema.by_name("animationOnly")) is True
+    assert starting_value(record.id, schema.by_name("rewritePrompt")) is None

@@ -571,10 +571,14 @@ down the list, is quicker and repaints the whole surface.
 Text to Motion: describe the motion, such as "walks forward four steps then
 waves", and generate. They upload nothing and need a mesh that already has a rig
 (use **Rigging** first); **Apply animation** then moves your rig with the motion,
-including its walk across the floor. **Meshy Animation** instead plays a motion
-from Meshy's library on your uploaded character: pick it by name (**Walk**,
-**Run**, **Wave hello**, **Jump** and others), or choose **Other ID** and type any
-ID from [Meshy's animation library](https://docs.meshy.ai/en/api/animation-library).
+including its walk across the floor. Their duration starts at your scene's length
+once you have set a frame range, and Uthana's frame rate at your scene's when it
+offers it (24, 30 or 60 fps), until you change them; Uthana also starts on
+**Animation only**, since your own character plays the motion. **Meshy Animation**
+instead plays a motion from Meshy's library on your uploaded character: pick it by
+name (**Walk**, **Run**, **Wave hello**, **Jump** and others), or choose **Other ID**
+and type any ID from
+[Meshy's animation library](https://docs.meshy.ai/en/api/animation-library).
 
 A mesh too dense to take edits in place shows its triangle count and suggests
 remeshing it first; its results still import as new objects.
@@ -1316,6 +1320,10 @@ data is shared. See [Privacy and data handling](PRIVACY.md) for details.
 - **"Select the mesh to edit"**: the 3D tab's Edit mode needs a selected mesh.
 - **"Rig the selected mesh first"**: a text-to-motion model in **Animate** plays
   on your mesh's armature; give it one with **Rigging** first.
+- **"Animation not applied; the rig is unchanged"**: nothing moved; the rest of
+  the message says what to change. "Rig the mesh again with Edit 3D > Rigging"
+  means your rig is not one a humanoid motion can be retargeted to: rig the mesh
+  with **Rigging**, then choose **Apply animation** on the saved job again.
 - **"This model takes no image/video input"**: choose another model in the
   Render lane.
 - **The result doesn't appear**: check Generations for an error. Use **Inspect

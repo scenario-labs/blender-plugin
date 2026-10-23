@@ -353,4 +353,7 @@ read-only; the shared UI/MCP command implements the
 keys were corrected for a rest difference, the job row then shows **Clips
 adjusted to this rig's rest pose by up to N°**, and for a retargeted clip
 **Clips retargeted from a Mixamo skeleton** (or another skeleton name), until
-undo history changes.
+undo history changes. A refused clip changes nothing; the job row shows
+**Animation not applied; the rig is unchanged** followed by the reason and what
+to change, such as **Rig the mesh again with Edit 3D > Rigging, then apply the
+animation again**.

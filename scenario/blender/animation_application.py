@@ -6,7 +6,10 @@ A returned armature's clips are copied onto the armature that the captured
 source's Armature skin uses. The source mesh, its skin and the rig's rest data are
 never modified, and no returned object is kept. Bones are matched by name; when
 the names, hierarchy or rest pose do not match and both rigs are recognized
-humanoids, the clips are retargeted instead (see `motion_retarget`).
+humanoids, the clips are retargeted instead (see `motion_retarget`). A clip that
+also keys the returned armature object, as when a file's skin leaves its scene
+root out of the joints and the root carries the travel, is always retargeted:
+that motion belongs to no bone a name could match.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it. Skinning moves a vertex by its bone's armature-space
@@ -55,7 +58,11 @@ _CHANNEL = re.compile(
     r'pose\.bones\["((?:[^"\\]|\\.)*)"\]\.'
     r"(location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale)"
 )
+# The returned armature object's own transform, which only a retarget plays.
+_CARRIED = re.compile(r"location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale")
 _ROTATIONS = frozenset({"rotation_quaternion", "rotation_euler", "rotation_axis_angle"})
+# What to do when the clips match neither by name nor as two humanoids.
+_RIG_AGAIN = "Rig the mesh again with Edit 3D > Rigging, then apply the animation again"
 # Vector components a correction rotates: location, and the quaternion's X, Y and Z
 # (conjugation keeps W). Both maps are linear, so rotating every key and handle of
 # curves that share their timing rotates the interpolated values exactly, and the
@@ -110,7 +117,8 @@ def _values(curve):
 def _channels(action, slot):
     """Map each animated bone to its animated properties; reject anything else.
 
-    Also report whether any location key moves a bone away from its rest head.
+    Also report whether any location key moves a bone away from its rest head, and
+    which of its own transform properties the returned armature object keys.
     """
     if any(
         bag.fcurves
@@ -119,19 +127,23 @@ def _channels(action, slot):
         for bag in _channelbags(action, other)
     ):
         raise mesh.MeshApplicationError("Clips that animate other objects are unsupported")
-    bones, moved = {}, False
+    bones, moved, carried = {}, False, set()
     for bag in _channelbags(action, slot):
         for curve in bag.fcurves:
             match = _CHANNEL.fullmatch(curve.data_path)
+            if match is None and not curve.modifiers and _CARRIED.fullmatch(curve.data_path):
+                carried.add(curve.data_path)
+                continue
             if match is None or curve.modifiers:
                 raise mesh.MeshApplicationError(
-                    "Clips may only key bone location, rotation and scale"
+                    "Clips may only key the location, rotation and scale of the armature and "
+                    "its bones"
                 )
             name = bpy.utils.unescape_identifier(match.group(1))
             bones.setdefault(name, set()).add(match.group(2))
             if match.group(2) == "location" and not moved:
                 moved = any(abs(value) > 1e-9 for value in _values(curve))
-    return bones, moved
+    return bones, moved, carried
 
 
 def _orientation(rig, bone, world):
@@ -160,9 +172,21 @@ def _curves(action, slot):
     for bag in _channelbags(action, slot):
         for curve in bag.fcurves:
             match = _CHANNEL.fullmatch(curve.data_path)
+            if match is None:
+                continue
             name = bpy.utils.unescape_identifier(match.group(1))
             properties = curves.setdefault(name, {})
             properties.setdefault(match.group(2), {})[curve.array_index] = curve
+    return curves
+
+
+def _carried(action, slot):
+    """The returned armature object's own curves by property and array index."""
+    curves = {}
+    for bag in _channelbags(action, slot):
+        for curve in bag.fcurves:
+            if _CARRIED.fullmatch(curve.data_path):
+                curves.setdefault(curve.data_path, {})[curve.array_index] = curve
     return curves
 
 
@@ -353,7 +377,10 @@ def _check_free(destination, names):
         if (match := _CHANNEL.fullmatch(curve.data_path))
     }
     if driven & names or any(destination.pose.bones[name].constraints for name in names):
-        raise mesh.MeshApplicationError("Constraints or drivers move the animated bones")
+        raise mesh.MeshApplicationError(
+            "Constraints or drivers move the animated bones: remove or mute them, then apply "
+            "the animation again"
+        )
 
 
 def validate_clips(target, objects):
@@ -387,19 +414,23 @@ def validate_clips(target, objects):
         # A mirrored or flattened armature object has no rest rotation to correct by.
         raise mesh.MeshApplicationError("Apply animation needs rigs that are not mirrored")
     clips = _clips(source)
-    animated, moved = {}, False
+    animated, moved, carried = {}, False, False
     for action, slot in clips:
-        bones, offset = _channels(action, slot)
-        moved = moved or offset
+        bones, offset, own = _channels(action, slot)
+        moved, carried = moved or offset, carried or bool(own)
         for name, properties in bones.items():
             animated.setdefault(name, set()).update(properties)
     try:
+        if carried:
+            raise mesh.MeshApplicationError(
+                "The clips move the returned armature itself, which only a humanoid rig can take"
+            )
         world = _match(source, destination, animated)
-    except mesh.MeshApplicationError:
+    except mesh.MeshApplicationError as error:
         # Another skeleton, such as a text-to-motion model's: retarget humanoids only.
         retarget = motion_retarget.plan(source, destination)
         if retarget is None:
-            raise
+            raise mesh.MeshApplicationError(f"{error}. {_RIG_AGAIN}") from None
         _log.info("Clips retargeted from a %s skeleton", retarget.family)
         _check_free(destination, set(retarget.destination_bones.values()))
         return destination, clips, 1.0, {}, 0.0, retarget
@@ -563,13 +594,18 @@ class AnimationApplication:
         self._closed = True
 
 
+def default_range(scene):
+    """Whether the scene still has Blender's default frame range and no preview range in use."""
+    return (scene.frame_start, scene.frame_end) == _DEFAULT_RANGE and not scene.use_preview_range
+
+
 def _fit_timeline(scene, clip):
     """Play `clip` over a scene frame range still at Blender's default; return what changed.
 
     A range the user set, or a preview range in use, is left alone.
     """
     previous = (scene.frame_start, scene.frame_end)
-    if previous != _DEFAULT_RANGE or scene.use_preview_range:
+    if not default_range(scene):
         return None
     start, end = clip.frame_range
     scene.frame_start = math.floor(start)
@@ -600,7 +636,8 @@ def apply_clips(target, objects):
                 actions.append(_copy(action, slot, rig, ratio, corrections))
             else:
                 name = f"{rig.name} {action.name}"
-                actions.append(retarget.clip(action, slot, _curves(action, slot), name))
+                curves, carried = _curves(action, slot), _carried(action, slot)
+                actions.append(retarget.clip(action, slot, curves, name, carried))
         data = rig.animation_data or rig.animation_data_create()
         if data.action is not None:
             tracks.append(_track(data, data.action.name, data.action, data.action_slot))

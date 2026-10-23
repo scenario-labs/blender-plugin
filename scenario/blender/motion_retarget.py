@@ -16,7 +16,10 @@ copies its bone's world orientation from the returned clip, frame by frame:
   orientations and root motion are mapped through level character frames, so
   the character moves in its own facing, wherever it stands in the scene.
 - Root motion moves the destination hips by the returned hips' travel since the
-  first frame, scaled by the ratio of the two legs' lengths.
+  first frame, scaled by the ratio of the two legs' lengths. Some files carry that
+  travel on the returned armature object instead, when the skin leaves their
+  scene root out of its joints: those object keys move the returned skeleton in
+  the world each frame, and so reach the hips the same way.
 
 Every frame of the clip is sampled and keyed linearly: the hips get location and
 rotation keys, the other slots rotation keys in their own rotation mode. Bones
@@ -99,9 +102,8 @@ def _leg(points):
     )
 
 
-def _basis(pose_bone, curves, frame):
-    """A bone's local pose at `frame`: its keyed channels, else its current values."""
-    keyed = curves.get(pose_bone.name, {})
+def _local(owner, keyed, frame):
+    """A pose bone's or object's own transform at `frame`: keyed channels, else current values."""
 
     def values(name, current):
         channel = keyed.get(name, {})
@@ -110,22 +112,28 @@ def _basis(pose_bone, curves, frame):
             for index, value in enumerate(current)
         ]
 
-    mode = pose_bone.rotation_mode
+    mode = owner.rotation_mode
     if mode == "QUATERNION":
-        rotation = Quaternion(values("rotation_quaternion", pose_bone.rotation_quaternion))
+        rotation = Quaternion(values("rotation_quaternion", owner.rotation_quaternion))
         rotation = rotation.normalized().to_matrix()
     elif mode == "AXIS_ANGLE":
-        angle, *axis = values("rotation_axis_angle", pose_bone.rotation_axis_angle)
+        angle, *axis = values("rotation_axis_angle", owner.rotation_axis_angle)
         axis = Vector(axis)
         rotation = Matrix.Rotation(angle, 3, axis) if axis.length > _SMALL else Matrix()
     else:
-        rotation = Euler(values("rotation_euler", pose_bone.rotation_euler), mode).to_matrix()
-    # Blender ignores a connected bone's location.
-    location = (
-        Vector() if pose_bone.bone.use_connect else Vector(values("location", pose_bone.location))
-    )
-    scale = Vector(values("scale", pose_bone.scale))
+        rotation = Euler(values("rotation_euler", owner.rotation_euler), mode).to_matrix()
+    location = Vector(values("location", owner.location))
+    scale = Vector(values("scale", owner.scale))
     return Matrix.LocRotScale(location, rotation, scale)
+
+
+def _basis(pose_bone, curves, frame):
+    """A bone's local pose at `frame`: its keyed channels, else its current values."""
+    basis = _local(pose_bone, curves.get(pose_bone.name, {}), frame)
+    if pose_bone.bone.use_connect:
+        # Blender ignores a connected bone's location.
+        basis.translation = Vector()
+    return basis
 
 
 @dataclass(eq=False)
@@ -207,12 +215,28 @@ class Retarget:
             poses[bone.name] = (relative if parent is None else parent @ relative) @ basis
         return poses
 
-    def clip(self, action, slot, curves, name):
-        """A new action named `name` playing the clip on the destination rig, and its slot."""
-        source, rig = self.source, self.destination
+    def _world(self, carried, frame):
+        """The returned armature object's world matrix at `frame`, with its own keys if any."""
+        source = self.source
+        if not carried:
+            return source.matrix_world
+        parent = (
+            source.parent.matrix_world @ source.matrix_parent_inverse
+            if source.parent is not None
+            else Matrix.Identity(4)
+        )
+        return parent @ _local(source, carried, frame)
+
+    def clip(self, action, slot, curves, name, carried=None):
+        """A new action named `name` playing the clip on the destination rig, and its slot.
+
+        `carried` maps the returned armature object's own keyed properties to their
+        curves by index, as `curves` does for each bone.
+        """
+        rig = self.destination
         start, end = action.frame_range
         frames = range(math.floor(start), math.ceil(end) + 1)
-        world = source.matrix_world
+        world = self._world(carried, frames[0])
         first = self._source_pose(curves, frames[0])
         posed = {item: world @ first[bone].translation for item, bone in self.source_bones.items()}
         # Source world to destination world, both levelled on the floor.
@@ -221,7 +245,6 @@ class Retarget:
         if leg < _SMALL:
             raise mesh.MeshApplicationError("Cannot retarget a skeleton without legs")
         ratio = self._leg / leg
-        into = mapping @ _turn(world)
         back = _turn(rig.matrix_world).inverted()
         inverse = rig.matrix_world.inverted_safe()
         hips = self.source_bones["hips"]
@@ -235,6 +258,8 @@ class Retarget:
         }
         for frame in frames:
             pose = self._source_pose(curves, frame)
+            world = self._world(carried, frame)
+            into = mapping @ _turn(world)
             mine = {}
             for bone in self._destination_path:
                 parent = mine.get(bone.parent.name) if bone.parent else None

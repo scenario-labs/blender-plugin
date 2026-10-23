@@ -270,6 +270,58 @@ class AnimateTaskTests(unittest.TestCase):
                 self.assertEqual(request.body["prompt"], "walks forward four steps then waves")
                 self.assertIn("Nothing is uploaded", self.drawn())
 
+    def test_a_motion_form_hides_and_never_sends_a_character(self):
+        self.skin()
+        self.lane.model_id = "model_uthana-text-to-motion-3.0"
+        self.lane.prompt = "waves"
+        layout = MagicMock()
+        submodule("blender.panels").draw_edit3d_lane(layout, bpy.context)
+        self.assertNotIn("Character 3D model", str(layout.mock_calls))
+        # A character an older form attached is not uploaded either.
+        ref = self.lane.references.add()
+        ref.param_name, ref.source, ref.filepath = "characterFile", "FILE", "//character.glb"
+        request = self.generation.build_request(self.scene, "edit3d")
+        self.assertEqual((request.errors, request.captures, request.files), ([], [], {}))
+
+    def motion_form(self, model_id):
+        self.scene.scenario.lane, self.scene.scenario.three_d_mode = "3d", "EDIT"
+        self.lane.model_id = model_id
+        self.lane.prompt = "walks forward four steps then waves"
+        self.generation.on_model_changed(bpy.context, self.lane)
+        return self.generation.build_request(self.scene, "edit3d", for_estimate=True).body
+
+    def test_a_motion_starts_at_the_scenes_frame_rate_and_length(self):
+        self.scene.render.fps, self.scene.render.fps_base = 24, 1.0
+        self.scene.frame_start, self.scene.frame_end = 1, 120  # 5 s
+        body = self.motion_form("model_uthana-text-to-motion-3.0")
+        # Only the skeleton and its clip come back: Apply animation keeps no mannequin.
+        self.assertEqual((body["fps"], body["length"], body["animationOnly"]), (24, 5, True), body)
+        self.assertEqual(self.motion_form("model_viggle-text-to-motion")["duration"], 5)
+        # Both follow the scene until edited, within each input's range.
+        self.scene.frame_end = 240  # 10 s
+        self.assertTrue(self.generation.sync_shown_forms())
+        self.assertEqual(self.lane.params["duration"].int_value, 10)
+        self.lane.params["duration"].int_value = 7
+        self.scene.frame_end = 96
+        self.assertFalse(self.generation.sync_shown_forms())
+        self.assertEqual(self.lane.params["duration"].int_value, 7)
+        self.lane.model_id = "model_uthana-text-to-motion-3.0"
+        self.generation.on_model_changed(bpy.context, self.lane)
+        self.assertEqual(self.lane.params["length"].int_value, 4)  # 4 s is the minimum
+
+    def test_a_default_range_or_an_unoffered_frame_rate_keeps_the_models_own(self):
+        self.scene.render.fps, self.scene.render.fps_base = 25, 1.0
+        self.assertEqual((self.scene.frame_start, self.scene.frame_end), (1, 250))
+        # A form made in this scene; one made earlier keeps the last rate it followed.
+        self.lane.model_id = "model_meshy-animation"
+        body = self.motion_form("model_uthana-text-to-motion-3.0")
+        # Apply animation fits a default range to the clip, so the clip keeps its length.
+        self.assertEqual((body["fps"], body["length"]), (30, 8), body)
+        self.scene.frame_end = 125  # 5 s at 25 fps, a range the user set
+        self.assertTrue(self.generation.sync_shown_forms())
+        self.assertEqual(self.lane.params["length"].int_value, 5)
+        self.assertEqual(self.lane.params["fps"].enum_value, "30")
+
     def test_text_to_motion_needs_a_rigged_selection(self):
         self.lane.model_id = "model_viggle-text-to-motion"
         self.lane.prompt = "waves"

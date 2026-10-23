@@ -722,6 +722,7 @@ def clip_glb(
     rotation=None,
     turn_object=True,
     still=(),
+    carry=False,
 ):
     """Export a returned animated character with Blender's glTF exporter.
 
@@ -733,8 +734,11 @@ def clip_glb(
     and, with `location`, moves the first such bone along its Y axis by its amount
     in world units, over 24 frames; `stretch` also scales it along its Y axis, or by
     `1 + amount * rate` on each axis when it is a tuple of three rates. The
-    `still` bones stay unkeyed in the export. A triangle skinned to the first bone
-    is included. All scratch data is removed.
+    `still` bones stay unkeyed in the export. With `carry`, Clip N also moves the
+    armature object by its amount along world X and turns it by a quarter of it
+    in radians about Z, as files whose skin leaves the moving scene root out of
+    its joints do. A triangle skinned to the first bone is included. All scratch
+    data is removed.
     """
     import math
 
@@ -780,6 +784,11 @@ def clip_glb(
                         rates = (0, 0.5, 0) if stretch is True else stretch
                         pose.scale = [1 + factor * rate for rate in rates]
                         pose.keyframe_insert("scale", frame=frame)
+                if carry:
+                    rig.location = (factor, 0, 0)
+                    rig.rotation_euler = (0, 0, factor / 4)
+                    rig.keyframe_insert("location", frame=frame)
+                    rig.keyframe_insert("rotation_euler", frame=frame)
             data.action = None
             track = data.nla_tracks.new()
             track.name = action.name
@@ -787,6 +796,8 @@ def clip_glb(
         for pose in rig.pose.bones:
             pose.location, pose.rotation_quaternion = (0, 0, 0), (1, 0, 0, 0)
             pose.scale = (1, 1, 1)
+        if carry:
+            rig.location, rig.rotation_euler = (0, 0, 0), (0, 0, 0)
         path = pathlib.Path(directory.name) / "clip.glb"
         # As above, only the window shows the scratch scene during export.
         bpy.ops.export_scene.gltf(
@@ -838,6 +849,25 @@ def clip_deforms(body, clip, frames, *, fps=24, world=False):
     The rig is imported into a scratch scene at `fps` with the staging import
     options and removed with everything else the import created.
     """
+    with _played_clip(body, clip, fps) as (scene, rig):
+        return deform_matrices(scene, rig, frames, world=world)
+
+
+def clip_heads(body, clip, frames, *, fps=24):
+    """World head positions of a returned GLB's bones playing clip `clip`, by frame and bone.
+
+    Imported like `clip_deforms`, so a clip that also moves the armature object counts.
+    """
+    with _played_clip(body, clip, fps) as (scene, rig):
+        heads = {}
+        for frame in frames:
+            scene.frame_set(frame)
+            heads[frame] = {bone.name: rig.matrix_world @ bone.head for bone in rig.pose.bones}
+        return heads
+
+
+@contextmanager
+def _played_clip(body, clip, fps):
     names = (
         "objects",
         "meshes",
@@ -877,7 +907,7 @@ def clip_deforms(body, clip, frames, *, fps=24, world=False):
         )
         data.action = action
         data.action_slot = action.slots[0]
-        return deform_matrices(scene, rig, frames, world=world)
+        yield scene, rig
     finally:
         window.scene, window.view_layer = previous
         bpy.data.scenes.remove(scene)

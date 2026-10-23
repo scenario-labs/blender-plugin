@@ -289,8 +289,10 @@ full render-lane desktop acceptance.
   returned clips onto a rig with the same bone names and parents and a rest
   pose within 15 degrees per bone, correcting the keys for that difference, or
   retargets them between humanoid skeletons with Meshy, Mixamo, SMPL or Unreal
-  bone names. Other skeletons are refused; fingers and face bones are not
-  retargeted, and a clip's root motion assumes its first frame stands upright.
+  bone names. Other skeletons are refused, as are clips that move the returned
+  armature object itself on a rig that is not a humanoid; fingers and face bones
+  are not retargeted, and a clip's root motion assumes its first frame stands
+  upright.
 - Automatic Image-lane import and saved image and material application
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.

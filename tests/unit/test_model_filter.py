@@ -410,3 +410,30 @@ def test_music_length_spec_names_the_length_input_of_music_models_only():
     )
     choices = {"name": "duration", "type": "number", "allowedValues": [15, 30, 60]}
     assert mf.music_length_spec(music, schema(music, [choices])) is None
+
+
+def test_motion_length_and_rate_specs_name_text_to_motion_inputs_only():
+    from scenario.core.schema.params import parse_schema
+
+    def schema(model, inputs):
+        return parse_schema(rec(model.id, model.name, ("txt23d",), inputs=inputs))
+
+    length = {"name": "length", "type": "number", "default": 8, "min": 4, "max": 10, "step": 1}
+    rate = {"name": "fps", "type": "number", "default": 30, "allowedValues": [24, 30, 60]}
+    uthana = rec("model_uthana-text-to-motion-3.0", "Uthana Text to Motion 3.0", ("txt23d",))
+    found = schema(uthana, [length, rate])
+    assert mf.motion_length_spec(uthana, found).name == "length"
+    assert mf.motion_rate_spec(uthana, found).name == "fps"
+    assert mf.rate_choice(found.by_name("fps"), 24.0) == 24
+    # 25 fps and NTSC's 23.976 are not offered: the model keeps its own rate.
+    assert mf.rate_choice(found.by_name("fps"), 25.0) is None
+    assert mf.rate_choice(found.by_name("fps"), 24000 / 1001) is None
+    # Viggle names its length duration and has no frame rate input.
+    duration = {"name": "duration", "type": "number", "default": 5, "min": 3, "max": 60}
+    viggle = rec("model_viggle-text-to-motion", "Viggle Text to Motion", ("txt23d",))
+    assert mf.motion_length_spec(viggle, schema(viggle, [duration])).name == "duration"
+    assert mf.motion_rate_spec(viggle, schema(viggle, [duration])) is None
+    # Other 3D models with the same input names are left alone.
+    other = rec("model_tripo-p2-text-to-3d", "Tripo P2 Text to 3D", ("txt23d",))
+    assert mf.motion_length_spec(other, schema(other, [length, rate])) is None
+    assert mf.motion_rate_spec(other, schema(other, [length, rate])) is None

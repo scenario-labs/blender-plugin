@@ -1105,8 +1105,14 @@ validates the staged import before any change. The result must contain exactly
 one armature with at least one clip, plus optional meshes and Empties. Clips are
 the armature's active action and its NLA strips' actions, in that order. Each
 clip may key only pose-bone location, rotation and scale in the armature's own
-action slot, without F-Curve modifiers. Other animated objects, shape-key or
-armature-data animation and other channels are rejected rather than dropped.
+action slot, without F-Curve modifiers, and the location, rotation and scale of
+the armature object itself. Other animated objects, shape-key or armature-data
+animation and other channels are rejected rather than dropped. Keys on the
+armature object come from files whose skin leaves the scene root out of its
+joints, such as Uthana Text to Motion with its mannequin mesh: the root becomes
+the armature object and carries the walk. No bone can take that motion by name,
+so such clips are always [retargeted](#retarget-a-humanoid-clip), and refused
+for a rig that is not a humanoid.
 Every bone a clip animates must exist in the destination rig by name, with the
 same parent name, connection, rotation/scale inheritance and local location
 setting; rotated bones must use the same rotation mode. They must have no
@@ -1115,7 +1121,10 @@ override the clips. Neither armature object may be mirrored, and the
 destination may not solo an NLA track, which keeps the clip from playing. When
 names, hierarchy, rotation mode or rest pose do not match, the clips are
 [retargeted](#retarget-a-humanoid-clip) if both rigs are humanoid skeletons, and
-rejected with the first mismatch otherwise.
+rejected with the first mismatch otherwise, followed by "Rig the mesh again with
+Edit 3D > Rigging, then apply the animation again". A refused clip leaves the
+rig as it was, and the job row says so: **Animation not applied; the rig is
+unchanged**, then the reason.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
@@ -1213,7 +1222,10 @@ character's facing on the floor: orientations and root motion go through level
 character frames, so the character moves in its own facing wherever it stands.
 The hips move by the returned hips' travel since that first frame, scaled by the
 ratio of the two rigs' mean thigh plus shin lengths; the first frame is taken as
-standing at the rig's rest height.
+standing at the rig's rest height. When the clip also keys the returned armature
+object, its world transform is evaluated from those keys every frame, so its
+travel and turns reach the hips the same way; the destination rig object itself
+is never keyed.
 
 Every frame of the clip is sampled and keyed linearly into a new action: hips
 location and rotation, and every other slot's rotation in its bone's rotation

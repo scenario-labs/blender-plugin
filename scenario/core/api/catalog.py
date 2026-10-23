@@ -296,6 +296,8 @@ def choice_items(model_id, name):
 # Tripo P2 picks its own face count, which leaves a character's face soft, and an arbitrary size. 50,000 faces is its
 # maximum and keeps the likeness in a file of a few MB; Auto Size returns a character at its real height in meters.
 # Tripo P2 Text to 3D starts the same way: a game prop of about 50,000 faces in a 5 MB GLB, at its real size.
+# Uthana Text to Motion 3.0 returns only its skeleton and clip: Apply animation keeps none of its mannequin mesh, and
+# with the mesh its skin leaves the scene root, which carries the walk, out of the joints.
 PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-text-to-3d": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-text-to-3d-fast": {"material": "PBR"},
@@ -303,6 +305,7 @@ PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-fast": {"material": "PBR"},
     "model_tripo-p2-image-to-3d": {"autoSize": True, "faceLimit": 50000},
     "model_tripo-p2-text-to-3d": {"autoSize": True, "faceLimit": 50000},
+    "model_uthana-text-to-motion-3.0": {"animationOnly": True},
 }
 MULTIVIEW_HINTS = ("multi", "multiview")
 

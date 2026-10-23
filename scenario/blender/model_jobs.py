@@ -1152,11 +1152,13 @@ class ModelJobs:
                 )
             except (MeshApplicationError, MeshResultApplicationError) as error:
                 reason = getattr(error, "reason", None)
-                self._pause(
-                    request_id,
-                    "Mesh application stopped; inspect the saved result, source and edit policy"
-                    + (f". {reason}" if reason else ""),
+                outcome = (
+                    # A refused clip leaves the rig as it was; its reason says what to change.
+                    "Animation not applied; the rig is unchanged"
+                    if mesh is not None and mesh.policy == "ANIMATE"
+                    else "Mesh application stopped; inspect the saved result, source and edit policy"
                 )
+                self._pause(request_id, outcome + (f". {reason}" if reason else ""))
             except ModelPreflightError as error:
                 # Rejected before the claim: the saved job and the scene are unchanged.
                 verb = "applied" if command == "verify_mesh_edit" else "imported"

@@ -9,11 +9,18 @@ from dataclasses import dataclass, field, replace
 import bpy
 
 from ..core.jobs.results import VerifiedResults
+from ..core.scene import material_tiling as tiling
 from .image_application import apply_images
 
-_IMAGE_TYPES = {"image/png", "image/exr", "image/x-exr"}
+_IMAGE_TYPES = {"image/png", "image/jpeg", "image/exr", "image/x-exr"}
 _MAX_MAP_BYTES = 256 * 1024 * 1024
-_MAX_POLYGONS = 1_000_000
+# Bounds the main-thread face-slot copies at capture, validation and rollback. It sits
+# above any triangle-list GLB the import accepts (three accessor entries per triangle).
+_MAX_POLYGONS = 4_000_000
+# The UV layout is measured on at most this many evenly spaced faces of at most this many
+# corners, so the measurement stays cheap on a dense mesh.
+_UV_SAMPLE_FACES = 512
+_UV_SAMPLE_CORNERS = 64
 
 
 class MaterialApplicationError(RuntimeError):
@@ -81,17 +88,18 @@ def capture_target(scene, obj):
         or obj.data.override_library
         or obj.data.users != 1
         or len(obj.users_scene) != 1
-        or not obj.data.uv_layers.active
         or len(obj.material_slots) > 128
     ):
-        raise MaterialApplicationError("Choose one local, single-user mesh with UVs in Object Mode")
+        raise MaterialApplicationError("Choose one local, single-user mesh in Object Mode")
+    layer = obj.data.uv_layers.active
     return MaterialTarget(
         scene,
         obj,
         obj.data,
         tuple((slot.link, slot.material) for slot in obj.material_slots),
         obj.active_material_index,
-        obj.data.uv_layers.active.name,
+        # A mesh without UVs is mapped by box projection; its data stays unchanged.
+        layer.name if layer else "",
         _face_slots(obj.data),
     )
 
@@ -101,7 +109,41 @@ def validate_target(target):
         raise MaterialApplicationError("The mesh or material destination changed; review it again")
 
 
-def _build(images, uv_name):
+def _metres_per_uv(target):
+    """Metres one UV unit spans on the mesh, or None when its layout cannot be measured."""
+    mesh, layer = target.mesh, target.mesh.uv_layers.active
+    count = len(mesh.polygons)
+    if layer is None or not count:
+        return None
+    world = target.obj.matrix_world
+    samples = []
+    for index in range(0, count, max(1, count // _UV_SAMPLE_FACES)):
+        polygon = mesh.polygons[index]
+        corners = range(polygon.loop_start, polygon.loop_start + polygon.loop_total)
+        if len(corners) > _UV_SAMPLE_CORNERS:
+            continue
+        points = [tuple(world @ mesh.vertices[mesh.loops[i].vertex_index].co) for i in corners]
+        samples.append(
+            (
+                tiling.polygon_area(points),
+                tiling.polygon_area([tuple(layer.uv[i].vector) for i in corners]),
+            )
+        )
+    return tiling.uv_metres_per_unit(samples)
+
+
+def _mapping(target, tile_size):
+    """Projection and Mapping scale for the approved mesh at `tile_size` world metres."""
+    uv = bool(target.uv_name)
+    return tiling.plan_mapping(
+        tile_size,
+        uv=uv,
+        object_scale=target.obj.matrix_world.to_scale(),
+        metres_per_uv=_metres_per_uv(target) if uv else None,
+    )
+
+
+def _build(images, uv_name, mapping):
     material = bpy.data.materials.new("Scenario Material")
     material.use_nodes = True
     tree = material.node_tree
@@ -109,10 +151,24 @@ def _build(images, uv_name):
     output = tree.nodes.new("ShaderNodeOutputMaterial")
     bsdf = tree.nodes.new("ShaderNodeBsdfPrincipled")
     tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
-    output.location = (600, 0)
-    uv = tree.nodes.new("ShaderNodeUVMap")
-    uv.uv_map = uv_name
-    uv.location = (-1000, 0)
+    # Columns left to right: coordinates, Tiling, maps, converters, shader, output.
+    bsdf.location, output.location = (200, 0), (600, 0)
+    box = mapping.projection == tiling.BOX
+    # Box projection reads object-space coordinates, so the mesh needs no UVs.
+    if box:
+        coordinates = tree.nodes.new("ShaderNodeTexCoord")
+        vector = coordinates.outputs["Object"]
+    else:
+        coordinates = tree.nodes.new("ShaderNodeUVMap")
+        coordinates.uv_map = uv_name
+        vector = coordinates.outputs["UV"]
+    coordinates.location = (-1200, 0)
+    # Every map reads this one Mapping node, so they stay aligned and one scale retiles all.
+    placement = tree.nodes.new("ShaderNodeMapping")
+    placement.label = "Tiling" if mapping.measured else "Tiling (UV size unknown)"
+    placement.inputs["Scale"].default_value = mapping.scale
+    placement.location = (-1000, 0)
+    tree.links.new(vector, placement.inputs["Vector"])
     textures = {}
     for index, (role, image) in enumerate(images.items()):
         image.colorspace_settings.name = "sRGB" if role in {"base", "albedo"} else "Non-Color"
@@ -120,8 +176,10 @@ def _build(images, uv_name):
         image.use_fake_user = False
         texture = tree.nodes.new("ShaderNodeTexImage")
         texture.image, texture.label = image, role.title()
+        if box:
+            texture.projection, texture.projection_blend = "BOX", tiling.BOX_BLEND
         texture.location = (-700, -index * 250)
-        tree.links.new(uv.outputs["UV"], texture.inputs["Vector"])
+        tree.links.new(placement.outputs["Vector"], texture.inputs["Vector"])
         textures[role] = texture
     base = textures.get("albedo") or textures["base"]
     tree.links.new(base.outputs["Color"], bsdf.inputs["Base Color"])
@@ -131,16 +189,19 @@ def _build(images, uv_name):
     if "smoothness" in textures:
         invert = tree.nodes.new("ShaderNodeInvert")
         invert.label = "Smoothness to roughness"
+        invert.location = (-350, textures["smoothness"].location.y)
         tree.links.new(textures["smoothness"].outputs["Color"], invert.inputs["Color"])
         tree.links.new(invert.outputs["Color"], bsdf.inputs["Roughness"])
     normal = None
     if "normal" in textures:
         normal = tree.nodes.new("ShaderNodeNormalMap")
         normal.uv_map = uv_name
+        normal.location = (-350, textures["normal"].location.y)
         tree.links.new(textures["normal"].outputs["Color"], normal.inputs["Color"])
     if "height" in textures:
         bump = tree.nodes.new("ShaderNodeBump")
         bump.inputs["Distance"].default_value = 0.05
+        bump.location = (-120, textures["height"].location.y)
         tree.links.new(textures["height"].outputs["Color"], bump.inputs["Height"])
         if normal:
             tree.links.new(normal.outputs["Normal"], bump.inputs["Normal"])
@@ -178,12 +239,18 @@ class MaterialApplication:
     material: object = field(repr=False)
     images: tuple = field(repr=False)
     target: MaterialTarget = field(repr=False)
+    mapping: tiling.MaterialMapping | None = None
 
 
-def apply_material(verified, target):
+def apply_material(verified, target, tile_size=tiling.DEFAULT_TILE_SIZE_M):
+    """Apply the saved maps to the approved slot, one texture repeat per `tile_size` metres."""
     _main_thread()
     validate_target(target)
     roles = selected_maps(verified.record)
+    try:
+        tile_size = tiling.tile_size(tile_size)
+    except ValueError as error:
+        raise MaterialApplicationError(str(error)) from None
     before_images, before_materials = set(bpy.data.images), set(bpy.data.materials)
     try:
         chosen = VerifiedResults(
@@ -192,10 +259,11 @@ def apply_material(verified, target):
             ),
             tuple(verified.paths[i] for i in roles.values()),
         )
-        images = apply_images(chosen, pixel_budget=32_000_000)
-        material = _build(dict(zip(roles, images, strict=True)), target.uv_name)
+        images = apply_images(chosen, pixel_budget=32_000_000, jpeg=True)
+        mapping = _mapping(target, tile_size)
+        material = _build(dict(zip(roles, images, strict=True)), target.uv_name, mapping)
         _assign(target, material)
-        return MaterialApplication(material, images, target)
+        return MaterialApplication(material, images, target, mapping)
     except Exception:
         # Verify cleanup's outcome before permitting the durable job to retry.
         try:

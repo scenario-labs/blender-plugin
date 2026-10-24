@@ -63,6 +63,16 @@ class QuoteError(ValueError):
     """The current request no longer matches an active, unexpired quote."""
 
 
+class QuoteExpired(QuoteError):
+    """The quote's validity window ended before preparation or the paid claim; nothing was sent."""
+
+    def __init__(self):
+        super().__init__("Quote expired; request a fresh estimate")
+
+    def __reduce__(self):
+        return type(self), ()
+
+
 class DuplicateRequestError(QuoteError):
     """An identical paid request in this scope has no confirmed outcome yet.
 
@@ -85,6 +95,26 @@ class DuplicateRequestError(QuoteError):
 
     def __reduce__(self):
         return type(self), (self.request_id, self.sending)
+
+
+class CaptureConflictError(QuoteError):
+    """Captures of different bytes identify one asset, so its captured source is unknown.
+
+    Byte-identical captures are one source and never raise this. Raised after the
+    free dry run, before a quote is returned, so nothing is saved or sent.
+    `price_without_capture(asset_id)` lets this session quote the asset with no
+    captured source; the text is fixed and safe to show.
+    """
+
+    def __init__(self, asset_id):
+        super().__init__(
+            "Different captured meshes were uploaded as one Scenario asset, so its source is "
+            "unknown. Price it without the captured source, or change the mesh and upload it again"
+        )
+        self.asset_id = asset_id
+
+    def __reduce__(self):
+        return type(self), (self.asset_id,)
 
 
 class RouteQuoteError(QuoteError):
@@ -358,6 +388,9 @@ class JobCoordinator:
         self._quotes = WeakValueDictionary()
         # Unconfirmed request IDs the user marked reviewed; in memory only, never saved.
         self._reviewed = set()
+        # Conflicting captured assets the user chose to price with no captured source;
+        # in memory only, never saved.
+        self._uncaptured = set()
         # Request IDs this coordinator has claimed and is still sending; no
         # candidate lookup or link may treat them as abandoned.
         self._sending = set()
@@ -1181,9 +1214,12 @@ class JobCoordinator:
                 if not matching:
                     continue  # External assets and ordinary uploads have no inferred source.
                 if len(matching) != 1:
-                    raise QuoteError(
-                        "Several captured uploads identify this asset; review its source"
-                    )
+                    # Neither capture provably describes the asset's bytes.
+                    with self._lock:
+                        if asset_id in self._uncaptured:
+                            continue
+                    raise CaptureConflictError(asset_id)
+                # The latest of byte-identical captures; the payload binds the same bytes.
                 if (index is not None and index >= 128) or len(bindings) >= 128:
                     raise QuoteError("Too many captured mesh inputs")
                 record = matching[0]
@@ -1405,6 +1441,19 @@ class JobCoordinator:
         with self._lock:
             return request_id in self._reviewed
 
+    def price_without_capture(self, asset_id):
+        """Quote a conflicting captured asset with no captured source for this session.
+
+        Only an asset whose captures still conflict qualifies. Its later quotes bind
+        no source, so no result is offered for the captured object; nothing is
+        saved or sent.
+        """
+        _identity(asset_id)
+        with self._request_guard():
+            if len(self._upload_commands().mesh_sources(asset_id)) != 2:
+                raise QuoteError("This asset's captures no longer conflict; estimate again")
+            self._uncaptured.add(asset_id)
+
     def _unconfirmed(self, request_id, expected_revision):
         """The current unconfirmed record that no sender in this process still owns."""
         with self._lock:
@@ -1523,7 +1572,7 @@ class JobCoordinator:
             expires_at = estimate.issued_at + self._ttl
             now = self._clock()
             if not math.isfinite(now) or now < estimate.issued_at or now >= expires_at:
-                raise QuoteError("Quote expired; request a fresh estimate")
+                raise QuoteExpired()
             prepared = PreparedJob(intent, expires_at, estimate, composition)
             self._store.create(intent)
             self._prepared[id(prepared)] = prepared
@@ -1549,7 +1598,7 @@ class JobCoordinator:
                     or now < prepared.estimate.issued_at
                     or now >= prepared.expires_at
                 ):
-                    raise QuoteError("Quote expired; request a fresh estimate")
+                    raise QuoteExpired()
                 intent = prepared.intent
                 if (
                     origin != intent.origin

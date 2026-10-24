@@ -26,6 +26,8 @@ ACTIONS = (
     "apply_mesh",
     "apply_mesh_source",
     "use_first_frame",
+    "camera_background",
+    "image_plane",
     "recover_blockout",
 )
 ASSETS = {
@@ -123,7 +125,14 @@ class ResultActionTests(unittest.TestCase):
             jobs = SimpleNamespace(recovery=SimpleNamespace(current=lambda *_, r=review: r))
             self.runtime.state.blockout_jobs = jobs
             for action in ACTIONS:
-                view = self.view("applied", (action,), STILL, first_frame_assets=("still",))
+                view = self.view(
+                    "applied",
+                    (action,),
+                    STILL,
+                    first_frame_assets=("still",),
+                    camera_background_assets=("clip", "still"),
+                    image_plane_assets=("still",),
+                )
                 with patch.object(controller, "listening", return_value=listening):
                     items = self.recovery.result_actions(view)
                 for item in items:
@@ -147,6 +156,8 @@ class ResultActionTests(unittest.TestCase):
                 "scenario.recover_job",
                 "scenario.import_saved_images",
                 "scenario.import_saved_media",
+                "scenario.set_saved_camera_background",
+                "scenario.add_saved_image_plane",
                 "scenario.import_saved_model",
                 "scenario.apply_saved_world",
                 "scenario.apply_saved_material",

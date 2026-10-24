@@ -413,8 +413,9 @@ support explicit still captures; video inputs support explicit clips. **Upload
 selected mesh** creates one GLB reference for an empty 3D input. Preparation
 runs on the main thread in private temporary storage retained until asynchronous
 staging finishes or the session retires. Clips use the preview range when
-enabled, otherwise the scene range, at 1280x720 with no audio or implicit
-duration padding. Capture settings/current frame and mesh selection are
+enabled, otherwise the scene range, with no audio or implicit duration padding.
+Stills and clips are 1280 pixels on the long side, shaped like the camera's
+render frame or the viewport. Capture settings/current frame and mesh selection are
 restored. Restoration writes the preview-range toggle only when it changed, and
 a clip keeps an enabled preview range that already equals its span. In the GUI,
 Blender answers any write to that toggle, even an unchanged one, with a
@@ -736,9 +737,10 @@ their typed 3D input parameters and persists them before spending; see
 [generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 Quotes look up only selected asset IDs within the credential scope, using a
 partial SQLite index of imported captured meshes. Each unique input needs one
-query and at most two decoded records; two matches still reject an ambiguous
-source. Repeated array entries keep their original positions without repeating
-the lookup, and absent optional inputs do not read upload storage. External
+query and at most two decoded records: the latest capture, then one of other
+bytes, which still rejects an ambiguous source. Repeated array entries keep
+their original positions without repeating the lookup, and absent optional
+inputs do not read upload storage. External
 assets and ordinary uploads do not gain an inferred source. Each quote allows at
 most 128 distinct 3D input asset IDs across all parameters, including unmatched
 external assets. A 129th identity fails before another lookup; repeated IDs share

@@ -32,49 +32,59 @@ LANE_CAPS = {
     },  # a mesh from the scene to a retextured / remeshed / rigged / animated mesh
 }
 PATINA_MODELS = ("model_patina-material", "model_patina", "model_patina-material-extract")
+# Scenario tags its texture models; the base ones that generate images also join the Materials lane,
+# so a new texture model appears there without a plugin release.
+TEXTURE_TAG = "sc:texture"
+TEXTURE_CAPS = {"txt2img", "img2img"}
 DEFAULT_MODELS = {
     "image": [
-        "model_openai-gpt-image-2",
+        "model_openai-gpt-image-2-5-sunburst",
+        "model_google-gemini-nano-banana-2-1",
         "model_google-gemini-3-1-flash",
         "model_bytedance-seedream-5-0-pro",
         "model_bytedance-seedream-5-0-lite",
         "model_z-image",
     ],
     "video": [
-        "model_bytedance-seedance-2-0",
         "model_bytedance-seedance-2-5",
         "model_veo3-1",
         "model_kling-v3-omni-video",
     ],
     "3d": [
-        "model_meshy-7-txt23d",
+        "model_meshy-7-1-txt23d",
         "model_rodin-hyper3d-v2-5-text-to-3d",
+        "model_tripo-p2-image-to-3d",
         "model_tripo-v3-1-image-to-3d",
-        "model_meshy-7-img23d",
+        "model_meshy-7-1-img23d",
         "model_hunyuan-3d-pro-3-1-i23d",
         "model_rodin-hyper3d-v2-5",
-        "model_tripo-p1-image-to-3d",
-        "model_meshy-7-multi-image-to-3d",
+        "model_meshy-7-1-multi-image-to-3d",
         "model_tripo-v3-1-multiview-to-3d",
         "model_hunyuan-3d-pro-3-1-multiview",
     ],
-    "material": list(PATINA_MODELS),
+    # PATINA's PBR sets first, then Scenario Texture; other texture models follow by name.
+    "material": [*PATINA_MODELS, "model_scenario-texture"],
     "audio": [
-        "model_elevenlabs-music-v2",
+        "model_elevenlabs-music-v2-5",
+        "model_lyria-3-5",
         "model_lyria-3-pro",
         "model_ace-step-1-5-quality-text-to-music",
         "model_minimax-music-3-0",
+        "model_elevenlabs-tts-v4",
         "model_elevenlabs-tts-v3",
-        "model_google-gemini-3-1-flash-tts",
+        "model_google-gemini-3-8-flash-tts",
         "model_elevenlabs-sound-effects-v2",
         "model_sonilo-v1-1-text-to-sound-effects",
         "model_sonilo-v1-1-video-to-sound-effects",
     ],
-    # The image edit models take a reference image and a look prompt; GPT Image 2 comes first (product decision).
+    # The image edit models take a reference image and a look prompt; GPT Image 2.5 Sunburst comes first
+    # (product decision).
     "render_image": [
-        "model_openai-gpt-image-2",
+        "model_openai-gpt-image-2-5-sunburst",
+        "model_google-gemini-nano-banana-2-1",
         "model_google-gemini-3-1-flash",
         "model_bytedance-seedream-5-0-pro",
+        "model_bfl-flux-3-image",
         "model_bfl-flux-2-max-editing",
         "model_bfl-flux-2-pro-editing",
         "model_qwen-image-edit-2511",
@@ -82,21 +92,20 @@ DEFAULT_MODELS = {
         "model_xai-grok-imagine-image-2-0",
         "model_z-image",
     ],
-    # the ten video models that accept a reference video (and images) to re-render
+    # the video models that accept a reference video (and images) to re-render
     "render_video": [
-        "model_bytedance-seedance-2-0",
-        "model_minimax-h3",
         "model_bytedance-seedance-2-5",
+        "model_minimax-h3",
         "model_bytedance-seedance-2-0-mini",
         "model_runway-aleph-2",
         "model_alibaba-happy-horse-video-editing",
         "model_google-omni-1-1-flash-edit",
-        "model_google-omni-flash-edit",
         "model_xai-grok-edit-video",
         "model_bfl-flux-3-extend",
     ],
     "edit3d": [
         "model_meshy-7-retexture",
+        "model_tripo-retopology-v3",
         "model_tripo-retopology",
         "model_meshy-rigging",
         "model_meshy-animation",
@@ -126,7 +135,7 @@ def lane_kind(lane):
     return LANE_KIND.get(lane, "image")
 
 
-# Most specific lane first, so Patina reads as material and a mesh edit as 3d.
+# Most specific lane first, so a texture model reads as material and a mesh edit as 3d.
 _KIND_LANES = (
     "material",
     "3d",
@@ -159,7 +168,12 @@ EDIT3D_TASKS = (
         "REMESH",
         "Remesh",
         "Clean quad or triangle topology at a target polycount",
-        ("model_tripo-retopology", "model_meshy-remesh", "model_tencent-smarttopology"),
+        (
+            "model_tripo-retopology-v3",
+            "model_tripo-retopology",
+            "model_meshy-remesh",
+            "model_tencent-smarttopology",
+        ),
     ),
     (
         "RETEXTURE",
@@ -223,19 +237,32 @@ UTILITY_HINTS = (
 )
 
 
-# Schema defaults that produce surprising results in Blender. Applied when the value is among the allowed ones.
+# Starting values for a model's settings where its schema default gives surprising results in Blender. The
+# sidebar, the composer and local MCP all start from them, and only while the schema still accepts the value.
 # Rodin's "All" material returns two meshes (a baked Shaded GLB and a PBR GLB); one PBR mesh is what a Blender user expects.
+# Tripo P2 picks its own face count, which leaves a character's face soft, and an arbitrary size. 50,000 faces is its
+# maximum and keeps the likeness in a file of a few MB; Auto Size returns a character at its real height in meters.
 PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-text-to-3d": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-text-to-3d-fast": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-fast": {"material": "PBR"},
+    "model_tripo-p2-image-to-3d": {"autoSize": True, "faceLimit": 50000},
 }
 MULTIVIEW_HINTS = ("multi", "multiview")
 
 
 def param_override(model_id, name):
     return (PARAM_OVERRIDES.get(model_id) or {}).get(name)
+
+
+def starting_value(model_id, spec):
+    """The curated starting value of one setting of this model, or None.
+
+    None when the table names none, or when the model's current schema no longer accepts it.
+    """
+    value = param_override(model_id, spec.name)
+    return value if value is not None and spec.accepts(value) else None
 
 
 @dataclass
@@ -290,11 +317,25 @@ class ModelRecord:
     def lanes(self):
         caps = set(self.capabilities)
         lanes = {lane for lane, wanted in LANE_CAPS.items() if caps & wanted}
-        if self.id in PATINA_MODELS:
+        if is_texture_model(self):
             lanes.add("material")
         if self.id in PANORAMA_MODELS:
             lanes.add("panorama")
         return lanes
+
+
+def is_texture_model(record):
+    """PATINA, or a base model Scenario tags as a texture model that generates images.
+
+    Trained texture models carry the same tag; they stay out, as in every base lane.
+    """
+    if record.id in PATINA_MODELS:
+        return True
+    return (
+        TEXTURE_TAG in record.tags
+        and bool(TEXTURE_CAPS.intersection(record.capabilities))
+        and not is_trained(record)
+    )
 
 
 def is_utility(record):
@@ -400,12 +441,10 @@ def models_for_lane(lane, records):
         and r.status in ("", "trained")
         and not is_trained(r)
     ]
-    if lane == "material":
-        usable = [r for r in usable if r.id in PATINA_MODELS]
-    elif lane == "panorama":
+    if lane == "panorama":
         usable = [r for r in usable if r.id in PANORAMA_MODELS]
     elif lane == "render_image":
-        usable = [r for r in usable if r.id not in PATINA_MODELS and not is_utility(r)]
+        usable = [r for r in usable if not is_texture_model(r) and not is_utility(r)]
     return sorted(usable, key=lambda r: (rank.get(r.id, len(rank)), r.name.lower()))
 
 

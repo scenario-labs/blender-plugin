@@ -30,7 +30,7 @@ LANE_ITEMS = [
         "3D",
         "Text or images to 3D models; Edit mode runs Scenario's 3D tools on the selected mesh",
     ),
-    ("material", "Materials", "PBR materials with Patina"),
+    ("material", "Materials", "Seamless textures and PBR materials"),
     ("audio", "Audio", "Speech, music and sound effects; results can go on the sequencer"),
     (
         "render_image",
@@ -146,7 +146,8 @@ THREE_D_MODES = [
     ("EDIT", "Edit", "Remesh, retexture, unwrap, rig, animate or split the selected mesh"),
 ]
 # Environment modes, each listing only its verified panorama contract models. A
-# saved blend stores the mode and size as item indexes: append, never reorder.
+# saved blend stores the mode and size as item indexes: append, never reorder; the
+# size a new scene starts at is the contract's default, not the first item.
 PANORAMA_MODES = [
     (mode, panorama_contract.MODE_LABELS[mode], panorama_contract.MODE_DESCRIPTIONS[mode])
     for mode in panorama_contract.PANORAMA_MODES
@@ -155,6 +156,7 @@ PANORAMA_SIZES = [
     (f"{width}x{height}", f"{width} x {height}", f"A {width} x {height} pixel 2:1 panorama")
     for width, height in panorama_contract.SIZE_PRESETS
 ]
+PANORAMA_DEFAULT_SIZE = "{}x{}".format(*panorama_contract.DEFAULT_SIZE)
 
 
 def panorama_size(scene):
@@ -282,6 +284,8 @@ def clamp_param(item, assign=setattr):
 
 def _on_param_update(self, context):
     clamp_param(self)
+    if self.follows_scene:
+        self.follows_scene = False  # an edit makes the value the user's own
     lane_state = _find_lane_state(context, self.lane, self)
     if lane_state is not None:
         mark_estimate_dirty(lane_state)
@@ -307,6 +311,10 @@ class ScenarioParamValue(bpy.types.PropertyGroup):
     fmin: FloatProperty(default=-1e9)
     fmax: FloatProperty(default=1e9)
     has_range: BoolProperty(default=False)
+    follows_scene: BoolProperty(
+        default=False,
+        description="The value was set from the scene (a music length) and follows it until edited",
+    )
 
 
 # The RNA default of every LoRA strength field (the form's and the picker's), which
@@ -547,7 +555,7 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
     panorama_size: EnumProperty(
         name="Size",
         items=PANORAMA_SIZES,
-        default=PANORAMA_SIZES[0][0],
+        default=PANORAMA_DEFAULT_SIZE,
         description="The 2:1 output size; free sizes are not offered",
         update=_on_panorama_size_change,
     )
@@ -590,6 +598,11 @@ class ScenarioBlockoutProps(bpy.types.PropertyGroup):
         items=blockout_core.TIERS,
         default=blockout_core.DEFAULT_TIER,
         description="Which Scenario LLM designs the plan; the price is on the Generate button",
+    )
+    dress_scene: BoolProperty(
+        name="Colours, camera and light",
+        default=True,
+        description="Give each group its own colour and material, and add a camera framing the blockout and a sun light when the scene has none. Your own cameras and lights are never moved",
     )
     image_path: StringProperty(
         name="Reference image",

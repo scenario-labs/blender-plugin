@@ -267,7 +267,11 @@ From top to bottom:
   with **Upload**, a still with **Render**, **Viewport** or **Camera**, or a
   clip with **Viewport clip** or **Camera clip**; then **Upload reference**
   sends it. For 3D, **Upload selected mesh** exports your selection. Generate
-  never captures or uploads anything by itself.
+  never captures or uploads anything by itself. On the Image, Video, 3D,
+  Materials and Audio tabs, you can also drop PNG, JPEG or WebP files from your
+  file manager onto the Scenario sidebar: they join the first image input with
+  room. If Blender offers more than one action, choose **Add as Scenario
+  reference**. Drops on the viewport or the composer stay Blender's.
 - **Parameters**: built from the model's own settings. Tick an optional
   parameter to send it; unticked, Scenario uses its default. On/off settings are
   always sent. `(cost)` marks parameters that change the price.
@@ -329,10 +333,12 @@ the minus button collapses it. Narrow cards shorten the tab labels. When there's
 no room for the card, the pill opens the Settings dialog instead.
 
 **Editing the prompt.** Text editing works as usual (selection, double-click,
-Home/End, Ctrl/Cmd+A, C, X, V). Enter generates and Esc leaves. Clicking outside
-saves your edit and passes the click to Blender. If the form changes behind your
-back (for example from another window), your text stays with the old form and
-nothing is sent until you press Esc or click a lane tab.
+Home/End, Ctrl/Cmd+A, C, X, V). Other Ctrl/Cmd shortcuts and function keys, such
+as Ctrl+S or F12, still reach Blender; Ctrl/Cmd+Z and Y don't. Enter generates and
+Esc leaves; while the price is still loading, Enter says so and sends nothing.
+Clicking outside saves your edit and passes the click to Blender. If the form
+changes behind your back (for example from another window), your text stays with
+the old form and nothing is sent until you press Esc or click a lane tab.
 
 **Japanese, Chinese or Korean input.** The composer can't show input-method
 composition. Press F2 in the prompt to open Blender's own text field at the
@@ -346,8 +352,8 @@ the price and how many other jobs are unfinished. **Inspect** opens the job's
 details and actions. A second chip offers the next step, such as
 **Cancel generation**, **Resume download** or **Add video strip**, and asks for the
 same confirmation as the sidebar. The cross hides the tray for that job only. Jobs
-from before a restart, workflows and Film tasks aren't shown there; use
-**Inspect saved jobs** in the Jobs panel. When collapsed, a thin line in the pill
+from before a restart, workflows and Film tasks aren't shown there; find them in
+the Jobs panel. When collapsed, a thin line in the pill
 shows the job's status and progress.
 
 If the composer keeps failing, it switches itself off: turn it back on with
@@ -412,7 +418,8 @@ price. Uploading never generates.
   selected mesh** fills a 3D input.
 
 Supported PNG and OpenEXR results import as packed images, which you can find in
-Blender's Image Editor.
+Blender's Image Editor. They import into the scene you generated from, edited or
+not, while it is selected; after Undo, Redo or opening a file they wait in Jobs.
 
 **Remove background** on an image result fills the Image form with a
 background-removal model and that image, replacing the form's previous content. It
@@ -468,11 +475,12 @@ and other video models, including audio-to-video.
 ![Video lane with Seedance parameters, frame references, Match timeline and Generate controls](images/panel-video.png)
 
 **Using your scene.** Add a **Viewport clip** or **Camera clip** reference and
-choose **Upload reference**. Blender records a silent 1280x720 MP4 over the preview
-range, or the scene range, and restores your settings afterwards. **Grey clay
-capture** replaces viewport shading. The uploaded clip is fixed: it isn't
-trimmed or padded, and later timeline changes don't affect it, so set the range
-first. **Match timeline** helps set the model's duration, but check the model's
+choose **Upload reference**. Blender records a silent MP4 over the preview range,
+or the scene range, and restores your settings afterwards. Captures are 1280
+pixels on the long side and keep the shape of the camera's render frame or of the
+viewport. **Grey clay capture** replaces viewport shading. The uploaded clip is
+fixed: it isn't trimmed or padded, and later timeline changes don't affect it, so
+set the range first. **Match timeline** helps set the model's duration, but check the model's
 own limits.
 
 **Playing a result.** **Play video (N)** opens a private copy in your system player,
@@ -484,8 +492,11 @@ gets your credentials, and both work offline.
 scene and current frame, then places the video (MP4 or WebM, up to 512 MiB) on a
 free channel without generating again. The strip leaves out embedded audio and plays
 at the scene's frame rate. If the scene or frame changes first, confirm again.
-Select the scene in the Sequencer header to see it. The strip plays a local copy
-kept by the extension, which must stay available if you move or share the file.
+If the Sequencer shows another scene, select this one in its header. The strip
+plays a local copy kept by the extension, which must stay available if you move or
+share the file.
+To show it behind the scene instead, see
+[Camera backgrounds and image planes](#camera-backgrounds-and-image-planes).
 
 Results from the earlier prototype offer **Play**, **Play in Blender** and
 **Add video strip** instead.
@@ -495,7 +506,8 @@ Results from the earlier prototype offer **Play**, **Play in Blender** and
 Four modes: **Text**, **Image**, **Multi-view** (several views of one object, front
 first) and **Edit** (Scenario's 3D tools on your selected mesh). Models include
 Meshy, Rodin, Tripo and Hunyuan, plus worlds such as Marble, HY World and
-TripoSplat.
+TripoSplat. Image mode starts with Tripo P2 at real-world size (**Auto Size**) and
+50,000 faces; change either in the form.
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 
@@ -504,9 +516,12 @@ TripoSplat.
 for another file the provider returned. The review shows the scene, cursor position
 and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
 as a new group at the cursor with its materials and textures packed; your
-objects and selection are untouched. Importing one result uses up the job's
-import: the other files stay saved for
-[Reuse saved results](#reuse-saved-results). If the cursor or scene changes
+objects and selection are untouched. Check **Longest side** to scale the new
+group evenly to that length, with its bottom still at the cursor. For an Edit
+job whose mesh is still in the scene, **Match <mesh>** lands the result on that
+mesh at its size instead; it starts on for Remesh, Retexture, UV Unwrap and
+Parts. Importing one result uses up the job's import: the other files stay saved
+for [Reuse saved results](#reuse-saved-results). If the cursor or scene changes
 first, confirm again.
 
 - Supported: GLB, glTF, FBX, OBJ and mesh PLY, up to 256 MiB per file. Large
@@ -543,6 +558,9 @@ again once it finishes. See
    edits don't change the snapshot; remove the reference and upload again to
    replace it.
 
+A mesh too dense to take edits in place shows its triangle count and suggests
+remeshing it first; its results still import as new objects.
+
 To put the result back on your mesh, see
 [Apply a saved mesh edit](#apply-a-saved-mesh-edit).
 
@@ -550,18 +568,22 @@ To put the result back on your mesh, see
 
 ### Materials
 
-Patina turns a prompt or photo into a seamless PBR set: base color, normal,
-roughness, metalness and height. **PATINA Material** works from a prompt,
-**PATINA Image to Maps** from a flat texture or photo, and
-**PATINA Material Extract** isolates one material from a photo.
+The Materials tab lists Scenario's texture models, PATINA first. Patina turns a
+prompt or photo into a seamless PBR set: base color, normal, roughness, metalness
+and height. **PATINA Material** works from a prompt, **PATINA Image to Maps** from
+a flat texture or photo, and **PATINA Material Extract** isolates one material from
+a photo. **Scenario Texture** and the other texture models make one seamless
+texture that applies as base color.
 
 ![Earlier Materials lane layout with a copper prompt, texture map choices and settings](images/panel-materials.png)
 
 Describe the material, choose the maps and size, and generate. The texture set is
 saved without touching your scene.
 
-To apply it, select a mesh with UVs and choose **Apply saved material** on the job.
-Confirm the mesh, material slot and maps. Only that slot changes; nothing is
+To apply it, select a mesh and choose **Apply saved material** on the job.
+Confirm the mesh, material slot, maps and **Tile size**, the length one texture
+repeat covers (2 m by default). A mesh without UVs is mapped by box projection and
+keeps its geometry. Only that slot changes; nothing is
 regenerated or spent. Height is wired as bump, and AO and edge maps are kept for
 you to connect by hand. Undo doesn't cover this, so keep any material you want
 to restore and save the blend file yourself. See
@@ -575,7 +597,8 @@ to restore and save the blend file yourself. See
 
 Speech, music and sound effects with ElevenLabs, Google Lyria, ACE-Step, Minimax,
 Gemini TTS, Sonilo and other audio models. When a model makes WAV audio, you get
-that WAV file, not Scenario's compressed MP3 copy.
+that WAV file, not Scenario's compressed MP3 copy. A music model's duration starts at
+your scene's length, from its frame range and frame rate, until you change it.
 
 ![Audio lane with ElevenLabs Music v2, a prompt with the Spark, Rewrite and Translate buttons, duration and format settings](images/panel-audio.png)
 
@@ -599,8 +622,12 @@ Your view, rendered as a finished still by an image-editing model. The
 **Rendering Style** section holds everything that shapes the look.
 
 - **Scene to render**: choose Viewport or Scene camera (optionally with Grey
-  clay capture), then **Capture and upload scene**.
-- **Model**: GPT Image 2 by default, or any other image-to-image model.
+  clay capture), then **Capture and upload scene**. The still keeps the shape of
+  the camera's render frame or of the viewport, at the size shown. The price
+  appears on **Generate** when the upload finishes; nothing is sent until you
+  press it. **Capture again** replaces an uploaded capture after you move the
+  camera. The floating composer has the same button, **Capture**.
+- **Model**: GPT Image 2.5 Sunburst by default, or any other image-to-image model.
 - **Look**: describe the result, for example "weathered steampunk copper,
   overcast light". Left empty, **Prepare look with Prompt Spark** (on by
   default) writes one, with its own price and approval before the render's; turn
@@ -625,9 +652,10 @@ takes a reference video. The look, reference frames and first frame are in the
 
 - **Clip to render**: choose Viewport or Scene camera, build a
   [camera path](#camera-path) if you want one, then **Capture and upload
-  scene**. The silent 1280x720 clip covers the range shown, without padding or
-  trimming. **Match timeline** sets the model's duration; it doesn't change a
-  clip already uploaded.
+  scene**. The silent clip covers the range shown, without padding or trimming,
+  at the size shown, and a chosen [first frame](#first-frame) uploads with it.
+  **Match timeline** sets the model's duration; it doesn't change a clip already
+  uploaded.
 - **Model**: Seedance, Minimax, Runway Aleph, Gemini, Grok and other
   video-to-video models.
 - **Look** and **Reference frames**: as the look and style images in Render
@@ -649,10 +677,12 @@ exactly that move.
 
 #### First frame
 
-Choose an image and **Upload first frame**. To use a generated image instead,
-choose **Use as video first frame (N)** on a PNG, JPEG or WebP result: it reuses
-the image on Scenario without uploading or generating, and the slot shows **From
-a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and
+Choose an image: **Capture and upload scene** uploads it with the clip, or
+**Upload first frame** uploads it alone. To use a generated image instead,
+choose **Use as video first frame (N)** on a PNG, JPEG or WebP result (first in
+the list on Render Image results, and **Use as first frame** on the composer's
+job strip): it reuses the image on Scenario without uploading or generating, and
+the slot shows **From a saved result** (remove it to undo). Some models (Seedance 2.5, 2.0 Fast and
 2.0 Mini, Minimax H3 and Wan 3.0) can't take a first frame together with the clip;
 for them, the image guides the opening look instead, and the form says so.
 
@@ -667,7 +697,7 @@ coloured primitives, grouped in a `Blockout` collection.
    image** and press **Upload**; the description is then optional.
 2. Choose a **Density** (Simple, Medium, Advanced or Expert: more primitives and
    finer detail) and a model: **Best** (Claude Opus, a few minutes) or **Fast**
-   (Gemini Flash, under a minute, cheaper).
+   (Gemini Flash, under a minute, cheaper). **Colours, camera and light** is on by default.
 3. The price appears on **Generate blockout**; choose it to pay once and design
    the plan, which Jobs lists until it arrives. **New plan** prices another one
    from the same fields. Changing the fields, scene or credentials first cancels
@@ -677,11 +707,14 @@ coloured primitives, grouped in a `Blockout` collection.
 5. **Clear** removes the collection and plan after asking. Build and Clear
    support Undo.
 
-Colours mark categories such as Floor, Wall, Prop, Furniture and Vegetation. Swap
-blocks for generated 3D assets as your scene develops. Rebuilding replaces only this
-scene's Blockout collection, and manual edits to its objects are lost. Move any
-objects you added to that collection elsewhere first: they block rebuilding and
-clearing.
+Each group has its own colour and a shared material. With **Colours, camera and
+light** on, a build also adds a camera that frames the whole blockout and one sun
+light when the scene has none; your own cameras and lights are never moved, and
+Undo reverts all of it. With it off, colours mark categories such as Floor, Wall,
+Prop, Furniture and Vegetation. Swap blocks for generated 3D assets as your scene
+develops. Rebuilding replaces only this scene's Blockout collection (the camera and
+light stay), and manual edits to its objects are lost. Move any objects you added to
+that collection elsewhere first: they block rebuilding and clearing.
 
 If a request's outcome is uncertain, don't generate again: select the scene, choose
 **Inspect saved jobs**, **Read saved Blockout plan**, then
@@ -694,7 +727,7 @@ reverts it); choose **Build blockout** to update the geometry.
 
 Generate a 360 panorama for the scene World. Modes:
 
-- **Generate**: from a prompt, with Scenario Skybox Flux or GPT.
+- **Generate**: from a prompt, with Scenario Skybox GPT (3840 x 1920 by default) or Flux.
 - **From image**: from one image of a place, with HY World.
 - **HDRI**: convert a saved panorama or a local 2:1 image into an HDR OpenEXR environment.
 - **Upscale**: upscale a saved panorama or a local 2:1 image. To stay within the
@@ -723,6 +756,10 @@ The **Jobs** panel lists what's running, with statuses such as "queued",
 "generating", "finished on Scenario", "downloading results" and "results saved".
 A job stays here until you apply its results.
 
+- **This session: N CU across N jobs** adds up the exact prices of the jobs
+  Scenario accepted from this Blender, agents' included, since you opened it or
+  changed credentials or project. A submission with an unconfirmed outcome counts
+  only once linked. It sums prices, not your bill.
 - A progress bar appears when Scenario reports progress; some models don't.
 - With Online Access off, checking and downloading pause; the job continues on Scenario.
 - If Scenario can't be reached for a moment, the job shows "Status not
@@ -736,8 +773,8 @@ A job stays here until you apply its results.
   up checking other jobs.
 - **Stop download** stops a download in progress without keeping a partial
   file. **Resume download** starts it again later.
-- After a restart, choose **Inspect saved jobs**, then **Refresh status** or
-  **Resume download**.
+- After a restart or opening a file, saved jobs show again in the Jobs panel;
+  choose **Refresh status** or **Resume download**.
 - **Cancel prepared job** drops an approved request that hasn't been sent yet;
   nothing reaches Scenario. A canceled Film task keeps its name, so use a new
   take name to retry.
@@ -763,15 +800,23 @@ and the actions for its kind:
 
 | Result | Actions |
 | --- | --- |
-| Image | View image, Use as reference, Remove background, Apply as texture, Add as plane |
+| Image | View image, Use as reference, Remove background, Apply as texture, Add image plane, Set as camera background |
 | 3D | Add to scene, Select, Delete |
-| Video | Play, Play in Blender, Add video strip |
+| Video | Play, Play in Blender, Add video strip, Set as camera background |
 | Audio | Play audio, Waveform, Open in system player, Add strip |
 
 - **Reload parameters** puts the lane, model, prompt, settings and references
   back into the form.
 - **Details** shows everything that was sent and returned.
+- **Use as reference** on an image this session saved reuses its Scenario asset
+  when the file still matches, so nothing is uploaded again.
 - **Select** and **Delete** find the objects a generation created, even after renames.
+
+**Grid** shows the results as preview tiles, twelve at a time; **List** brings the
+rows back. Choose a tile to see its preview large with the prompt, model, kind, file
+size, submission time and price, and the same actions; the arrows move to the next
+result and **All results** goes back. The sidebar starts on the list, **Studio >
+Results** on the grid.
 
 When a generation fails, a red marker shows the reason Scenario gave, including the
 error ID (`error_...`) support asks for; **Copy error** in Details copies it. The
@@ -834,6 +879,20 @@ action spends anything. Save the blend file yourself.
 
 ![Applied panorama offers a separate native confirmation to restore the previous scene World](images/saved-world-restore.png)
 
+### Camera backgrounds and image planes
+
+**Set as camera background (N)** adds a saved PNG, JPEG, OpenEXR, MP4 or WebM
+result as one more background of the scene camera, at half opacity behind objects;
+look through the camera to see it. Existing backgrounds stay. A video starts at the
+current frame and plays from a local copy that must stay available. Without a scene
+camera, Blender says so and adds nothing.
+
+**Add image plane (N)** adds a 1 m tall plane showing a saved PNG, JPEG or OpenEXR
+image, its bottom at the 3D cursor, facing the Front view. Transparent parts of the
+image stay transparent. Check **Unlit** to show the image's own colours, unaffected
+by scene lights. Earlier results keep **Add as plane**, with the same **Unlit**
+option under **Adjust Last Operation**.
+
 ### Apply a saved mesh edit
 
 Select your mesh, then choose **Apply mesh edit (N)** on the saved job and pick how
@@ -874,8 +933,8 @@ when it then lines up with your mesh: exactly for UVs, textures, rigs and parts
 cut from your mesh, and within a small margin for new geometry and other parts.
 **Replace geometry** starts on **Scene coordinates** unless the job was a
 Remesh. If a result doesn't match, the job says why and
-your mesh is unchanged. **Keep original** (on by default) leaves an unselected
-copy. With Global Undo on, Undo and Redo restore the scene before and after the
+your mesh is unchanged. **Keep original** (on by default) leaves a hidden copy
+named after your mesh. With Global Undo on, Undo and Redo restore the scene before and after the
 edit, but don't refund it. If the outcome is uncertain, inspect it rather than
 applying again. See [mesh application](MESH_APPLICATION.md#supported-policies)
 for requirements.
@@ -1163,12 +1222,24 @@ save the file yourself.
 
 Prices are in Creative Units (CU) and depend on the model, settings and references.
 
-- **Generate (N CU)** is the price of the form as it stands.
+- **Generate (N CU)** is the price of the form as it stands. After a scene
+  change, such as a selection or a frame change, it is priced again once the
+  scene is still (**Scene changed; updating the price**).
+- Above **Confirm generations above** in the extension's preferences (500 CU by
+  default; 0 asks every time), Generate and Generate blockout first ask you to
+  confirm the model and exact price. Agent requests keep their own approval.
+  Repeat Last never generates again.
 - After you generate, the button keeps its price and comes back a moment later,
   once Scenario confirms the job. Change anything to price a different request.
 - **from N CU** means the final price may be higher: some references aren't
   uploaded yet, or a workflow loops or can't be checked for loops.
 - **Price shown after the upload** means a required mesh or capture is still missing.
+- Scenario can refuse the first price of a reference it has just received. The
+  form then asks again on its own for about a minute (**Upload not ready yet;
+  retrying**).
+- When a price fails, the sidebar offers **Estimate again**. If Scenario reports
+  two different uploaded meshes as one asset, it offers **Price without captured
+  source** instead: the result then has no **Apply to captured source**.
 - Prompt helpers and Blockout designs are paid separately.
 - If a price check ever starts a job on Scenario, prices stop until you restart
   Blender and nothing is sent again.
@@ -1207,6 +1278,9 @@ data is shared. See [Privacy and data handling](PRIVACY.md) for details.
 
 ## Troubleshooting
 
+- **"Scenario needs Blender's Allow Online Access"**: press **Allow Online
+  Access** below it. Blender started with `--offline-mode` must be restarted
+  without it.
 - **"Loading models..." doesn't end**: check your key and secret (Test
   connection) and Allow Online Access. A Retry button appears if the request
   failed.

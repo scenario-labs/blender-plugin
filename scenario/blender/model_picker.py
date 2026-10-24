@@ -29,7 +29,7 @@ from bpy.props import (
 
 from ..core.api import model_filter, trained_offers
 from ..core.api.assets import download_file
-from ..core.api.catalog import PATINA_MODELS, TRAINED_COMPOSITION, TRAINED_LORA
+from ..core.api.catalog import TRAINED_COMPOSITION, TRAINED_LORA
 from ..core.api.errors import ScenarioError
 from ..core.ui import capability_status
 from . import generation, icons, props, runtime, trained_models
@@ -369,7 +369,7 @@ def refilter(wm):
 
 
 def _on_modality_change(self, context):
-    # A curated list (PATINA, the Environment mode's contract models) is not the tab's catalog.
+    # A lane's own list (Materials, the Environment mode's contract models) is not the tab's catalog.
     if not (_ctx["material_only"] or _ctx["panorama_only"]):
         _ctx["records"] = candidate_records(self.scenario_picker_modality)
     _enum_cache.pop(("categories", self.scenario_picker_modality), None)
@@ -518,9 +518,8 @@ def prepare(context, lane, category="all"):
     _ctx["panorama_only"] = lane == "panorama"
     modality = modality_for_lane(lane)
     if _ctx["material_only"]:
-        _ctx["records"] = [
-            r for r in runtime.state.records.values() if r.id in PATINA_MODELS
-        ] or list(runtime.state.lane_models.get("material") or [])
+        # The Materials lane list: PATINA, then Scenario Texture, then other texture models.
+        _ctx["records"] = list(runtime.state.lane_models.get("material") or [])
     elif _ctx["panorama_only"]:
         _ctx["records"] = generation.panorama_models(
             scene.scenario.panorama_mode, list(runtime.state.records.values())
@@ -842,7 +841,7 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
         if _ctx["material_only"]:
             header = layout.row()
             header.alignment = "CENTER"
-            header.label(text="Materials: PATINA models", icon="MATERIAL")
+            header.label(text="Materials: texture and PBR models", icon="MATERIAL")
         elif _ctx["panorama_only"]:
             header = layout.row()
             header.alignment = "CENTER"

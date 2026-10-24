@@ -158,7 +158,7 @@ again. Restart recovery polls this state even after a crash before sending;
 there is no lease expiry or explicit reset/reattempt command. Schema 3 retains the
 immutable result manifest and receipts introduced in schema 2 and adds a separate
 `application_origin`. Claiming `applying` atomically saves that destination before
-any Blender mutation. Automatic application uses the original intent origin;
+any Blender mutation. Automatic Image import uses the scene captured at submission;
 explicit recovery may supply a newly approved destination. Neither changes the
 intent. Application receipts preserve the claimed destination. A new destination
 requires a new claim after confirmed rollback, never an interrupted `applying`
@@ -257,8 +257,9 @@ purpose and selected asset IDs. It stores no extra paths, prompts, credentials,
 URLs or Blender names. Supported purpose labels are images, media, model,
 mesh_edit, World and material; a label does not establish decoder compatibility
 or scene acceptance. New mesh replacements use `mesh_edit`; new static-model
-imports retain `model`. Existing claims keep their recorded labels, including
-older mesh replacements stored as `model`. This adds a validated label without
+imports retain `model`. Camera backgrounds and image planes reuse `images`, or
+`media` for a video background. Existing claims keep their recorded labels,
+including older mesh replacements stored as `model`. This adds a validated label without
 changing schema-5 fields. Older readers reject an unknown label; do not downgrade
 a store containing newer application purposes.
 
@@ -311,10 +312,11 @@ The shared quote path matches only declared 3D file inputs to completed captured
 uploads in the selected credential/project scope. Prompt strings, unknown assets
 and ordinary file uploads acquire no inferred source. Repeated array values keep
 their positions for both `type: file_array` and `type: file` with `array: true`,
-matching payload validation. Ambiguous captured records for the same asset
-reject the quote. The coordinator rechecks every binding before preparation and
-again before the paid claim. A missing or changed upload stops dispatch while
-preserving the job.
+matching payload validation. Byte-identical captures of one asset are one
+source and bind the latest; captures of different bytes reject the quote unless
+the user prices that asset without a captured source for the session. The
+coordinator rechecks every binding before preparation and again before the paid
+claim. A missing or changed upload stops dispatch while preserving the job.
 
 Bindings describe the immutable uploaded snapshot, not the current geometry of
 an object. Their origin may differ from the generation's current scene context.

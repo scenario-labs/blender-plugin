@@ -87,6 +87,8 @@ APPLICATION_ACTIONS = (
     "apply_mesh",
     "apply_mesh_source",
     "use_first_frame",
+    "camera_background",
+    "image_plane",
 )
 VOCABULARY = (*sja.RECOVERY_ACTIONS, *APPLICATION_ACTIONS, "recover_blockout")
 ASSETS = (
@@ -99,6 +101,8 @@ ASSETS = (
 WORLD = {"world_assets": ("panorama",)}
 # ModelJobs projects the stills a first-frame review accepts.
 FIRST_FRAME = {"first_frame_assets": ("still",)}
+# ModelJobs projects the results a camera background or an image plane accepts.
+LANDING = {"camera_background_assets": ("clip", "still"), "image_plane_assets": ("still",)}
 AWAITING = (
     "awaiting_review",
     "status",
@@ -644,7 +648,7 @@ def test_every_offered_action_is_described_with_unique_keys_and_its_action_name(
     for state, length in itertools.product(("ready", "applied"), (1, 2)):
         for actions in itertools.combinations(VOCABULARY, length):
             items = sja.describe(
-                view(actions, state, ASSETS, **WORLD, **FIRST_FRAME), CONTEXT, TYPES
+                view(actions, state, ASSETS, **WORLD, **FIRST_FRAME, **LANDING), CONTEXT, TYPES
             )
             keys = [item.key for item in items]
             assert len(keys) == len(set(keys)), actions
@@ -727,13 +731,17 @@ def _mcp_purpose(item):
         return "video_first_frame"
     if item.operator == "scenario.apply_saved_mesh":
         return "mesh_source" if properties["original_source"] else "mesh_edit"
+    if item.action in sja.LANDINGS:
+        return item.action
     return "material" if item.operator == "scenario.apply_saved_material" else "import"
 
 
 def test_native_result_applications_have_matching_mcp_purposes():
     schema = ast.literal_eval(_mcp_spec("prepare_result_application")[1])
     items = sja.describe(
-        view(APPLICATION_ACTIONS, "applied", ASSETS, **WORLD, **FIRST_FRAME), CONTEXT, TYPES
+        view(APPLICATION_ACTIONS, "applied", ASSETS, **WORLD, **FIRST_FRAME, **LANDING),
+        CONTEXT,
+        TYPES,
     )
     native = {_mcp_purpose(item) for item in items if item.group == "apply"}
     # Agents can prepare every application a native surface offers.
@@ -745,6 +753,8 @@ def test_native_result_applications_have_matching_mcp_purposes():
         "mesh_edit",
         "mesh_source",
         "video_first_frame",
+        "camera_background",
+        "image_plane",
     }
     assert native <= set(schema["purpose"]["enum"])
 
@@ -794,6 +804,69 @@ def test_first_frame_controls_follow_the_projected_stills_and_number_every_asset
     assert "video_first_frame" in schema["purpose"]["enum"]
     description, _ = _mcp_spec("job_status")
     assert "use_first_frame offers" in description
+
+
+def test_a_render_image_result_leads_with_the_first_frame_handoff():
+    assets = (("still", "image/png"),)
+    actions = ("import_images", "camera_background", "use_first_frame", "image_plane")
+
+    def controls(lane):
+        candidate = view(actions, "ready", assets, **FIRST_FRAME, **LANDING)
+        if lane:
+            candidate.lane = lane
+        return [item.key for item in sja.describe(candidate, CONTEXT, TYPES) if item.operator]
+
+    other = controls("image")
+    assert other == controls(None)
+    assert other[0] == "import_images"
+    leading = controls("render_image")
+    assert leading[0] == "use_first_frame:still"
+    # the same controls, in another order
+    assert sorted(leading) == sorted(other)
+    # Listed again after File > Open, the job is a generic model view that remembers its form.
+    reopened = view(actions, "ready", assets, **FIRST_FRAME, **LANDING)
+    reopened.lane = "model"
+    reopened.meta["shown_lane"] = "render_image"
+    keys = [item.key for item in sja.describe(reopened, CONTEXT, TYPES) if item.operator]
+    assert keys == leading
+
+
+def test_camera_background_and_image_plane_controls_follow_their_projected_results():
+    assets = (
+        ("clip", "video/mp4"),
+        ("colour", "image/png"),
+        ("normal", "image/png"),
+        ("sound", "audio/wav"),
+    )
+    accepted = {
+        "camera_background_assets": ("clip", "colour"),
+        "image_plane_assets": ("colour",),
+    }
+    actions = ("import_media", "camera_background", "image_plane")
+    background, plane = (sja.LANDINGS[action][0] for action in actions[1:])
+    items = sja.describe(view(actions, "ready", assets, **accepted), CONTEXT, TYPES)
+    # Beside the media strips; numbering counts every saved asset.
+    assert rows(items) == [
+        asset("import_media", "scenario.import_saved_media", "Add video strip (1)", "clip"),
+        asset("import_media", "scenario.import_saved_media", "Add audio strip (4)", "sound"),
+        asset("camera_background", background, "Set as camera background (1)", "clip"),
+        asset("camera_background", background, "Set as camera background (2)", "colour"),
+        asset("image_plane", plane, "Add image plane (2)", "colour"),
+        AWAITING,
+    ]
+    assert (background, plane) == (
+        "scenario.set_saved_camera_background",
+        "scenario.add_saved_image_plane",
+    )
+    # The media type alone never offers one: a normal map is a PNG too.
+    unprojected = sja.describe(view(actions[1:], "ready", assets), CONTEXT, TYPES)
+    assert rows(unprojected) == [AWAITING]
+    # Agents prepare the same reviews under purposes of the same names.
+    schema = ast.literal_eval(_mcp_spec("prepare_result_application")[1])
+    assert {"camera_background", "image_plane"} <= set(schema["purpose"]["enum"])
+    assert schema["plane_unlit"] == {"type": "boolean"}
+    description, _ = _mcp_spec("job_status")
+    assert "camera_background and image_plane offer" in description
 
 
 def test_session_import_notices_are_status_rows_after_the_controls():

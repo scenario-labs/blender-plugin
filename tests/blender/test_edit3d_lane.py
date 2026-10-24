@@ -5,6 +5,7 @@
 import json
 import os
 import unittest
+from unittest.mock import MagicMock
 
 import bpy
 from helpers import FIXTURES, reset_scene, submodule
@@ -73,6 +74,33 @@ class Edit3DLaneTests(unittest.TestCase):
         bpy.context.view_layer.objects.active = None
         request = self.generation.build_request(self.scene, "edit3d")
         self.assertIn("Select the mesh to edit", request.errors)
+
+    def test_dense_mesh_hint_suggests_remesh_and_keeps_generate(self):
+        panels = submodule("blender.panels")
+
+        def hints(task):
+            self.scene.scenario.edit3d_task = task
+            layout = MagicMock()
+            panels.draw_edit3d_lane(layout, bpy.context)
+            box = layout.box.return_value
+            return " ".join(call.kwargs["text"] for call in box.label.call_args_list)
+
+        self.assertNotIn("Dense mesh", hints("RIG"))
+        # Over the plugin's in-place application work cap, like many generated meshes.
+        bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=7)
+        drawn = hints("RIG")
+        self.assertIn("Dense mesh: 81,920 triangles.", drawn)
+        self.assertIn("can't be applied to it in place", drawn)
+        self.assertIn("remeshing it first, for example with Tripo Retopology,", drawn)
+        drawn = hints("REMESH")
+        self.assertIn("Dense mesh: 81,920 triangles.", drawn)
+        self.assertNotIn("remeshing", drawn)
+        # A hint only: the Edit form still builds its request.
+        self.scene.scenario.edit3d_task = "RETEXTURE"
+        lane = self.scene.scenario.lane_state("edit3d")
+        lane.model_id = "model_meshy-7-retexture"
+        lane.prompt = "rusty iron plates"
+        self.assertEqual(self.generation.build_request(self.scene, "edit3d").errors, [])
 
     def test_export_and_result_placed_next_to_the_source(self):
         mesh_export = submodule("blender.mesh_export")

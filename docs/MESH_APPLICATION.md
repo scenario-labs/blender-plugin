@@ -136,9 +136,11 @@ unchanged; a later user change requires explicit review.
 
 Only local, non-overridden meshes in Object Mode are supported. Modifiers,
 constraints, vertex groups, shape keys, animation, armature/bone/vertex parenting,
-vertex-parented children, object material overrides and custom mesh properties are
-rejected. Generic attributes are limited to boolean, scalar float/integer, integer
-2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
+vertex-parented children, object material overrides and custom mesh properties that
+reference other data are rejected. Other custom mesh properties, such as the glTF
+extras Blender imports, stay on the edited mesh under every policy; a result's own
+are never adopted. Generic attributes are limited to boolean, scalar float/integer,
+integer 2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
 command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policies
 cover segmented parts and compatible skins; RIG also accepts a source
 [already skinned to an armature](#replace-an-existing-skin), and
@@ -157,7 +159,8 @@ imported result and downloaded files remain available for a local retry without
 rerunning generation.
 
 With **Keep original**, a duplicate object using the original mesh is linked into
-the source's collections with the same parenting/transforms. It becomes user-owned
+the source's collections with the same parenting/transforms, hidden in the viewport
+and renders so the edited mesh is what shows. It becomes user-owned
 once returned, remains accessible as `receipt.original`, and survives both accept
 and rollback. It shares the old mesh with any existing users; subsequent edits to
 that old mesh prevent automatic rollback.
@@ -177,12 +180,12 @@ targets by name.
 Rollback rechecks the supported object structure as well as source/scene membership,
 the applied mesh pointer, active material selection and fingerprints of both original
 and applied meshes. Adding modifiers, constraints, vertex groups, shape keys,
-animation, incompatible parenting, object material overrides or mesh custom properties
-requires explicit review before rollback. These guards protect topology-dependent
-data and metadata outside the fingerprint. A refusal leaves the receipt open;
-removing the added structure allows retry if the remaining guards still pass.
-The fingerprints cover geometry, supported generic attributes, UV layer roles
-and material slot bindings, so editing the applied mesh in place cannot silently
+animation, incompatible parenting or object material overrides requires explicit
+review before rollback. These guards protect topology-dependent data and metadata
+outside the fingerprint. A refusal leaves the receipt open; removing the added
+structure allows retry if the remaining guards still pass. The fingerprints cover
+geometry, supported generic attributes, UV layer roles, material slot bindings and
+custom mesh properties, so editing the applied mesh in place cannot silently
 lose user work. Shader node graph edits are outside that fingerprint and are
 never reverted. Rollback removes its unchanged staged mesh only when no other
 user owns it; it never removes the imported result or a mesh adopted by another
@@ -241,12 +244,16 @@ can pause Blender. There is no automatic blend save.
 
 Native **Import GLB model (N)** or **Import alternate: GLB (N)** and MCP
 `prepare_result_application` with the unit's `asset_id` capture the scene
-revision and exact cursor. MCP can also bind a `target_size_m` to the approval:
+revision and exact cursor. MCP `target_size_m`, or the native review's
+**Longest side** option, binds a length to the approval:
 publication then scales the group root uniformly so the longest side of the mesh
 bounds, measured like the bottom center, has that length, and keeps the bottom
-center at the cursor. A model with no measurable size fails after the claim and
-is rolled back. Every import reports the group's measured world size and bottom
-height in MCP `model_import`. Approval is consumed once; worker verification,
+center at the cursor. The native review of a mesh unit from a job with one
+uploaded mesh source still live in the scene can instead match it: the length
+is that source's longest side and the bottom center lands on its bottom center.
+A model with no measurable size fails after the claim and is rolled back. Every
+import reports the group's measured world size and bottom height in MCP
+`model_import`. Approval is consumed once; worker verification,
 destination revalidation and the main-thread snapshot preflight precede the
 durable claim. The current scene must be local and in Object Mode both at
 preparation and after verification. Rejection before the claim, including a
@@ -551,7 +558,7 @@ Splat** or node group named **Scenario Splat Points** is never reused or
 changed. Publication reuses the model group: a new **Scenario Model** collection
 and root with the bottom center of the decoded bounds at the cursor,
 `scenario_asset` and `scenario_assets`, and `scenario_splat_points` and
-`scenario_splat_kept` counts. An MCP `target_size_m` fits the longest side of
+`scenario_splat_kept` counts. A reviewed longest side fits the longest side of
 those decoded centre bounds, so the reported size, which includes point radii,
 can be slightly larger. Selection, the active object and the timeline stay
 unchanged. A failure removes only new objects, collections, meshes, materials
@@ -662,7 +669,7 @@ The source is revalidated immediately before replacement. Temporary imported
 objects are removed; RIG retains its armature/parent hierarchy and ANIMATE only
 its copied clips. Replacement
 material/image dependencies remain packed. Keep original
-retains a separate unselected copy, preserving the previous selection and active
+retains a separate hidden, unselected copy, preserving the previous selection and active
 object. Without it, the primitive may release the unchanged, unused original mesh.
 A returned result is finalized and contains the source, optional original and
 policy and whether a desktop undo checkpoint was recorded; it is not a persistent
@@ -848,7 +855,7 @@ to none. **Apply mesh edit** still reviews only the active mesh.
   before any is published; a failed publication or binding restores the objects
   already changed only once every one is proven restorable, and otherwise
   restores none and reports the outcome uncertain. Keep original makes one
-  unselected copy per object. One pair of native undo checkpoints covers the
+  hidden copy per object. One pair of native undo checkpoints covers the
   whole application, and receipt-only recovery never applies it again.
 
 The approval's `target` is null and `targets` lists every object; after
@@ -973,7 +980,7 @@ components above the existing synchronous limit. The source must have surface
 geometry; an empty parts anchor cannot receive another parts group. Select a
 child or the retained original for further mesh operations.
 
-Keep original retains an unselected copy of the previous source geometry. The
+Keep original retains a hidden copy of the previous source geometry. The
 shared guarded replacement swaps in empty geometry only after all parts pass
 validation; part publication and imported-data cleanup stay inside the same
 rollback boundary. A verified failure restores the captured source and removes

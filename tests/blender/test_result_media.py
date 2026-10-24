@@ -315,6 +315,7 @@ class ResultMediaTests(unittest.TestCase):
             [
                 "Add video strip (1)",
                 "Add audio strip (2)",
+                "Set as camera background (1)",
                 "Play video (1)",
                 "Play in Blender (1)",
                 "Play audio (2)",

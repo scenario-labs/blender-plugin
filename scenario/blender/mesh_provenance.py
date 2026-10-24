@@ -75,9 +75,8 @@ def export_with_source(context, objects, path, session):
     # and within the bound application enforces on them together: never fingerprint
     # sources that could not be applied.
     captured = ()
-    total = sum(mesh_application._components(obj.data) for obj in objects)
     try:
-        if total <= mesh_application.MAX_COMPONENTS:
+        if mesh_application.within_component_limit(obj.data for obj in objects):
             captured = tuple(capture_target(scene, obj) for obj in objects)
     except MeshApplicationError:
         # Upload/export supports more sources than in-place replacement.

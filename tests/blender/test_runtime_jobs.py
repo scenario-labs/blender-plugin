@@ -148,6 +148,47 @@ class RuntimeJobTests(unittest.TestCase):
         self.assertEqual(result["state"], "canceled")
         self.assertEqual(self.requests, [])
 
+    def test_saved_jobs_are_listed_once_per_context_with_the_prompts_shown(self):
+        # Until the catalog step selects a connection, listing selects none itself.
+        self.assertFalse(self.runtime.show_saved_jobs())
+        self.assertIsNone(self.runtime.state.catalog)
+        self.seed()
+        self.assertTrue(self.runtime.show_saved_jobs())
+        (view,) = self.runtime.state.jobs_view
+        self.assertEqual((view.local_id, view.meta["prompt"]), ("request", "Recovered saved job"))
+        self.assertFalse(self.runtime.show_saved_jobs())
+        # What a job this session submitted shows; the store keeps no prompt.
+        view.meta.update(prompt="Café 雪 dome", model_name="Fixture model")
+        view.lane = "render_image"  # as a Render Image submission shows it
+        context = self.runtime.state.job_context_id
+        filepath = str(self.root / "listed.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=filepath)
+        bpy.ops.wm.open_mainfile(filepath=filepath)
+        self.runtime.sync_catalog_context()  # the pump's catalog step, before the listing
+        self.assertEqual(self.runtime.state.jobs_view, [])
+        self.assertTrue(self.runtime.show_saved_jobs())
+        self.assertNotEqual(self.runtime.state.job_context_id, context)
+        (view,) = self.runtime.state.jobs_view
+        self.assertEqual(
+            (view.local_id, view.meta["prompt"], view.meta["model_name"]),
+            ("request", "Café 雪 dome", "Fixture model"),
+        )
+        # A generic view again, which still knows the form it came from.
+        self.assertEqual((view.lane, view.meta["shown_lane"]), ("model", "render_image"))
+        self.assertEqual(self.requests, [])
+        # Another connection lists only its own jobs; with none saved, no session starts.
+        self.prefs.api_secret = "other-fixture-secret"
+        self.runtime.ensure_catalog()
+        self.assertFalse(self.runtime.show_saved_jobs())
+        self.assertIsNone(self.runtime.state.job_session)
+        self.assertEqual((self.runtime.state.jobs_view, self.runtime.state.job_labels), ([], {}))
+
+    def test_the_gui_pump_lists_saved_jobs(self):
+        pump = submodule("blender.pump")
+        with patch.object(self.runtime, "show_saved_jobs", return_value=True) as listed:
+            pump._process()
+        listed.assert_called_once_with()
+
     def test_credential_change_isolates_records_and_cannot_cancel_same_id(self):
         _, original = self.seed()
         old = self.tools.list_local_jobs({})

@@ -14,6 +14,8 @@ from bpy.props import StringProperty
 
 from ..core.api.errors import ScenarioError
 from ..core.scene import blockout as core
+from ..core.scene import blockout_view as core_view
+from . import blockout_view as view
 from . import runtime
 
 COLLECTION = "Blockout"
@@ -147,7 +149,9 @@ def _remove_tree(root):
 def clear_blockout(scene):
     """Clear only this scene's explicitly owned, unshared generated collection."""
     root = _owned_tree(scene)
-    return _remove_tree(root) if root is not None else 0
+    removed = _remove_tree(root) if root is not None else 0
+    view.purge_unused_materials()
+    return removed
 
 
 def _colour_the_viewport():
@@ -158,13 +162,44 @@ def _colour_the_viewport():
                 area.spaces.active.shading.color_type = "OBJECT"
 
 
-def build_blockout(context, elements):
-    """Stage a complete local build before replacing only this scene's owned tree."""
+class Built(list):
+    """The objects a build created; `added` names the camera and light it added to the scene."""
+
+    added = ()
+
+
+def _dress(scene, elements, staging):
+    """Stage the group colours and materials, then the camera and sun the scene lacks.
+
+    Returns ({group: (RGBA, material)}, names of what was added). Nothing here touches data the user owns.
+    """
+    colours = core_view.group_colours(elements)
+    materials = view.group_materials(colours, staging)
+    bounds = core_view.plan_bounds(elements)
+    added = []
+    if bounds is not None and view.lacks_camera(scene):
+        view.add_camera(scene, *bounds, staging)
+        added.append("camera")
+    if bounds is not None and view.lacks_light(scene):
+        view.add_sun(scene, *bounds, staging)
+        added.append("sun light")
+    return {group: (colours[group], materials[group]) for group in colours}, added
+
+
+def build_blockout(context, elements, *, dress=True):
+    """Stage a complete local build before replacing only this scene's owned tree.
+
+    With `dress`, each top-level group gets its own muted colour and shared material, and a camera framing
+    the blockout and a sun are added when the scene has none. A failed build removes everything it created.
+    """
     scene = context.scene
     old = _owned_tree(scene)
     root = _sub_collection(COLLECTION, scene.collection)
-    groups, created = {}, []
+    staging = view.Staging()
+    groups, created, looks, added = {}, Built(), {}, []
     try:
+        if dress:
+            looks, added = _dress(scene, elements, staging)
         for el in elements:
             group = el.get("group") or COLLECTION
             category = el.get("category") or core.DEFAULT_CATEGORY
@@ -183,23 +218,33 @@ def build_blockout(context, elements):
             obj.location = el.get("position") or (0.0, 0.0, 0.0)
             obj.scale = el.get("size") or (1.0, 1.0, 1.0)
             obj.rotation_euler = (0.0, 0.0, radians(el.get("rotation", 0.0) or 0.0))
-            r, g, b = core.CATEGORIES.get(category, core.CATEGORIES[core.DEFAULT_CATEGORY])[1]
-            obj.color = (r, g, b, 1.0)
+            if dress:
+                colour, material = looks[core_view.group_name(el)]
+                view.assign_material(obj, material)
+            else:
+                r, g, b = core.CATEGORIES.get(category, core.CATEGORIES[core.DEFAULT_CATEGORY])[1]
+                colour = (r, g, b, 1.0)
+            obj.color = colour
             obj[MARK] = category
             obj.display_type = "SOLID"
     except BaseException:
-        _remove_tree(root)
+        try:
+            _remove_tree(root)
+        finally:
+            staging.discard()
         raise
     # All decoding and creation succeeded before touching the old collection.
     # After publication starts, never destroy the staged replacement on failure.
     scene.scenario_blockout.built_collection = root
     if old is not None:
         _remove_tree(old)
+    view.purge_unused_materials()
     root.name = COLLECTION
     for name, coll in groups.items():
         coll.name = name
     for obj, element in zip(created, elements, strict=True):
         obj.name = element.get("name") or "Block"
+    created.added = tuple(added)
     if created and not bpy.app.background:
         _colour_the_viewport()
     return created
@@ -242,6 +287,26 @@ class SCENARIO_OT_blockout_approve(bpy.types.Operator):
         from .operators import _network_poll
 
         return _network_poll(cls, context)
+
+    def invoke(self, context, event):
+        """Above the "Confirm generations above" preference, name the model and exact price first."""
+        from ..core.ui.costs import confirms_spend, spend_confirmation
+        from .generation import confirm_threshold
+
+        jobs = runtime.state.blockout_jobs
+        item = jobs.actions.get(self.quote_id) if jobs is not None else None
+        # A stale or changed quote is refused by execute, without a dialog.
+        if (
+            item is None
+            or item.phase != "READY"
+            or item.cost != self.approved_cost
+            or not confirms_spend(item.cost, confirm_threshold())
+        ):
+            return self.execute(context)
+        title, message = spend_confirmation(core.model_label(item.model), item.cost)
+        return context.window_manager.invoke_confirm(
+            self, event, title=title, message=message, confirm_text="Generate"
+        )
 
     def execute(self, context):
         try:
@@ -481,13 +546,16 @@ class SCENARIO_OT_blockout_build(bpy.types.Operator):
             self.report({"WARNING"}, "No blockout plan yet; design one first")
             return {"CANCELLED"}
         try:
-            created = build_blockout(context, elements)
+            created = build_blockout(
+                context, elements, dress=context.scene.scenario_blockout.dress_scene
+            )
         except (ValueError, RuntimeError):
             self.report(
                 {"WARNING"}, "Could not build safely; inspect the existing Blockout collection"
             )
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Built {len(created)} elements")
+        added = f", added a {' and a '.join(created.added)}" if created.added else ""
+        self.report({"INFO"}, f"Built {len(created)} elements{added}")
         return {"FINISHED"}
 
 

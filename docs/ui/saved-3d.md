@@ -39,7 +39,14 @@ cursor, the new group, packed textures and preserved selection. Format lines
 follow: GLB and glTF keep scene FPS and the timeline, FBX packs embedded textures,
 rejects external texture files and keeps the file's clip timing, OBJ leaves out
 maps that were not saved, and PLY says a file without splat data imports as a
-mesh. A last line says the files are checked again first. Every line stays
+mesh. A **Longest side** checkbox, off by default, enables a length field; when
+checked, a line says the group is scaled evenly with its bottom at the cursor.
+When the job edited a mesh still in the scene, a **Match <mesh>** checkbox comes
+first, on for shape-keeping tasks; it replaces the cursor and length lines with
+the mesh's bottom center and longest side.
+Changing either calls `check()`, which exchanges the approval for a new handle
+with the same scene, cursor and unit, as for splat options below. A last line
+says the files are checked again first. Every line stays
 within 66 characters, the longest line the earlier 480 px desktop capture
 showed. Drawing only reads the prepared values; cancel discards the approval.
 
@@ -225,7 +232,7 @@ quality or indexing.
 
 ## Saved mesh undo interaction
 
-The approval dialog explains that Keep original retains an unselected copy,
+The approval dialog explains that Keep original retains a hidden copy,
 Blender settings control undo, and history changes leave jobs and spending
 recorded. The shared command uses native history for every mesh policy;
 see [the contract](../MESH_APPLICATION.md#native-undo-for-saved-mesh-edits).

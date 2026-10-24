@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bridge between ParamSpec schemas and the ScenarioParamValue collection, plus drawing."""
 
-from ..core.api.catalog import param_override
+from ..core.api.catalog import param_override, starting_value
 from ..core.schema.params import float32_decimal
 from . import props, runtime
 
@@ -117,6 +117,23 @@ def sync_params(lane_state, schema, model_id):
     return seeded
 
 
+def unsynced(lane_state, schema, model_id):
+    """Whether a drawable setting of `model_id` has no row of that model; read-only.
+
+    sync_params gives every drawable setting a row of the form's model. A form
+    read from a file that this session has not synchronized can lack them, and a
+    request built from it would send only the server's defaults.
+    """
+    hidden = _hidden(model_id)
+    for spec in schema.specs:
+        if not _drawable(spec, hidden):
+            continue
+        item = lane_state.params.get(spec.name)
+        if item is None or item.model_id != model_id:
+            return True
+    return False
+
+
 def _numeric_fallback(spec, schema=None):
     """A sensible value when the schema has no default: preset, then 1024 for sizes, then the range."""
     lo = spec.min if spec.min is not None else 0
@@ -144,7 +161,9 @@ def _apply_default(item, spec, schema=None):
     item.has_range = spec.min is not None or spec.max is not None
     item.fmin = float(spec.min) if spec.min is not None else -1e9
     item.fmax = float(spec.max) if spec.max is not None else 1e9
-    default = spec.default
+    # A curated start replaces the schema default and switches an optional setting on, like a declared default.
+    curated = starting_value(item.model_id, spec)
+    default = spec.default if curated is None else curated
     if spec.ptype == "number":
         value = default if isinstance(default, (int, float)) else _numeric_fallback(spec, schema)
         if spec.is_integer:

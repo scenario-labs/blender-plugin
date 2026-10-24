@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Synchronous, explicit-target mesh application; no import, jobs or selection lookup."""
 
+import contextlib
 import hashlib
 import math
 import threading
@@ -72,11 +73,11 @@ def _check_rig(scene, rig):
     return rig
 
 
-def _validate_object(scene, obj, *, skin=False, read_only=False, deform=True):
+def _validate_object(scene, obj, *, skin=False, deform=True):
     """Check supported structure; skin admits only one vertex-weight Armature skin.
 
-    read_only admits custom mesh properties on a result that is only read.
-    deform=False leaves modifiers and vertex groups to the caller.
+    deform=False leaves modifiers and vertex groups to the caller. Custom mesh
+    properties are checked with the mesh data (`_fingerprint`).
     """
     if not _present(bpy.data.scenes, scene) or not _present(scene.objects, obj):
         raise MeshApplicationError("Use a live object in the explicit originating scene")
@@ -104,9 +105,6 @@ def _validate_object(scene, obj, *, skin=False, read_only=False, deform=True):
         raise MeshApplicationError("Vertex-parented children require another policy")
     if any(slot.link != "DATA" for slot in obj.material_slots):
         raise MeshApplicationError("Object material overrides require another policy")
-    # A result that is only read (UV, retexture) never passes its properties on.
-    if obj.data.keys() and not read_only:
-        raise MeshApplicationError("Custom mesh properties require another policy")
 
 
 def _plain(value):
@@ -117,13 +115,62 @@ def _plain(value):
     return tuple(_plain(component) for component in value)
 
 
+def _property(value):
+    """A custom property value as plain data; a reference to other data fails closed."""
+    if isinstance(value, bpy.types.ID):
+        raise MeshApplicationError(
+            "Custom mesh properties that reference data require another policy"
+        )
+    if hasattr(value, "keys"):
+        return ("group", tuple((key, _property(value[key])) for key in sorted(value.keys())))
+    if hasattr(value, "to_list"):
+        value = value.to_list()
+    if isinstance(value, (list, tuple)):
+        return ("list", tuple(_property(item) for item in value))
+    return _plain(value)
+
+
+def _properties(mesh):
+    """Custom mesh properties with their UI settings, such as the glTF extras Blender imports.
+
+    An edited mesh keeps the source mesh's own (`_carry_properties`), so they
+    are guarded like its geometry instead of refused.
+    """
+    values = []
+    for key in sorted(mesh.keys()):
+        try:
+            settings = _property(mesh.id_properties_ui(key).as_dict())
+        except TypeError:
+            # Groups have no UI settings.
+            settings = None
+        values.append((key, _property(mesh[key]), settings))
+    return tuple(values)
+
+
+def _carry_properties(source, staged):
+    """Give a staged mesh the source mesh's custom properties, never a result's."""
+    for key in tuple(staged.keys()):
+        del staged[key]
+    if source.keys():
+        # A group merge copies values with their UI settings.
+        staged.id_properties_ensure().update(source.id_properties_ensure())
+
+
 def _components(mesh):
     size = len(mesh.vertices) + len(mesh.edges) + len(mesh.loops) + len(mesh.polygons)
     return size + sum(len(attribute.data) for attribute in mesh.attributes)
 
 
+def within_component_limit(meshes):
+    """Whether these meshes together stay within the synchronous application work cap.
+
+    Counting reads only sizes, so the Edit lane can check it while drawing.
+    """
+    return sum(_components(mesh) for mesh in meshes) <= MAX_COMPONENTS
+
+
 def _fingerprint(mesh):
-    """Guard geometry, generic attributes, UV roles and material slot bindings."""
+    """Guard geometry, generic attributes, UV roles, material slots and custom properties."""
     if _components(mesh) > MAX_COMPONENTS:
         raise MeshApplicationError("Mesh exceeds the synchronous application component limit")
     digest = hashlib.sha256()
@@ -165,6 +212,7 @@ def _fingerprint(mesh):
     add(tuple((layer.name, layer.active_render, layer.active_clone) for layer in mesh.uv_layers))
     add(mesh.uv_layers.active_index)
     add((mesh.use_auto_texspace, mesh.texspace_location, mesh.texspace_size, mesh.use_fake_user))
+    add(_properties(mesh))
     return digest.digest()
 
 
@@ -922,9 +970,10 @@ def _retexture(staged, values, loop, polygon, several=False):
 
 
 def _stage(source, result, policy, mapping):
-    """Copy a remesh result into source-local coordinates."""
+    """Copy a remesh result into source-local coordinates, with the source's custom properties."""
     staged = result.copy()
     try:
+        _carry_properties(source, staged)
         staged.transform(mapping)
         staged.update()
         return staged
@@ -996,8 +1045,8 @@ def _publish(source, staged):
 class MeshApplication:
     """Caller-owned rollback boundary. Call accept() or rollback() on the main thread.
 
-    A visible Keep original object is user-owned once returned and survives both
-    methods. Without Keep original, an unlinked holder retains the original mesh
+    A Keep original object, hidden in the viewport and renders, is user-owned once
+    returned and survives both methods. Without Keep original, an unlinked holder retains the original mesh
     until this receipt is finalized. No destructor touches Blender data.
     """
 
@@ -1044,9 +1093,9 @@ class MeshApplication:
         mesh = self._before
         if not _present(bpy.data.meshes, mesh) or mesh.users:
             return
+        # The fingerprint covers custom properties: the applied mesh carries them.
         if (
             mesh.name != self._before_name
-            or mesh.keys()
             or mesh.animation_data
             or mesh.shape_keys
             or mesh.asset_data
@@ -1133,7 +1182,7 @@ def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original
             "Use an explicit REMESH/UV/RETEXTURE policy and boolean Keep original"
         )
     if policy == "REMESH":
-        _validate_results(scene, source, (result,), read_only=False)
+        _validate_results(scene, source, (result,))
         staged = _stage(source.data, result.data, policy, _matrix(result_to_source))
         return _replace_mesh(scene, source, staged, keep_original=keep_original)
     return apply_surface(
@@ -1147,10 +1196,10 @@ def apply_mesh(scene, source, result, *, policy, result_to_source, keep_original
     )
 
 
-def _validate_results(scene, source, results, *, read_only=True):
+def _validate_results(scene, source, results):
     _validate_object(scene, source)
     for result in results:
-        _validate_object(scene, result, read_only=read_only)
+        _validate_object(scene, result)
         if source is result or source.data is result.data:
             raise MeshApplicationError("Use a separate imported result mesh")
     _fingerprint(source.data)
@@ -1220,7 +1269,7 @@ def _validate_sources(scene, sources, results):
             raise MeshApplicationError("Use a separate imported result mesh")
         _fingerprint(source.data)
     for result in results:
-        _validate_object(scene, result, read_only=True)
+        _validate_object(scene, result)
         _fingerprint(result.data)
 
 
@@ -1277,6 +1326,18 @@ def _replace_meshes(scene, sources, staged, *, keep_original):
     return tuple(receipts)
 
 
+def _hide(obj, scene):
+    """Hide a Keep original copy in the viewport and renders, so the edit is what shows.
+
+    It sits at the source's transform; left visible it covers the edited mesh.
+    """
+    obj.hide_render = True
+    for view_layer in scene.view_layers:
+        # A collection excluded from a view layer has no base there to hide.
+        with contextlib.suppress(RuntimeError):
+            obj.hide_set(True, view_layer=view_layer)
+
+
 def _replace_mesh(scene, source, staged, *, keep_original, skin=False):
     """Publish an already validated private mesh; caller owns non-mesh changes.
 
@@ -1297,6 +1358,7 @@ def _replace_mesh(scene, source, staged, *, keep_original, skin=False):
             holder.name = f"{source.name} Original"
             for collection in source.users_collection:
                 collection.objects.link(holder)
+            _hide(holder, scene)
         holder_state = _holder_state(holder) if not keep_original else ()
         _publish(source, staged)
         return MeshApplication(

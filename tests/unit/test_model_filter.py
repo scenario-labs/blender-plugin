@@ -385,3 +385,28 @@ def test_recent_models_touch_orders_dedupes_and_limits(tmp_path):
     assert mf.RecentModels(path).ids("image") == ["d", "c", "a"]
     path.write_text("not json")
     assert mf.RecentModels(path).ids("image") == []
+
+
+def test_music_length_spec_names_the_length_input_of_music_models_only():
+    from scenario.core.schema.params import parse_schema
+
+    def schema(model, inputs):
+        return parse_schema(rec(model.id, model.name, ("txt2audio",), model.tags, inputs=inputs))
+
+    seconds = {"name": "durationSeconds", "type": "number", "min": 3, "max": 600, "step": 1}
+    music = rec("model_elevenlabs-music-v2-5", "ElevenLabs Music v2.5", ("txt2audio",))
+    assert mf.music_length_spec(music, schema(music, [seconds])).name == "durationSeconds"
+    # ACE-Step names it duration; a length the model decides on its own is still the input.
+    ace = rec("model_ace-step-1-5", "ACE-Step 1.5 Text to Music - Quality", ("txt2audio",))
+    plain = {"name": "duration", "type": "number", "min": 10, "max": 600, "step": 1}
+    assert mf.music_length_spec(ace, schema(ace, [plain])).name == "duration"
+    # A sound effect has a length too, but it is not a music length.
+    sfx = rec("model_elevenlabs-sound-effects-v2", "ElevenLabs Sound Effects 2", ("txt2audio",))
+    assert mf.music_length_spec(sfx, schema(sfx, [seconds])) is None
+    # Music models without a length input, or with a choice list, have none to start.
+    lyria = rec("model_lyria-3-5", "Google Lyria 3.5", ("txt2audio",))
+    assert (
+        mf.music_length_spec(lyria, schema(lyria, [{"name": "prompt", "type": "string"}])) is None
+    )
+    choices = {"name": "duration", "type": "number", "allowedValues": [15, 30, 60]}
+    assert mf.music_length_spec(music, schema(music, [choices])) is None

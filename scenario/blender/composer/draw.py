@@ -10,10 +10,11 @@ import bpy
 import gpu
 from gpu_extras.batch import batch_for_shader
 
+from ...core.api.catalog import RENDER_LANES
 from ...core.ui import composer_layout as cl
 from ...core.ui import job_strip
 from ...core.ui.costs import format_cu
-from .. import generation, job_recovery, panels, runtime
+from .. import generation, job_recovery, panels, render_references, runtime
 
 _batches = {}
 _shader = None
@@ -173,6 +174,14 @@ def card_fits_with_sidebar(context):
     return cl.card_fits(region.width, region.height, scale, (left, right))
 
 
+def shows_capture(context, state):
+    """Whether the card offers its capture chip: the form it shows is a Render Image or Render Video form."""
+    scene = getattr(context, "scene", None)
+    if scene is None or not hasattr(scene, "scenario"):
+        return False
+    return state.shown_form(scene)[1] in RENDER_LANES
+
+
 def composer_layout(context, state):
     """Geometry of the composer in `context.region`: the one layout drawing and hit testing share."""
     region = context.region
@@ -184,6 +193,7 @@ def composer_layout(context, state):
         offset=state.offset,
         width=state.width if state.expanded else None,
         insets=overlap_insets(getattr(context, "area", None), region),
+        capture=shows_capture(context, state),
     )
 
 
@@ -278,7 +288,7 @@ def strip_job(scene, state, lane):
     actions, held = state.shown_actions(
         view.local_id, revision, job_recovery.result_actions(view), busy
     )
-    chips = job_strip.strip_chips(actions, saved, automatic=automatic, error=view.error)
+    chips = job_strip.strip_chips(actions, saved, automatic=automatic, error=view.error, lane=lane)
     price = f"{format_cu(view.cu_cost)} CU" if view.cu_cost is not None else ""
     more = sum(1 for other in views[1:] if other.meta.get("saved_state") not in SETTLED_STATES)
     title = panels._short_prompt(view, STRIP_TITLE)
@@ -478,15 +488,21 @@ def _draw_strip(geometry, state, scale):
 
 
 def status_note(lane_state):
-    """The line shown next to the model chip: a failed model description, a quote problem, the lane's error, else the add-on's temporary message."""
+    """The line shown next to the model chip: a failed model description, a quote problem, the lane's error, a price being requested again, else the add-on's temporary message."""
     error = generation.lane_error(lane_state)  # without a stale saved model-load failure
     failure = runtime.state.model_errors.get(lane_state.model_id)
     if failure is not None and generation.schema_for(lane_state.model_id) is None:
         return error or failure  # explains why the quote is unavailable
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
+        waiting = (render_references.CAPTURE_SCENE, render_references.NEEDS_FIRST_FRAME)
+        if lane_state.estimate_error in waiting and not runtime.online():
+            return render_references.CAPTURE_OFFLINE  # what the muted Capture chip needs first
         return lane_state.estimate_error
     if error:
         return error
+    note = generation.repricing_note(lane_state)
+    if note:
+        return note
     visible = getattr(runtime, "message_visible", None)
     message = (visible() if callable(visible) else runtime.state.last_message) or ""
     if not message and any(slot.has_scale for slot in lane_state.trained):
@@ -645,6 +661,18 @@ def draw_composer():
                 centered=True,
             )
             note_x = layout.settings_rect.right + 10 * scale
+        if layout.capture_rect is not None:
+            label, wait = render_references.chip(lane_state)
+            _chip(
+                layout.capture_rect,
+                label,
+                scale,
+                font_px,
+                hovered=(state.hover == ("capture",)) and not wait,
+                color=MUTED if wait else TEXT,
+                centered=True,
+            )
+            note_x = layout.capture_rect.right + 10 * scale
         gr = layout.generate_rect
         rect(gr.x, gr.y, gr.w, gr.h, ACCENT if enabled else TAB, 6 * scale)
         label = panels.generate_button_text(lane_state)

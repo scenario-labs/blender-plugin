@@ -200,6 +200,60 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.blockout_build(), {"FINISHED"})
         self.assertIn("Test tower", bpy.data.objects)
 
+    def approve_operator(self, item, approved_cost=None):
+        """Generate blockout as its button runs it (invoke, then execute), with a recording dialog."""
+        cls = self.blockout.SCENARIO_OT_blockout_approve
+        operator = SimpleNamespace(
+            quote_id=item.identifier,
+            approved_cost=item.cost if approved_cost is None else approved_cost,
+            report=MagicMock(),
+        )
+        operator.execute = lambda context: cls.execute(operator, context)
+        confirm = MagicMock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(
+            scene=self.scene, window_manager=SimpleNamespace(invoke_confirm=confirm)
+        )
+        return cls, operator, context, confirm
+
+    def confirm_every_generate(self):
+        prefs = self.runtime.prefs()
+        self.addCleanup(setattr, prefs, "confirm_above_cu", prefs.confirm_above_cu)
+        prefs.confirm_above_cu = 0
+
+    def test_approval_below_the_threshold_submits_without_a_dialog(self):
+        item = self.quote()
+        cls, operator, context, confirm = self.approve_operator(item)
+        self.assertEqual(cls.invoke(operator, context, None), {"FINISHED"})
+        confirm.assert_not_called()
+        self.advance(item)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_approval_above_the_threshold_names_the_model_and_exact_price_first(self):
+        self.confirm_every_generate()
+        item = self.quote()
+        cls, operator, context, confirm = self.approve_operator(item)
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        label = submodule("core.scene.blockout").model_label(item.model)
+        confirm.assert_called_once_with(
+            operator,
+            None,
+            title=f"Generate with {label}?",
+            message="Exact price: 0.1234567890123456789 CU",
+            confirm_text="Generate",
+        )
+        self.assertEqual((self.paid, item.phase), ([], "READY"))
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.advance(item)
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_stale_approval_is_refused_without_a_dialog(self):
+        self.confirm_every_generate()
+        item = self.quote()
+        cls, operator, context, confirm = self.approve_operator(item, approved_cost="0.1")
+        self.assertEqual(cls.invoke(operator, context, None), {"CANCELLED"})
+        confirm.assert_not_called()
+        self.assertEqual((self.paid, item.phase), ([], "READY"))
+
     def test_mcp_uses_same_quote_and_native_delivery(self):
         deferred = self.mcp.estimate_blockout({"action": "DESIGN"})
         value = deferred.finish(deferred.run())

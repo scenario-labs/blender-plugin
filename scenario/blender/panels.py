@@ -10,6 +10,7 @@ from contextlib import contextmanager
 import bpy
 
 from ..core.ui.costs import format_cu, workflow_loop_warning
+from ..core.ui.result_grid import PAGE_SIZE
 from . import (
     generation,
     history,
@@ -57,10 +58,34 @@ AUDIO_EXTS = (".mp3", ".wav", ".ogg", ".m4a", ".flac")
 SIDEBAR_CHARS = 36  # wrapped status text fits the default sidebar width
 
 
+def draw_online_access(layout):
+    """Why Scenario cannot connect, and the button that turns Allow Online Access on.
+
+    The pump follows the preference, so the catalog loads once it is on. Blender's
+    --offline-mode refuses the change until a restart, so that case gets no button.
+    """
+    # The job box's inset is a little wider than this panel line needs: it wraps, never clips.
+    inset = result_previews.TEXT_INSET
+    column = layout.column(align=True)
+    lines = label_wrap.label_lines(bpy.context, runtime.ONLINE_ACCESS_NEEDED, inset)
+    for index, line in enumerate(lines):
+        column.label(text=line, icon="INTERNET_OFFLINE" if index == 0 else "BLANK1")
+    if runtime.started_offline():
+        for line in label_wrap.label_lines(bpy.context, runtime.STARTED_OFFLINE, inset):
+            column.label(text=line, icon="BLANK1")
+    else:
+        column.operator("scenario.allow_online_access", icon="INTERNET")
+
+
 def draw_account_strip(layout, context):
+    online = runtime.online()
+    if not online:
+        # First: a new Blender profile starts with it off, and without it even
+        # Test connection cannot reach Scenario.
+        draw_online_access(layout)
     creds = runtime.credentials()
-    row = layout.row(align=True)
     if not creds.valid:
+        row = layout.row(align=True)
         source = getattr(runtime.prefs(), "credential_source", "PREFERENCES")
         message = (
             "Environment key/secret missing"
@@ -71,9 +96,9 @@ def draw_account_strip(layout, context):
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
         draw_feedback_heart(row)
         return False
-    if not runtime.online():
-        row.label(text="Online access is disabled", icon="ERROR")
+    if not online:
         return False
+    row = layout.row(align=True)
     label = runtime.state.account_label or (
         "Connected" if runtime.state.catalog_loaded else "Connecting..."
     )
@@ -281,6 +306,7 @@ def draw_references(
 
 def draw_clip_options(layout, context, lane_state, schema):
     from ..core.scene import capture_plan
+    from . import capture
 
     has_video_input = any(s.is_file and s.kind == "video" for s in schema.specs)
     uses_capture = any(r.source in props.CAPTURE_SOURCES for r in lane_state.references)
@@ -298,7 +324,13 @@ def draw_clip_options(layout, context, lane_state, schema):
         preview_start=scene.frame_preview_start,
         preview_end=scene.frame_preview_end,
     )
-    box.label(text=f"Frames {start} to {end}: {seconds:.1f} s at {fps:g} fps, 1280x720")
+    # Clips still to capture; an uploaded clip keeps the size it was recorded at.
+    sizes = [
+        capture.capture_size(context, r.source)
+        for r in lane_state.references
+        if r.source in props.CLIP_SOURCES
+    ]
+    box.label(text=capture_plan.clip_label(start, end, seconds, fps, sizes))
     if schema.by_name("duration") is not None:
         box.prop(lane_state, "match_timeline")
         if lane_state.match_timeline:
@@ -398,10 +430,28 @@ def draw_generate_row(layout, lane_state, lane):
     ).lane = lane
     if lane_state.estimate_state in ("ERROR", "UNAVAILABLE") and lane_state.estimate_error:
         draw_wrapped(layout, lane_state.estimate_error, "INFO")
+        draw_price_retry(layout, lane_state, lane)
+    note = generation.repricing_note(lane_state)
+    if note:
+        draw_wrapped(layout, note, "TIME")
     error = generation.lane_error(lane_state)  # a stale saved model-load failure is not drawn
     if error:
         draw_wrapped(layout, error, "ERROR")
         prompts.draw_error_link(layout, error)
+
+
+def draw_price_retry(layout, lane_state, lane):
+    """A failed price offers one fix: drop a conflicting captured source, else ask again."""
+    if not generation.estimate_again_offered(lane_state):
+        return
+    if generation.capture_conflict(lane_state):
+        layout.operator(
+            "scenario.price_without_capture", text="Price without captured source", icon="UNLINKED"
+        ).lane = lane
+    else:
+        layout.operator(
+            "scenario.estimate_again", text="Estimate again", icon="FILE_REFRESH"
+        ).lane = lane
 
 
 def draw_wrapped(layout, message, icon):
@@ -540,6 +590,35 @@ def draw_panorama_lane(layout, context):
     draw_generate_row(layout, lane_state, "panorama")
 
 
+def draw_dense_mesh_hint(layout, objects, task_id):
+    """Name a mesh too dense for in-place edits, and the Remesh task that lightens it.
+
+    The bound is the plugin's own application work cap, not a model's limit:
+    Generate stays available and a result still imports as a new object.
+    """
+    from ..core.api.catalog import edit3d_models
+    from . import mesh_application
+
+    meshes = [obj.data for obj in objects]
+    if mesh_application.within_component_limit(meshes):
+        return
+    triangles = sum(len(mesh.loops) - 2 * len(mesh.polygons) for mesh in meshes)
+    draw_wrapped(
+        layout,
+        f"Dense mesh: {triangles:,} triangles. Edits of it import as new objects; "
+        "they can't be applied to it in place.",
+        "INFO",
+    )
+    if task_id != "REMESH":
+        remesh = edit3d_models("REMESH", list(runtime.state.records.values()))
+        example = f", for example with {remesh[0].name}," if remesh else ""
+        draw_wrapped(
+            layout,
+            f"Consider remeshing it first{example} and editing the lighter copy.",
+            "MOD_REMESH",
+        )
+
+
 def draw_edit3d_lane(layout, context):
     """The 3D tab in Edit mode: Scenario's 3D tools on the selected mesh."""
     from ..core.api.catalog import edit3d_task, mesh_param
@@ -555,6 +634,7 @@ def draw_edit3d_lane(layout, context):
         )
         box.label(text=f"Mesh: {names}", icon="MESH_DATA")
         box.label(text="Upload a GLB snapshot before requesting a generation price", icon="INFO")
+        draw_dense_mesh_hint(box, objects, scene.scenario.edit3d_task)
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")
     tasks = [t[0] for t in props.EDIT3D_TASK_ITEMS]
@@ -631,12 +711,25 @@ def draw_mcp_lane(layout, context):
 # -- results ------------------------------------------------------------------
 
 
+def result_model_name(rec):
+    """The model a generation names: its saved label, else the loaded catalog's name.
+
+    A saved job listed after a restart keeps only its model ID; the catalog is
+    in memory, so drawing never shows an internal ID for a model it lists.
+    """
+    name = rec.meta.get("model_name")
+    if name:
+        return name
+    record = runtime.state.records.get(rec.model_id)
+    return record.name if record is not None and record.name else rec.model_id
+
+
 def _short_prompt(rec, limit=40):
     text = (
         rec.meta.get("prompt") or rec.meta.get("spark_look") or rec.meta.get("look") or ""
     ).strip()
     if not text:
-        text = rec.meta.get("model_name") or rec.model_id
+        text = result_model_name(rec)
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
@@ -683,13 +776,29 @@ def draw_result(layout, rec, *, collapsible=True):
     header.label(text=result_cost_label(rec))
     if collapsed:
         return
-    row = box.row(align=True)
-    row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
+    draw_result_model(box, rec)
+    # The composer's job card stays compact, without the error link.
+    draw_result_body(box, rec, error_link=collapsible)
+
+
+def draw_result_model(layout, rec):
+    """A generation's model, with Reload parameters when its lane has a form, and Details."""
+    row = layout.row(align=True)
+    row.label(text=result_model_name(rec), icon="NODE_MATERIAL")
     if generation.reload_lane(rec) is not None:
         reload = row.operator("scenario.reload_generation", text="", icon="FILE_REFRESH")
         reload.local_id = rec.local_id
     details = row.operator("scenario.result_details", text="", icon="INFO")
     details.local_id = rec.local_id
+
+
+def draw_result_body(box, rec, *, error_link=True, single_icon=True):
+    """Everything a generation's row draws below its model: asset ID, error, previews and actions.
+
+    The Results grid's large view reuses it, so a result offers the same
+    actions there; ``single_icon=False`` leaves out a preview row of one tile
+    that view already draws large.
+    """
     asset_id = _primary_asset(rec)
     if asset_id:
         row = box.row(align=True)
@@ -699,7 +808,7 @@ def draw_result(layout, rec, *, collapsible=True):
             row.label(text=f"+{len(rec.asset_ids) - 1}")
     if rec.error and not rec.is_success:
         draw_failure(box, f"Failed: {rec.error}")
-        if collapsible:  # the composer's job card stays compact
+        if error_link:
             prompts.draw_error_link(box, rec.error)
     elif rec.error:
         row = box.row(align=True)
@@ -707,7 +816,7 @@ def draw_result(layout, rec, *, collapsible=True):
         row.operator(
             "scenario.error_details", text="", icon="INFO"
         ).local_id = rec.local_id  # tooltip = full message; click = full text + copy
-    result_previews.draw(box, rec)
+    result_previews.draw(box, rec, single_icon=single_icon)
     job_recovery.draw_controls(box, rec)
     if rec.meta.get("download_errors"):
         box.label(
@@ -724,18 +833,23 @@ def draw_result(layout, rec, *, collapsible=True):
                 row.template_icon(icon_value=icon_id, scale=3.0)
             col = row.column(align=True)
             col.operator("scenario.show_image", text="View image", icon="ZOOM_ALL").filepath = path
-            col.operator_menu_enum(
+            use = col.operator_menu_enum(
                 "scenario.use_as_reference",
                 "target",
                 text="Use as reference",
                 icon="IMAGE_REFERENCE",
-            ).filepath = path
+            )
+            use.filepath = path
+            if shared:
+                use.local_id = rec.local_id  # its verified saved asset is reused, not uploaded
             col.operator(
                 "scenario.remove_background", text="Remove background", icon="MOD_MASK"
             ).filepath = path
             sub = col.row(align=True)
             sub.operator("scenario.apply_texture", text="Apply as texture").filepath = path
-            sub.operator("scenario.add_plane", text="Add as plane").filepath = path
+            # A shared row offering its receipt-bound image plane shows only that control.
+            if not (shared and "image_plane" in rec.meta.get("recovery_actions", ())):
+                sub.operator("scenario.add_plane", text="Add as plane").filepath = path
     elif rec.kind == "3d":
         primary = rec.meta.get("primary_mesh") or next(
             (p for p in rec.files if p.lower().endswith(MESH_EXTS)), ""
@@ -913,6 +1027,7 @@ def draw_blockout_tab(layout, context):
     box.prop(props, "density")
     row = box.row(align=True)
     row.prop(props, "tier", expand=True)
+    box.prop(props, "dress_scene")
     if item is None or item.action == "DESIGN":
         bo.draw_status(box, scene)
     bo.draw_price(box, scene)
@@ -1059,7 +1174,7 @@ def draw_active_job(layout, rec):
     box = layout.box()
     row = box.row(align=True)
     row.label(text=_short_prompt(rec, 44), icon=KIND_ICON.get(rec.kind, "TIME"))
-    model = rec.meta.get("model_name", rec.model_id)
+    model = result_model_name(rec)
     if rec.meta.get("shared_job"):
         draw_shared_status(box, rec, model)
     else:
@@ -1095,6 +1210,9 @@ class SCENARIO_PT_jobs(bpy.types.Panel):
         layout.operator(
             "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="FILE_REFRESH"
         )
+        spent = runtime.session_spend_label()
+        if spent:
+            layout.label(text=spent, icon="INFO")
         from . import blockout
 
         active = [r for r in runtime.state.jobs_view if not r.is_terminal]
@@ -1118,40 +1236,52 @@ class SCENARIO_PT_generations(bpy.types.Panel):
     bl_order = 2
 
     def draw(self, context):
-        layout = self.layout
-        row = layout.row(align=True)
-        row.operator("scenario.open_output_folder", text="Output folder", icon="FILE_FOLDER")
-        row.operator("scenario.history_refresh", text="Refresh cloud", icon="FILE_REFRESH")
-        terminal = [r for r in runtime.state.jobs_view if r.is_terminal]
-        if terminal:
-            any_open = any(not r.meta.get("collapsed") for r in terminal)
-            row.operator(
-                "scenario.collapse_results",
-                text="Collapse all" if any_open else "Expand all",
-                icon="FULLSCREEN_EXIT" if any_open else "FULLSCREEN_ENTER",
-            )
-        prompts.draw_rating_card(layout, context)
-        shown, shown_ids = 0, set()
-        for rec in runtime.state.jobs_view:
-            if not rec.is_terminal:
-                continue
+        draw_generations(self.layout, context, "SIDEBAR")
+
+
+def draw_generations(layout, context, surface):
+    """This session's results as a list or a grid, then the project's cloud history.
+
+    The sidebar's Generations panel and Studio's Results page (``surface``
+    ``SIDEBAR`` or ``STUDIO``) each keep their own List or Grid choice.
+    """
+    from . import result_grid
+
+    terminal = [r for r in runtime.state.jobs_view if r.is_terminal]
+    as_grid = result_grid.layout_of(context, surface) == "GRID"
+    row = layout.row(align=True)
+    row.operator("scenario.open_output_folder", text="Output folder", icon="FILE_FOLDER")
+    row.operator("scenario.history_refresh", text="Refresh cloud", icon="FILE_REFRESH")
+    if terminal and not as_grid:
+        any_open = any(not r.meta.get("collapsed") for r in terminal)
+        row.operator(
+            "scenario.collapse_results",
+            text="Collapse all" if any_open else "Expand all",
+            icon="FULLSCREEN_EXIT" if any_open else "FULLSCREEN_ENTER",
+        )
+    result_grid.draw_toggle(layout, context, surface)
+    prompts.draw_rating_card(layout, context)
+    if as_grid:
+        result_grid.draw(layout, context, terminal, surface)
+        # Every result is reachable through the grid's pages.
+        shown_ids = {rec.job_id for rec in terminal if rec.meta.get("shared_job")}
+    else:
+        shown_ids = set()
+        for rec in terminal[:PAGE_SIZE]:
             draw_result(layout, rec)
             if rec.meta.get("shared_job"):
                 shown_ids.add(rec.job_id)
-            shown += 1
-            if shown >= 12:
-                break
-        if shown == 0:
+        if not terminal:
             layout.label(text="Nothing generated yet in this session")
-        layout.separator()
-        layout.prop(
-            context.scene.scenario,
-            "show_cloud_history",
-            text="Project history (cloud)",
-            icon="WORLD",
-        )
-        if context.scene.scenario.show_cloud_history:
-            draw_history(layout, context, shown_ids)
+    layout.separator()
+    layout.prop(
+        context.scene.scenario,
+        "show_cloud_history",
+        text="Project history (cloud)",
+        icon="WORLD",
+    )
+    if context.scene.scenario.show_cloud_history:
+        draw_history(layout, context, shown_ids)
 
 
 class SCENARIO_PT_agents(bpy.types.Panel):

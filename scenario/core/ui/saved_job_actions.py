@@ -107,6 +107,14 @@ SINGLE_APPLY = {
 NOT_REUSE = frozenset({"restore_world", "retry_receipt"})
 # The Render Video first-frame review; ModelJobs projects its accepted assets.
 FIRST_FRAME_OPERATOR = "scenario.use_saved_first_frame"
+# The lane whose results lead with the first-frame handoff.
+FIRST_FRAME_LANE = "render_image"
+# One more background for the scene camera, or a new image plane, from one saved
+# result; ModelJobs projects the assets each accepts as `<action>_assets`.
+LANDINGS = {
+    "camera_background": ("scenario.set_saved_camera_background", "Set as camera background"),
+    "image_plane": ("scenario.add_saved_image_plane", "Add image plane"),
+}
 # Display names of the saved model formats `import_model` can offer.
 MODEL_FORMATS = {
     "glb": "GLB",
@@ -396,6 +404,27 @@ def _mesh_edits(view, action, job):
     return tuple(items)
 
 
+def _projected(view, action, operator, text, job, key):
+    """One control per asset the owner projected as `<key>_assets`.
+
+    Eligibility needs texture roles and receipts, so the owner projects the
+    accepted asset IDs; numbering still counts every saved asset.
+    """
+    accepted = frozenset(view.meta.get(f"{key}_assets", ()))
+    return tuple(
+        SavedJobAction(
+            f"{action}:{asset_id}",
+            action,
+            "apply",
+            f"{text} ({index})",
+            operator=operator,
+            properties=(*job, ("asset_id", asset_id)),
+        )
+        for index, asset_id in enumerate(view.asset_ids, 1)
+        if asset_id in accepted
+    )
+
+
 def _describe_action(action, view, job, result_types, review, workflow=None):
     if action == "recover_blockout":
         return _blockout(review, job)
@@ -458,21 +487,11 @@ def _describe_action(action, view, job, result_types, review, workflow=None):
             job,
         )
     if action == "use_first_frame":
-        # Eligibility needs texture roles and receipts, so the owner projects
-        # the accepted asset IDs; numbering still counts every saved asset.
-        accepted = frozenset(view.meta.get("first_frame_assets", ()))
-        return tuple(
-            SavedJobAction(
-                f"{action}:{asset_id}",
-                action,
-                "apply",
-                f"Use as video first frame ({index})",
-                operator=FIRST_FRAME_OPERATOR,
-                properties=(*job, ("asset_id", asset_id)),
-            )
-            for index, asset_id in enumerate(view.asset_ids, 1)
-            if asset_id in accepted
+        return _projected(
+            view, action, FIRST_FRAME_OPERATOR, "Use as video first frame", job, "first_frame"
         )
+    if action in LANDINGS:
+        return _projected(view, action, *LANDINGS[action], job, action)
     if action not in RECOVERY_GROUPS:
         raise ValueError(f"No saved-job control describes action {action!r}")
     return (
@@ -667,6 +686,12 @@ def describe(
         items.extend(
             _note("cloud_lookup", meta["cloud_lookup"], meta.get("cloud_lookup_icon", "INFO"))
         )
+    shown_lane = getattr(view, "lane", None)
+    if shown_lane in ("model", "workflow"):
+        shown_lane = meta.get("shown_lane")  # a job listed again after File > Open
+    if shown_lane == FIRST_FRAME_LANE and "use_first_frame" in actions:
+        # An approved Render Image still most often starts a Render Video: that control leads.
+        actions = ("use_first_frame", *(a for a in actions if a != "use_first_frame"))
     for action in actions:
         items.extend(_describe_action(action, view, job, result_types, blockout_review, workflow))
     items.extend(_hdri_prefills(view, job))

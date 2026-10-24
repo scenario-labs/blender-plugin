@@ -8,16 +8,9 @@ import pathlib
 import bpy
 
 from . import runtime
+from .image_plane import ensure_nodes, plane_material
 
 log = logging.getLogger("scenario.image")
-
-
-def _ensure_nodes(mat):
-    if bpy.app.version < (5, 0, 0):
-        mat.use_nodes = True
-    if mat.node_tree is None:  # very old files
-        mat.use_nodes = True
-    return mat.node_tree
 
 
 def load_image(path, pack=True):
@@ -85,7 +78,7 @@ def _fit_view(window, area):
 
 def material_with_image(name, image):
     mat = bpy.data.materials.new(name)
-    tree = _ensure_nodes(mat)
+    tree = ensure_nodes(mat)
     nodes, links = tree.nodes, tree.links
     bsdf = next((n for n in nodes if n.type == "BSDF_PRINCIPLED"), None) or nodes.new(
         "ShaderNodeBsdfPrincipled"
@@ -113,7 +106,8 @@ def apply_as_texture(obj, image):
     return mat
 
 
-def add_as_plane(context, image):
+def add_as_plane(context, image, *, alpha=False, unlit=False):
+    """A view-facing plane at the cursor; `alpha` wires the image's alpha, `unlit` emits it."""
     scene = context.scene
     width, height = image.size[0] or 1, image.size[1] or 1
     aspect = width / height
@@ -124,7 +118,8 @@ def add_as_plane(context, image):
     region = _first_region_3d(context)
     if region is not None:
         plane.rotation_euler = region.view_rotation.to_euler()
-    plane.data.materials.append(material_with_image(f"Scenario {image.name}", image))
+    material = plane_material(f"Scenario {image.name}", image, alpha=alpha, unlit=unlit)
+    plane.data.materials.append(material)
     _material_preview()
     return plane
 

@@ -11,6 +11,7 @@ import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, replace
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call, patch
@@ -733,12 +734,34 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertTrue(owner.status(item.record.intent.request_id)["delivery_paused"])
         self.assertFalse(self.downloads or self.paid)
 
-    def test_stale_origin_downloads_but_does_not_apply_or_resubmit(self):
+    def test_scene_edits_during_an_image_job_keep_its_automatic_import(self):
         self.result_fixture()
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        # A frame change, then any other scene update, revokes the job's scene revision.
+        scene = bpy.context.scene
+        scene.frame_set(scene.frame_current + 1)
+        owner.session.invalidate_scene(scene)
+        before = set(bpy.data.images)
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(len(set(bpy.data.images) - before), 1)
+        saved = self.store.get(result["local_id"])
+        # The import claimed the scene the job was sent from, not a revision of its content.
+        destination = saved.application_origin
+        self.assertTrue(submodule("core.jobs.origins").destination_only(destination))
+        self.assertEqual(destination.scene_id, saved.intent.origin.scene_id)
+        self.assertEqual(len(self.paid), 1)
+        self.assertEqual(len(self.downloads), 1)
+
+    def test_undo_during_an_image_job_downloads_but_does_not_apply_or_resubmit(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        owner.session.invalidate_all()  # Undo, Redo or file loading
         before = set(bpy.data.images)
         self.deliver_results()
         status = self.tools.job_status({"job_id": result["local_id"]})
@@ -747,6 +770,24 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.images), before)
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(len(self.downloads), 1)
+
+    def test_an_image_job_whose_scene_is_not_selected_waits_for_review(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        owner = self.runtime.state.model_jobs
+        owner.submissions[result["local_id"]].result(5)
+        first, window = bpy.context.scene, bpy.context.window
+        other = bpy.data.scenes.new("Selected while the job runs")
+        self.addCleanup(bpy.data.scenes.remove, other)
+        self.addCleanup(setattr, window, "scene", first)
+        window.scene = other
+        before = set(bpy.data.images)
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": result["local_id"]})
+        self.assertEqual(status["status"], "ready")
+        self.assertTrue(status["delivery_paused"])
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(len(self.paid), 1)
 
     def test_failed_download_stops_without_automatic_retry_or_paid_replay(self):
         self.result_fixture()
@@ -824,7 +865,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -1717,6 +1758,8 @@ class ModelGenerationTests(unittest.TestCase):
         session = self.runtime.ensure_job_session()
         with (
             patch.object(session, "submit", side_effect=self.origin_error("Fixture origin gone")),
+            # Only a cancellation that is not saved leaves the prepared job for review.
+            patch.object(session, "cancel_prepared", side_effect=self.storemod.StoreError("held")),
             self.assertRaises(self.origin_error),
         ):
             self.mcp_submit(quote)
@@ -1737,6 +1780,96 @@ class ModelGenerationTests(unittest.TestCase):
             ("prepared", False, False, False, ("cancel_prepared",)),
         )
         self.assertEqual(self.paid, [])
+
+    def test_a_generation_blender_could_not_queue_is_canceled_and_priced_again(self):
+        refresh = submodule("core.jobs.quote_refresh")
+        props = submodule("blender.props")
+        workers = submodule("core.jobs.workers")
+        self.ui_quote()
+        owner = self.runtime.state.model_jobs
+        with patch.object(
+            owner.session._workers, "submit", side_effect=workers.WorkerError("Job queue is full")
+        ):
+            with self.assertRaisesRegex(self.generation.PriceRefreshing, "nothing was sent"):
+                self.generation.submit_generation(bpy.context, "image")
+        # The intent was saved, then canceled because nothing could ever send it.
+        (record,) = self.store.records()
+        self.assertEqual(record.state, self.storemod.JobState.CANCELED)
+        self.assertNotIn(record.intent.request_id, owner.views)
+        self.assertFalse(owner.imports_automatically(record.intent.request_id))
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.NOT_QUEUED)
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_full_session_refuses_generate_before_saving_an_intent(self):
+        self.ui_quote()
+        quote = self.mcp_quote()
+        session = self.runtime.state.model_jobs.session
+        with patch.object(session, "_completion_limit", 0):
+            with self.assertRaisesRegex(self.generation.PriceRefreshing, "nothing was sent"):
+                self.generation.submit_generation(bpy.context, "image")
+            with self.assertRaisesRegex(self.request_error, "nothing was sent"):
+                self.mcp_submit(quote)
+        self.assertEqual((self.store.records(), self.paid), ((), []))
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+
+    def test_an_expired_price_says_so_and_is_priced_again_without_saving(self):
+        refresh = submodule("core.jobs.quote_refresh")
+        props = submodule("blender.props")
+        self.ui_quote()
+        ticket = self.runtime.state.estimates[self.lane.estimate_key]
+        coordinator = self.runtime.state.model_jobs.session._coordinator
+        # Generate after the quote's two minutes, as when a ready price is left waiting.
+        with patch.object(
+            coordinator, "_clock", return_value=ticket.quote.estimate.issued_at + 121
+        ):
+            with self.assertRaisesRegex(
+                self.generation.PriceRefreshing,
+                "^This price expired; nothing was sent; Generate again once the new price shows$",
+            ):
+                self.generation.submit_generation(bpy.context, "image")
+        self.assertEqual((self.store.records(), self.paid), ((), []))
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.EXPIRED)
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.generation.submit_generation(bpy.context, "image")
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_refused_price_names_its_cause_and_saves_nothing(self):
+        coordinator_module = submodule("core.jobs.coordinator")
+        changed = coordinator_module.QuoteError(
+            "A captured input changed; inspect the upload and estimate again"
+        )
+        twin = coordinator_module.DuplicateRequestError("0123456789abcdef" * 2)
+        for name, error in (
+            ("_validate_mesh_bindings", changed),
+            ("_refuse_unconfirmed_twin", twin),
+        ):
+            with self.subTest(refusal=name):
+                self.ui_quote()
+                coordinator = self.runtime.state.model_jobs.session._coordinator
+                with patch.object(coordinator, name, side_effect=error):
+                    if error is changed:
+                        with self.assertRaisesRegex(
+                            self.generation.PriceRefreshing,
+                            "^This price no longer applies; nothing was sent",
+                        ):
+                            self.generation.submit_generation(bpy.context, "image")
+                        self.assertEqual(self.lane.estimate_state, "PENDING")
+                    else:
+                        # A new price cannot clear an unconfirmed twin: the form names it.
+                        with self.assertRaisesRegex(self.request_error, "^An identical request"):
+                            self.generation.submit_generation(bpy.context, "image")
+                        self.assertEqual(self.lane.estimate_state, "ERROR")
+                        self.assertEqual(self.lane.estimate_error, str(twin))
+                self.assertEqual((self.store.records(), self.paid), ((), []))
 
     def test_pump_redraws_on_projected_progress_change_and_not_on_idle_ticks(self):
         pump = submodule("blender.pump")
@@ -2518,6 +2651,98 @@ class ModelGenerationTests(unittest.TestCase):
             bpy.ops.scenario.generate(lane="image")
         self.assertEqual(len(self.paid), 1)
 
+    def generate_operator(self):
+        """Generate as its button runs it (invoke, then execute), with a recording confirmation."""
+        cls = submodule("blender.operators").SCENARIO_OT_generate
+        operator = SimpleNamespace(lane="image", report=MagicMock())
+        operator.execute = lambda context: cls.execute(operator, context)
+        confirm = MagicMock(return_value={"RUNNING_MODAL"})
+        context = SimpleNamespace(
+            scene=bpy.context.scene, window_manager=SimpleNamespace(invoke_confirm=confirm)
+        )
+        return cls, operator, context, confirm
+
+    def test_generate_stays_out_of_repeat_last_and_the_operator_history(self):
+        # Blender keeps only REGISTER operators there; Repeat Last would spend without a click.
+        cls = submodule("blender.operators").SCENARIO_OT_generate
+        self.assertFalse({"REGISTER", "UNDO"} & set(cls.bl_options), cls.bl_options)
+
+    def test_generate_at_or_below_the_threshold_submits_without_a_dialog(self):
+        self.dry_run_costs[self.model["id"]] = "500"
+        self.ui_quote()
+        cls, operator, context, confirm = self.generate_operator()
+        self.assertEqual(cls.invoke(operator, context, None), {"FINISHED"})
+        self.settle()
+        confirm.assert_not_called()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_generate_above_the_threshold_names_the_model_and_exact_price_first(self):
+        self.dry_run_costs[self.model["id"]] = "500.5"
+        self.ui_quote()
+        cls, operator, context, confirm = self.generate_operator()
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        confirm.assert_called_once_with(
+            operator,
+            None,
+            title="Generate with Shared image?",
+            message="Exact price: 500.5 CU",
+            confirm_text="Generate",
+        )
+        self.settle()
+        self.assertEqual((self.paid, self.lane.estimate_state), ([], "READY"))
+        # Generate in the dialog spends the quote it named, once.
+        self.assertEqual(cls.execute(operator, context), {"FINISHED"})
+        self.settle()
+        self.assertEqual(len(self.paid), 1)
+
+    def test_a_price_that_changed_under_the_dialog_is_refused_without_spending(self):
+        self.dry_run_costs[self.model["id"]] = "500.5"
+        self.ui_quote()
+        cls, operator, context, confirm = self.generate_operator()
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        # Repriced while the dialog is open: the dialog names a price the form no longer offers.
+        self.dry_run_costs[self.model["id"]] = "600"
+        self.ui_quote()
+        self.assertEqual(cls.execute(operator, context), {"CANCELLED"})
+        operator.report.assert_called_once_with({"ERROR"}, self.generation.PRICE_CHANGED)
+        self.settle()
+        self.assertEqual(self.paid, [])
+        # The new price stays on the form to review and generate again.
+        self.assertEqual(self.lane.estimate_state, "READY")
+        self.assertEqual(self.lane.estimate_cu, 600.0)
+
+    def test_a_zero_threshold_confirms_every_generate(self):
+        saved = self.prefs.confirm_above_cu
+        self.addCleanup(setattr, self.prefs, "confirm_above_cu", saved)
+        self.prefs.confirm_above_cu = 0
+        self.ui_quote()
+        cls, operator, context, confirm = self.generate_operator()
+        self.assertEqual(cls.invoke(operator, context, None), {"RUNNING_MODAL"})
+        message = confirm.call_args.kwargs["message"]
+        self.assertEqual(message, "Exact price: 0.1234567890123456789 CU")
+        self.assertEqual(self.paid, [])
+
+    def test_jobs_panel_totals_the_exact_quotes_of_accepted_jobs_only(self):
+        # A lost response has no job to count yet, though Scenario may have run it.
+        self.lose_response = True
+        self.mcp_submit(self.mcp_quote(prompt="a lamp"), prompt="a lamp")
+        self.settle()
+        self.lose_response = False
+        self.assertEqual(self.runtime.session_spend_label(), "")
+        self.ui_quote()
+        self.assertEqual(bpy.ops.scenario.generate(lane="image"), {"FINISHED"})
+        self.settle()
+        spend = self.runtime.state.session_spend
+        self.assertEqual(spend.snapshot(), (Decimal("0.1234567890123456789"), 1))
+        _, jobs, _, _ = draw_job_panels()
+        self.assertIn("This session: 0.123 CU across 1 job", drawn_texts(jobs))
+        # An agent's accepted job in this Blender counts too.
+        self.mcp_submit(self.mcp_quote(prompt="a chair"), prompt="a chair")
+        self.settle()
+        self.assertEqual(spend.snapshot(), (Decimal("0.2469135780246913578"), 2))
+        self.assertEqual(self.runtime.session_spend_label(), "This session: 0.247 CU across 2 jobs")
+        self.assertEqual(len(self.paid), 3)
+
     def test_confirmed_receipt_clears_transient_submission_warning(self):
         self.ui_quote()
         self.release.clear()
@@ -2548,21 +2773,106 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.records()[0].state, self.storemod.JobState.PREPARED)
         self.assertEqual(self.paid, [])
 
-    def test_rejected_ui_quote_requires_explicit_repricing(self):
+    def test_generate_after_a_scene_change_prices_the_form_again(self):
+        panels = submodule("blender.panels")
+        props = submodule("blender.props")
+        refresh = submodule("core.jobs.quote_refresh")
         self.ui_quote()
+        ticket = self.runtime.state.estimates[self.lane.estimate_key]
         self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
-        with self.assertRaises(self.request_error):
-            self.generation.submit_generation(bpy.context, "image")
-        self.assertEqual(self.lane.estimate_state, "ERROR")
-        self.assertNotIn(self.lane.estimate_key, self.runtime.state.estimates)
+        # Generate before the pump noticed: a warning, not an error the form keeps.
+        self.assertEqual(bpy.ops.scenario.generate(lane="image"), {"CANCELLED"})
+        self.assertEqual(self.lane.last_error, "")
+        self.assertEqual((self.store.records(), self.paid), ((), []))
+        self.assertNotIn(ticket.identifier, self.runtime.state.model_jobs.quotes)
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(panels.generate_button_text(self.lane), "Generate  (estimating...)")
+        self.assertFalse(panels.generate_enabled(self.lane, "image"))
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.SCENE_CHANGED)
+        layout = MagicMock()
+        panels.draw_generate_row(layout, self.lane, "image")
+        layout.label.assert_any_call(text=refresh.SCENE_CHANGED, icon="TIME")
+        self.assertEqual(
+            submodule("blender.composer.draw").status_note(self.lane), refresh.SCENE_CHANGED
+        )
         with self.assertRaisesRegex(self.request_error, "fresh price"):
             self.generation.submit_generation(bpy.context, "image")
-        self.assertEqual(self.store.records(), ())
-        self.assertEqual(self.paid, [])
-        self.ui_quote()
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.assertEqual(self.generation.repricing_note(state), "")
+        self.assertTrue(panels.generate_enabled(state, "image"))
         self.generation.submit_generation(bpy.context, "image")
         self.settle()
         self.assertEqual(len(self.paid), 1)
+
+    def test_the_pump_prices_again_a_price_the_scene_changed_after(self):
+        pump = submodule("blender.pump")
+        props = submodule("blender.props")
+        self.ui_quote()
+        session = self.runtime.state.job_session
+        dry_runs = len(self.dry_runs())
+        start = props.clock()
+        session.invalidate_scene(bpy.context.scene)
+        with patch.object(props, "clock", return_value=start):
+            pump._process()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertFalse(self.runtime.state.estimates)
+        # While the scene keeps changing, as in a drag or playback, nothing is requested.
+        for step in range(1, 6):
+            session.invalidate_scene(bpy.context.scene)
+            with patch.object(props, "clock", return_value=start + step):
+                pump._process()
+            self.assertEqual(self.lane.estimate_key, "")
+        self.assertEqual(len(self.dry_runs()), dry_runs)
+        with patch.object(props, "clock", return_value=start + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
+        self.assertEqual(len(self.dry_runs()), dry_runs + 1)
+        self.assertEqual(self.runtime.state.reprices, {})
+
+    def test_the_pump_redraws_when_a_requested_price_arrives_and_not_on_idle_ticks(self):
+        pump = submodule("blender.pump")
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.lane.estimate_dirty_at = 0.0  # requested: nothing waits for the debounce
+        # Hold the answered quote back so the ticks before its delivery can be compared.
+        held = dict(self.runtime.state.model_previews)
+        for ticket in held.values():
+            ticket.task.result(5)
+        self.runtime.state.model_previews.clear()
+        with patch.object(pump, "redraw") as redraw:
+            pump._process()
+            redraw.reset_mock()
+            for _ in range(3):
+                pump._process()
+            self.assertEqual(self.lane.estimate_state, "PENDING")
+            redraw.assert_not_called()
+            # The tick delivers the price in context maintenance, outside its own steps;
+            # the Generate button and the composer said "estimating" until something redrew.
+            self.runtime.state.model_previews.update(held)
+            pump._process()
+            self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+            redraw.assert_called_once()
+            for _ in range(3):
+                pump._process()
+            redraw.assert_called_once()
+
+    def test_a_price_revoked_while_it_is_requested_is_requested_again(self):
+        props = submodule("blender.props")
+        refresh = submodule("core.jobs.quote_refresh")
+        self.generation.request_estimate(bpy.context.scene, "image")
+        self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The worker may refuse the changed origin itself.
+        self.runtime.sync_catalog_context()
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.SCENE_CHANGED)
+        with patch.object(props, "clock", return_value=props.clock() + 10):
+            state = self.pump_until_priced()
+        self.assertEqual(state.estimate_state, "READY", state.estimate_error)
 
     def test_lost_ui_intent_receipt_clears_ready_price_without_replay(self):
         self.ui_quote()
@@ -2697,8 +3007,9 @@ class ModelGenerationTests(unittest.TestCase):
     def test_scene_change_and_retired_credentials_reject_quotes(self):
         quote = self.mcp_quote()
         self.runtime.state.job_session.invalidate_scene(bpy.context.scene)
-        with self.assertRaises((self.request_error, self.origin_error)):
+        with self.assertRaisesRegex(self.request_error, "scene changed after this estimate"):
             self.mcp_submit(quote)
+        self.assertEqual(self.store.records(), ())
         quote = self.mcp_quote()
         self.prefs.api_secret = "other-synthetic-secret"
         with self.assertRaises((self.request_error, self.origin_error)):
@@ -3335,15 +3646,19 @@ class ModelGenerationTests(unittest.TestCase):
             self.generation.submit_generation(bpy.context, "render_image")
         self.assertEqual(self.paid, [])
 
-    def recovered_media(self):
+    def recovered_media(self, *, video=False):
         from test_media_application import wav_bytes
 
-        self.result_bytes, self.result_media_type = wav_bytes(), "audio/wav"
+        if video:
+            data = (FIXTURES / "synthetic/video-six-frames.mp4").read_bytes()
+            self.result_bytes, self.result_media_type = data, "video/mp4"
+        else:
+            self.result_bytes, self.result_media_type = wav_bytes(), "audio/wav"
         self.remote_status = "success"
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -3405,6 +3720,310 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Media insertion was not started"):
             bpy.ops.scenario.import_saved_media(**args)
 
+    def prepare_landing(self, request_id, purpose, **options):
+        args = self.recovery_args(request_id, purpose)
+        del args["action"]
+        args.update(purpose=purpose, asset_id="result-image", **options)
+        return self.tools.prepare_result_application(args)
+
+    def landing_camera(self, name="Landing camera"):
+        scene = bpy.context.scene
+        camera = bpy.data.objects.new(name, bpy.data.cameras.new(name))
+        scene.collection.objects.link(camera)
+        scene.camera = camera
+        return camera
+
+    def test_saved_image_becomes_one_more_camera_background_without_spending(self):
+        request_id = self.recovered_images()
+        camera = self.landing_camera()
+        camera.data.background_images.new().alpha = 0.9
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertIn("camera_background", status["actions"])
+        approval = self.prepare_landing(request_id, "camera_background")
+        self.assertEqual(
+            (approval["purpose"], approval["kind"], approval["camera"]),
+            ("camera_background", "image", camera.name),
+        )
+        self.assertEqual((approval["backgrounds_kept"], approval["frame"]), (1, None))
+        self.assertEqual(len(camera.data.background_images), 1)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        kept, added = camera.data.background_images
+        self.assertAlmostEqual(kept.alpha, 0.9)
+        self.assertEqual(added.source, "IMAGE")
+        self.assertTrue(camera.data.show_background_images)
+        self.assertEqual(status["images"], [added.image.name])
+        # The first landing applies the waiting job; only a reuse is a labelled claim.
+        self.assertEqual(status["local_applications"], [])
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        with self.assertRaises(self.request_error):
+            self.tools.apply_result_application(self.import_args(approval))
+        # Reuse adds another background after a new review, never another generation.
+        again = self.prepare_landing(request_id, "camera_background")
+        self.assertTrue(again["reuse"])
+        status = self.finish_application(again)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["local_applications"][0]["purpose"], "images")
+        self.assertEqual(len(camera.data.background_images), 3)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_camera_background_without_a_scene_camera_is_refused_before_any_claim(self):
+        request_id = self.recovered_images()
+        bpy.context.scene.camera = None
+        original = self.store.get(request_id)
+        with self.assertRaisesRegex(self.request_error, "no camera"):
+            self.prepare_landing(request_id, "camera_background")
+        self.assertFalse(self.runtime.state.model_jobs._application_approvals)
+        self.assertEqual(self.store.get(request_id), original)
+        with self.assertRaisesRegex(ValueError, "plane_unlit applies only"):
+            self.prepare_landing(request_id, "camera_background", plane_unlit=True)
+        recovery = submodule("blender.job_recovery")
+        args = self.recovery_args(request_id, "camera_background")
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            report=MagicMock(),
+        )
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=MagicMock())
+        operator = recovery.SCENARIO_OT_set_saved_camera_background
+        self.assertEqual(operator.invoke(fake, context, None), {"CANCELLED"})
+        (kinds, message), _ = fake.report.call_args
+        self.assertEqual(kinds, {"ERROR"})
+        self.assertIn("No background added", message)
+        self.assertIn("no camera", message)
+        context.window_manager.invoke_props_dialog.assert_not_called()
+        self.assertEqual(self.store.get(request_id), original)
+
+    def test_saved_video_background_starts_its_clip_at_the_reviewed_frame(self):
+        request_id = self.recovered_media(video=True)
+        camera = self.landing_camera()
+        bpy.context.scene.frame_set(12)
+        actions = self.tools.job_status({"job_id": request_id})["actions"]
+        self.assertIn("camera_background", actions)
+        self.assertNotIn("image_plane", actions)
+        approval = self.prepare_landing(request_id, "camera_background")
+        self.assertEqual((approval["kind"], approval["frame"]), ("video", 12))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        (background,) = camera.data.background_images
+        self.assertEqual((background.source, background.clip.frame_start), ("MOVIE_CLIP", 12))
+        self.assertEqual(status["local_applications"], [])
+        # A reuse of the applied video is claimed under the media label.
+        again = self.prepare_landing(request_id, "camera_background")
+        self.assertTrue(again["reuse"])
+        status = self.finish_application(again)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["local_applications"][0]["purpose"], "media")
+        self.assertEqual(len(camera.data.background_images), 2)
+
+    def test_a_camera_change_during_verification_adds_no_background(self):
+        request_id = self.recovered_images()
+        camera = self.landing_camera()
+        approval = self.prepare_landing(request_id, "camera_background")
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        other = self.landing_camera("Other camera")
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertEqual(
+            (len(camera.data.background_images), len(other.data.background_images)), (0, 0)
+        )
+
+    def test_saved_image_plane_uses_its_alpha_unlit_at_the_reviewed_cursor(self):
+        from test_apply_image import linked, png
+
+        request_id = self.recovered_panorama(data=png(alpha=True))
+        bpy.context.scene.cursor.location = (1, 2, 3)
+        objects = set(bpy.data.objects)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        owner = self.runtime.state.model_jobs
+        with self.assertRaisesRegex(self.request_error, "Unlit applies only"):
+            owner.prepare_landing_application(
+                request_id,
+                self.store.get(request_id).revision,
+                bpy.context.scene,
+                "result-image",
+                purpose="camera_background",
+                unlit=True,
+            )
+        approval = self.prepare_landing(request_id, "image_plane", plane_unlit=True)
+        self.assertEqual((approval["cursor"], approval["plane_unlit"]), ([1.0, 2.0, 3.0], True))
+        self.assertEqual(set(bpy.data.objects), objects)
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        (plane,) = set(bpy.data.objects) - objects
+        self.assertEqual(status["objects"], [plane.name])
+        self.assertEqual(tuple(plane.location), (1.0, 2.0, 3.0))
+        material = plane.data.materials[0]
+        self.assertEqual(status["materials"], [material.name])
+        self.assertEqual(material.surface_render_method, "BLENDED")
+        self.assertEqual(linked(material.node_tree, "MIX_SHADER", "Fac").type, "TEX_IMAGE")
+        self.assertIsNotNone(linked(material.node_tree, "EMISSION", "Color"))
+        self.assertEqual(status["local_applications"], [])
+        # A second plane reuses the applied image under the images label.
+        again = self.prepare_landing(request_id, "image_plane", plane_unlit=True)
+        self.assertTrue(again["reuse"])
+        status = self.finish_application(again)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(status["local_applications"][0]["purpose"], "images")
+        self.assertEqual(len(set(bpy.data.objects) - objects), 2)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_a_cursor_change_during_verification_adds_no_plane(self):
+        request_id = self.recovered_images()
+        objects = set(bpy.data.objects)
+        approval = self.prepare_landing(request_id, "image_plane")
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        result = deferred.run()
+        bpy.context.scene.cursor.location = (9, 9, 9)
+        status = deferred.finish(result)
+        self.assertEqual(status["status"], "ready", status)
+        self.assertTrue(status["error"])
+        self.assertEqual(set(bpy.data.objects), objects)
+
+    def test_native_plane_review_revises_unlit_under_a_new_handle(self):
+        request_id = self.recovered_images()
+        args = self.recovery_args(request_id, "image_plane")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_add_saved_image_plane
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        self.assertFalse(owner._application_approvals[fake.application_id].unlit)
+        snapshot = dict(vars(fake))
+        operator.draw(fake, context)
+        self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared values.
+        fake.layout.prop.assert_called_once_with(fake, "unlit")
+        labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+        self.assertTrue(set(recovery.PLANE_REVIEW) <= set(labels))
+        self.assertLessEqual(max(len(label) for label in labels), 66)
+        first = fake.application_id
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(fake.application_id, first)  # Unchanged options keep the handle.
+        fake.unlit = True
+        self.assertTrue(operator.check(fake, context))
+        self.assertNotIn(first, owner._application_approvals)
+        self.assertTrue(owner._application_approvals[fake.application_id].unlit)
+        objects = set(bpy.data.objects)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        (plane,) = set(bpy.data.objects) - objects
+        self.assertIsNotNone(
+            next(
+                node for node in plane.data.materials[0].node_tree.nodes if node.type == "EMISSION"
+            )
+        )
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+
+    def test_native_plane_ok_adds_the_unlit_choice_shown_after_a_failed_check(self):
+        request_id = self.recovered_images()
+        args = self.recovery_args(request_id, "image_plane")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_add_saved_image_plane
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        fake.unlit = True
+        self.assertTrue(operator.check(fake, context))
+        self.assertTrue(owner._application_approvals[fake.application_id].unlit)
+        # Turning Unlit off again while the exchange fails leaves the unlit approval.
+        fake.unlit = False
+        with patch.object(
+            self.runtime, "revise_landing_application", side_effect=RuntimeError("synthetic")
+        ):
+            self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertTrue(owner._application_approvals[fake.application_id].unlit)
+        objects = set(bpy.data.objects)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        (plane,) = set(bpy.data.objects) - objects
+        nodes = plane.data.materials[0].node_tree.nodes
+        self.assertFalse(any(node.type == "EMISSION" for node in nodes))
+
+    def test_native_model_ok_keeps_the_saved_size_shown_after_a_failed_check(self):
+        request_id = self.recovered_model()
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+            target_size=1.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        fake.use_target_size, fake.target_size = True, 0.5
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(owner._application_approvals[fake.application_id].target_size, 0.5)
+        # Turning the longest side off while the exchange fails leaves 0.5 m approved.
+        fake.use_target_size = False
+        with patch.object(
+            self.runtime, "revise_model_application", side_effect=RuntimeError("synthetic")
+        ):
+            self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertEqual(owner._application_approvals[fake.application_id].target_size, 0.5)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        self.assertEqual(tuple(bpy.data.objects[summary["root"]].scale), (1.0, 1.0, 1.0))
+        self.assertIsNone(summary["target_size_m"])
+
+    def test_a_shared_image_row_drops_the_unbound_plane_button_for_its_reviewed_one(self):
+        self.result_fixture()
+        result = self.mcp_submit(self.mcp_quote())
+        self.deliver_results()
+        request_id = result["local_id"]
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
+        view = self.runtime.state.model_jobs.views[request_id]
+        self.assertEqual(view.kind, "image")
+        self.assertIn("image_plane", view.meta["recovery_actions"])
+        _, _, generations, listed = draw_job_panels()
+        self.assertTrue(any(row is view for row in listed))
+        texts = drawn_texts(generations)
+        self.assertIn("Apply as texture", texts)
+        self.assertNotIn("Add as plane", texts)
+
     def recovered_model(self, body=None):
         from helpers import FIXTURES
 
@@ -3430,7 +4049,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -3558,6 +4177,201 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.objects), objects)
         # A valid review still works afterwards.
         self.assertEqual(self.prepare_model(request_id, target_size_m=2)["target_size_m"], 2.0)
+
+    def test_native_model_review_scales_to_a_longest_side_in_one_undo_step(self):
+        request_id = self.recovered_model()
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+            target_size=1.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+        original = owner._application_approvals[fake.application_id]
+        # Off by default: the review keeps the saved size.
+        self.assertEqual((fake.use_target_size, original.target_size), (False, None))
+
+        def drawn():
+            fake.layout = MagicMock()
+            snapshot = dict(vars(fake))
+            operator.draw(fake, context)
+            self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared values.
+            row = fake.layout.row.return_value
+            props = [call.args[1] for call in row.prop.call_args_list]
+            props += [call.args[1] for call in row.row.return_value.prop.call_args_list]
+            self.assertEqual(props, ["use_target_size", "target_size"])
+            labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+            self.assertLessEqual(max(len(label) for label in labels), 66)
+            return labels
+
+        self.assertNotIn(recovery.TARGET_SIZE_REVIEW, drawn())
+        first = fake.application_id
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(fake.application_id, first)  # Unchanged options keep the handle.
+        fake.use_target_size, fake.target_size = True, 0.5
+        self.assertTrue(operator.check(fake, context))
+        self.assertNotIn(first, owner._application_approvals)
+        revised = owner._application_approvals[fake.application_id]
+        self.assertEqual(revised.target_size, 0.5)
+        self.assertEqual(
+            (revised.destination, revised.cursor, revised.unit, revised.max_points),
+            (original.destination, original.cursor, original.unit, None),
+        )
+        self.assertIn(recovery.TARGET_SIZE_REVIEW, drawn())
+        with self.assertRaises(self.request_error):
+            self.runtime.apply_saved_result(args["context_id"], first)
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        history = self.model_history()
+        self.assertEqual(bpy.ops.ed.undo_push(message="Fixture prior state"), {"FINISHED"})
+        with history:
+            self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+            self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        root_name = summary["root"]
+        self.assertEqual(tuple(bpy.data.objects[root_name].scale), (0.5, 0.5, 0.5))
+        self.assertEqual((summary["target_size_m"], summary["scale"]), (0.5, 0.5))
+        self.assertEqual(summary["dimensions_m"], [0.5, 0.0, 0.5])
+        self.assertEqual(summary["bottom_z_m"], 6.0)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+        # One Undo removes the scaled group; the scaling is not a separate step.
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertNotIn(root_name, {obj.name for obj in bpy.data.objects})
+        self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
+        self.assertEqual(tuple(bpy.data.objects[root_name].scale), (0.5, 0.5, 0.5))
+
+    def test_native_import_of_an_edit_lands_on_its_source_at_its_size(self):
+        # Providers normalize sizes; a retexture of a 3 m mesh should still be 3 m.
+        self.model["id"] = "model_meshy-7-retexture"
+        bpy.context.scene.scenario.edit3d_task = "RETEXTURE"
+        request_id, source = self.captured_source_result(scale=(1.5, 1.5, 1.5))
+        source.location = (3, -2, 1)
+        bpy.context.scene.cursor.location = (4, 5, 6)
+        bpy.context.view_layer.update()
+        args = self.recovery_args(request_id, "import_model")
+        recovery = submodule("blender.job_recovery")
+        operator = recovery.SCENARIO_OT_import_saved_model
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            asset_id="result-image",
+            layout=MagicMock(),
+            report=MagicMock(),
+            target_size=1.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(scene=bpy.context.scene, window_manager=wm)
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        owner = self.runtime.state.model_jobs
+
+        def approval():
+            return owner._application_approvals[fake.application_id]
+
+        def drawn():
+            fake.layout = MagicMock()
+            operator.draw(fake, context)
+            return [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
+
+        # On by default for a shape-keeping edit, showing where and how large.
+        self.assertTrue(fake.match_source)
+        self.assertEqual(approval().source.name, source.name)
+        self.assertEqual((approval().match_source, approval().target_size), (True, 3.0))
+        for value, expected in zip(approval().placement, (3, -2, -0.5), strict=True):
+            self.assertAlmostEqual(value, expected, places=5)
+        labels = drawn()
+        self.assertIn("Place model bottom on the edited mesh: 3.000, -2.000, -0.500", labels)
+        self.assertIn("Longest side: 3.000, like the edited mesh.", labels)
+        self.assertLessEqual(max(len(label) for label in labels), 66)
+        # Turning it off goes back to the cursor and the saved size.
+        fake.match_source = False
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual((approval().match_source, approval().target_size), (False, None))
+        self.assertEqual(approval().placement, (4, 5, 6))
+        self.assertIn("Place model bottom at cursor: 4.000, 5.000, 6.000", drawn())
+        with self.assertRaises(self.request_error):
+            owner.revise_model_application(fake.application_id, target_size=2, match_source=True)
+        fake.match_source = True
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        summary = status["model_import"]
+        self.assertEqual((summary["target_size_m"], summary["scale"]), (3.0, 3.0))
+        low, high = self.group_bounds(status["objects"])
+        for value, expected in zip(
+            ((low[0] + high[0]) / 2, (low[1] + high[1]) / 2, low[2]), (3, -2, -0.5), strict=True
+        ):
+            self.assertAlmostEqual(value, expected, places=4)
+        self.assertAlmostEqual(max(b - a for a, b in zip(low, high, strict=True)), 3.0, places=4)
+        # The cursor and the source stay where they were.
+        self.assertEqual(tuple(bpy.context.scene.cursor.location), (4, 5, 6))
+        self.assertEqual(tuple(source.location), (3, -2, 1))
+
+    def test_import_without_a_live_source_offers_no_match(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        owner = self.runtime.state.model_jobs
+        ticket = owner._application_approvals[approval["application_id"]]
+        self.assertIsNone(ticket.source)
+        with self.assertRaises(self.request_error):
+            owner.revise_model_application(ticket.identifier, match_source=True)
+        self.assertIn(ticket.identifier, owner._application_approvals)
+
+    def test_native_model_review_without_a_size_keeps_an_mcp_reviewed_size(self):
+        # Confirming a review prepared elsewhere never rewrites its approved size.
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id, target_size_m=0.5)
+        args = self.import_args(approval)
+        args.update(
+            request_id=request_id,
+            expected_revision=approval["revision"],
+            asset_id=approval["asset_id"],
+        )
+        self.assertEqual(bpy.ops.scenario.import_saved_model(**args), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["model_import"]["target_size_m"], 0.5, status)
+
+    def test_revising_a_model_review_checks_the_size_and_unit_options(self):
+        request_id = self.recovered_model()
+        approval = self.prepare_model(request_id)
+        owner = self.runtime.state.model_jobs
+        identifier = approval["application_id"]
+        for options in (
+            {"target_size": 0},
+            {"target_size": 1001},
+            {"target_size": float("nan")},
+            {"max_points": 250000},
+            {"axes": "OPENGL"},
+        ):
+            with self.subTest(options=options), self.assertRaises(self.request_error):
+                owner.revise_model_application(identifier, **options)
+        self.assertIn(identifier, owner._application_approvals)
+        revised = owner.revise_model_application(identifier, target_size=2)
+        self.assertEqual(revised.target_size, 2.0)
+        self.assertNotIn(identifier, owner._application_approvals)
+        # Clearing the size keeps the saved size under another new handle.
+        cleared = owner.revise_model_application(revised.identifier)
+        self.assertIsNone(cleared.target_size)
+        self.assertNotEqual(cleared.identifier, revised.identifier)
 
     def test_shared_animated_model_import_retains_rig_and_clips_without_more_requests(self):
         request_id = self.recovered_model(animated_glb())
@@ -3944,7 +4758,7 @@ class ModelGenerationTests(unittest.TestCase):
         result = self.mcp_submit(self.mcp_quote())
         owner = self.runtime.state.model_jobs
         owner.submissions[result["local_id"]].result(5)
-        owner.session.invalidate_scene(bpy.context.scene)
+        owner.session.invalidate_all()  # Undo: the automatic image import stops for review
         self.deliver_results()
         self.runtime.state.reset()
         self.runtime.inspect_model_jobs()
@@ -5224,11 +6038,24 @@ class ModelGenerationTests(unittest.TestCase):
         bpy.ops.mesh.primitive_cube_add()
         return self.recovered_images()
 
-    def prepare_material(self, request_id):
+    def prepare_material(self, request_id, **options):
         args = self.recovery_args(request_id, "apply_material")
         del args["action"]
         args["purpose"] = "material"
+        args.update(options)
         return self.tools.prepare_result_application(args)
+
+    @staticmethod
+    def plane_without_uvs(size=40.0):
+        bpy.ops.mesh.primitive_plane_add(size=size, calc_uvs=False)
+        plane = bpy.context.active_object
+        bpy.context.view_layer.update()
+        return plane
+
+    @staticmethod
+    def mapping_scale(material):
+        (mapping,) = [node for node in material.node_tree.nodes if node.type == "MAPPING"]
+        return tuple(round(value, 5) for value in mapping.inputs["Scale"].default_value)
 
     def test_material_actions_require_the_same_supported_texture_set_as_approval(self):
         request_id = self.recovered_material()
@@ -5242,7 +6069,7 @@ class ModelGenerationTests(unittest.TestCase):
                 proposed = replace(record, results=(changed,))
                 self.assertEqual(
                     "apply_material" in owner.actions(proposed),
-                    media_type in {"image/png", "image/exr", "image/x-exr"},
+                    media_type in {"image/png", "image/jpeg", "image/exr", "image/x-exr"},
                 )
         invalid_sets = (
             (replace(albedo, receipt=None),),
@@ -5352,6 +6179,29 @@ class ModelGenerationTests(unittest.TestCase):
             self.prepare_saved_world(request_id, "result-map-0")
         self.assertEqual(self.store.get(request_id), before)
         self.assertFalse(owner._application_approvals)
+
+    def test_one_jpeg_base_texture_lands_as_a_material_not_an_image_import(self):
+        # A seamless texture model's single JPEG: Apply saved material is its landing.
+        self.result_bytes = self.image_bytes(4, 4, jpeg=True)
+        self.result_media_type, self.remote_status = "image/jpeg", "success"
+        with patch.object(self, "result_fixture", return_value=None):
+            request_id = self.recovered_material(("inference-txt2img-texture",))
+        owner = self.runtime.state.model_jobs
+        status = owner.status(request_id)
+        self.assertEqual([item["media_type"] for item in status["results"]], ["image/jpeg"])
+        self.assertIn("apply_material", status["actions"])
+        self.assertNotIn("import_images", status["actions"])
+        self.assertNotIn("apply_world", status["actions"])
+        before = len(self.calls), len(self.paid)
+        approval = self.prepare_material(request_id)
+        self.assertEqual(approval["roles"], ["base"])
+        deferred = self.tools.apply_result_application(self.import_args(approval))
+        status = deferred.finish(deferred.run())
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual((len(self.calls), len(self.paid)), before)
+        tree = bpy.context.active_object.active_material.node_tree
+        (texture,) = [node for node in tree.nodes if node.type == "TEX_IMAGE"]
+        self.assertEqual((texture.label, texture.image.file_format), ("Base", "JPEG"))
 
     def test_material_mcp_applies_to_captured_mesh_without_additional_requests(self):
         request_id = self.recovered_material()
@@ -5503,6 +6353,145 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.APPLIED)
         with self.assertRaisesRegex(RuntimeError, "Material assignment was not started"):
             bpy.ops.scenario.apply_saved_material(**args)
+
+    def test_mcp_material_review_names_the_projection_and_applies_box_mapping(self):
+        request_id = self.recovered_material()
+        cube = bpy.context.active_object
+        uv_approval = self.prepare_material(request_id)
+        self.assertEqual((uv_approval["projection"], uv_approval["tile_size_m"]), ("UV", 2.0))
+        plane = self.plane_without_uvs()
+        before = len(self.calls), len(self.paid), len(self.downloads)
+        approval = self.prepare_material(request_id)
+        self.assertEqual((approval["projection"], approval["tile_size_m"]), ("BOX", 2.0))
+        self.assertEqual(approval["target"], plane.name)
+        self.assertIn("box projection", approval["note"])
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        # A 40 m plane at the default 2 m tiles: 20 repeats over its 40 object units.
+        self.assertEqual(self.mapping_scale(plane.active_material), (0.5, 0.5, 0.5))
+        self.assertFalse(plane.data.uv_layers)
+        self.assertIsNone(cube.active_material)
+        self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
+
+    def test_mcp_material_tile_size_sets_the_repeat_length(self):
+        request_id = self.recovered_material()
+        plane = self.plane_without_uvs()
+        approval = self.prepare_material(request_id, tile_size_m=5)
+        self.assertEqual(approval["tile_size_m"], 5.0)
+        self.finish_application(approval)
+        self.assertEqual(self.mapping_scale(plane.active_material), (0.2, 0.2, 0.2))
+        # The tile size follows the object's scale: the same 40 m plane, scaled, tiles alike.
+        scaled = self.plane_without_uvs(2.0)
+        scaled.scale = (20.0, 20.0, 1.0)
+        bpy.context.view_layer.update()
+        self.finish_application(self.prepare_material(request_id, tile_size_m=2))
+        self.assertEqual(self.mapping_scale(scaled.active_material), (10.0, 10.0, 0.5))
+
+    def test_mcp_material_tile_size_is_refused_before_any_capture_and_only_for_materials(self):
+        request_id = self.recovered_material()
+        self.plane_without_uvs()
+        record, owner = self.store.get(request_id), self.runtime.state.model_jobs
+        approvals, materials = dict(owner._application_approvals), set(bpy.data.materials)
+        for value in (0, -1, 0.001, 1000.5, float("inf"), float("nan"), True, "2"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(self.request_error, "tile_size_m must be"):
+                    self.prepare_material(request_id, tile_size_m=value)
+        args = self.recovery_args(request_id, "import_images")
+        del args["action"]
+        with self.assertRaisesRegex(ValueError, "tile_size_m applies only to purpose material"):
+            self.tools.prepare_result_application(dict(args, tile_size_m=2.0))
+        self.assertEqual(owner._application_approvals, approvals)
+        self.assertEqual((self.store.get(request_id), set(bpy.data.materials)), (record, materials))
+        self.assertEqual(self.prepare_material(request_id, tile_size_m=0.01)["tile_size_m"], 0.01)
+
+    def native_material_dialog(self, request_id):
+        """An operator stand-in the dialog's own methods run on, as the plane test does."""
+        args = self.recovery_args(request_id, "apply_material")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_material
+        fake = SimpleNamespace(
+            context_id=args["context_id"],
+            request_id=request_id,
+            expected_revision=args["expected_revision"],
+            layout=MagicMock(),
+            report=MagicMock(),
+            tile_size=2.0,
+        )
+        fake._sync_options = lambda: operator._sync_options(fake)
+        fake.cancel = lambda context: operator.cancel(fake, context)
+        wm = MagicMock()
+        wm.invoke_props_dialog.return_value = {"RUNNING_MODAL"}
+        context = SimpleNamespace(
+            scene=bpy.context.scene, view_layer=bpy.context.view_layer, window_manager=wm
+        )
+        self.assertEqual(operator.invoke(fake, context, None), {"RUNNING_MODAL"})
+        return operator, fake, context
+
+    def test_native_material_dialog_draw_does_not_change_properties_or_approvals(self):
+        request_id = self.recovered_material()
+        owner = self.runtime.state.model_jobs
+        for projection, make_target in (
+            ("UV", lambda: bpy.context.active_object),
+            ("BOX", self.plane_without_uvs),
+        ):
+            with self.subTest(projection=projection):
+                make_target()
+                operator, fake, context = self.native_material_dialog(request_id)
+                self.assertEqual((fake.projection, fake.tile_size), (projection, 2.0))
+                fake.tile_size = 7.5
+                properties = dict(vars(fake))
+                approvals = dict(owner._application_approvals)
+                materials, images = set(bpy.data.materials), set(bpy.data.images)
+                with patch.object(
+                    self.runtime, "revise_material_application", side_effect=AssertionError
+                ):
+                    operator.draw(fake, context)
+                    operator.draw(fake, context)
+                self.assertEqual(vars(fake), properties)
+                self.assertEqual(owner._application_approvals, approvals)
+                self.assertEqual(
+                    (set(bpy.data.materials), set(bpy.data.images)), (materials, images)
+                )
+                fake.layout.prop.assert_called_with(fake, "tile_size")
+                texts = [call.kwargs.get("text", "") for call in fake.layout.label.call_args_list]
+                self.assertEqual(
+                    any("box projection" in text for text in texts), projection == "BOX"
+                )
+                self.assertTrue(any("tile size" in text for text in texts))
+                operator.cancel(fake, context)
+
+    def test_native_material_dialog_ok_applies_the_tile_size_shown_after_a_failed_check(self):
+        request_id = self.recovered_material()
+        plane = self.plane_without_uvs()
+        operator, fake, context = self.native_material_dialog(request_id)
+        owner = self.runtime.state.model_jobs
+        fake.tile_size = 5.0
+        self.assertTrue(operator.check(fake, context))
+        self.assertEqual(owner._application_approvals[fake.application_id].tile_size, 5.0)
+        # Changing the size back to 3 m while the exchange fails leaves 5 m approved.
+        fake.tile_size = 3.0
+        with patch.object(
+            self.runtime, "revise_material_application", side_effect=RuntimeError("synthetic")
+        ):
+            self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertEqual(owner._application_approvals[fake.application_id].tile_size, 5.0)
+        self.assertEqual(operator.execute(fake, context), {"FINISHED"})
+        self.deliver_results()
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(self.mapping_scale(plane.active_material), (0.33333,) * 3)
+
+    def test_native_material_dialog_ok_is_refused_after_the_mesh_changed_under_review(self):
+        request_id = self.recovered_material()
+        plane = self.plane_without_uvs()
+        operator, fake, context = self.native_material_dialog(request_id)
+        plane.data.materials.append(bpy.data.materials.new("Added during review"))
+        fake.tile_size = 4.0
+        self.assertTrue(operator.check(fake, context))
+        self.assertTrue(fake.review_error)
+        self.assertEqual(operator.execute(fake, context), {"CANCELLED"})
+        self.assertEqual(self.store.get(request_id).state, self.storemod.JobState.READY)
+        self.assertEqual(plane.active_material.name, "Added during review")
 
     def test_material_scene_edit_during_verification_keeps_job_ready(self):
         request_id = self.recovered_material()

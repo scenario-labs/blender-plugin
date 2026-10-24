@@ -331,13 +331,14 @@ def _exif_orientation(payload):
     return 1
 
 
-def _jpeg(data):
+def _jpeg(data, *, panorama=True):
     # ITU-T T.81 Annex B: marker segments precede the first scan and may sit
     # between later scans. A small file can declare billions of pixels, so read
     # only the frame header before Blender allocates a decoded buffer, and
     # charge every marker segment, before or after the first scan, to one
     # budget. Tables, entropy-coded data, color transforms and APPn metadata
     # other than EXIF orientation stay Blender's.
+    subject = "panorama" if panorama else "image"
     offset, info, exif, marker, segments, scans = 2, None, False, None, 0, 0
     while True:
         if scans:
@@ -379,11 +380,11 @@ def _jpeg(data):
                 raise PanoramaError("JPEG has conflicting EXIF metadata")
             exif = True
             # Blender 5.0-5.2 ignore EXIF orientation, so a rotated or mirrored
-            # panorama would become a World in its stored pixel order.
+            # image would load in its stored pixel order.
             if _exif_orientation(data[offset + 4 : end]) != 1:
-                raise PanoramaError("EXIF-rotated or mirrored JPEG panoramas are unsupported")
+                raise PanoramaError(f"EXIF-rotated or mirrored JPEG {subject}s are unsupported")
         if marker in _JPEG_UNSUPPORTED_FRAMES:
-            raise PanoramaError("Use a baseline or progressive JPEG panorama")
+            raise PanoramaError(f"Use a baseline or progressive JPEG {subject}")
         if marker in _JPEG_FRAMES:
             if info is not None:
                 raise PanoramaError("JPEG has conflicting frame headers")
@@ -393,8 +394,8 @@ def _jpeg(data):
             if size != 8 + 3 * components:
                 raise PanoramaError("JPEG frame header is invalid")
             if precision != 8 or components != 3:
-                raise PanoramaError("Use a standard 8-bit color JPEG panorama")
-            info = _dimensions("JPEG", width, height)
+                raise PanoramaError(f"Use a standard 8-bit color JPEG {subject}")
+            info = _dimensions("JPEG", width, height, panorama=panorama)
         offset = end
 
 
@@ -416,14 +417,89 @@ def inspect_panorama(data):
     raise PanoramaError("Use a supported PNG, JPEG or OpenEXR panorama")
 
 
-def inspect_image(data):
-    """The same bounded PNG/scanline-EXR preflight, without panorama aspect rules."""
+def inspect_image(data, *, jpeg=False):
+    """The same bounded PNG/scanline-EXR preflight, without panorama aspect rules.
+
+    With `jpeg`, an 8-bit color baseline or progressive JPEG passes the World
+    JPEG checks, also without aspect rules.
+    """
     if not isinstance(data, bytes) or not data or len(data) > MAX_FILE_BYTES:
         raise PanoramaError("Image file is empty or exceeds the byte limit")
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return _png(data, panorama=False)
+    if jpeg and data.startswith(b"\xff\xd8"):
+        return _jpeg(data, panorama=False)
     if data.startswith(b"\x76\x2f\x31\x01"):
         return _exr(data, panorama=False)
+    formats = "PNG, color JPEG" if jpeg else "PNG"
     raise PanoramaError(
-        "Automatic application supports grayscale/RGB/RGBA PNG and scanline OpenEXR images"
+        f"Automatic application supports grayscale/RGB/RGBA {formats} and scanline OpenEXR images"
     )
+
+
+def image_alpha(data):
+    """Whether an image that passed `inspect_image` declares transparency in its header.
+
+    PNG: an RGBA colour type or a tRNS chunk before the image data. OpenEXR: an
+    `A` channel in its channel list. JPEG has no alpha. Malformed headers read
+    as opaque; the decoder still decides what the pixels hold.
+    """
+    if not isinstance(data, bytes):
+        return False
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return _png_alpha(data)
+    if data.startswith(b"\x76\x2f\x31\x01"):
+        return _exr_alpha(data)
+    return False
+
+
+def _png_alpha(data):
+    if len(data) < 26:
+        return False
+    if data[25] == 6:  # IHDR colour type 6: truecolour with alpha
+        return True
+    offset = 8
+    for _ in range(MAX_PNG_CHUNKS):
+        if offset + 8 > len(data):
+            break
+        size = struct.unpack_from(">I", data, offset)[0]
+        kind = data[offset + 4 : offset + 8]
+        if kind == b"tRNS":
+            return True
+        if kind in (b"IDAT", b"IEND"):
+            break
+        offset += 12 + size
+    return False
+
+
+def _exr_alpha(data):
+    # Header attributes follow the version field: name, type, size, value.
+    limit, offset = min(len(data), 1024 * 1024), 8
+    while offset < limit and data[offset] != 0:
+        fields = []
+        for _ in range(2):
+            end = data.find(b"\0", offset, min(offset + 256, limit))
+            if end < 0:
+                return False
+            fields.append(data[offset:end])
+            offset = end + 1
+        if offset + 4 > limit:
+            return False
+        size = struct.unpack_from("<I", data, offset)[0]
+        offset += 4
+        if fields == [b"channels", b"chlist"]:
+            return b"A" in _channel_names(data[offset : min(offset + size, limit)])
+        offset += size
+    return False
+
+
+def _channel_names(payload):
+    """OpenEXR chlist names: each name, then 16 bytes of type and sampling, then a NUL."""
+    names, offset = set(), 0
+    while offset < len(payload) and payload[offset] != 0:
+        end = payload.find(b"\0", offset, offset + 256)
+        if end < 0:
+            break
+        names.add(payload[offset:end])
+        offset = end + 1 + 16
+    return names

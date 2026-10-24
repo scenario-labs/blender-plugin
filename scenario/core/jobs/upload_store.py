@@ -379,21 +379,36 @@ class UploadStore:
             return tuple(self._read(connection, row[0]) for row in rows)
 
     def mesh_sources(self, asset_id):
-        """Read a selected captured asset; two matches suffice to detect ambiguity."""
+        """Read a selected captured asset: its latest capture, then one of other bytes.
+
+        Scenario imports identical bytes as one asset, so captures of the same
+        exported file are one source and the latest (in insertion order) stands
+        for them. A second record is a capture of different bytes that Scenario
+        also reports as this asset: a conflict. At most two records are decoded.
+        """
         _identity(asset_id)
         with self._connection() as connection:
             rows = connection.execute(
-                "SELECT request_id, revision, record FROM uploads INDEXED BY upload_mesh_asset "
+                "SELECT request_id, revision, json_extract(record, '$.intent.file_sha256'), "
+                "record FROM uploads INDEXED BY upload_mesh_asset "
                 "WHERE scope=? AND json_extract(record, '$.asset_id')=? "
-                f"AND {_MESH_ASSET_FILTER} LIMIT 2",
+                f"AND {_MESH_ASSET_FILTER} ORDER BY rowid DESC",
                 (self._key, asset_id),
-            ).fetchall()
+            )
             records = []
-            for request_id, revision, raw in rows:
+            for request_id, revision, digest, raw in rows:
+                if records and digest == records[0].intent.file_sha256:
+                    continue  # Another capture of the same bytes: the same source.
                 record = _decode(raw, self.scope)
-                if record.intent.request_id != request_id or record.revision != revision:
+                if (
+                    record.intent.request_id != request_id
+                    or record.revision != revision
+                    or record.intent.file_sha256 != digest
+                ):
                     raise StoreError("Stored upload identity or revision is inconsistent")
                 records.append(record)
+                if len(records) == 2:
+                    break
             return tuple(records)
 
     def create(self, intent):

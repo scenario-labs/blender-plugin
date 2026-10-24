@@ -242,8 +242,11 @@ For one unapplied saved texture set, `purpose: material` captures the active mes
 its active material slot and unambiguous stored map roles. Show that destination
 and map list before consuming the shared application approval. It packs new
 images, creates a material and changes only that slot. It does not reuse a new
-selection after confirmation. See [material application](MATERIAL_APPLICATION.md)
-for single-user/UV restrictions, supported maps, rollback and no-global-undo limits.
+selection after confirmation. The approval returns `projection` (`BOX` for a mesh
+without UVs, else `UV`) and `tile_size_m`, the metres one texture repeat spans; pass
+`tile_size_m` (0.01 to 1000, default 2) to change it. See
+[material application](MATERIAL_APPLICATION.md) for single-user restrictions, supported
+maps, tiling, rollback and no-global-undo limits.
 
 ## Typed local references
 
@@ -265,10 +268,11 @@ lost response must be reconciled using saved progress instead of starting
 another upload. The same uploads and saved-reference recovery are available in
 generation forms and loaded Studio workflow forms for image, audio, video and 3D
 inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`,
-`CAMERA_CLIP` and `MESH` snapshots. Clips use the preview/scene range at
-1280x720 without audio, trimming or padding; mesh export produces one GLB from
-the selected meshes. Only mesh export works in background mode. `render_form`
-uses the native render form and the same upload session for explicit
+`CAMERA_CLIP` and `MESH` snapshots. Stills and clips are 1280 pixels on the long
+side, shaped like the camera's render frame or the viewport; clips use the
+preview/scene range without audio, trimming or padding; mesh export produces one
+GLB from the selected meshes. Only mesh export works in background mode.
+`render_form` uses the native render form and the same upload session for explicit
 scene/first-frame slots. Its `prepare` action requires a GUI for scene captures;
 first-frame file uploads also work headlessly. Result-specific application
 remains separate.
@@ -466,7 +470,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame', 'camera_background', 'image_plane'])<br>`plane_unlit`: boolean<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number<br>`tile_size_m`: number | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'stop_download', 'retry_receipt', 'find_cloud_job']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -623,9 +627,9 @@ this computer can connect. The server refuses any bind address other than
   Blender's extension user directory that holds saved results, previews, captures
   and staging; or
 - the user chose it in Blender during the current Blender session: a reference file
-  picked with a generation form's **Upload** button, or a file set in the Render
-  Video first-frame field or a workflow input's **File** field, through the file
-  browser or typed into the field.
+  picked with a generation form's **Upload** button or dropped on the Scenario
+  sidebar, or a file set in the Render Video first-frame field or a workflow
+  input's **File** field, through the file browser or typed into the field.
 
 Every other path, including the Output Folder, which can point anywhere, is refused
 with `UploadRefused` before the file is opened, copied or sent. The path is resolved
@@ -639,9 +643,10 @@ outside the allowlist, so a refusal does not reveal which files exist.
 `first_frame_path` an agent set through `configure` is refused until the user
 chooses that file.
 
-Choices are recorded on Blender's main thread when one of those fields changes or
-the **Upload** file browser confirms a file, outside a local MCP tool call: a
-value an agent writes while its tool runs is never a choice. They are kept in
+Choices are recorded on Blender's main thread when one of those fields changes,
+the **Upload** file browser confirms a file or a file is dropped on the Scenario
+sidebar, outside a local MCP tool call: a value an agent writes while its tool
+runs is never a choice. They are kept in
 memory by resolved path, up to the 256 most recent, and forgotten when Blender
 quits or the extension is disabled; a path saved in a blend file in an earlier
 session must be chosen again. This policy does not apply to the user's own
@@ -816,8 +821,10 @@ timeout. Cancellation and interrupted download recovery use the same scoped
 revision guards as Image.
 
 Only the Image lane automatically imports verified PNG/EXR images into its
-unchanged original scene. Other lanes stop at `ready` after saving downloads;
-there is no implicit texture assignment, mesh import or sequencer insertion.
+original scene, if selected; scene edits keep the import, while Undo, Redo, loading
+a file or removing the scene leave the job `ready`. Other lanes stop at `ready`
+after saving downloads; there is no implicit texture assignment, mesh import or
+sequencer insertion.
 `job_status.results` reports asset identity, media type, expected size, `source`,
 `projection` and whether a download receipt was recorded. `source: original` means
 a declared OpenEXR original was saved instead of its preview, or a WAV original
@@ -938,7 +945,9 @@ a form sends each decimal field as the shortest decimal its 32-bit storage holds
 (`0.8`, not `0.800000011920929`). `estimate_cost` and `generate` start
 each number parameter that is not given at its declared default, in the field's
 own type (`0.0` in a decimal field), as a form does. `null` still leaves an
-optional parameter to the service, like a field switched off in the form. The
+optional parameter to the service, like a field switched off in the form. A few
+models start at the curated value their form shows instead: Tripo P2 with Auto Size on
+and Face Limit 50000, Rodin with the PBR material. The
 [Environment lane](#environment-lane-360-panoramas) has no form; its requests
 apply their panorama contract's lane defaults and sizes instead.
 Approval is unchanged: `generate` needs the same parameters and the exact
@@ -1093,7 +1102,7 @@ same contract to the parameters before the exact quote:
 - Lane defaults apply when a parameter is unset: the Flux model makes one
   panorama (`numOutputs` 1) instead of the schema's two. The Image lane keeps
   the schema defaults of the same models.
-- The GPT model takes only 2048x1024 (default), 3072x1536 or 3840x1920.
+- The GPT model takes only 2048x1024, 3072x1536 or 3840x1920 (default).
 - A panorama-kind reference must be the `asset_id` of a saved, downloaded result
   of this account and project whose `job_status` result shows
   `projection: equirectangular` and `source: asset`. Other asset IDs, OpenEXR

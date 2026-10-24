@@ -518,10 +518,11 @@ class ModelPickerTests(unittest.TestCase):
             (node.alignment, c[1], c[2])
             for node in root.walk()
             for c in node.named("label")
-            if "PATINA" in c[2].get("text", "")
+            if "Materials" in c[2].get("text", "")
         ]
         self.assertEqual(
-            headers, [("CENTER", (), {"text": "Materials: PATINA models", "icon": "MATERIAL"})]
+            headers,
+            [("CENTER", (), {"text": "Materials: texture and PBR models", "icon": "MATERIAL"})],
         )
         self.assertEqual([c[1][1] for c in root.named("prop")], ["scenario_picker_query"])
 

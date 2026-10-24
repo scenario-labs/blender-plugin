@@ -43,11 +43,19 @@ from ..core.jobs.results import (
     PromptResults,
     VerifiedResults,
 )
+from ..core.jobs.session_spend import SessionSpend
 from ..core.jobs.store import JobOrigin, JobState, StoredJob
 from ..core.jobs.workers import ExportTask, JobWorkers, LocalExportWorker
+from ..core.scene import landing
+from ..core.scene.material_tiling import DEFAULT_TILE_SIZE_M
 from . import file_state, mesh_result_application, model_application
 from .film_application import FilmShotCommands
 from .image_application import ImageApplicationError, apply_images
+from .landing_application import (
+    LandingApplicationError,
+    apply_camera_background,
+    apply_image_plane,
+)
 from .material_application import (
     MaterialApplicationError,
     apply_material,
@@ -130,6 +138,14 @@ class MediaResultUncertain(RuntimeError):
 
     def __init__(self, application=None):
         super().__init__("Media application needs inspection; do not insert it again")
+        self.application = application
+
+
+class LandingResultUncertain(MediaResultUncertain):
+    """A camera background or image plane may already exist; retry only its receipt."""
+
+    def __init__(self, application=None):
+        RuntimeError.__init__(self, "Result application needs inspection; do not apply it again")
         self.application = application
 
 
@@ -226,6 +242,7 @@ class JobSession:
         part_uploader=None,
         preview_root=None,
         preview_waveform=None,
+        spend=None,
     ):
         _main_thread()
         if not _registered:
@@ -233,6 +250,8 @@ class JobSession:
         if type(completion_limit) is not int or completion_limit < 1:
             raise ValueError("Use a positive completion limit")
         self._completion_limit = completion_limit
+        # Accepted jobs' quotes for the Jobs panel; the runtime keeps one per connection.
+        self.spend = SessionSpend(getattr(store, "scope", None)) if spend is None else spend
         self._origins = OriginRevisions()
         self._scenes = {}
         self._synchronizing = ()
@@ -421,13 +440,19 @@ class JobSession:
         except ReferenceError:
             return False
 
+    def origin_current(self, origin):
+        """Whether a captured origin is still current; reads only, captures nothing new."""
+        _main_thread()
+        return self._active and isinstance(origin, JobOrigin) and self._origins.current(origin)
+
     def capture_destination(self, scene):
         """Capture only the scene a payload is for, when that payload does not come from it.
 
-        A file the user chose keeps its bytes whatever the scene does, so scene,
-        frame and render updates keep this origin. Removing the scene, Undo/Redo,
-        file loading and retirement revoke it, and delivery still requires the
-        selected scene. Never use it to price, submit or apply scene content.
+        A file the user chose keeps its bytes whatever the scene does, and an Image
+        job's results import into the scene it was submitted from, so scene, frame
+        and render updates keep this origin. Removing the scene, Undo/Redo, file
+        loading and retirement revoke it, and delivery still requires the selected
+        scene. Never use it to price, submit or apply scene content.
         """
         return self._origins.capture_destination(self._scene_identity(scene, ()))
 
@@ -536,6 +561,29 @@ class JobSession:
             ):
                 raise OriginUnavailable("The captured source context was replaced")
         return targets
+
+    def mesh_source_objects(self, binding, scene):
+        """The live objects of one uploaded mesh source in `scene`, in export order, or None.
+
+        Reads only, for where an import of the edit may land: unlike
+        `mesh_source_targets`, it grants no in-place edit, so the source may have
+        changed since export. Undo, file loading and retirement forget the
+        identities, and an object removed or out of `scene` gives None.
+        """
+        _main_thread()
+        objects = []
+        try:
+            if not self._active or self._scenes.get(binding.origin.scene_id) != scene:
+                return None
+            members = tuple(scene.objects)
+            for exported in binding.mesh_source.objects:
+                obj = self._targets.get(exported.target_id)
+                if obj is None or obj not in members or obj.type != "MESH":
+                    return None
+                objects.append(obj)
+        except ReferenceError:
+            return None
+        return tuple(objects)
 
     def mesh_source_target(self, binding):
         """Resolve a retained single-object export; see `mesh_source_targets`."""
@@ -673,6 +721,8 @@ class JobSession:
         _main_thread()
         if not isinstance(quote, OriginQuote):
             raise OriginUnavailable("Use a quote from this session")
+        # Refuse before saving an intent that submit() could not queue.
+        self._check_capacity()
         self._resolve(quote.origin)
         return self._coordinator.prepare_quote(quote)
 
@@ -689,6 +739,11 @@ class JobSession:
 
     def unconfirmed_reviewed(self, request_id):
         return self._coordinator.unconfirmed_reviewed(request_id)
+
+    def price_without_capture(self, asset_id):
+        """Quote a conflicting captured asset with no captured source this session; sends nothing."""
+        _main_thread()
+        self._coordinator.price_without_capture(asset_id)
 
     def _check_capacity(self):
         if len(self._pending) >= self._completion_limit:
@@ -708,6 +763,7 @@ class JobSession:
             payload=payload,
         )
         self._pending.append((task, prepared.intent.origin))
+        self.spend.sent(prepared.intent.request_id, prepared.intent.quote_cost)
         return task
 
     def refresh_remote(self, request_id, *, expected_revision, automatic=False):
@@ -1343,6 +1399,8 @@ class JobSession:
                     local_export=isinstance(task, ExportTask),
                     asset_organization=task in self._organization_tasks,
                 )
+                # A submission, or a later read of a linked one, that carries Scenario's job ID.
+                self.spend.accepted(record)
             finally:
                 self._cloud_reads.pop(task, None)
                 self._workflow_reads.pop(task, None)
@@ -1444,8 +1502,17 @@ class JobSession:
         del self._issued[id(completion)]
         return callback(completion.result, scene, target)
 
-    def apply_images(self, completion):
-        return self._apply_images(completion)
+    def apply_images(self, completion, *, destination=None):
+        """Import an Image job's verified results without another review.
+
+        Into the intent's origin, or into `destination`, the destination-only origin
+        captured when the job was submitted (`capture_destination`). Never imports an
+        applied job again.
+        """
+        _main_thread()
+        if destination is not None and not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Capture the image import destination at submission")
+        return self._apply_images(completion, destination=destination, reuse=False)
 
     def apply_recovered_images(self, completion, *, destination):
         """Import into an explicitly approved captured destination after recovery."""
@@ -1500,7 +1567,7 @@ class JobSession:
             )
         return self._coordinator.claim_recovered_application(verified, destination)
 
-    def _apply_images(self, completion, *, destination=None):
+    def _apply_images(self, completion, *, destination=None, reuse=True):
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed verification from this session")
@@ -1512,16 +1579,18 @@ class JobSession:
         self._resolve(destination or completion.origin)
         before = set(bpy.data.images)
         del self._issued[id(completion)]
-        claim = (
-            self._coordinator.claim_application(verified)
-            if destination is None
-            else self._claim_saved_application(
+        if destination is None:
+            claim = self._coordinator.claim_application(verified)
+        elif reuse:
+            claim = self._claim_saved_application(
                 verified,
                 destination,
                 "images",
                 tuple(item.asset.asset_id for item in verified.record.results),
             )
-        )
+        else:
+            # Same claim as recovery, without reopening an applied job.
+            claim = self._coordinator.claim_recovered_application(verified, destination)
         try:
             images = apply_images(verified)
         except ImageApplicationError:
@@ -1601,6 +1670,69 @@ class JobSession:
             raise outcome from None
         return AppliedMedia(record, application)
 
+    def apply_recovered_landing(
+        self, completion, *, destination, asset_id, purpose, frame=None, cursor=None, unlit=False
+    ):
+        """Add one verified image or video as the approved camera's background, or an image plane.
+
+        The destination binds the scene and, for a background, its camera; a video
+        background also binds the current frame and a plane the cursor. A video is
+        claimed as media and an image as images, so stored labels stay unchanged.
+        """
+        _main_thread()
+        if self._issued.get(id(completion)) is not completion:
+            raise OriginUnavailable("Use an unconsumed verification from this session")
+        if completion.error is not None:
+            raise completion.error
+        verified = completion.result
+        if not isinstance(verified, VerifiedResults) or not isinstance(destination, JobOrigin):
+            raise OriginUnavailable("Verify the saved result and approve its destination")
+        scene, camera = self._resolve(destination)
+        if frame is not None and (type(frame) is not int or scene.frame_current != frame):
+            raise OriginUnavailable("The destination frame changed; review it again")
+        if cursor is not None and tuple(scene.cursor.location) != cursor:
+            raise OriginUnavailable("The destination cursor changed; review it again")
+        background = purpose == landing.CAMERA_BACKGROUND
+        if purpose not in landing.PURPOSES or (
+            background and (camera is None or scene.camera != camera)
+        ):
+            raise OriginUnavailable("The scene camera changed; review it again")
+        if not background and (cursor is None or type(unlit) is not bool):
+            raise OriginUnavailable("Approve the plane's cursor again")
+        selected = [
+            (item, path)
+            for item, path in zip(verified.record.results, verified.paths, strict=True)
+            if item.asset.asset_id == asset_id and landing.accepts(purpose, item.asset.media_type)
+        ]
+        if len(selected) != 1:
+            raise OriginUnavailable("Select one saved image or video")
+        item, path = selected[0]
+        del self._issued[id(completion)]
+        label = "media" if landing.kind(item.asset.media_type) == "video" else "images"
+        claim = self._claim_saved_application(verified, destination, label, (asset_id,))
+        try:
+            if background:
+                application = apply_camera_background(scene, camera, item, path, frame=frame)
+            else:
+                application = apply_image_plane(scene, item, path, cursor=cursor, unlit=unlit)
+        except LandingApplicationError:
+            try:
+                self._coordinator.fail_application(claim)
+            except Exception:
+                raise LandingResultUncertain() from None
+            raise
+        except Exception:
+            _changed("Scenario result application")
+            raise LandingResultUncertain() from None
+        _changed("Scenario result application")
+        try:
+            record = self._coordinator.complete_application(claim)
+        except Exception:
+            outcome = LandingResultUncertain(application)
+            self._media_receipts[outcome] = (claim, application)
+            raise outcome from None
+        return AppliedMedia(record, application)
+
     def retry_media_receipt(self, outcome):
         _main_thread()
         if not isinstance(outcome, MediaResultUncertain) or outcome not in self._media_receipts:
@@ -1614,7 +1746,15 @@ class JobSession:
         return AppliedMedia(record, application)
 
     def apply_recovered_model(
-        self, completion, *, destination, asset_id, cursor, options=None, target_size=None
+        self,
+        completion,
+        *,
+        destination,
+        asset_id,
+        cursor,
+        options=None,
+        target_size=None,
+        placement=None,
     ):
         """Import one saved model unit at the approved scene/cursor after worker preparation.
 
@@ -1628,6 +1768,8 @@ class JobSession:
         `verify_results` when the local-operation slot was busy; it then imports
         only as a mesh. A reuse claim of a completed job names every member read.
         `target_size` is the approved longest side in metres, or None for the saved size.
+        `placement` is where the bottom center lands when it is not the approved
+        cursor, such as on the source mesh an edit replaces; the cursor is checked either way.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1642,6 +1784,9 @@ class JobSession:
         validate_model_destination(scene, cursor)
         if tuple(scene.cursor.location) != cursor:
             raise OriginUnavailable("The destination cursor changed; review it again")
+        if placement is None:
+            placement = cursor
+        validate_model_destination(scene, placement)
         try:
             unit = import_plan(verified.record).unit(asset_id)
         except ValueError:
@@ -1673,7 +1818,7 @@ class JobSession:
                 lambda: import_splat(
                     scene,
                     prepared.splat,
-                    cursor=cursor,
+                    cursor=placement,
                     unit_key=unit.key,
                     members=unit.members,
                     fmt=unit.format.value,
@@ -1687,7 +1832,7 @@ class JobSession:
             return self._finish_model(
                 claim,
                 lambda: import_snapshot(
-                    scene, snapshot, cursor=cursor, history=True, target_size=target_size
+                    scene, snapshot, cursor=placement, history=True, target_size=target_size
                 ),
             )
         finally:
@@ -1827,7 +1972,9 @@ class JobSession:
         del self._model_receipts[outcome]
         return AppliedModel(record, application)
 
-    def apply_recovered_material(self, completion, *, destination, target):
+    def apply_recovered_material(
+        self, completion, *, destination, target, tile_size=DEFAULT_TILE_SIZE_M
+    ):
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
             raise OriginUnavailable("Use an unconsumed material verification from this session")
@@ -1849,7 +1996,7 @@ class JobSession:
             tuple(verified.record.results[index].asset.asset_id for index in roles.values()),
         )
         try:
-            application = apply_material(verified, target)
+            application = apply_material(verified, target, tile_size)
         except MaterialApplicationError:
             try:
                 self._coordinator.fail_application(claim)

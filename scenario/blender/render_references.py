@@ -3,11 +3,21 @@
 """Explicit render input slots backed by the shared typed upload lifecycle."""
 
 from ..core.api.errors import ScenarioError
-from . import generation, props, reference_form, render_lanes
+from . import generation, props, reference_form, render_lanes, runtime
 
 ROLE = reference_form.RENDER_ROLE
 SCENE = "scene"
 FIRST_FRAME = "first_frame"
+# The price waits for these; each says what to do or what is under way, in one line.
+CAPTURE_SCENE = "Capture the scene to see the price"
+NEEDS_FIRST_FRAME = "Upload the first frame to see the price"
+UPLOADING_SCENE = "Uploading the scene capture; the price follows"
+UPLOADING_FIRST_FRAME = "Uploading the first frame; the price follows"
+CAPTURE_OFFLINE = "Allow Online Access to capture the scene"
+UPLOADING = "uploading"
+READY = "ready"
+REVIEW = "review"
+ALL = "all"  # the operator's role for the whole form: the scene, with the first frame it uses
 
 
 def first_frame_enabled(lane):
@@ -39,6 +49,49 @@ def slot(lane, role):
     return [(index, ref) for index, ref in enumerate(lane.references) if ref.get(ROLE) == role]
 
 
+def slot_state(lane, role):
+    """The slot's upload, read-only: None without one, READY once an asset is attached,
+    UPLOADING while this session's upload runs, REVIEW when it stopped or belongs to a saved upload."""
+    matches = slot(lane, role)
+    if not matches:
+        return None
+    ref = matches[0][1]
+    if ref.source == "ASSET" and ref.asset_id:
+        return READY
+    binding = reference_form._binding(runtime.state.reference_uploads, ref)
+    if binding is None or binding.error or (binding.ticket is not None and binding.ticket.error):
+        return REVIEW
+    return UPLOADING
+
+
+def uploading_note(lane):
+    """What an upload under way for this form says in place of a price, or ""; read-only."""
+    if slot_state(lane, SCENE) == UPLOADING:
+        return UPLOADING_SCENE
+    if slot_state(lane, FIRST_FRAME) == UPLOADING and first_frame_enabled(lane):
+        return UPLOADING_FIRST_FRAME
+    return ""
+
+
+def chip(lane):
+    """The composer's capture chip for a render form: (label, wait), read-only.
+
+    `wait` says why a click does nothing now (offline, no credentials, an upload running or in
+    need of review), else "". An uploaded capture is offered again as Recapture.
+    """
+    state = slot_state(lane, SCENE)
+    label = "Recapture" if state == READY else "Capture"
+    if not runtime.online():
+        return label, CAPTURE_OFFLINE
+    if not runtime.credentials().valid:
+        return label, "Set up credentials to capture the scene"
+    if note := uploading_note(lane):
+        return "Uploading...", note
+    if state == REVIEW or (slot_state(lane, FIRST_FRAME) == REVIEW and first_frame_enabled(lane)):
+        return label, "An upload needs review: open Settings to inspect it"
+    return label, ""
+
+
 def target(lane_name, schema, role):
     if role == SCENE:
         return render_lanes.scene_spec(lane_name, schema)
@@ -53,6 +106,8 @@ def require_uploaded(lane_name, lane, schema, role):
     spec = target(lane_name, schema, role)
     if spec is None:
         raise ScenarioError(0, f"This model has no input for the {label}")
+    if not matches:
+        raise ScenarioError(0, CAPTURE_SCENE if role == SCENE else NEEDS_FIRST_FRAME)
     if len(matches) != 1:
         raise ScenarioError(0, f"Prepare one {label} reference before requesting a price")
     if (
@@ -110,6 +165,79 @@ def prepare(context, lane_name, role):
         raise  # Admitted or uncertain uploads retain their marked slot.
 
 
+def _detach(lane, index):
+    """Take a slot out of the form, keeping what it takes to put it back."""
+    ref = lane.references[index]
+    saved = (
+        (ref.param_name, ref.source, ref.filepath, ref.asset_id, ref.label),
+        {key: ref[key] for key in ref.keys()},
+    )
+    lane.references.remove(index)
+    return saved
+
+
+def _reattach(lane, saved):
+    values, markers = saved
+    ref = lane.references.add()
+    ref.param_name, ref.source, ref.filepath, ref.asset_id, ref.label = values
+    for key, value in markers.items():
+        ref[key] = value
+    props.mark_estimate_dirty(lane)
+
+
+def capture_form(context, lane_name):
+    """Capture the scene and upload it, with the first frame the form uses, in one action.
+
+    A scene capture already uploaded is replaced, as removing it and capturing again would;
+    one still uploading, or one whose upload needs review, is never replaced. Nothing is
+    priced or submitted here: each upload that attaches marks the form dirty, and the pump
+    prices the shown form once everything it needs is in, so the Generate button shows the
+    exact price without another click. Whatever fails before the capture leaves the form as
+    it was.
+    """
+    if lane_name not in {"render_image", "render_video"}:
+        raise ScenarioError(0, "Choose Render Image or Render Video")
+    lane = context.scene.scenario.lane_state(lane_name)
+    schema = generation.schema_for(lane.model_id)
+    if schema is None:
+        raise ScenarioError(0, "Load the selected model before capturing the scene")
+    if target(lane_name, schema, SCENE) is None:
+        raise ScenarioError(0, "Choose a model with a matching render input")
+    if not runtime.online():
+        raise ScenarioError(0, "Allow Online Access before uploading a reference")
+    from . import capture
+
+    source = render_lanes.capture_source(lane, lane_name)
+    if reason := capture.unavailable_reason(context, source):
+        raise ScenarioError(0, reason)
+    if slot(lane, SCENE) and slot_state(lane, SCENE) != READY:
+        raise ScenarioError(0, "The scene capture has an upload in progress; inspect it first")
+    # The first frame goes first: its file uploads on a worker while the capture runs here.
+    if lane_name == "render_video" and first_frame_enabled(lane) and lane.first_frame_path:
+        if target(lane_name, schema, FIRST_FRAME) is None:
+            raise ScenarioError(
+                0, "This model has no input for the first frame; turn it off or pick another model"
+            )
+        frames = slot(lane, FIRST_FRAME)
+        if not frames:
+            prepare(context, lane_name, FIRST_FRAME)
+        elif frames[0][1].filepath != lane.first_frame_path:
+            if slot_state(lane, FIRST_FRAME) != READY:
+                raise ScenarioError(
+                    0, "The first frame has an upload in progress; inspect it first"
+                )
+            _detach(lane, frames[0][0])  # a changed file replaces the old one, as asked
+            prepare(context, lane_name, FIRST_FRAME)
+    old = slot(lane, SCENE)  # after the first frame: its slot may have moved this one
+    saved = _detach(lane, old[0][0]) if old else None
+    try:
+        return prepare(context, lane_name, SCENE)
+    except Exception:
+        if saved is not None and not slot(lane, SCENE):
+            _reattach(lane, saved)
+        raise
+
+
 def draw_slot(layout, lane_name, lane, schema, role):
     from . import panels
 
@@ -121,6 +249,13 @@ def draw_slot(layout, lane_name, lane, schema, role):
             layout.label(
                 text="First frame changed: remove its old reference and upload again", icon="ERROR"
             )
+        if role == SCENE and slot_state(lane, SCENE) == READY:
+            # A new capture of the scene as it is now, replacing this snapshot.
+            row = layout.row()
+            op = row.operator(
+                "scenario.prepare_render_reference", text="Capture again", icon="EXPORT"
+            )
+            op.lane, op.role = lane_name, ALL
         return
     row = layout.row()
     row.enabled = target(lane_name, schema, role) is not None
@@ -129,4 +264,4 @@ def draw_slot(layout, lane_name, lane, schema, role):
         text="Capture and upload scene" if role == SCENE else "Upload first frame",
         icon="EXPORT",
     )
-    op.lane, op.role = lane_name, role
+    op.lane, op.role = lane_name, ALL if role == SCENE else role

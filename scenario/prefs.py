@@ -98,6 +98,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
     composer_enabled: BoolProperty(
         name="Floating composer in the viewport",
         default=True,
+        description="Show the Scenario prompt bar at the bottom of the 3D viewport",
         update=lambda self, context: __import__(
             __package__ + ".blender.composer", fromlist=["set_enabled"]
         ).set_enabled(self.composer_enabled),
@@ -118,7 +119,13 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         min=0,
         description="Width of the expanded composer in pixels (0 = default)",
     )
-    mcp_port: IntProperty(name="MCP Port", default=9876, min=1024, max=65535)
+    mcp_port: IntProperty(
+        name="MCP Port",
+        default=9876,
+        min=1024,
+        max=65535,
+        description="Local port agents use to reach this Blender; change it only if another app uses it",
+    )
     mcp_allow_python: BoolProperty(
         name="Allow connected agents to run Python",
         default=False,
@@ -132,6 +139,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
     )
     log_level: EnumProperty(
         name="Log Level",
+        description="How much the plugin writes to its log; Debug helps support find a problem",
         items=[("INFO", "Info", ""), ("DEBUG", "Debug", "")],
         default="INFO",
         update=lambda self, context: __import__(

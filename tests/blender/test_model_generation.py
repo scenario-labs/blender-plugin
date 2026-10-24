@@ -1517,7 +1517,8 @@ class ModelGenerationTests(unittest.TestCase):
         self.runtime.state.reset()
         calls = len(self.calls)
         owner = self.runtime.inspect_model_jobs()
-        unbound = {"lane": None, "remote_status": None, "progress": None, "remote_stale": None}
+        # The saved lane is display only: the job is unbound and has no reading.
+        unbound = {"lane": "image", "remote_status": None, "progress": None, "remote_stale": None}
         self.assertEqual(
             self.remote_fields(result["local_id"])[0],
             dict(unbound, status="remote", delivery_active=False),
@@ -1558,7 +1559,7 @@ class ModelGenerationTests(unittest.TestCase):
         # An explicit refresh is one reading; nothing keeps it current afterwards.
         self.assertEqual(
             (status["lane"], status["remote_status"], status["progress"], status["remote_stale"]),
-            (None, "in-progress", 0.25, True),
+            ("image", "in-progress", 0.25, True),
         )
         self.assertEqual(len(self.paid), 1)
 
@@ -1586,9 +1587,10 @@ class ModelGenerationTests(unittest.TestCase):
                 restarted = self.runtime.inspect_model_jobs()
                 self.assertEqual(restarted.bound_views(bpy.context.scene, "image"), ())
                 fields = self.remote_fields(result["local_id"])[0]
+                # Only the saved lane remains, for display.
                 self.assertEqual(
                     (fields["lane"], fields["remote_status"], fields["progress"]),
-                    (None, None, None),
+                    ("image", None, None),
                 )
         self.assertEqual(len(self.paid), 2)
 
@@ -3268,7 +3270,7 @@ class ModelGenerationTests(unittest.TestCase):
                 self.remote_status = "success"
                 result = self.mcp_submit(self.mcp_quote(lane))
                 reference = result["local_id"]
-                references.append((reference, media_type))
+                references.append((reference, media_type, lane))
                 self.deliver_results()
                 status = self.tools.job_status({"job_id": reference})
                 self.assertEqual(status["status"], "ready", status)
@@ -3297,10 +3299,12 @@ class ModelGenerationTests(unittest.TestCase):
         self.runtime.state.reset()
         calls = len(self.calls)
         self.runtime.inspect_model_jobs()
-        for reference, media_type in references:
+        lane_kind = submodule("core.api.catalog").LANE_KIND
+        for reference, media_type, lane in references:
             status = self.tools.job_status({"job_id": reference})
             self.assertEqual(status["status"], "ready")
-            self.assertEqual(status["kind"], "model")
+            # The saved lane keeps the kind its form gave the job before the restart.
+            self.assertEqual((status["lane"], status["kind"]), (lane, lane_kind[lane]))
             self.assertEqual(status["results"][0]["media_type"], media_type)
         self.assertEqual(len(self.calls), calls)
         self.assertEqual(len(self.paid), len(references))
@@ -4768,26 +4772,31 @@ class ModelGenerationTests(unittest.TestCase):
     def package_exports(self):
         return textured_model_exports(Path(self.enterContext(tempfile.TemporaryDirectory())))
 
-    def obj_package(self):
-        """A legacy OBJ package beside a GLB alias: OBJ, MTL with a missing map, albedo."""
+    def obj_package(self, *, copies=False):
+        """A legacy OBJ package beside a GLB alias: OBJ, MTL with a missing map, albedo.
+
+        With `copies`, the OBJ, MTL and albedo name the GLB as their parent, like the
+        format copies Meshy returns, so the job's download leaves them for a fetch.
+        """
         from helpers import FIXTURES
 
         exports = self.package_exports()
         obj = exports["obj"].read_text().replace("mtllib cube.mtl", "mtllib result-obj.mtl")
         mtl = exports["mtl"].read_text().replace("map_Kd tex.png", "map_Kd result-obj_albedo.png")
         glb = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
+        lineage = {"parentId": "result-glb"} if copies else {}
         return self.recovered_package(
             {
-                "result-obj": ("model/obj", obj.encode(), {"type": "txt23d"}),
+                "result-obj": ("model/obj", obj.encode(), {"type": "txt23d", **lineage}),
                 "result-mtl": (
                     "model/mtl",
                     (mtl + "map_Pm result-obj_metallic.png\n").encode(),
-                    {"type": "3d-texture-mtl"},
+                    {"type": "3d-texture-mtl", **lineage},
                 ),
                 "result-albedo": (
                     "image/png",
                     exports["png"].read_bytes(),
-                    {"type": "3d-texture-albedo"},
+                    {"type": "3d-texture-albedo", **lineage},
                 ),
                 "result-glb": ("model/glb", glb, {"type": "txt23d"}),
             }
@@ -4884,6 +4893,56 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), before)
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
+
+    def test_glb_format_copies_download_when_a_result_needs_them(self):
+        request_id = self.obj_package(copies=True)
+        saved = {
+            item.asset.asset_id: (item.asset.on_demand, item.receipt is not None)
+            for item in self.store.get(request_id).results
+        }
+        self.assertEqual(
+            saved,
+            {
+                "result-obj": (True, False),
+                "result-mtl": (True, False),
+                "result-albedo": (True, False),
+                "result-glb": (False, True),
+            },
+        )
+        status = self.tools.job_status({"job_id": request_id})
+        self.assertEqual(status["status"], "ready")
+        self.assertEqual(
+            [unit["key"] for unit in status["import_units"]], ["result-glb", "result-obj"]
+        )
+        for action in ("import_model", "apply_mesh", "apply_material"):
+            self.assertIn(action, status["actions"])
+        jobs = submodule("blender.model_jobs")
+        # The material needs its one map, then the OBJ unit its OBJ and MTL.
+        bpy.ops.mesh.primitive_cube_add()
+        steps = (
+            (lambda: self.prepare_material(request_id), "file", 1),
+            (lambda: self.prepare_package(request_id, "result-obj"), "2 files", 2),
+        )
+        for prepare, files, count in steps:
+            before = len(self.downloads)
+            with self.assertRaises(jobs.FilesDownloading) as caught:
+                prepare()
+            self.assertIn(f"Downloading the {files} this result needs", str(caught.exception))
+            self.deliver_results()
+            self.assertEqual(len(self.downloads), before + count)
+            status = self.tools.job_status({"job_id": request_id})
+            self.assertEqual((status["status"], status["error"]), ("ready", None), status)
+            self.assertNotIn(jobs.FILES_FETCHING, status["status_notes"])
+        self.assertTrue(all(item["downloaded"] for item in status["results"]), status)
+        before = len(self.downloads)
+        approval = self.prepare_package(request_id, "result-obj")
+        self.assertEqual((approval["kind"], approval["format"]), ("model", "obj"))
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "applied", status)
+        self.assertEqual(
+            status["model_import"]["members"], ["result-obj", "result-mtl", "result-albedo"]
+        )
+        self.assertEqual(len(self.downloads), before)
 
     def test_package_member_changed_after_verification_keeps_the_job_unclaimed(self):
         request_id = self.obj_package()
@@ -7333,6 +7392,40 @@ class ModelGenerationTests(unittest.TestCase):
         with self.assertRaises(self.request_error):
             self.tools.apply_result_application(self.import_args(approval))
 
+    def test_retexture_review_keeps_the_selected_faces_and_says_when_no_head_is_found(self):
+        request_id = self.recovered_mesh_edit()
+        source = bpy.context.view_layer.objects.active
+        # A cube is no standing character: the review starts on keeping nothing.
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE")
+        self.assertEqual(
+            (approval["keep_texture"], approval["kept_faces"], approval["kept_note"]),
+            ("NONE", 0, "The whole surface takes the new texture"),
+        )
+        head = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE", keep_texture="HEAD")
+        self.assertEqual((head["keep_texture"], head["kept_faces"]), ("HEAD", 0))
+        self.assertTrue(head["kept_note"].startswith("No head found on this mesh"))
+        for polygon in source.data.polygons:
+            polygon.select = polygon.index < 2
+        approval = self.prepare_mesh_edit(request_id, mesh_policy="RETEXTURE")
+        self.assertEqual((approval["keep_texture"], approval["kept_faces"]), ("SELECTED", 2))
+        # Other edits keep no texture.
+        remesh = self.prepare_mesh_edit(request_id, mesh_policy="REMESH")
+        self.assertEqual(
+            (remesh["keep_texture"], remesh["kept_faces"], remesh["kept_note"]), (None, 0, None)
+        )
+        with self.assertRaises(self.request_error):
+            self.prepare_mesh_edit(request_id, mesh_policy="REMESH", keep_texture="HEAD")
+        operator = submodule("blender.job_recovery").SCENARIO_OT_apply_saved_mesh
+        op, ticket = self.mesh_dialog(request_id, policy="RETEXTURE")
+        self.assertEqual((op.keep_texture, ticket.keep_texture), ("SELECTED", "SELECTED"))
+        self.assertEqual(op.kept_note, "The selected faces keep their texture (2)")
+        op.keep_texture = "NONE"
+        operator._sync_options(op)
+        ticket = self.runtime.state.model_jobs._application_approvals[op.application_id]
+        self.assertEqual(ticket.keep_texture, "NONE")
+        self.assertFalse(ticket.kept.kept)
+        self.assertEqual(op.kept_note, "The whole surface takes the new texture")
+
     def mesh_native_history(self, policy, *, keep_original):
         from helpers import parts_glb
 
@@ -8130,6 +8223,20 @@ class ModelGenerationTests(unittest.TestCase):
             self.assertEqual((len(self.calls), len(self.paid), len(self.downloads)), calls)
         finally:
             prefs.use_global_undo, prefs.undo_steps = settings
+
+    def test_a_refused_clip_says_the_rig_is_unchanged_and_what_to_do_next(self):
+        request_id, source = self.captured_clip_result()
+        rig = source.modifiers[0].object
+        rig.pose.bones[0].constraints.new("COPY_ROTATION")
+        approval = self.prepare_mesh_edit(request_id, purpose="mesh_source", mesh_policy="ANIMATE")
+        status = self.finish_application(approval)
+        self.assertEqual(status["status"], "apply_failed", status)
+        self.assertEqual(
+            status["error"],
+            "Animation not applied; the rig is unchanged. Constraints or drivers move the "
+            "animated bones: remove or mute them, then apply the animation again",
+        )
+        self.assertIsNone(rig.animation_data and rig.animation_data.action)
 
     def test_clips_at_another_frame_rate_are_reported_in_status_and_the_job_row(self):
         request_id, _ = self.captured_clip_result()

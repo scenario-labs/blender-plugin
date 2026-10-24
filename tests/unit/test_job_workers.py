@@ -696,6 +696,24 @@ def test_transfers_run_on_their_own_lane_beside_blocked_job_workers(setup, monke
     assert running.result(2).state == JobState.REMOTE
 
 
+def test_on_demand_fetch_runs_on_the_transfer_lane_and_can_be_stopped(setup, monkeypatch):
+    owner, coordinator, _, _, _, _, _, _ = setup()
+    started = threading.Event()
+
+    def fetch(request_id, *, expected_revision, asset_ids, cancel):
+        started.set()
+        assert cancel.wait(5), "The fetch was not stopped"
+        return (request_id, expected_revision, asset_ids, threading.current_thread().name)
+
+    monkeypatch.setattr(coordinator, "fetch_results", fetch)
+    task = owner.fetch_results("request", expected_revision=3, asset_ids=["obj", "mtl"])
+    assert started.wait(2)
+    owner.cancel_transfer(task)
+    request_id, revision, asset_ids, thread = task.result(2)
+    assert (request_id, revision, asset_ids) == ("request", 3, ("obj", "mtl"))
+    assert thread.startswith("ScenarioTransfer") and not owner._transfer_cancels
+
+
 def test_saturated_transfer_lane_never_delays_polls_cancels_or_submissions(setup, monkeypatch):
     owner, coordinator, _, _, _, _, _, _ = setup(workers=1, pending_limit=4)
     started, release = threading.Semaphore(0), threading.Event()

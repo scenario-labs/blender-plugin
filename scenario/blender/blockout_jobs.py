@@ -22,8 +22,19 @@ MODEL = "model_scenario-llm"
 CANCELED = "Blockout request canceled; nothing was sent to Scenario"
 BUSY = {"QUOTING", "SUBMITTING", "POLLING", "LISTING", "READING"}
 AUTO_QUOTE_DELAY = 0.7  # seconds the design inputs stay unchanged before an automatic price
-# Measured per plan in October 2026; shown as an expectation, never used to bind anything.
-MINUTES = {"best": "3 to 6 min", "fast": "under a minute"}
+# Measured per plan in October 2026 (Advanced density, grouped rows); shown as an expectation,
+# never used to bind anything. A refinement rewrites a plan that already exists, so it is quicker.
+MINUTES = {
+    ("best", "DESIGN"): "3 to 4 min",
+    ("best", "REFINE"): "1 to 2 min",
+    ("fast", "DESIGN"): "under a minute",
+    ("fast", "REFINE"): "under a minute",
+}
+
+
+def expected_time(item):
+    """How long the action's plan usually takes, for the waiting state."""
+    return MINUTES.get((item.tier, item.action), "a few minutes")
 
 
 def binding(scene):

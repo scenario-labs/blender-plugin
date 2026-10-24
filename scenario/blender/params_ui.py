@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bridge between ParamSpec schemas and the ScenarioParamValue collection, plus drawing."""
 
-from ..core.api.catalog import param_override, starting_value
+from ..core.api.catalog import OTHER_CHOICE, choice_items, param_override, starting_value
 from ..core.schema.params import float32_decimal
 from . import props, runtime
 
@@ -75,6 +75,16 @@ def sync_params(lane_state, schema, model_id):
             created = True
             seeded.add(spec.name)
         keep[spec.name] = True
+        choices = choice_items(model_id, spec.name) if spec.ptype == "number" else []
+        if choices and not spec.allowed_values:
+            # Named choices pick the number; Other keeps the typed one.
+            runtime.set_enum_items(("param", model_id, spec.name), choices)
+            valid = [choice[0] for choice in choices]
+            if created or item.enum_value not in valid:
+                number = str(item.int_value if spec.is_integer else item.float_value)
+                _seed(item, "enum_value", valid.index(number if number in valid else OTHER_CHOICE))
+                seeded.add(spec.name)
+            continue
         if spec.allowed_values and spec.ptype != "string_array":
             # Blender rejects empty enum identifiers: an empty option means "unset", modelled by the enable toggle.
             options = [v for v in spec.allowed_values if str(v) != ""]
@@ -181,6 +191,16 @@ def _apply_default(item, spec, schema=None):
     props.clamp_param(item, _seed)
 
 
+def named(item, spec):
+    """Whether a number with named choices holds one of them rather than Other."""
+    return (
+        spec.ptype == "number"
+        and not spec.allowed_values
+        and bool(choice_items(item.model_id, spec.name))
+        and item.enum_value not in {OTHER_CHOICE, "", "NONE"}
+    )
+
+
 def collect_values(lane_state, schema):
     values, enabled = {}, {}
     if schema.prompt_name:
@@ -197,6 +217,8 @@ def collect_values(lane_state, schema):
         enabled[spec.name] = spec.ptype == "boolean" or bool(item.enabled) or spec.required_always
         if spec.ptype == "string_array":
             values[spec.name] = multi_selection(item)
+        elif named(item, spec):
+            values[spec.name] = int(item.enum_value) if spec.is_integer else float(item.enum_value)
         elif spec.allowed_values:
             # numeric choices (Seedance duration: -1, 4..15) are edited through the enum, so read the enum, not int_value
             values[spec.name] = item.enum_value if item.enum_value != "NONE" else None
@@ -248,7 +270,11 @@ def draw_params(layout, lane_state, schema, exclude=(), locked=()):
                 row.prop(item, "enabled", text="")
             sub = row.row(align=True)
             sub.enabled = (item.enabled or spec.required_always) and spec.name not in locked
-            if spec.ptype == "number" and not spec.allowed_values:
+            if spec.ptype == "number" and choice_items(item.model_id, spec.name):
+                sub.prop(item, "enum_value", text=label)
+                if not named(item, spec):
+                    sub.prop(item, "int_value" if spec.is_integer else "float_value", text="")
+            elif spec.ptype == "number" and not spec.allowed_values:
                 sub.prop(item, "int_value" if spec.is_integer else "float_value", text=label)
             elif spec.ptype == "string_array":
                 col = sub.column(align=True)

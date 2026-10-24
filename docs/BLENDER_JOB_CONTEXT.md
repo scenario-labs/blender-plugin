@@ -270,8 +270,10 @@ prototype rows; it never drops shared recovery rows or changes durable records.
 worker or store. Design and Refine capture the original scene revision plus
 prompt, refinement, density, model tier, uploaded reference image and previous
 plan before quoting. The tier resolves to the newest Claude Opus (Best) or Gemini
-Flash (Fast) that the loaded Scenario LLM schema allows, else a fixed fallback. Refine includes
-the complete bounded prior plan, without text truncation, using an explicit
+Flash (Fast) that the loaded Scenario LLM schema allows, else a fixed fallback. The model
+writes grouped rows, a group label then one ten-value array per element: under half the
+text of keyed objects, so plans and above all refinements arrive sooner. Refine includes
+the complete bounded prior plan in the same rows, without text truncation, using an explicit
 update instruction rather than describing the refinement note as a new scene.
 An absent, malformed or incomplete prior plan is rejected with a guided error
 before a quote request, including through MCP.
@@ -286,8 +288,9 @@ The application pump polls the known job, lists its single plain-text output and
 reads the complete body through `JobSession.read_model_text`. Delivery validates
 scope, original scene/revision and unchanged inputs before storing a normalized
 array of 1–400 elements. Complete arrays may have Markdown fences, surrounding
-prose or the Scenario LLM `{"results": [{"text": ...}]}` answer wrapper;
-malformed/truncated arrays are rejected without recovering a partial prefix, and
+prose or the Scenario LLM `{"results": [{"text": ...}]}` answer wrapper, and keyed
+element objects from earlier answers still parse; malformed/truncated arrays and rows
+with a missing or extra value are rejected without recovering a partial prefix, and
 the error names the unusable answer. Delivery never creates geometry. A scene
 switch, edited plan, file load or retired owner cannot redirect a late result to
 the current scene.
@@ -604,13 +607,16 @@ job's sizes once it leaves them, and stops offering an image whose size is not
 
 `result_files` queues the coordinator's receipt rehash of saved results on the
 same lane, again not a session completion. The model job owner checks only the
-jobs a local MCP status read asked about, at most one preview batch at a time,
-whether this session imported them or not and including after a restart. A
-file the session already hashed while downloading or importing it is not checked
-again: the coordinator keeps that identity in memory (`verified_files`), and the
-status read uses it once. Each check is kept with the file's identity as hashed;
-a later status read compares that identity and checks the file again when it
-differs.
+jobs a local MCP status read asked about and image rows (Image, Render Image and
+Environment jobs, or results that are images) whose files no automatic import of
+this session lists, at most one preview batch at a time, whether this session
+imported them or not and including after a restart. Such a row lists only
+verified files, so its file tools show in the submitting session and after a
+restart alike. A file the session already hashed while downloading or importing
+it is not checked again: the coordinator keeps that identity in memory
+(`verified_files`), and the status read uses it once. Each check is kept with
+the file's identity as hashed; a later status read compares that identity and
+checks the file again when it differs.
 
 The main-thread [preview controller](../scenario/blender/result_previews.py)
 is the scheduler's Blender-side owner for
@@ -934,6 +940,9 @@ revision. Queued commands retain their original scope.
   without a confirmation, since nothing is lost: the job becomes
   `download_failed` with no receipt for the unfinished asset, delivery pauses
   with a note that nothing partial was saved, and `resume` downloads it again.
+  It also stops this owner's download of the
+  [format copies](RESULT_TRANSFERS.md#glb-format-copies-on-demand) a chosen result
+  needs; the job keeps its state and choosing the result again starts it again.
 - `retry_receipt` saves an already completed local application's outcome without
   any scene mutation. The exact pending owner-local handle must still exist.
 - `mark_reviewed` is offered for a `submitting` or `uncertain` record with no
@@ -1133,8 +1142,11 @@ job strip finds the current job of the form it shows without guessing. A binding
 grants no destination, origin or application authority; results still apply
 only through their own approvals and origin checks. Workflow and Film
 submissions are unbound. Bindings and readings retire with their owner on a
-credential, project or file change. Lanes are not persisted: restarted and
-recovered jobs are unbound, and MCP reports `lane: null` for them.
+credential, project or file change. Bindings are not persisted: restarted and
+recovered jobs are unbound. The submitted lane itself is saved with the job,
+display only ([schema 13](JOB_STORAGE.md#generation-lane)), so a listed
+job keeps its form's kind and result controls and MCP reports its `lane`; jobs
+saved without one are generic `model` views of the kind their results establish.
 
 ### Failure reasons
 

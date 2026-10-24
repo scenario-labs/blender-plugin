@@ -291,6 +291,33 @@ class ModelPickerTests(unittest.TestCase):
         self.assertEqual(target, "3d")
         self.assertEqual(scene.scenario.three_d_mode, "TEXT")
 
+    def test_a_model_that_animates_the_given_character_opens_edit_3d(self):
+        import json
+
+        from helpers import FIXTURES
+
+        catalog = submodule("core.api.catalog")
+        handlers = submodule("blender.handlers")
+        body = (FIXTURES / "models" / "model_cartwheel-text-to-motion.json").read_text()
+        records = [*fake_records(), catalog.ModelRecord.from_api(json.loads(body)["model"])]
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        scene = bpy.context.scene
+        scene.scenario.lane = "3d"
+        self.picker.prepare(bpy.context, "3d")
+        wm = bpy.context.window_manager
+        wm.scenario_picker_modality = "3d"
+        wm.scenario_picker_index = [i.model_id for i in wm.scenario_picker_items].index(
+            "model_cartwheel-text-to-motion"
+        )
+        # It takes text, but it animates the selected character instead of making one.
+        model_id, target = self.picker.apply_choice(bpy.context, "3d")
+        self.assertEqual((model_id, target), ("model_cartwheel-text-to-motion", "edit3d"))
+        self.assertEqual(
+            scene.scenario.lane_state("edit3d").model_key, "model_cartwheel-text-to-motion"
+        )
+
     def test_material_lane_shows_only_patina(self):
         catalog = submodule("core.api.catalog")
         handlers = submodule("blender.handlers")

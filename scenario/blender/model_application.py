@@ -31,7 +31,7 @@ from functools import partial
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from ..core.scene import placement, splat_ply, splats
 from ..core.scene.glb import MAX_GLB_BYTES, GLBError, inspect_glb
@@ -139,16 +139,100 @@ def _read(item, path, *, static_only=True):
 
 
 def _import(path):
+    before = set(bpy.data.objects)
     result = bpy.ops.import_scene.gltf(
         filepath=str(path),
         import_pack_images=True,
         import_select_created_objects=False,
         import_scene_extras=False,
         import_scene_as_collection=False,
+        bone_heuristic="BLENDER",
         disable_bone_shape=True,
     )
     if result != {"FINISHED"}:
         raise ModelApplicationError("Blender could not import the saved GLB")
+    for obj in tuple(bpy.data.objects):
+        if obj not in before and obj.type == "ARMATURE":
+            _fit_bones(obj)
+
+
+# Imported bone lengths, as fractions of the skeleton's size.
+_LONGEST_BONE = 0.5
+_SHORTEST_REACH = 0.005
+_LONE_BONE = 0.1
+
+
+def _skeleton_size(rig):
+    """The longest side of the bone heads' and child meshes' bounds, in armature space."""
+    points = [bone.head_local for bone in rig.data.bones]
+    inverse = rig.matrix_world.inverted_safe()
+    for obj in rig.children_recursive:
+        if obj.type == "MESH":
+            points.extend(inverse @ obj.matrix_world @ Vector(corner) for corner in obj.bound_box)
+    if not points:
+        return 0.0
+    size = max(max(p[axis] for p in points) - min(p[axis] for p in points) for axis in range(3))
+    return size if math.isfinite(size) else 0.0
+
+
+def _fit_bones(rig):
+    """Draw an imported armature's bones at the character's size, inside it.
+
+    Blender's glTF importer (`bone_heuristic="BLENDER"`) divides each guessed
+    bone length by the armature object's scale, so a centimetre skeleton under a
+    0.01 scale draws bones a hundred times too long around the character, and In
+    Front draws them over it. Only lengths change, not heads, directions or rolls,
+    so every rest matrix, the skin and every pose stay as imported. A bone
+    reaches its nearest child, a leaf takes its parent's length, and none passes
+    half the skeleton. A bone with a connected child or B-Bone segments keeps its
+    length, which would move that child or the skin. An object parented to a bone
+    hangs from its tail, set back by the length guessed before that division: it
+    lands where the file puts it.
+    """
+    layer = bpy.context.view_layer
+    layer.update()
+    size = _skeleton_size(rig)
+    if size <= 0:
+        return
+    data = rig.data
+    guessed = {bone.name: bone.length * max(rig.scale) for bone in data.bones}
+    active = layer.objects.active
+    layer.objects.active = rig
+    bpy.ops.object.mode_set(mode="EDIT")
+    try:
+        lengths = {}
+        # EditBone.children scans every bone, so map children once: rigs reach thousands of joints.
+        children = {bone.name: [] for bone in data.edit_bones}
+        for bone in data.edit_bones:
+            if bone.parent is not None:
+                children[bone.parent.name].append(bone)
+        stack = [bone for bone in data.edit_bones if bone.parent is None]
+        while stack:
+            bone = stack.pop()
+            kids = children[bone.name]
+            stack.extend(kids)
+            if bone.bbone_segments > 1 or any(child.use_connect for child in kids):
+                lengths[bone.name] = bone.length
+                continue
+            reach = [(child.head - bone.head).length for child in kids]
+            reach = [value for value in reach if value > size * _SHORTEST_REACH]
+            if reach:
+                length = min(reach)
+            elif bone.parent is not None:
+                length = lengths[bone.parent.name]
+            else:
+                length = size * _LONE_BONE
+            bone.length = lengths[bone.name] = min(length, size * _LONGEST_BONE)
+    finally:
+        bpy.ops.object.mode_set(mode="OBJECT")
+        layer.objects.active = active
+    for child in rig.children:
+        if child.parent_type == "BONE" and child.parent_bone in guessed:
+            change = data.bones[child.parent_bone].length - guessed[child.parent_bone]
+            if change:
+                shift = Matrix.Translation((0.0, -change, 0.0))
+                child.matrix_parent_inverse = shift @ child.matrix_parent_inverse
+    rig.show_in_front = False
 
 
 def _bounds(objects):

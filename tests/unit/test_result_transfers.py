@@ -781,6 +781,23 @@ def sent_headers(connection):
     return connection.request.call_args.kwargs["headers"]
 
 
+def test_connecting_takes_the_connect_timeout_then_reads_take_the_socket_timeout(tmp_path, storage):
+    # A new connection tries each DNS address for the connect timeout: one that
+    # never accepts must not cost the 30-second socket timeout.
+    conn, constructor = storage
+    downloader().download(URL, root=tmp_path, name="x", expected_size=len(DATA))
+    assert transfers.StoragePolicy(frozenset({"storage.example.invalid"})).connect_timeout == 5.0
+    assert constructor.call_args.kwargs["timeout"] == 5.0
+    waits = [call.args[0] for call in conn.sock.settimeout.call_args_list]
+    assert waits and all(wait in (transfers.POLL_INTERVAL, 30.0) for wait in waits)
+    conn.getresponse.return_value = Response()
+    downloader(timeout=2.0).download(URL, root=tmp_path, name="y", expected_size=len(DATA))
+    assert constructor.call_args.kwargs["timeout"] == 2.0
+    for value in (0, -1.0, float("inf"), float("nan"), True):
+        with pytest.raises(ValueError):
+            transfers.StoragePolicy(frozenset({"storage.example.invalid"}), connect_timeout=value)
+
+
 def test_size_scaled_deadline_has_a_floor_and_a_ceiling():
     policy = transfers.StoragePolicy(frozenset({"storage.example.invalid"}))
     assert policy.deadline(None) == policy.total_timeout == 300.0

@@ -57,6 +57,11 @@ _REFERENCE_TYPES = {
 # Popups report no close. The saved-uploads view counts as shown for this long
 # after its last draw, which spans several maintenance pump ticks.
 _VIEW_SECONDS = 2.0
+# Seconds before each read of a processing upload: Scenario usually imports a
+# reference within a few seconds of its completion, so the first reads come
+# soon and the rest every two seconds.
+_PROCESSING_READS = (0.5, 0.5, 1.0)
+_PROCESSING_READ = 2.0
 
 
 class UploadNotStarted(ScenarioError):
@@ -184,6 +189,7 @@ class ReferenceUpload:
     error: str | None = None
     next_poll: float = 0.0
     retry_admission_at: float = 0.0
+    reads: int = 0  # processing reads done, for their schedule
 
     @property
     def sent_nothing(self):
@@ -218,6 +224,35 @@ class UploadRecovery:
     scene: object = None
     reference_id: str | None = None
     replacement: object = None
+
+
+def _next_command(record):
+    """The session command that takes this upload one step further, if any."""
+    if record.state == UploadState.PREPARED:
+        return "initialize_upload"
+    if record.state == UploadState.UPLOADING and record.active_part is None:
+        if len(record.receipts) == len(record.intent.part_sha256):
+            return "finalize_upload"
+        return "transfer_upload_part"
+    if record.state == UploadState.PROCESSING:
+        return "refresh_upload"
+    return None
+
+
+# The pump's idle tick: a processing check ticks it faster only from this long before it is due.
+_POLL_LEAD = 0.6
+
+
+def _ready_command(ticket, now):
+    """The ticket's next command if the pump should tick fast for it.
+
+    A processing check counts only from one idle tick before it is due, so a long wait
+    keeps the slow tick.
+    """
+    command = _next_command(ticket.record)
+    if command == "refresh_upload" and now + _POLL_LEAD < ticket.next_poll:
+        return None
+    return command
 
 
 class ReferenceUploads:
@@ -329,7 +364,12 @@ class ReferenceUploads:
                     if completion.error is not None:
                         raise completion.error
                     ticket.record = self.session.inspect_upload(completion.result.intent.request_id)
-                    ticket.next_poll = time.monotonic() + 2.0
+                    if ticket.command == "refresh_upload":
+                        ticket.reads += 1
+                    reads = _PROCESSING_READS
+                    ticket.next_poll = time.monotonic() + (
+                        reads[ticket.reads] if ticket.reads < len(reads) else _PROCESSING_READ
+                    )
                 except UploadPlanUnavailable:
                     ticket.error = (
                         "Upload cannot continue in this session; restart it from saved uploads"
@@ -356,17 +396,9 @@ class ReferenceUploads:
                 continue
             if time.monotonic() < ticket.retry_admission_at:
                 continue
-            command = None
-            if record.state == UploadState.PREPARED:
-                command = "initialize_upload"
-            elif record.state == UploadState.UPLOADING and record.active_part is None:
-                command = (
-                    "finalize_upload"
-                    if len(record.receipts) == len(record.intent.part_sha256)
-                    else "transfer_upload_part"
-                )
-            elif record.state == UploadState.PROCESSING and time.monotonic() >= ticket.next_poll:
-                command = "refresh_upload"
+            command = _next_command(record)
+            if command == "refresh_upload" and time.monotonic() < ticket.next_poll:
+                command = None
             if command:
                 try:
                     ticket.task = getattr(self.session, command)(
@@ -392,6 +424,29 @@ class ReferenceUploads:
             from .workflow_uploads import deliver as deliver_workflow
 
             deliver_workflow(self)
+
+    def advancing(self):
+        """Whether poll() has an upload step to take: the GUI pump then ticks sooner.
+
+        Each step of an upload starts on the first poll after the previous one
+        ends, so the pump's tick adds up to its length to every step.
+        """
+        if not self.session.active:
+            return False
+        scene = bpy.context.scene
+        online = self._online()
+        now = time.monotonic()
+        return any(
+            ticket.task is not None
+            or (
+                online
+                and not ticket.error
+                and ticket.record is not None
+                and ticket.scene == scene
+                and _ready_command(ticket, now) is not None
+            )
+            for ticket in self.references.values()
+        )
 
     def status(self, identifier):
         self.poll()

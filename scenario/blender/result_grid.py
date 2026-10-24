@@ -181,7 +181,7 @@ def _draw_detail(layout, context, record, rows, surface):
         for index, line in enumerate(lines[:PROMPT_LINES]):
             box.label(text=line, icon="TEXT" if index == 0 else "BLANK1")
     panels.draw_result_model(box, record)
-    # A recovered saved job knows only that it ran a model; its preview names the kind.
+    # A saved job listed before its results are known has no kind; its preview names it.
     kind = record.kind if record.kind in grid.KIND_LABEL or tile is None else tile.kind
     asset_id = tile.asset_id if tile is not None else panels._primary_asset(record)
     size = (record.meta.get("result_sizes") or {}).get(asset_id)

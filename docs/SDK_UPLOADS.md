@@ -479,11 +479,13 @@ when their scene is removed or replaced (Undo/Redo, file loading) or the
 connection changes. Attachment still requires the same scene, form slot or input
 and connection scope. A restart keeps whichever binding the upload had. Initialization,
 each PUT and completion still require durable claims and use one attempt only.
-Known processing uploads are polled at two-second intervals. Uncertain responses
-stop automatic mutation; no later status read releases a part claim or replays
-initialization/completion. The facade retains at most 128 handles per session.
-An admission rejection from a full worker/outcome queue has not started a task;
-the facade waits briefly and retries admission only. It never treats a failed
+Known processing uploads are read 0.5, 1 and 2 seconds after completion, then
+every two seconds; while an upload has a step to take, the GUI pump ticks every
+0.25 seconds instead of 0.6. Uncertain responses stop automatic mutation; no later
+status read releases a part claim or replays initialization/completion. The facade
+retains at most 128 handles per session. An admission rejection from a full
+worker/outcome queue has not started a task; the facade waits briefly and retries
+admission only. It never treats a failed
 task as this safe case. Explicit refresh that confirms `processing` re-enables
 status reads, while uncertain initialization/part/finalization cannot be replayed.
 The facade owns recovery tasks and drains their outcomes even after the dialog

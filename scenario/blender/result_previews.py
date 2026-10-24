@@ -699,8 +699,8 @@ class SCENARIO_OT_retry_result_preview(bpy.types.Operator):
     bl_idname = "scenario.retry_result_preview"
     bl_label = "Retry result preview"
     bl_description = (
-        "Prepare this saved result's preview again from Scenario's preview or the "
-        "verified saved file; nothing is generated, applied, spent or changed in the scene"
+        "Rebuild this result's preview from Scenario or the verified saved file; nothing is "
+        "generated, applied, spent or changed in the scene"
     )
     context_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     request_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})

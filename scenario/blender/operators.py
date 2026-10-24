@@ -144,8 +144,8 @@ class SCENARIO_OT_price_without_capture(bpy.types.Operator):
     bl_idname = "scenario.price_without_capture"
     bl_label = "Price without captured source"
     bl_description = (
-        "Price this uploaded mesh for this session without the Blender objects it came from. "
-        "Its result then has no Apply to captured source"
+        "Price this uploaded mesh on its own; its result cannot be applied back to the objects "
+        "it came from"
     )
     lane: StringProperty(default="image", options={"HIDDEN"})
 
@@ -459,7 +459,13 @@ class SCENARIO_OT_retile_material(bpy.types.Operator):
     bl_description = "Scale the UV mapping of a Scenario material"
     bl_options = {"REGISTER", "UNDO"}
     material_name: StringProperty()
-    scale: FloatProperty(name="Tiling", default=1.0, min=0.01, max=100.0)
+    scale: FloatProperty(
+        name="Tiling",
+        default=1.0,
+        min=0.01,
+        max=100.0,
+        description="How many times the material repeats across the UVs; higher gives smaller tiles",
+    )
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
@@ -1136,6 +1142,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                     item.int_value = int(value)
                 else:
                     item.float_value = float(value)
+                choices = [i[0] for i in catalog.choice_items(rec.model_id, spec.name)]
+                if choices:
+                    item.enum_value = str(value) if str(value) in choices else catalog.OTHER_CHOICE
             elif spec.ptype == "boolean":
                 item.bool_value = bool(value)
             else:
@@ -1386,8 +1395,8 @@ class SCENARIO_OT_mcp_connect(bpy.types.Operator):
     bl_idname = "scenario.mcp_connect"
     bl_label = "Connect"
     bl_description = (
-        "Add the scenario-blender server, with this Blender's URL, to this client's "
-        "configuration file. Other servers are kept and the previous file is copied beside it first"
+        "Add this Blender's scenario-blender server to the client's configuration file, keeping "
+        "its other servers and a backup of the previous file"
     )
     client: StringProperty(default="claude_code")
 

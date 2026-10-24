@@ -43,8 +43,19 @@ def _tick():
         _process()
     except Exception:  # an exception here would silently kill the timer
         log.exception("pump tick failed")
+    return ACTIVE_INTERVAL if _busy() else IDLE_INTERVAL
+
+
+def _busy():
+    """Catalog work runs, or a reference upload has its next step to take."""
     manager = runtime.state.manager
-    return ACTIVE_INTERVAL if manager is not None and manager.has_active() else IDLE_INTERVAL
+    if manager is not None and manager.has_active():
+        return True
+    uploads = runtime.state.reference_uploads
+    try:
+        return uploads is not None and uploads.advancing()
+    except Exception:  # the cadence must never stop the timer
+        return False
 
 
 def _process():

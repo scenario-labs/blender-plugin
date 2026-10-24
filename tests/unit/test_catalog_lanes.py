@@ -123,6 +123,87 @@ def test_edit3d_lane_and_tasks():
     assert catalog.edit3d_task("nope")[0] == "ALL"
 
 
+def test_retexture_starts_on_meshy_7_then_the_scene_edit_models():
+    # Meshy 7 repaints the whole outfit in about a minute; applying it in place keeps the
+    # source's head. The scene-edit models keep the face themselves, in 10 to 16 minutes.
+    inputs = [
+        {"name": "images", "type": "file_array", "kind": "image"},
+        {"name": "sceneFile", "type": "file", "kind": "3d"},
+        {"name": "prompt", "type": "string"},
+    ]
+    caps = ["img23d", "3d23d", "txt23d"]
+    opus = rec("model_scenario-claude-opus-5-5-3d", "Claude Opus 5.5 3D", caps, inputs=inputs)
+    astra = rec("model_scenario-gpt6-astra-3d", "GPT-6 Astra 3D", caps, inputs=inputs)
+    shuffled = [astra, *reversed(RECORDS), opus]
+    assert ids(catalog.edit3d_models("RETEXTURE", shuffled)) == [
+        "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
+        "model_scenario-gpt6-astra-3d",
+    ]
+    assert catalog.DEFAULT_MODELS["edit3d"][:2] == [
+        "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
+    ]
+    assert ids(catalog.models_for_lane("edit3d", shuffled))[0] == "model_meshy-7-retexture"
+    # The selected mesh goes to the scene file, not to the reference images listed first.
+    assert catalog.mesh_param(opus) == "sceneFile"
+    # Retexture is their only Edit 3D task, and they still build in the 3D lane.
+    tasks = [task for task, _label, _desc, models in catalog.EDIT3D_TASKS if opus.id in models]
+    assert tasks == ["RETEXTURE"]
+    assert opus.id in ids(catalog.models_for_lane("3d", shuffled))
+
+
+def test_only_the_slow_scene_edit_models_show_an_expected_wait():
+    assert catalog.expected_wait("model_scenario-claude-opus-5-5-3d") == (
+        "Slow: about 12 to 16 minutes on a 55,000-triangle character"
+    )
+    assert catalog.expected_wait("model_scenario-gpt6-astra-3d") == (
+        "Slow: about 10 minutes on a 55,000-triangle character"
+    )
+    assert catalog.expected_wait("model_meshy-7-retexture") is None
+    assert catalog.expected_wait("model_unknown") is None
+
+
+def test_text_to_motion_models_join_the_animate_task_first_and_stay_3d_results():
+    motion = [
+        rec(
+            "model_uthana-text-to-motion-3.0",
+            "Uthana Text to Motion 3.0",
+            ["txt23d"],
+            inputs=[{"name": "characterFile", "type": "file", "kind": "3d"}],
+        ),
+        rec("model_viggle-text-to-motion", "Viggle Text to Motion", ["txt23d"]),
+        rec("model_meshy-text-to-motion", "Meshy Text to Motion", ["txt23d"]),
+        rec(
+            "model_meshy-animation",
+            "Meshy Animation",
+            ["3d23d"],
+            inputs=[{"name": "model", "type": "file", "kind": "3d"}],
+        ),
+    ]
+    records = RECORDS + motion
+    assert ids(catalog.edit3d_models("ANIMATE", records)) == [
+        "model_uthana-text-to-motion-3.0",
+        "model_viggle-text-to-motion",
+        "model_meshy-animation",
+    ]
+    # Only the curated text-to-motion models join Edit 3D; they still generate in 3D.
+    assert "model_meshy-text-to-motion" not in ids(catalog.edit3d_models("ALL", records))
+    assert motion[1].lanes == {"3d", "edit3d"}
+    assert catalog.model_kind(motion[1]) == "3d"
+
+
+def test_meshy_library_motions_are_named_with_an_other_id_escape():
+    items = catalog.choice_items("model_meshy-animation", "actionId")
+    assert items[1][:2] == ("30", "Walk")
+    assert items[1][2] == "Casual_Walk (library ID 30)"
+    assert items[-1][0] == catalog.OTHER_CHOICE
+    assert {"Idle", "Run", "Wave hello", "Jump"} <= {label for _id, label, _d in items}
+    assert len(items) == len({value for value, _label, _d in items}) <= 20
+    assert catalog.choice_items("model_meshy-animation", "heightMeters") == []
+    assert catalog.choice_items("model_other", "actionId") == []
+
+
 def test_mesh_param_and_tagged_models():
     assert catalog.mesh_param(RECORDS[8]) == "model"
     assert catalog.mesh_param(RECORDS[10]) == "file3d"

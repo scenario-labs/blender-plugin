@@ -243,6 +243,12 @@ def _param_items(self, context):
 
     schema = generation.schema_for(self.model_id)
     spec = schema.by_name(self.name) if schema is not None else None
+    if spec is not None and not spec.allowed_values:
+        from ..core.api.catalog import choice_items
+
+        if options := choice_items(self.model_id, self.name):
+            runtime.set_enum_items(key, options)
+            return runtime.state.enum_cache[key]
     if spec is not None and spec.allowed_values and spec.ptype != "string_array":
         options = [
             (str(v), spec.label_for(v), spec.description)
@@ -558,6 +564,15 @@ class ScenarioSceneProps(bpy.types.PropertyGroup):
         default=PANORAMA_DEFAULT_SIZE,
         description="The 2:1 output size; free sizes are not offered",
         update=_on_panorama_size_change,
+    )
+    retexture_keep_head: BoolProperty(
+        name="Keep the head's texture",
+        default=True,
+        description=(
+            "On a mesh that reads as a standing character, Replace textures paints its "
+            "original texture back on the head, so the face stays as it was. Faces selected "
+            "in Edit Mode are kept instead"
+        ),
     )
     show_cloud_history: BoolProperty(
         name="Cloud history",

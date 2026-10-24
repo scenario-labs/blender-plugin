@@ -4,7 +4,9 @@
 
 An element is a primitive (box, cylinder, plane, wedge, cone, sphere) with a position, size, yaw and a semantic
 category that decides its greybox colour and which sub-collection it lands in. The Scenario LLM writes the plan as
-JSON; parse_plan tolerates the usual noise and clamps every value so a bad answer can never place a runaway shape."""
+grouped JSON rows, a group label then one short array per element: under half the text of keyed objects, so plans
+and above all refinements arrive sooner. parse_plan reads rows and keyed objects (older answers), tolerates the usual
+noise and clamps every value so a bad answer can never place a runaway shape."""
 
 import json
 import re
@@ -44,8 +46,8 @@ DEFAULT_DENSITY = "advanced"
 # without a plugin release. The fixed lists apply when the live model list is unknown or offers no
 # family member. Fast runs Gemini Flash with low thinking: the lowest level 3.7 Flash supports.
 TIERS = (
-    ("best", "Best", "The newest Claude Opus: the richest plans, a few minutes per plan"),
-    ("fast", "Fast", "The newest Gemini Flash: a good plan in under a minute, at a lower price"),
+    ("best", "Best", "The newest Claude Opus: the richest plans, 3 to 4 minutes per plan"),
+    ("fast", "Fast", "The newest Gemini Flash: a rougher plan in under a minute, at a lower price"),
 )
 DEFAULT_TIER = "best"
 _FAMILIES = {
@@ -111,14 +113,16 @@ _ROLE = (
     "place at once.\n\n"
 )
 _FORMAT = (
-    "OUTPUT: ONLY a JSON array, no prose, no code fence, no wrapper object. Each element:\n"
-    '{"name": "<short unique label>", "category": "<floor|wall|structure|prop|furniture|'
-    'vegetation|vehicle|water|light|other>", "primitive": "<box|cylinder|plane|wedge|cone|sphere>", '
-    '"position": [x, y, z], "size": [x, y, z], "rotation": <yaw degrees about Z>, "group": '
-    '"<sub-group label>"}\n'
-    "Units are metres. Z is up. Ground is z = 0. position is the CENTRE of the shape, so an "
-    "element resting on the ground has z = size_z / 2, and an element resting on top of another "
-    "has z = (support top) + size_z / 2. size is the full extent along x, y, z before the yaw "
+    "OUTPUT: ONLY a JSON array, no prose, no code fence. Write each group as its label (a string) "
+    "followed by one row per element of that group:\n"
+    '["<group label>", ["<short unique name>", "<category>", "<primitive>", x, y, z, sx, sy, sz, '
+    'yaw], ["<name>", ...], "<next group label>", [...], ...]\n'
+    "category: floor|wall|structure|prop|furniture|vegetation|vehicle|water|light|other. "
+    "primitive: box|cylinder|plane|wedge|cone|sphere. yaw: degrees about Z. Numbers have at most "
+    "two decimals.\n"
+    "Units are metres. Z is up. Ground is z = 0. x, y, z is the CENTRE of the shape, so an "
+    "element resting on the ground has z = sz / 2, and an element resting on top of another "
+    "has z = (support top) + sz / 2. sx, sy, sz is the full extent along x, y, z before the yaw "
     "rotation. A plane is a thin box. A wedge rises from -x (low edge) to +x (high edge): use two "
     "wedges back to back (one rotated 180) for a gable roof. A cone's tip points up. A cylinder's "
     "axis is Z.\n\n"
@@ -165,13 +169,57 @@ def instruction(prompt, density=DEFAULT_DENSITY, previous=None, *, image=False):
     if previous:
         return (
             head
-            + "Here is the current plan as JSON; return an UPDATED full plan applying this change: "
+            + "Here is the current plan in the same format; return an UPDATED full plan applying "
+            + "this change: "
             + str(prompt)
             + "\nCurrent plan:\n"
-            + json.dumps(previous, separators=(",", ":"))
+            + encode_rows(previous)
         )
     text = str(prompt).strip() or "the place in the reference image"
     return head + "Scene to block out: " + text
+
+
+def encode_rows(elements):
+    """A plan as the grouped rows the LLM reads and writes: each group's label, then its rows."""
+    rows, group = [], None
+    for el in parse_plan(json.dumps(list(elements))):
+        if el["group"] != group:
+            group = el["group"]
+            rows.append(group)
+        row = [el["name"], el["category"], el["primitive"], *el["position"], *el["size"]]
+        rows.append([*row, el["rotation"]])
+    return json.dumps(rows, separators=(",", ":"))
+
+
+def _from_rows(items, *, strict=False):
+    """Keyed elements from grouped rows; keyed objects (older answers) pass through unchanged.
+
+    A string sets the group of the rows after it. A row is [name, category, primitive, x, y, z,
+    sx, sy, sz, yaw]; a row of another length could have lost any value, so it is never guessed:
+    it is skipped, or refused when `strict`.
+    """
+    elements, group = [], None
+    for item in items:
+        if isinstance(item, str):
+            group = item
+        elif isinstance(item, dict):
+            elements.append(item)
+        elif isinstance(item, list) and len(item) == 10:
+            name, category, primitive, x, y, z, sx, sy, sz, yaw = item
+            element = {
+                "name": name,
+                "category": category,
+                "primitive": primitive,
+                "position": [x, y, z],
+                "size": [sx, sy, sz],
+                "rotation": yaw,
+            }
+            if group is not None:
+                element["group"] = group
+            elements.append(element)
+        elif strict:
+            raise ValueError("A Blockout row is incomplete")
+    return elements
 
 
 def _num(value, default, lo, hi):
@@ -247,7 +295,7 @@ def parse_plan(text):
     if not isinstance(data, list):
         return []
     elements = []
-    for index, raw in enumerate(data[:MAX_ELEMENTS]):
+    for index, raw in enumerate(_from_rows(data)[:MAX_ELEMENTS]):
         if not isinstance(raw, dict):
             continue
         name = str(raw.get("name") or f"Block {index + 1}").strip()[:60] or f"Block {index + 1}"
@@ -311,11 +359,10 @@ def _complete_json(text):
 def parse_complete_plan(text):
     """Accept a complete array with optional prose/fences/answer wrapper, never a recovered prefix."""
     raw = _complete_json(text)
-    if (
-        not isinstance(raw, list)
-        or not 1 <= len(raw) <= MAX_ELEMENTS
-        or any(not isinstance(item, dict) for item in raw)
-    ):
+    if not isinstance(raw, list) or any(not isinstance(item, (dict, list, str)) for item in raw):
+        raise ValueError("Expected a complete bounded Blockout array")
+    raw = _from_rows(raw, strict=True)
+    if not 1 <= len(raw) <= MAX_ELEMENTS:
         raise ValueError("Expected a complete bounded Blockout array")
     elements = parse_plan(json.dumps(raw, allow_nan=False))
     if len(elements) != len(raw):

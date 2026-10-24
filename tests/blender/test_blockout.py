@@ -438,3 +438,38 @@ class BlockoutViewTests(unittest.TestCase):
         self.assertEqual(bpy.ops.ed.redo(), {"FINISHED"})
         self.assertEqual((len(_of_type("CAMERA")), len(_of_type("LIGHT"))), (1, 1))
         self.assertIsNotNone(bpy.context.scene.camera)
+
+    def test_a_refinement_and_its_rebuild_each_undo_in_one_step(self):
+        first = _garden()
+        moved = {**first[-1], "position": [-5.0, 5.0, 0.5]}  # the lantern moves beside the pond
+        bench = _el("Bench", "furniture", "box", (-4, 2, 0.25), (1.8, 0.5, 0.5), group="Pond")
+        refined = [*first[:-1], moved, bench]
+        self.blockout._store(self.scene, first)
+        bpy.ops.ed.undo_push(message="Before blockout")
+        self.assertEqual(bpy.ops.scenario.blockout_build(), {"FINISHED"})
+        bpy.ops.ed.undo_push(message="Build blockout")
+        # A refined plan lands through maintenance, which records its own step.
+        self.blockout._store(self.scene, refined)
+        bpy.ops.ed.undo_push(message="Scenario Blockout plan")
+        self.assertEqual(bpy.ops.scenario.blockout_build(), {"FINISHED"})
+        bpy.ops.ed.undo_push(message="Build blockout")
+        props = self.scene.scenario_blockout
+        self.assertEqual(
+            {obj.name for obj in props.built_collection.all_objects},
+            {element["name"] for element in refined},
+        )
+        self.assertEqual((len(_of_type("CAMERA")), len(_of_type("LIGHT"))), (1, 1))
+
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        props = bpy.context.scene.scenario_blockout
+        built = {obj.name: list(obj.location) for obj in props.built_collection.all_objects}
+        self.assertEqual(set(built), {element["name"] for element in first})
+        self.assertEqual(built["Lantern"], first[-1]["position"])
+        self.assertEqual(self.blockout.stored_plan(bpy.context.scene), refined)
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertEqual(self.blockout.stored_plan(bpy.context.scene), first)
+        # Undo past the first build frees the shared primitive meshes; a new build remakes them.
+        self.assertEqual(bpy.ops.ed.undo(), {"FINISHED"})
+        self.assertEqual(len(bpy.data.objects), 0)
+        self.assertEqual(bpy.ops.scenario.blockout_build(), {"FINISHED"})
+        self.assertEqual(len(_of_type("MESH")), len(first))

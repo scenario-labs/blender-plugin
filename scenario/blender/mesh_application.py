@@ -267,7 +267,8 @@ class SourceSkin:
     armature_name: str
     modifier: tuple = field(repr=False)
     groups: tuple
-    weights: bytes = field(repr=False)
+    # None over the work cap.
+    weights: bytes | None = field(repr=False)
     bones: bytes = field(repr=False)
     rig_world: tuple = field(repr=False)
 
@@ -283,9 +284,15 @@ def _digest(values):
 def _capture_skin(scene, obj):
     modifier, rig = _skin_rig(scene, obj)
     bones = rig.data.bones
-    entries = sum(len(vertex.groups) for vertex in obj.data.vertices)
-    if entries + len(bones) > MAX_COMPONENTS:
-        raise MeshApplicationError("Skin weights exceed the synchronous component limit")
+    # Over the work cap, only ANIMATE applies (`MeshTarget.dense`), which reads no weights.
+    weights = None
+    if _components(obj.data) <= MAX_COMPONENTS:
+        entries = sum(len(vertex.groups) for vertex in obj.data.vertices)
+        if entries + len(bones) <= MAX_COMPONENTS:
+            weights = _digest(
+                tuple((group.group, group.weight) for group in vertex.groups)
+                for vertex in obj.data.vertices
+            )
     return SourceSkin(
         rig,
         rig.data,
@@ -293,10 +300,7 @@ def _capture_skin(scene, obj):
         rig.data.name,
         modifier_settings(modifier, interface=False),
         tuple((group.name, group.lock_weight) for group in obj.vertex_groups),
-        _digest(
-            tuple((group.group, group.weight) for group in vertex.groups)
-            for vertex in obj.data.vertices
-        ),
+        weights,
         _digest(
             (
                 bone.name,
@@ -318,10 +322,20 @@ class MeshTarget:
     mesh: object = field(repr=False)
     name: str
     mesh_name: str
-    geometry: bytes = field(repr=False)
+    # None for a skinned mesh over the work cap.
+    geometry: bytes | None = field(repr=False)
     context: tuple = field(repr=False)
     # Set only for a source skinned to an armature: RIG alone may replace it.
     skin: SourceSkin | None = field(default=None, repr=False)
+
+    @property
+    def dense(self):
+        """A skinned source over the work cap, captured without its geometry or weights.
+
+        Only ANIMATE applies to it: the clips go to its rig, and its mesh and
+        weights are never read or changed.
+        """
+        return self.geometry is None or (self.skin is not None and self.skin.weights is None)
 
 
 def capture_target(scene, obj):
@@ -363,7 +377,7 @@ def capture_target(scene, obj):
             obj.data,
             obj.name,
             obj.data.name,
-            _fingerprint(obj.data),
+            None if skin and _components(obj.data) > MAX_COMPONENTS else _fingerprint(obj.data),
             context,
             _capture_skin(scene, obj) if skin else None,
         )

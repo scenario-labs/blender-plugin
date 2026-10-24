@@ -613,7 +613,10 @@ class ResultGridPreviewTests(unittest.TestCase):
         drawn = labels(calls)
         self.assertIn((self.core.summary("image", len(data), 1), "IMAGE_DATA"), drawn)
         self.assertIn((f"Submitted {self.core.submitted_label(CLAIMED)}", "TIME"), drawn)
-        self.assertIn(("Recovered saved job", "TEXT"), drawn)
+        # The store keeps no prompt: no prompt line, and the model is named.
+        self.assertNotIn("TEXT", [icon for _, icon in drawn])
+        name = submodule("blender.panels").result_model_name(view)
+        self.assertIn((name, "NODE_MATERIAL"), drawn)
         # The saved-job controls a list row draws, for the same view.
         self.assertEqual(len(controls), 1)
         self.assertIs(controls[0], view)
@@ -648,7 +651,8 @@ class ResultGridPreviewTests(unittest.TestCase):
         drawn = labels(calls)
         self.assertIn(("3-6 of 6", "NONE"), drawn)
         size = len(png(8, 8))
-        self.assertIn((self.core.summary("image", size, 6), "IMAGE_DATA"), drawn)
+        # Saved without a lane, the job is the material its saved map roles establish.
+        self.assertIn((self.core.summary("material", size, 6), "MATERIAL"), drawn)
         self.assertEqual(len(controls), 1)
         self.assertIs(controls[0], view)
 

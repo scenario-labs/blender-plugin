@@ -53,10 +53,16 @@ resume/download, known model-job cancellation, interrupted-download reconciliati
 stopping a running download or pending import-receipt retry. `stop_download`
 appears in `actions` only while this Blender session downloads the job's results;
 it stops the transfer without saving a partial file, the job becomes
-`download_failed` and `resume` downloads it again. `cancel` appears in `actions` only after a refresh
-in the current context reported a running `inference` job, the only type Scenario
-documents as cancellable; for any other job it is refused without a request and
-the job keeps running, matching the native Jobs panel. A running workflow job
+`download_failed` and `resume` downloads it again. It is also listed while a
+`prepare_result_application` downloads the OBJ, MTL or map
+[copies of a GLB](RESULT_TRANSFERS.md#glb-format-copies-on-demand) that a model unit,
+mesh edit or material needs; that prepare call refuses with a note, `wait_for_job`
+waits for the download and preparing again reviews the result. Meanwhile `job_status`
+reports `delivery_active` true and the status note "Downloading the files a chosen
+result needs"; stopping keeps the job `ready`. `cancel` appears in `actions` only after
+a refresh in the current context reported a running `inference` job, the only type
+Scenario documents as cancellable; for any other job it is refused without a request
+and the job keeps running, matching the native Jobs panel. A running workflow job
 cannot be canceled: `cancel` returns that explanation and sends nothing, while an
 unsent prepared one keeps `cancel_prepared_job`. Resuming a restarted job does
 not import it into the current scene. Shared `wait_for_job` waits without
@@ -65,10 +71,11 @@ is held by disabled Online Access, or reaches its timeout. See
 [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
 Shared `job_status` and `wait_for_job` results add the native Jobs projection as
-flat fields. `lane` is the model lane that submitted the job in this Blender
-session, or `null` for workflow, Film, restarted and recovered jobs; it never
-selects a destination. While a known remote job is active, `remote_status` is its
-latest validated Scenario status, `progress` its reported fraction from 0 to 1
+flat fields. `lane` is the model lane that submitted the job, saved with it, so a
+restart keeps it; it is `null` for workflow, Film and recovered cloud jobs and for
+jobs saved by releases before job schema 13, and it never selects a destination.
+While a known remote job is active, `remote_status` is its latest validated
+Scenario status, `progress` its reported fraction from 0 to 1
 (`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
 `remote_stale` whether automatic polling has stopped keeping it current, also
 while a failed refresh is being retried. They are
@@ -470,7 +477,7 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame', 'camera_background', 'image_plane'])<br>`plane_unlit`: boolean<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number<br>`tile_size_m`: number | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame', 'camera_background', 'image_plane'])<br>`plane_unlit`: boolean<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`keep_texture`: string (['SELECTED', 'HEAD', 'NONE'])<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number<br>`tile_size_m`: number | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'stop_download', 'retry_receipt', 'find_cloud_job']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
@@ -830,10 +837,11 @@ sequencer insertion.
 a declared OpenEXR original was saved instead of its preview, or a WAV original
 instead of Scenario's MP3 copy, with unknown size;
 `projection: equirectangular` appears only when Scenario declares a 360 image.
-Neither is an application approval, and neither is a listed file. Recovered
-display records use generic `kind: model`; original lane metadata is not
-persisted. PNG/EXR results can use the explicit image import approval above,
-without inferring a material or World assignment from their media type.
+Neither is an application approval, and neither is a listed file. A job listed after
+a restart reports the `kind` of its saved lane; one saved without a lane reports the
+kind its saved results establish, or `model` until they are known. PNG/EXR results
+can use the explicit image import approval above, without inferring a material or
+World assignment from their media type.
 Supported video/audio uses the explicit asset and scene/frame approval above.
 Saved model `import_units` use the scene/cursor approval above; in-place mesh
 editing is separate. `import_result` rejects direct cached-file import,
@@ -946,8 +954,9 @@ a form sends each decimal field as the shortest decimal its 32-bit storage holds
 each number parameter that is not given at its declared default, in the field's
 own type (`0.0` in a decimal field), as a form does. `null` still leaves an
 optional parameter to the service, like a field switched off in the form. A few
-models start at the curated value their form shows instead: Tripo P2 with Auto Size on
-and Face Limit 50000, Rodin with the PBR material. The
+models start at the curated value their form shows instead: Tripo P2, text or image,
+with Auto Size on and Face Limit 50000, Rodin with the PBR material, Uthana Text to
+Motion 3.0 with Animation only on. The
 [Environment lane](#environment-lane-360-panoramas) has no form; its requests
 apply their panorama contract's lane defaults and sizes instead.
 Approval is unchanged: `generate` needs the same parameters and the exact
@@ -1260,6 +1269,24 @@ result meshes were joined into one. See
 fit](MESH_APPLICATION.md#bounds-fit-for-remeshes-and-copied-parts).
 
 
+## Retexture kept texture
+
+For `mesh_policy: RETEXTURE`, `keep_texture` chooses which faces get the source's
+own maps back after the result's UVs and materials replace them: `SELECTED` (faces
+selected in Edit Mode), `HEAD` (a character's head, found from its shape) or
+`NONE`. Omitted, the review starts on `SELECTED` when some faces are selected,
+else on `HEAD` for sources that stand like a character (0.5 to 3 m tall, taller
+than wide) while the scene's Keep the head's texture option is on, else on
+`NONE`. The approval returns `keep_texture`, `kept_faces` and `kept_note`; for
+other policies `keep_texture` and `kept_note` are null and `kept_faces` is 0, and
+a `keep_texture` other than `NONE` is refused. `kept_faces` 0 with `HEAD` means no
+head was found and nothing will be kept. After success, `job_status`
+`mesh_edit.kept_texture` reports `mode`, `source` (`selection`, `head` or null),
+`faces`, the `maps` painted (`base_color`, `normal`, `roughness`, `metallic`) and
+`skipped` roles with their reason. See
+[kept texture](MESH_APPLICATION.md#keep-the-sources-texture-on-chosen-faces).
+
+
 ## Saved mesh undo status
 
 `mesh_edit.undo_available` reports whether a desktop Blender history checkpoint
@@ -1320,19 +1347,32 @@ provider/retargeting limitations.
 Use `mesh_policy: ANIMATE` with `purpose: mesh_source` or `mesh_edit` and one
 saved GLB, glTF or FBX unit from an Animate job when the source is skinned to an
 armature. The returned armature's clips are copied onto that existing rig; the
-source's mesh, skin, rig and object context stay, and no returned object is
-added. Every animated bone needs the same name and parent as the rig and a rest
-pose within 15 degrees, which the copied keys are corrected for, and location
-keys are scaled to the rig's units. The first clip becomes the active action;
-it, the other clips and the previous action stay in muted NLA tracks.
-`mesh_placement` and `keep_original` are not used. An unskinned source, a
-different skeleton or a result without clips is rejected, leaving the job
-reviewable. `mesh_edit.rig` names the animated rig, `mesh_edit.clips` the new
-actions and `mesh_edit.rest_correction_deg` the largest rest correction in
-degrees while the status is current. FBX clips, for RIG too, keep the file's
-frame rate and `mesh_edit.frame_rate_mismatch` reports a different scene FPS.
-The shared native history and receipt-only recovery rules apply. See [the
-ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
+source's mesh, skin, rig and object context stay, and no returned object is added.
+Every animated bone needs the same name and parent as the rig and a rest pose
+within 15 degrees, which the copied keys are corrected for, and location keys are
+scaled to the rig's units. Otherwise, when both rigs are humanoid skeletons with
+Meshy, Mixamo, SMPL or Unreal bone names, as for a text-to-motion clip on a Meshy
+rig, the clips are [retargeted](MESH_APPLICATION.md#retarget-a-humanoid-clip) with
+root motion scaled by leg length and the feet kept on the rig's rest floor. Clips
+that also key the returned armature object, as files whose skin leaves the moving
+scene root out of its joints do, are only retargeted, that motion reaching the
+hips. The first clip becomes the active action; it, the other clips and the
+previous action stay in muted NLA tracks, and a scene frame range still at
+Blender's default 1 to 250 becomes the first clip's. `mesh_placement` and
+`keep_original` are not used. A skinned source too dense for other in-place edits
+still takes ANIMATE. An unskinned source, another
+skeleton that is not humanoid or a result without clips is rejected, leaving the
+job reviewable and the rig unchanged; `job_status` `error` then starts with
+"Animation not applied; the rig is unchanged" and says what to change, such as
+rigging the mesh again with Edit 3D > Rigging. `mesh_edit.rig` names the animated
+rig, `mesh_edit.clips` the new actions, `mesh_edit.rest_correction_deg` the
+largest rest correction in degrees (null when retargeted),
+`mesh_edit.retargeted_from` the returned skeleton when retargeted and
+`mesh_edit.frame_range` the range the first clip set, while the status is current.
+FBX clips, for RIG too, keep the file's frame rate and
+`mesh_edit.frame_rate_mismatch` reports a different scene FPS. The shared native
+history and receipt-only recovery rules apply. See [the ANIMATE
+contract](MESH_APPLICATION.md#apply-returned-animation).
 
 
 ## Blockout plan commands

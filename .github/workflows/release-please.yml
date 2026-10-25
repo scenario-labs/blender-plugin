@@ -158,7 +158,7 @@ jobs:
       matrix:
         include:
           - { version: "5.1.2", sha256: "aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb" }
-          - { version: "5.2.2", sha256: "84098912789dc450e95697c4184fb8a90acbe5111c2ba4aede3fecb57806a168" }
+          - { version: "5.2.3", sha256: "78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a918eec" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

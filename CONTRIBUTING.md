@@ -212,6 +212,7 @@ the default unit-test collection and are not added to PR workflows.
 | `SCENARIO_SMOKE` | `tools/smoke_image.py`, `tools/smoke_suite.py`, `tools/smoke_inputs.py` | `=1` opts into explicitly authorized smoke spending or reference uploads; keep this out of dotenv files | Developer, on the command line after authorization; the protected smoke workflow |
 | `SCENARIO_GUI_PROBE` | `scenario/blender/operators.py`: `probe_mode`; Film and model-job approvals in `scenario/blender/`; `scenario/mcp/tools_scenario.py`: `generate`; `tools/capture_gui_scene.py` | `=1` blocks panel, Film, workflow and MCP generation during screenshots and desktop review; it is not a general network or spending sandbox | `tools/capture_gui.py`, `tools/gui_screenshot.py`, `tools/desktop_review.py` |
 | `SCENARIO_PROBE_MODEL` | `tools/gui_screenshot.py` | Selects a model for 3D-tab screenshots | Test tools |
+| `SCENARIO_PROBE_TASK` | `tools/gui_screenshot.py` | Selects the Edit task, such as `ANIMATE`, for 3D Edit screenshots (`RETEXTURE` by default) | Test tools |
 | `SCENARIO_SHOT_SOURCE` | `tests/blender/test_shot_planner.py` | `=1` loads the shot planner from source rather than the installed extension; unsuitable as evidence of ZIP acceptance | Test tools |
 | `SCHEMA_CACHE` | `tools/audit_payloads.py` | Optional private persistent schema-cache root; otherwise each run uses a new temporary cache. Live subdirectories are partitioned by credentials, project and API base URL | Developer |
 

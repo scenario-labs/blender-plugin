@@ -56,7 +56,12 @@ def _prepare():
             bpy.context.scene.scenario.three_d_mode = (
                 "EDIT"  # edit3d lives under the 3D tab in Edit mode
             )
-            bpy.context.scene.scenario.edit3d_task = "RETEXTURE"
+            # SCENARIO_PROBE_TASK picks the Edit task (REMESH, RETEXTURE, UV, RIG, ANIMATE or PARTS)
+            bpy.context.scene.scenario.edit3d_task = os.environ.get(
+                "SCENARIO_PROBE_TASK", "RETEXTURE"
+            )
+            if PROMPT:
+                bpy.context.scene.scenario.lane_state("edit3d").prompt = PROMPT
             probe_model = os.environ.get("SCENARIO_PROBE_MODEL")
             if probe_model:
                 # force a specific edit3d model (e.g. Rodin Bang) and trigger its async schema fetch
@@ -192,6 +197,8 @@ def _prepare():
                             with bpy.context.temp_override(area=a, region=region):
                                 bpy.ops.object.select_all(action="SELECT")
                                 bpy.ops.view3d.view_selected()
+                                # deselect again so the group colours show without outlines
+                                bpy.ops.object.select_all(action="DESELECT")
         if ACTION == "blockout_live":
             # Prepare the form only. Screenshot probes must never submit a paid design.
             for o in list(bpy.context.scene.objects):
@@ -202,7 +209,6 @@ def _prepare():
                 PROMPT
                 or "a small artist's studio: a desk, an easel, shelves, a couch, a rug, a window"
             )
-            bo.scene_type, bo.scale = "interior", "room"
             bpy.context.scene.scenario.lane = "blockout"
             print("GUI probe: skipped paid blockout design")
         if ACTION == "generations":

@@ -509,7 +509,7 @@ Meshy, Rodin, Tripo and Hunyuan, plus worlds such as Marble, HY World and
 TripoSplat. Text and Image modes start with Tripo P2 at real-world size
 (**Auto Size**) and 50,000 faces; change either in the form.
 
-![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
+![3D lane in Text mode with Tripo P2 Text to 3D, a prompt, Face Limit 50000, Auto Size, texture options and Generate with its price](images/panel-3d.png)
 
 **Importing a model.** Choose **Import <format> model (N)**, such as
 **Import GLB model (1)**, for the main model, or **Import alternate: <format> (N)**
@@ -571,6 +571,8 @@ too. Claude Opus 5.5 3D and GPT-6 Astra 3D, next in the list, repaint only what
 your prompt names and keep the rest themselves, but take 10 to 16 minutes on a
 typical character; the form shows the expected wait.
 
+![3D tab in Edit mode on a rigged character: the Retexture task with Meshy 7 Retexture, Keep the head's texture on, a prompt and the selected mesh upload](images/panel-3d-edit.png)
+
 **Animate** starts with text-to-motion models, Uthana Text to Motion 3.0 and Viggle
 Text to Motion: describe the motion, such as "walks forward four steps then
 waves", and generate. They upload nothing and need a mesh that already has a rig
@@ -586,14 +588,14 @@ and type any ID from
 **Cartwheel Text to Motion** also animates your uploaded character from a prompt;
 it is listed here, not in Text mode.
 
+![3D tab in Edit mode on a rigged character: the Animate task with Uthana Text to Motion 3.0, a walking prompt, frame rate, duration and Generate with its price](images/panel-3d-animate.png)
+
 A mesh too dense to take edits in place shows its triangle count and suggests
 remeshing it first; its results still import as new objects. **Apply animation**
 still works on a rigged mesh that dense, since it changes only the rig.
 
 To put the result back on your mesh, see
 [Apply a saved mesh edit](#apply-a-saved-mesh-edit).
-
-![3D tab in Edit mode: the selected mesh, task tabs Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts, Meshy 7 Retexture and its parameters](images/panel-3d-edit.png)
 
 ### Materials
 
@@ -671,7 +673,7 @@ apply; to start a clip from one, use **Use as video first frame**
 form through local MCP; see the
 [agent preparation sequence](MCP.md#preparing-render-image-and-render-video).
 
-![Render Image lane: Scene to render, model Gemini 3.1, the Look field, style images with the pinned capture row, parameters and Generate](images/panel-render-image.png)
+![Render Image lane: Scene to render on the scene camera, Capture and upload scene, GPT Image 2.5 Sunburst, the Look field and style image slots](images/panel-render-image.png)
 
 ### Render Video
 
@@ -690,7 +692,7 @@ takes a reference video. The look, reference frames and first frame are in the
 - **Look** and **Reference frames**: as the look and style images in Render
   Image. Prompt Spark needs a [first frame](#first-frame).
 
-![Render Video lane: Clip to render, the Camera path planner with an orbit built, Seedance 2.0, the Look field with Prompt Spark, the first frame row and style images](images/panel-render-video.png)
+![Render Video lane: Clip to render on the scene camera with Match timeline and Capture and upload scene, the Camera path planner with an orbit built, and Seedance 2.5](images/panel-render-video.png)
 
 #### Camera path
 
@@ -717,7 +719,10 @@ for them, the image guides the opening look instead, and the form says so.
 
 ### Blockout
 
-![Blockout tab with Scene, Type and Scale controls above a stored example layout and Rebuild, Clear and Refine actions](images/panel-blockout.png)
+![Blockout tab with the scene description, a reference image field, Density, Best and Fast, Colours camera and light, a priced Generate blockout button and a coloured example layout with its camera](images/panel-blockout.png)
+
+*The layout is a sample plan built locally for this screenshot, not a model response;
+the price is an example.*
 
 Turn a scene description or a reference picture into a greybox layout of
 coloured primitives, grouped in a `Blockout` collection.
@@ -753,7 +758,7 @@ reverts it); choose **Build blockout** to update the geometry.
 
 ### Environment
 
-![Environment tab in Generate mode: Scenario Skybox Flux.1 with a prompt, a reference panorama, Style, Skybox Count and Sampling Steps settings, and Generate with its price](images/panel-environment.png)
+![Environment tab in Generate mode: Scenario Skybox GPT with a prompt, reference image slots, a 3840 x 1920 panorama size, Quality and Generate with its price](images/panel-environment.png)
 
 Generate a 360 panorama for the scene World. Modes:
 

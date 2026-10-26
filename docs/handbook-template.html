@@ -86,26 +86,50 @@ window.va = window.va || function () { (window.vaq = window.vaq || []).push(argu
     if (narrow.matches && event.target.closest("a[href^='#']")) contents.open = false;
   });
 })();
-// Previous and next buttons for sideways strips; without script they still scroll.
+// Sideways strips get previous and next arrows on their edges and one dot per panel
+// below, lit for the panels in view; without script they still scroll.
 document.querySelectorAll(".lane-strip").forEach(strip => {
-  const nav = document.createElement("div");
-  nav.className = "strip-nav";
   const still = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const buttons = [["Previous panels", "←", -1], ["Next panels", "→", 1]].map(([label, arrow, step]) => {
+  const behavior = () => still.matches ? "auto" : "smooth";
+  const frame = document.createElement("div");
+  frame.className = "strip-frame";
+  strip.before(frame);
+  frame.append(strip);
+  const arrows = [["Previous panels", "←", -1], ["Next panels", "→", 1]].map(([label, arrow, step]) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "button quiet";
+    button.className = `strip-arrow ${step < 0 ? "prev" : "next"}`;
     button.setAttribute("aria-label", label);
     button.textContent = arrow;
-    button.addEventListener("click", () => strip.scrollBy({left: step * strip.clientWidth * 0.8, behavior: still.matches ? "auto" : "smooth"}));
-    nav.append(button);
+    button.addEventListener("click", () => strip.scrollBy({left: step * strip.clientWidth * 0.8, behavior: behavior()}));
+    frame.append(button);
     return button;
   });
+  const panels = [...strip.querySelectorAll(":scope > figure")];
+  const dots = document.createElement("div");
+  dots.className = "strip-dots";
+  const marks = panels.map(panel => {
+    const dot = document.createElement("button");
+    dot.type = "button";
+    const name = panel.querySelector("figcaption a")?.textContent || "panel";
+    dot.setAttribute("aria-label", `Show the ${name} panel`);
+    dot.title = name;
+    dot.addEventListener("click", () => strip.scrollTo({
+      left: strip.scrollLeft + panel.getBoundingClientRect().left - strip.getBoundingClientRect().left,
+      behavior: behavior(),
+    }));
+    dots.append(dot);
+    return dot;
+  });
+  frame.after(dots);
+  const seen = new IntersectionObserver(entries => entries.forEach(entry => {
+    marks[panels.indexOf(entry.target)].classList.toggle("on", entry.intersectionRatio >= 0.5);
+  }), {root: strip, threshold: [0, 0.5, 1]});
+  panels.forEach(panel => seen.observe(panel));
   const update = () => {
-    buttons[0].disabled = strip.scrollLeft <= 1;
-    buttons[1].disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
+    arrows[0].disabled = strip.scrollLeft <= 1;
+    arrows[1].disabled = strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 1;
   };
-  strip.after(nav);
   strip.addEventListener("scroll", update, {passive: true});
   window.addEventListener("resize", update);
   update();

@@ -84,9 +84,39 @@ and generate with Scenario; see [Agents (MCP)](#agents-mcp).
 
 For ideas, browse the [explorations made in Blender](#explorations-made-in-blender).
 
-![Image lane in the Scenario sidebar, showing all creation tabs and an offline example form](images/panel-image.png)
+Model names below are examples; what's available depends on your access and each
+model's current settings. Scroll sideways through the panels; select a panel to enlarge
+it, or its name to read its section.
 
-*The Image form is an offline illustration, not a live model response or price quote.*
+<div class="lane-strip" role="region" aria-label="Lane panels" tabindex="0">
+<figure><img src="images/panel-image.png" width="440" height="400"
+alt="Image lane with an offline example form in the Scenario sidebar">
+<figcaption><a href="#image">Image</a> text or references to image</figcaption></figure>
+<figure><img class="tall" src="images/panel-video.png" width="245" height="750"
+alt="Video lane with Seedance parameters and frame references">
+<figcaption><a href="#video">Video</a> text, images or your scene</figcaption></figure>
+<figure><img class="tall" src="images/panel-3d.png" width="245" height="757" loading="lazy"
+alt="3D lane in Text mode with Tripo P2 and texture options">
+<figcaption><a href="#3d">3D</a> text, image, multi-view or edit</figcaption></figure>
+<figure><img class="tall" src="images/panel-materials.png" width="245" height="820" loading="lazy"
+alt="Materials lane with a prompt and PBR map choices">
+<figcaption><a href="#materials">Materials</a> seamless PBR maps</figcaption></figure>
+<figure><img class="tall" src="images/panel-audio.png" width="245" height="385" loading="lazy"
+alt="Audio lane with ElevenLabs Music v2 and duration settings">
+<figcaption><a href="#audio">Audio</a> speech, music and effects</figcaption></figure>
+<figure><img class="tall" src="images/panel-render-image.png" width="245" height="656" loading="lazy"
+alt="Render Image lane with Scene to render, Capture and upload scene and the Look field">
+<figcaption><a href="#render-image">Render Image</a> your view as a finished still</figcaption></figure>
+<figure><img class="tall" src="images/panel-render-video.png" width="245" height="721" loading="lazy"
+alt="Render Video lane with Clip to render, Capture and upload scene and the camera path planner">
+<figcaption><a href="#render-video">Render Video</a> your playblast as a finished clip</figcaption></figure>
+<figure><img src="images/panel-blockout.png" width="485" height="400" loading="lazy"
+alt="Blockout lane with a coloured example layout and its camera in the viewport">
+<figcaption><a href="#blockout">Blockout</a> a description to a greybox layout</figcaption></figure>
+<figure><img class="tall" src="images/panel-environment.png" width="245" height="641" loading="lazy"
+alt="Environment lane in Generate mode with Scenario Skybox GPT and its settings">
+<figcaption><a href="#environment">Environment</a> a 360 panorama for the scene World</figcaption></figure>
+</div>
 
 ## Install
 
@@ -363,45 +393,17 @@ If the composer keeps failing, it switches itself off: turn it back on with
 
 ## Lanes
 
-Model names below are examples; what's available depends on your access and each
-model's current settings. Scroll sideways through the panels; select a panel to enlarge
-it, or its name to read its section.
-
-<div class="lane-strip" role="region" aria-label="Lane panels" tabindex="0">
-<figure><img src="images/panel-image.png" width="440" height="400" loading="lazy"
-alt="Image lane with an offline example form in the Scenario sidebar">
-<figcaption><a href="#image">Image</a> text or references to image</figcaption></figure>
-<figure><img class="tall" src="images/panel-video.png" width="245" height="750" loading="lazy"
-alt="Video lane with Seedance parameters and frame references">
-<figcaption><a href="#video">Video</a> text, images or your scene</figcaption></figure>
-<figure><img class="tall" src="images/panel-3d.png" width="245" height="600" loading="lazy"
-alt="3D lane in Text mode with Meshy and texture options">
-<figcaption><a href="#3d">3D</a> text, image, multi-view or edit</figcaption></figure>
-<figure><img class="tall" src="images/panel-materials.png" width="245" height="820" loading="lazy"
-alt="Materials lane with a prompt and PBR map choices">
-<figcaption><a href="#materials">Materials</a> seamless PBR maps</figcaption></figure>
-<figure><img class="tall" src="images/panel-audio.png" width="245" height="385" loading="lazy"
-alt="Audio lane with ElevenLabs Music v2 and duration settings">
-<figcaption><a href="#audio">Audio</a> speech, music and effects</figcaption></figure>
-<figure><img class="tall" src="images/panel-render-image.png" width="245" height="585" loading="lazy"
-alt="Render Image lane with Scene to render and the Look field">
-<figcaption><a href="#render-image">Render Image</a> your view as a finished still</figcaption></figure>
-<figure><img class="tall" src="images/panel-render-video.png" width="245" height="820" loading="lazy"
-alt="Render Video lane with Clip to render and the camera path planner">
-<figcaption><a href="#render-video">Render Video</a> your playblast as a finished clip</figcaption></figure>
-<figure><img src="images/panel-blockout.png" width="440" height="400" loading="lazy"
-alt="Blockout lane with a greybox layout of a medieval market in the viewport">
-<figcaption><a href="#blockout">Blockout</a> a description to a greybox layout</figcaption></figure>
-<figure><img class="tall" src="images/panel-environment.png" width="242" height="815" loading="lazy"
-alt="Environment lane in Generate mode with Scenario Skybox Flux.1 and its settings">
-<figcaption><a href="#environment">Environment</a> a 360 panorama for the scene World</figcaption></figure>
-</div>
+[What it does](#what-it-does) shows every lane's panel side by side.
 
 ### Image
 
 Choose a model and describe the result. To use a reference, add it to the form,
 click **Upload reference** and wait for it to finish; the form then shows a fresh
 price. Uploading never generates.
+
+![Image lane in the Scenario sidebar, showing all creation tabs and an offline example form](images/panel-image.png)
+
+*The Image form is an offline illustration, not a live model response or price quote.*
 
 - While an upload runs, keep the model and slot unchanged, and for a viewport,
   camera or Render Result snapshot, the scene too; otherwise the late upload

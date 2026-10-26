@@ -12,6 +12,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 START, END = "<!-- tools:start -->", "<!-- tools:end -->"
 MAP_START, MAP_END = "<!-- tool-map:start -->", "<!-- tool-map:end -->"
+# The guide shows the same map again in What it does.
+INTRO_START, INTRO_END = "<!-- tool-map-intro:start -->", "<!-- tool-map-intro:end -->"
 GROUPS = (
     ("Scene tools (run on Blender's main thread)", "scenario/mcp/tools_blender.py"),
     ("Scenario tools", "scenario/mcp/tools_scenario.py"),
@@ -241,9 +243,11 @@ def main(argv=None):
     if not (args.write or args.check):
         print(block, end="")
         return 0
+    tool_map = generated_map()
     targets = (
         ("docs/MCP.md", block, START, END),
-        ("docs/USER_GUIDE.md", generated_map(), MAP_START, MAP_END),
+        ("docs/USER_GUIDE.md", tool_map, MAP_START, MAP_END),
+        ("docs/USER_GUIDE.md", tool_map, INTRO_START, INTRO_END),
     )
     stale = False
     for relative, content, start, end in targets:

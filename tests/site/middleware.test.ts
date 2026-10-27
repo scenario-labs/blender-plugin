@@ -293,7 +293,6 @@ test("gives up on an analytics service that does not answer", async () => {
 });
 
 // The telemetry relay: opt-in usage events and user-sent feedback from the extension.
-const DAY_MS = 24 * 3600_000;
 const AGENT = "ScenarioBlender/0.11.0";
 const INSTALL = "0123456789abcdef0123456789abcdef";
 const SUBMISSION = "fedcba9876543210fedcba9876543210";
@@ -966,9 +965,9 @@ describe("relay requests", () => {
     );
   });
 
-  // Mocked clocks run ahead of the real one, so addresses from earlier tests are already idle.
   test("forgets addresses idle for two minutes", async (t) => {
-    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + DAY_MS });
+    // Mocked days after the real clock, so clients earlier tests recorded at real time are already idle.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 86_400_000 });
     for (const ip of ["192.0.2.21", "192.0.2.22", "192.0.2.23"]) await admitted("events", { "x-real-ip": ip });
     assert.ok(rememberedClients() >= 3);
 
@@ -979,7 +978,7 @@ describe("relay requests", () => {
   });
 
   test("remembers at most 10,000 addresses, forgetting the least recent first", async (t) => {
-    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 2 * DAY_MS });
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 2 * 86_400_000 });
     const first = { "x-real-ip": "192.0.2.30" };
     const statuses: number[] = [];
     for (let i = 0; i < 61; i += 1) statuses.push(await admitted("events", first));

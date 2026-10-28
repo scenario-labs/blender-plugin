@@ -821,6 +821,15 @@ read from the job or its definition in a flow that has one. The native review
 dialog and local MCP `decide_workflow_step` call it through `ModelJobs.decide`.
 Offline contracts do not establish live endpoint acceptance.
 
+## Browser authorization
+
+The identity provider's `/oauth/authorize` and `/oauth/token` endpoints have no
+SDK client: `core/api/oauth.py` opens the authorize URL through the
+credential-free opener and calls the token endpoint with `urllib` and the
+bundled certifi roots, outside the adapter. The adapter then sends the resulting
+access token through `Credentials(token_source=...)`, read per request so a
+refresh lands before the next call.
+
 ## Known authentication failure
 
 [SDK issue #26](https://github.com/scenario-labs/scenario-sdk-python/issues/26)
@@ -1093,8 +1102,9 @@ When adopting further Studio code:
   media, historical ZIPs and account-specific validation exports out of the
   canonical runtime tree.
 
-Browser sign-in remains deferred under
-[#67](https://github.com/scenario-labs/blender-plugin/issues/67). The open
+Browser sign-in ships in `core/api/oauth.py`, usable once the production OAuth
+application is registered; the rest of
+[#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open. The open
 acceptance checks on Blender 5.0, 5.1 and 5.2, including Linux and Windows
 desktop interaction and coexistence with other extensions, are in
 [#494](https://github.com/scenario-labs/blender-plugin/issues/494).

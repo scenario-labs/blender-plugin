@@ -38,7 +38,8 @@ limits of its current controls. It does not replace Scenario's service policies.
   you can link to it. Local MCP `inspect_result_previews` requests the same
   previews for any downloaded saved job an agent names, with the same reads.
 - Scenario API requests authenticate with your selected key/secret pair using an
-  HTTP Basic `Authorization` header over TLS. They identify the extension with
+  HTTP Basic `Authorization` header over TLS, or with a Bearer token after Sign
+  in with Scenario. They identify the extension with
   `ScenarioBlender/<version>`. Signed storage transfers use the URL's authorization;
   they do not forward the Scenario API key/secret header.
 - Studio > Library reads one page of asset metadata, sending any search text,
@@ -74,6 +75,11 @@ clips and workflow review images use content URLs returned by the service, so
 content transfers are not limited to the API hostname. The Create a key in the
 portal button opens `https://app.scenario.com/team` in your browser. The local
 agent connection uses loopback HTTP, described below.
+
+Sign in with Scenario opens `https://clerk.scenario.com`, Scenario's identity
+provider, in your browser, and the extension exchanges and refreshes its tokens
+there. The browser returns to a listener on `127.0.0.1` (port 9877, 9878 or
+9879) once, for the sign-in's single-use code; the listener stops right after.
 
 The official update repository and handbook use `https://blender.scenario.com/`,
 served by Vercel from the copy hosted by GitHub Pages. The site counts each
@@ -169,6 +175,12 @@ Switching sources does not erase values already saved in Blender. Clear both
 saved fields and save preferences to remove them there; also check backups and
 how your launcher stores environment variables. Rotate the key in Scenario if
 it leaks or a machine holding it is lost.
+
+Sign in with Scenario keeps its access and refresh tokens in `state/sign-in.json`
+under the extension's user directory, a private file (owner read and write
+only) that is never written into a `.blend` file. The token is refreshed in
+place; Sign out deletes the file. Revoke the "Scenario for Blender" application
+in your Scenario account if a machine holding it is lost.
 
 The extension's own user directory under Blender's extensions folder stores
 shared job requests, quotes, prompts and recovery state in

@@ -30,8 +30,9 @@ runtime acceptance have separate gates.
 - **Credentials** ([config.py](../../scenario/core/config.py),
   [prefs.py](../../scenario/prefs.py)): Credentials default to the saved Blender
   pair; environment credentials require explicit selection and cannot mix with
-  preferences. Optional project selection scopes both catalog and shared jobs;
-  OAuth and live permission acceptance remain separate.
+  preferences. A browser sign-in is a third source, isolated the same way.
+  Optional project selection scopes both catalog and shared jobs; live
+  permission acceptance remains separate.
 
 Do not infer UI/MCP parity from the shared adapter's test coverage, or promote
 prototype transport usage into an approved exception to the mandatory SDK policy
@@ -131,11 +132,11 @@ clients see.
 
 0.10.0 delivered consolidated adoption, the shared runtime and the views. The
 open checks, fixes and decisions are in
-[#494](https://github.com/scenario-labs/blender-plugin/issues/494), and future
-OAuth authentication remains deferred under
+[#494](https://github.com/scenario-labs/blender-plugin/issues/494), and the
+rest of browser sign-in (secure storage, tenant selection) is open under
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67). Offline
 serialization tests and source inspection do not satisfy live or native
 acceptance criteria.
 
 The current release follows the [API-key release plan](../maintenance/release-plan.md).
-OAuth deferral does not relax credential precedence, project scope or paid-job safety.
+A browser sign-in does not relax credential precedence, project scope or paid-job safety.

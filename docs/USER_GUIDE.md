@@ -105,7 +105,9 @@ you its updates:
    lists the account requirements.
 5. In Edit > Preferences > Add-ons > Scenario, leave **Credentials** on **Saved
    in Blender**, paste the key and secret, and press **Test connection**. Pick
-   an **Output Folder** (default `~/Downloads/Scenario`).
+   an **Output Folder** (default `~/Downloads/Scenario`). **Sign in with
+   Scenario**, which opens your browser instead, becomes usable once Scenario's
+   OAuth application is registered.
 
 Then press `N` in the 3D viewport and open the **Scenario** tab.
 
@@ -122,6 +124,9 @@ guide; follow the instructions attached to them.
 
 ### Credentials and project
 
+- **Sign in with Scenario** opens your web browser on Scenario's sign-in page and
+  keeps the session in the extension's private state folder, refreshed in the
+  background. **Sign out** forgets it.
 - **Saved in Blender** keeps the key and secret in Blender's preferences, masked
   on screen but not in an OS keychain.
 - **Environment** reads `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` from the

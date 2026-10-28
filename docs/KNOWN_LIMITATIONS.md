@@ -142,8 +142,9 @@ full render-lane desktop acceptance.
   local storage. Preferences also allow an explicit optional project ID; changing
   it retires approvals and selects separate saved jobs. Blank uses the API key's
   default scope without discovering its identity. Live project permission and
-  cross-project service acceptance continue in #494; browser sign-in in
-  [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is deferred.
+  cross-project service acceptance continue in #494; browser sign-in waits for
+  the production OAuth application, and the rest of
+  [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open.
 - An uncertain submission is not reconciled automatically: Scenario offers no
   idempotency key or client reference that identifies the job a lost request
   created. Blender lists recent cloud jobs of the same kind and model or workflow
@@ -562,8 +563,8 @@ full render-lane desktop acceptance.
 ## Verification
 
 Offline contracts establish the behavior of fixtures and local state machines.
-Browser sign-in remains deferred under
-[#67](https://github.com/scenario-labs/blender-plugin/issues/67); the open
+Browser sign-in has no offline tests yet and the rest of
+[#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open; the open
 provider, UI/MCP parity and platform checks are in
 [#494](https://github.com/scenario-labs/blender-plugin/issues/494).
 Inherited historical reports must be reproduced before being called current

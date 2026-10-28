@@ -29,6 +29,7 @@ SPDX-License-Identifier = "GPL-3.0-or-later"
 [[annotations]]
 path = [
   "docs/images/**",
+  "docs/media/**",
   "scenario/icons/**",
   "tools/assets/**",
   "tools/blank.blend",

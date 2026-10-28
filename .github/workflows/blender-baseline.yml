@@ -21,8 +21,8 @@ jobs:
             sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
           - version: "5.1.2"
             sha256: "aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb"
-          - version: "5.2.2"
-            sha256: "84098912789dc450e95697c4184fb8a90acbe5111c2ba4aede3fecb57806a168"
+          - version: "5.2.3"
+            sha256: "78486c018b4443efe5e75ab54c290ed8c15abafd249b862c2c9ce2530a918eec"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -139,8 +139,8 @@ jobs:
             sha256: "921d77f6c505a35b2c2f6e67d4ad1c10b72418338ba0e0d3ea7f582a5e5fe46e"
           - version: "5.1.2"
             sha256: "345bedea7b0acf7cc9666423d8553f9129622aea34ded65c23e8cb70f83f14ff"
-          - version: "5.2.2"
-            sha256: "3849d17a682cba006075aaa3f3597ecb5c9c30ec31035b2e092c53e40679b535"
+          - version: "5.2.3"
+            sha256: "723f08a4401502561eb763cdeacf8745b31e5f3f154d287d3830d97cf75dc2fb"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

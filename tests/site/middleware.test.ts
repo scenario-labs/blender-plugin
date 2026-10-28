@@ -966,7 +966,8 @@ describe("relay requests", () => {
   });
 
   test("forgets addresses idle for two minutes", async (t) => {
-    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-20T00:00:00Z") });
+    // Mocked days after the real clock, so clients earlier tests recorded at real time are already idle.
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 86_400_000 });
     for (const ip of ["192.0.2.21", "192.0.2.22", "192.0.2.23"]) await admitted("events", { "x-real-ip": ip });
     assert.ok(rememberedClients() >= 3);
 
@@ -977,7 +978,7 @@ describe("relay requests", () => {
   });
 
   test("remembers at most 10,000 addresses, forgetting the least recent first", async (t) => {
-    t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-10-21T00:00:00Z") });
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 2 * 86_400_000 });
     const first = { "x-real-ip": "192.0.2.30" };
     const statuses: number[] = [];
     for (let i = 0; i < 61; i += 1) statuses.push(await admitted("events", first));

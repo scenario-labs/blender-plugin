@@ -215,7 +215,7 @@ Discover repository maintenance commands with
 The `assets check` and `assets optimize` commands share the
 [documentation image policy](CONTRIBUTING.md#screenshots) with the unit suite.
 
-Native CI covers Blender 5.0.1, 5.1.2 and 5.2.2 on Linux and Windows for pull
+Native CI covers Blender 5.0.1, 5.1.2 and 5.2.3 on Linux and Windows for pull
 requests. A separate informational workflow schedules Blender 5.1.2 checks on
 macOS Apple silicon and Windows x64 weekly; see [matrix maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)
 for failure tracking.

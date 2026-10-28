@@ -16,6 +16,27 @@ const WORD = /[\p{L}\p{N}]+/gu;
 const WEIGHTS = { title: 3, text: 1, trail: 0.5 };
 const SNIPPET_BEFORE = 60;
 const SNIPPET_LENGTH = 160;
+// Closeness at or below this came from a typo, not the letters as typed.
+const TYPO = 0.4;
+// English endings, longest first; "ies"/"ied" become "y" so "query" meets
+// "queries". A bare "y" is not stripped: "ready" is not a form of "read".
+const ENDINGS = [
+  ["ations", ""],
+  ["ation", ""],
+  ["ions", ""],
+  ["ion", ""],
+  ["ings", ""],
+  ["ing", ""],
+  ["ies", "y"],
+  ["ied", "y"],
+  ["ers", ""],
+  ["er", ""],
+  ["ed", ""],
+  ["es", ""],
+  ["s", ""],
+  ["e", ""],
+];
+const MIN_STEM = 4;
 
 /** @param {string} text */
 function normalize(text) {
@@ -57,6 +78,30 @@ function distance(a, b, limit) {
 }
 
 /**
+ * The word and every stem of MIN_STEM letters or more left by dropping one of its endings.
+ * @param {string} word
+ */
+function stems(word) {
+  const found = [word];
+  for (const [ending, replacement] of ENDINGS) {
+    if (!word.endsWith(ending)) continue;
+    const stem = word.slice(0, -ending.length) + replacement;
+    if (stem.length >= MIN_STEM) found.push(stem);
+  }
+  return found;
+}
+
+/**
+ * Whether two words are forms of one word: "agents" and "agent", "queries" and "query".
+ * @param {string} term
+ * @param {string} word
+ */
+function shareStem(term, word) {
+  const termStems = new Set(stems(term));
+  return stems(word).some((stem) => termStems.has(stem));
+}
+
+/**
  * How well one query term matches one word, from 0 (not at all) to 1 (exactly).
  * @param {string} term
  * @param {string} word
@@ -64,6 +109,7 @@ function distance(a, b, limit) {
 function closeness(term, word) {
   if (word === term) return 1;
   if (word.startsWith(term)) return 0.75;
+  if (shareStem(term, word)) return 0.6;
   if (term.length >= 3 && word.includes(term)) return 0.5;
   // Typos only count in words of five letters or more, judged by the word in
   // the guide: "imge" is one letter short of "image".
@@ -78,20 +124,42 @@ function closeness(term, word) {
 }
 
 /**
- * The best match of a term among unique words, with the words it matched.
+ * The best match of a term among unique words, with the words it matched,
+ * counting either only typo matches or only typo-free ones.
  * @param {string} term
  * @param {Set<string>} candidates
+ * @param {boolean} typo
  */
-function best(term, candidates) {
+function best(term, candidates, typo) {
   let score = 0;
   /** @type {Set<string>} */
   const matched = new Set();
   for (const word of candidates) {
     const value = closeness(term, word);
-    if (value > 0) matched.add(word);
+    if (value === 0 || value <= TYPO !== typo) continue;
+    matched.add(word);
     score = Math.max(score, value);
   }
   return { score, matched };
+}
+
+/**
+ * A term's best weighted match in a section among its typo or typo-free
+ * matches, with the title and text words matched; undefined when none.
+ * @param {string} term
+ * @param {{title: Set<string>, text: Set<string>, trail: Set<string>}} fields
+ * @param {boolean} typo
+ */
+function bestField(term, fields, typo) {
+  let score = 0;
+  /** @type {{title: Set<string>, text: Set<string>}} */
+  const matched = { title: new Set(), text: new Set() };
+  for (const field of /** @type {const} */ (["title", "text", "trail"])) {
+    const found = best(term, fields[field], typo);
+    score = Math.max(score, found.score * WEIGHTS[field]);
+    if (field !== "trail") matched[field] = found.matched;
+  }
+  return score > 0 ? { score, matched } : undefined;
 }
 
 /**
@@ -150,6 +218,9 @@ function snippet(text, matched) {
 
 /**
  * Rank sections for a query. Every query word must match the section somewhere.
+ * A word counts a typo only when nothing in the section matches it without one,
+ * and only the words of the kind that scored it are highlighted. Sections with
+ * fewer typos rank first, so an exact word in the text beats a typo in a title.
  * @param {Section[]} sections
  * @param {string} query
  * @param {number} [limit]
@@ -158,8 +229,8 @@ function snippet(text, matched) {
 function search(sections, query, limit = 8) {
   const terms = [...new Set(words(query))];
   if (!terms.length) return [];
-  /** @type {Result[]} */
-  const results = [];
+  /** @type {{result: Result, typos: number}[]} */
+  const ranked = [];
   for (const section of sections) {
     const fields = {
       title: new Set(words(section.title)),
@@ -167,32 +238,38 @@ function search(sections, query, limit = 8) {
       trail: new Set(words(section.trail)),
     };
     let total = 0;
+    let typos = 0;
     /** @type {{title: Set<string>, text: Set<string>}} */
     const highlight = { title: new Set(), text: new Set() };
     for (const term of terms) {
-      let score = 0;
-      for (const field of /** @type {const} */ (["title", "text", "trail"])) {
-        const found = best(term, fields[field]);
-        score = Math.max(score, found.score * WEIGHTS[field]);
-        if (field !== "trail") for (const word of found.matched) highlight[field].add(word);
-      }
-      if (score === 0) {
+      const exact = bestField(term, fields, false);
+      const match = exact ?? bestField(term, fields, true);
+      if (!match) {
         total = 0;
         break;
       }
-      total += score;
+      if (!exact) typos += 1;
+      total += match.score;
+      for (const word of match.matched.title) highlight.title.add(word);
+      for (const word of match.matched.text) highlight.text.add(word);
     }
     if (total > 0) {
-      results.push({
-        section,
-        score: total,
-        title: segments(section.title, highlight.title),
-        snippet: snippet(section.text, highlight.text),
+      ranked.push({
+        typos,
+        result: {
+          section,
+          score: total,
+          title: segments(section.title, highlight.title),
+          snippet: snippet(section.text, highlight.text),
+        },
       });
     }
   }
-  // Array.prototype.sort is stable: equal scores keep the handbook's order.
-  return results.sort((a, b) => b.score - a.score).slice(0, limit);
+  // Array.prototype.sort is stable: equal ranks keep the handbook's order.
+  return ranked
+    .sort((a, b) => a.typos - b.typos || b.result.score - a.result.score)
+    .slice(0, limit)
+    .map(({ result }) => result);
 }
 
 /**

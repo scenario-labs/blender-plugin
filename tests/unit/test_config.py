@@ -45,6 +45,19 @@ def test_partial_preferences_never_borrow_from_environment():
         assert not config.resolve_credentials(key, secret, env).valid
 
 
+def test_browser_source_carries_an_account_and_never_an_ambient_key():
+    env = {"SCENARIO_API_KEY": "env_key", "SCENARIO_API_SECRET": "env_secret"}
+    creds = config.resolve_credentials(
+        "pref_key", "pref_secret", env, source="BROWSER", account=" https://idp#user_1 "
+    )
+    assert creds.valid and creds.browser
+    assert (creds.key, creds.secret, creds.account) == ("", "", "https://idp#user_1")
+    assert creds == config.Credentials("", "", "https://idp#user_1")
+    signed_out = config.resolve_credentials("pref_key", "pref_secret", env, source="BROWSER")
+    assert not signed_out.valid and not signed_out.browser
+    assert not config.resolve_credentials("pref_key", "pref_secret", env).browser
+
+
 def test_unknown_source_is_rejected_and_credentials_are_not_in_repr():
     import pytest
 

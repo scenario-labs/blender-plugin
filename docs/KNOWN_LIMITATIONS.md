@@ -563,7 +563,7 @@ full render-lane desktop acceptance.
 ## Verification
 
 Offline contracts establish the behavior of fixtures and local state machines.
-Browser sign-in has no offline tests yet and the rest of
+Browser sign-in has offline protocol tests and no native run yet, and the rest of
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open; the open
 provider, UI/MCP parity and platform checks are in
 [#494](https://github.com/scenario-labs/blender-plugin/issues/494).

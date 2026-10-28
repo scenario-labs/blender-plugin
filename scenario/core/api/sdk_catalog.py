@@ -38,7 +38,7 @@ class SDKCatalog:
     """
 
     def __init__(self, credentials, *, online, adapter_factory=None, scope=None):
-        credentials.authorization()
+        credentials.authorization(refresh=False)
         if scope is not None and not isinstance(scope, JobScope):
             raise ValueError("Use an explicit job scope")
         self._scope = scope

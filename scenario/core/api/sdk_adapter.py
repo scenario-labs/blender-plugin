@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 from weakref import WeakValueDictionary
 
 from ..schema.forms import prepare_run, record_schema
+from .oauth import SignInError
 from .sdk_extensions import SDKResourceExtensions
 from .user_agent import user_agent_string
 
@@ -242,18 +243,37 @@ _MAX_JSON_INTEGER = 2**53 - 1
 
 @dataclass(frozen=True)
 class Credentials:
+    """One API-key pair, one fixed bearer token, or a token source for a signed-in account.
+
+    A token source (``core.api.oauth.TokenSession``) answers ``bearer()`` with
+    the current access token, refreshing it first when needed, so a long job
+    keeps its account across token expiry. Its refusal, a ``SignInError``, means
+    nothing was sent.
+    """
+
     api_key: str = field(default="", repr=False)
     api_secret: str = field(default="", repr=False)
     bearer_token: str = field(default="", repr=False)
+    token_source: object = field(default=None, repr=False, compare=False)
 
-    def authorization(self):
+    def authorization(self, *, refresh=True):
+        """The Authorization header value; ``refresh=False`` only validates the shape.
+
+        A token source may refresh over the network, so callers on Blender's
+        main thread validate without a refresh and leave it to the request.
+        """
         import base64
 
+        bearer_token = self.bearer_token
+        if self.token_source is not None:
+            if bearer_token:
+                raise ValueError("Select one bearer token or one token source")
+            bearer_token = self.token_source.bearer() if refresh else self.token_source.peek()
         basic = bool(self.api_key and self.api_secret)
         partial = bool(self.api_key) != bool(self.api_secret)
-        if partial or basic == bool(self.bearer_token):
+        if partial or basic == bool(bearer_token):
             raise ValueError("Select one complete API-key pair or one bearer token")
-        values = (self.api_key, self.api_secret, self.bearer_token)
+        values = (self.api_key, self.api_secret, bearer_token)
         if any(not isinstance(value, str) or not value.isascii() for value in values):
             raise ValueError("Credentials must be ASCII strings")
         if any(any(ord(char) < 33 or ord(char) == 127 for char in value) for value in values):
@@ -263,7 +283,7 @@ class Credentials:
                 raise ValueError("API keys cannot contain a colon")
             encoded = base64.b64encode(f"{self.api_key}:{self.api_secret}".encode()).decode()
             return f"Basic {encoded}"
-        return f"Bearer {self.bearer_token}"
+        return f"Bearer {bearer_token}"
 
 
 @dataclass(frozen=True)
@@ -639,7 +659,8 @@ def _client(credentials, base_url, timeout, transport):
     import httpx
     from scenario_sdk import Scenario
 
-    authorization = credentials.authorization()
+    source = credentials.token_source
+    authorization = credentials.authorization() if source is None else None
 
     class SelectedAccount(Scenario):
         @property
@@ -649,8 +670,9 @@ def _client(credentials, base_url, timeout, transport):
             # https://github.com/scenario-labs/scenario-sdk-python/issues/26
             # Remove after upstream offers verified environment-isolated config.
             # This changes configuration, not endpoint routing; no raw API fallback.
+            # The SDK reads this per request, so a token source refreshes in time.
             return {
-                "Authorization": authorization,
+                "Authorization": authorization or credentials.authorization(),
                 "Accept": "application/json",
                 "Content-Type": "application/json",
                 "User-Agent": user_agent_string(),
@@ -663,7 +685,7 @@ def _client(credentials, base_url, timeout, transport):
         return SelectedAccount(
             api_key=credentials.api_key,
             api_secret=credentials.api_secret,
-            bearer_auth=credentials.bearer_token,
+            bearer_auth=source.peek() if source is not None else credentials.bearer_token,
             base_url=base_url,
             max_retries=0,
             timeout=timeout,
@@ -779,6 +801,9 @@ class SDKAdapter:
         try:
             response = method(*args, **kwargs)
             return response.read()
+        except SignInError as error:
+            # Raised while building the headers: nothing was sent.
+            raise AdapterError(str(error)) from None
         except APIStatusError as error:
             # Only a request that carried the override can blame the Project ID;
             # the SDK's omit sentinel means the request sent no projectId.
@@ -814,6 +839,9 @@ class SDKAdapter:
             raise AdapterError("Online access is disabled")
         try:
             return method(*args, **kwargs).read()
+        except SignInError as error:
+            # Raised while building the headers: nothing was sent.
+            raise AdapterError(str(error)) from None
         except APIStatusError as error:
             status = error.status_code
             if adding and _already_members(status, error.body):

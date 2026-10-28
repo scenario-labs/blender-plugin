@@ -98,6 +98,10 @@ mark{background:var(--primary-soft);color:inherit;border-radius:2px;padding:0 .1
 .handbook strong{font-weight:600}
 .handbook img{display:block;max-width:100%;height:auto;border:1px solid var(--border);border-radius:6px;box-shadow:var(--shadow);margin:1.6rem 0;background:var(--card)}
 .handbook p:has(>img:only-child)+p>em:only-child{display:block;font-size:.84rem;color:var(--muted);margin-top:-.8rem}
+.handbook figure.launch-film{margin:1.6rem 0}
+.handbook figure.launch-film video{display:block;width:100%;height:auto;aspect-ratio:16/9;border-radius:6px;background:#000;box-shadow:0 0 0 1px var(--border),var(--shadow)}
+.handbook figure.launch-film video:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+.handbook figure.launch-film figcaption{font-size:.84rem;color:var(--muted);margin-top:.6rem}
 .handbook table{border-collapse:collapse;width:100%;font-size:.9rem;margin:1.4rem 0;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .handbook th,.handbook td{text-align:left;padding:.65rem .9rem;border-bottom:1px solid var(--border);vertical-align:top}
 .handbook th{font-family:var(--mono);font-size:.66rem;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);background:var(--surface)}

@@ -175,6 +175,7 @@ BINARY_SUFFIXES = {
     ".ogg",
     ".wav",
     ".webm",
+    ".pdf",
     ".blend",
     ".glb",
     ".whl",

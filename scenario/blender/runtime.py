@@ -12,6 +12,7 @@ import bpy
 
 from .. import prefs as prefs_module
 from ..core import config
+from ..core.api import oauth
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
@@ -75,6 +76,10 @@ class RuntimeState:
         self.catalog_credentials = None
         self.catalog_project_id = None
         self.retired_catalogs = []
+        # The signed-in browser account (core.api.oauth.TokenSession), loaded from
+        # its private state file on first use; None until then or after sign-out.
+        self.browser_session = None
+        self.browser_session_loaded = False
         self.account_label = ""
         self.connection_request = None
         self.connection_worker = None
@@ -241,12 +246,54 @@ def paths():
     return config.Paths(state_dir=state_dir, cache_dir=cache_dir, output_dir=output_dir)
 
 
+BROWSER_SESSION_FILE = "sign-in.json"
+
+
+def browser_session_path():
+    return paths().state_dir / BROWSER_SESSION_FILE
+
+
+def browser_session():
+    """The saved browser account for the selected application, or None.
+
+    Read once per Blender session; a sign-in or sign-out replaces it. A saved
+    session of another application or API (a developer override) is ignored,
+    never sent elsewhere.
+    """
+    if not state.browser_session_loaded:
+        state.browser_session_loaded = True
+        try:
+            app = oauth.selected_app()
+        except oauth.SignInError:
+            return None
+        path = browser_session_path()
+        tokens = oauth.load_tokens(path)
+        if tokens is not None and tokens.matches(app):
+            state.browser_session = oauth.TokenSession(app, tokens, path)
+    session = state.browser_session
+    return session if session is not None and session.ended is None else None
+
+
+def set_browser_session(session):
+    """Install the account a sign-in produced, or None after a sign-out."""
+    state.browser_session = session
+    state.browser_session_loaded = True
+    state.account_label = ""
+    sync_catalog_context()
+
+
 def credentials():
     p = prefs()
+    source = p.credential_source if p else "PREFERENCES"
+    account = None
+    if source == "BROWSER":
+        session = browser_session()
+        account = session.account if session is not None else ""
     return config.resolve_credentials(
         p.api_key if p else "",
         p.api_secret if p else "",
-        source=p.credential_source if p else "PREFERENCES",
+        source=source,
+        account=account,
     )
 
 
@@ -283,19 +330,31 @@ def ensure_catalog():
     creds = credentials()
     if state.catalog is None:
         if not creds.valid:
+            if prefs() is not None and prefs().credential_source == "BROWSER":
+                raise ScenarioError(0, "Sign in to Scenario in Scenario Preferences")
             raise ScenarioError(
                 0, "Complete the selected credential source in Scenario Preferences"
             )
+        session = browser_session() if creds.browser else None
+        if creds.browser and session is None:
+            # A worker ended the session between the two reads.
+            raise ScenarioError(0, "Sign in to Scenario in Scenario Preferences")
         try:
-            selected = SDKCredentials(creds.key, creds.secret)
-            selected.authorization()
+            if session is not None:
+                # No authorization() check here: it could refresh on the main thread.
+                selected = SDKCredentials(token_source=session)
+                storage = dict(service=session.app.service, account=session.account)
+            else:
+                selected = SDKCredentials(creds.key, creds.secret)
+                selected.authorization()
+                storage = {}
         except ValueError:
             raise ScenarioError(
                 0, "The selected credentials are not a valid API key and secret"
             ) from None
         try:
             store = open_credential_store(
-                paths().state_dir / "shared-jobs", selected, project_id=project_id()
+                paths().state_dir / "shared-jobs", selected, project_id=project_id(), **storage
             )
         except StoreError as error:
             raise ScenarioError(0, str(error)) from None

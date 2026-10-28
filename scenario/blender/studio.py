@@ -112,9 +112,10 @@ def draw_connection(layout, context):
     box.label(text="Account and project", icon="PREFERENCES")
     prefs = runtime.prefs()
     source = getattr(prefs, "credential_source", "PREFERENCES")
-    box.label(text="Credentials: " + ("Environment" if source == "ENVIRONMENT" else "Preferences"))
+    sources = {"BROWSER": "Scenario account", "ENVIRONMENT": "Environment"}
+    box.label(text="Credentials: " + sources.get(source, "Preferences"))
     project = getattr(prefs, "project_id", "").strip()
-    box.label(text="Project: " + (project or "API key default scope"))
+    box.label(text="Project: " + (project or "Default scope"))
     box.operator(
         "preferences.addon_show", text="Open Scenario Preferences", icon="PREFERENCES"
     ).module = runtime.PACKAGE

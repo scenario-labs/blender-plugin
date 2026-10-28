@@ -62,11 +62,12 @@ def draw_account_strip(layout, context):
     row = layout.row(align=True)
     if not creds.valid:
         source = getattr(runtime.prefs(), "credential_source", "PREFERENCES")
-        message = (
-            "Environment key/secret missing"
-            if source == "ENVIRONMENT"
-            else "Add key and secret in Preferences"
-        )
+        if source == "BROWSER":
+            message = "Sign in to Scenario in Preferences"
+        elif source == "ENVIRONMENT":
+            message = "Environment key/secret missing"
+        else:
+            message = "Add key and secret in Preferences"
         row.label(text=message, icon="ERROR")
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
         draw_feedback_heart(row)

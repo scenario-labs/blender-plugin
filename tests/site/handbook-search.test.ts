@@ -49,6 +49,43 @@ test("ranks a misspelt start of a title word above the same typo in the text", (
   );
 });
 
+test("ranks a match without a typo above a typo, whatever their fields", () => {
+  const sections = [
+    { id: "scenario", title: "Scenario tools", trail: "", text: "" },
+    { id: "scene", title: "", trail: "", text: "Set the scene first." },
+  ];
+
+  assert.deepEqual(
+    search(sections, "scene").map((result) => result.section.id),
+    ["scene", "scenario"],
+  );
+});
+
+test("counts a typo only when nothing in the section matches the word without one", () => {
+  const sections = [
+    { id: "typo", title: "Latency", trail: "", text: "" },
+    { id: "both", title: "Latency", trail: "", text: "Try again later." },
+  ];
+
+  assert.deepEqual(
+    search(sections, "later").map((result) => result.section.id),
+    ["both", "typo"],
+  );
+});
+
+test("ranks another form of a word as a match without a typo", () => {
+  const sections = [
+    { id: "text", title: "", trail: "", text: "Agents call the tools." },
+    { id: "typo", title: "Agentic workflows", trail: "", text: "" },
+    { id: "title", title: "Agent Skills", trail: "", text: "" },
+  ];
+
+  assert.deepEqual(
+    search(sections, "agents").map((result) => result.section.id),
+    ["title", "text", "typo"],
+  );
+});
+
 test("allows a typo by the length of the word in the guide, not the query", () => {
   const sections = [{ id: "image", title: "Image", trail: "Lanes", text: "Generate a still." }];
 
@@ -73,7 +110,7 @@ test("requires every word of the query", () => {
 });
 
 test("ignores case and accents", () => {
-  assert.deepEqual(ids("GENERATION"), ["3d"]);
+  assert.deepEqual(ids("GENERATION"), ["3d", "materials"]);
   assert.deepEqual(ids("3d"), ["3d"]);
 });
 
@@ -96,6 +133,16 @@ test("highlights the matched part of the title", () => {
   const [result] = search(SECTIONS, "upd");
 
   assert.deepEqual(result.title, [{ text: "Updates", match: true }]);
+});
+
+test("leaves typo matches unmarked when the word matched without one", () => {
+  const [result] = search([{ id: "latency", title: "Latency", trail: "", text: "Try again later." }], "later");
+
+  assert.deepEqual(result.title.filter((segment) => segment.match), []);
+  assert.deepEqual(
+    result.snippet.filter((segment) => segment.match).map((segment) => segment.text),
+    ["later"],
+  );
 });
 
 test("shortens a long text around the first match", () => {

@@ -499,8 +499,8 @@ TripoSplat.
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 
-**Importing a model.** Choose **Import <format> model (N)**, such as
-**Import GLB model (1)**, for the main model, or **Import alternate: <format> (N)**
+**Importing a model.** Choose **Import &lt;format&gt; model (N)**, such as
+**Import GLB model (1)**, for the main model, or **Import alternate: &lt;format&gt; (N)**
 for another file the provider returned. The review shows the scene, cursor position
 and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
 as a new group at the cursor with its materials and textures packed; your

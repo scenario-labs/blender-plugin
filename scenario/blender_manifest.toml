@@ -18,7 +18,7 @@ platforms = ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]
 wheels = [
   "./wheels/annotated_types-0.8.0-py3-none-any.whl",
   "./wheels/anyio-4.15.1-py3-none-any.whl",
-  "./wheels/certifi-2026.10.18-py3-none-any.whl",
+  "./wheels/certifi-2026.10.19-py3-none-any.whl",
   "./wheels/distro-1.9.0-py3-none-any.whl",
   "./wheels/h11-0.16.0-py3-none-any.whl",
   "./wheels/httpcore-1.0.9-py3-none-any.whl",

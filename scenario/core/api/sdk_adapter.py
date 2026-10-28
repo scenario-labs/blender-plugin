@@ -660,7 +660,10 @@ def _client(credentials, base_url, timeout, transport):
     from scenario_sdk import Scenario
 
     source = credentials.token_source
+    # A token source is read per request below; validate its shape now without a refresh.
     authorization = credentials.authorization() if source is None else None
+    if source is not None:
+        credentials.authorization(refresh=False)
 
     class SelectedAccount(Scenario):
         @property

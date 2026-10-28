@@ -4,6 +4,17 @@ Scenario for Blender brings Scenario's generation models into Blender. You need
 Blender 5.0 or later, a Scenario account with API access (see the
 [Scenario documentation](https://docs.scenario.com)) and an internet connection.
 
+<figure class="launch-film">
+<video controls preload="none" poster="media/launch-film-poster.jpg"
+  aria-label="Scenario for Blender launch film, about 4 minutes">
+<source src="media/launch-film.mp4" type="video/mp4">
+</video>
+<figcaption>The launch film, about 4 minutes.</figcaption>
+</figure>
+
+The [illustrated guide](media/illustrated-guide.pdf) (PDF, 25 pages, version 1, 2026-10-20)
+covers every lane, input and result.
+
 <div class="hero-map" role="group" aria-label="What Scenario for Blender does">
 <div class="hero-col hero-in">
 <p class="hero-label">From your scene</p>

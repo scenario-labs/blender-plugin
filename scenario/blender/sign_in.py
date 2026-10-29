@@ -30,15 +30,20 @@ class _Attempt:
         self.attempt = attempt
         self.path = path
         self.cancelled = threading.Event()
+        self.reason = ""  # Why the attempt was cancelled, when it was.
         self.tokens = None
         self.error = ""
         self.thread = threading.Thread(target=self._run, name="ScenarioSignInWait", daemon=True)
+
+    def cancel(self, reason="Sign-in cancelled"):
+        self.reason = reason
+        self.cancelled.set()
 
     def _run(self):
         try:
             self.tokens = self.attempt.complete(cancelled=self.cancelled)
         except oauth.SignInError as error:
-            self.error = str(error)
+            self.error = self.reason or str(error)
         except Exception:  # The worker must end with an outcome, never a traceback.
             log.exception("browser sign-in failed")
             self.error = "The sign-in did not complete"
@@ -98,16 +103,23 @@ def start():
 
 def cancel():
     if _pending is not None:
-        _pending.cancelled.set()
+        _pending.cancel()
 
 
 def _poll():
-    """Apply a finished attempt on the main thread; keep polling while it runs."""
+    """Apply a finished attempt on the main thread; keep polling while it runs.
+
+    Allow Online Access is read here, on the main thread, while the browser is
+    pending: switched off, the attempt is cancelled before the worker can swap
+    the code for tokens, so no request starts after the permission is withdrawn.
+    """
     global _pending
     attempt = _pending
     if attempt is None:
         return None
     if attempt.thread.is_alive():
+        if not runtime.online():
+            attempt.cancel("Allow Online Access was disabled during the sign-in")
         return POLL_INTERVAL
     _pending = None
     if attempt.tokens is None:
@@ -126,7 +138,7 @@ def _poll():
                 try:
                     runtime.request_connection_check()
                 except ScenarioError:
-                    pass
+                    pass  # Already signed in; the account strip reports the check's outcome.
     _redraw()
     return None
 

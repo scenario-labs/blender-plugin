@@ -465,3 +465,74 @@ def test_sign_out_ends_the_session_and_deletes_the_file(tmp_path):
     assert oauth.load_tokens(path) is None
     with pytest.raises(oauth.SignedOut):
         session.bearer()
+
+
+def test_a_refresh_token_spent_first_by_another_process_adopts_its_rotation(tmp_path):
+    path = tmp_path / "sign-in.json"
+    stale = _tokens(expires_at=time.time() + 10)
+    oauth.save_tokens(path, stale)
+    rotated = _tokens(access_token="access-2", refresh_token="refresh-2")
+    calls = []
+
+    def racing_refresh(app, tokens):
+        calls.append(tokens.refresh_token)
+        # The other Blender's rotation lands between this process's read and its request.
+        oauth.save_tokens(path, rotated)
+        raise oauth.SignedOut("ended")
+
+    session = oauth.TokenSession(APP, stale, path, refresh=racing_refresh)
+    assert session.bearer() == "access-2"
+    assert session.ended is None
+    assert calls == ["refresh-1"]
+    assert oauth.load_tokens(path) == rotated
+
+
+@pytest.mark.parametrize("second", ["fresh", "refused"])
+def test_an_adopted_rotation_that_is_expiring_too_is_refreshed_in_turn(tmp_path, second):
+    path = tmp_path / "sign-in.json"
+    stale = _tokens(expires_at=time.time() + 10)
+    oauth.save_tokens(path, stale)
+    rotated = _tokens(
+        access_token="access-2", refresh_token="refresh-2", expires_at=time.time() + 10
+    )
+    fresh = _tokens(access_token="access-3", refresh_token="refresh-3")
+    calls = []
+
+    def refresh(app, tokens):
+        calls.append(tokens.refresh_token)
+        if tokens.refresh_token == "refresh-1":
+            oauth.save_tokens(path, rotated)
+            raise oauth.SignedOut("ended")
+        if second == "refused":
+            raise oauth.SignedOut("ended")
+        return fresh
+
+    session = oauth.TokenSession(APP, stale, path, refresh=refresh)
+    if second == "fresh":
+        assert session.bearer() == "access-3"
+        assert session.ended is None
+        assert oauth.load_tokens(path) == fresh
+    else:
+        with pytest.raises(oauth.SignedOut):
+            session.bearer()
+        assert session.ended == "ended"
+        assert oauth.load_tokens(path) is None  # the adopted rotation was this session's too
+    assert calls == ["refresh-1", "refresh-2"]
+
+
+def test_a_refresh_never_rewrites_a_file_signed_out_or_replaced_from_another_process(tmp_path):
+    path = tmp_path / "sign-in.json"
+    stale = _tokens(expires_at=time.time() + 10)
+    oauth.save_tokens(path, stale)
+    fresh = _tokens(access_token="access-2", refresh_token="refresh-2")
+    session = oauth.TokenSession(APP, stale, path, refresh=_Refresh(fresh))
+    oauth.clear_tokens(path)  # signed out from another Blender
+    assert session.bearer() == "access-2"
+    assert session.ended is None
+    assert oauth.load_tokens(path) is None
+    other = _tokens(subject="user_2", access_token="access-9", refresh_token="refresh-9")
+    oauth.save_tokens(path, other)  # another account signed in from another Blender
+    session = oauth.TokenSession(APP, stale, path, refresh=_Refresh(fresh))
+    assert session.bearer() == "access-2"
+    assert session.ended is None
+    assert oauth.load_tokens(path) == other

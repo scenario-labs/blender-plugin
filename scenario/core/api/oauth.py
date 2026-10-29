@@ -485,9 +485,13 @@ class TokenSession:
     Workers call ``bearer`` before each request. One refresh runs at a time:
     a worker that finds another refresh in flight waits for its outcome instead
     of spending the same refresh token twice. Another Blender on the same
-    account may have rotated the refresh token first: the file is re-read
-    before a refresh and its newer tokens adopted. A refresh the provider
-    refuses ends the session for every caller until the user signs in again.
+    account may rotate the refresh token first: the file is re-read before a
+    refresh and its newer tokens adopted, and a refresh refused because that
+    rotation landed in between adopts it afterwards. A refresh the provider
+    refuses otherwise ends the session for every caller until the user signs in
+    again. The file is rewritten only while it still holds this account: signed
+    out or replaced from another Blender, it is left alone and this session
+    lives on in memory.
     """
 
     def __init__(self, app, tokens, path, *, refresh=refresh_tokens):
@@ -524,19 +528,44 @@ class TokenSession:
         """
         return self._tokens.access_token
 
+    def _saved_for_this_account(self):
+        """The file's tokens while it still belongs to this account, else None."""
+        saved = load_tokens(self._path)
+        if saved is None or saved.account != self._tokens.account or not saved.matches(self._app):
+            return None
+        return saved
+
     def _adopt_newer(self):
         """Take the tokens another process saved for this account, if any."""
-        saved = load_tokens(self._path)
-        if (
-            saved is not None
-            and saved.account == self._tokens.account
-            and saved.matches(self._app)
-            and saved.refresh_token != self._tokens.refresh_token
-        ):
+        saved = self._saved_for_this_account()
+        if saved is not None and saved.refresh_token != self._tokens.refresh_token:
             self._tokens = saved
             self._unsaved = False
 
+    def _rotated(self):
+        """This session's tokens after a refresh.
+
+        A refusal right after another Blender rotated the same refresh token is
+        that Blender's win, not the end of the account: its tokens are adopted
+        and, when they are expiring too, refreshed in turn.
+        """
+        burned = self._tokens.refresh_token
+        try:
+            return self._refresh(self._app, self._tokens)
+        except SignedOut:
+            self._adopt_newer()
+            if self._tokens.refresh_token == burned:
+                raise
+        if not self._tokens.expiring():
+            return self._tokens
+        return self._refresh(self._app, self._tokens)
+
     def _save(self):
+        if self._saved_for_this_account() is None:
+            # Signed out, or another account signed in, from another Blender:
+            # never rewrite that; this session keeps its tokens in memory.
+            self._unsaved = False
+            return
         try:
             save_tokens(self._path, self._tokens)
         except OSError:
@@ -554,13 +583,12 @@ class TokenSession:
             if self._tokens.expiring():
                 self._adopt_newer()
             if self._tokens.expiring():
-                burned = self._tokens.refresh_token
                 try:
-                    self._tokens = self._refresh(self._app, self._tokens)
+                    self._tokens = self._rotated()
                 except SignedOut as error:
                     self._ended = str(error)
                     saved = load_tokens(self._path)
-                    if saved is None or saved.refresh_token == burned:
+                    if saved is None or saved.refresh_token == self._tokens.refresh_token:
                         clear_tokens(self._path)
                     raise
                 self._save()

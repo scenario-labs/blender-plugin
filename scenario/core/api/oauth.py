@@ -81,11 +81,11 @@ class OAuthApp:
 
 
 # The production application. The client id is public: it travels in every
-# authorize URL. It is filled in once the production application exists; until
-# then the browser sign-in is shown as unavailable.
+# authorize URL. A build without one (a developer override that is not
+# complete) shows the browser sign-in as unavailable.
 PRODUCTION_APP = OAuthApp(
     issuer="https://clerk.scenario.com",
-    client_id="",
+    client_id="gUzfnnOTmz5SqATM",
     service="https://api.cloud.scenario.com/v1",
 )
 

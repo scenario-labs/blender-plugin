@@ -142,8 +142,8 @@ full render-lane desktop acceptance.
   local storage. Preferences also allow an explicit optional project ID; changing
   it retires approvals and selects separate saved jobs. Blank uses the API key's
   default scope without discovering its identity. Live project permission and
-  cross-project service acceptance continue in #494; browser sign-in waits for
-  the production OAuth application, and the rest of
+  cross-project service acceptance continue in #494; browser sign-in keeps its
+  tokens in a private file rather than an OS keychain, and the rest of
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open.
 - An uncertain submission is not reconciled automatically: Scenario offers no
   idempotency key or client reference that identifies the job a lost request

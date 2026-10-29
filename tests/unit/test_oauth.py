@@ -73,11 +73,13 @@ def _tokens(**overrides):
 # --- application selection ---------------------------------------------------
 
 
-def test_production_application_is_the_default_and_ships_without_a_client_id():
+def test_production_application_is_the_default_and_knows_its_client_id():
     app = oauth.selected_app({})
     assert app is oauth.PRODUCTION_APP
-    assert not app.configured
+    assert app.configured
     assert app.issuer == "https://clerk.scenario.com"
+    assert app.service == "https://api.cloud.scenario.com/v1"
+    assert app.client_id == "gUzfnnOTmz5SqATM"
 
 
 def test_developer_override_needs_all_three_https_values_together():
@@ -283,8 +285,9 @@ def test_listener_wait_honors_timeout_and_cancellation(listener):
 
 
 def test_attempt_refuses_an_unconfigured_application_and_a_late_cancel(monkeypatch):
+    unconfigured = oauth.OAuthApp(issuer=APP.issuer, client_id="", service=APP.service)
     with pytest.raises(oauth.SignInError, match="not available"):
-        oauth.SignInAttempt(oauth.PRODUCTION_APP)
+        oauth.SignInAttempt(unconfigured)
     monkeypatch.setattr(oauth, "LOOPBACK_PORTS", (0,))
     attempt = oauth.SignInAttempt(APP)
     try:

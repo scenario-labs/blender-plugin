@@ -56,6 +56,12 @@ def _new_material(group, colour, staging):
     return material
 
 
+def kept_colours(groups):
+    """{group: RGBA} of the groups whose shared material an earlier build left."""
+    found = {group: _find_material(group) for group in groups}
+    return {group: tuple(m.diffuse_color) for group, m in found.items() if m is not None}
+
+
 def group_materials(colours, staging):
     """{group: material}: the group's shared material from an earlier build, else a new one."""
     return {

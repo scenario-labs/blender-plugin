@@ -19,7 +19,6 @@ from unittest.mock import MagicMock, patch
 import bpy
 import test_result_preview_tiles
 from helpers import online_access, submodule
-from test_result_preview_tiles import MP4, png
 
 CLAIMED = "2026-10-22T13:04:05.123Z"
 CREATED = 1_800_000_000.0
@@ -587,7 +586,7 @@ class ResultGridPreviewTests(unittest.TestCase):
         return [(c.kwargs["icon_value"], c.kwargs["scale"]) for c in named(calls, "template_icon")]
 
     def test_a_saved_image_fills_its_tile_and_its_large_view(self):
-        data = png(640, 320)
+        data = test_result_preview_tiles.png(640, 320)
         with online_access(False):
             view = self.applied([("image", "result.png", "image/png", data)])
             self.fixture.settle(lambda: self.fixture.status() == "ready")
@@ -650,7 +649,7 @@ class ResultGridPreviewTests(unittest.TestCase):
         self.assertEqual([c.properties["direction"] for c in arrows], ["PREVIOUS", "NEXT"])
         drawn = labels(calls)
         self.assertIn(("3-6 of 6", "NONE"), drawn)
-        size = len(png(8, 8))
+        size = len(test_result_preview_tiles.png(8, 8))
         # Saved without a lane, the job is the material its saved map roles establish.
         self.assertIn((self.core.summary("material", size, 6), "MATERIAL"), drawn)
         self.assertEqual(len(controls), 1)
@@ -658,7 +657,7 @@ class ResultGridPreviewTests(unittest.TestCase):
 
     def test_a_video_waiting_offline_shows_its_kind_icon_and_status_large(self):
         with online_access(False):
-            self.applied([("clip", "clip.mp4", "video/mp4", MP4)])
+            self.applied([("clip", "clip.mp4", "video/mp4", test_result_preview_tiles.MP4)])
             self.fixture.settle(lambda: self.fixture.status() == "offline")
             cover = self.tiles.controller.covers["request"]
             self.assertEqual((cover.status, cover.icon_id), ("offline", 0))
@@ -671,6 +670,9 @@ class ResultGridPreviewTests(unittest.TestCase):
         self.assertEqual([icon for icon, _ in self.icons(calls)], [film])
         texts = " ".join(text for text, _ in labels(calls))
         self.assertIn("Preview paused while online access is disabled", texts)
-        self.assertIn((self.core.summary("video", len(MP4), 1), "FILE_MOVIE"), labels(calls))
+        self.assertIn(
+            (self.core.summary("video", len(test_result_preview_tiles.MP4), 1), "FILE_MOVIE"),
+            labels(calls),
+        )
         self.assertEqual(self.fixture.requests, [])
         self.assertEqual(self.fixture.downloads, [])

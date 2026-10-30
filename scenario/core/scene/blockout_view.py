@@ -55,9 +55,27 @@ def group_colour(index):
     return (r, g, b, 1.0)
 
 
-def group_colours(elements):
-    """{group name: RGBA} for every group of the plan, by group order."""
-    return {name: group_colour(index) for index, name in enumerate(group_order(elements))}
+def _rgb(colour):
+    return tuple(round(float(value), 3) for value in colour[:3])
+
+
+def group_colours(elements, kept=None):
+    """{group name: RGBA} for every group of the plan, by group order.
+
+    `kept` maps groups that already have a colour from an earlier build to it; they keep it, so a
+    rebuild that reorders or drops groups never recolours one. New groups take the palette colours
+    no kept group uses, in order, and the palette repeats once every colour is taken.
+    """
+    kept = kept or {}
+    taken = {_rgb(colour) for colour in kept.values()}
+    free = [index for index, rgb in enumerate(PALETTE) if _rgb(rgb) not in taken]
+    colours = {}
+    for index, name in enumerate(group_order(elements)):
+        if name in kept:
+            colours[name] = tuple(kept[name])
+        else:
+            colours[name] = group_colour(free.pop(0) if free else index)
+    return colours
 
 
 def plan_bounds(elements):

@@ -149,7 +149,7 @@ def _local(owner, keyed, frame):
     elif mode == "AXIS_ANGLE":
         angle, *axis = values("rotation_axis_angle", owner.rotation_axis_angle)
         axis = Vector(axis)
-        rotation = Matrix.Rotation(angle, 3, axis) if axis.length > _SMALL else Matrix()
+        rotation = Matrix.Rotation(angle, 3, axis) if axis.length > _SMALL else Matrix.Identity(3)
     else:
         rotation = Euler(values("rotation_euler", owner.rotation_euler), mode).to_matrix()
     location = Vector(values("location", owner.location))

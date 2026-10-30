@@ -15,7 +15,7 @@ from unittest.mock import patch
 import bmesh
 import bpy
 from helpers import FIXTURES, animated_glb, parts_glb, submodule
-from mathutils import Matrix
+from mathutils import Matrix, Quaternion, Vector
 
 FREE_BONES = (
     "Constraints or drivers move the animated bones: remove or mute them, then apply the "
@@ -2213,6 +2213,15 @@ class RetargetResultTests(unittest.TestCase):
         self.assertEqual(retarget.whole_frames((0.9999996, 89.0)), (1, 89))
         # Keys between frames still widen the range to the whole frames around them.
         self.assertEqual(retarget.whole_frames((0.5, 191.04)), (0, 192))
+
+    def test_a_zero_axis_angle_reads_as_no_rotation(self):
+        retarget = submodule("blender.motion_retarget")
+        self.rig.rotation_mode = "AXIS_ANGLE"
+        self.rig.rotation_axis_angle = (0.7, 0.0, 0.0, 0.0)
+        self.rig.location = (1.0, 2.0, 3.0)
+        local = retarget._local(self.rig, {}, 1)
+        self.assertEqual(local.to_translation(), Vector((1.0, 2.0, 3.0)))
+        self.assertEqual(local.to_3x3().to_quaternion(), Quaternion())
 
     def test_a_carried_clip_on_a_rig_that_is_no_humanoid_says_what_to_do(self):
         from helpers import CHAIN, skin_to_chain_rig

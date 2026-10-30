@@ -202,7 +202,7 @@ def _prepare():
                 PROMPT
                 or "a small artist's studio: a desk, an easel, shelves, a couch, a rug, a window"
             )
-            bo.scene_type, bo.scale = "interior", "room"
+            bo.density, bo.tier = "simple", "fast"
             bpy.context.scene.scenario.lane = "blockout"
             print("GUI probe: skipped paid blockout design")
         if ACTION == "generations":

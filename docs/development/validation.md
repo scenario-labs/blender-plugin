@@ -72,11 +72,15 @@ tab. To fuzz locally with Docker, run
 Each unit matrix leg measures statement coverage for `scenario/core` and
 `scenario/mcp` using the pinned pytest-cov development dependency and locked
 coverage.py version. The log and Actions summary contain per-file totals;
-`unit-coverage-3.11` and `unit-coverage-3.13` retain XML and browsable HTML reports
-for 14 days, including when tests fail. Coverage is measured without a minimum
-threshold. The reports include unexecuted files in those directories; Blender-only
+`unit-coverage-3.11` and `unit-coverage-3.13` retain the raw `.coverage` data, XML
+and browsable HTML reports for 14 days, including when tests fail. Coverage is
+measured without a minimum threshold. The reports include unexecuted files in those directories; Blender-only
 MCP modules can therefore show zero coverage. These reports do not measure native
 Blender behavior or subprocess execution and do not prove live service acceptance.
+[Coverage CI](../../.github/workflows/coverage.yml) reruns the suite on pushes,
+combines the 3.11 and 3.13 data so a line run by either version counts as covered,
+and uploads that XML report to GitHub code coverage for `main` and same-repository
+pull requests.
 
 To generate the same XML and HTML reports locally from the repository root:
 

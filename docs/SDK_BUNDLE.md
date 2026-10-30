@@ -18,7 +18,7 @@ following `pydantic-core` binary wheels:
 
 These are package targets. Passing validation on a platform does not prove
 native execution there. The native CI matrix requires Linux x64 and Windows x64
-runs on Blender 5.0.1, 5.1.2 and 5.2.2. Inspect each run's actual installed-ZIP
+runs on Blender 5.0.1, 5.1.2 and 5.2.3. Inspect each run's actual installed-ZIP
 result before claiming acceptance; configuring a leg is not a passing result.
 The native check compares the loaded binary and its Python sources with the same
 exact wheel; platform wheels can have different source line endings.
@@ -92,7 +92,7 @@ from a successful isolated installation.
 | scenario-sdk | 2.3.0 | MIT |
 | annotated-types | 0.8.0 | MIT |
 | anyio | 4.15.1 | MIT |
-| certifi | 2026.7.22 | MPL-2.0 |
+| certifi | 2026.10.19 | MPL-2.0 |
 | distro | 1.9.0 | Apache-2.0 |
 | h11 | 0.16.0 | MIT |
 | httpcore | 1.0.9 | BSD-3-Clause |

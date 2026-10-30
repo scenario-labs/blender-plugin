@@ -334,7 +334,7 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertIn("Use 120 to 200 elements", sent["instruction"])
         self.assertEqual(item.model, "claude-opus-5-5")
         props.tier, props.density = "fast", "expert"
-        item = self.quote()
+        self.quote()
         sent = self.quoted_parameters()
         self.assertEqual((sent["model"], sent["thinkingLevel"]), ("gemini-3.7-flash", "low"))
         self.assertIn("Use 200 to 350 elements", sent["instruction"])
@@ -549,6 +549,25 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertIn("UPDATED full plan applying this change: Add a doorway", instruction)
         self.assertEqual(len(json.loads(instruction.split("\nCurrent plan:\n")[1])), 100)
         self.assertEqual(self.paid, [])
+
+    def test_refine_and_design_report_the_refusal_reason(self):
+        self.lose_response = True
+        item = self.quote()
+        self.approve(item)
+        self.advance(item)
+        props = self.scene.scenario_blockout
+        props.plan_json = json.dumps([{"name": "Wall", "group": "Walls"}])
+        props.refine = "Add a doorway"
+        for operator in (
+            self.blockout.SCENARIO_OT_blockout_refine,
+            self.blockout.SCENARIO_OT_blockout_design,
+        ):
+            fake = MagicMock()
+            self.assertEqual(operator.execute(fake, bpy.context), {"CANCELLED"})
+            level, reason = fake.report.call_args.args
+            self.assertEqual(level, {"WARNING"})
+            self.assertIn("uncertain saved Blockout job", reason)
+        self.assertEqual(len(self.paid), 1)
 
     def test_mcp_refinement_requires_a_complete_plan_before_requesting_a_quote(self):
         self.scene.scenario_blockout.refine = "Add a doorway"

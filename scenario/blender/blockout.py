@@ -526,6 +526,9 @@ class SCENARIO_OT_blockout_refine(bpy.types.Operator):
             return {"CANCELLED"}
         try:
             _design(context, change, previous=previous)
+        except ScenarioError as error:
+            self.report({"WARNING"}, error.reason)
+            return {"CANCELLED"}
         except Exception:
             self.report(
                 {"WARNING"}, "Could not request a Blockout price; check inputs and connection"

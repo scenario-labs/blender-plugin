@@ -985,6 +985,13 @@ description can still render. This assumes the hidden input has no default; if
 one did, the dry run would report the service's error and nothing would be
 spent.
 
+`required.conditional` (SDK 2.3.0) makes an input required when siblings hold
+listed values. Validation applies it with `operator: "or"` when one condition
+matches, otherwise only when every condition does: the default operator is
+undocumented, so a local check never refuses what the service accepts. A sibling
+the schema does not declare never matches. Native panels do not yet mark such an
+input as required.
+
 The pure LoRA/composition routing helper retains required base-model wiring for
 its synthetic remote-MCP tests; strengths follow the policy in
 [trained-model routes](#trained-model-routes), so a wired LoRA without one is

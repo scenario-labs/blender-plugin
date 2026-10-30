@@ -73,6 +73,17 @@ def test_group_colours_follow_group_order_and_never_depend_on_the_names():
     assert list(one.values()) == [view.group_colour(0), view.group_colour(1), view.group_colour(2)]
 
 
+def test_kept_groups_keep_their_colour_and_new_groups_take_unused_ones():
+    kept = {"A": view.group_colour(0), "C": view.group_colour(1)}
+    colours = view.group_colours([_el("C"), _el("New"), _el("A")], kept)
+    assert colours["A"] == view.group_colour(0)
+    assert colours["C"] == view.group_colour(1)
+    assert colours["New"] == view.group_colour(2)
+    # Colours read back from Blender are float32: they still count as taken.
+    near = {"A": tuple(value + 1e-5 for value in view.group_colour(0)[:3]) + (1.0,)}
+    assert view.group_colours([_el("New"), _el("A")], near)["New"] == view.group_colour(1)
+
+
 def test_palette_is_distinct_muted_and_repeats_after_its_last_colour():
     colours = [view.group_colour(i) for i in range(len(view.PALETTE))]
     assert len(set(colours)) == len(view.PALETTE)

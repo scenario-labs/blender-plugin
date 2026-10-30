@@ -173,7 +173,7 @@ def _dress(scene, elements, staging):
 
     Returns ({group: (RGBA, material)}, names of what was added). Nothing here touches data the user owns.
     """
-    colours = core_view.group_colours(elements)
+    colours = core_view.group_colours(elements, view.kept_colours(core_view.group_order(elements)))
     materials = view.group_materials(colours, staging)
     bounds = core_view.plan_bounds(elements)
     added = []

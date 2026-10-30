@@ -272,6 +272,31 @@ class BlockoutViewTests(unittest.TestCase):
         left = {m[self.bview.GROUP_KEY] for m in bpy.data.materials if self.bview.GROUP_KEY in m}
         self.assertEqual(left, {"Ground", "Pond", "Teahouse", "Bridge"})
 
+    def test_a_rebuild_keeps_each_group_colour_in_solid_and_material_views(self):
+        def looks():
+            seen = {}
+            for obj in bpy.data.objects:
+                if obj.type != "MESH" or not obj.material_slots:
+                    continue
+                material = obj.material_slots[0].material
+                group = material[self.bview.GROUP_KEY]
+                colour = tuple(round(c, 3) for c in obj.color)
+                self.assertEqual(colour, tuple(round(c, 3) for c in material.diffuse_color))
+                seen.setdefault(group, colour)
+            return seen
+
+        self.build()
+        first = looks()
+        # Trees first, Pond gone, a new Bridge group: kept groups keep their colour.
+        garden = [el for el in _garden() if el["group"] != "Pond"]
+        trees = [el for el in garden if el["group"] == "Trees"]
+        bridge = _el("Bridge", "structure", "box", (0, 5, 0.3), group="Bridge")
+        self.build(trees + [bridge] + garden[:3])
+        second = looks()
+        for group in ("Ground", "Teahouse", "Trees"):
+            self.assertEqual(second[group], first[group])
+        self.assertEqual(len(set(second.values())), len(second))
+
     def test_user_objects_and_materials_are_never_recoloured_or_reused(self):
         mine = bpy.data.objects.new("Mine", bpy.data.meshes.new("Mine"))
         mine.color = (0.1, 0.2, 0.3, 1.0)

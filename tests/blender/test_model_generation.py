@@ -3911,7 +3911,7 @@ class ModelGenerationTests(unittest.TestCase):
         self.assertEqual(vars(fake), snapshot)  # Drawing only displays prepared values.
         fake.layout.prop.assert_called_once_with(fake, "unlit")
         labels = [call.kwargs.get("text") for call in fake.layout.label.call_args_list]
-        self.assertTrue(set(recovery.PLANE_REVIEW) <= set(labels))
+        self.assertLessEqual(set(recovery.PLANE_REVIEW), set(labels))
         self.assertLessEqual(max(len(label) for label in labels), 66)
         first = fake.application_id
         self.assertTrue(operator.check(fake, context))

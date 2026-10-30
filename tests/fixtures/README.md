@@ -113,7 +113,7 @@ accepts it and rejects comment floods inserted into it. Native World tests check
 that Blender decodes this progressive frame with its expected colors, that scan
 and comment floods built from it are rejected before decoding, and that comments
 up to the segment limit decode to the same pixels. Reproduce it with the locked
-Pillow 12.3.0 development dependency; the tests do not run this command:
+Pillow 13.0.0 development dependency; the tests do not run this command:
 
 ```sh
 uv run --locked python -c 'from PIL import Image

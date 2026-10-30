@@ -3,7 +3,8 @@
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    # The workflows and the local composite actions under .github/actions/.
+    directories: ["/", "/.github/actions/*"]
     schedule:
       interval: "weekly"
     # Wait a week after an action release before proposing it.
@@ -39,6 +40,9 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
+    groups:
+      docker:
+        patterns: ["*"]
     labels: ["dependencies", "area:ci"]
     commit-message:
       prefix: "ci(deps)"

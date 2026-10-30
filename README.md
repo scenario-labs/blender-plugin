@@ -4,6 +4,7 @@
 <h1 align="center">Scenario for Blender</h1>
 <p align="center">
   <a href="https://github.com/scenario-labs/blender-plugin/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/scenario-labs/blender-plugin"></a>
+  <a href="https://github.com/scenario-labs/blender-plugin/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/scenario-labs/blender-plugin/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="Licence GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Blender 5.0 and later" src="https://img.shields.io/badge/Blender-5.0%2B-orange">
   <a href="https://docs.scenario.com"><img alt="API documentation" src="https://img.shields.io/badge/documentation-api-black.svg"></a>
@@ -214,7 +215,7 @@ Discover repository maintenance commands with
 The `assets check` and `assets optimize` commands share the
 [documentation image policy](CONTRIBUTING.md#screenshots) with the unit suite.
 
-Native CI covers Blender 5.0.1, 5.1.2 and 5.2.2 on Linux and Windows for pull
+Native CI covers Blender 5.0.1, 5.1.2 and 5.2.3 on Linux and Windows for pull
 requests. A separate informational workflow schedules Blender 5.1.2 checks on
 macOS Apple silicon and Windows x64 weekly; see [matrix maintenance](CONTRIBUTING.md#bumping-the-blender-matrix)
 for failure tracking.

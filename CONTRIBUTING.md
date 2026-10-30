@@ -394,7 +394,7 @@ runner ownership records are refused with exit status 2 before importing `bpy`.
 Use `make test-blender` to create the managed profile and exact candidate ZIP.
 
 [Blender baseline CI](.github/workflows/blender-baseline.yml) runs the same native
-baseline on Linux x64 and Windows x64 with Blender **5.0.1, 5.1.2 and 5.2.2**;
+baseline on Linux x64 and Windows x64 with Blender **5.0.1, 5.1.2 and 5.2.3**;
 documentation-only and site-only pull requests
 [skip it](docs/development/validation.md). It reuses the release pipeline's
 checksum-verifying setup action and publishes logs/reports/ZIPs, including on
@@ -688,7 +688,7 @@ ignored `workdir/screenshots/`; when using worktrees, pass the root checkout's
 absolute screenshots directory to collect milestones together.
 
 The Blender baseline CI matrix also captures sidebar and composer on 5.0.1,
-5.1.2 and 5.2.2 using a virtual X display, Openbox and software OpenGL. The X11
+5.1.2 and 5.2.3 using a virtual X display, Openbox and software OpenGL. The X11
 capture backend reads the Blender window directly because llvmpipe can return
 black frames through Blender’s GPU screenshot operator. CI passes the
 same ZIP that completed the native tests to the capture runner. Each matrix

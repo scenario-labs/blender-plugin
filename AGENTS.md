@@ -31,8 +31,10 @@ This is a Python Blender extension with a local MCP server; `README.md`
 describes the current checkout.
 
 The approved direction is one consolidated extension, a compact default UI,
-optional expanded Studio and Blender-native updates. The current release uses
-explicit API key/secret configuration; browser OAuth is deferred under #67.
+optional expanded Studio and Blender-native updates. Credentials are a browser
+sign-in (Authorization Code with PKCE against Scenario's identity provider,
+`scenario/core/api/oauth.py`, the rest of #67 still open) or an explicit API
+key/secret pair.
 There is no prototype-data migration requirement. Preserve useful capabilities
 and tests, source attribution and required third-party notices when adopting
 code.

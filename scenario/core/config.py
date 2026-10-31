@@ -56,16 +56,29 @@ _MIME_EXT = {
 
 @dataclass(frozen=True, repr=False)
 class Credentials:
+    """The selected credential source: one API-key pair, or one signed-in browser account.
+
+    A browser account carries no token here, only its stable local identity, so
+    a refreshed access token does not read as a change of credentials.
+    """
+
     key: str
     secret: str
+    account: str = ""
 
     @property
     def valid(self):
-        return bool(self.key and self.secret)
+        return bool(self.key and self.secret) or bool(self.account)
+
+    @property
+    def browser(self):
+        return bool(self.account)
 
 
-def resolve_credentials(pref_key, pref_secret, environ=None, *, source="PREFERENCES"):
-    """Use one explicitly selected pair; never mix sources or silently fall back."""
+def resolve_credentials(pref_key, pref_secret, environ=None, *, source="PREFERENCES", account=None):
+    """Use one explicitly selected source; never mix sources or silently fall back."""
+    if source == "BROWSER":
+        return Credentials("", "", (account or "").strip())
     if source == "PREFERENCES":
         key, secret = pref_key, pref_secret
     elif source == "ENVIRONMENT":

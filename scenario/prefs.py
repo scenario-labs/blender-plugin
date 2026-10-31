@@ -53,12 +53,23 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
 
     credential_source: EnumProperty(
         name="Credentials",
+        # Explicit values: Blender saves the selection as its integer, so the two
+        # existing choices keep 0 and 1 for every saved userpref.blend.
         items=[
-            ("PREFERENCES", "Saved in Blender", "Use the API key and secret entered below"),
+            ("BROWSER", "Sign in with Scenario", "Sign in through your web browser", "NONE", 2),
+            (
+                "PREFERENCES",
+                "Saved in Blender",
+                "Use the API key and secret entered below",
+                "NONE",
+                0,
+            ),
             (
                 "ENVIRONMENT",
                 "Environment",
                 "Use SCENARIO_API_KEY and SCENARIO_API_SECRET from Blender's launch environment",
+                "NONE",
+                1,
             ),
         ],
         default="PREFERENCES",
@@ -149,7 +160,9 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         box = layout.box()
         box.label(text="Account", icon="USER")
         box.prop(self, "credential_source")
-        if self.credential_source == "PREFERENCES":
+        if self.credential_source == "BROWSER":
+            self._draw_browser(box)
+        elif self.credential_source == "PREFERENCES":
             box.prop(self, "api_key")
             box.prop(self, "api_secret")
             box.label(text="Saved as plain text in userpref.blend", icon="INFO")
@@ -158,14 +171,17 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
             box.label(text="SCENARIO_API_KEY + SCENARIO_API_SECRET", icon="CONSOLE")
             box.label(text="From the environment used to launch Blender")
         box.prop(self, "project_id")
-        box.label(text="Blank uses the API key's default scope", icon="INFO")
-        if not runtime.credentials().valid:
-            box.label(text="The selected source needs both a key and a secret", icon="ERROR")
-        row = box.row(align=True)
-        row.operator(
-            "scenario.open_url", text="Create a key in the portal", icon="URL"
-        ).url = PORTAL_KEYS_URL
-        row.operator("scenario.test_connection", text="Test connection", icon="CHECKMARK")
+        if self.credential_source == "BROWSER":
+            box.label(text="Blank uses your account's default scope", icon="INFO")
+        else:
+            box.label(text="Blank uses the API key's default scope", icon="INFO")
+            if not runtime.credentials().valid:
+                box.label(text="The selected source needs both a key and a secret", icon="ERROR")
+            row = box.row(align=True)
+            row.operator(
+                "scenario.open_url", text="Create a key in the portal", icon="URL"
+            ).url = PORTAL_KEYS_URL
+            row.operator("scenario.test_connection", text="Test connection", icon="CHECKMARK")
         if runtime.state.account_label:
             # Labels clip instead of wrapping; permission guidance must stay readable.
             icon = "ERROR" if runtime.state.connection_status == "error" else "INFO"
@@ -202,6 +218,26 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
             box.label(text="Nothing is sent while Allow Online Access is off", icon="ERROR")
         layout.prop(self, "log_level")
         updates.draw(layout, context)
+
+    def _draw_browser(self, box):
+        """The browser account's state and actions; reads only, the timer applies changes."""
+        from .blender import runtime, sign_in
+
+        if sign_in.pending():
+            box.label(text="Waiting for your web browser...", icon="TIME")
+            box.operator("scenario.cancel_sign_in", text="Cancel", icon="X")
+        elif runtime.browser_session() is not None:
+            box.label(text="Signed in with your Scenario account", icon="CHECKMARK")
+            box.label(text="Saved privately in this Blender's extension data", icon="INFO")
+            row = box.row(align=True)
+            row.operator("scenario.sign_out", text="Sign out", icon="X")
+            row.operator("scenario.test_connection", text="Test connection", icon="CHECKMARK")
+        elif sign_in.unavailable_reason():
+            box.label(text=sign_in.unavailable_reason(), icon="ERROR")
+            box.label(text="Select Saved in Blender to use an API key")
+        else:
+            box.operator("scenario.sign_in", text="Sign in with Scenario", icon="URL")
+            box.label(text="Opens your web browser; no API key to paste", icon="INFO")
 
 
 def get_prefs(context=None):

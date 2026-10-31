@@ -156,11 +156,14 @@ blender --background scene.blend --command scenario_blender
 
 ### Authentication
 
-Scenario API requests use an API key and secret. Saved Blender credentials are
-the default; **Credentials > Environment** explicitly selects an environment
-pair instead. The extension does not provide browser OAuth sign-in. The hosted
-Scenario MCP service has its own authentication, described in its linked docs.
-Blender stores saved credentials in its preferences, not an OS keychain.
+**Credentials > Sign in with Scenario** opens your web browser on Scenario's
+sign-in page and keeps the resulting session in the extension's private state
+folder, refreshed in the background, never in `userpref.blend` or a `.blend`
+file; it becomes usable once Scenario's OAuth application is registered.
+**Saved in Blender** uses an API key and secret from the preferences, and
+**Credentials > Environment** explicitly selects an environment pair instead.
+The hosted Scenario MCP service has its own authentication, described in its
+linked docs. Blender stores saved API keys in its preferences, not an OS keychain.
 
 ## What leaves your machine
 

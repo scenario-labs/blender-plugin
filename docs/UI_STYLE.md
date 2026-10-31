@@ -47,6 +47,18 @@ other platforms continue in #494.
 ![Environment credentials retain the explicit optional project B selection](images/project-scope-environment.png)
 ![Viewport selection and front view remain usable after editing Preferences](images/project-scope-viewport.png)
 
+## Browser sign-in in Preferences
+
+**Credentials > Sign in with Scenario** replaces the key fields with one **Sign
+in with Scenario** button and a one-line note; while the browser is open the box
+says so and offers **Cancel**; once signed in it shows the account state with
+**Sign out** and **Test connection** side by side. The Project ID field and its
+helper line stay in place for every source. Drawing reads the saved session the
+pump and the sign-in timer maintain; it starts nothing.
+
+![Credentials set to Sign in with Scenario before signing in](images/sign-in-preferences-signed-out.png)
+![The Account box after a browser sign-in, with Sign out and Test connection](images/sign-in-preferences-signed-in.png)
+
 ## Tabs and segmented choices
 
 A row of mutually exclusive choices (lane tabs, picker modality tabs and

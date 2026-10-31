@@ -654,7 +654,9 @@ class ModelPickerTests(unittest.TestCase):
         # The selected catalog's permission Event, which the pump syncs, wins over that mirror.
         sdk_catalog = submodule("core.api.sdk_catalog")
         catalog = sdk_catalog.SDKCatalog(
-            types.SimpleNamespace(authorization=lambda: None), online=True, adapter_factory=Mock()
+            types.SimpleNamespace(authorization=lambda **_: None),
+            online=True,
+            adapter_factory=Mock(),
         )
         self.addCleanup(catalog.close)
         self.enterContext(patch.object(self.runtime.state, "catalog", catalog))

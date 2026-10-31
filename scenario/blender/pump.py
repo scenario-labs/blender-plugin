@@ -6,7 +6,7 @@ import logging
 
 import bpy
 
-from . import generation, handlers, model_jobs, props, runtime
+from . import generation, handlers, model_jobs, props, runtime, sign_in
 
 log = logging.getLogger("scenario.pump")
 ESTIMATE_DEBOUNCE = 0.7
@@ -62,6 +62,7 @@ def _process():
     if changed:  # an outcome was applied: the status bar, which said sending, shows it too
         feedback.announce()
     changed |= generation.process_catalog_events()
+    changed |= sign_in.observe_session_end()
     changed |= mcp_service.follow_online_access()
     mcp_service.process_pending()
     # A change delivered during a sculpt or paint stroke is marked once it ends.

@@ -79,3 +79,15 @@ def test_standalone_guide_preserves_disclosures(tmp_path):
     assert "PRIVACY.md" in text
     assert "userpref.blend" in text
     assert "removed with the extension" not in text
+
+
+def test_footer_guide_link_follows_the_published_release(tmp_path):
+    output = build_handbook(
+        ROOT / "docs/USER_GUIDE.md",
+        ROOT / "docs/handbook-template.html",
+        ROOT / "scenario/blender_manifest.toml",
+        tmp_path / "handbook.html",
+        ref="blender-plugin-v1.2.3",
+    )
+    link = "https://github.com/scenario-labs/blender-plugin/blob/blender-plugin-v1.2.3/docs/USER_GUIDE.md"
+    assert f'<a href="{link}">Markdown guide</a>' in output.read_text()

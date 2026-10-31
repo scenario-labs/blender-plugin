@@ -30,9 +30,9 @@ SPEC = importlib.util.spec_from_file_location("mcp_tool_sizes", ROOT / "tools/mc
 sizer = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(sizer)
 
-# Measured for 88 tools with capture_views: 127,775 characters in total, about 31,900 tokens
-# at four characters per token.
-TOTAL_BUDGET = 129_000
+# Measured for 88 tools with Retexture's keep_texture: 129,279 characters in total, about
+# 32,300 tokens at four characters per token.
+TOTAL_BUDGET = 129_300
 # A budget that the total undercuts by more than this fraction is lowered, so a
 # trim is not silently spent by a later addition.
 TOTAL_SLACK = 0.03
@@ -40,7 +40,7 @@ TOTAL_SLACK = 0.03
 DEFAULT_TOOL_BUDGET = 2_500
 TOOL_BUDGETS = {
     "job_status": 9_600,
-    "prepare_result_application": 6_800,
+    "prepare_result_application": 7_100,
     "render_form": 4_500,
     "inspect_result_previews": 3_200,
     "decide_workflow_step": 3_000,

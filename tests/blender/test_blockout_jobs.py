@@ -448,7 +448,14 @@ class BlockoutJobsTests(unittest.TestCase):
         self.lose_response = True
         self.approve(item)
         # The Jobs panel lists the plan Scenario is designing, unless its saved job is shown.
-        self.assertEqual(len(self.blockout.running_plans()), 1)
+        label = submodule("core.scene.blockout").model_label(item.model)
+        self.assertEqual(self.blockout.running_plans(), [f"{label}, 3 to 4 min"])
+        refining = SimpleNamespace(tier=item.tier, action="REFINE")
+        self.assertEqual(self.facade.expected_time(refining), "1 to 2 min")
+        layout = MagicMock()
+        self.blockout.draw_status(layout, self.scene)
+        waiting = " ".join(call.kwargs["text"] for call in layout.label.call_args_list)
+        self.assertEqual(waiting, f"{label} is designing the plan, 3 to 4 min...")
         self.assertEqual(self.blockout.running_plans({item.request_id}), [])
         self.advance(item)
         self.assertEqual((item.phase, self.blockout.running_plans()), ("ERROR", []))
@@ -547,7 +554,8 @@ class BlockoutJobsTests(unittest.TestCase):
         self.assertIn("Add a doorway", instruction)
         self.assertNotIn("Scene to block out:", instruction)
         self.assertIn("UPDATED full plan applying this change: Add a doorway", instruction)
-        self.assertEqual(len(json.loads(instruction.split("\nCurrent plan:\n")[1])), 100)
+        rows = instruction.split("\nCurrent plan:\n")[1]
+        self.assertEqual(len(submodule("core.scene.blockout").parse_complete_plan(rows)), 100)
         self.assertEqual(self.paid, [])
 
     def test_refine_and_design_report_the_refusal_reason(self):

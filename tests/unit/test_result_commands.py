@@ -43,12 +43,23 @@ class OfflineDownloader(ResultDownloader):
         self.calls = []
         self.fail_at = None
         self.after_download = None
+        # A job downloads its results while `downloading`; a fetch keeps it `ready`.
+        self.state = JobState.DOWNLOADING
 
     def download(
-        self, url, *, root, name, expected_size, expected_sha256, cancel=None, partial=None
+        self,
+        url,
+        *,
+        root,
+        name,
+        expected_size,
+        expected_sha256,
+        cancel=None,
+        partial=None,
+        allow_size_mismatch=False,
     ):
         self._policy.destination(url)
-        active = [record for record in self.store.records() if record.state == JobState.DOWNLOADING]
+        active = [record for record in self.store.records() if record.state == self.state]
         assert len(active) == 1 and active[0].results
         self.calls.append((url, root, name, threading.current_thread()))
         if len(self.calls) == self.fail_at:
@@ -1076,8 +1087,9 @@ def test_schema_nine_manifest_keeps_downloading_its_saved_preview(setup, tmp_pat
     with sqlite3.connect(path) as connection:
         value = json.loads(connection.execute("SELECT record FROM jobs").fetchone()[0])
         for item in value["results"]:
-            del item["asset"]["source"], item["asset"]["projection"], item["asset"]["parent_id"]
-        del value["claimed_at"]
+            for key in ("source", "projection", "parent_id", "on_demand"):
+                del item["asset"][key]
+        del value["claimed_at"], value["intent"]["lane"]
         connection.execute("UPDATE jobs SET record=?", (json.dumps(value),))
         connection.execute("DROP TABLE trained_defaults")
         connection.execute("PRAGMA user_version=9")
@@ -1233,3 +1245,181 @@ def test_refresh_keeps_a_saved_parent_whatever_the_server_reports_later(setup, l
     assert len(downloader.calls) == 2
     assert store.get("request").state == JobState.READY
     assert _parents(store.get("request")) == [None, "asset-one"]
+
+
+def _model_results(job, assets, members):
+    """Give the fixture job (identifier, MIME type, metadata) results, as a 3D job returns."""
+    job["metadata"]["assetIds"] = [identifier for identifier, _, _ in members]
+    assets.clear()
+    for identifier, mime, metadata in members:
+        assets[identifier] = {
+            "id": identifier,
+            "status": "success",
+            "mimeType": mime,
+            "metadata": metadata,
+            "properties": {"size": len(DATA)},
+            "url": f"https://storage.example.invalid/{identifier}?signed=initial",
+        }
+
+
+# Meshy text-to-3D: one GLB, then an OBJ, its MTL and four maps that each name the GLB.
+MESHY_RESULTS = (
+    ("mesh-glb", "model/gltf-binary", {}),
+    ("mesh-obj", "model/obj", {"parentId": "mesh-glb"}),
+    ("mesh-mtl", "model/mtl", {"parentId": "mesh-glb"}),
+    ("map-base", "image/png", {"parentId": "mesh-glb", "type": "3d-texture-albedo"}),
+    ("map-normal", "image/png", {"parentId": "mesh-glb", "type": "3d-texture-normal"}),
+    ("map-rough", "image/png", {"parentId": "mesh-glb", "type": "3d-texture-roughness"}),
+    ("map-metal", "image/png", {"parentId": "mesh-glb", "type": "3d-texture-metallic"}),
+)
+
+
+def _saved(record):
+    return [item.asset.asset_id for item in record.results if item.receipt is not None]
+
+
+def test_download_saves_the_glb_and_leaves_its_copies_on_demand(setup):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    assert ready.state == JobState.READY
+    assert _saved(ready) == ["mesh-glb"] and len(downloader.calls) == 1
+    assert [item.asset.on_demand for item in ready.results] == [False] + [True] * 6
+    # Every copy stays listed for import, mesh edits and saved materials.
+    assert [item.asset.asset_id for item in ready.results] == [
+        identifier for identifier, _, _ in MESHY_RESULTS
+    ]
+    verified = coordinator.verify_results("request", expected_revision=ready.revision)
+    assert verified.paths[0] is not None and verified.paths[1:] == (None,) * 6
+
+
+def test_fetch_saves_the_chosen_copies_and_keeps_the_job_ready(setup):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    downloader.state = JobState.READY
+    fetched = coordinator.fetch_results(
+        "request", expected_revision=ready.revision, asset_ids=("mesh-obj", "mesh-mtl")
+    )
+    assert (fetched.state, fetched.revision) == (JobState.READY, ready.revision + 2)
+    assert _saved(fetched) == ["mesh-glb", "mesh-obj", "mesh-mtl"]
+    assert len(downloader.calls) == 3 and store.get("request") == fetched
+    verified = coordinator.verify_results("request", expected_revision=fetched.revision)
+    assert [path is not None for path in verified.paths] == [True] * 3 + [False] * 4
+    # A fetched copy is verified, not downloaded again.
+    again = coordinator.fetch_results(
+        "request", expected_revision=fetched.revision, asset_ids=("mesh-obj", "map-base")
+    )
+    assert _saved(again)[-1] == "map-base" and len(downloader.calls) == 4
+
+
+@pytest.mark.parametrize(
+    "asset_ids", [(), ("mesh-glb",), ("unknown",), ("mesh-obj", "mesh-obj"), ("bad id/",)]
+)
+def test_fetch_takes_only_on_demand_copies_of_the_job(setup, asset_ids):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    with pytest.raises(ResultError, match="on-demand copies"):
+        coordinator.fetch_results("request", expected_revision=ready.revision, asset_ids=asset_ids)
+    assert store.get("request") == ready and len(downloader.calls) == 1
+
+
+def test_fetch_needs_a_completed_job_at_the_seen_revision(setup):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    with pytest.raises(StoreConflict):
+        coordinator.fetch_results(
+            "request", expected_revision=current.revision, asset_ids=("mesh-obj",)
+        )
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    with pytest.raises(StoreConflict):
+        coordinator.fetch_results(
+            "request", expected_revision=ready.revision - 1, asset_ids=("mesh-obj",)
+        )
+    assert len(downloader.calls) == 1
+
+
+def test_failed_fetch_keeps_the_job_ready_and_a_retry_completes_it(setup):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    downloader.state, downloader.fail_at = JobState.READY, 3
+    with pytest.raises(ResultError, match="did not download") as error:
+        coordinator.fetch_results(
+            "request", expected_revision=ready.revision, asset_ids=("mesh-obj", "mesh-mtl")
+        )
+    assert "token" not in str(error.value)
+    failed = store.get("request")
+    assert failed.state == JobState.READY and _saved(failed) == ["mesh-glb", "mesh-obj"]
+    downloader.fail_at = None
+    fetched = coordinator.fetch_results(
+        "request", expected_revision=failed.revision, asset_ids=("mesh-obj", "mesh-mtl")
+    )
+    assert _saved(fetched) == ["mesh-glb", "mesh-obj", "mesh-mtl"]
+
+
+def test_a_copy_saved_without_its_receipt_is_fetched_again(setup):
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    downloader.state = JobState.READY
+    # A fetch that wrote its file but never recorded the receipt left it behind.
+    name = next(item.asset.name for item in ready.results if item.asset.asset_id == "mesh-obj")
+    (downloader.calls[0][1] / name).write_bytes(b"unverified bytes")
+    fetched = coordinator.fetch_results(
+        "request", expected_revision=ready.revision, asset_ids=("mesh-obj",)
+    )
+    assert _saved(fetched) == ["mesh-glb", "mesh-obj"]
+    assert (downloader.calls[0][1] / name).read_bytes() == DATA
+
+
+def test_stopped_fetch_saves_nothing_and_says_so(setup, monkeypatch):
+    from scenario.core.jobs.results import DownloadCanceled
+    from scenario.core.jobs.transfers import TransferInterrupted
+
+    coordinator, store, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, MESHY_RESULTS)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+
+    def interrupted(*args, **kwargs):
+        raise TransferInterrupted("stopped at a chunk")
+
+    monkeypatch.setattr(downloader, "download", interrupted)
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(DownloadCanceled):
+        coordinator.fetch_results(
+            "request", expected_revision=ready.revision, asset_ids=("mesh-obj",), cancel=cancel
+        )
+    assert store.get("request") == ready
+
+
+@pytest.mark.parametrize(
+    "members",
+    [
+        # No GLB: an OBJ with its MTL and map is the mesh to import.
+        (
+            ("mesh-obj", "model/obj", {}),
+            ("mesh-mtl", "model/mtl", {"parentId": "mesh-obj"}),
+            ("map-base", "image/png", {"parentId": "mesh-obj", "type": "3d-texture-albedo"}),
+        ),
+        # A GLB and an OBJ side by side, neither derived from the other.
+        (("mesh-glb", "model/gltf-binary", {}), ("mesh-obj", "model/obj", {})),
+        # A rigged FBX and an untyped image that descend from the GLB stay.
+        (
+            ("mesh-glb", "model/gltf-binary", {}),
+            ("rig-fbx", "model/x-fbx", {"parentId": "mesh-glb"}),
+            ("preview", "image/png", {"parentId": "mesh-glb"}),
+        ),
+        # Another result descends from a copy, so every file downloads.
+        MESHY_RESULTS[:2] + (("rig-fbx", "model/x-fbx", {"parentId": "mesh-obj"}),),
+    ],
+)
+def test_results_that_are_not_a_glbs_copies_download_with_the_job(setup, members):
+    coordinator, _, current, job, assets, downloader, _, _ = setup
+    _model_results(job, assets, members)
+    ready = coordinator.download_results("request", expected_revision=current.revision)
+    assert _saved(ready) == [identifier for identifier, _, _ in members]
+    assert not any(item.asset.on_demand for item in ready.results)
+    assert len(downloader.calls) == len(members)

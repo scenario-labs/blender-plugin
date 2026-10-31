@@ -542,10 +542,13 @@ def prepare(context, lane, category="all"):
 
 def _target_lane(scene, record, lane):
     """The lane a chosen model belongs to: the current lane when the modality matches, else the modality's base lane
-    (3D-to-3D models go to the Edit 3D lane / mode)."""
+    (3D-to-3D models, and models that animate a given character, go to the Edit 3D lane / mode)."""
     modality = model_filter.modality_of(record)
     caps = set(record.capabilities)
-    if modality == "3d" and "3d23d" in caps and "txt23d" not in caps and "img23d" not in caps:
+    if modality == "3d" and (
+        ("3d23d" in caps and "txt23d" not in caps and "img23d" not in caps)
+        or model_filter.animates_given_character(record)
+    ):
         return "edit3d"
     if modality_for_lane(lane) == modality and not (lane == "edit3d" and "3d23d" not in caps):
         return lane

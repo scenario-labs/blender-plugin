@@ -16,6 +16,7 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, AdapterError, EstimateStartedJob
+from ..core.history import result_kind
 from ..core.jobs import (
     failures,
     progress,
@@ -50,6 +51,9 @@ from ..core.jobs.store import (
 )
 from ..core.jobs.workers import WorkerError
 from ..core.scene import landing, material_tiling, panorama_contract, placement
+from ..core.scene.kept_texture import AUTO as KEEP_AUTO
+from ..core.scene.kept_texture import MODES as KEEP_MODES
+from ..core.scene.kept_texture import NONE as KEEP_NONE
 from ..core.scene.mesh_edit_policy import (
     SEVERAL_SOURCES_FALLBACK,
     TASK_POLICIES,
@@ -61,7 +65,7 @@ from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
 from ..core.ui.saved_job_actions import NATIVE_ONLY, WorkflowSteps
-from . import file_state, first_frame_handoff
+from . import file_state, first_frame_handoff, kept_texture
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
@@ -111,6 +115,12 @@ CANCEL_UNSUPPORTED = (
 )
 # A download the user stopped: nothing partial was saved and Resume starts it again.
 DOWNLOAD_STOPPED = "Download stopped; nothing partial was saved. Resume download starts it again"
+# A chosen result whose OBJ, MTL or maps wait for an explicit fetch (FilesDownloading).
+FILES_DOWNLOADING = (
+    "Downloading the {count} this result needs. Choose it again when the download finishes"
+)
+FETCH_STOPPED = "Download stopped; nothing partial was saved. Choose the result again to restart it"
+FETCH_FAILED = "The files this result needs did not download; choose it again to retry"
 # Shared by the native World operator and MCP prepare_result_application.
 NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
 # Native review notes for a submission Scenario never confirmed; MCP keeps the error.
@@ -128,6 +138,7 @@ REFRESH_RETRYING = "Status not refreshed; retrying"
 # FBX clips keep the file's frame rate in a model import or a RIG/ANIMATE edit.
 FRAME_RATE_NOTICE = "Clips keep the file's frame rate, which differs from the scene's"
 CANCEL_NOT_SENT = "Cancel not sent; the job keeps running"
+FILES_FETCHING = "Downloading the files a chosen result needs"
 CANCEL_UNCONFIRMED = "Cancel not confirmed yet; checking the job's status"
 # Delivery pauses with this once refresh_backoff.FAILURE_CEILING refreshes in a row failed.
 REFRESH_STOPPED = (
@@ -165,6 +176,14 @@ class AutomaticEstimatesStopped(ScenarioError):
             f"{error}. Automatic prices are off until Blender restarts; once that job finishes, "
             "save it from history.",
         )
+
+
+class FilesDownloading(ScenarioError):
+    """A chosen result needs on-demand copies: their download started, nothing was reviewed."""
+
+    def __init__(self, count):
+        files = "file" if count == 1 else f"{count} files"
+        super().__init__(0, FILES_DOWNLOADING.format(count=files))
 
 
 class NothingSent(ScenarioError):
@@ -544,14 +563,16 @@ class MeshApplicationApproval:
     format: str = "glb"
     # Every target object's name, in capture order.
     target_names: tuple = ()
+    # Where RETEXTURE keeps the source's own texture: SELECTED, HEAD or NONE, and
+    # the region resolved on the captured sources (None for other policies).
+    keep_texture: str = KEEP_NONE
+    kept: object = field(default=None, repr=False)
 
     @property
     def targets(self):
         return self.target if isinstance(self.target, tuple) else (self.target,)
 
 
-# The prompt line of an inspected saved job whose prompt this session never showed.
-RECOVERED = "Recovered saved job"
 LABELS = ("prompt", "model_name")
 
 
@@ -560,12 +581,27 @@ def labels(views):
     found = {}
     for view in views:
         label = {key: view.meta[key] for key in LABELS if view.meta.get(key)}
-        if view.meta.get("shared_job") and label and label.get("prompt") != RECOVERED:
-            lane = view.meta.get("shown_lane") or view.lane
-            if lane not in ("model", "workflow"):
-                label["shown_lane"] = lane  # the form it came from, for its actions' order only
+        if view.meta.get("shared_job") and label:
             found[view.local_id] = label
     return found
+
+
+def listed_lane(record):
+    """The lane and kind of a saved job's view when the store lists it.
+
+    A job saved with its lane (schema 13) shows that form's kind, so its row
+    offers what the submitting session's row did. One saved without a lane, by
+    an earlier schema or as a cloud read, is a generic model view of the kind its
+    saved results establish, or of none before they are known.
+    """
+    if record.intent.operation == "workflow":
+        return "workflow", "workflow"
+    lane = record.intent.lane
+    if lane in LANE_KIND:
+        return lane, LANE_KIND[lane]
+    if lane == "film":
+        return lane, lane
+    return "model", result_kind(tuple(item.asset for item in record.results)) or "model"
 
 
 class ModelJobs:
@@ -578,8 +614,8 @@ class ModelJobs:
         self.submissions = {}
         self.views = {}
         # request_id -> the prompt and model name an earlier owner of this scope
-        # showed this session. The store keeps no prompt, so only they replace
-        # RECOVERED on an inspected job. Memory only.
+        # showed this session. The store keeps no prompt, so an inspected job
+        # shows one only from here; otherwise its row names its model. Memory only.
         self._labels = {} if labels is None else labels
         self._bindings = {}
         self._online = online
@@ -639,9 +675,10 @@ class ModelJobs:
         # again for the same receipt. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
-        # Verified local files of the jobs MCP job_status asked about, checked on
-        # the preview lane against their saved receipts. Memory only; it follows
-        # the saved store, so a restarted job is checked like a current one.
+        # Verified local files of the jobs MCP job_status asked about and of image
+        # rows, checked on the preview lane against their saved receipts.
+        # Memory only; it follows the saved store, so a restarted job is checked
+        # like a current one.
         self._files = ResultFiles()
         # request_id -> number of `wait` calls on MCP HTTP workers waiting for it.
         self._file_waits = {}
@@ -859,7 +896,7 @@ class ModelJobs:
         estimate = quote.estimate
         model_id = estimate.target_id
         try:
-            prepared = self.session.prepare_quote(quote)
+            prepared = self.session.prepare_quote(quote, lane=lane)
         except SessionBusy:
             if not withdraw:
                 raise
@@ -1008,6 +1045,7 @@ class ModelJobs:
                         policy=mesh.policy,
                         result_to_source=mesh.mapping,
                         keep_original=mesh.keep_original,
+                        keep_texture=mesh.kept,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
@@ -1080,6 +1118,8 @@ class ModelJobs:
                     self._refresh_failures.pop(request_id, None)
                 elif command == "read_prompt_results":
                     self._prompt_texts[request_id] = tuple(completion.result.prompts)
+                elif command == "fetch_results":
+                    self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except first_frame_handoff.FirstFrameHandoffError as error:
                 self._remember_first_frame(request_id, first_frame, error=error.reason)
@@ -1120,11 +1160,13 @@ class ModelJobs:
                 )
             except (MeshApplicationError, MeshResultApplicationError) as error:
                 reason = getattr(error, "reason", None)
-                self._pause(
-                    request_id,
-                    "Mesh application stopped; inspect the saved result, source and edit policy"
-                    + (f". {reason}" if reason else ""),
+                outcome = (
+                    # A refused clip leaves the rig as it was; its reason says what to change.
+                    "Animation not applied; the rig is unchanged"
+                    if mesh is not None and mesh.policy == "ANIMATE"
+                    else "Mesh application stopped; inspect the saved result, source and edit policy"
                 )
+                self._pause(request_id, outcome + (f". {reason}" if reason else ""))
             except ModelPreflightError as error:
                 # Rejected before the claim: the saved job and the scene are unchanged.
                 verb = "applied" if command == "verify_mesh_edit" else "imported"
@@ -1154,7 +1196,15 @@ class ModelJobs:
                 self._cancellable.pop(request_id, None)
                 self._pause(request_id, CANCEL_UNSUPPORTED)
             except Exception as error:
-                if command == "verify_first_frame":
+                if command == "fetch_results":
+                    # The job stays complete; only this download stopped.
+                    self._pause(
+                        request_id,
+                        FETCH_STOPPED
+                        if stopped and isinstance(error, DownloadCanceled)
+                        else FETCH_FAILED,
+                    )
+                elif command == "verify_first_frame":
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
@@ -1181,12 +1231,14 @@ class ModelJobs:
                 self._observe(request_id, observed)
         online = self._online_seen = self._online()
         unread_sizes = []
+        polled = {}
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
                 raise ScenarioError(
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
+            polled[request_id] = record
             if record.state != JobState.REMOTE:
                 self._cancellable.pop(request_id, None)
             view.job_id = record.remote_job_id
@@ -1195,6 +1247,13 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
+            if view.lane == "model":
+                # Saved without its lane: the kind its saved results establish.
+                view.kind = listed_lane(record)[1]
+            if self._lists_files(request_id, view):
+                view.files = [
+                    row.file for row in self._watched_rows(record) if row.state == VERIFIED
+                ]
             # The Results grid's large view names a saved file's size and the
             # submission time without reading storage while drawing.
             view.meta["result_sizes"] = {
@@ -1282,19 +1341,21 @@ class ModelJobs:
                     self._pause(request_id, "Result delivery could not start; inspect saved jobs")
         self._prune_world_sizes()
         self._read_world_sizes(unread_sizes)
-        self._check_files()
+        self._check_files(polled)
 
-    def _check_files(self):
+    def _check_files(self, polled=None):
         """Queue one preview-lane check of the watched jobs' unchecked result files.
 
         Files this session verified are settled even while a batch is in flight,
-        so a wait on them does not wait for another job's check.
+        so a wait on them does not wait for another job's check. `polled` holds
+        the records this tick already read, so a watched job is read once per tick.
         """
         busy = self._files.busy
         targets = []
+        polled = polled or {}
         for request_id in self._files.watched:
             try:
-                record = self.store.get(request_id)
+                record = polled.get(request_id) or self.store.get(request_id)
             except Exception:
                 # An unreadable record is reported by status; it is checked later.
                 continue
@@ -1431,7 +1492,8 @@ class ModelJobs:
         return True
 
     def _status_notes(self, request_id, record, *, online):
-        """Information lines for a job whose status or cancellation is not confirmed.
+        """Information lines for a job whose status or cancellation is not confirmed,
+        or that downloads the files a chosen result needs.
 
         A cancel note lasts while the saved revision it was written for is
         unchanged. REFRESH_RETRYING shows while transient failures delay an
@@ -1450,6 +1512,9 @@ class ModelJobs:
                 del self._refresh_failures[request_id]
             elif online and request_id not in self._paused:
                 notes.append(REFRESH_RETRYING)
+        command = self._commands.get(request_id)
+        if command is not None and command[0] == "fetch_results":
+            notes.append(FILES_FETCHING)
         return tuple(notes)
 
     def _observe_cancellation(self, request_id, snapshot):
@@ -1901,20 +1966,34 @@ class ModelJobs:
     def _view(self, record):
         request_id = record.intent.request_id
         if request_id not in self.views:
-            label = self._labels.get(request_id) or {"prompt": RECOVERED}
+            lane, kind = listed_lane(record)
             self.views[request_id] = JobRecord(
                 local_id=request_id,
-                lane="workflow" if record.intent.operation == "workflow" else "model",
-                kind="workflow" if record.intent.operation == "workflow" else "model",
+                lane=lane,
+                kind=kind,
                 model_id=record.intent.target_id,
                 body={},
                 cu_cost=float(record.intent.quote_cost)
                 if record.intent.quote_cost is not None
                 else None,
-                meta={"shared_job": True, **label},
+                # Listed from the store, which keeps only the request's hash:
+                # its row offers no Reload parameters.
+                meta={"shared_job": True, "listed": True, **self._labels.get(request_id, {})},
             )
             self._paused.add(request_id)
         return self.views[request_id]
+
+    def _lists_files(self, request_id, view):
+        """Whether a view lists its verified saved images for the image row's file tools.
+
+        Every image kind does: the Image, Render Image and Environment lanes and
+        a job saved without a lane whose results are images. An Image lane job
+        lists the files its automatic import verified while that import owns
+        it; the others list the files a preview-lane check verified, in the
+        submitting session and after a restart alike. A 3D row lists none: it
+        imports through its receipt-bound saved-job action, never a direct path.
+        """
+        return view.kind == "image" and request_id not in self._automatic_application
 
     def _plan(self, record):
         """Classify saved results once per saved revision; reads no files."""
@@ -1932,6 +2011,32 @@ class ModelJobs:
     def _units(self, record):
         plan = self._plan(record)
         return plan.units if plan is not None else ()
+
+    def _fetch_first(self, record, asset_ids):
+        """Start downloading the on-demand copies among `asset_ids` that are not saved yet.
+
+        Raises FilesDownloading once that download is queued, so nothing is reviewed
+        before every file the result needs is saved; returns when none is missing.
+        """
+        wanted = set(asset_ids)
+        missing = tuple(
+            item.asset.asset_id
+            for item in record.results
+            if item.asset.asset_id in wanted and item.receipt is None
+        )
+        if not missing:
+            return
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access to download the files this result needs")
+        request_id = record.intent.request_id
+        task = self.session.fetch_results(
+            request_id, expected_revision=record.revision, asset_ids=missing
+        )
+        self._commands[request_id] = ("fetch_results", task)
+        view = self._view(record)
+        view.meta["recovery_actions"] = ()
+        view.error = None
+        raise FilesDownloading(len(missing))
 
     def _unit_rows(self, record):
         """Importable units for drawing: (key, format, primary) in classified order."""
@@ -2055,9 +2160,11 @@ class ModelJobs:
         request_id = record.intent.request_id
         command = self._commands.get(request_id)
         return (
-            record.state == JobState.DOWNLOADING
-            and command is not None
-            and command[0] == "download_results"
+            command is not None
+            and (
+                (record.state == JobState.DOWNLOADING and command[0] == "download_results")
+                or command[0] == "fetch_results"
+            )
             and not command[1].done()
             and request_id not in self._stopping
         )
@@ -2607,6 +2714,7 @@ class ModelJobs:
             )
         unit = selected[0]
         max_points, axes = self._splat_options(unit, max_points, axes)
+        self._fetch_first(record, (*unit.members, *unit.resources))
         if len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Complete or cancel an existing application review first")
         if scene != bpy.context.scene:
@@ -2803,6 +2911,28 @@ class ModelJobs:
             policy = SEVERAL_SOURCES_FALLBACK
         return start, policy, source
 
+    @staticmethod
+    def _kept_texture(targets, policy, requested):
+        """RETEXTURE's kept region on the captured sources: (mode, region or None).
+
+        AUTO, or None, starts on the selected faces, else on a standing
+        character's head while the Edit form's Keep head option is on. Other
+        policies keep no texture; they report the mode a retexture would start on.
+        """
+        if requested is None:
+            requested = KEEP_AUTO
+        if requested not in (KEEP_AUTO, *KEEP_MODES):
+            raise ScenarioError(0, "Keep texture on SELECTED faces, the HEAD or NONE")
+        scene = targets[0].scene
+        keep_head = scene.scenario.retexture_keep_head
+        if policy != "RETEXTURE":
+            if requested not in (KEEP_AUTO, KEEP_NONE):
+                raise ScenarioError(0, "Keep texture applies only to Replace textures")
+            objects = [target.obj for target in targets]
+            return kept_texture.starting_mode(objects, scene, keep_head), None
+        region = kept_texture.review(targets, requested, keep_head=keep_head)
+        return region.mode, region
+
     def prepare_mesh_application(
         self,
         request_id,
@@ -2816,6 +2946,7 @@ class ModelJobs:
         keep_original=True,
         original_source=False,
         review_placement=False,
+        keep_texture=None,
     ):
         """Capture one reviewed mesh destination; return its single-use approval.
 
@@ -2830,6 +2961,9 @@ class ModelJobs:
         (`MeshApplicationApproval.target` is then a tuple) and accepts only UV,
         RETEXTURE or RIG, in scene coordinates or fitted from them; a job with
         no derived task starts those on UV instead of REMESH.
+
+        RETEXTURE resolves where the source keeps its own texture (`keep_texture`:
+        AUTO, SELECTED, HEAD or NONE) on the captured sources now, and binds it.
         """
         record = self.store.get(request_id)
         if (
@@ -2843,6 +2977,7 @@ class ModelJobs:
         unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
         if unit is None or not mesh_applicable(unit):
             raise ScenarioError(0, "Choose one saved GLB, glTF, FBX or OBJ mesh result")
+        self._fetch_first(record, (*unit.members, *unit.resources))
         if type(original_source) is not bool:
             raise ScenarioError(0, "Choose whether to use the captured source")
         if original_source:
@@ -2878,6 +3013,7 @@ class ModelJobs:
         ):
             placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
+        mode, kept = self._kept_texture(targets, policy, keep_texture)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2898,12 +3034,20 @@ class ModelJobs:
             primary=unit.primary,
             format=unit.format.value,
             target_names=tuple(item.name for item in targets),
+            keep_texture=mode,
+            kept=kept,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
-    def revise_mesh_application(self, identifier, *, policy, placement, keep_original):
-        """Change reviewed options without recapturing or retargeting the source."""
+    def revise_mesh_application(
+        self, identifier, *, policy, placement, keep_original, keep_texture=None
+    ):
+        """Change reviewed options without recapturing or retargeting the source.
+
+        `keep_texture` None keeps the reviewed choice; a RETEXTURE region is
+        resolved again only when the choice or the policy changes.
+        """
         ticket = self._application_approvals.get(identifier)
         if not isinstance(ticket, MeshApplicationApproval):
             raise ScenarioError(0, "Use an unconsumed mesh destination review")
@@ -2911,12 +3055,20 @@ class ModelJobs:
         self.session.validate_destination(ticket.destination)
         if self.store.get(ticket.record.intent.request_id) != ticket.record:
             raise ScenarioError(0, "The saved mesh changed; start a fresh review")
-        if (policy, placement, keep_original) == (
+        keep_texture = ticket.keep_texture if keep_texture is None else keep_texture
+        if (policy, placement, keep_original, keep_texture) == (
             ticket.policy,
             ticket.placement,
             ticket.keep_original,
+            ticket.keep_texture,
         ):
             return ticket
+        if policy == ticket.policy and keep_texture == ticket.keep_texture:
+            mode, kept = ticket.keep_texture, ticket.kept
+        else:
+            # Other policies keep no texture: they only report a retexture's start.
+            requested = keep_texture if policy == "RETEXTURE" else None
+            mode, kept = self._kept_texture(ticket.targets, policy, requested)
         revised = replace(
             ticket,
             identifier=uuid.uuid4().hex,
@@ -2925,6 +3077,8 @@ class ModelJobs:
             mapping=mapping,
             keep_original=keep_original,
             policy_source=ticket.policy_source if policy == ticket.policy else "requested",
+            keep_texture=mode,
+            kept=kept,
         )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised
@@ -2940,6 +3094,7 @@ class ModelJobs:
             policy=ticket.policy,
             result_to_source=ticket.mapping,
             keep_original=ticket.keep_original,
+            keep_texture=ticket.kept,
         )
         self.session.validate_destination(ticket.destination)
         request_id = record.intent.request_id
@@ -2971,6 +3126,9 @@ class ModelJobs:
         bpy.context.view_layer.update()
         target = capture_target(scene, obj)
         roles = selected_maps(record)
+        self._fetch_first(
+            record, (record.results[index].asset.asset_id for index in roles.values())
+        )
         ticket = MaterialApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -3329,9 +3487,13 @@ class ModelJobs:
 
         False once it is settled, including a finished job whose results
         ModelJobs never downloads, paused for review, prepared but never
-        queued, or not owned by this session. `wait` calls this on the HTTP
+        queued, or not owned by this session. A completed job advances while it
+        downloads the files a chosen result needs. `wait` calls this on the HTTP
         worker, so it reads only in-memory state, never bpy.
         """
+        command = self._commands.get(request_id)
+        if command is not None and command[0] == "fetch_results":
+            return request_id in self.views
         return (
             request_id in self.views
             and request_id not in self._paused
@@ -3391,6 +3553,8 @@ class ModelJobs:
             "rig": application.rig.name if application.rig in objects else None,
             "clips": tuple(clip.name for clip in application.clips if clip in actions),
             "rest_correction_deg": application.rest_correction_deg,
+            "retargeted_from": application.retargeted_from,
+            "frame_range": list(application.frame_range) if application.frame_range else None,
             "result_to_source": [list(row) for row in application.mapping],
             "fitted_from": application.fitted_from,
             "frame_rate_mismatch": application.frame_rate_mismatch,
@@ -3402,6 +3566,7 @@ class ModelJobs:
             else None,
             "parts_from": application.parts_from,
             "joined_meshes": application.joined_meshes,
+            "kept_texture": application.kept_texture,
         }
 
     def _model_import_status(self, request_id):
@@ -3419,6 +3584,8 @@ class ModelJobs:
         # The receipt rounds to 0.1 degrees; smaller corrections are not shown.
         if edit is not None and (correction := edit.rest_correction_deg):
             notices.append(f"Clips adjusted to this rig's rest pose by up to {correction:g}°")
+        if edit is not None and edit.retargeted_from:
+            notices.append(f"Clips retargeted from a {edit.retargeted_from} skeleton")
         status = self._model_import_status(request_id)
         if (edit is not None and edit.frame_rate_mismatch) or (
             status and status["frame_rate_mismatch"]
@@ -3468,13 +3635,17 @@ class ModelJobs:
 
     def _file_rows(self, record):
         """This status read's file rows; it asks a worker to check what is unchecked."""
-        self._files.watch(record.intent.request_id)
-        # Files this session just downloaded or imported are listed at once.
-        self._files.seed(record, self.session.verified_files(record.intent.request_id))
-        rows = self._files.project(record)
+        rows = self._watched_rows(record)
         if self.session.active:
             self._check_files()
         return rows
+
+    def _watched_rows(self, record):
+        """A job's file rows; watching it lets the next poll queue its checks."""
+        self._files.watch(record.intent.request_id)
+        # Files this session just downloaded or imported are listed at once.
+        self._files.seed(record, self.session.verified_files(record.intent.request_id))
+        return self._files.project(record)
 
     def status(self, reference):
         self.poll()
@@ -3495,7 +3666,6 @@ class ModelJobs:
         reading = view.meta.get("remote") if view is not None else None
         steps = self._current_steps(record.intent.request_id, record)
         failed = self._step_errors.get(record.intent.request_id)
-        binding = self._bindings.get(record.intent.request_id)
         units, findings = self._import_units_status(record)
         files = self._file_rows(record)
         return {
@@ -3504,8 +3674,8 @@ class ModelJobs:
             "job_id": record.remote_job_id,
             "status": record.state.value,
             "revision": record.revision,
-            # In-memory projection shared with the Jobs views; never persisted.
-            "lane": binding.lane if binding is not None else None,
+            # The generation lane saved with the job; display only, never a destination.
+            "lane": record.intent.lane if record.intent.lane in GENERATION_LANES else None,
             "remote_status": reading.status if reading is not None else None,
             "progress": reading.fraction if reading is not None else None,
             "remote_observed_at": reading.observed_utc if reading is not None else None,
@@ -3518,7 +3688,7 @@ class ModelJobs:
             "source": getattr(record.intent, "source", "generation"),
             "kind": self.views[record.intent.request_id].kind
             if record.intent.request_id in self.views
-            else "model",
+            else listed_lane(record)[1],
             # Downloaded results whose local bytes a worker matched to their saved
             # receipts, whatever their kind, import or restart; see result_files.
             "files": [row.file for row in files if row.state == VERIFIED],

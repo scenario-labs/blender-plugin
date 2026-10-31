@@ -596,12 +596,14 @@ without a subject). Drawing reads the status and changes nothing.
   **Experimental: LoRAs and compositions in testing**
   ([trained models](#trained-models-in-the-picker)); the **Trained models** box,
   whose title names them, ends with **Experimental: in testing**.
-- For models offering `audio2txt` or `video23d`, the model picker's
+- For models offering `audio2txt`, `video2txt` or `video23d`, the model picker's
   highlighted-model box and the persistent **Model** row show a read-only
-  **Experimental: speech-to-text in testing** or
+  **Experimental: speech-to-text in testing**,
+  **Experimental: video-to-text in testing** or
   **Experimental: video-to-motion in testing** label. The Model row is shared
   by the sidebar and Studio lanes, Render Image/Video and Edit 3D; the viewport
-  composer's model chip does not show it. These models can be submitted and
+  composer's model chip does not show it. A model offering only `video2txt`
+  produces text and is not in the picker. These models can be submitted and
   results stay in saved jobs; provider behavior and result handling are not
   accepted. Generic Import is offered by file type, so a returned model (GLB,
   glTF, FBX, OBJ or mesh PLY) or media file may import, but motion and

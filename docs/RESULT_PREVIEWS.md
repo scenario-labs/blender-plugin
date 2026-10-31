@@ -39,7 +39,7 @@ unsupported.
 
 ## Server stills and clips
 
-Metadata uses the selected SDK 2.3.0 through the shared
+Metadata uses the selected SDK 2.5.0 through the shared
 [adapter](../scenario/core/api/sdk_adapter.py):
 `assets.with_raw_response.get_bulk` for every batch, a single asset included, in
 chunks of 100 identities (the SDK documents a 200-identity limit). It carries the

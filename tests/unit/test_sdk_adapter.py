@@ -787,7 +787,7 @@ def test_job_discovery_rechecks_online_permission_before_each_page(adapter):
         {"hide_results": "false"},
         {"hide_results": 0},
         {"page_size": 0},
-        {"page_size": 201},
+        {"page_size": 101},
         {"page_size": True},
         {"page_size": 1.5},
         {"max_pages": 0},

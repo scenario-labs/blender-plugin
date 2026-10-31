@@ -354,7 +354,7 @@ claims these units. In-place mesh edits apply a GLB, JSON glTF, FBX or OBJ unit
 by the same key and name it primary or alternate; the Film path does not use
 them.
 
-Inputs are URL-free manifest facts typed by the pinned SDK 2.3.0
+Inputs are URL-free manifest facts typed by the pinned SDK 2.5.0
 [asset response](https://docs.scenario.com/api/python/resources/assets/methods/retrieve):
 `mimeType`, the verified receipt size (else `properties.size`), the stored texture
 role, and the lineage facts `metadata.type` and `metadata.parentId`. MIME selects

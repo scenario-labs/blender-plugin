@@ -11,7 +11,7 @@ errors. Add only verified operations with an upstream issue and wire tests.
 class SDKResourceExtensions:
     """Temporary resources the selected scenario-sdk cannot serve yet.
 
-    SDK 2.3.0 generates every operation the adapter uses, so none is needed.
+    SDK 2.5.0 generates every operation the adapter uses, so none is needed.
     Each method added here names its upstream issue. Replace a call when a
     selected SDK release has an equivalent generated method that passes the
     same request, scope, authentication and retry contracts.

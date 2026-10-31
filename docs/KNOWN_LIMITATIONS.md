@@ -350,9 +350,11 @@ full render-lane desktop acceptance.
   model tags alone do not establish supported input and result handling. Models
   offering `video23d`, `audio2txt` or `video2txt` show a visible experimental
   status in the picker, the Model row and `list_models`; the viewport composer's
-  model chip does not show it. They can be submitted; provider behavior and result handling
-  are not accepted. Generic import by file type may still bring in a returned
-  model (GLB, glTF, FBX, OBJ or mesh PLY) or media file.
+  model chip does not show it. A model offering only `video2txt` produces text,
+  so neither the picker nor `list_models` lists it. Flagged models can be
+  submitted; provider behavior and result handling are not accepted. Generic
+  import by file type may still bring in a returned model (GLB, glTF, FBX, OBJ
+  or mesh PLY) or media file.
 
 ## Interface and capture
 

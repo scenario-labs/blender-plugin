@@ -251,7 +251,7 @@ caller.
 
 ## Texture result semantics
 
-The selected SDK 2.3.0's public `assets.with_raw_response.retrieve` response keeps
+The selected SDK 2.5.0's public `assets.with_raw_response.retrieve` response keeps
 `mimeType` separate from `metadata.type`. The
 [asset retrieval contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve)
 names both fields. The shared adapter already preserves that response; no new

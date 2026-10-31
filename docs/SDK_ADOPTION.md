@@ -573,8 +573,10 @@ UI refresh/load-older and MCP `list_generations` use the same connection and
 worker queue. `SDKAdapter.job_page` calls the pinned SDK's
 `jobs.with_raw_response.list` once with `hide_results=False`, a bounded page size
 and the opaque cursor; its response preserves unknown fields while validating
-job IDs and the next cursor. The existing adapter supplies selected credentials,
-project context when configured and online permission. There is no raw fallback.
+job IDs and the next cursor. With results, `jobs.list` returns only the last 30
+days; the history does not reach further. The existing adapter supplies selected
+credentials, project context when configured and online permission. There is no
+raw fallback.
 
 Prompt previews use `assets.with_raw_response.retrieve` on the captured connection,
 bounded to 30 per page; step jobs that price a workflow run but are missing from

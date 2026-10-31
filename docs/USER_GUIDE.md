@@ -984,7 +984,7 @@ A job stays here until you apply its results.
 
 The **Generations** panel shows this session's results, then, with
 **Project history (cloud)** on, your project's history from the web app, agents and
-other machines. **Load older** goes back in time.
+other machines. **Load older** goes back in time, up to 30 days.
 
 Each entry shows the prompt, price, model, asset ID (click to copy), a thumbnail
 and the actions for its kind:

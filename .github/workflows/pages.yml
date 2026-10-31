@@ -66,17 +66,20 @@ jobs:
           fi
       # Unreleased guide changes on main must not describe features users cannot
       # download yet, so the guide, its images and version come from the newest
-      # verified release commit; the template, styles and builders stay on main.
+      # verified release commit, and its links point to that release tag; the
+      # template, styles and builders stay on main.
       - name: Take the guide from the newest published release
+        id: release
         if: steps.prepare.outputs.repository == 'true'
         run: |
           set -euo pipefail
-          COMMIT="$(jq -r '.releases | max_by(.version | split(".") | map(tonumber)) | .commit' "$RUNNER_TEMP/verified/provenance.json")"
-          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::No verified release commit"; exit 1; }
+          read -r TAG COMMIT < <(jq -r '.releases | max_by(.version | split(".") | map(tonumber)) | "\(.tag) \(.commit)"' "$RUNNER_TEMP/verified/provenance.json")
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ && "$TAG" =~ ^blender-plugin-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::No verified release"; exit 1; }
           git fetch --no-tags --depth=1 origin "$COMMIT"
           paths=(docs/USER_GUIDE.md docs/images scenario/blender_manifest.toml)
           if git cat-file -e "$COMMIT:docs/media" 2>/dev/null; then paths+=(docs/media); fi
           git restore --overlay --source="$COMMIT" -- "${paths[@]}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/setup-blender
         if: steps.prepare.outputs.repository == 'true'
         with:
@@ -84,10 +87,13 @@ jobs:
           sha256: "8019580ee1b7262e505f4196a00237ccf743c88d205b38d34201510676e60b09"
       - name: Build the guide and repository from exact published bytes
         if: steps.prepare.outputs.repository == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
         run: >-
           uv run --locked --no-env-file python tools/build_site.py
           --inventory "$RUNNER_TEMP/verified/inventory.json"
           --output "$RUNNER_TEMP/site" --artifacts "$RUNNER_TEMP/native-logs"
+          --ref "$TAG"
       - name: Publish the handbook before the first adopted release
         if: steps.prepare.outputs.repository == 'false'
         run: >-

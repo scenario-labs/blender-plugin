@@ -186,7 +186,9 @@ dashboard as `extension_downloaded` with that version, not `unknown`. The proxy
 rereads the index within a few minutes of the deployment.
 
 The workflow runs on relevant `main` changes, successful release-workflow
-completion and manual dispatch. It always checks out current `main`. The
+completion and manual dispatch. It always checks out current `main`, then takes
+the guide, its images and the manifest from the newest published release commit,
+so merged guide changes go live with the next release. The
 `workflow_run` trigger keeps deployments on the default branch, compatible with
 the existing `github-pages` environment restriction, rather than deploying a tag.
 Canonical-repository guards and job-scoped permissions limit publishing.

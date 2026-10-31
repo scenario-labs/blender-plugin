@@ -64,6 +64,19 @@ jobs:
           else
             echo "repository=false" >> "$GITHUB_OUTPUT"
           fi
+      # Unreleased guide changes on main must not describe features users cannot
+      # download yet, so the guide, its images and version come from the newest
+      # verified release commit; the template, styles and builders stay on main.
+      - name: Take the guide from the newest published release
+        if: steps.prepare.outputs.repository == 'true'
+        run: |
+          set -euo pipefail
+          COMMIT="$(jq -r '.releases | max_by(.version | split(".") | map(tonumber)) | .commit' "$RUNNER_TEMP/verified/provenance.json")"
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::No verified release commit"; exit 1; }
+          git fetch --no-tags --depth=1 origin "$COMMIT"
+          paths=(docs/USER_GUIDE.md docs/images scenario/blender_manifest.toml)
+          if git cat-file -e "$COMMIT:docs/media" 2>/dev/null; then paths+=(docs/media); fi
+          git restore --overlay --source="$COMMIT" -- "${paths[@]}"
       - uses: ./.github/actions/setup-blender
         if: steps.prepare.outputs.repository == 'true'
         with:

@@ -45,6 +45,7 @@ _MIME_EXT = {
     "model/splat": "splat",
     "model/stl": "stl",
     "model/usd": "usdz",
+    "model/vnd.usdz+zip": "usdz",
     "model/x-3d-vox": "vox",
     "audio/mpeg": "mp3",
     "audio/wav": "wav",

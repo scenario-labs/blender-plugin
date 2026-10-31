@@ -73,6 +73,7 @@ def test_ext_for_mime():
     assert config.ext_for_mime("image/png") == "png"
     assert config.ext_for_mime("model/gltf-binary") == "glb"
     assert config.ext_for_mime("video/mp4") == "mp4"
+    assert config.ext_for_mime("model/vnd.usdz+zip") == "usdz"
     assert config.ext_for_mime("application/x-unknown") == "bin"
     assert config.ext_for_mime(None) == "bin"
     for mime in ("image/exr", "image/x-exr", "image/aces"):

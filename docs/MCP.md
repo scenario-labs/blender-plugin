@@ -883,11 +883,11 @@ listed. Checks stay in the selected credentials and project and never return a
 download URL. A listed file grants no application: every import or application
 rehashes the bytes it reads and needs its own approval.
 
-Speech-to-text (`audio2txt`) and video-to-motion (`video23d`) models are
-experimental. `estimate_cost` and `generate` describe this status and accept
-them like other models, and `list_models` returns the picker's status text in
-each entry's `capability_status` (empty otherwise), named apart from the
-server's model status. Their results stay in saved jobs.
+Speech-to-text (`audio2txt`), video-to-text (`video2txt`) and video-to-motion
+(`video23d`) models are experimental. `estimate_cost` and `generate` describe this
+status and accept them like other models, and `list_models` returns the picker's
+status text in each entry's `capability_status` (empty otherwise), named apart
+from the server's model status. Their results stay in saved jobs.
 `prepare_result_application` imports a returned model or media file by file type
 only; motion and transcription handling is not accepted ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 

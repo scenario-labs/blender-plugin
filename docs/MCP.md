@@ -1671,7 +1671,7 @@ when it contains a nested `workflow` step or any node carrying a `workflowId`,
 whose definition the quote does not read; or when a node's type is missing, not
 a string or not a known type. The SDK documents `hasFlow` as present even when
 `flow` is not, so an empty list alone does not prove the workflow is empty.
-Known non-loop types are those of the SDK 2.3.0 `WorkflowFlow.type` other than
+Known non-loop types are those of the SDK 2.5.0 `WorkflowFlow.type` other than
 `for-each` and `workflow`. The server's dry run prices one pass through a loop,
 so a run that iterates more often can be charged more than `cu_cost_exact`. Show
 the warning with the price. It never blocks approval.
@@ -1730,9 +1730,8 @@ already finished. The result also carries the steps read after the decision and
 `decision_error`. Never repeat an uncertain decision: read the steps again and
 decide only if the step is shown waiting again and the user chooses again.
 
-Rejecting stops the workflow, and completed steps stay charged. The API reference
-says a rejected ForEach iteration cascades to the surrounding loop instead, so
-the refreshed state is authoritative. Approving or selecting lets the remaining
+Rejecting stops the workflow, even inside a ForEach iteration, and completed steps
+stay charged; the refreshed state is authoritative. Approving or selecting lets the remaining
 steps run and spend credits; nothing checks that charge against the approved
 price. A selection that feeds a ForEach loop, a nested workflow or an unlisted
 node type stays blocked, with only `reject`, because the approved price may not

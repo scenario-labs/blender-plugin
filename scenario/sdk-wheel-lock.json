@@ -251,13 +251,13 @@
     },
     {
       "package": "scenario-sdk",
-      "version": "2.3.0",
-      "filename": "scenario_sdk-2.3.0-py3-none-any.whl",
-      "url": "https://files.pythonhosted.org/packages/d0/66/a6f9f7b1c7d680486ba82439c0bc9d3c694718be408d3a298286704987ef/scenario_sdk-2.3.0-py3-none-any.whl",
-      "sha256": "8f36ce8e456ec75ad8ca966962312c4d98c673e1cfd83671a3a65714fa85cddd",
+      "version": "2.5.0",
+      "filename": "scenario_sdk-2.5.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/83/ed/45f9fa09f7ab8ddaf88a08ede6f58a63c9ae5ed1529c54faaff0fa72a302/scenario_sdk-2.5.0-py3-none-any.whl",
+      "sha256": "1f65a043cf28574af3be6cb7a8d186a20bd13f7762228324a1a17daea6ca0a3b",
       "licenses": [
         {
-          "path": "scenario_sdk-2.3.0.dist-info/licenses/LICENSE",
+          "path": "scenario_sdk-2.5.0.dist-info/licenses/LICENSE",
           "sha256": "bfae4eca28ced117132d2aa7bee49f9c4f9041a4e371faa6ed5e0add64976855"
         }
       ],

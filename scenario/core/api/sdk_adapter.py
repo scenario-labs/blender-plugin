@@ -290,7 +290,7 @@ class Estimate:
         return _json(self.response_json, exact=True)
 
 
-# SDK 2.3.0 WorkflowFlow.type values that neither loop nor nest a workflow.
+# SDK 2.5.0 WorkflowFlow.type values that neither loop nor nest a workflow.
 NON_LOOP_NODE_TYPES = frozenset(
     {
         "custom-model",
@@ -644,7 +644,7 @@ def _client(credentials, base_url, timeout, transport):
     class SelectedAccount(Scenario):
         @property
         def default_headers(self):
-            # Public SDK hook: use only adapter-owned headers. SDK 2.3.0 otherwise
+            # Public SDK hook: use only adapter-owned headers. SDK 2.5.0 otherwise
             # merges SCENARIO_CUSTOM_HEADERS and prefers Basic over Bearer.
             # https://github.com/scenario-labs/scenario-sdk-python/issues/26
             # Remove after upstream offers verified environment-isolated config.
@@ -1319,7 +1319,7 @@ class SDKAdapter:
 
     def job_page(self, *, page_size=50, pagination_token=None):
         """One history page with inputs/results, using an opaque service cursor."""
-        # SDK 2.3.0 documents jobs.list pageSize as 1 to 100.
+        # SDK 2.5.0 documents jobs.list pageSize as 1 to 100.
         if type(page_size) is not int or not 1 <= page_size <= 100:
             raise ValueError("Job page size must be between 1 and 100")
         options = {"page_size": page_size, "hide_results": False}

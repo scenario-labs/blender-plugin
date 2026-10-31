@@ -717,14 +717,14 @@ class JobSession:
         self._pending.append((task, origin))
         return task
 
-    def prepare_quote(self, quote):
+    def prepare_quote(self, quote, *, lane=None):
         _main_thread()
         if not isinstance(quote, OriginQuote):
             raise OriginUnavailable("Use a quote from this session")
         # Refuse before saving an intent that submit() could not queue.
         self._check_capacity()
         self._resolve(quote.origin)
-        return self._coordinator.prepare_quote(quote)
+        return self._coordinator.prepare_quote(quote, lane=lane)
 
     def prepare(self, estimate, *, origin):
         """Use the origin captured with inputs before requesting the estimate."""
@@ -843,11 +843,18 @@ class JobSession:
         """Queue an explicit download on the transfer lane under the private storage policy."""
         return self._record_command("download_results", request_id, expected_revision)
 
+    def fetch_results(self, request_id, *, expected_revision, asset_ids):
+        """Queue the on-demand copies a chosen result needs on the transfer lane."""
+        return self._record_command(
+            "fetch_results", request_id, expected_revision, asset_ids=tuple(asset_ids)
+        )
+
     def cancel_download(self, task):
         """Stop one of this session's downloads at its next chunk, without a receipt.
 
         The job then reads `download_failed`; its completed receipts stay and a
-        later explicit download resumes the rest. Retirement cancels them all.
+        later explicit download resumes the rest. A stopped fetch keeps the job's
+        state. Retirement cancels them all.
         """
         _main_thread()
         if any(pending is task for pending, _ in self._pending):
@@ -1871,6 +1878,7 @@ class JobSession:
         policy,
         result_to_source,
         keep_original,
+        keep_texture=None,
     ):
         """Apply one saved import unit to an explicitly captured mesh, never current selection.
 
@@ -1882,6 +1890,7 @@ class JobSession:
 
         `target` may be a tuple of captured sources edited together; the claim's
         destination is then their scene, and the job's mesh source lists them.
+        `keep_texture` is RETEXTURE's reviewed kept region of those sources, or None.
         """
         _main_thread()
         if self._issued.get(id(completion)) is not completion:
@@ -1899,7 +1908,11 @@ class JobSession:
         elif target.scene != scene or target.obj != obj:
             raise OriginUnavailable("Use the exact captured mesh target")
         validate_mesh_request(
-            target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
+            target,
+            policy=policy,
+            result_to_source=result_to_source,
+            keep_original=keep_original,
+            keep_texture=keep_texture,
         )
         try:
             unit = import_plan(verified.record).unit(asset_id)
@@ -1919,6 +1932,7 @@ class JobSession:
             policy=policy,
             result_to_source=result_to_source,
             keep_original=keep_original,
+            keep_texture=keep_texture,
         )
         try:
             claim = self._claim_saved_application(
@@ -1932,6 +1946,7 @@ class JobSession:
                     policy=policy,
                     result_to_source=result_to_source,
                     keep_original=keep_original,
+                    keep_texture=keep_texture,
                 ),
             )
         finally:

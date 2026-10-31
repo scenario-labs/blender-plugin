@@ -602,6 +602,11 @@ def draw_dense_mesh_hint(layout, objects, task_id):
     meshes = [obj.data for obj in objects]
     if mesh_application.within_component_limit(meshes):
         return
+    if task_id == "ANIMATE" and all(
+        any(m.type == "ARMATURE" and m.object for m in obj.modifiers) for obj in objects
+    ):
+        # Apply animation changes only the rig, so a dense rigged mesh still takes it.
+        return
     triangles = sum(len(mesh.loops) - 2 * len(mesh.polygons) for mesh in meshes)
     draw_wrapped(
         layout,
@@ -619,13 +624,46 @@ def draw_dense_mesh_hint(layout, objects, task_id):
         )
 
 
+def draw_kept_texture(layout, scene, objects):
+    """Say which faces Replace textures keeps, and offer the head of a standing character.
+
+    The review resolves the faces when the result is applied; this only reads
+    selection counts and bounds, so drawing stays cheap.
+    """
+    from . import kept_texture
+
+    chosen = total = 0
+    for obj in objects:
+        count, faces = kept_texture.selected_faces(obj)
+        chosen, total = chosen + count, total + faces
+    if 0 < chosen < total:
+        draw_wrapped(
+            layout,
+            f"Faces selected in Edit Mode keep their texture ({chosen:,}); the rest is repainted.",
+            "FACESEL",
+        )
+        return
+    if kept_texture.standing(objects, scene):
+        layout.prop(scene.scenario, "retexture_keep_head")
+        if scene.scenario.retexture_keep_head:
+            draw_wrapped(
+                layout,
+                "The head keeps its texture. Select faces in Edit Mode to choose what keeps "
+                "its texture instead.",
+                "INFO",
+            )
+        return
+    draw_wrapped(layout, "Select faces in Edit Mode to keep their texture.", "FACESEL")
+
+
 def draw_edit3d_lane(layout, context):
     """The 3D tab in Edit mode: Scenario's 3D tools on the selected mesh."""
-    from ..core.api.catalog import edit3d_task, mesh_param
+    from ..core.api.catalog import MOTION_MODELS, edit3d_task, expected_wait, mesh_param
     from . import mesh_export
 
     scene = context.scene
     lane_state = scene.scenario.lane_state("edit3d")
+    motion = lane_state.model_id in MOTION_MODELS
     box = layout.box()
     objects = mesh_export.source_objects(context)
     if objects:
@@ -633,7 +671,10 @@ def draw_edit3d_lane(layout, context):
             f" +{len(objects) - 3}" if len(objects) > 3 else ""
         )
         box.label(text=f"Mesh: {names}", icon="MESH_DATA")
-        box.label(text="Upload a GLB snapshot before requesting a generation price", icon="INFO")
+        if motion:
+            box.label(text="Nothing is uploaded: the motion is retargeted to its rig", icon="INFO")
+        else:
+            box.label(text="Upload a copy of the selected mesh to get the price", icon="INFO")
         draw_dense_mesh_hint(box, objects, scene.scenario.edit3d_task)
     else:
         box.label(text="Select the mesh to edit in the viewport", icon="ERROR")
@@ -646,6 +687,11 @@ def draw_edit3d_lane(layout, context):
         layout.label(text="No model for this task in the catalog", icon="ERROR")
         return
     draw_model_row(layout, lane_state, "edit3d")
+    wait = expected_wait(lane_state.model_id)
+    if wait:
+        draw_wrapped(layout, wait, "TIME")
+    if task[0] == "RETEXTURE" and objects and not motion:
+        draw_kept_texture(layout, scene, objects)
     schema = generation.schema_for(lane_state.model_id)
     if schema is None:
         draw_schema_status(layout, lane_state, "edit3d")
@@ -654,12 +700,17 @@ def draw_edit3d_lane(layout, context):
         draw_prompt_row(layout, lane_state, "edit3d")
     record = runtime.state.records.get(lane_state.model_id)
     mesh_name = mesh_param(record) if record is not None else None
-    draw_references(
-        layout,
-        lane_state,
-        schema,
-        fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
-    )
+    if motion:
+        # The clip is retargeted onto the selected rig: no character is uploaded.
+        hide = {s.name for s in schema.specs if s.is_file and (s.kind or "").lower() == "3d"}
+        draw_references(layout, lane_state, schema, hide=hide)
+    else:
+        draw_references(
+            layout,
+            lane_state,
+            schema,
+            fixed_first={mesh_name: "Selected mesh (upload before pricing)"} if mesh_name else None,
+        )
     params_ui.draw_params(layout, lane_state, schema)
     # Enablement and submission use the Edit form's own lane-bound quote.
     draw_generate_row(layout, lane_state, "edit3d")

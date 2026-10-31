@@ -170,9 +170,15 @@ saved fields and save preferences to remove them there; also check backups and
 how your launcher stores environment variables. Rotate the key in Scenario if
 it leaks or a machine holding it is lost.
 
-The extension's own user directory under Blender's extensions folder stores
-shared job requests, quotes, prompts and recovery state in
-`state/shared-jobs/jobs.sqlite3`. Keep its `scope.key` alongside the database for
+The extension's own user directory under Blender's extensions folder keeps the
+recovery state of shared jobs in `state/shared-jobs/jobs.sqlite3`: each job's IDs,
+the model or workflow it ran, the generation lane that submitted it, hashes of the
+request and quote, the exact quoted cost, its submission time, the IDs, hashes,
+object placements and Film task names that bind it to its inputs, result file names,
+types and download receipts, and local application records. It stores no prompt,
+credential, raw service response, absolute file path or signed URL; see
+[job storage](JOB_STORAGE.md).
+Keep its `scope.key` alongside the database for
 recovery. The key derives local credential-bound identities; it does not encrypt
 the database or store your API key/secret. An explicit project override selects a
 separate scope in that storage. The same database keeps any per-lane default you

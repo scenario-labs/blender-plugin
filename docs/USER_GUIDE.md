@@ -517,15 +517,19 @@ Results from the earlier prototype offer **Play**, **Play in Blender** and
 Four modes: **Text**, **Image**, **Multi-view** (several views of one object, front
 first) and **Edit** (Scenario's 3D tools on your selected mesh). Models include
 Meshy, Rodin, Tripo and Hunyuan, plus worlds such as Marble, HY World and
-TripoSplat. Image mode starts with Tripo P2 at real-world size (**Auto Size**) and
-50,000 faces; change either in the form.
+TripoSplat. Text and Image modes start with Tripo P2 at real-world size
+(**Auto Size**) and 50,000 faces; change either in the form.
 
 ![3D lane in Text mode with Meshy selected, texture options and a target polygon count](images/panel-3d.png)
 
 **Importing a model.** Choose **Import &lt;format&gt; model (N)**, such as
 **Import GLB model (1)**, for the main model, or **Import alternate: &lt;format&gt; (N)**
-for another file the provider returned. The review shows the scene, cursor position
-and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
+for another file the provider returned. When a model also returns its GLB as an OBJ
+with an MTL and texture maps, only the GLB downloads with the job. Choosing
+**Import alternate: OBJ**, **Apply alternate mesh edit: OBJ** or **Apply saved material**
+downloads the files it needs first; choose it again when the download finishes. This
+needs Online Access, and **Stop download** stops it. The review shows the scene, cursor
+position and files, for example `OBJ + MTL + 2 maps`. Once confirmed, the model arrives
 as a new group at the cursor with its materials and textures packed; your
 objects and selection are untouched. Check **Longest side** to scale the new
 group evenly to that length, with its bottom still at the cursor. For an Edit
@@ -569,8 +573,33 @@ again once it finishes. See
    edits don't change the snapshot; remove the reference and upload again to
    replace it.
 
+Retexture starts on Meshy 7 Retexture, which repaints the whole surface in about a
+minute on your mesh's own UVs, with normal, roughness and metallic maps. When you
+apply it to your mesh, the faces you selected in Edit Mode keep their own texture.
+With no faces selected, a standing character keeps its head, so its face stays as
+it was; turn off **Keep the head's texture**, under the model, to repaint the head
+too. Claude Opus 5.5 3D and GPT-6 Astra 3D, next in the list, repaint only what
+your prompt names and keep the rest themselves, but take 10 to 16 minutes on a
+typical character; the form shows the expected wait.
+
+**Animate** starts with text-to-motion models, Uthana Text to Motion 3.0 and Viggle
+Text to Motion: describe the motion, such as "walks forward four steps then
+waves", and generate. They upload nothing and need a mesh that already has a rig
+(use **Rigging** first); **Apply animation** then moves your rig with the motion,
+including its walk across the floor. Their duration starts at your scene's length
+once you have set a frame range, and Uthana's frame rate at your scene's when it
+offers it (24, 30 or 60 fps), until you change them; Uthana also starts on
+**Animation only**, since your own character plays the motion. **Meshy Animation**
+instead plays a motion from Meshy's library on your uploaded character: pick it by
+name (**Walk**, **Run**, **Wave hello**, **Jump** and others), or choose **Other ID**
+and type any ID from
+[Meshy's animation library](https://docs.meshy.ai/en/api/animation-library).
+**Cartwheel Text to Motion** also animates your uploaded character from a prompt;
+it is listed here, not in Text mode.
+
 A mesh too dense to take edits in place shows its triangle count and suggests
-remeshing it first; its results still import as new objects.
+remeshing it first; its results still import as new objects. **Apply animation**
+still works on a rigged mesh that dense, since it changes only the rig.
 
 To put the result back on your mesh, see
 [Apply a saved mesh edit](#apply-a-saved-mesh-edit).
@@ -707,8 +736,9 @@ coloured primitives, grouped in a `Blockout` collection.
 1. Describe the scene. To follow a picture or concept, choose a **Reference
    image** and press **Upload**; the description is then optional.
 2. Choose a **Density** (Simple, Medium, Advanced or Expert: more primitives and
-   finer detail) and a model: **Best** (Claude Opus, a few minutes) or **Fast**
-   (Gemini Flash, under a minute, cheaper). **Colours, camera and light** is on by default.
+   finer detail) and a model: **Best** (Claude Opus, the richest plans: 3 to 4 minutes,
+   1 to 2 for a refinement) or **Fast** (Gemini Flash, a rougher plan in under a minute,
+   cheaper). **Colours, camera and light** is on by default.
 3. The price appears on **Generate blockout**; choose it to pay once and design
    the plan, which Jobs lists until it arrives. **New plan** prices another one
    from the same fields. Changing the fields, scene or credentials first cancels
@@ -784,8 +814,12 @@ A job stays here until you apply its results.
   up checking other jobs.
 - **Stop download** stops a download in progress without keeping a partial
   file. **Resume download** starts it again later.
-- After a restart or opening a file, saved jobs show again in the Jobs panel;
-  choose **Refresh status** or **Resume download**.
+- After a restart or opening a file, saved jobs show again in the Jobs panel,
+  also while Online Access is off; nothing is sent to Scenario to list them.
+  Choose **Refresh status** or **Resume download**. They keep their result
+  tools, such as **Use as reference** on an image whose saved file is unchanged.
+  Prompts aren't saved, so such a job shows its model's name and offers no
+  **Reload parameters**.
 - **Cancel prepared job** drops an approved request that hasn't been sent yet;
   nothing reaches Scenario. A canceled Film task keeps its name, so use a new
   take name to retry.
@@ -811,7 +845,7 @@ and the actions for its kind:
 
 | Result | Actions |
 | --- | --- |
-| Image | View image, Use as reference, Remove background, Apply as texture, Add image plane, Set as camera background |
+| Image, Render Image, Environment | View image, Use as reference, Remove background, Apply as texture, Add image plane, Set as camera background |
 | 3D | Add to scene, Select, Delete |
 | Video | Play, Play in Blender, Add video strip, Set as camera background |
 | Audio | Play audio, Waveform, Open in system player, Add strip |
@@ -919,7 +953,13 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   result that comes back in several pieces is joined into one mesh.
 - **Replace active UVs** or **Replace textures**: only when the result is the
   same surface as your mesh. Triangulated, split or reordered results are fine;
-  changed shapes are refused.
+  changed shapes are refused. **Replace textures** also shows **Keep texture**:
+  **Selected faces** (select them in Edit Mode, then return to Object Mode),
+  **Head** or **Nothing**. It starts on your selection, else on the head of a mesh
+  that stands like a character, 0.5 to 3 m tall, while **Keep the head's
+  texture** is on, and the line below says how many faces keep their texture.
+  They get your mesh's own colour, roughness, metallic and normal maps back,
+  blended into the new texture over a short band so no seam shows.
 - **Replace with parts**: replaces the mesh with the result's named parts, under
   an empty parent. When the parts are cut from your mesh's own surface, your
   mesh is split along them and every part keeps your UVs and materials, or the
@@ -928,14 +968,20 @@ applied: a main result in another format shows it, as in **Apply mesh edit: FBX
   skin is the same surface. If the mesh already has a rig, its weights are
   replaced and the old rig is left as it was; **Keep original** keeps a copy
   that still follows the old rig. A mesh with a rig can only use Attach rig or
-  Apply animation. Move the new rig group with the mesh afterwards.
+  Apply animation. Move the new rig group with the mesh afterwards. The bones
+  are drawn inside the character at its size, not In Front, so the mesh stays
+  visible; turn on In Front in the armature's Viewport Display to see them.
 - **Apply animation**: for a mesh that already has a rig, adds the returned
-  animation to that rig and keeps your mesh, weights and rig as they are. The
-  bones must have the same names, parents and rest pose as the returned
-  character, for example a rig you attached earlier from the same service;
-  animation made for a different skeleton is refused. The first clip plays, and
-  the others and your previous animation stay in muted NLA tracks. Your timeline
-  doesn't change.
+  animation to that rig and keeps your mesh, weights and rig as they are. When
+  the bones have the same names, parents and rest pose as the returned
+  character, for example a rig you attached earlier from the same service, the
+  keys are copied. Otherwise a humanoid motion, such as a text-to-motion result,
+  is retargeted onto a humanoid rig (Meshy, Mixamo, SMPL or Unreal bone names),
+  root motion included, the feet on the floor your rig's rest pose stands on;
+  fingers keep their pose. Other skeletons are refused.
+  The first clip plays, and the others and your previous animation stay in
+  muted NLA tracks. If your scene still has Blender's default frame range, it
+  becomes the clip's; a range you set stays.
 
 Choose **Scene coordinates** or **Object local coordinates** for the result's
 positions. **Fit and verify**, the default for every edit but **Apply
@@ -1300,6 +1346,12 @@ data is shared. See [Privacy and data handling](PRIVACY.md) for details.
 - **"Prompt is required" / "Add a reference to see the cost"**: fill in the
   prompt or add the required reference.
 - **"Select the mesh to edit"**: the 3D tab's Edit mode needs a selected mesh.
+- **"Rig the selected mesh first"**: a text-to-motion model in **Animate** plays
+  on your mesh's armature; give it one with **Rigging** first.
+- **"Animation not applied; the rig is unchanged"**: nothing moved; the rest of
+  the message says what to change. "Rig the mesh again with Edit 3D > Rigging"
+  means your rig is not one a humanoid motion can be retargeted to: rig the mesh
+  with **Rigging**, then choose **Apply animation** on the saved job again.
 - **"This model takes no image/video input"**: choose another model in the
   Render lane.
 - **The result doesn't appear**: check Generations for an error. Use **Inspect

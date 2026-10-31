@@ -153,6 +153,15 @@ def test_exact_bound_intent_is_saved_before_paid_request_and_reopens(env, tmp_pa
         submit(env, prepared)
 
 
+def test_the_submitting_lane_is_saved_with_the_intent_for_display_only(env, tmp_path):
+    prepared = env.coordinator.prepare_quote(quote(env), lane="film")
+    saved = JobStore(tmp_path / "jobs.sqlite3", env.scope).get(prepared.intent.request_id)
+    assert saved.intent.lane == prepared.intent.lane == "film"
+    # Without a lane, as blockout and prompt jobs prepare, none is saved.
+    other = env.coordinator.prepare_quote(quote(env, production="second"))
+    assert other.intent.lane is None
+
+
 @pytest.mark.parametrize(
     "stage", ["prepared", "canceled", "uncertain", "remote", "failed", "succeeded"]
 )

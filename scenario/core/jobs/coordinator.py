@@ -777,6 +777,12 @@ class JobCoordinator:
             request_id, expected_revision=expected_revision, cancel=cancel
         )
 
+    def fetch_results(self, request_id, *, expected_revision, asset_ids, cancel=None):
+        """Download a completed job's on-demand copies; a set ``cancel`` stops the transfer."""
+        return self._results.fetch(
+            request_id, expected_revision=expected_revision, asset_ids=asset_ids, cancel=cancel
+        )
+
     def recover_downloads(self, request_id, *, expected_revision):
         """Explicitly reconcile an interrupted download without network or scene work."""
         return self._results.recover_download(request_id, expected_revision=expected_revision)
@@ -1383,8 +1389,11 @@ class JobCoordinator:
         with self._request_guard(origin):
             pass
 
-    def prepare_quote(self, quote):
-        """Persist one chosen quote without rebinding it to a newer scene revision."""
+    def prepare_quote(self, quote, *, lane=None):
+        """Persist one chosen quote without rebinding it to a newer scene revision.
+
+        `lane` names the generation form that submits it, saved for display only.
+        """
         if not isinstance(quote, OriginQuote):
             raise QuoteError("Use an unchanged quote issued by this context")
         # Adapter ownership takes its estimate lock. Never acquire it while
@@ -1402,6 +1411,7 @@ class JobCoordinator:
                 mesh_sources=quote.mesh_sources,
                 film_task=quote.film_task,
                 composition=quote.composition,
+                lane=lane,
             )
             del self._quotes[id(quote)]
             return prepared
@@ -1544,6 +1554,7 @@ class JobCoordinator:
         mesh_sources=(),
         film_task=None,
         composition=None,
+        lane=None,
     ):
         """Persist after ownership was checked outside the coordinator lock.
 
@@ -1568,6 +1579,7 @@ class JobCoordinator:
                 quote_cost=str(estimate.cost),
                 mesh_sources=mesh_sources,
                 film_task=film_task,
+                lane=lane,
             )
             expires_at = estimate.issued_at + self._ttl
             now = self._clock()

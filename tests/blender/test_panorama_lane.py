@@ -443,7 +443,8 @@ class EnvironmentJobTests(unittest.TestCase):
         # The restarted session reads the saved 2:1 header again before its offer is final.
         self.fixture.settle_world_sizes()
         view = self.runtime.state.model_jobs.views[result["local_id"]]
-        self.assertEqual(view.kind, "model")  # restarted jobs are generic
+        # The saved lane keeps the Environment job's kind; its prompt is not saved.
+        self.assertEqual((view.lane, view.kind), ("panorama", "image"))
         labels = [item.label for item in self.actions(view)]
         self.assertEqual(labels[0], "360 panorama (LDR)")
         self.assertIn("Set panorama as World (1)", labels)

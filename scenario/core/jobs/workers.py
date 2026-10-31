@@ -507,6 +507,16 @@ class JobWorkers:
             expected_revision=expected_revision,
         )
 
+    def fetch_results(self, request_id, *, expected_revision, asset_ids):
+        """Queue an on-demand copy download on the transfer lane; ``cancel_transfer`` stops it."""
+        return self._enqueue_transfer(
+            self._coordinator.fetch_results,
+            request_id,
+            cancellable=True,
+            expected_revision=expected_revision,
+            asset_ids=tuple(asset_ids),
+        )
+
     def verify_results(self, request_id, *, expected_revision):
         return self._enqueue(
             self._coordinator.verify_results, request_id, expected_revision=expected_revision

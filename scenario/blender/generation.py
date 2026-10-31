@@ -15,6 +15,7 @@ from ..core.api import model_filter, trained_offers
 from ..core.api.catalog import (
     DEFAULT_MODELS,
     LANE_KIND,
+    MOTION_MODELS,
     MULTIVIEW_HINTS,
     RENDER_LANES,
     USABLE_TRAINED_KINDS,
@@ -46,6 +47,8 @@ _schemas = {}
 MODEL_OFFLINE = "Online access is disabled; the model description cannot load"
 _MODEL_FAILED = "Could not load this model: "
 SETTINGS_NOT_LOADED = "This form's settings are not loaded; choose its model again"
+# Forms whose model length can follow the scene's: music, and text-to-motion in Edit 3D.
+SCENE_LENGTH_LANES = ("audio", "edit3d")
 
 
 class ModelLoading(ScenarioError):
@@ -66,7 +69,10 @@ def reload_lane(record):
 
     A catalog lane without a native form never falls back to its asset kind's
     form, which would drop that lane's own rules; only generic jobs use the kind.
+    A job listed from the store has no request to reload: it keeps only its hash.
     """
+    if record.meta.get("listed"):
+        return None
     if record.lane in props.GENERATION_LANES:
         return record.lane
     if record.lane in LANE_KIND:
@@ -380,14 +386,15 @@ def three_d_models(mode, records):
     """Bucket 3D models by how they are driven: TEXT (txt23d), IMAGE (one picture), MULTI (several views).
 
     With a schema, a file_array image input that accepts more than one file means multi-view. Without a schema
-    (list entries), the model id and name decide ("multi", "multiview"). Models taking 1 to N images appear in both."""
+    (list entries), the model id and name decide ("multi", "multiview"). Models taking 1 to N images appear in both.
+    A model that animates a character mesh it is given stays in Edit 3D > Animate, out of TEXT."""
     out = []
     for record in records:
         caps = set(record.capabilities)
         if record.deprecated_successor:
             continue
         if mode == "TEXT":
-            if "txt23d" in caps:
+            if "txt23d" in caps and not model_filter.animates_given_character(record):
                 out.append(record)
             continue
         if "img23d" not in caps:
@@ -572,8 +579,8 @@ def sync_shown_forms(context=None):
     if schema is None:
         return False
     if not params_ui.unsynced(lane_state, schema, lane_state.model_id):
-        if lane == "audio" and follow_scene_length(lane_state, schema):
-            props.mark_estimate_dirty(lane_state)  # the scene's range moved the music length
+        if lane in SCENE_LENGTH_LANES and follow_scene_length(lane_state, schema):
+            props.mark_estimate_dirty(lane_state)  # the scene moved a music or motion length
             return True
         return False
     on_model_changed(context, lane_state, mark_dirty=False)
@@ -718,7 +725,7 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     seeded = params_ui.sync_params(lane_state, schema, model_id)
     if props.lane_of(lane_state) == "panorama":
         seeded |= _apply_contract_settings(lane_state, schema, model_id, previous)
-    elif props.lane_of(lane_state) == "audio":
+    elif props.lane_of(lane_state) in SCENE_LENGTH_LANES:
         seeded |= follow_scene_length(lane_state, schema, seeded)
     trained_models.sync_bounds(lane_state)  # strength fields follow the base's declared range
     # Seeded values skip their RNA callbacks: re-arm this form's price and let a
@@ -822,10 +829,10 @@ def build_request(scene, lane, for_estimate=False):
         apply_match_timeline(
             scene, lane_state, schema
         )  # base Video: the model duration follows the timeline
-    if lane == "audio":
+    if lane in SCENE_LENGTH_LANES:
         follow_scene_length(
             lane_state, schema
-        )  # a music length still at its start follows the scene
+        )  # a music or motion length still at its start follows the scene
     values, enabled = params_ui.collect_values(lane_state, schema)
     record = runtime.state.records.get(model_id)
     refs = {
@@ -838,7 +845,11 @@ def build_request(scene, lane, for_estimate=False):
     # elsewhere (a text-to-motion model's character mesh) it is optional but still used when something is selected.
     # Skip it only when the user attached an explicit file/asset for that input.
     mesh_name = mesh_param(record) if record is not None else None
-    if lane == "edit3d" and mesh_name is None:
+    # Text-to-motion in Edit 3D sends no mesh: its clip is retargeted onto the selected rig.
+    motion = lane == "edit3d" and model_id in MOTION_MODELS
+    if motion:
+        mesh_name = None
+    elif lane == "edit3d" and mesh_name is None:
         return Request(
             lane, lane_kind(lane), model_id, {}, errors=["This model takes no mesh input"]
         )
@@ -848,7 +859,8 @@ def build_request(scene, lane, for_estimate=False):
         if lane == "edit3d" or mesh_export.source_objects(bpy.context):
             captures.append({"param": mesh_name, "source": "MESH", "camera": None, "first": True})
     for spec in schema.specs:
-        if not spec.is_file:
+        if not spec.is_file or (motion and (spec.kind or "").lower() == "3d"):
+            # A motion's character input is hidden and never sent, even from an older form.
             continue
         if spec.ptype == "file_array":
             array_params.add(spec.name)
@@ -913,8 +925,15 @@ def build_request(scene, lane, for_estimate=False):
     if lane == "edit3d":
         from . import mesh_export
 
-        if not mesh_export.source_objects(bpy.context):
+        objects = mesh_export.source_objects(bpy.context)
+        if not objects:
             errors.append("Select the mesh to edit")
+        elif motion and not any(
+            modifier.type == "ARMATURE" and modifier.object is not None
+            for obj in objects
+            for modifier in obj.modifiers
+        ):
+            errors.append("Rig the selected mesh first: the motion plays on its armature")
     if for_estimate:
         # The dry run rejects unknown asset ids (404), so files still to be uploaded are left out of the quote.
         if missing_required_files(schema.specs, check):
@@ -1098,36 +1117,66 @@ def scene_length(scene):
 
 
 def follow_scene_length(lane_state, schema, created=()):
-    """Start a music model's length at the scene's, and keep it there until the user edits it.
+    """Start a music or text-to-motion model's length at the scene's, and keep it there until edited.
 
     A length the form just created (`created` names it) takes the scene's. One that still
     follows the scene (`follows_scene`, which any edit clears) is moved when the scene's
     range changed. The value is clamped to the input's range and stored without its RNA
     update, which would count as the user's edit; the caller re-arms the price for the
-    returned names. Runs on the main thread, never while drawing.
+    returned names. A text-to-motion model's frame rate follows the scene's the same way
+    when the model offers it, and its length waits while the scene still has Blender's
+    default frame range, which Apply animation replaces with the clip's. Runs on the main
+    thread, never while drawing.
     """
+    from . import animation_application
+
     record = runtime.state.records.get(lane_state.model_id)
-    spec = None if record is None else model_filter.music_length_spec(record, schema)
-    index = lane_state.params.find(spec.name) if spec is not None else -1
-    if index < 0:
+    if record is None:
         return set()
+    scene = lane_state.id_data
+    seconds = scene_length(scene)
+    music = model_filter.music_length_spec(record, schema)
+    length = music or model_filter.motion_length_spec(record, schema)
+    if length is not None and (music or not animation_application.default_range(scene)):
+        value, _ = capture_plan.clamp_duration(
+            seconds, length.min, length.max, integer=length.is_integer
+        )
+    else:
+        value = None
+    inputs = [(length, value)] if length is not None else []
+    rate = model_filter.motion_rate_spec(record, schema)
+    if rate is not None:
+        fps = scene.render.fps / (scene.render.fps_base or 1.0)
+        inputs.append((rate, model_filter.rate_choice(rate, fps)))
+    return {spec.name for spec, value in inputs if _follow_scene(lane_state, spec, value, created)}
+
+
+def _follow_scene(lane_state, spec, value, created):
+    """Set one input that follows the scene to `value`, or leave it at None; return if it changed."""
+    index = lane_state.params.find(spec.name)
+    if index < 0:
+        return False
     item = lane_state.params[index]
     if spec.name not in created and not item.follows_scene:
-        return set()
-    value, _ = capture_plan.clamp_duration(
-        scene_length(lane_state.id_data), spec.min, spec.max, integer=spec.is_integer
-    )
-    attr = "int_value" if spec.is_integer else "float_value"
+        return False
     changed = False
-    if getattr(item, attr) != value:
-        item[attr] = value
-        changed = True
-    if not item.enabled:
-        item["enabled"] = True  # the model would otherwise choose its own length
-        changed = True
+    if value is not None:
+        if spec.allowed_values:
+            choices = [str(option) for option in spec.allowed_values if str(option) != ""]
+            if item.enum_value != str(value):
+                item["enum_value"] = choices.index(str(value))
+                changed = True
+        else:
+            attr = "int_value" if spec.is_integer else "float_value"
+            if getattr(item, attr) != value:
+                item[attr] = value
+                changed = True
+        if not item.enabled:
+            item["enabled"] = True  # the model would otherwise choose its own value
+            changed = True
     if not item.follows_scene:
         item["follows_scene"] = True
-    return {spec.name} if changed else set()
+    return changed
 
 
 def perform_captures(context, request, runner=None):

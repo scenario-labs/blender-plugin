@@ -45,6 +45,27 @@ def p2_record():
     )
 
 
+P2_TEXT = "model_tripo-p2-text-to-3d"
+
+
+def p2_text_record():
+    """Tripo P2 Text to 3D: Tripo P2's settings with a prompt in place of the image."""
+    catalog = submodule("core.api.catalog")
+    inputs = p2_record().raw["inputs"][1:]
+    return catalog.ModelRecord.from_api(
+        {
+            "id": P2_TEXT,
+            "name": "Tripo P2 Text to 3D",
+            "capabilities": ["txt23d"],
+            "status": "trained",
+            "inputs": [
+                {"name": "prompt", "type": "string", "prompt": True, "required": True},
+                *inputs,
+            ],
+        }
+    )
+
+
 class ThreeDLaneTests(unittest.TestCase):
     def setUp(self):
         reset_scene()
@@ -64,6 +85,11 @@ class ThreeDLaneTests(unittest.TestCase):
         multi_ids = [r.id for r in generation.three_d_models("MULTI", records)]
         self.assertIn("model_meshy-7-img23d", multi_ids)
         self.assertNotIn("model_meshy-7-txt23d", multi_ids)
+        # Cartwheel animates the character it is given, from Edit 3D > Animate only.
+        motion = [rec("model_uthana-text-to-motion-3.0"), rec("model_cartwheel-text-to-motion")]
+        text_ids = [r.id for r in generation.three_d_models("TEXT", records + motion)]
+        self.assertIn("model_uthana-text-to-motion-3.0", text_ids)
+        self.assertNotIn("model_cartwheel-text-to-motion", text_ids)
 
     def test_mode_change_refreshes_model_enum(self):
         runtime = submodule("blender.runtime")
@@ -302,3 +328,33 @@ class ThreeDLaneTests(unittest.TestCase):
         _, other = tools._body_for("model_tripo-v3-1-image-to-3d", {"image": "asset_fixture"})
         self.assertNotIn("faceLimit", other)
         self.assertNotIn("autoSize", other)
+
+    def test_tripo_p2_text_leads_the_text_models_and_starts_a_light_prop_at_real_size(self):
+        generation = submodule("blender.generation")
+        runtime = submodule("blender.runtime")
+        handlers = submodule("blender.handlers")
+        tools = submodule("mcp.tools_scenario")
+        runtime.state.reset()
+        records = [rec("model_meshy-7-txt23d"), p2_text_record()]
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        scene = bpy.context.scene
+        scene.scenario.three_d_mode = "TEXT"
+        shown = [item[0] for item in runtime.enum_items(("models", "3d"))]
+        self.assertEqual(shown, [P2_TEXT, "model_meshy-7-txt23d"])
+        lane = scene.scenario.lane_state("3d")
+        # A form that never chose a model shows the lane's first one.
+        self.assertEqual(lane.model_id, P2_TEXT)
+        generation.on_model_changed(bpy.context, lane)
+        self.assertTrue(lane.params["autoSize"].bool_value)
+        self.assertEqual(lane.params["faceLimit"].int_value, 50000)
+        self.assertTrue(lane.params["faceLimit"].enabled)
+        self.assertTrue(lane.params["pbr"].bool_value)
+        lane.prompt = "A weathered wooden treasure chest"
+        request = generation.build_request(scene, "3d", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        self.assertEqual((request.body["faceLimit"], request.body["autoSize"]), (50000, True))
+        # Local MCP starts where the form starts.
+        _, body = tools._body_for(P2_TEXT, {"prompt": "A weathered wooden treasure chest"})
+        self.assertEqual({k: request.body[k] for k in body}, body)

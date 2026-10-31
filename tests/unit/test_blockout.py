@@ -201,4 +201,68 @@ def test_refinement_instruction_preserves_complete_plan_without_design_framing()
     instruction = blockout.instruction("add one door", previous=previous)
     assert "Scene to block out:" not in instruction
     assert "UPDATED full plan applying this change: add one door" in instruction
-    assert json.loads(instruction.split("\nCurrent plan:\n")[1]) == previous
+    rows = instruction.split("\nCurrent plan:\n")[1]
+    assert blockout.parse_complete_plan(rows) == blockout.parse_plan(json.dumps(previous))
+
+
+def test_grouped_rows_parse_to_the_same_elements_as_keyed_objects():
+    keyed = [
+        {
+            "name": "Pond",
+            "category": "water",
+            "primitive": "cylinder",
+            "position": [-9, 5, 0.1],
+            "size": [8, 6, 0.2],
+            "rotation": 20,
+            "group": "Garden",
+        },
+        {
+            "name": "Roof",
+            "category": "structure",
+            "primitive": "wedge",
+            "position": [8, -4, 4.75],
+            "size": [8, 6, 1.5],
+            "rotation": 30,
+            "group": "Teahouse",
+        },
+    ]
+    rows = blockout.encode_rows(keyed)
+    assert json.loads(rows) == [
+        "Garden",
+        ["Pond", "water", "cylinder", -9.0, 5.0, 0.1, 8.0, 6.0, 0.2, 20.0],
+        "Teahouse",
+        ["Roof", "structure", "wedge", 8.0, -4.0, 4.75, 8.0, 6.0, 1.5, 30.0],
+    ]
+    assert len(rows) < 0.6 * len(json.dumps(keyed, separators=(",", ":")))
+    expected = blockout.parse_plan(json.dumps(keyed))
+    assert blockout.parse_complete_plan(rows) == blockout.parse_plan(rows) == expected
+    assert blockout.parse_complete_plan(f"```json\n{rows}\n```") == expected
+
+
+def test_rows_before_any_label_and_mixed_keyed_objects_still_parse():
+    text = '[["Rock", "prop", "sphere", 1, 2, 0.3, 0.6, 0.6, 0.6, 0], {"name": "Gate"}, "Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 0.1, 1, 0]]'
+    plan = blockout.parse_complete_plan(text)
+    assert [(e["name"], e["group"]) for e in plan] == [
+        ("Rock", "Blockout"),
+        ("Gate", "Blockout"),
+        ("Post", "Fence"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '["Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 1, 0]]',  # a value is missing
+        '["Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 0.1, 1, 0, 9]]',
+        '["Fence"]',
+        '["Fence", 3]',
+    ],
+)
+def test_complete_plan_refuses_a_row_that_lost_or_gained_a_value(text):
+    with pytest.raises(ValueError):
+        blockout.parse_complete_plan(text)
+
+
+def test_a_lenient_parse_skips_an_incomplete_row():
+    text = '["Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 1, 0], ["Rail", "structure", "box", 0, 0, 0.8, 4, 0.1, 0.1, 0]]'
+    assert [e["name"] for e in blockout.parse_plan(text)] == ["Rail"]

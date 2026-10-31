@@ -78,7 +78,7 @@ class RuntimeJobTests(unittest.TestCase):
         for session in self.sessions:
             session.shutdown()
 
-    def seed(self, state=None):
+    def seed(self, state=None, *, lane=None):
         m = self.storemod
         store = self.runtime.ensure_job_store()
         rec = store.create(
@@ -91,6 +91,7 @@ class RuntimeJobTests(unittest.TestCase):
                 "a" * 64,
                 "b" * 64,
                 "0.10000000000000001",
+                lane=lane,
             )
         )
         if state is not None:
@@ -147,6 +148,49 @@ class RuntimeJobTests(unittest.TestCase):
         result = self.tools.cancel_prepared_job(dict(context_id=new["context_id"], **args))
         self.assertEqual(result["state"], "canceled")
         self.assertEqual(self.requests, [])
+
+    def test_saved_jobs_are_listed_once_per_context_with_the_prompts_shown(self):
+        # With no saved job database, listing selects no connection itself.
+        self.assertFalse(self.runtime.show_saved_jobs())
+        self.assertIsNone(self.runtime.state.catalog)
+        self.seed(lane="render_image")
+        self.assertTrue(self.runtime.show_saved_jobs())
+        (view,) = self.runtime.state.jobs_view
+        # The form it came from is saved; its prompt is not, so the row names its model.
+        self.assertEqual(
+            (view.local_id, view.lane, view.kind), ("request", "render_image", "image")
+        )
+        self.assertNotIn("prompt", view.meta)
+        self.assertFalse(self.runtime.show_saved_jobs())
+        # What a job this session submitted shows; the store keeps no prompt.
+        view.meta.update(prompt="Café 雪 dome", model_name="Fixture model")
+        context = self.runtime.state.job_context_id
+        filepath = str(self.root / "listed.blend")
+        bpy.ops.wm.save_as_mainfile(filepath=filepath)
+        bpy.ops.wm.open_mainfile(filepath=filepath)
+        self.runtime.sync_catalog_context()  # the pump's catalog step, before the listing
+        self.assertEqual(self.runtime.state.jobs_view, [])
+        self.assertTrue(self.runtime.show_saved_jobs())
+        self.assertNotEqual(self.runtime.state.job_context_id, context)
+        (view,) = self.runtime.state.jobs_view
+        self.assertEqual(
+            (view.local_id, view.meta["prompt"], view.meta["model_name"]),
+            ("request", "Café 雪 dome", "Fixture model"),
+        )
+        self.assertEqual((view.lane, view.kind), ("render_image", "image"))
+        self.assertEqual(self.requests, [])
+        # Another connection lists only its own jobs; with none saved, no session starts.
+        self.prefs.api_secret = "other-fixture-secret"
+        self.runtime.ensure_catalog()
+        self.assertFalse(self.runtime.show_saved_jobs())
+        self.assertIsNone(self.runtime.state.job_session)
+        self.assertEqual((self.runtime.state.jobs_view, self.runtime.state.job_labels), ([], {}))
+
+    def test_the_gui_pump_lists_saved_jobs(self):
+        pump = submodule("blender.pump")
+        with patch.object(self.runtime, "show_saved_jobs", return_value=True) as listed:
+            pump._process()
+        listed.assert_called_once_with()
 
     def test_credential_change_isolates_records_and_cannot_cancel_same_id(self):
         _, original = self.seed()

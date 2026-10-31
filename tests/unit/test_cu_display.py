@@ -58,3 +58,33 @@ def test_workflow_quote_notice_flags_loops_without_blocking(loop_steps, flagged,
         assert phrase in warning and "charge can be higher" in warning
     else:
         assert warning is None
+
+
+@pytest.mark.parametrize(
+    ("cost", "threshold", "confirms"),
+    [
+        ("200", 200, False),  # at the threshold: no dialog
+        ("200.0000000000000000001", 200, True),
+        ("250.5", 200, True),
+        ("0.1234567890123456789", 200, False),
+        (Decimal("201"), 200, True),
+        ("0", 0, True),  # 0 asks before every Generate
+        ("0.1234567890123456789", 0, True),
+        ("5", 4, True),
+        ("4", 4, False),
+    ],
+)
+def test_confirms_spend_compares_the_exact_quote_with_the_threshold(cost, threshold, confirms):
+    from scenario.core.ui.costs import confirms_spend
+
+    assert confirms_spend(cost, threshold) is confirms
+
+
+def test_spend_confirmation_names_the_model_and_the_unrounded_price():
+    from scenario.core.ui.costs import CONFIRM_ABOVE_DEFAULT, spend_confirmation
+
+    assert CONFIRM_ABOVE_DEFAULT == 500
+    assert spend_confirmation("Shared image", "0.1234567890123456789") == (
+        "Generate with Shared image?",
+        "Exact price: 0.1234567890123456789 CU",
+    )

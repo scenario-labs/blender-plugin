@@ -335,7 +335,7 @@ def _draw_first_frame(box, lane_state, schema):
 
 
 def draw_render_image_lane(layout, context):
-    from . import generation, panels, params_ui, render_references
+    from . import capture, generation, panels, params_ui, render_references
 
     scene = context.scene
     lane_state = scene.scenario.lane_state("render_image")
@@ -343,6 +343,8 @@ def draw_render_image_lane(layout, context):
     box.label(text="Scene to render", icon="RESTRICT_VIEW_OFF")
     row = box.row(align=True)
     row.prop(lane_state, "capture_source", expand=True)
+    width, height = capture.capture_size(context, capture_source(lane_state, "render_image"))
+    box.label(text=f"Captures a {width}x{height} still")
     box.prop(lane_state, "force_solid")
     panels.draw_model_row(layout, lane_state, "render_image")
     schema = generation.schema_for(lane_state.model_id)
@@ -362,7 +364,7 @@ def draw_render_image_lane(layout, context):
 
 
 def draw_render_video_lane(layout, context):
-    from . import generation, panels, params_ui, render_references
+    from . import capture, generation, panels, params_ui, render_references
 
     scene = context.scene
     lane_state = scene.scenario.lane_state("render_video")
@@ -372,7 +374,8 @@ def draw_render_video_lane(layout, context):
     row.prop(lane_state, "capture_source", expand=True)
     start, end, seconds = _clip_info(scene)
     fps = scene.render.fps / (scene.render.fps_base or 1.0)
-    box.label(text=f"Frames {start} to {end}: {seconds:.1f} s at {fps:g} fps, 1280x720")
+    size = capture.capture_size(context, capture_source(lane_state, "render_video"))
+    box.label(text=capture_plan.clip_label(start, end, seconds, fps, (size,)))
     row = box.row(align=True)
     row.prop(lane_state, "force_solid")
     row.prop(lane_state, "match_timeline")

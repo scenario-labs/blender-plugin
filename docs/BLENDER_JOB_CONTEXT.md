@@ -35,9 +35,10 @@ download/receipt recovery. These recovery tools do not import prototype jobs.
 Model submission creates new durable intents.
 
 Active Image jobs poll and download through this session. `apply_images` requires
-an owned verification completion, resolves the original scene/revision, and claims
-`applying` before loading any image. Every byte snapshot must match its saved
-receipt and supported container before Blender decodes and packs it. Multiple
+an owned verification completion, resolves the destination captured at submission
+(below) or else the original scene/revision, and claims `applying` before loading
+any image; it never claims an `applied` job again. Every byte snapshot must match
+its saved receipt and supported container before Blender decodes and packs it. Multiple
 variants are imported together; failure removes only newly created images.
 Confirmed rollback records `apply_failed`; incomplete rollback or uncertain
 receipt persistence retains `applying`. `retry_image_receipt` can acknowledge a
@@ -267,8 +268,12 @@ prototype rows; it never drops shared recovery rows or changes durable records.
 
 `BlockoutJobs` is a presentation facade over the selected session, not another
 worker or store. Design and Refine capture the original scene revision plus
-prompt, refinement, type, scale and previous plan before quoting. Refine includes
-the complete bounded prior plan, without text truncation, using an explicit
+prompt, refinement, density, model tier, uploaded reference image and previous
+plan before quoting. The tier resolves to the newest Claude Opus (Best) or Gemini
+Flash (Fast) that the loaded Scenario LLM schema allows, else a fixed fallback. The model
+writes grouped rows, a group label then one ten-value array per element: under half the
+text of keyed objects, so plans and above all refinements arrive sooner. Refine includes
+the complete bounded prior plan in the same rows, without text truncation, using an explicit
 update instruction rather than describing the refinement note as a new scene.
 An absent, malformed or incomplete prior plan is rejected with a guided error
 before a quote request, including through MCP.
@@ -282,12 +287,15 @@ quotes and unconfirmed or uncertain jobs retain their handles.
 The application pump polls the known job, lists its single plain-text output and
 reads the complete body through `JobSession.read_model_text`. Delivery validates
 scope, original scene/revision and unchanged inputs before storing a normalized
-array of 1–200 elements. Complete arrays may have Markdown fences or surrounding
-prose; malformed/truncated arrays are rejected without recovering a partial
-prefix. Delivery never creates geometry. A scene switch, edited plan, file load
-or retired owner cannot redirect a late result to the current scene.
+array of 1–400 elements. Complete arrays may have Markdown fences, surrounding
+prose or the Scenario LLM `{"results": [{"text": ...}]}` answer wrapper, and keyed
+element objects from earlier answers still parse; malformed/truncated arrays and rows
+with a missing or extra value are rejected without recovering a partial prefix, and
+the error names the unusable answer. Delivery never creates geometry. A scene
+switch, edited plan, file load or retired owner cannot redirect a late result to
+the current scene.
 
-Build plan stages local geometry before replacing the scene's explicitly stored
+Build blockout stages local geometry before replacing the scene's explicitly stored
 collection pointer. It does not adopt collections by name. Unmarked additions,
 externally linked objects and shared collection trees block destructive rebuild
 or Clear; a staging failure removes only the new tree and preserves the old one.
@@ -379,8 +387,9 @@ across sessions; they never inspect or mutate bpy data. Callers must prepare
 inputs and capture their origin together on the main thread.
 
 A payload that does not come from the scene, such as a file the user chose to
-upload, binds only to the scene it is for. `capture_destination(scene)` records a
-destination-only origin: dependency, frame and render-thread updates keep it, while
+upload or an Image job's results, binds only to the scene it is for.
+`capture_destination(scene)` records a destination-only origin: dependency, frame
+and render-thread updates keep it, while
 removing that scene, Undo/Redo, file loading and deactivation revoke it. Delivery
 still requires that scene to be selected, and callers recheck their own destination,
 such as the form slot or workflow input. Such an origin never vouches for scene
@@ -598,13 +607,16 @@ job's sizes once it leaves them, and stops offering an image whose size is not
 
 `result_files` queues the coordinator's receipt rehash of saved results on the
 same lane, again not a session completion. The model job owner checks only the
-jobs a local MCP status read asked about, at most one preview batch at a time,
-whether this session imported them or not and including after a restart. A
-file the session already hashed while downloading or importing it is not checked
-again: the coordinator keeps that identity in memory (`verified_files`), and the
-status read uses it once. Each check is kept with the file's identity as hashed;
-a later status read compares that identity and checks the file again when it
-differs.
+jobs a local MCP status read asked about and image rows (Image, Render Image and
+Environment jobs, or results that are images) whose files no automatic import of
+this session lists, at most one preview batch at a time, whether this session
+imported them or not and including after a restart. Such a row lists only
+verified files, so its file tools show in the submitting session and after a
+restart alike. A file the session already hashed while downloading or importing
+it is not checked again: the coordinator keeps that identity in memory
+(`verified_files`), and the status read uses it once. Each check is kept with
+the file's identity as hashed; a later status read compares that identity and
+checks the file again when it differs.
 
 The main-thread [preview controller](../scenario/blender/result_previews.py)
 is the scheduler's Blender-side owner for
@@ -845,9 +857,16 @@ handles and in-memory display projections for the selected session. UI and MCP
 model generation share its quote and submission commands. Handles bind the
 captured scene, originating lane, exact input snapshot and session-issued SDK
 estimate. Submission validates the current inputs and exact approved cost before
-consuming the handle and persisting intent. The coordinator still checks origin,
-ownership and expiry at dispatch. No handle is reconstructed from a saved
-fingerprint after restart.
+consuming the handle and persisting intent. A handle whose scene revision changed
+is refused before consumption and the form is priced again once the scene keeps one
+revision for 0.7 s ([quote_refresh](../scenario/core/jobs/quote_refresh.py)).
+Session capacity is checked before the intent is saved, and an intent the worker
+queue refuses is canceled locally, so neither leaves a prepared job to review. A
+quote that expired or no longer applies when it is prepared saves nothing either:
+the form says so and is priced again. An unconfirmed identical request is named
+instead. The
+coordinator still checks origin, ownership and expiry at dispatch. No handle is
+reconstructed from a saved fingerprint after restart.
 
 `drain(task=...)` collects only the requested task, leaving other consumers'
 completions intact. Context maintenance routes each quote back to its originating
@@ -855,7 +874,8 @@ form even after a tab switch and drives receipt delivery in both the GUI and
 actual CLI loop. Model status after restart is read from the
 credential-scoped store, without automatically polling or resubmitting remotely.
 Active jobs poll and download through this owner. Only Image automatically
-imports supported images; other lanes stop at saved results for explicit application.
+imports supported images, once, into the scene captured at submission; other lanes
+stop at saved results for explicit application.
 
 ## Environment lane delivery
 
@@ -920,6 +940,9 @@ revision. Queued commands retain their original scope.
   without a confirmation, since nothing is lost: the job becomes
   `download_failed` with no receipt for the unfinished asset, delivery pauses
   with a note that nothing partial was saved, and `resume` downloads it again.
+  It also stops this owner's download of the
+  [format copies](RESULT_TRANSFERS.md#glb-format-copies-on-demand) a chosen result
+  needs; the job keeps its state and choosing the result again starts it again.
 - `retry_receipt` saves an already completed local application's outcome without
   any scene mutation. The exact pending owner-local handle must still exist.
 - `mark_reviewed` is offered for a `submitting` or `uncertain` record with no
@@ -994,6 +1017,8 @@ A new saved-job action adds one descriptor here, not a surface-specific branch.
 `use_first_frame` draws one control per still that `ModelJobs` projects as
 `first_frame_assets`, because eligibility needs texture roles and receipts that
 the view's media types do not carry; its numbering counts every saved asset.
+`camera_background` and `image_plane` likewise draw one control per result in
+`camera_background_assets` and `image_plane_assets`.
 Results whose saved metadata declares a 360 projection add a status row
 (**360 panorama (LDR)**, **360 HDR environment (OpenEXR)** or both) and, once a
 settled job has a downloaded LDR panorama, one **Make HDRI (N)** descriptor in
@@ -1117,8 +1142,11 @@ job strip finds the current job of the form it shows without guessing. A binding
 grants no destination, origin or application authority; results still apply
 only through their own approvals and origin checks. Workflow and Film
 submissions are unbound. Bindings and readings retire with their owner on a
-credential, project or file change. Lanes are not persisted: restarted and
-recovered jobs are unbound, and MCP reports `lane: null` for them.
+credential, project or file change. Bindings are not persisted: restarted and
+recovered jobs are unbound. The submitted lane itself is saved with the job,
+display only ([schema 13](JOB_STORAGE.md#generation-lane)), so a listed
+job keeps its form's kind and result controls and MCP reports its `lane`; jobs
+saved without one are generic `model` views of the kind their results establish.
 
 ### Failure reasons
 
@@ -1393,6 +1421,31 @@ Film integration are separate from this video/audio path.
 Shutdown releases pending media receipt handles after its workers stop, matching
 image and World ownership. A retained exception cannot persist success after
 shutdown; the saved uncertain record and any existing strip remain unchanged.
+
+## Saved camera background and image plane
+
+`camera_background` and `image_plane` follow the `import_media` gates for a job
+with a downloaded colour result (no texture role, or base): PNG, JPEG, OpenEXR,
+MP4 or WebM for a background, the stills only for a plane. Prompt and translate
+jobs never offer them. `ModelJobs.prepare_landing_application`, reached through
+MCP `prepare_result_application` with that purpose and the `asset_id`, or through
+the native controls, reads no file and changes nothing. A background captures the
+scene, its local scene camera linked to it, and the current frame for a video; a
+scene without a camera is refused before any capture. A plane captures the scene
+in Object Mode, the cursor and `plane_unlit`; the native **Unlit** checkbox
+exchanges the approval for a new handle.
+
+Applying consumes the approval, verifies the receipts and re-checks the scene,
+camera, frame or cursor before the claim, which uses the `images` label, or
+`media` for a video. A background is appended to the camera's list (existing
+backgrounds are never changed) at alpha 0.5, depth `BACK` and fit `FIT`, and
+camera backgrounds are turned on. An image is packed; a video loads as a movie
+clip from a persistent private copy, starting at the captured frame. A plane is
+1 m tall, as wide as the image's aspect, faces -Y with its bottom center at the
+cursor, joins the scene's own collection without changing selection, and uses a
+packed image whose header alpha wires a blended material. A failure removes only
+the data this call added. One undo step covers the change; an uncertain receipt
+offers `retry_receipt` like media.
 
 ## Saved image to Render Video first frame
 

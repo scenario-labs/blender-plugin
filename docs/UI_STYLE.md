@@ -85,18 +85,30 @@ so the form is always visible.
   s) has passed. Meanwhile it fetches a fresh free quote, because each send
   consumes its own; a different price replaces the old one before Generate
   re-enables. Any edit prices the form normally instead.
+- Above the **Confirm generations above** preference (500 CU, 0 asks every
+  time), Generate (sidebar, Settings and composer, all through its invoke path)
+  and Generate blockout ask with `invoke_confirm`, naming the model and exact
+  price. Execute then submits only the quote that dialog named. Generate has no
+  `REGISTER`, so Repeat Last and operator history never run it.
 - Icon-only buttons keep Blender's fixed size; a button that must fill a row
   carries a short label (Blender never stretches an icon-only button). The three
   prompt tools are `New`, `Rewrite`, `Translate`.
 - Destructive actions (`Delete`, `Clear path`) ask for confirmation (`invoke_confirm`).
 
-When Blender online access is disabled, the composer shows **Offline** on its
-disabled generation button and **Online access disabled** instead of a loading
-message when no model is available. Pending edits retain their estimate request
-until online access and credentials are available. Only the selected scene is
+When Blender online access is disabled, the sidebar's Scenario panel shows
+**Scenario needs Blender's Allow Online Access** and an **Allow Online Access**
+button, or a restart hint when `--offline-mode` forced it off. The composer
+shows **Offline** on its disabled generation button and **Online access
+disabled** instead of a loading message when no model is available. Pending
+edits retain their estimate request until online access and credentials are
+available. Only the selected scene is
 priced: another scene's pending form shows no price error and is priced once
 that scene is selected. A price that arrives while another scene is selected is
-requested again in the same way. The generation controls
+requested again in the same way. A price the scene changed after is requested
+again once the scene stops changing, under **Scene changed; updating the price**;
+**Generate** meanwhile sends nothing. The pump redraws the sidebar and the
+composer when the visible form's price arrives or fails, so **Generate** shows it
+without hovering. The generation controls
 remain disabled until a ready quote handle exists; the submission path still
 rechecks its exact inputs, origin and approval. A model list is only described as
 loading while a catalog request is active.
@@ -127,6 +139,13 @@ prompt row: a click or double-click does not focus it, and a lane tab that shows
 such a form leaves focus. If another window or a tool loads such a model while
 the prompt is focused, the next text key leaves focus with that warning and
 writes nothing.
+
+A focused prompt keeps the keys it edits with, Ctrl/Cmd+Z and Y, modifier presses
+and pointer events. Other Ctrl/Cmd shortcuts and function keys pass through to
+Blender (`composer_layout.passes_to_blender`). Enter or Generate on a form whose
+price is still loading, or whose repeat delay is running, sets the status line
+and reports it (`composer_layout.generate_wait`) instead of only blurring. The
+price-loading line goes as soon as a price arrives, so it never sits beside one.
 
 Installed tests on the packaged ZIP run the real composer draw function, with
 recording drawing primitives, and the real modal handler. Run against the previous
@@ -333,8 +352,8 @@ it keeps opening the picker on All, since **Add LoRA or composition** sits in
 the Trained models box below. Drawing it reads the form's slots only. Strengths are
 edited in the sidebar or Studio, and the composer note says so (**Edit LoRA
 strength in the sidebar or Studio**) when nothing more urgent is shown. Job views
-name the base with its trained choice the same way while the session that
-submitted them lasts; a recovered saved job names its base model only.
+name the base with its trained choice the same way until Blender restarts, across
+file loads; a saved job recovered after a restart names its base model only.
 
 ## Duration and Match timeline
 
@@ -394,7 +413,16 @@ confirmation, keep drawing read-only and invalidate the prior generation price
 after attachment.
 
 Render forms show **Capture and upload scene** in their scene/clip section, with
-that slot's progress, inspection and removal controls. Render Video's optional
+that slot's progress, inspection and removal controls. It is one action: it also
+uploads the first frame a Render Video form uses, and once uploaded it is offered
+again as **Capture again**, which replaces the snapshot (never one still
+uploading, and a failed capture keeps the old one). It sends no paid request:
+each upload that attaches marks the form dirty, so the pump prices the shown form
+and **Generate** shows the price without another click. The composer's
+**Capture** chip (**Recapture** once uploaded, **Uploading...** while it runs)
+sits after **Settings** in the two render lanes, only where the card has room for
+it, and starts the same action. A form waiting for the capture or an upload says
+so in its status line. Render Video's optional
 first frame always exposes a file field and native folder picker, followed by a
 separate **Upload first frame** action after choosing an image. Do not draw
 these slots again as style references. The scene snapshot precedes styles; a
@@ -431,8 +459,22 @@ message tells users to upload the reference, review the price and choose
 form; reset the old prompt/settings/references and invalidate the previous quote.
 Existing jobs and admitted uploads keep their own lifetime and origin guards.
 
-Each result collapses on its own; the panel header has a **Collapse all / Expand
-all** toggle. A failed result shows a red error control in its header whose
+Generations and Studio's **Results** page each have a **List** / **Grid**
+segmented control; the sidebar starts on the list, Studio on the grid. Each
+choice, the grid's page and its selected result are unsaved window-manager
+state that only their operators change. The grid draws twelve finished results
+per page as `template_icon` tiles in a `grid_flow` of two to six columns sized
+from the region width: the job's first ranked preview or its kind's icon, and a
+button with the prompt's start. Blank cells fill a page with fewer tiles than
+columns, so its tiles keep a full row's width. Choosing a tile draws that
+preview large (at most the 256-pixel still) with the prompt, model, kind, saved
+size, submission time and price, then the list row's model row, preview tiles
+and saved-job controls; arrows step to the neighbouring results and **All
+results** returns to the grid. A page or selection that no longer exists draws
+as the nearest page or the grid without being written back.
+
+In the list, each result collapses on its own; the panel header has a
+**Collapse all / Expand all** toggle. A failed result shows a red error control in its header whose
 tooltip is the whole message (with the Error ID) and which opens the full text
 with a Copy button on click (a `description()`-driven operator, since Blender
 labels have no per-instance tooltip). Never truncate an error to a single
@@ -485,6 +527,12 @@ or property write. The pump redraws when the drawn rows or online access change,
 so the bar moves without hovering, but it does not redraw for the brief
 in-flight refresh that hides saved-job controls. Studio Jobs reuses the same
 draw.
+
+Under **Inspect saved jobs**, `This session: N CU across N jobs` sums the exact
+quotes of the job session's submissions once a completion carries Scenario's job
+ID (`core.jobs.session_spend`), kept in memory per connection across file loads.
+It counts sidebar, composer, Blockout, prompt helper and agent requests, and a
+pump redraw follows each change.
 
 Installed tests on macOS arm64 Blender 5.0.1, 5.1.2 and 5.2.1 check the drawn
 label, bar factor and text, the offline and stale lines, a finished generation
@@ -851,7 +899,9 @@ shows its own job or no tray.
   [saved-job action descriptors](BLENDER_JOB_CONTEXT.md#active-saved-job-controls):
   **Inspect**, which is never dropped, and at most one primary action before it:
   a receipt retry, a cancellation, download recovery, the single result action,
-  or **Apply... (N)** / **Reuse... (N)**, which opens the job card to choose.
+  or **Apply... (N)** / **Reuse... (N)**, which opens the job card to choose. A
+  Render Image result with one first-frame action leads with **Use as first
+  frame** instead, and lists that action first in Jobs and the job card.
   As in Jobs, **Cancel generation** appears only once a poll confirmed an
   inference job, the only type Scenario documents as cancellable.
   A submission in flight or unconfirmed, and an Image result being imported

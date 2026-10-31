@@ -21,11 +21,13 @@ from ..core.jobs.credential_storage import open_credential_store
 from ..core.jobs.manager import JobManager
 from ..core.jobs.model_defaults import ModelDefaults
 from ..core.jobs.records import JobRegistry
+from ..core.jobs.session_spend import SessionSpend
 from ..core.jobs.store import StoreError
 from ..core.jobs.transfers import ResultDownloader, StoragePolicy
 from ..core.jobs.upload_sources import UploadSources
 from ..core.jobs.upload_store import UploadStore
 from ..core.jobs.upload_transfers import PartUploader, S3UploadPolicy
+from ..core.ui.costs import session_spend_label as session_spend_text
 from ..mcp.upload_policy import ChosenFiles
 from .job_session import JobSession, OriginUnavailable, reap_retired
 
@@ -40,6 +42,8 @@ class RuntimeState:
         self.job_store = None
         self.model_defaults = None  # Explicit lane defaults of job_store's scope.
         self.job_session = None
+        # Accepted jobs' quotes for the selected connection; kept across file loads.
+        self.session_spend = None
         self.job_context_id = None
         self.model_jobs = None
         self.workflow_controls = None
@@ -54,6 +58,14 @@ class RuntimeState:
         self.estimates = {}  # Exact SDK responses for current UI previews, never spend approval.
         # (scene session_uid, lane) -> generation.Repeat after Generate; see generation.repeat_*.
         self.repeats = {}
+        # (scene session_uid, lane) -> generation.Reprice while a revoked price is requested again.
+        self.reprices = {}
+        # (scene session_uid, lane) -> (estimate key, asset ID) of a failed price whose
+        # captured meshes conflict; see generation.capture_conflict.
+        self.capture_conflicts = {}
+        # (scene session_uid, lane) -> generation.FreshUpload while a just-attached
+        # upload's price may still be refused; see generation.retry_fresh_upload.
+        self.fresh_uploads = {}
         self.estimate_origins = {}  # Pending request key -> original scene and lane, main thread only.
         self.records = {}  # model_id -> ModelRecord (detailed)
         self.model_errors = {}  # model_id -> sanitized lane error of its last failed detail read
@@ -84,6 +96,11 @@ class RuntimeState:
         self.enum_cache = {}  # key -> list of (id, name, desc) tuples kept alive for EnumProperty
         self.previews = None  # bpy.utils.previews collection, created lazily
         self.jobs_view = []  # JobRecord list shown in the panel (active + recent)
+        # Prompts and model names of this connection's saved jobs shown this session,
+        # by request ID; kept across file loads so inspected jobs show them again.
+        self.job_labels = {}
+        # (credentials, project, job context) whose saved jobs show_saved_jobs listed.
+        self.saved_jobs_listed = None
         self.history = []
         self.history_token = None
         self.history_request = None
@@ -153,7 +170,10 @@ class RuntimeState:
             self.job_session = None
         self.job_context_id = None
         if self.model_jobs is not None:
+            from .model_jobs import labels
+
             views = tuple(self.model_jobs.views.values())
+            self.job_labels.update(labels(views))
             self.jobs_view[:] = [
                 view for view in self.jobs_view if all(view is not v for v in views)
             ]
@@ -183,8 +203,21 @@ def prefs():
     return prefs_module.get_prefs()
 
 
+# The panel line and button shown while Blender's network preference is off.
+ONLINE_ACCESS_NEEDED = "Scenario needs Blender's Allow Online Access"
+STARTED_OFFLINE = "Blender started in offline mode (--offline-mode); restart it without that option"
+
+
 def online():
     return bool(getattr(bpy.app, "online_access", True))
+
+
+def started_offline():
+    """Whether Blender's --offline-mode holds Allow Online Access off until a restart.
+
+    Blender then refuses to change the preference, so no button can turn it on.
+    """
+    return bool(getattr(bpy.app, "online_access_override", False)) and not online()
 
 
 def waveform_spec():
@@ -351,6 +384,20 @@ def clear_model_default(context_id, lane, *, expected_revision):
     return _current_model_defaults(context_id).clear(lane, expected_revision=expected_revision)
 
 
+def session_spend(scope):
+    """The connection's running spend: kept across file loads, started over for another scope."""
+    spend = state.session_spend
+    if spend is None or spend.scope != scope:
+        spend = state.session_spend = SessionSpend(scope)
+    return spend
+
+
+def session_spend_label():
+    """The Jobs panel's "This session" line, or "" (reads memory only, safe in draw)."""
+    spend = state.session_spend
+    return "" if spend is None else session_spend_text(*spend.snapshot())
+
+
 def ensure_job_session():
     """Select one application-owned job session, independent of open panels."""
     catalog = ensure_catalog()
@@ -383,6 +430,7 @@ def ensure_job_session():
                 part_uploader=PartUploader(S3UploadPolicy(), online_access=catalog.network_allowed),
                 preview_root=preview_root,
                 preview_waveform=waveform_spec(),
+                spend=session_spend(state.job_store.scope),
             )
         except BaseException:
             adapter.close()
@@ -403,7 +451,9 @@ def ensure_model_jobs():
 
     session = ensure_job_session()
     if state.model_jobs is None:
-        state.model_jobs = ModelJobs(session, state.job_store, online=online)
+        state.model_jobs = ModelJobs(
+            session, state.job_store, online=online, labels=state.job_labels
+        )
     return state.model_jobs
 
 
@@ -489,6 +539,40 @@ def inspect_model_jobs():
     jobs = ensure_model_jobs()
     show_job_views(jobs.inspect())
     return jobs
+
+
+def show_saved_jobs():
+    """List the selected connection's saved jobs once per job context (GUI pump).
+
+    The read Inspect saved jobs makes: saved jobs show paused for review, never
+    resumed, applied or submitted again. Starting Blender, opening a file or
+    changing credentials leaves no listed context, so the Jobs list and the
+    Results grid show them again without a click. The pump calls it after its
+    context check this tick, which retires a session a file load deactivated.
+    Online it lists only a connection the catalog step already selected, never
+    selecting or switching one itself. Offline no catalog step runs, so once a
+    job database exists it selects the saved credentials' connection the way
+    Inspect saved jobs does: locally, sending nothing. Returns whether rows changed.
+    """
+    selection = (credentials(), project_id(), state.job_context_id)
+    if not selection[0].valid or selection == state.saved_jobs_listed:
+        return False
+    if state.catalog is not None:
+        if not catalog_selection_matches():
+            return False
+    elif online() or not (paths().state_dir / "shared-jobs" / "jobs.sqlite3").is_file():
+        return False  # the catalog step selects it, or nothing was ever saved here
+    state.saved_jobs_listed = selection  # one attempt per context, even when it fails
+    try:
+        store = ensure_job_store()
+        if state.job_session is None and not store.records():
+            return False  # nothing saved: no session is started for an empty list
+        inspect_model_jobs()
+    except Exception:
+        log.warning("Could not list saved jobs; Inspect saved jobs reads them again")
+        return False
+    state.saved_jobs_listed = (credentials(), project_id(), state.job_context_id)
+    return True
 
 
 def control_model_job(context_id, request_id, expected_revision, action):
@@ -579,6 +663,25 @@ def prepare_media_application(context_id, request_id, expected_revision, scene, 
     return jobs, jobs.prepare_media_application(request_id, expected_revision, scene, asset_id)
 
 
+def prepare_landing_application(
+    context_id, request_id, expected_revision, scene, asset_id, **options
+):
+    """Review one saved result as a camera background or image plane (`purpose`)."""
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; list local jobs again")
+    return jobs, jobs.prepare_landing_application(
+        request_id, expected_revision, scene, asset_id, **options
+    )
+
+
+def revise_landing_application(context_id, application_id, **options):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; review the result again")
+    return jobs.revise_landing_application(application_id, **options)
+
+
 def prepare_model_application(
     context_id, request_id, expected_revision, scene, asset_id, **options
 ):
@@ -616,11 +719,21 @@ def revise_mesh_application(context_id, application_id, **options):
     return jobs.revise_mesh_application(application_id, **options)
 
 
-def prepare_material_application(context_id, request_id, expected_revision, scene, obj):
+def prepare_material_application(context_id, request_id, expected_revision, scene, obj, **options):
+    """Review one material slot; `tile_size` is the metres one texture repeat spans."""
     jobs = ensure_model_jobs()
     if context_id != state.job_context_id:
         raise ScenarioError(0, "Inspect the current connection's jobs before applying a material")
-    return jobs, jobs.prepare_material_application(request_id, expected_revision, scene, obj)
+    return jobs, jobs.prepare_material_application(
+        request_id, expected_revision, scene, obj, **options
+    )
+
+
+def revise_material_application(context_id, application_id, **options):
+    jobs = ensure_model_jobs()
+    if context_id != state.job_context_id:
+        raise ScenarioError(0, "The selected job context changed; review the material again")
+    return jobs.revise_material_application(application_id, **options)
 
 
 def prepare_world_application(
@@ -718,6 +831,8 @@ def sync_catalog_context():
             state.retired_catalogs.append(state.catalog)
             state.catalog = None
             state.job_store = None
+            state.session_spend = None  # another account or project starts its own total
+            state.job_labels = {}
             state.catalog_credentials = None
             state.catalog_project_id = None
             state.history = []

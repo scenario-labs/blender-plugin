@@ -127,7 +127,8 @@ class JobStoreTests(unittest.TestCase):
                 del raw["claimed_at"]
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
-                for key in ("texture_role", "source", "projection", "parent_id"):
+                del raw["intent"]["lane"]
+                for key in ("texture_role", "source", "projection", "parent_id", "on_demand"):
                     del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
@@ -142,7 +143,7 @@ class JobStoreTests(unittest.TestCase):
             )
             self.assertEqual(reopened.get("result-request"), record)
             with closing(sqlite3.connect(root / "jobs.sqlite3")) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 12)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
             with self.assertRaises(sqlite3.ProgrammingError):
                 connection.execute("SELECT 1")
             verified = transfers.verify_download(root, record.results[0].receipt)
@@ -159,7 +160,8 @@ class JobStoreTests(unittest.TestCase):
                 del raw["claimed_at"]
                 del raw["intent"]["mesh_sources"]
                 del raw["intent"]["film_task"]
-                for key in ("source", "projection", "parent_id"):
+                del raw["intent"]["lane"]
+                for key in ("source", "projection", "parent_id", "on_demand"):
                     del raw["results"][0]["asset"][key]
                 connection.execute("UPDATE jobs SET record=?", (json.dumps(raw),))
                 connection.execute("DROP TABLE film_uploads")
@@ -227,11 +229,15 @@ class JobStoreTests(unittest.TestCase):
                 record = stores[key].get(request_id)
                 self.assertEqual(record.revision, revision)
                 expected = json.loads(raw) | {"claimed_at": None}
+                if expected["intent"].get("source") != "cloud":
+                    expected["intent"]["lane"] = None
                 for item in expected["results"]:
-                    item["asset"].update(source="asset", projection=None, parent_id=None)
+                    item["asset"].update(
+                        source="asset", projection=None, parent_id=None, on_demand=False
+                    )
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 12)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
             selected = next(store for store in stores.values() if store.scope.project_id)
             default = module.TrainedModelDefault(
                 "image", "stack", "model_base", (module.TrainedModelPick("model_lora", 0.75),)
@@ -270,11 +276,13 @@ class JobStoreTests(unittest.TestCase):
                 self.assertEqual(record.revision, revision)
                 self.assertIsNone(record.claimed_at)
                 expected = json.loads(raw) | {"claimed_at": None}
+                if expected["intent"].get("source") != "cloud":
+                    expected["intent"]["lane"] = None
                 for item in expected["results"]:
-                    item["asset"]["parent_id"] = None
+                    item["asset"].update(parent_id=None, on_demand=False)
                 self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
             with closing(sqlite3.connect(path)) as connection, connection:
-                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 12)
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
             selected = next(store for store in stores.values() if store.scope.project_id)
             uncertain = selected.get("p-uncertain-model")
             linked = selected.link_remote(
@@ -282,6 +290,44 @@ class JobStoreTests(unittest.TestCase):
             )
             self.assertEqual((linked.state.value, linked.claimed_at), ("remote", None))
             self.assertEqual(selected.trained_default("image").default.picks[0].scale, 0.75)
+
+    def test_installed_store_upgrades_the_real_schema_twelve_fixture(self):
+        from helpers import FIXTURES
+
+        module = submodule("core.jobs.store")
+        with tempfile.TemporaryDirectory(dir=bpy.utils.resource_path("USER")) as directory:
+            path = Path(directory) / "jobs.sqlite3"
+            # SQL dump of a database written by the schema 12 release's storage code.
+            script = (FIXTURES / "synthetic/jobs-schema12.sql").read_text(encoding="utf-8")
+            with closing(sqlite3.connect(path)) as connection:
+                connection.executescript(script)
+            with closing(sqlite3.connect(path)) as connection, connection:
+                rows = connection.execute(
+                    "SELECT scope, request_id, revision, record FROM jobs ORDER BY 1, 2"
+                ).fetchall()
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 12)
+            scopes = {
+                key: module.JobScope(**json.loads(raw)["intent"]["scope"])
+                for key, _, _, raw in rows
+            }
+            stores = {key: module.JobStore(path, scope) for key, scope in scopes.items()}
+            for key, request_id, revision, raw in rows:
+                record = stores[key].get(request_id)
+                self.assertEqual(record.revision, revision)
+                # Earlier stores never saved the submitting lane: it is not guessed,
+                # and no earlier result waits for a fetch.
+                self.assertIsNone(record.intent.lane)
+                expected = json.loads(raw)
+                if expected["intent"].get("source") != "cloud":
+                    expected["intent"]["lane"] = None
+                for item in expected["results"]:
+                    item["asset"]["on_demand"] = False
+                self.assertEqual(json.loads(json.dumps(asdict(record))), expected)
+            with closing(sqlite3.connect(path)) as connection, connection:
+                self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], 13)
+            selected = next(store for store in stores.values() if store.scope.project_id)
+            self.assertEqual(selected.get("q-claimed").claimed_at, "2026-10-14T21:18:11.123Z")
+            self.assertEqual(selected.get("r-parents").results[1].asset.parent_id, "asset-glb")
 
     def test_installed_store_keeps_a_default_for_every_installed_lane(self):
         module = submodule("core.jobs.store")

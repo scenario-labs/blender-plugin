@@ -21,9 +21,10 @@ side and runs on the main thread only, in its own timer, never while drawing:
   ``ImagePreviewCollection.load``, which writes a copy into the operating
   system's thumbnail cache.
 
-Drawing reads only the tiles and pages this controller precomputed; a page
-offset is transient state of this controller, changed only by the pager's
-operator and reset when a job's results change. Nothing here generates, downloads a result, applies, spends or changes the scene or the job
+Drawing reads only the tiles, covers and pages this controller precomputed; a
+page offset is transient state of this controller, changed only by the
+pager's operator and reset when a job's results change. Nothing here
+generates, downloads a result, applies, spends or changes the scene or the job
 store, and a late status from a retired connection is never shown.
 """
 
@@ -60,8 +61,8 @@ from . import label_wrap, runtime
 from .preview_decode import PreviewDecodeError, decode
 
 _log = logging.getLogger("scenario")
-# Previews are kept for the first jobs of each list the panels draw: Jobs rows
-# and the Generations rows, which list at most twelve.
+# Previews are kept for the first Jobs rows and for the Generations rows drawn:
+# the list's first twelve, and a grid's page of twelve and its selected result.
 JOB_LIMIT = 12
 # Tiles drawn at once; a pager steps through a job's other previewable results.
 TILE_LIMIT = preview_pages.SIZE
@@ -273,6 +274,8 @@ class PreviewController:
     def __init__(self):
         self.tiles = {}
         self.pages = {}  # request ID -> preview_pages.Page, for jobs with a pager
+        # request ID -> the Tile of its first ranked result, whatever page is drawn.
+        self.covers = {}
         self._offsets = preview_pages.PageOffsets()
         self.context_id = None
         self._session = None
@@ -331,12 +334,14 @@ class PreviewController:
     # -- polling ------------------------------------------------------------
 
     def _shown(self):
-        """Shared saved views the Jobs and Generations panels draw first."""
-        shown, active, settled = [], 0, 0
+        """Shared saved views the Jobs panel draws first and the Generations rows drawn."""
+        from . import result_grid
+
+        shown, active = [], 0
+        settled = result_grid.previewed()
         for view in runtime.state.jobs_view:
             if view.is_terminal:
-                settled += 1
-                if settled > JOB_LIMIT:
+                if view.local_id not in settled:
                     continue
             else:
                 active += 1
@@ -369,13 +374,16 @@ class PreviewController:
                     if fresh:
                         record = store.get(request_id)
                         job = _Job(revision, () if record is None else tile_targets(record))
-                    # Only the drawn page is requested; the pager requests others.
+                    # Only the drawn page and the grid's cover are requested; the
+                    # pager requests others.
                     visible, _ = self._visible(request_id, job.targets)
-                    missing = [
-                        target.asset_id
-                        for target in visible
-                        if target.asset_id not in job.requested
-                    ]
+                    missing = list(
+                        dict.fromkeys(
+                            target.asset_id
+                            for target in (*job.targets[:1], *visible)
+                            if target.asset_id not in job.requested
+                        )
+                    )
                     if missing:
                         scheduler.request(request_id, asset_ids=missing, renditions=(STILL,))
                         job = replace(job, requested=job.requested | frozenset(missing))
@@ -477,10 +485,22 @@ class PreviewController:
             return Tile(*base, "unavailable", reason, retry=True), budget
         return Tile(*base, "unavailable", "No preview is available for this format"), budget
 
+    def _job_tile(self, scheduler, request_id, job, target, budget):
+        """One requested target's tile; a target the scheduler forgot is requested again."""
+        if scheduler.status(request_id, target.asset_id) is None:
+            if job.message:
+                # Its request was refused; the job asks again when due.
+                base = target.asset_id, target.number, target.label, target.kind
+                return Tile(*base, "waiting", job.message), budget
+            # The scheduler forgot a settled entry to make room: request this
+            # job again on the next poll.
+            self._jobs[request_id] = replace(job, revision=-1)
+        return self._tile(scheduler, request_id, target, budget)
+
     def _update_tiles(self, scheduler, budget):
-        """Rebuild the drawn tiles and pages; ``budget`` is how many icons this tick may decode."""
+        """Rebuild the drawn tiles, covers and pages; this tick may decode ``budget`` icons."""
         self._used = set()
-        tiles, pages, results, hidden = {}, {}, {}, set()
+        tiles, covers, pages, results, hidden = {}, {}, {}, {}, set()
         for request_id, job in tuple(self._jobs.items()):
             results[request_id] = tuple(target.asset_id for target in job.targets)
             visible, page = self._visible(request_id, job.targets)
@@ -491,16 +511,7 @@ class PreviewController:
             )
             built = []
             for target in visible:
-                if scheduler.status(request_id, target.asset_id) is None:
-                    if job.message:
-                        # Its request was refused; the job asks again when due.
-                        base = target.asset_id, target.number, target.label, target.kind
-                        built.append(Tile(*base, "waiting", job.message))
-                        continue
-                    # The scheduler forgot a settled entry to make room: request
-                    # this job again on the next poll.
-                    self._jobs[request_id] = replace(job, revision=-1)
-                tile, budget = self._tile(scheduler, request_id, target, budget)
+                tile, budget = self._job_tile(scheduler, request_id, job, target, budget)
                 built.append(tile)
             if built:
                 tiles[request_id] = tuple(built)
@@ -508,6 +519,14 @@ class PreviewController:
                     pages[request_id] = page
             elif job.message:
                 tiles[request_id] = (Tile("", 0, "Previews", "image", "unavailable", job.message),)
+            if job.targets:
+                # A grid tile shows the first ranked result, also while its job
+                # draws a later page of tiles.
+                first = job.targets[0]
+                cover = next((tile for tile in built if tile.asset_id == first.asset_id), None)
+                if cover is None:
+                    cover, budget = self._job_tile(scheduler, request_id, job, first, budget)
+                covers[request_id] = cover
         # A job no longer shown, or whose results changed, starts on its first page.
         self._offsets.prune(results)
         self._trim_icons(self._used)
@@ -519,10 +538,11 @@ class PreviewController:
             for key, message in self._icon_failures.items()
             if key in self._used or key.rpartition("/")[0] + "/" in hidden
         }
-        self._busy = any(tile.status == "loading" for items in tiles.values() for tile in items)
-        if tiles == self.tiles and pages == self.pages:
+        drawn = [tile for items in tiles.values() for tile in items]
+        self._busy = any(tile.status == "loading" for tile in (*drawn, *covers.values()))
+        if tiles == self.tiles and covers == self.covers and pages == self.pages:
             return False
-        self.tiles, self.pages = tiles, pages
+        self.tiles, self.covers, self.pages = tiles, covers, pages
         return True
 
     def poll(self):
@@ -629,10 +649,11 @@ class PreviewController:
                 del self._icon_failures[key]
 
     def retire(self):
-        """Forget tiles, pages, requests and icons of the current connection."""
+        """Forget tiles, covers, pages, requests and icons of the current connection."""
         _main_thread()
         self._release_icons()
         self.tiles = {}
+        self.covers = {}
         self.pages = {}
         self._offsets.clear()
         self._jobs.clear()
@@ -678,8 +699,8 @@ class SCENARIO_OT_retry_result_preview(bpy.types.Operator):
     bl_idname = "scenario.retry_result_preview"
     bl_label = "Retry result preview"
     bl_description = (
-        "Prepare this saved result's preview again from Scenario's preview or the "
-        "verified saved file; nothing is generated, applied, spent or changed in the scene"
+        "Rebuild this result's preview from Scenario or the verified saved file; nothing is "
+        "generated, applied, spent or changed in the scene"
     )
     context_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     request_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
@@ -742,7 +763,7 @@ class SCENARIO_OT_page_result_previews(bpy.types.Operator):
 _builtin_icons = {}
 
 
-def _builtin(name):
+def builtin_icon(name):
     """The icon value of a built-in icon, for drawing a placeholder at preview size."""
     value = _builtin_icons.get(name)
     if value is None:
@@ -788,21 +809,34 @@ def _arrow(row, record, text, direction, enabled, icon_scale):
     arrow.direction = direction
 
 
-def draw(layout, record):
-    """Preview tiles of one shared saved view; only precomputed tiles and pages are read."""
+def _current(record):
+    """Whether drawing may read the controller's state for this view's connection."""
+    return (
+        bool(record.meta.get("shared_job"))
+        and controller.context_id is not None
+        and controller.context_id == runtime.state.job_context_id
+    )
+
+
+def cover(record):
+    """The tile of a shared saved view's first ranked result, or None; reads memory only."""
+    return controller.covers.get(record.local_id) if _current(record) else None
+
+
+def draw(layout, record, *, single_icon=True):
+    """Preview tiles of one shared saved view; only precomputed tiles and pages are read.
+
+    ``single_icon=False`` leaves out a row holding one tile, which a larger
+    view of the same result already shows; its status line and Retry stay.
+    """
     tiles = controller.tiles.get(record.local_id)
-    if (
-        not tiles
-        or not record.meta.get("shared_job")
-        or controller.context_id is None
-        or controller.context_id != runtime.state.job_context_id
-    ):
+    if not tiles or not _current(record):
         return
     context = bpy.context
     width = label_wrap.region_width(context) / label_wrap.ui_scale(context)
     shown = [tile for tile in tiles if tile.asset_id]
     page = controller.pages.get(record.local_id)
-    if shown:
+    if shown and (single_icon or page is not None or len(shown) > 1):
         icon_scale, columns = _row_size(width, len(shown), page is not None)
         row = layout.row(align=False)
         if page is not None:
@@ -811,7 +845,7 @@ def draw(layout, record):
             column = row.column(align=True)
             column.ui_units_x = columns
             column.template_icon(
-                icon_value=tile.icon_id or _builtin(KIND_ICON[tile.kind]), scale=icon_scale
+                icon_value=tile.icon_id or builtin_icon(KIND_ICON[tile.kind]), scale=icon_scale
             )
             column.label(text=tile.title)
         if page is not None:

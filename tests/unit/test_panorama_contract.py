@@ -59,7 +59,7 @@ def saved(asset_id=SAVED, **options):
 
 
 def test_every_contract_matches_its_recorded_public_record():
-    assert contracts.PANORAMA_MODELS == (FLUX, GPT, WORLD, HDRI, UPSCALE)
+    assert contracts.PANORAMA_MODELS == (GPT, FLUX, WORLD, HDRI, UPSCALE)
     assert set(contracts.PANORAMA_MODES) == {c.mode for c in contracts.CONTRACTS.values()}
     for model_id, contract in contracts.CONTRACTS.items():
         data = raw(model_id)
@@ -92,7 +92,7 @@ def test_describe_never_calls_an_ldr_result_hdr():
 def test_models_for_mode_keeps_record_order_and_skips_other_models():
     records = [ModelRecord.from_api(raw(model_id)) for model_id in reversed(contracts.CONTRACTS)]
     records.append(ModelRecord.from_api({"id": "model_other", "capabilities": ["txt2img"]}))
-    assert [r.id for r in contracts.models_for_mode(contracts.GENERATE, records)] == [GPT, FLUX]
+    assert [r.id for r in contracts.models_for_mode(contracts.GENERATE, records)] == [FLUX, GPT]
     assert [r.id for r in contracts.models_for_mode(contracts.FROM_IMAGE, records)] == [WORLD]
     assert [r.id for r in contracts.models_for_mode(contracts.HDRI, records)] == [HDRI]
     assert [r.id for r in contracts.models_for_mode(contracts.UPSCALE, records)] == [UPSCALE]
@@ -111,7 +111,8 @@ def test_flux_makes_one_panorama_unless_asked_and_restyles_only_saved_panoramas(
 
 
 def test_gpt_uses_only_two_to_one_sizes_and_up_to_ten_still_references():
-    assert ok(GPT, {"prompt": "a desert"}) == {"prompt": "a desert", "width": 2048, "height": 1024}
+    assert ok(GPT, {"prompt": "a desert"}) == {"prompt": "a desert", "width": 3840, "height": 1920}
+    assert ok(GPT, {"prompt": "x", "width": 2048, "height": 1024})["width"] == 2048
     assert ok(GPT, {"prompt": "x", "width": 3072, "height": 1536})["width"] == 3072
     assert ok(GPT, {"prompt": "x", "width": 3840.0, "height": 1920.0})["height"] == 1920
     stills = [f"asset_still{index}" for index in range(10)]
@@ -294,3 +295,21 @@ def test_saved_mode_and_size_indexes_keep_their_order():
         contracts.UPSCALE,
     )
     assert contracts.SIZE_PRESETS[:3] == ((2048, 1024), (3072, 1536), (3840, 1920))
+
+
+def test_gpt_starts_at_its_largest_size_while_the_presets_keep_their_saved_order():
+    gpt = contracts.CONTRACTS[GPT]
+    assert gpt.default_size == (3840, 1920) == max(gpt.sizes)
+    assert contracts.DEFAULT_SIZE == gpt.starting_size
+    assert contracts.DEFAULT_SIZE in contracts.SIZE_PRESETS
+    assert contracts.summary(gpt)["default_size"] == "3840x1920"
+    # Contracts without sizes name none; a contract without a preferred size starts at its first.
+    assert contracts.summary(contracts.CONTRACTS[FLUX])["default_size"] is None
+    plain = contracts.PanoramaContract("m", "GENERATE", "ldr", sizes=((8, 4), (16, 8)))
+    assert plain.starting_size == (8, 4)
+
+
+def test_gpt_leads_the_generate_models_and_flux_stays_listed():
+    generate = [m for m, c in contracts.CONTRACTS.items() if c.mode == contracts.GENERATE]
+    assert generate == [GPT, FLUX]
+    assert contracts.PANORAMA_MODELS[0] == GPT

@@ -39,7 +39,14 @@ cursor, the new group, packed textures and preserved selection. Format lines
 follow: GLB and glTF keep scene FPS and the timeline, FBX packs embedded textures,
 rejects external texture files and keeps the file's clip timing, OBJ leaves out
 maps that were not saved, and PLY says a file without splat data imports as a
-mesh. A last line says the files are checked again first. Every line stays
+mesh. A **Longest side** checkbox, off by default, enables a length field; when
+checked, a line says the group is scaled evenly with its bottom at the cursor.
+When the job edited a mesh still in the scene, a **Match <mesh>** checkbox comes
+first, on for shape-keeping tasks; it replaces the cursor and length lines with
+the mesh's bottom center and longest side.
+Changing either calls `check()`, which exchanges the approval for a new handle
+with the same scene, cursor and unit, as for splat options below. A last line
+says the files are checked again first. Every line stays
 within 66 characters, the longest line the earlier 480 px desktop capture
 showed. Drawing only reads the prepared values; cancel discards the approval.
 
@@ -225,7 +232,7 @@ quality or indexing.
 
 ## Saved mesh undo interaction
 
-The approval dialog explains that Keep original retains an unselected copy,
+The approval dialog explains that Keep original retains a hidden copy,
 Blender settings control undo, and history changes leave jobs and spending
 recorded. The shared command uses native history for every mesh policy;
 see [the contract](../MESH_APPLICATION.md#native-undo-for-saved-mesh-edits).
@@ -333,10 +340,10 @@ establish provider compatibility or existing-rig retargeting.
 
 The saved-mesh review offers **Apply animation**. It names the captured source
 and explains that the returned clips go onto this mesh's rig while its mesh and
-skin stay, that bone names, parents and rest pose must match and clips are
-scaled to the rig, that the first clip plays while it, the others and the
-previous action stay in NLA, that the returned character is not added and the
-timeline stays unchanged, and how Undo behaves. **Result coordinates** and
+skin stay, that matching bones take the keys and a humanoid clip is retargeted
+to the rig, that the first clip plays while it, the others and the previous
+action stay in NLA, that the returned character is not added and a default frame
+range fits the clip, and how Undo behaves. **Result coordinates** and
 **Keep original** are not shown because ANIMATE changes no mesh data. A skinned
 source starts on Apply animation for an Animate job or when it was requested,
 otherwise on Attach rig; choosing Apply animation for an unskinned mesh shows
@@ -344,4 +351,9 @@ otherwise on Attach rig; choosing Apply animation for an unskinned mesh shows
 read-only; the shared UI/MCP command implements the
 [animation contract](../MESH_APPLICATION.md#apply-returned-animation). When the
 keys were corrected for a rest difference, the job row then shows **Clips
-adjusted to this rig's rest pose by up to N°** until undo history changes.
+adjusted to this rig's rest pose by up to N°**, and for a retargeted clip
+**Clips retargeted from a Mixamo skeleton** (or another skeleton name), until
+undo history changes. A refused clip changes nothing; the job row shows
+**Animation not applied; the rig is unchanged** followed by the reason and what
+to change, such as **Rig the mesh again with Edit 3D > Rigging, then apply the
+animation again**.

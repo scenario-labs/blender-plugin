@@ -130,8 +130,10 @@ small stream that calls `recv_into` directly; a timed-out read consumes nothing,
 on plain and TLS sockets alike. Nothing touches the socket from another thread,
 so this behaves the same on every operating system and cannot reach a reused
 descriptor. A cancellation is final and never retryable, whether it is seen
-after a timeout or between chunks. DNS resolution, the TLS handshake and waiting
-for response headers still use the full socket timeout.
+after a timeout or between chunks. DNS resolution and waiting for response
+headers still use the full socket timeout. Connecting, the TLS handshake included,
+takes at most 5 seconds (`StoragePolicy.connect_timeout`) for each address of the
+DNS answer in turn, for downloads and upload parts alike.
 
 A download makes at most three attempts, waiting 1 second before the second and
 3 seconds before the third. Before every
@@ -276,6 +278,32 @@ choose between multiple texture sets/variants; texture-set choice is
 [#446](https://github.com/scenario-labs/blender-plugin/issues/446). A later
 material approval must select unambiguous assets and the intended mesh targets;
 role preservation alone does not authorize a scene mutation.
+
+## GLB format copies on demand
+
+Some 3D models also return their GLB as an OBJ with its MTL and one PNG per map, each
+naming the GLB as its `metadata.parentId` ([result parents](JOB_STORAGE.md#result-parents)).
+The GLB holds the same mesh with its maps embedded, so the manifest marks every OBJ, MTL
+and texture-role image whose parent is a GLB result of the same job as `on_demand`
+([schema 13](JOB_STORAGE.md#on-demand-copies)). Lineage decides, never a file
+name or size. When a result descends from one of those copies, nothing is marked; a job
+without that lineage, such as an OBJ package with no GLB, downloads every file.
+
+The job's download skips on-demand copies and the job is `ready` once every other result
+is saved. The copies stay in the manifest, so **Import alternate**, **Apply alternate
+mesh edit** and **Apply saved material** are offered as before. Preparing one of them
+checks the unit's members and resources, or the selected maps. When some are not saved,
+`ModelJobs` queues `ResultCommands.fetch` for them on the transfer lane and refuses the
+review with a note to choose the result again once the download finishes; MCP gets the
+same text as an error. Nothing is queued while Online Access is off.
+
+`fetch` holds the result transfer lock and requires a `ready`, `apply_failed` or
+`applied` job at its observed revision. Each copy is downloaded like a job result, with
+a fresh signed URL that is never saved, verified, and saved with `JobStore.record_fetch`,
+which keeps the job state. **Stop download** stops it like a job download. A stopped or
+failed fetch saves nothing partial and keeps the job state and earlier receipts;
+choosing the result again starts it again. Until a map is saved, the material byte
+limit counts its declared size and result previews leave it out.
 
 ## Declared HDR originals and 360 projection
 

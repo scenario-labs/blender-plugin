@@ -14,6 +14,7 @@ import pytest
 
 from scenario import __version__
 from scenario.core.api.sdk_adapter import (
+    CONNECT_TIMEOUT,
     ESTIMATE_STARTED_JOB,
     LOOP_NODE_FIELDS,
     MODEL_BULK_LIMIT,
@@ -271,6 +272,26 @@ def test_online_permission_is_rechecked_between_pages_and_for_estimates(adapter)
     with pytest.raises(AdapterError, match="Online access"):
         client.estimate_model(MODEL, {"prompt": "test"})
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(("timeout", "connect"), [(45.0, CONNECT_TIMEOUT), (2.0, 2.0)])
+def test_connecting_takes_at_most_the_connect_timeout_of_every_request(adapter, timeout, connect):
+    # A new connection tries each DNS address for this long: one that never accepts
+    # must not cost the whole request timeout.
+    seen = []
+
+    def handler(request):
+        seen.append(request.extensions["timeout"])
+        if request.method == "GET":
+            return httpx.Response(200, json={"model": MODEL})
+        return httpx.Response(200, content=QUOTE)
+
+    client = adapter(handler, timeout=timeout)
+    client.estimate_model(MODEL, {"prompt": "test"})
+    client.model("fixture-model")
+    expected = {"connect": connect, "read": timeout, "write": timeout, "pool": timeout}
+    assert CONNECT_TIMEOUT == 5.0
+    assert seen == [expected, expected]
 
 
 @pytest.mark.parametrize("failure", [307, 429, 500, "timeout"])

@@ -364,6 +364,14 @@ def test_relative_directory_links_use_github_tree_urls(inputs):
     assert 'href="https://github.com/scenario-labs/blender-plugin/tree/main"' in text
 
 
+def test_relative_links_can_point_to_a_release_tag(inputs):
+    inputs["source"].write_text("[Images](images)\n\n[Guide](guide.md)")
+    text = build_handbook(**inputs, ref="blender-plugin-v1.2.3").read_text()
+    base = "https://github.com/scenario-labs/blender-plugin"
+    assert f'href="{base}/tree/blender-plugin-v1.2.3/docs/images"' in text
+    assert f'href="{base}/blob/blender-plugin-v1.2.3/docs/guide.md"' in text
+
+
 @pytest.mark.parametrize("inline", [False, True])
 def test_rerender_removes_only_previously_generated_images(inputs, inline):
     output = build_handbook(**inputs)

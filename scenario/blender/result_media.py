@@ -938,9 +938,8 @@ class SCENARIO_OT_play_saved_audio(bpy.types.Operator):
     bl_idname = "scenario.play_saved_audio"
     bl_label = "Play saved audio"
     bl_description = (
-        "Play a verified private copy of this saved audio through Blender's audio engine, "
-        "in a separate offline Blender process; no other app opens, and nothing is "
-        "generated, downloaded or changed in the scene"
+        "Play this saved audio in a separate offline Blender process; no other app opens and "
+        "nothing is generated, downloaded or changed in the scene"
     )
     context_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     request_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})

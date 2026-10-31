@@ -136,9 +136,11 @@ unchanged; a later user change requires explicit review.
 
 Only local, non-overridden meshes in Object Mode are supported. Modifiers,
 constraints, vertex groups, shape keys, animation, armature/bone/vertex parenting,
-vertex-parented children, object material overrides and custom mesh properties are
-rejected. Generic attributes are limited to boolean, scalar float/integer, integer
-2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
+vertex-parented children, object material overrides and custom mesh properties that
+reference other data are rejected. Other custom mesh properties, such as the glTF
+extras Blender imports, stay on the edited mesh under every policy; a result's own
+are never adopted. Generic attributes are limited to boolean, scalar float/integer,
+integer 2D, float 2D/3D and float/byte color types. Other types fail closed. The saved
 command's [PARTS](#apply-static-parts) and [RIG](#attach-a-returned-rig) policies
 cover segmented parts and compatible skins; RIG also accepts a source
 [already skinned to an armature](#replace-an-existing-skin), and
@@ -157,7 +159,8 @@ imported result and downloaded files remain available for a local retry without
 rerunning generation.
 
 With **Keep original**, a duplicate object using the original mesh is linked into
-the source's collections with the same parenting/transforms. It becomes user-owned
+the source's collections with the same parenting/transforms, hidden in the viewport
+and renders so the edited mesh is what shows. It becomes user-owned
 once returned, remains accessible as `receipt.original`, and survives both accept
 and rollback. It shares the old mesh with any existing users; subsequent edits to
 that old mesh prevent automatic rollback.
@@ -177,12 +180,12 @@ targets by name.
 Rollback rechecks the supported object structure as well as source/scene membership,
 the applied mesh pointer, active material selection and fingerprints of both original
 and applied meshes. Adding modifiers, constraints, vertex groups, shape keys,
-animation, incompatible parenting, object material overrides or mesh custom properties
-requires explicit review before rollback. These guards protect topology-dependent
-data and metadata outside the fingerprint. A refusal leaves the receipt open;
-removing the added structure allows retry if the remaining guards still pass.
-The fingerprints cover geometry, supported generic attributes, UV layer roles
-and material slot bindings, so editing the applied mesh in place cannot silently
+animation, incompatible parenting or object material overrides requires explicit
+review before rollback. These guards protect topology-dependent data and metadata
+outside the fingerprint. A refusal leaves the receipt open; removing the added
+structure allows retry if the remaining guards still pass. The fingerprints cover
+geometry, supported generic attributes, UV layer roles, material slot bindings and
+custom mesh properties, so editing the applied mesh in place cannot silently
 lose user work. Shader node graph edits are outside that fingerprint and are
 never reverted. Rollback removes its unchanged staged mesh only when no other
 user owns it; it never removes the imported result or a mesh adopted by another
@@ -191,7 +194,9 @@ object.
 Fingerprinting is linear and runs on the main thread. A limit of 2,000,000 combined
 vertices, edges, loops, polygons and generic-attribute entries bounds each pass;
 this is a work cap, not a latency guarantee. Large meshes and unsupported data
-require another application path.
+require another application path. A [skinned](#replace-an-existing-skin) mesh over
+the cap is captured without its geometry and weights, and only ANIMATE, which
+changes neither, applies to it.
 
 ## Explicit saved GLB import
 
@@ -208,7 +213,10 @@ claim.
 [`glb.inspect_glb`](../scenario/core/scene/glb.py) checks the
 [GLB 2.0 container](https://github.com/KhronosGroup/glTF/blob/98015344c6a5f5a3a96686cbd77960a8b09f6276/specification/2.0/Specification.adoc)
 and the supported import policy before Blender runs. It requires one scene,
-one embedded binary buffer and no URI references. New-group imports retain skins
+one embedded binary buffer and no URI references. The buffer's `byteLength` may
+be shorter than its binary chunk: Viggle Text to Motion leaves unused bytes after
+the buffer, which glTF validators only warn about and importers never read; a
+buffer longer than its chunk is refused. New-group imports retain skins
 and node transform/morph-weight animations. Limits are 256 MiB of file bytes,
 8 MiB of JSON, 10,000 nodes, 10 million accessor entries, 128 skins, 128 animation
 clips and 10,000 total joints or animation channels. This is a bounded policy
@@ -241,12 +249,16 @@ can pause Blender. There is no automatic blend save.
 
 Native **Import GLB model (N)** or **Import alternate: GLB (N)** and MCP
 `prepare_result_application` with the unit's `asset_id` capture the scene
-revision and exact cursor. MCP can also bind a `target_size_m` to the approval:
+revision and exact cursor. MCP `target_size_m`, or the native review's
+**Longest side** option, binds a length to the approval:
 publication then scales the group root uniformly so the longest side of the mesh
 bounds, measured like the bottom center, has that length, and keeps the bottom
-center at the cursor. A model with no measurable size fails after the claim and
-is rolled back. Every import reports the group's measured world size and bottom
-height in MCP `model_import`. Approval is consumed once; worker verification,
+center at the cursor. The native review of a mesh unit from a job with one
+uploaded mesh source still live in the scene can instead match it: the length
+is that source's longest side and the bottom center lands on its bottom center.
+A model with no measurable size fails after the claim and is rolled back. Every
+import reports the group's measured world size and bottom height in MCP
+`model_import`. Approval is consumed once; worker verification,
 destination revalidation and the main-thread snapshot preflight precede the
 durable claim. The current scene must be local and in Object Mode both at
 preparation and after verification. Rejection before the claim, including a
@@ -301,12 +313,21 @@ disposable staging scene before publication. The destination's current animated
 pose does not change that anchor. Import leaves the
 current frame/subframe, frame range and frame rate unchanged. It does not shift
 clips to the current frame, extend the timeline or retarget animation to an
-existing rig ([ANIMATE](#apply-returned-animation) does that for a matching
-skeleton). Moving the new parent group moves the imported character together.
+existing rig ([ANIMATE](#apply-returned-animation) does that for a matching or
+humanoid skeleton). Moving the new parent group moves the imported character together.
 
 Armature construction requires the staging scene to own the active window and
 view layer while Blender's importer runs. The importer restores both afterward,
 including on failure, and disables generated bone-display helper geometry.
+Blender's glTF importer divides its guessed bone lengths by the armature object's
+scale, so a centimetre skeleton under a 0.01 scale, as Meshy Rigging returns,
+would draw bones a hundred times too long, In Front of the character.
+Each imported armature is redrawn at the character's size instead: a bone reaches
+its nearest child, a leaf takes its parent's length, none passes half the
+skeleton, and In Front is off. Only lengths change, never heads, directions or
+rolls, so rest matrices, weights, poses, clips and retargeting stay as imported;
+a bone with a connected child or B-Bone segments keeps its length. An object
+parented to a bone lands where the file puts it.
 Ordinary background Blender sessions retain an off-screen window and support
 that path. An explicitly windowless caller can import static models or apply a
 saved static mesh using its scene and view layer; rigged models are rejected
@@ -551,7 +572,7 @@ Splat** or node group named **Scenario Splat Points** is never reused or
 changed. Publication reuses the model group: a new **Scenario Model** collection
 and root with the bottom center of the decoded bounds at the cursor,
 `scenario_asset` and `scenario_assets`, and `scenario_splat_points` and
-`scenario_splat_kept` counts. An MCP `target_size_m` fits the longest side of
+`scenario_splat_kept` counts. A reviewed longest side fits the longest side of
 those decoded centre bounds, so the reported size, which includes point radii,
 can be slightly larger. Selection, the active object and the timeline stay
 unchanged. A failure removes only new objects, collections, meshes, materials
@@ -662,7 +683,7 @@ The source is revalidated immediately before replacement. Temporary imported
 objects are removed; RIG retains its armature/parent hierarchy and ANIMATE only
 its copied clips. Replacement
 material/image dependencies remain packed. Keep original
-retains a separate unselected copy, preserving the previous selection and active
+retains a separate hidden, unselected copy, preserving the previous selection and active
 object. Without it, the primitive may release the unchanged, unused original mesh.
 A returned result is finalized and contains the source, optional original and
 policy and whether a desktop undo checkpoint was recorded; it is not a persistent
@@ -693,8 +714,8 @@ Several captured sources claim their scene instead; the job's saved mesh-source
 binding lists those objects in order. `retry_model_receipt` records only known
 success, never another replacement. See [session
 ownership](BLENDER_JOB_CONTEXT.md#verified-saved-mesh-replacement). The command
-makes no service request. Retargeting across different skeletons is roadmap#674
-G14 work.
+makes no service request. ANIMATE retargets clips between
+[humanoid skeletons](#retarget-a-humanoid-clip) only.
 
 ## Saved mesh edit approval
 
@@ -789,7 +810,8 @@ Export, static or [skinned](#replace-an-existing-skin), retains a live
 and keys them by the exact upload origin and export metadata. Several objects
 are retained together only when every one can be captured and their meshes
 total at most 2,000,000 components; larger uploads are never fingerprinted for
-this guard. The action appears only while the guard is retained. Shared quotes
+this guard. One skinned object over that bound is retained for ANIMATE alone. The
+action appears only while the guard is retained. Shared quotes
 persist that upload binding in the generation intent. Review resolves only this
 retained guard, never an object name or a reconstructed match from disk. Retention
 compares the stored export digest with a fresh export fingerprint of the live
@@ -848,7 +870,7 @@ to none. **Apply mesh edit** still reviews only the active mesh.
   before any is published; a failed publication or binding restores the objects
   already changed only once every one is proven restorable, and otherwise
   restores none and reports the outcome uncertain. Keep original makes one
-  unselected copy per object. One pair of native undo checkpoints covers the
+  hidden copy per object. One pair of native undo checkpoints covers the
   whole application, and receipt-only recovery never applies it again.
 
 The approval's `target` is null and `targets` lists every object; after
@@ -888,6 +910,59 @@ acceptance remain outside this policy;
 [several captured objects](#several-captured-objects) are retextured together.
 Explicit remesh remains a separate reviewed choice when geometry replacement is
 intended.
+
+### Keep the source's texture on chosen faces
+
+A retexture model repaints the whole surface, and a character's face drifts with
+it. Replace textures can paint the source's own maps back on some faces after the
+result lands: **Keep texture** in the native review, `keep_texture` over MCP.
+
+- `SELECTED`: the faces selected in Edit Mode, read from the captured mesh in
+  Object Mode. Selecting every face, as an import does, is no selection.
+- `HEAD`: a character's head, found from the shape alone
+  (`core/scene/kept_texture.py`). Positions are welded so a mesh split at UV seams
+  is one surface again, and connected pieces are told apart: the piece that holds
+  the top and reaches lowest is the body. Its horizontal sections, read down from
+  the widest one in the top quarter, narrow to a neck and open again at the
+  shoulders or a collar within 30% of the height; the neck must be at most 0.85
+  of the head's widest section. Other pieces mostly above the neck, such as hair,
+  are kept whole and pieces mostly below it, such as a jacket and its collar, are
+  not. The body piece is kept whole when it is a head-and-neck shell, and is
+  otherwise cut at the neck with a band of 2% of the height. A mesh with no such
+  neck keeps nothing, and the review says so.
+- `NONE`: the result's texture everywhere.
+
+The review starts on `SELECTED` when some but not all faces are selected, else on
+`HEAD` when the captured sources stand like a character (0.5 to 3 m tall at the
+scene's unit scale and taller than their widest horizontal extent) and the Edit 3D
+form's **Keep the head's texture** is on, else on `NONE`, so a prop or a building
+never starts on `HEAD`; chosen explicitly, `HEAD` still needs a neck. The review's
+note names the kept faces, and the region is bound to the approval like the policy
+and coordinates: changing it reviews again.
+
+After the result's UVs and materials replace the source's, and before the edit is
+accepted, each new result image used by a kept face is painted: every texel under
+a kept face takes the source's map at the same surface point, sampled through the
+source's UVs (bilinear, repeating), and blended by a per-vertex weight interpolated
+across each face: 1 on kept faces, falling to 0 over 1% of the bounding-box
+diagonal along the surface around a selection, or over 2% of the height across a
+neck cut. Empty texels within 8 texels per
+2048 of a painted one take its colour, so mipmaps and filtering show no seam.
+Maps pair by their role in each material's Principled BSDF: base colour (same
+colour space only), tangent-space normal (only where the result keeps the source's
+UV layout, since the tangent frame follows it), and roughness and metallic, read
+from a Separate Color channel as glTF packs them or directly as a grey value. Only
+images this application created change; they are repacked losslessly as PNG, or
+OpenEXR for float images. Source materials and images are never written.
+`job_status` `mesh_edit.kept_texture` reports `mode`, `source` (`selection`,
+`head` or null), `faces`, the `maps` painted and the roles `skipped` with a reason.
+A failure rolls the whole application back.
+
+Results on the source's own UV layout, such as Meshy 7 Retexture with
+`enableOriginalUv`, which the Edit 3D form turns on, give every map back,
+normals included. A face whose result UVs overlap a repainted face's shares its
+texels, and the last one painted wins; a texture repeated outside 0 to 1 is
+painted at the wrapped texel.
 
 
 ## Native undo for saved mesh edits
@@ -973,7 +1048,7 @@ components above the existing synchronous limit. The source must have surface
 geometry; an empty parts anchor cannot receive another parts group. Select a
 child or the retained original for further mesh operations.
 
-Keep original retains an unselected copy of the previous source geometry. The
+Keep original retains a hidden copy of the previous source geometry. The
 shared guarded replacement swaps in empty geometry only after all parts pass
 validation; part publication and imported-data cleanup stay inside the same
 rollback boundary. A verified failure restores the captured source and removes
@@ -1032,8 +1107,7 @@ captured target and optional original-export target guards. Session status
 exposes `mesh_edit.rig`; history invalidation retires that status before
 dereferencing stale Blender data.
 [Apply returned animation](#apply-returned-animation) copies clips onto a
-matching existing rig; retargeting across different skeletons is roadmap#674 G14
-work.
+matching existing rig, or retargets a humanoid clip onto it.
 
 ### Replace an existing skin
 
@@ -1049,7 +1123,8 @@ modifier are rejected.
 The captured target adds the modifier's settings, vertex group names and lock
 flags, a digest of every vertex's weights, and the armature's identity, names,
 bone names, parents, rest matrices, lengths and deform flags and its world
-matrix. Weight entries and bones share the 2,000,000-component work cap. Any
+matrix. Weight entries and bones share the 2,000,000-component work cap; over it,
+or on a mesh over it, the weights are not captured and only ANIMATE applies. Any
 change makes the target stale before import. Posing or animating the bones does
 not: the glTF export excludes Armature modifiers when it applies modifiers, so
 the provider receives the unposed source mesh data without the old skin, and
@@ -1082,7 +1157,9 @@ instead.
 The explicit `ANIMATE` policy applies the clips of an Edit 3D **Animate** result
 to the rig of a source [skinned to an armature](#replace-an-existing-skin).
 Animate providers return a complete re-rigged character: one armature with its
-clips, usually with a skinned mesh. ANIMATE keeps the user's mesh, skin,
+clips, usually with a skinned mesh. Text-to-motion providers return a clip on
+their own humanoid skeleton instead, which is
+[retargeted](#retarget-a-humanoid-clip). ANIMATE keeps the user's mesh, skin,
 armature and object context, copies only the clips onto the armature that the
 source's Armature modifier uses, and adds none of the returned objects. Every
 mesh that armature deforms follows the clips. An unskinned source is rejected
@@ -1094,14 +1171,26 @@ validates the staged import before any change. The result must contain exactly
 one armature with at least one clip, plus optional meshes and Empties. Clips are
 the armature's active action and its NLA strips' actions, in that order. Each
 clip may key only pose-bone location, rotation and scale in the armature's own
-action slot, without F-Curve modifiers. Other animated objects, shape-key or
-armature-data animation and other channels are rejected rather than dropped.
+action slot, without F-Curve modifiers, and the location, rotation and scale of
+the armature object itself. Other animated objects, shape-key or armature-data
+animation and other channels are rejected rather than dropped. Keys on the
+armature object come from files whose skin leaves the scene root out of its
+joints, such as Uthana Text to Motion with its mannequin mesh: the root becomes
+the armature object and carries the walk. No bone can take that motion by name,
+so such clips are always [retargeted](#retarget-a-humanoid-clip), and refused
+for a rig that is not a humanoid.
 Every bone a clip animates must exist in the destination rig by name, with the
 same parent name, connection, rotation/scale inheritance and local location
 setting; rotated bones must use the same rotation mode. They must have no
 constraints, and no drivers on their location, rotation or scale, which would
 override the clips. Neither armature object may be mirrored, and the
-destination may not solo an NLA track, which keeps the clip from playing.
+destination may not solo an NLA track, which keeps the clip from playing. When
+names, hierarchy, rotation mode or rest pose do not match, the clips are
+[retargeted](#retarget-a-humanoid-clip) if both rigs are humanoid skeletons, and
+rejected with the first mismatch otherwise, followed by "Rig the mesh again with
+Edit 3D > Rigging, then apply the animation again". A refused clip leaves the
+rig as it was, and the job row says so: **Animation not applied; the rig is
+unchanged**, then the reason.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it, and keys pose each bone relative to its own rest. Each
@@ -1153,7 +1242,11 @@ none of them. The active action blends as Replace at full influence; existing
 NLA tracks and the extrapolation stay as they were. GLB and glTF clip timing
 follows the destination's effective frame rate through the
 [shared staging scene](#rigged-and-animated-model-import); FBX clips keep the
-file's. Frame range, current frame and frame rate stay unchanged.
+file's. A scene frame range still at Blender's default, 1 to 250 without a
+preview range, becomes the first clip's, rounded out to whole frames (ends
+within 0.001 of a frame count as on it), so the clip plays in full; a range the
+user set stays. The current frame and frame rate stay unchanged, and rollback
+restores the range.
 
 The captured target guards the rig's identity, bones, rest and transform, so a
 changed rig is stale before import; posing or animating it is not. Animation
@@ -1166,10 +1259,56 @@ follow the [saved mesh history](#native-undo-for-saved-mesh-edits). Session
 status reports the rig in `mesh_edit.rig`, the new clip names in
 `mesh_edit.clips` and the largest rest correction applied to an animated bone,
 in degrees rounded to 0.1, in `mesh_edit.rest_correction_deg` (null for other
-policies). A nonzero correction also shows **Clips adjusted to this rig's rest
-pose by up to N°** in the job row until undo history changes.
+policies and for retargeted clips). A nonzero correction also shows **Clips
+adjusted to this rig's rest pose by up to N°** in the job row until undo history
+changes. `mesh_edit.frame_range` gives the frame range the first clip set, or
+null when the scene kept its own. UI **Apply animation** and MCP
+`mesh_policy: ANIMATE` use the same captured target guards.
 
-Bones are matched by name only. Clips from a different skeleton, such as another
-provider's or a rig whose rest pose differs by more than 15 degrees, are
-rejected; retargeting them is roadmap#674 G14 work. UI **Apply animation** and
-MCP `mesh_policy: ANIMATE` use the same captured target guards.
+### Retarget a humanoid clip
+
+Text-to-motion models such as Uthana and Viggle animate their own skeleton, an
+Unreal or Mixamo one, and Meshy's text-to-motion an SMPL one. When bones do not
+match by name, [`motion_retarget.py`](../scenario/blender/motion_retarget.py)
+retargets the clips if both rigs are recognized humanoids:
+[`humanoid.py`](../scenario/core/scene/humanoid.py) names 22 body slots (hips,
+four spine and neck bones, head, shoulders, arms, forearms, hands, thighs, shins,
+feet and toes) for the Meshy, Mixamo, SMPL and Unreal bone conventions, after
+any `namespace:` prefix. Every slot bone must exist and descend from its parent
+slot's bone; two bones with the same name under different prefixes make a rig
+unrecognized. Other skeletons keep the name-matching error.
+
+Each slot bone takes the returned bone's world orientation, frame by frame,
+whatever the bone axes or rest pose. The two rest skeletons are aligned through
+a character frame built from their rest heads (up from the hips to the head,
+left from the right thigh to the left one), and each destination bone turns by
+the swing that takes its rest direction, head to child slot head, onto the
+returned one, so a T-pose clip plays on an A-pose rig. Hands, the head and toes
+follow their parent slot's swing. Feet only turn on the floor to meet the
+returned ones at rest, since both rests stand flat, so each foot keeps its own
+pitch however high its ankle sits, then follows the returned foot's turns. The
+clip's first frame gives the returned character's facing on the floor:
+orientations and root motion go through level character frames, so the
+character moves in its own facing wherever it stands. The hips move by the
+returned hips' travel since that first frame, scaled by the ratio of the two
+rigs' mean thigh plus shin lengths. One height for the whole clip then puts the
+feet on the rest floor, whether the clip starts with soft knees or raised heels:
+the median over frames of how far the lowest ankle or ball joint stands over its
+rest height on the rig, against how far it stands over its lowest height in the
+clip on the returned skeleton, scaled like the travel. When the clip also keys
+the returned armature object, its world transform is evaluated from those keys
+every frame, so its travel and turns reach the hips the same way; the destination
+rig object itself is never keyed.
+
+Every frame of the clip is sampled and keyed linearly into a new action: hips
+location and rotation, and every other slot's rotation in its bone's rotation
+mode, quaternion with sign continuity or Euler. Bones outside the slots, such as
+fingers, twist and face bones, keep their current pose, as does an extra rig
+bone between two slot bones. Slot bones and their ancestors
+must inherit rotation and scale with local location, on both rigs; slot bones
+may not use axis-angle rotation and, as above, may carry no constraints or
+drivers. Keys are not rest-corrected, so `mesh_edit.rest_correction_deg` is null
+and `mesh_edit.retargeted_from` names the returned skeleton (Meshy, Mixamo, SMPL
+or Unreal); the job row shows **Clips retargeted from a Mixamo skeleton**, for
+example. A rig whose own rest pose is wrong for its mesh, such as a forearm bone
+pointing away from the forearm, plays the clip wrong there too.

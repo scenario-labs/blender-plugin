@@ -4,18 +4,28 @@
 
 import os
 import textwrap
+from collections import Counter
 
 import bpy
-from bpy.props import EnumProperty, FloatProperty, IntProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    CollectionProperty,
+    EnumProperty,
+    FloatProperty,
+    IntProperty,
+    StringProperty,
+)
 
 from ..core.api.errors import ScenarioError
 from ..core.scene import panorama_contract
 from ..core.scene.splats import SplatError
-from ..core.ui.costs import format_cu
+from ..core.ui import reference_drop
+from ..core.ui.costs import format_cu, spend_confirmation
 from . import (
     apply_image,
     desktop,
     generation,
+    image_plane,
     label_wrap,
     panorama_lane,
     params_ui,
@@ -41,6 +51,30 @@ class SCENARIO_OT_test_connection(bpy.types.Operator):
             self.report({"ERROR"}, f"Scenario: {err.reason}")
             return {"CANCELLED"}
         self.report({"INFO"}, runtime.state.account_label)
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_allow_online_access(bpy.types.Operator):
+    bl_idname = "scenario.allow_online_access"
+    bl_label = "Allow Online Access"
+    bl_description = (
+        "Turn on Allow Online Access in Blender's System preferences so Scenario can connect"
+    )
+
+    @classmethod
+    def poll(cls, context):
+        if runtime.started_offline():
+            cls.poll_message_set(runtime.STARTED_OFFLINE)
+            return False
+        return True
+
+    def execute(self, context):
+        # The same switch as Blender's own button; the pump follows it on its next tick.
+        context.preferences.system.use_online_access = True
+        if not runtime.online():
+            self.report({"WARNING"}, runtime.STARTED_OFFLINE)
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Allow Online Access is on")
         return {"FINISHED"}
 
 
@@ -88,20 +122,83 @@ class SCENARIO_OT_retry_model(bpy.types.Operator):
         return {"CANCELLED"}
 
 
-class SCENARIO_OT_generate(bpy.types.Operator):
-    bl_idname = "scenario.generate"
-    bl_label = "Generate"
-    bl_description = "Submit this generation to Scenario"
-    lane: StringProperty(default="image")
+class SCENARIO_OT_estimate_again(bpy.types.Operator):
+    bl_idname = "scenario.estimate_again"
+    bl_label = "Estimate again"
+    bl_description = "Request a new price for this form after a failed one; pricing never spends"
+    lane: StringProperty(default="image", options={"HIDDEN"})
 
     @classmethod
     def poll(cls, context):
         return _network_poll(cls, context)
 
     def execute(self, context):
-        lane = props.effective_lane(context.scene, self.lane)
+        lane_state = context.scene.scenario.lane_state(self.lane)
+        if not generation.estimate_again_offered(lane_state):
+            return {"CANCELLED"}  # already priced, being priced or not priceable now
+        props.mark_estimate_dirty(lane_state)
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_price_without_capture(bpy.types.Operator):
+    bl_idname = "scenario.price_without_capture"
+    bl_label = "Price without captured source"
+    bl_description = (
+        "Price this uploaded mesh on its own; its result cannot be applied back to the objects "
+        "it came from"
+    )
+    lane: StringProperty(default="image", options={"HIDDEN"})
+
+    @classmethod
+    def poll(cls, context):
+        return _network_poll(cls, context)
+
+    def execute(self, context):
         try:
-            rec = generation.submit_generation(context, lane)
+            generation.price_without_capture(context.scene, self.lane)
+        except ScenarioError as error:
+            self.report({"WARNING"}, error.reason)
+            return {"CANCELLED"}
+        self.report({"INFO"}, "Pricing without the captured source")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_generate(bpy.types.Operator):
+    bl_idname = "scenario.generate"
+    bl_label = "Generate"
+    bl_description = "Submit this generation to Scenario"
+    # Not REGISTER (nor UNDO): Blender keeps only those in the operator history that Repeat
+    # Last and Repeat History run again, which would spend without a click or confirmation.
+    bl_options = set()
+    lane: StringProperty(default="image")
+
+    @classmethod
+    def poll(cls, context):
+        return _network_poll(cls, context)
+
+    def invoke(self, context, event):
+        """Above the "Confirm generations above" preference, name the model and exact price first."""
+        lane = props.effective_lane(context.scene, self.lane)
+        review = generation.spend_review(context.scene, lane, generation.confirm_threshold())
+        if review is None:
+            return self.execute(context)
+        self._review = review
+        title, message = spend_confirmation(review.model, review.cost)
+        return context.window_manager.invoke_confirm(
+            self, event, title=title, message=message, confirm_text="Generate"
+        )
+
+    def execute(self, context):
+        lane = props.effective_lane(context.scene, self.lane)
+        # Set by invoke's confirmation: only the quote it named may be spent.
+        review = getattr(self, "_review", None)
+        self._review = None
+        try:
+            rec = generation.submit_generation(context, lane, review=review)
+        except generation.PriceRefreshing as err:
+            # Nothing was sent and the form shows its new price shortly: no error to keep.
+            self.report({"WARNING"}, err.reason)
+            return {"CANCELLED"}
         except ScenarioError as err:
             context.scene.scenario.lane_state(lane).last_error = err.reason
             self.report({"ERROR"}, err.reason)
@@ -142,19 +239,110 @@ class SCENARIO_OT_add_reference(bpy.types.Operator):
 
     def execute(self, context):
         lane_state = context.scene.scenario.lane_state(self.lane)
-        ref = lane_state.references.add()
-        ref.param_name, ref.source = self.param_name, self.source
-        if self.source == "FILE":
-            ref.filepath = self.filepath
-            ref.label = os.path.basename(self.filepath)
-            from .reference_uploads import note_chosen_file
-
-            # Chosen in the file browser: local MCP may upload it (an agent's call may not add it).
-            note_chosen_file(self.filepath)
-        else:
-            ref.label = {k: v for k, v, _ in props.REFERENCE_SOURCES}[self.source]
-        props.mark_estimate_dirty(lane_state)
+        add_reference(lane_state, self.param_name, self.source, self.filepath)
         return {"FINISHED"}
+
+
+def add_reference(lane_state, param_name, source, filepath=""):
+    """Add one reference to a lane form, as its Add buttons and a sidebar drop do."""
+    ref = lane_state.references.add()
+    ref.param_name, ref.source = param_name, source
+    if source == "FILE":
+        ref.filepath = filepath
+        ref.label = os.path.basename(filepath)
+        from .reference_uploads import note_chosen_file
+
+        # Chosen in the file browser or dropped: local MCP may upload it (an agent's call may not add it).
+        note_chosen_file(filepath)
+    else:
+        ref.label = {k: v for k, v, _ in props.REFERENCE_SOURCES}[source]
+    props.mark_estimate_dirty(lane_state)
+    return ref
+
+
+def drop_input(scene):
+    """The current form and the image input a dropped file joins, or None."""
+    lane = props.effective_lane(scene)
+    lane_state = scene.scenario.lane_state(lane)
+    if lane_state is None:
+        return None
+    schema = generation.schema_for(lane_state.model_id)
+    if schema is None:
+        return None
+    counts = Counter(ref.param_name for ref in lane_state.references)
+    name = reference_drop.image_input(lane, schema.specs, counts)
+    return None if name is None else (lane_state, name)
+
+
+def drop_target(context):
+    """Where a file dropped in `context` goes: only the Scenario tab of a 3D View sidebar.
+
+    Drops anywhere else, the viewport and the composer included, stay Blender's.
+    Reads the form and the cached model only, so file handlers can poll it while
+    the pointer moves.
+    """
+    area, region = context.area, context.region
+    if (
+        area is None
+        or area.type != "VIEW_3D"
+        or region is None
+        or region.type != "UI"
+        or getattr(region, "active_panel_category", None) != "Scenario"
+    ):
+        return None
+    return drop_input(context.scene)
+
+
+class SCENARIO_OT_drop_reference(bpy.types.Operator):
+    bl_idname = "scenario.drop_reference"
+    bl_label = "Add as Scenario reference"
+    bl_description = "Add dropped images as references of the current Scenario form"
+    bl_options = {"INTERNAL"}
+    directory: StringProperty(subtype="DIR_PATH", options={"HIDDEN", "SKIP_SAVE"})
+    files: CollectionProperty(
+        type=bpy.types.OperatorFileListElement, options={"HIDDEN", "SKIP_SAVE"}
+    )
+    filepath: StringProperty(subtype="FILE_PATH", options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        return self.execute(context)
+
+    def execute(self, context):
+        paths = [os.path.join(self.directory, item.name) for item in self.files if item.name]
+        if not paths and self.filepath:
+            paths = [self.filepath]
+        added = 0
+        for path in paths:
+            if not reference_drop.is_image_file(path) or not os.path.isfile(path):
+                continue
+            target = drop_input(context.scene)
+            if target is None:
+                break
+            add_reference(*target, "FILE", path)
+            added += 1
+        if not added:
+            self.report({"WARNING"}, "No reference added: no image input of this form has room")
+            return {"CANCELLED"}
+        noun = "reference" if added == 1 else "references"
+        left = len(paths) - added
+        self.report({"INFO"}, f"Added {added} {noun}" + (f"; {left} not added" if left else ""))
+        return {"FINISHED"}
+
+
+class SCENARIO_FH_reference_drop(bpy.types.FileHandler):
+    """Images dropped on the Scenario sidebar join the current form's image input."""
+
+    bl_idname = "SCENARIO_FH_reference_drop"
+    bl_label = "Scenario reference"
+    bl_import_operator = "scenario.drop_reference"
+    bl_file_extensions = ";".join(reference_drop.IMAGE_EXTENSIONS)
+
+    @classmethod
+    def poll_drop(cls, context):
+        try:
+            return drop_target(context) is not None
+        except Exception:
+            return False  # A failed check leaves the drop to Blender.
 
 
 class SCENARIO_OT_remove_reference(bpy.types.Operator):
@@ -245,13 +433,23 @@ class SCENARIO_OT_add_plane(bpy.types.Operator):
     bl_description = "Add a view-facing plane at the 3D cursor with this image (Object Mode)"
     bl_options = {"REGISTER", "UNDO"}
     filepath: StringProperty()
+    unlit: BoolProperty(
+        name="Unlit",
+        description="Show the image's own colours, unaffected by scene lights",
+    )
 
     @classmethod
     def poll(cls, context):
         return context.mode == "OBJECT"
 
     def execute(self, context):
-        apply_image.add_as_plane(context, apply_image.load_image(self.filepath))
+        # The image's alpha, when its header declares one, makes the plane transparent.
+        apply_image.add_as_plane(
+            context,
+            apply_image.load_image(self.filepath),
+            alpha=image_plane.file_alpha(self.filepath),
+            unlit=self.unlit,
+        )
         return {"FINISHED"}
 
 
@@ -261,7 +459,13 @@ class SCENARIO_OT_retile_material(bpy.types.Operator):
     bl_description = "Scale the UV mapping of a Scenario material"
     bl_options = {"REGISTER", "UNDO"}
     material_name: StringProperty()
-    scale: FloatProperty(name="Tiling", default=1.0, min=0.01, max=100.0)
+    scale: FloatProperty(
+        name="Tiling",
+        default=1.0,
+        min=0.01,
+        max=100.0,
+        description="How many times the material repeats across the UVs; higher gives smaller tiles",
+    )
 
     def invoke(self, context, event):
         return context.window_manager.invoke_props_dialog(self)
@@ -506,7 +710,7 @@ class SCENARIO_OT_result_details(bpy.types.Operator):
         row.label(text=panels._short_prompt(rec, 60), icon=panels.KIND_ICON.get(rec.kind, "FILE"))
         row.label(text=f"{format_cu(rec.cu_cost)} CU" if rec.cu_cost is not None else rec.status)
         row = header.row(align=True)
-        row.label(text=rec.meta.get("model_name") or rec.model_id, icon="NODE_MATERIAL")
+        row.label(text=panels.result_model_name(rec), icon="NODE_MATERIAL")
         row.label(text=rec.status, icon="CHECKMARK" if rec.is_success else "ERROR")
         if rec.meta.get("prompt"):
             op = row.operator("scenario.copy_text", text="", icon="COPYDOWN")
@@ -609,8 +813,12 @@ def _first_image_spec(schema):
     return (arrays or specs or [None])[0]
 
 
-def _add_file_reference(context, lane, filepath, param_name=None):
-    """Attach a local image to the first image input of the lane's current model; returns the parameter name or None."""
+def _add_file_reference(context, lane, filepath, param_name=None, saved=None):
+    """Attach a local image to the first image input of the lane's current model; returns the parameter name or None.
+
+    With `saved`, the (record, result) of a verified saved image, the slot holds that result's
+    own Scenario asset instead of the file, so nothing is uploaded again.
+    """
     scene = context.scene
     lane_state = scene.scenario.lane_state(lane)
     schema = generation.schema_for(lane_state.model_id)
@@ -632,13 +840,31 @@ def _add_file_reference(context, lane, filepath, param_name=None):
         for index in range(len(lane_state.references) - 1, -1, -1):
             if lane_state.references[index].param_name == spec.name:
                 lane_state.references.remove(index)  # a single input holds one file
+    from . import first_frame_handoff, reference_form
+
     ref = lane_state.references.add()
-    ref.param_name, ref.source, ref.filepath, ref.label = (
-        spec.name,
-        "FILE",
-        filepath,
-        os.path.basename(filepath),
-    )
+    store = runtime.state.job_store
+    if (
+        saved is not None
+        and store is not None
+        and reference_form.input_kind(lane_state, spec.name) == "image"
+    ):
+        record, item = saved
+        ref.param_name, ref.source, ref.asset_id, ref.filepath = (
+            spec.name,
+            "ASSET",
+            item.asset.asset_id,
+            "",
+        )
+        ref.label = f"{item.asset.name} (saved result)"
+        first_frame_handoff.mark_saved_result(ref, store.scope, record, item)
+    else:
+        ref.param_name, ref.source, ref.filepath, ref.label = (
+            spec.name,
+            "FILE",
+            filepath,
+            os.path.basename(filepath),
+        )
     props.mark_estimate_dirty(lane_state)
     return spec.name
 
@@ -666,18 +892,25 @@ class SCENARIO_OT_use_as_reference(bpy.types.Operator):
     bl_description = "Send this image to another lane as a reference and open that lane"
     filepath: StringProperty()
     target: EnumProperty(items=REFERENCE_TARGETS, default="3d")
+    # The saved job the image came from: its verified asset is reused instead of an upload.
+    local_id: StringProperty(options={"HIDDEN"})
 
     def execute(self, context):
         if not os.path.exists(self.filepath):
             self.report({"ERROR"}, "File not found")
             return {"CANCELLED"}
+        from . import first_frame_handoff
+
+        saved = first_frame_handoff.saved_reference(
+            runtime.state.job_store, self.local_id, self.filepath
+        )
         scene = context.scene
         lane = self.target
         if lane == "3d":
             scene.scenario.three_d_mode = "IMAGE"
         scene.scenario.lane = lane
         try:
-            name = _add_file_reference(context, lane, self.filepath)
+            name = _add_file_reference(context, lane, self.filepath, saved=saved)
         except ScenarioError as error:
             self.report({"ERROR"}, error.reason)
             return {"CANCELLED"}
@@ -891,6 +1124,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
             item = lane_state.params[index]
             if spec.name not in rec.body:
                 item.enabled = bool(spec.required_always)
+                if spec.ptype == "boolean":
+                    # The job left it to the service, whatever a curated start gave the form.
+                    item.bool_value = bool(spec.default)
                 continue
             value = rec.body[spec.name]
             item.enabled = True
@@ -906,6 +1142,9 @@ class SCENARIO_OT_reload_generation(bpy.types.Operator):
                     item.int_value = int(value)
                 else:
                     item.float_value = float(value)
+                choices = [i[0] for i in catalog.choice_items(rec.model_id, spec.name)]
+                if choices:
+                    item.enum_value = str(value) if str(value) in choices else catalog.OTHER_CHOICE
             elif spec.ptype == "boolean":
                 item.bool_value = bool(value)
             else:
@@ -1156,8 +1395,8 @@ class SCENARIO_OT_mcp_connect(bpy.types.Operator):
     bl_idname = "scenario.mcp_connect"
     bl_label = "Connect"
     bl_description = (
-        "Add the scenario-blender server, with this Blender's URL, to this client's "
-        "configuration file. Other servers are kept and the previous file is copied beside it first"
+        "Add this Blender's scenario-blender server to the client's configuration file, keeping "
+        "its other servers and a backup of the previous file"
     )
     client: StringProperty(default="claude_code")
 
@@ -1251,10 +1490,15 @@ CLASSES = (
     SCENARIO_OT_history_older,
     SCENARIO_OT_import_result,
     SCENARIO_OT_test_connection,
+    SCENARIO_OT_allow_online_access,
     SCENARIO_OT_refresh_catalog,
     SCENARIO_OT_retry_model,
+    SCENARIO_OT_estimate_again,
+    SCENARIO_OT_price_without_capture,
     SCENARIO_OT_generate,
     SCENARIO_OT_add_reference,
+    SCENARIO_OT_drop_reference,
+    SCENARIO_FH_reference_drop,
     SCENARIO_OT_remove_reference,
     SCENARIO_OT_toggle_multi,
     SCENARIO_OT_open_output_folder,

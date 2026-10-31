@@ -69,7 +69,7 @@ def check(document, data, static_only):
     (json_length,) = struct.unpack_from("<I", data, 12)
     (binary_length,) = struct.unpack_from("<I", data, 20 + json_length)
     (buffer,) = document["buffers"]
-    assert type(buffer["byteLength"]) is int and 0 <= binary_length - buffer["byteLength"] <= 3
+    assert type(buffer["byteLength"]) is int and 0 <= buffer["byteLength"] <= binary_length
     counts = [accessor["count"] for accessor in document.get("accessors", [])]
     assert all(type(count) is int and count >= 1 for count in counts)
     assert sum(counts) <= MAX_ACCESSOR_ENTRIES

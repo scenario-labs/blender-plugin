@@ -16,12 +16,23 @@ from mathutils import Matrix
 from ..core.api.catalog import GENERATION_LANES, LANE_KIND
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import ESTIMATE_STARTED_JOB, AdapterError, EstimateStartedJob
-from ..core.jobs import failures, progress, reconcile, refresh_backoff, workflow_nodes
+from ..core.history import result_kind
+from ..core.jobs import (
+    failures,
+    progress,
+    quote_refresh,
+    reconcile,
+    refresh_backoff,
+    workflow_nodes,
+)
 from ..core.jobs.coordinator import (
     UNCONFIRMED,
     CancellationUnsupported,
     DecisionRefused,
     DecisionUncertain,
+    DuplicateRequestError,
+    QuoteError,
+    QuoteExpired,
     RecoveryError,
     RemoteSnapshot,
     cancellable_job,
@@ -39,9 +50,13 @@ from ..core.jobs.store import (
     _identity,
 )
 from ..core.jobs.workers import WorkerError
-from ..core.scene import panorama_contract, placement
+from ..core.scene import landing, material_tiling, panorama_contract, placement
+from ..core.scene.kept_texture import AUTO as KEEP_AUTO
+from ..core.scene.kept_texture import MODES as KEEP_MODES
+from ..core.scene.kept_texture import NONE as KEEP_NONE
 from ..core.scene.mesh_edit_policy import (
     SEVERAL_SOURCES_FALLBACK,
+    TASK_POLICIES,
     animate_policy,
     default_policy,
 )
@@ -50,14 +65,22 @@ from ..core.scene.panorama import is_world_size, world_candidate
 from ..core.scene.splats import SplatCancelled, SplatOptions
 from ..core.ui.costs import workflow_quote_notice
 from ..core.ui.saved_job_actions import NATIVE_ONLY, WorkflowSteps
-from . import file_state, first_frame_handoff
+from . import file_state, first_frame_handoff, kept_texture
 from .blockout_jobs import MODEL as BLOCKOUT_MODEL
 from .job_session import (
     ImageResultUncertain,
+    LandingResultUncertain,
     MaterialResultUncertain,
     MediaResultUncertain,
     ModelResultUncertain,
+    OriginUnavailable,
+    SessionBusy,
     WorldResultUncertain,
+)
+from .landing_application import (
+    LandingApplicationError,
+    scene_camera,
+    validate_plane_destination,
 )
 from .material_application import MaterialApplicationError, capture_target, selected_maps
 from .material_application import validate_target as validate_material_target
@@ -77,6 +100,7 @@ from .model_application import (
     ModelPreflightError,
     import_plan,
     importable,
+    source_fit,
     worker_prepared,
 )
 from .model_application import validate_destination as validate_model_destination
@@ -91,6 +115,12 @@ CANCEL_UNSUPPORTED = (
 )
 # A download the user stopped: nothing partial was saved and Resume starts it again.
 DOWNLOAD_STOPPED = "Download stopped; nothing partial was saved. Resume download starts it again"
+# A chosen result whose OBJ, MTL or maps wait for an explicit fetch (FilesDownloading).
+FILES_DOWNLOADING = (
+    "Downloading the {count} this result needs. Choose it again when the download finishes"
+)
+FETCH_STOPPED = "Download stopped; nothing partial was saved. Choose the result again to restart it"
+FETCH_FAILED = "The files this result needs did not download; choose it again to retry"
 # Shared by the native World operator and MCP prepare_result_application.
 NOT_WORLD_SIZE = "This saved image is not a 2:1 panorama within the World pixel limit"
 # Native review notes for a submission Scenario never confirmed; MCP keeps the error.
@@ -108,6 +138,7 @@ REFRESH_RETRYING = "Status not refreshed; retrying"
 # FBX clips keep the file's frame rate in a model import or a RIG/ANIMATE edit.
 FRAME_RATE_NOTICE = "Clips keep the file's frame rate, which differs from the scene's"
 CANCEL_NOT_SENT = "Cancel not sent; the job keeps running"
+FILES_FETCHING = "Downloading the files a chosen result needs"
 CANCEL_UNCONFIRMED = "Cancel not confirmed yet; checking the job's status"
 # Delivery pauses with this once refresh_backoff.FAILURE_CEILING refreshes in a row failed.
 REFRESH_STOPPED = (
@@ -145,6 +176,45 @@ class AutomaticEstimatesStopped(ScenarioError):
             f"{error}. Automatic prices are off until Blender restarts; once that job finishes, "
             "save it from history.",
         )
+
+
+class FilesDownloading(ScenarioError):
+    """A chosen result needs on-demand copies: their download started, nothing was reviewed."""
+
+    def __init__(self, count):
+        files = "file" if count == 1 else f"{count} files"
+        super().__init__(0, FILES_DOWNLOADING.format(count=files))
+
+
+class NothingSent(ScenarioError):
+    """Generate was refused before anything could be sent, and nothing needs review.
+
+    Either nothing was saved, or the saved intent was canceled locally because it
+    was never queued. `note` says why the form is priced again.
+    """
+
+    note = quote_refresh.NOT_QUEUED
+
+    def __init__(self, reason):
+        super().__init__(0, reason)
+
+
+class QuoteRevoked(NothingSent):
+    """The scene changed after this price: refused before the quote was consumed."""
+
+    note = quote_refresh.SCENE_CHANGED
+
+    def __init__(self):
+        super().__init__("The scene changed after this estimate; estimate again")
+
+
+class PriceExpired(NothingSent):
+    """The price expired before Generate could save it: nothing was saved or sent."""
+
+    note = quote_refresh.EXPIRED
+
+    def __init__(self):
+        super().__init__("This price expired; nothing was sent")
 
 
 def automatic_estimates_stopped():
@@ -291,6 +361,8 @@ class ModelQuote:
     quote: object = field(default=None, repr=False)
     used: bool = False
     operation: str = "model"
+    # The scene revision the inputs were read from; see ModelJobs.quote_current.
+    origin: object = field(default=None, repr=False)
 
 
 @dataclass(frozen=True)
@@ -357,12 +429,52 @@ class MediaApplicationApproval:
 
 
 @dataclass(frozen=True)
+class LandingApplicationApproval:
+    """One reviewed camera background or image plane for a saved image or video.
+
+    A background binds the scene's camera, and a video background the current
+    frame its clip starts at; a plane binds the cursor and its unlit choice.
+    `backgrounds` counts the camera's existing backgrounds, which all stay.
+    """
+
+    identifier: str
+    record: StoredJob
+    destination: JobOrigin
+    scene_name: str
+    asset_id: str
+    purpose: str
+    kind: str
+    frame: int | None = None
+    cursor: tuple | None = None
+    camera_name: str = ""
+    backgrounds: int = 0
+    unlit: bool = False
+
+
+@dataclass(frozen=True)
+class SourceFit:
+    """Where the live mesh a job edited stands, measured when its import is reviewed.
+
+    `bottom` is its world bounds' bottom center and `size` their longest side.
+    `suggested` marks a shape-keeping edit (Remesh, Retexture, UV Unwrap, Parts),
+    whose import starts out matching it.
+    """
+
+    name: str
+    bottom: tuple
+    size: float
+    suggested: bool = False
+
+
+@dataclass(frozen=True)
 class ModelApplicationApproval:
     """One reviewed import unit; `asset_id` is its key, the primary member's ID.
 
     SPZ, .splat and PLY units also carry the reviewed point limit and saved axes;
     mesh units leave both None. `target_size` is the reviewed longest side in
-    Blender units, or None to keep the saved size.
+    Blender units, or None to keep the saved size. A mesh unit of a job that
+    edited a live mesh carries that `source`; with `match_source` the import
+    lands on it at its size instead of at the cursor.
     """
 
     identifier: str
@@ -376,10 +488,17 @@ class ModelApplicationApproval:
     max_points: int | None = None
     axes: str | None = None
     target_size: float | None = None
+    source: SourceFit | None = None
+    match_source: bool = False
 
     @property
     def splat_options(self):
         return None if self.max_points is None else SplatOptions(self.max_points, self.axes)
+
+    @property
+    def placement(self):
+        """Where the group's bottom center lands: the source's when matching it, else the cursor."""
+        return self.source.bottom if self.match_source else self.cursor
 
 
 @dataclass(frozen=True)
@@ -398,6 +517,8 @@ class WorldApplicationApproval:
 
 @dataclass(frozen=True)
 class MaterialApplicationApproval:
+    """One reviewed material slot; `tile_size` is the metres one texture repeat spans."""
+
     identifier: str
     record: StoredJob
     destination: JobOrigin
@@ -406,6 +527,12 @@ class MaterialApplicationApproval:
     target: object = field(repr=False)
     roles: tuple
     kind: str = "material"
+    tile_size: float = material_tiling.DEFAULT_TILE_SIZE_M
+
+    @property
+    def projection(self):
+        """Box projection for a mesh without UVs, else the mesh's active UV map."""
+        return material_tiling.UV if self.target.uv_name else material_tiling.BOX
 
 
 @dataclass(frozen=True)
@@ -436,21 +563,60 @@ class MeshApplicationApproval:
     format: str = "glb"
     # Every target object's name, in capture order.
     target_names: tuple = ()
+    # Where RETEXTURE keeps the source's own texture: SELECTED, HEAD or NONE, and
+    # the region resolved on the captured sources (None for other policies).
+    keep_texture: str = KEEP_NONE
+    kept: object = field(default=None, repr=False)
 
     @property
     def targets(self):
         return self.target if isinstance(self.target, tuple) else (self.target,)
 
 
+LABELS = ("prompt", "model_name")
+
+
+def labels(views):
+    """The prompts and model names these saved-job views show, by request ID."""
+    found = {}
+    for view in views:
+        label = {key: view.meta[key] for key in LABELS if view.meta.get(key)}
+        if view.meta.get("shared_job") and label:
+            found[view.local_id] = label
+    return found
+
+
+def listed_lane(record):
+    """The lane and kind of a saved job's view when the store lists it.
+
+    A job saved with its lane (schema 13) shows that form's kind, so its row
+    offers what the submitting session's row did. One saved without a lane, by
+    an earlier schema or as a cloud read, is a generic model view of the kind its
+    saved results establish, or of none before they are known.
+    """
+    if record.intent.operation == "workflow":
+        return "workflow", "workflow"
+    lane = record.intent.lane
+    if lane in LANE_KIND:
+        return lane, LANE_KIND[lane]
+    if lane == "film":
+        return lane, lane
+    return "model", result_kind(tuple(item.asset for item in record.results)) or "model"
+
+
 class ModelJobs:
     """Own ephemeral quotes and display projections, never another job engine."""
 
-    def __init__(self, session, store, *, online=lambda: True):
+    def __init__(self, session, store, *, online=lambda: True, labels=None):
         self.session = session
         self.store = store
         self.quotes = {}
         self.submissions = {}
         self.views = {}
+        # request_id -> the prompt and model name an earlier owner of this scope
+        # showed this session. The store keeps no prompt, so an inspected job
+        # shows one only from here; otherwise its row names its model. Memory only.
+        self._labels = {} if labels is None else labels
         self._bindings = {}
         self._online = online
         # Online Access as the main thread last saw it. `wait` runs on the MCP
@@ -474,9 +640,15 @@ class ModelJobs:
         self._images = {}
         self._receipts = {}
         self._automatic_application = set()
+        # request_id -> destination-only origin of the scene an Image job was
+        # submitted from: scene edits keep its automatic import, Undo/Redo, file
+        # loading or removing the scene stop it for review. Read only while the
+        # job is in _automatic_application. Memory only.
+        self._automatic_destinations = {}
         self._application_approvals = {}
         self._application_destinations = {}
         self._media_destinations = {}
+        self._landing_destinations = {}
         self._model_destinations = {}
         self._objects = {}
         self._world_destinations = {}
@@ -503,9 +675,10 @@ class ModelJobs:
         # again for the same receipt. `_world_read` is the (task, targets) in flight.
         self._world_sizes = {}
         self._world_read = None
-        # Verified local files of the jobs MCP job_status asked about, checked on
-        # the preview lane against their saved receipts. Memory only; it follows
-        # the saved store, so a restarted job is checked like a current one.
+        # Verified local files of the jobs MCP job_status asked about and of image
+        # rows, checked on the preview lane against their saved receipts.
+        # Memory only; it follows the saved store, so a restarted job is checked
+        # like a current one.
         self._files = ResultFiles()
         # request_id -> number of `wait` calls on MCP HTTP workers waiting for it.
         self._file_waits = {}
@@ -603,7 +776,14 @@ class ModelJobs:
             identifier, json.loads(snapshot), origin=origin
         )
         quote = ModelQuote(
-            uuid.uuid4().hex, identifier, scene, snapshot, task, lane=lane, operation=operation
+            uuid.uuid4().hex,
+            identifier,
+            scene,
+            snapshot,
+            task,
+            lane=lane,
+            operation=operation,
+            origin=origin,
         )
         self.quotes[quote.identifier] = quote
         return quote
@@ -626,6 +806,10 @@ class ModelJobs:
                 raise
         return ticket.quote.estimate
 
+    def quote_current(self, ticket):
+        """Whether the scene this quote's inputs were read from is unchanged; memory only."""
+        return ticket.origin is not None and self.session.origin_current(ticket.origin)
+
     def require_quote(self, quote_id):
         ticket = self.quotes.get(quote_id) if isinstance(quote_id, str) else None
         if ticket is None or ticket.used:
@@ -634,6 +818,10 @@ class ModelJobs:
 
     def submit(self, quote_id, scene, model_id, body, *, approved_cost, meta=None, lane="image"):
         ticket = self.require_quote(quote_id)
+        if not self.quote_current(ticket):
+            # The coordinator would refuse it too; nothing is saved or sent.
+            ticket.used = True
+            raise QuoteRevoked()
         estimate = self.finish_quote(ticket)
         if (
             ticket.operation != "model"
@@ -644,6 +832,9 @@ class ModelJobs:
             or approved_cost != str(estimate.cost)
         ):
             raise ScenarioError(0, "The request or approved cost changed; estimate again")
+        # Image results import into the scene they were generated from, whatever
+        # is edited there meanwhile; the quote itself stays bound to its revision.
+        destination = self.session.capture_destination(scene) if lane == "image" else None
         # Consumption precedes persistence: an error may occur after a committed
         # write. A second click must never prepare another intent from this quote.
         ticket.used = True
@@ -653,6 +844,8 @@ class ModelJobs:
             kind=LANE_KIND[lane],
             meta=meta,
             binding=JobBinding(scene.session_uid, lane),
+            destination=destination,
+            withdraw=True,
         )
 
     def submit_workflow(self, quote_id, scene, workflow_id, body, *, approved_cost):
@@ -691,10 +884,33 @@ class ModelJobs:
             raise ScenarioError(0, "Approve a Film task's unchanged exact price")
         return self._submit_quote(quote, lane="film", kind="film")
 
-    def _submit_quote(self, quote, *, lane, kind, meta=None, binding=None):
+    def _submit_quote(
+        self, quote, *, lane, kind, meta=None, binding=None, destination=None, withdraw=False
+    ):
+        """Save and queue one approved quote.
+
+        With `withdraw`, a refusal that leaves nothing to review raises NothingSent:
+        a full session or a refused quote before anything is saved, or a queue
+        refusal whose saved intent is then canceled locally.
+        """
         estimate = quote.estimate
         model_id = estimate.target_id
-        prepared = self.session.prepare_quote(quote)
+        try:
+            prepared = self.session.prepare_quote(quote, lane=lane)
+        except SessionBusy:
+            if not withdraw:
+                raise
+            raise NothingSent(
+                "Blender is still finishing other job steps; nothing was sent"
+            ) from None
+        except (QuoteError, OriginUnavailable) as error:
+            # Both are raised before an intent is saved, so nothing needs review.
+            # An unconfirmed twin stays itself: a new price cannot clear it.
+            if not withdraw or isinstance(error, DuplicateRequestError):
+                raise
+            if isinstance(error, QuoteExpired):
+                raise PriceExpired() from None
+            raise NothingSent("This price no longer applies; nothing was sent") from None
         view = JobRecord(
             local_id=prepared.intent.request_id,
             lane=lane,
@@ -713,15 +929,40 @@ class ModelJobs:
         view.meta["shared_job"] = True
         if lane == "image":
             self._automatic_application.add(view.local_id)
+            if destination is not None:
+                self._automatic_destinations[view.local_id] = destination
         try:
             task = self.session.submit(
                 prepared, operation=estimate.operation, target_id=model_id, payload=estimate.payload
             )
         except Exception:
+            if withdraw and self._withdraw(view.local_id):
+                raise NothingSent(
+                    "Blender could not queue this generation; nothing was sent"
+                ) from None
             view.error = "Submission could not be queued; inspect the saved job before continuing"
             raise
         self.submissions[view.local_id] = task
         return view
+
+    def _withdraw(self, request_id):
+        """Cancel a saved intent that was never queued, so it needs no review.
+
+        Nothing holds it for dispatch, so local cancellation is final. Returns False,
+        leaving the prepared job for review, when the cancellation is not saved.
+        """
+        try:
+            record = self.store.get(request_id)
+            if record is None or record.state != JobState.PREPARED:
+                return False
+            self.session.cancel_prepared(request_id, expected_revision=record.revision)
+        except Exception:
+            return False
+        self.views.pop(request_id, None)
+        self._bindings.pop(request_id, None)
+        self._automatic_application.discard(request_id)
+        self._automatic_destinations.pop(request_id, None)
+        return True
 
     def poll(self):
         """Advance owned jobs through existing commands; never replay paid work."""
@@ -762,7 +1003,14 @@ class ModelJobs:
                 self._finish_lookup(request_id, command, task)
                 continue
             destination = self._application_destinations.pop(request_id, None)
+            # One automatic import attempt; a stopped one is paused for explicit review.
+            automatic = (
+                self._automatic_destinations.pop(request_id, None)
+                if command == "verify_results"
+                else None
+            )
             media = self._media_destinations.pop(request_id, None)
+            placed = self._landing_destinations.pop(request_id, None)
             model = self._model_destinations.pop(request_id, None)
             world = self._world_destinations.pop(request_id, None)
             material = self._material_destinations.pop(request_id, None)
@@ -797,12 +1045,16 @@ class ModelJobs:
                         policy=mesh.policy,
                         result_to_source=mesh.mapping,
                         keep_original=mesh.keep_original,
+                        keep_texture=mesh.kept,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
                 elif command == "verify_material":
                     applied = self.session.apply_recovered_material(
-                        completion, destination=material.destination, target=material.target
+                        completion,
+                        destination=material.destination,
+                        target=material.target,
+                        tile_size=material.tile_size,
                     )
                     _remember(
                         self._materials,
@@ -826,6 +1078,7 @@ class ModelJobs:
                         cursor=model.cursor,
                         options=model.splat_options,
                         target_size=model.target_size,
+                        placement=model.placement,
                     )
                     self._remember_model_application(request_id, applied.application)
                     self._paused.discard(request_id)
@@ -837,10 +1090,22 @@ class ModelJobs:
                         frame=media.frame,
                     )
                     self._paused.discard(request_id)
+                elif command == "verify_landing":
+                    applied = self.session.apply_recovered_landing(
+                        completion,
+                        destination=placed.destination,
+                        asset_id=placed.asset_id,
+                        purpose=placed.purpose,
+                        frame=placed.frame,
+                        cursor=placed.cursor,
+                        unlit=placed.unlit,
+                    )
+                    self._remember_landing(request_id, applied.application)
+                    self._paused.discard(request_id)
                 elif command == "verify_results":
                     self.views[request_id].files = [str(p) for p in completion.result.paths]
                     result = (
-                        self.session.apply_images(completion)
+                        self.session.apply_images(completion, destination=automatic)
                         if destination is None
                         else self.session.apply_recovered_images(
                             completion, destination=destination
@@ -853,6 +1118,8 @@ class ModelJobs:
                     self._refresh_failures.pop(request_id, None)
                 elif command == "read_prompt_results":
                     self._prompt_texts[request_id] = tuple(completion.result.prompts)
+                elif command == "fetch_results":
+                    self._paused.discard(request_id)
                 self._next_poll[request_id] = time.monotonic() + POLL_INTERVAL
             except first_frame_handoff.FirstFrameHandoffError as error:
                 self._remember_first_frame(request_id, first_frame, error=error.reason)
@@ -893,15 +1160,26 @@ class ModelJobs:
                 )
             except (MeshApplicationError, MeshResultApplicationError) as error:
                 reason = getattr(error, "reason", None)
-                self._pause(
-                    request_id,
-                    "Mesh application stopped; inspect the saved result, source and edit policy"
-                    + (f". {reason}" if reason else ""),
+                outcome = (
+                    # A refused clip leaves the rig as it was; its reason says what to change.
+                    "Animation not applied; the rig is unchanged"
+                    if mesh is not None and mesh.policy == "ANIMATE"
+                    else "Mesh application stopped; inspect the saved result, source and edit policy"
                 )
+                self._pause(request_id, outcome + (f". {reason}" if reason else ""))
             except ModelPreflightError as error:
                 # Rejected before the claim: the saved job and the scene are unchanged.
                 verb = "applied" if command == "verify_mesh_edit" else "imported"
                 self._pause(request_id, f"Nothing was {verb}: {error}")
+            except LandingResultUncertain as error:
+                if error.application is not None:
+                    self._receipts[request_id] = error
+                    self._remember_landing(request_id, error.application)
+                self._pause(request_id, "Result needs receipt recovery; do not apply it again")
+            except LandingApplicationError:
+                self._pause(
+                    request_id, "Nothing was added; inspect the saved result and its destination"
+                )
             except MediaResultUncertain as error:
                 if error.application is not None:
                     self._receipts[request_id] = error
@@ -918,7 +1196,15 @@ class ModelJobs:
                 self._cancellable.pop(request_id, None)
                 self._pause(request_id, CANCEL_UNSUPPORTED)
             except Exception as error:
-                if command == "verify_first_frame":
+                if command == "fetch_results":
+                    # The job stays complete; only this download stopped.
+                    self._pause(
+                        request_id,
+                        FETCH_STOPPED
+                        if stopped and isinstance(error, DownloadCanceled)
+                        else FETCH_FAILED,
+                    )
+                elif command == "verify_first_frame":
                     # Verification failed before binding: the form is unchanged.
                     self._remember_first_frame(request_id, first_frame, error=None)
                     self._pause(request_id, first_frame_handoff.STOPPED)
@@ -945,12 +1231,14 @@ class ModelJobs:
                 self._observe(request_id, observed)
         online = self._online_seen = self._online()
         unread_sizes = []
+        polled = {}
         for request_id, view in self.views.items():
             record = self.store.get(request_id)
             if record is None:
                 raise ScenarioError(
                     0, "The saved job is unavailable; preserve storage for recovery"
                 )
+            polled[request_id] = record
             if record.state != JobState.REMOTE:
                 self._cancellable.pop(request_id, None)
             view.job_id = record.remote_job_id
@@ -959,6 +1247,21 @@ class ModelJobs:
             view.asset_types = {
                 item.asset.asset_id: item.asset.media_type for item in record.results
             }
+            if view.lane == "model":
+                # Saved without its lane: the kind its saved results establish.
+                view.kind = listed_lane(record)[1]
+            if self._lists_files(request_id, view):
+                view.files = [
+                    row.file for row in self._watched_rows(record) if row.state == VERIFIED
+                ]
+            # The Results grid's large view names a saved file's size and the
+            # submission time without reading storage while drawing.
+            view.meta["result_sizes"] = {
+                item.asset.asset_id: item.receipt.size
+                for item in record.results
+                if item.receipt is not None
+            }
+            view.meta["claimed_at"] = record.claimed_at
             # Drawing reads the World offer here; it has no saved texture roles or sizes.
             view.meta["world_assets"] = self._world_offer(record)
             unread_sizes.extend(self._unread_world_sizes(record))
@@ -980,6 +1283,11 @@ class ModelJobs:
             view.meta["first_frame_assets"] = tuple(
                 item.asset.asset_id for item in first_frame_handoff.eligible_assets(record)
             )
+            # Native background and plane controls name only the results each accepts.
+            for purpose in landing.PURPOSES:
+                view.meta[f"{purpose}_assets"] = tuple(
+                    item.asset.asset_id for item in landing.eligible_assets(record, purpose)
+                )
             view.meta["import_units"] = self._unit_rows(record)
             view.meta["import_notices"] = self._import_notices(request_id)
             view.meta["status_notes"] = self._status_notes(request_id, record, online=online)
@@ -1033,19 +1341,21 @@ class ModelJobs:
                     self._pause(request_id, "Result delivery could not start; inspect saved jobs")
         self._prune_world_sizes()
         self._read_world_sizes(unread_sizes)
-        self._check_files()
+        self._check_files(polled)
 
-    def _check_files(self):
+    def _check_files(self, polled=None):
         """Queue one preview-lane check of the watched jobs' unchecked result files.
 
         Files this session verified are settled even while a batch is in flight,
-        so a wait on them does not wait for another job's check.
+        so a wait on them does not wait for another job's check. `polled` holds
+        the records this tick already read, so a watched job is read once per tick.
         """
         busy = self._files.busy
         targets = []
+        polled = polled or {}
         for request_id in self._files.watched:
             try:
-                record = self.store.get(request_id)
+                record = polled.get(request_id) or self.store.get(request_id)
             except Exception:
                 # An unreadable record is reported by status; it is checked later.
                 continue
@@ -1182,7 +1492,8 @@ class ModelJobs:
         return True
 
     def _status_notes(self, request_id, record, *, online):
-        """Information lines for a job whose status or cancellation is not confirmed.
+        """Information lines for a job whose status or cancellation is not confirmed,
+        or that downloads the files a chosen result needs.
 
         A cancel note lasts while the saved revision it was written for is
         unchanged. REFRESH_RETRYING shows while transient failures delay an
@@ -1201,6 +1512,9 @@ class ModelJobs:
                 del self._refresh_failures[request_id]
             elif online and request_id not in self._paused:
                 notes.append(REFRESH_RETRYING)
+        command = self._commands.get(request_id)
+        if command is not None and command[0] == "fetch_results":
+            notes.append(FILES_FETCHING)
         return tuple(notes)
 
     def _observe_cancellation(self, request_id, snapshot):
@@ -1652,19 +1966,34 @@ class ModelJobs:
     def _view(self, record):
         request_id = record.intent.request_id
         if request_id not in self.views:
+            lane, kind = listed_lane(record)
             self.views[request_id] = JobRecord(
                 local_id=request_id,
-                lane="workflow" if record.intent.operation == "workflow" else "model",
-                kind="workflow" if record.intent.operation == "workflow" else "model",
+                lane=lane,
+                kind=kind,
                 model_id=record.intent.target_id,
                 body={},
                 cu_cost=float(record.intent.quote_cost)
                 if record.intent.quote_cost is not None
                 else None,
-                meta={"shared_job": True, "prompt": "Recovered saved job"},
+                # Listed from the store, which keeps only the request's hash:
+                # its row offers no Reload parameters.
+                meta={"shared_job": True, "listed": True, **self._labels.get(request_id, {})},
             )
             self._paused.add(request_id)
         return self.views[request_id]
+
+    def _lists_files(self, request_id, view):
+        """Whether a view lists its verified saved images for the image row's file tools.
+
+        Every image kind does: the Image, Render Image and Environment lanes and
+        a job saved without a lane whose results are images. An Image lane job
+        lists the files its automatic import verified while that import owns
+        it; the others list the files a preview-lane check verified, in the
+        submitting session and after a restart alike. A 3D row lists none: it
+        imports through its receipt-bound saved-job action, never a direct path.
+        """
+        return view.kind == "image" and request_id not in self._automatic_application
 
     def _plan(self, record):
         """Classify saved results once per saved revision; reads no files."""
@@ -1682,6 +2011,32 @@ class ModelJobs:
     def _units(self, record):
         plan = self._plan(record)
         return plan.units if plan is not None else ()
+
+    def _fetch_first(self, record, asset_ids):
+        """Start downloading the on-demand copies among `asset_ids` that are not saved yet.
+
+        Raises FilesDownloading once that download is queued, so nothing is reviewed
+        before every file the result needs is saved; returns when none is missing.
+        """
+        wanted = set(asset_ids)
+        missing = tuple(
+            item.asset.asset_id
+            for item in record.results
+            if item.asset.asset_id in wanted and item.receipt is None
+        )
+        if not missing:
+            return
+        if not self._online():
+            raise ScenarioError(0, "Allow Online Access to download the files this result needs")
+        request_id = record.intent.request_id
+        task = self.session.fetch_results(
+            request_id, expected_revision=record.revision, asset_ids=missing
+        )
+        self._commands[request_id] = ("fetch_results", task)
+        view = self._view(record)
+        view.meta["recovery_actions"] = ()
+        view.error = None
+        raise FilesDownloading(len(missing))
 
     def _unit_rows(self, record):
         """Importable units for drawing: (key, format, primary) in classified order."""
@@ -1754,6 +2109,10 @@ class ModelJobs:
             actions.append("import_images")
         if reusable and any(item.asset.media_type in MEDIA_TYPES for item in record.results):
             actions.append("import_media")
+        # Beside media strips: one more camera background, or a new image plane.
+        for purpose in landing.PURPOSES:
+            if reusable and landing.eligible_assets(record, purpose):
+                actions.append(purpose)
         if self._confirmed_cancellable(record):
             actions.append("cancel")
         if reusable and any(importable(unit) for unit in self._units(record)):
@@ -1801,9 +2160,11 @@ class ModelJobs:
         request_id = record.intent.request_id
         command = self._commands.get(request_id)
         return (
-            record.state == JobState.DOWNLOADING
-            and command is not None
-            and command[0] == "download_results"
+            command is not None
+            and (
+                (record.state == JobState.DOWNLOADING and command[0] == "download_results")
+                or command[0] == "fetch_results"
+            )
             and not command[1].done()
             and request_id not in self._stopping
         )
@@ -1842,6 +2203,8 @@ class ModelJobs:
                 "cancel_prepared",
                 "import_images",
                 "import_media",
+                "camera_background",
+                "image_plane",
                 "import_model",
                 "apply_world",
                 "restore_world",
@@ -2178,6 +2541,135 @@ class ModelJobs:
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
+    def prepare_landing_application(
+        self, request_id, expected_revision, scene, asset_id, *, purpose, unlit=False
+    ):
+        """Review one saved image or video as a camera background, or an image as a plane.
+
+        A background captures the scene camera, refused clearly when the scene
+        has none; a video background also binds the current frame. A plane
+        captures the cursor and whether it is unlit. Nothing changes here.
+        """
+        if purpose not in landing.PURPOSES:
+            raise ScenarioError(0, "Choose camera_background or image_plane")
+        background = purpose == landing.CAMERA_BACKGROUND
+        if type(unlit) is not bool or (unlit and background):
+            raise ScenarioError(0, "Unlit applies only to an image plane")
+        record = self.store.get(request_id)
+        if (
+            type(expected_revision) is not int
+            or record is None
+            or record.revision != expected_revision
+            or purpose not in self.actions(record)
+        ):
+            raise ScenarioError(0, "The saved result changed; inspect the job again")
+        selected = [
+            item
+            for item in landing.eligible_assets(record, purpose)
+            if item.asset.asset_id == asset_id
+        ]
+        if len(selected) != 1:
+            raise ScenarioError(
+                0,
+                "Choose one downloaded PNG, JPEG or OpenEXR image"
+                + (" or MP4/WebM video" if background else ""),
+            )
+        if len(self._application_approvals) >= 128:
+            raise ScenarioError(0, "Complete or cancel an existing application review first")
+        if scene != bpy.context.scene:
+            raise ScenarioError(0, "Select the destination scene before reviewing it")
+        bpy.context.view_layer.update()
+        kind = landing.kind(selected[0].asset.media_type)
+        try:
+            if background:
+                camera = scene_camera(scene)
+                options = {
+                    "destination": self.session.capture(scene, camera),
+                    "frame": scene.frame_current if kind == "video" else None,
+                    "camera_name": camera.name,
+                    "backgrounds": len(camera.data.background_images),
+                }
+            else:
+                cursor = tuple(scene.cursor.location)
+                validate_plane_destination(scene, cursor)
+                options = {
+                    "destination": self.session.capture(scene),
+                    "cursor": cursor,
+                    "unlit": unlit,
+                }
+        except LandingApplicationError as error:
+            raise ScenarioError(0, str(error)) from None
+        ticket = LandingApplicationApproval(
+            uuid.uuid4().hex,
+            record,
+            scene_name=scene.name,
+            asset_id=asset_id,
+            purpose=purpose,
+            kind=kind,
+            **options,
+        )
+        self._application_approvals[ticket.identifier] = ticket
+        return ticket
+
+    def revise_landing_application(self, identifier, *, unlit):
+        """Change a reviewed plane's unlit choice under a new handle; the old one stops working."""
+        ticket = self._application_approvals.get(identifier)
+        if (
+            not isinstance(ticket, LandingApplicationApproval)
+            or ticket.purpose != landing.IMAGE_PLANE
+            or type(unlit) is not bool
+        ):
+            raise ScenarioError(0, "Use an unconsumed image plane review")
+        self._validate_landing(ticket)
+        if self.store.get(ticket.record.intent.request_id) != ticket.record:
+            raise ScenarioError(0, "The saved result changed; start a fresh review")
+        if unlit == ticket.unlit:
+            return ticket
+        revised = replace(ticket, identifier=uuid.uuid4().hex, unlit=unlit)
+        del self._application_approvals[identifier]
+        self._application_approvals[revised.identifier] = revised
+        return revised
+
+    def _validate_landing(self, ticket):
+        """The captured scene, frame or cursor and, for a background, camera are unchanged."""
+        self.session.validate_destination(
+            ticket.destination, frame=ticket.frame, cursor=ticket.cursor
+        )
+        if ticket.purpose == landing.CAMERA_BACKGROUND:
+            scene = bpy.context.scene
+            try:
+                camera = scene_camera(scene)
+            except LandingApplicationError as error:
+                raise ScenarioError(0, str(error)) from None
+            if camera.name != ticket.camera_name:
+                raise ScenarioError(0, "The scene camera changed; review it again")
+
+    def _apply_landing(self, ticket):
+        self._application_approvals.pop(ticket.identifier)
+        if not self.session.active:
+            raise ScenarioError(0, "Review the current connection and destination again")
+        record = self.store.get(ticket.record.intent.request_id)
+        if record != ticket.record or ticket.purpose not in self.actions(record):
+            raise ScenarioError(0, "The saved result changed; inspect the job again")
+        self._validate_landing(ticket)
+        request_id = record.intent.request_id
+        task = self.session.verify_results(request_id, expected_revision=record.revision)
+        self._landing_destinations[request_id] = ticket
+        self._commands[request_id] = ("verify_landing", task)
+        self._automatic_application.discard(request_id)
+        self._paused.add(request_id)
+        view = self._view(record)
+        view.meta["recovery_actions"], view.error = (), None
+        return request_id, task
+
+    def _remember_landing(self, request_id, application):
+        """Report a new plane, its material and image, or a background image, in status."""
+        if application.purpose == landing.IMAGE_PLANE:
+            _remember(self._objects, request_id, (application.target,), bpy.data.objects)
+            _remember(self._materials, request_id, (application.material,), bpy.data.materials)
+        if application.image is not None:
+            _remember(self._images, request_id, (application.image,), bpy.data.images)
+
     def prepare_model_application(
         self,
         request_id,
@@ -2188,6 +2680,7 @@ class ModelJobs:
         max_points=None,
         axes=None,
         target_size=None,
+        match_source=False,
     ):
         """Capture one import unit's destination; `asset_id` is the unit key.
 
@@ -2195,6 +2688,8 @@ class ModelJobs:
         axes (default: the file format's convention); mesh units take neither.
         Any unit takes an optional `target_size`, the longest side in Blender units that
         the new group is scaled to; it is checked here, before anything is captured.
+        A mesh unit of a job that edited a live mesh in this scene measures it as
+        `source`; `match_source` lands the import on it at its longest side.
         """
         try:
             target_size = placement.target_size(target_size)
@@ -2219,12 +2714,15 @@ class ModelJobs:
             )
         unit = selected[0]
         max_points, axes = self._splat_options(unit, max_points, axes)
+        self._fetch_first(record, (*unit.members, *unit.resources))
         if len(self._application_approvals) >= 128:
             raise ScenarioError(0, "Complete or cancel an existing application review first")
         if scene != bpy.context.scene:
             raise ScenarioError(0, "Select the destination scene before reviewing insertion")
         bpy.context.view_layer.update()
         validate_model_destination(scene, tuple(scene.cursor.location))
+        source = None if worker_prepared(unit) else self._source_fit(record, scene)
+        target_size = self._matched_size(source, match_source, target_size)
         ticket = ModelApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2236,9 +2734,40 @@ class ModelJobs:
             max_points=max_points,
             axes=axes,
             target_size=target_size,
+            source=source,
+            match_source=match_source,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
+
+    def _source_fit(self, record, scene):
+        """The live mesh this job edited, when it was its only mesh input and is in `scene`."""
+        if len(record.intent.mesh_sources) != 1:
+            return None
+        objects = self.session.mesh_source_objects(record.intent.mesh_sources[0], scene)
+        fit = source_fit(objects) if objects else None
+        if fit is None:
+            return None
+        view = self.views.get(record.intent.request_id)
+        task = default_policy(
+            record.intent.target_id, view.meta.get("edit3d_task") if view is not None else None
+        ).task
+        name = objects[0].name + (f" +{len(objects) - 1}" if len(objects) > 1 else "")
+        # Rigging and Animate may resize or repose the character on purpose.
+        return SourceFit(name, *fit, suggested=task in TASK_POLICIES and task != "RIG")
+
+    @staticmethod
+    def _matched_size(source, match_source, target_size):
+        """The longest side to import at: the source's when matching it."""
+        if type(match_source) is not bool:
+            raise ScenarioError(0, "Match the source mesh or not")
+        if not match_source:
+            return target_size
+        if source is None:
+            raise ScenarioError(0, "This result has no live source mesh in this scene to match")
+        if target_size is not None:
+            raise ScenarioError(0, "Match the source mesh or choose a longest side, not both")
+        return source.size
 
     @staticmethod
     def _splat_options(unit, max_points, axes):
@@ -2257,21 +2786,39 @@ class ModelJobs:
             raise ScenarioError(0, "Choose OPENGL or OPENCV saved splat axes")
         return max_points, axes
 
-    def revise_model_application(self, identifier, *, max_points, axes):
-        """Change reviewed splat options under a new handle; the old one stops working.
+    def revise_model_application(
+        self, identifier, *, max_points=None, axes=None, target_size=None, match_source=False
+    ):
+        """Change reviewed options under a new handle; the old one stops working.
 
-        The captured scene, cursor and unit stay the same; nothing is recaptured.
+        Every option is given again: SPZ, PLY and .splat units take splat options,
+        and any unit takes a longest side (None keeps the saved size) or, with a
+        measured source, `match_source`. The captured scene, cursor, unit and
+        source stay the same; nothing is recaptured.
         """
         ticket = self._application_approvals.get(identifier)
-        if not isinstance(ticket, ModelApplicationApproval) or not worker_prepared(ticket.unit):
-            raise ScenarioError(0, "Use an unconsumed SPZ, PLY or .splat import review")
+        if not isinstance(ticket, ModelApplicationApproval):
+            raise ScenarioError(0, "Use an unconsumed model import review")
+        try:
+            target_size = placement.target_size(target_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
         max_points, axes = self._splat_options(ticket.unit, max_points, axes)
+        target_size = self._matched_size(ticket.source, match_source, target_size)
         self.session.validate_destination(ticket.destination, cursor=ticket.cursor)
         if self.store.get(ticket.record.intent.request_id) != ticket.record:
             raise ScenarioError(0, "The saved model changed; start a fresh review")
-        if (max_points, axes) == (ticket.max_points, ticket.axes):
+        options = (max_points, axes, target_size, match_source)
+        if options == (ticket.max_points, ticket.axes, ticket.target_size, ticket.match_source):
             return ticket
-        revised = replace(ticket, identifier=uuid.uuid4().hex, max_points=max_points, axes=axes)
+        revised = replace(
+            ticket,
+            identifier=uuid.uuid4().hex,
+            max_points=max_points,
+            axes=axes,
+            target_size=target_size,
+            match_source=match_source,
+        )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised
         return revised
@@ -2364,6 +2911,28 @@ class ModelJobs:
             policy = SEVERAL_SOURCES_FALLBACK
         return start, policy, source
 
+    @staticmethod
+    def _kept_texture(targets, policy, requested):
+        """RETEXTURE's kept region on the captured sources: (mode, region or None).
+
+        AUTO, or None, starts on the selected faces, else on a standing
+        character's head while the Edit form's Keep head option is on. Other
+        policies keep no texture; they report the mode a retexture would start on.
+        """
+        if requested is None:
+            requested = KEEP_AUTO
+        if requested not in (KEEP_AUTO, *KEEP_MODES):
+            raise ScenarioError(0, "Keep texture on SELECTED faces, the HEAD or NONE")
+        scene = targets[0].scene
+        keep_head = scene.scenario.retexture_keep_head
+        if policy != "RETEXTURE":
+            if requested not in (KEEP_AUTO, KEEP_NONE):
+                raise ScenarioError(0, "Keep texture applies only to Replace textures")
+            objects = [target.obj for target in targets]
+            return kept_texture.starting_mode(objects, scene, keep_head), None
+        region = kept_texture.review(targets, requested, keep_head=keep_head)
+        return region.mode, region
+
     def prepare_mesh_application(
         self,
         request_id,
@@ -2377,6 +2946,7 @@ class ModelJobs:
         keep_original=True,
         original_source=False,
         review_placement=False,
+        keep_texture=None,
     ):
         """Capture one reviewed mesh destination; return its single-use approval.
 
@@ -2391,6 +2961,9 @@ class ModelJobs:
         (`MeshApplicationApproval.target` is then a tuple) and accepts only UV,
         RETEXTURE or RIG, in scene coordinates or fitted from them; a job with
         no derived task starts those on UV instead of REMESH.
+
+        RETEXTURE resolves where the source keeps its own texture (`keep_texture`:
+        AUTO, SELECTED, HEAD or NONE) on the captured sources now, and binds it.
         """
         record = self.store.get(request_id)
         if (
@@ -2404,6 +2977,7 @@ class ModelJobs:
         unit = next((unit for unit in self._units(record) if unit.key == asset_id), None)
         if unit is None or not mesh_applicable(unit):
             raise ScenarioError(0, "Choose one saved GLB, glTF, FBX or OBJ mesh result")
+        self._fetch_first(record, (*unit.members, *unit.resources))
         if type(original_source) is not bool:
             raise ScenarioError(0, "Choose whether to use the captured source")
         if original_source:
@@ -2439,6 +3013,7 @@ class ModelJobs:
         ):
             placement = "LOCAL"
         mapping = self._mesh_options(target, policy, placement, keep_original)
+        mode, kept = self._kept_texture(targets, policy, keep_texture)
         ticket = MeshApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2459,12 +3034,20 @@ class ModelJobs:
             primary=unit.primary,
             format=unit.format.value,
             target_names=tuple(item.name for item in targets),
+            keep_texture=mode,
+            kept=kept,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
 
-    def revise_mesh_application(self, identifier, *, policy, placement, keep_original):
-        """Change reviewed options without recapturing or retargeting the source."""
+    def revise_mesh_application(
+        self, identifier, *, policy, placement, keep_original, keep_texture=None
+    ):
+        """Change reviewed options without recapturing or retargeting the source.
+
+        `keep_texture` None keeps the reviewed choice; a RETEXTURE region is
+        resolved again only when the choice or the policy changes.
+        """
         ticket = self._application_approvals.get(identifier)
         if not isinstance(ticket, MeshApplicationApproval):
             raise ScenarioError(0, "Use an unconsumed mesh destination review")
@@ -2472,12 +3055,20 @@ class ModelJobs:
         self.session.validate_destination(ticket.destination)
         if self.store.get(ticket.record.intent.request_id) != ticket.record:
             raise ScenarioError(0, "The saved mesh changed; start a fresh review")
-        if (policy, placement, keep_original) == (
+        keep_texture = ticket.keep_texture if keep_texture is None else keep_texture
+        if (policy, placement, keep_original, keep_texture) == (
             ticket.policy,
             ticket.placement,
             ticket.keep_original,
+            ticket.keep_texture,
         ):
             return ticket
+        if policy == ticket.policy and keep_texture == ticket.keep_texture:
+            mode, kept = ticket.keep_texture, ticket.kept
+        else:
+            # Other policies keep no texture: they only report a retexture's start.
+            requested = keep_texture if policy == "RETEXTURE" else None
+            mode, kept = self._kept_texture(ticket.targets, policy, requested)
         revised = replace(
             ticket,
             identifier=uuid.uuid4().hex,
@@ -2486,6 +3077,8 @@ class ModelJobs:
             mapping=mapping,
             keep_original=keep_original,
             policy_source=ticket.policy_source if policy == ticket.policy else "requested",
+            keep_texture=mode,
+            kept=kept,
         )
         del self._application_approvals[identifier]
         self._application_approvals[revised.identifier] = revised
@@ -2501,6 +3094,7 @@ class ModelJobs:
             policy=ticket.policy,
             result_to_source=ticket.mapping,
             keep_original=ticket.keep_original,
+            keep_texture=ticket.kept,
         )
         self.session.validate_destination(ticket.destination)
         request_id = record.intent.request_id
@@ -2513,7 +3107,9 @@ class ModelJobs:
         view.meta["recovery_actions"], view.error = (), None
         return request_id, task
 
-    def prepare_material_application(self, request_id, expected_revision, scene, obj):
+    def prepare_material_application(
+        self, request_id, expected_revision, scene, obj, *, tile_size=None
+    ):
         record = self.store.get(request_id)
         if (
             type(expected_revision) is not int
@@ -2523,9 +3119,16 @@ class ModelJobs:
             or len(self._application_approvals) >= 128
         ):
             raise ScenarioError(0, "Inspect the saved material and finish existing reviews first")
+        try:
+            tile_size = material_tiling.tile_size(tile_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
         bpy.context.view_layer.update()
         target = capture_target(scene, obj)
         roles = selected_maps(record)
+        self._fetch_first(
+            record, (record.results[index].asset.asset_id for index in roles.values())
+        )
         ticket = MaterialApplicationApproval(
             uuid.uuid4().hex,
             record,
@@ -2534,9 +3137,30 @@ class ModelJobs:
             obj.name,
             target,
             tuple(roles),
+            tile_size=tile_size,
         )
         self._application_approvals[ticket.identifier] = ticket
         return ticket
+
+    def revise_material_application(self, identifier, *, tile_size):
+        """Change a reviewed material's tile size under a new handle; the old one stops working."""
+        ticket = self._application_approvals.get(identifier)
+        if not isinstance(ticket, MaterialApplicationApproval):
+            raise ScenarioError(0, "Use an unconsumed material review")
+        try:
+            tile_size = material_tiling.tile_size(tile_size)
+        except ValueError as error:
+            raise ScenarioError(0, str(error)) from None
+        self.session.validate_destination(ticket.destination)
+        validate_material_target(ticket.target)
+        if self.store.get(ticket.record.intent.request_id) != ticket.record:
+            raise ScenarioError(0, "The saved material changed; start a fresh review")
+        if tile_size == ticket.tile_size:
+            return ticket
+        revised = replace(ticket, identifier=uuid.uuid4().hex, tile_size=tile_size)
+        del self._application_approvals[identifier]
+        self._application_approvals[revised.identifier] = revised
+        return revised
 
     def _apply_saved_material(self, ticket):
         self._application_approvals.pop(ticket.identifier)
@@ -2752,6 +3376,8 @@ class ModelJobs:
             return self._apply_saved_mesh(ticket)
         if isinstance(ticket, MaterialApplicationApproval):
             return self._apply_saved_material(ticket)
+        if isinstance(ticket, LandingApplicationApproval):
+            return self._apply_landing(ticket)
         if not isinstance(
             ticket, (MediaApplicationApproval, ModelApplicationApproval, WorldApplicationApproval)
         ):
@@ -2861,9 +3487,13 @@ class ModelJobs:
 
         False once it is settled, including a finished job whose results
         ModelJobs never downloads, paused for review, prepared but never
-        queued, or not owned by this session. `wait` calls this on the HTTP
+        queued, or not owned by this session. A completed job advances while it
+        downloads the files a chosen result needs. `wait` calls this on the HTTP
         worker, so it reads only in-memory state, never bpy.
         """
+        command = self._commands.get(request_id)
+        if command is not None and command[0] == "fetch_results":
+            return request_id in self.views
         return (
             request_id in self.views
             and request_id not in self._paused
@@ -2923,6 +3553,8 @@ class ModelJobs:
             "rig": application.rig.name if application.rig in objects else None,
             "clips": tuple(clip.name for clip in application.clips if clip in actions),
             "rest_correction_deg": application.rest_correction_deg,
+            "retargeted_from": application.retargeted_from,
+            "frame_range": list(application.frame_range) if application.frame_range else None,
             "result_to_source": [list(row) for row in application.mapping],
             "fitted_from": application.fitted_from,
             "frame_rate_mismatch": application.frame_rate_mismatch,
@@ -2934,6 +3566,7 @@ class ModelJobs:
             else None,
             "parts_from": application.parts_from,
             "joined_meshes": application.joined_meshes,
+            "kept_texture": application.kept_texture,
         }
 
     def _model_import_status(self, request_id):
@@ -2951,6 +3584,8 @@ class ModelJobs:
         # The receipt rounds to 0.1 degrees; smaller corrections are not shown.
         if edit is not None and (correction := edit.rest_correction_deg):
             notices.append(f"Clips adjusted to this rig's rest pose by up to {correction:g}°")
+        if edit is not None and edit.retargeted_from:
+            notices.append(f"Clips retargeted from a {edit.retargeted_from} skeleton")
         status = self._model_import_status(request_id)
         if (edit is not None and edit.frame_rate_mismatch) or (
             status and status["frame_rate_mismatch"]
@@ -3000,13 +3635,17 @@ class ModelJobs:
 
     def _file_rows(self, record):
         """This status read's file rows; it asks a worker to check what is unchecked."""
-        self._files.watch(record.intent.request_id)
-        # Files this session just downloaded or imported are listed at once.
-        self._files.seed(record, self.session.verified_files(record.intent.request_id))
-        rows = self._files.project(record)
+        rows = self._watched_rows(record)
         if self.session.active:
             self._check_files()
         return rows
+
+    def _watched_rows(self, record):
+        """A job's file rows; watching it lets the next poll queue its checks."""
+        self._files.watch(record.intent.request_id)
+        # Files this session just downloaded or imported are listed at once.
+        self._files.seed(record, self.session.verified_files(record.intent.request_id))
+        return self._files.project(record)
 
     def status(self, reference):
         self.poll()
@@ -3027,7 +3666,6 @@ class ModelJobs:
         reading = view.meta.get("remote") if view is not None else None
         steps = self._current_steps(record.intent.request_id, record)
         failed = self._step_errors.get(record.intent.request_id)
-        binding = self._bindings.get(record.intent.request_id)
         units, findings = self._import_units_status(record)
         files = self._file_rows(record)
         return {
@@ -3036,8 +3674,8 @@ class ModelJobs:
             "job_id": record.remote_job_id,
             "status": record.state.value,
             "revision": record.revision,
-            # In-memory projection shared with the Jobs views; never persisted.
-            "lane": binding.lane if binding is not None else None,
+            # The generation lane saved with the job; display only, never a destination.
+            "lane": record.intent.lane if record.intent.lane in GENERATION_LANES else None,
             "remote_status": reading.status if reading is not None else None,
             "progress": reading.fraction if reading is not None else None,
             "remote_observed_at": reading.observed_utc if reading is not None else None,
@@ -3050,7 +3688,7 @@ class ModelJobs:
             "source": getattr(record.intent, "source", "generation"),
             "kind": self.views[record.intent.request_id].kind
             if record.intent.request_id in self.views
-            else "model",
+            else listed_lane(record)[1],
             # Downloaded results whose local bytes a worker matched to their saved
             # receipts, whatever their kind, import or restart; see result_files.
             "files": [row.file for row in files if row.state == VERIFIED],

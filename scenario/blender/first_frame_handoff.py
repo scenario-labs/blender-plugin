@@ -11,6 +11,7 @@ asset ID, the existing scope/asset/kind markers and provenance (request ID,
 asset ID and receipt digest). A reader can use that provenance to find the
 saved job again in the same credential scope. Provenance never authorizes a
 quote; `reference_form.scope_error` still decides where the asset may be used.
+Use as reference reuses a saved image's asset the same way (`saved_reference`).
 """
 
 import hashlib
@@ -240,6 +241,49 @@ def _check_file(item, path):
         raise FirstFrameHandoffError("Image contents do not match the saved media type")
 
 
+def saved_reference(store, request_id, path):
+    """The saved image result a downloaded file is, so a form can reuse its asset.
+
+    Main thread; reads the store and rehashes the file, never the network.
+    Returns (record, result) only when this credential scope's saved job holds
+    exactly one eligible image result whose receipt names the file and matches
+    its bytes; otherwise None, and the caller attaches the file itself.
+    """
+    if store is None or not request_id:
+        return None
+    try:
+        record = store.get(request_id)
+    except Exception:
+        return None
+    name = Path(path).name
+    matches = (
+        [item for item in eligible_assets(record) if item.receipt.name == name] if record else []
+    )
+    if len(matches) != 1:
+        return None
+    try:
+        _check_file(matches[0], path)
+    except FirstFrameHandoffError:
+        return None
+    return record, matches[0]
+
+
+def mark_saved_result(ref, scope, record, item):
+    """Mark a slot as holding a saved image result's own asset in `scope`, with provenance."""
+    ref[reference_form._SCOPE] = reference_form.scope_key(scope)
+    ref[reference_form._ASSET] = item.asset.asset_id
+    ref[reference_form._KIND] = "image"
+    ref[RESULT] = json.dumps(
+        {
+            "request_id": record.intent.request_id,
+            "asset_id": item.asset.asset_id,
+            "sha256": item.receipt.sha256,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
 def _record_undo():
     from .mesh_result_application import _undo_enabled, _undo_push
 
@@ -296,18 +340,8 @@ def bind(session, completion, ticket):
         ref[render_references.ROLE] = render_references.FIRST_FRAME
         ref.source, ref.asset_id, ref.filepath = "ASSET", item.asset.asset_id, ""
         ref.label = f"First frame: {item.asset.name} (saved result)"
-        ref[reference_form._SCOPE] = reference_form.scope_key(session.scope)
-        ref[reference_form._ASSET] = item.asset.asset_id
-        ref[reference_form._KIND] = "image"
-        ref[RESULT] = json.dumps(
-            {
-                "request_id": ticket.record.intent.request_id,
-                "asset_id": item.asset.asset_id,
-                "sha256": ticket.sha256,
-            },
-            sort_keys=True,
-            separators=(",", ":"),
-        )
+        # The record and receipt digest were checked equal to the ticket's above.
+        mark_saved_result(ref, session.scope, ticket.record, item)
         # The asset replaces any chosen local file, so no path is kept.
         lane.first_frame_path = ""
         lane.use_first_frame = True

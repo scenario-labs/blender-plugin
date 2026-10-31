@@ -98,6 +98,26 @@ class MediaApplicationTests(unittest.TestCase):
         self.assertEqual(editor.active_strip, first)
         self.assertTrue(first.select)
 
+    def test_sequencer_without_a_scene_shows_the_strip_and_a_chosen_one_is_kept(self):
+        # Blender 5's Sequencer shows its workspace's sequencer scene, not the window's.
+        workspace = bpy.context.workspace
+        self.addCleanup(setattr, workspace, "sequencer_scene", workspace.sequencer_scene)
+        workspace.sequencer_scene = None
+        item, path = self.asset()
+        with patch.object(self.media, "_insert", side_effect=RuntimeError("synthetic")):
+            with self.assertRaises(self.media.MediaApplicationError):
+                self.media.apply_media(self.scene, item, path, frame=1)
+        self.assertIsNone(workspace.sequencer_scene)
+        result = self.media.apply_media(self.scene, item, path, frame=1)
+        self.assertEqual(workspace.sequencer_scene, self.scene)
+        self.assertIn(result.strip, list(workspace.sequencer_scene.sequence_editor.strips))
+        chosen = bpy.data.scenes.new("Chosen sequencer scene")
+        self.addCleanup(bpy.data.scenes.remove, chosen)
+        workspace.sequencer_scene = chosen
+        self.media.apply_media(self.scene, item, path, frame=40)
+        self.assertEqual(workspace.sequencer_scene, chosen)
+        self.assertEqual(len(self.scene.sequence_editor.strips), 2)
+
     def test_saved_wav_original_inserts_a_strip_as_long_as_the_wav(self):
         # Scenario keeps a model's WAV as the original behind its MP3 re-encode; the
         # saved original has no expected size and must keep its exact 2.5 s length.

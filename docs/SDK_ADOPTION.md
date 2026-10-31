@@ -842,6 +842,10 @@ expected failure until the SDK itself fixes #26, and remove the configuration
 workaround only after a verified environment-isolation interface replaces it.
 Token serialization does not establish browser OAuth acceptance by REST.
 
+Requests time out after 45 seconds, but connecting, the TLS handshake included,
+after 5 seconds (`CONNECT_TIMEOUT`, the SDK's own default). A new connection tries
+the DNS answer's addresses in turn, so an address that never accepts costs 5 seconds.
+
 ## Adapter coverage
 
 The adapter provides reads/estimates, a coordinator-only submission hook and
@@ -984,6 +988,13 @@ preparation before dispatch; the native panel drops blank names so the
 description can still render. This assumes the hidden input has no default; if
 one did, the dry run would report the service's error and nothing would be
 spent.
+
+`required.conditional` (SDK 2.3.0) makes an input required when siblings hold
+listed values. Validation applies it with `operator: "or"` when one condition
+matches, otherwise only when every condition does: the default operator is
+undocumented, so a local check never refuses what the service accepts. A sibling
+the schema does not declare never matches. Native panels do not yet mark such an
+input as required.
 
 The pure LoRA/composition routing helper retains required base-model wiring for
 its synthetic remote-MCP tests; strengths follow the policy in

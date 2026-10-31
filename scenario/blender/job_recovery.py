@@ -3,16 +3,31 @@
 """Explicit shared-job recovery controls; drawing never changes stored jobs."""
 
 import bpy
-from bpy.props import BoolProperty, EnumProperty, FloatVectorProperty, IntProperty, StringProperty
+from bpy.props import (
+    BoolProperty,
+    EnumProperty,
+    FloatProperty,
+    FloatVectorProperty,
+    IntProperty,
+    StringProperty,
+)
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.playback import PLAYBACK_TYPES
+from ..core.scene.material_tiling import (
+    BOX,
+    DEFAULT_TILE_SIZE_M,
+    MAX_TILE_SIZE_M,
+    MIN_TILE_SIZE_M,
+)
 from ..core.scene.mesh_edit_policy import task_label
 from ..core.scene.panorama import WORLD_MEDIA_TYPES, describe_world_media
+from ..core.scene.placement import MAX_TARGET_SIZE_M, MIN_TARGET_SIZE_M
 from ..core.ui import saved_job_actions
 from . import render_lanes, result_media, review_previews, runtime
 from .media_application import MEDIA_TYPES
 from .mesh_result_application import MeshResultApplicationError
+from .model_jobs import FilesDownloading
 
 # Saved media types offered per application; describe() owns no media policy.
 RESULT_TYPES = saved_job_actions.ResultTypes(
@@ -261,7 +276,7 @@ class SCENARIO_OT_use_saved_blockout(bpy.types.Operator):
         if self.replaces_plan:
             layout.label(text="Replace this scene's existing stored plan.", icon="ERROR")
         layout.label(text="Keep existing geometry unchanged; no new generation.")
-        layout.label(text="Choose Build plan separately to update geometry.")
+        layout.label(text="Choose Build blockout separately to update geometry.")
         layout.label(text="Use Blender Undo to restore the previous plan.")
 
     def cancel(self, context):
@@ -275,7 +290,7 @@ class SCENARIO_OT_use_saved_blockout(bpy.types.Operator):
         except Exception:
             self.report({"ERROR"}, "The saved plan or destination changed; review it again")
             return {"CANCELLED"}
-        runtime.set_message("Saved plan ready; choose Build plan to update geometry")
+        runtime.set_message("Saved plan ready; choose Build blockout to update geometry")
         return {"FINISHED"}
 
 
@@ -393,6 +408,203 @@ class SCENARIO_OT_import_saved_media(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _kept(count):
+    """The review line naming the camera backgrounds that stay."""
+    if count == 0:
+        return "The camera has no other background."
+    noun = "background" if count == 1 else "backgrounds"
+    return f"Keep its {count} existing {noun} unchanged."
+
+
+class SCENARIO_OT_set_saved_camera_background(bpy.types.Operator):
+    bl_idname = "scenario.set_saved_camera_background"
+    bl_label = "Set as camera background"
+    bl_description = "Review one saved image or video as another background of the scene camera"
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    camera_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    media_kind: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    destination_frame: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+    backgrounds: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_landing_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                self.asset_id,
+                purpose="camera_background",
+            )
+        except ScenarioError as error:
+            # A refusal names its cause, such as a scene without a camera.
+            self.report({"ERROR"}, f"No background added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare the background; inspect the saved result")
+            return {"CANCELLED"}
+        self._jobs = jobs
+        self.is_reuse = approval.record.state.value == "applied"
+        self.application_id, self.scene_name = approval.identifier, approval.scene_name
+        self.camera_name, self.media_kind = approval.camera_name, approval.kind
+        self.destination_frame = approval.frame or 0
+        self.backgrounds = approval.backgrounds
+        return context.window_manager.invoke_props_dialog(self, width=480)
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        layout.label(text=f"Camera: {self.camera_name}", icon="CAMERA_DATA")
+        layout.label(text=f"Add this saved {self.media_kind} as one more background.")
+        layout.label(text=_kept(self.backgrounds))
+        if self.media_kind == "video":
+            layout.label(text=f"Start the clip at frame {self.destination_frame}.")
+            layout.label(text="The video stays a separate file: keep it with this .blend.")
+        else:
+            layout.label(text="The image is packed into this .blend.")
+        for line in BACKGROUND_REVIEW:
+            layout.label(text=line)
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except ScenarioError as error:
+            self.cancel(context)
+            self.report({"ERROR"}, f"No background added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.cancel(context)
+            self.report({"ERROR"}, "No background added; review the scene camera again")
+            return {"CANCELLED"}
+        runtime.set_message("Verifying the saved result for the approved camera")
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_add_saved_image_plane(bpy.types.Operator):
+    bl_idname = "scenario.add_saved_image_plane"
+    bl_label = "Add image plane"
+    bl_description = "Review one saved image as a new upright plane at the 3D cursor"
+
+    context_id: StringProperty(options={"HIDDEN"})
+    request_id: StringProperty(options={"HIDDEN"})
+    expected_revision: IntProperty(min=0, options={"HIDDEN"})
+    asset_id: StringProperty(options={"HIDDEN"})
+    application_id: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    scene_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    is_reuse: BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
+    destination_cursor: FloatVectorProperty(size=3, options={"HIDDEN", "SKIP_SAVE"})
+    review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    unlit: BoolProperty(
+        name="Unlit",
+        description="Show the image's own colours, unaffected by scene lights",
+        options={"SKIP_SAVE"},
+    )
+
+    def invoke(self, context, event):
+        try:
+            jobs, approval = runtime.prepare_landing_application(
+                self.context_id,
+                self.request_id,
+                self.expected_revision,
+                context.scene,
+                self.asset_id,
+                purpose="image_plane",
+            )
+        except ScenarioError as error:
+            self.report({"ERROR"}, f"No image plane added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"ERROR"}, "Could not prepare the image plane; inspect the saved result")
+            return {"CANCELLED"}
+        self._jobs = jobs
+        self.is_reuse = approval.record.state.value == "applied"
+        self.application_id, self.scene_name = approval.identifier, approval.scene_name
+        self.destination_cursor, self.unlit = approval.cursor, approval.unlit
+        self.review_error = ""
+        return context.window_manager.invoke_props_dialog(self, width=480)
+
+    def _sync_options(self):
+        """Exchange the approval for one with the shown unlit choice."""
+        approval = runtime.revise_landing_application(
+            self.context_id, self.application_id, unlit=bool(self.unlit)
+        )
+        self.application_id = approval.identifier
+        self.review_error = ""
+
+    def check(self, context):
+        if not self.application_id:
+            return False
+        try:
+            self._sync_options()
+        except Exception:
+            self.review_error = "Destination changed; cancel and review again"
+        return True
+
+    def draw(self, context):
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        if self.is_reuse:
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
+        layout.label(text=f"Place plane bottom at cursor: {position}")
+        for line in PLANE_REVIEW:
+            layout.label(text=line)
+        layout.prop(self, "unlit")
+        layout.label(text="Saved files are verified first; if one changed, nothing is added.")
+        if self.review_error:
+            layout.label(text=self.review_error, icon="ERROR")
+
+    def cancel(self, context):
+        jobs = getattr(self, "_jobs", None)
+        if jobs is not None:
+            jobs.discard_image_application(self.application_id)
+
+    def execute(self, context):
+        try:
+            # A failed check() can leave an earlier choice on the approval; a review
+            # confirmed without this dialog keeps its own options.
+            if getattr(self, "_jobs", None) is not None:
+                self._sync_options()
+            runtime.apply_saved_result(self.context_id, self.application_id)
+        except ScenarioError as error:
+            self.cancel(context)
+            self.report({"ERROR"}, f"No image plane added: {_refusal(self.context_id, error)}")
+            return {"CANCELLED"}
+        except Exception:
+            self.cancel(context)
+            self.report({"ERROR"}, "No image plane added; review its destination again")
+            return {"CANCELLED"}
+        runtime.set_message("Verifying the saved image for the approved scene and cursor")
+        return {"FINISHED"}
+
+
+# Review lines shared by every saved camera background.
+BACKGROUND_REVIEW = (
+    "Half opacity, behind objects, fitted to the camera frame.",
+    "Shown when you look through the camera.",
+    "Saved files are verified first; if one changed, nothing is added.",
+)
+# Review lines of a saved image plane, after its cursor.
+PLANE_REVIEW = (
+    "Add one 1 m tall plane facing the Front view.",
+    "Keep existing objects and selection unchanged.",
+    "Use the image's alpha when it has one; pack the image.",
+)
+
 # Format-specific review lines for the saved model confirmation.
 MODEL_REVIEW = {
     "glb": (
@@ -418,6 +630,10 @@ SPLAT_REVIEW = (
     "Denser files are thinned evenly to the point limit.",
     "Default axes follow the file format; check the result is upright.",
 )
+# Shown when the review scales the new group to a longest side.
+TARGET_SIZE_REVIEW = "Scale the group evenly; its bottom stays at the cursor."
+# Shown when the import takes the place and size of the mesh the job edited.
+MATCH_SOURCE_REVIEW = "Scale the group evenly to the longest side of the mesh it edits."
 SPLAT_POINT_ITEMS = (
     ("250000", "250,000", "Keep at most 250,000 evenly spaced points"),
     ("500000", "500,000", "Keep at most 500,000 evenly spaced points"),
@@ -469,6 +685,29 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
     splat_axes: EnumProperty(
         name="Saved axes", items=SPLAT_AXIS_ITEMS, default="OPENGL", options={"SKIP_SAVE"}
     )
+    use_target_size: BoolProperty(
+        name="Longest side",
+        description="Scale the new group evenly so its longest side has this length",
+        options={"SKIP_SAVE"},
+    )
+    match_source: BoolProperty(
+        name="Match the edited mesh",
+        description="Land the new group on the mesh this job edited, at that mesh's size",
+        options={"SKIP_SAVE"},
+    )
+    source_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    source_bottom: FloatVectorProperty(size=3, options={"HIDDEN", "SKIP_SAVE"})
+    source_size: FloatProperty(options={"HIDDEN", "SKIP_SAVE"})
+    target_size: FloatProperty(
+        name="Longest side",
+        description="Length of the new group's longest side, in scene units",
+        default=1.0,
+        min=MIN_TARGET_SIZE_M,
+        max=MAX_TARGET_SIZE_M,
+        subtype="DISTANCE",
+        unit="LENGTH",
+        options={"SKIP_SAVE"},
+    )
 
     def invoke(self, context, event):
         try:
@@ -492,25 +731,45 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             self.is_splat = approval.max_points is not None
             if self.is_splat:
                 self.splat_points, self.splat_axes = str(approval.max_points), approval.axes
+            self.use_target_size = approval.target_size is not None
+            if self.use_target_size:
+                self.target_size = approval.target_size
+            source = approval.source
+            self.source_name = "" if source is None else source.name
+            if source is not None:
+                self.source_bottom, self.source_size = source.bottom, source.size
+            # An edit that keeps the shape lands where and as large as its source.
+            self.match_source = source is not None and source.suggested
             self.review_error = ""
+            if self.match_source:
+                self._sync_options()
+        except FilesDownloading as note:
+            self.report({"INFO"}, str(note))
+            return {"CANCELLED"}
         except Exception:
             self.report({"ERROR"}, "Could not prepare model import; inspect the saved result")
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=480)
 
     def _sync_options(self):
-        """Exchange the approval for one with the shown splat options."""
-        approval = runtime.revise_model_application(
-            self.context_id,
-            self.application_id,
-            max_points=int(self.splat_points),
-            axes=self.splat_axes,
-        )
+        """Exchange the approval for one with the shown splat options and size."""
+        # Rounded to micrometres: the property stores a single-precision float.
+        options = {
+            "target_size": (
+                round(self.target_size, 6)
+                if self.use_target_size and not self.match_source
+                else None
+            ),
+            "match_source": self.match_source,
+        }
+        if self.is_splat:
+            options.update(max_points=int(self.splat_points), axes=self.splat_axes)
+        approval = runtime.revise_model_application(self.context_id, self.application_id, **options)
         self.application_id = approval.identifier
         self.review_error = ""
 
     def check(self, context):
-        if not self.application_id or not self.is_splat:
+        if not self.application_id:
             return False
         try:
             self._sync_options()
@@ -525,10 +784,16 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             layout.label(text="Use saved results again; no new generation.", icon="INFO")
         choice = "primary result" if self.is_primary else "alternate result"
         layout.label(text=f"Selected: {self.model_summary} ({choice})")
-        position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
         splats_only = self.model_format in ("spz", "splat")
         noun = "splats" if splats_only else "model"
-        layout.label(text=f"Place {noun} bottom at cursor: {position}")
+        if self.source_name:
+            layout.prop(self, "match_source", text=f"Match {self.source_name}")
+        if self.match_source:
+            position = ", ".join(f"{value:.3f}" for value in self.source_bottom)
+            layout.label(text=f"Place model bottom on the edited mesh: {position}")
+        else:
+            position = ", ".join(f"{value:.3f}" for value in self.destination_cursor)
+            layout.label(text=f"Place {noun} bottom at cursor: {position}")
         if splats_only:
             layout.label(text="Import into a new group with its own new material.")
         else:
@@ -541,6 +806,17 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
             layout.prop(self, "splat_axes")
             for line in SPLAT_REVIEW:
                 layout.label(text=line)
+        if self.match_source:
+            layout.label(text=f"Longest side: {self.source_size:.3f}, like the edited mesh.")
+            layout.label(text=MATCH_SOURCE_REVIEW)
+        else:
+            row = layout.row(align=True)
+            row.prop(self, "use_target_size")
+            size = row.row(align=True)
+            size.active = self.use_target_size
+            size.prop(self, "target_size", text="")
+            if self.use_target_size:
+                layout.label(text=TARGET_SIZE_REVIEW)
         layout.label(text="Files are checked again first; a change stops the import.")
         if self.review_error:
             layout.label(text=self.review_error, icon="ERROR")
@@ -552,7 +828,9 @@ class SCENARIO_OT_import_saved_model(bpy.types.Operator):
 
     def execute(self, context):
         try:
-            if self.is_splat:
+            # A failed check() can leave an earlier size or match on the approval; a
+            # review confirmed without this dialog keeps its own size.
+            if getattr(self, "_jobs", None) is not None:
                 self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except ScenarioError as error:
@@ -661,6 +939,18 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
     target_name: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
     slot: IntProperty(options={"HIDDEN", "SKIP_SAVE"})
     roles: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    projection: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    review_error: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
+    tile_size: FloatProperty(
+        name="Tile size",
+        description="Length one texture repeat spans in the scene",
+        default=DEFAULT_TILE_SIZE_M,
+        min=MIN_TILE_SIZE_M,
+        max=MAX_TILE_SIZE_M,
+        subtype="DISTANCE",
+        unit="LENGTH",
+        options={"SKIP_SAVE"},
+    )
 
     def invoke(self, context, event):
         try:
@@ -678,23 +968,60 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
             self.application_id, self.scene_name = approval.identifier, approval.scene_name
             self.target_name, self.slot = approval.target_name, approval.target.active + 1
             self.roles = ", ".join(approval.roles)
+            self.projection, self.tile_size = approval.projection, approval.tile_size
+            self.review_error = ""
+        except FilesDownloading as note:
+            self.report({"INFO"}, str(note))
+            return {"CANCELLED"}
         except Exception:
-            self.report(
-                {"ERROR"}, "Choose a local single-user UV mesh and inspect saved texture maps"
-            )
+            self.report({"ERROR"}, "Choose a local single-user mesh and inspect saved texture maps")
             return {"CANCELLED"}
         return context.window_manager.invoke_props_dialog(self, width=540)
 
+    def _sync_options(self):
+        """Exchange the approval for one with the shown tile size."""
+        # Rounded to micrometres: the property stores a single-precision float.
+        approval = runtime.revise_material_application(
+            self.context_id, self.application_id, tile_size=round(self.tile_size, 6)
+        )
+        self.application_id = approval.identifier
+        self.review_error = ""
+
+    def check(self, context):
+        if not self.application_id:
+            return False
+        try:
+            self._sync_options()
+        except Exception:
+            self.review_error = "Destination changed; cancel and review again"
+        return True
+
     def draw(self, context):
-        self.layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
+        layout = self.layout
+        layout.label(text=f"Scene: {self.scene_name}", icon="SCENE_DATA")
         if self.is_reuse:
-            self.layout.label(text="Use saved results again; no new generation.", icon="INFO")
-        self.layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
-        self.layout.label(text=f"Maps: {self.roles}")
-        self.layout.label(text="Create a packed material using this mesh's active UV map.")
-        self.layout.label(text="Replace this slot only; existing materials remain unchanged.")
-        self.layout.label(text="Height uses bump; AO/edge maps remain available for wiring.")
-        self.layout.label(text="Normal maps use Blender tangent space. No global undo entry.")
+            layout.label(text="Use saved results again; no new generation.", icon="INFO")
+        layout.label(text=f"Mesh: {self.target_name}, material slot {self.slot}")
+        layout.label(text=f"Maps: {self.roles}")
+        if self.projection == BOX:
+            layout.label(
+                text="This mesh has no UVs: the maps use box projection; the mesh is unchanged."
+            )
+        else:
+            layout.label(text="Create a packed material using this mesh's active UV map.")
+        layout.prop(self, "tile_size")
+        layout.label(text="Every map repeats once per tile size.")
+        if self.projection == BOX:
+            layout.label(text="The tile size counts the object's current scale.")
+        else:
+            layout.label(
+                text="The size is read from the UVs; if it cannot be, each map covers the UVs once."
+            )
+        layout.label(text="Only this slot changes; your other materials stay as they are.")
+        layout.label(text="Height drives a Bump node; AO and edge maps load unconnected.")
+        layout.label(text="Normal maps use Blender's tangent space. Undo has no step for this.")
+        if self.review_error:
+            layout.label(text=self.review_error, icon="ERROR")
 
     def cancel(self, context):
         jobs = getattr(self, "_jobs", None)
@@ -703,8 +1030,12 @@ class SCENARIO_OT_apply_saved_material(bpy.types.Operator):
 
     def execute(self, context):
         try:
+            if getattr(self, "_jobs", None) is not None:
+                # A failed check() can leave an earlier tile size on the approval.
+                self._sync_options()
             runtime.apply_saved_result(self.context_id, self.application_id)
         except Exception:
+            self.cancel(context)
             self.report({"ERROR"}, "Material assignment was not started; review the destination")
             return {"CANCELLED"}
         runtime.set_message("Verifying saved maps for the approved material slot")
@@ -715,9 +1046,11 @@ def _draw_animate(layout, review_error):
     # Clips are pose data on the mesh's own rig: coordinates and Keep original
     # do not apply, so the review does not offer them.
     layout.label(text="Add the returned clips to this mesh's rig; keep its mesh and skin.")
-    layout.label(text="Bone names, parents and rest pose must match; clips scale to the rig.")
-    layout.label(text="The first clip plays; it, the others and the previous action stay in NLA.")
-    layout.label(text="The returned character is not added. Timeline settings stay unchanged.")
+    layout.label(text="Bones with matching names play the clip; a humanoid clip is retargeted.")
+    layout.label(text="The first clip plays; other clips and the previous action stay in the NLA.")
+    layout.label(
+        text="The returned character is not added. A default frame range takes the clip's."
+    )
     layout.label(text="Undo follows Blender settings; saved jobs and spending stay recorded.")
     if review_error:
         layout.label(text=review_error, icon="ERROR")
@@ -734,6 +1067,11 @@ def _source_names(names):
     shown = ", ".join(names[:_NAMED_SOURCES])
     hidden = len(names) - _NAMED_SOURCES
     return f"{shown} and {hidden} more" if hidden > 0 else shown
+
+
+def _kept_note(approval):
+    """The review's sentence on what keeps its texture; empty for other policies."""
+    return approval.kept.note if approval.kept is not None else ""
 
 
 def _mesh_policy_changed(self, _context):
@@ -771,6 +1109,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     source_count: IntProperty(default=1, options={"HIDDEN", "SKIP_SAVE"})
     policy: EnumProperty(
         name="Edit",
+        description="What the result replaces on the selected mesh",
         items=(
             ("REMESH", "Replace geometry", "Adopt result geometry, UVs and mesh materials"),
             ("UV", "Replace active UVs", "Keep geometry; the result must be the same surface"),
@@ -801,6 +1140,7 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
     )
     placement: EnumProperty(
         name="Result coordinates",
+        description="How the result's positions are read before it lands on the source",
         items=(
             ("WORLD", "Scene coordinates", "Preserve imported result positions in the scene"),
             (
@@ -817,7 +1157,29 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         default="WORLD",
         options={"SKIP_SAVE"},
     )
-    keep_original: BoolProperty(name="Keep original", default=True, options={"SKIP_SAVE"})
+    keep_original: BoolProperty(
+        name="Keep original",
+        default=True,
+        options={"SKIP_SAVE"},
+        description="Keep the mesh as it was in a hidden copy named after it, to compare or go back",
+    )
+    keep_texture: EnumProperty(
+        name="Keep texture",
+        description="Which faces keep the mesh's own texture under the retexture",
+        items=(
+            (
+                "SELECTED",
+                "Selected faces",
+                "Paint the original texture back on the faces selected in Edit Mode",
+            ),
+            ("HEAD", "Head", "Paint the original texture back on the head of a character"),
+            ("NONE", "Nothing", "Use the result's texture everywhere"),
+        ),
+        default="NONE",
+        options={"SKIP_SAVE"},
+    )
+    # The review's sentence on what keeps its texture.
+    kept_note: StringProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         try:
@@ -840,10 +1202,15 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
                 keep_original=self.keep_original,
                 original_source=self.original_source,
                 review_placement=True,
+                # Unset, Replace textures starts on the selected faces, else a character's head.
+                keep_texture=(
+                    self.keep_texture if self.properties.is_property_set("keep_texture") else None
+                ),
             )
             self._jobs = jobs
             self.application_id = approval.identifier
             self.policy, self.placement = approval.policy, approval.placement
+            self.keep_texture, self.kept_note = approval.keep_texture, _kept_note(approval)
             self.remesh_task = approval.remesh_task
             self.policy_note = _policy_note(approval)
             self.result_role = {True: "primary", False: "alternate"}.get(approval.primary, "")
@@ -864,6 +1231,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             # for several objects, names its own reason.
             self.report({"ERROR"}, str(error))
             return {"CANCELLED"}
+        except FilesDownloading as note:
+            self.report({"INFO"}, str(note))
+            return {"CANCELLED"}
         except Exception:
             self.report(
                 {"ERROR"},
@@ -883,8 +1253,10 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             policy=self.policy,
             placement=self.placement,
             keep_original=self.keep_original,
+            keep_texture=self.keep_texture,
         )
         self.application_id = approval.identifier
+        self.keep_texture, self.kept_note = approval.keep_texture, _kept_note(approval)
         self.review_error = ""
 
     def check(self, context):
@@ -965,6 +1337,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
         elif self.policy == "RETEXTURE":
             layout.label(text="Replace all UV layers and mesh materials; preserve geometry.")
             layout.label(text="The result must match this surface; triangles and seams are fine.")
+            layout.prop(self, "keep_texture")
+            if self.kept_note:
+                layout.label(text=self.kept_note, icon="FACESEL")
         else:
             layout.label(text="Replace active UVs only; the result must match this surface.")
         layout.label(
@@ -980,9 +1355,9 @@ class SCENARIO_OT_apply_saved_mesh(bpy.types.Operator):
             else "All result meshes form one surface. No fitting or scale adjustment."
         )
         layout.label(
-            text="Keep original copies each object, unselected. Undo follows Blender settings."
+            text="Keep original hides a copy of each object. Undo follows Blender settings."
             if several
-            else "Keep original makes an unselected copy. Undo follows Blender settings."
+            else "Keep original hides a copy of the mesh. Undo follows Blender settings."
         )
         layout.label(
             text="Undo/redo changes the scene only; saved jobs and spending stay recorded."
@@ -1177,6 +1552,8 @@ CLASSES = (
     SCENARIO_OT_use_saved_blockout,
     SCENARIO_OT_import_saved_images,
     SCENARIO_OT_import_saved_media,
+    SCENARIO_OT_set_saved_camera_background,
+    SCENARIO_OT_add_saved_image_plane,
     SCENARIO_OT_import_saved_model,
     SCENARIO_OT_apply_saved_world,
     SCENARIO_OT_apply_saved_material,

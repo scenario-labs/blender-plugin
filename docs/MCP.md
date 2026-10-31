@@ -53,10 +53,16 @@ resume/download, known model-job cancellation, interrupted-download reconciliati
 stopping a running download or pending import-receipt retry. `stop_download`
 appears in `actions` only while this Blender session downloads the job's results;
 it stops the transfer without saving a partial file, the job becomes
-`download_failed` and `resume` downloads it again. `cancel` appears in `actions` only after a refresh
-in the current context reported a running `inference` job, the only type Scenario
-documents as cancellable; for any other job it is refused without a request and
-the job keeps running, matching the native Jobs panel. A running workflow job
+`download_failed` and `resume` downloads it again. It is also listed while a
+`prepare_result_application` downloads the OBJ, MTL or map
+[copies of a GLB](RESULT_TRANSFERS.md#glb-format-copies-on-demand) that a model unit,
+mesh edit or material needs; that prepare call refuses with a note, `wait_for_job`
+waits for the download and preparing again reviews the result. Meanwhile `job_status`
+reports `delivery_active` true and the status note "Downloading the files a chosen
+result needs"; stopping keeps the job `ready`. `cancel` appears in `actions` only after
+a refresh in the current context reported a running `inference` job, the only type
+Scenario documents as cancellable; for any other job it is refused without a request
+and the job keeps running, matching the native Jobs panel. A running workflow job
 cannot be canceled: `cancel` returns that explanation and sends nothing, while an
 unsent prepared one keeps `cancel_prepared_job`. Resuming a restarted job does
 not import it into the current scene. Shared `wait_for_job` waits without
@@ -65,10 +71,11 @@ is held by disabled Online Access, or reaches its timeout. See
 [job contexts](BLENDER_JOB_CONTEXT.md) for lifetime and remaining integration.
 
 Shared `job_status` and `wait_for_job` results add the native Jobs projection as
-flat fields. `lane` is the model lane that submitted the job in this Blender
-session, or `null` for workflow, Film, restarted and recovered jobs; it never
-selects a destination. While a known remote job is active, `remote_status` is its
-latest validated Scenario status, `progress` its reported fraction from 0 to 1
+flat fields. `lane` is the model lane that submitted the job, saved with it, so a
+restart keeps it; it is `null` for workflow, Film and recovered cloud jobs and for
+jobs saved by releases before job schema 13, and it never selects a destination.
+While a known remote job is active, `remote_status` is its latest validated
+Scenario status, `progress` its reported fraction from 0 to 1
 (`null` when missing or invalid), `remote_observed_at` the reading's UTC time and
 `remote_stale` whether automatic polling has stopped keeping it current, also
 while a failed refresh is being retried. They are
@@ -242,8 +249,11 @@ For one unapplied saved texture set, `purpose: material` captures the active mes
 its active material slot and unambiguous stored map roles. Show that destination
 and map list before consuming the shared application approval. It packs new
 images, creates a material and changes only that slot. It does not reuse a new
-selection after confirmation. See [material application](MATERIAL_APPLICATION.md)
-for single-user/UV restrictions, supported maps, rollback and no-global-undo limits.
+selection after confirmation. The approval returns `projection` (`BOX` for a mesh
+without UVs, else `UV`) and `tile_size_m`, the metres one texture repeat spans; pass
+`tile_size_m` (0.01 to 1000, default 2) to change it. See
+[material application](MATERIAL_APPLICATION.md) for single-user restrictions, supported
+maps, tiling, rollback and no-global-undo limits.
 
 ## Typed local references
 
@@ -265,10 +275,11 @@ lost response must be reconciled using saved progress instead of starting
 another upload. The same uploads and saved-reference recovery are available in
 generation forms and loaded Studio workflow forms for image, audio, video and 3D
 inputs. `capture_reference` also supports explicit `VIEWPORT_CLIP`,
-`CAMERA_CLIP` and `MESH` snapshots. Clips use the preview/scene range at
-1280x720 without audio, trimming or padding; mesh export produces one GLB from
-the selected meshes. Only mesh export works in background mode. `render_form`
-uses the native render form and the same upload session for explicit
+`CAMERA_CLIP` and `MESH` snapshots. Stills and clips are 1280 pixels on the long
+side, shaped like the camera's render frame or the viewport; clips use the
+preview/scene range without audio, trimming or padding; mesh export produces one
+GLB from the selected meshes. Only mesh export works in background mode.
+`render_form` uses the native render form and the same upload session for explicit
 scene/first-frame slots. Its `prepare` action requires a GUI for scene captures;
 first-frame file uploads also work headlessly. Result-specific application
 remains separate.
@@ -466,16 +477,16 @@ Do not edit this block by hand; run `make mcp-docs`. An asterisk marks a require
 | `reference_upload_status` | Read a reference upload's progress while the shared session advances its already authorized work. | `context_id`*: string<br>`reference_id`*: string | read-only annotation |
 | `list_reference_uploads` | Inspect saved uploads under the selected credential scope, including after restart. | none | read-only annotation |
 | `recover_reference_upload` | Explicitly inspect a known remote upload, cancel unclaimed preparation, restart an unfinished upload, or clean its finished private source copy. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'cancel_prepared', 'restart', 'cleanup']) | destructive annotation |
-| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame'])<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number | read-only annotation |
+| `prepare_result_application` | Prepare explicit saved image/media/model import, material assignment, panorama World replacement, session-local World restoration, or a Render Video first frame from a saved image. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`purpose`: string (['import', 'material', 'world', 'restore_world', 'mesh_edit', 'mesh_source', 'video_first_frame', 'camera_background', 'image_plane'])<br>`plane_unlit`: boolean<br>`mesh_policy`: string (['REMESH', 'UV', 'RETEXTURE', 'PARTS', 'RIG', 'ANIMATE'])<br>`mesh_placement`: string (['WORLD', 'LOCAL', 'FIT'])<br>`keep_original`: boolean<br>`keep_texture`: string (['SELECTED', 'HEAD', 'NONE'])<br>`splat_max_points`: integer ([250000, 500000, 1000000, 2000000])<br>`splat_axes`: string (['OPENGL', 'OPENCV'])<br>`target_size_m`: number<br>`tile_size_m`: number | read-only annotation |
 | `apply_result_application` | Apply or restore saved results after the user approves the prepared destination and operation. | `context_id`*: string<br>`application_id`*: string | destructive annotation |
 | `recover_local_job` | Explicitly recover a saved job without repeating generation or importing into another scene. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`action`*: string (['refresh', 'resume', 'cancel', 'recover_download', 'stop_download', 'retry_receipt', 'find_cloud_job']) | destructive annotation |
 | `list_local_jobs` | Inspect durable local jobs for the selected API-key pair without network requests. | none | read-only annotation |
 | `cancel_prepared_job` | Cancel an unsubmitted durable local intent without contacting Scenario. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | destructive annotation |
-| `estimate_blockout` | Get the exact free estimate for the current scene's Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact. | `action`: string (['DESIGN', 'REFINE']) | read-only annotation |
+| `estimate_blockout` | Get the exact free estimate for the current scene's Blockout description or refinement. This reads the native Blockout fields (description, density, Best or Fast model, uploaded reference image) and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, model (the Scenario LLM model the tier resolved to), cu_cost_exact. | `action`: string (['DESIGN', 'REFINE']) | read-only annotation |
 | `approve_blockout` | Spend the explicitly approved exact cost once for estimate_blockout. Args: quote_id and approved_cost. Inputs, current plan and origin must still match. Returns: request_id and state. The unchanged source scene receives a complete plan; no geometry is built automatically. Inspect list_local_jobs after failure or restart; never repeat an uncertain submission. | `quote_id`*: string<br>`approved_cost`*: string | - |
 | `prepare_blockout_plan` | Read and validate one saved Scenario LLM plan for the current scene without generating or building geometry. Args: context_id, request_id, expected_revision from list_local_jobs. Returns: review_id, state, scene, elements, groups, replaces_plan, error. Poll blockout_plan_status until ready, then review the destination and replacement before apply_blockout_plan. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer | read-only annotation |
 | `blockout_plan_status` | Inspect a prepared saved-plan review or discard its finished approval handle. Args: context_id, review_id, optional discard. Returns: state, scene, elements, groups, replaces_plan, error; discarded state when requested. Never generates or changes a scene. | `context_id`*: string<br>`review_id`*: string<br>`discard`: boolean | read-only annotation |
-| `apply_blockout_plan` | Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build plan separately. Never spends or builds geometry. | `context_id`*: string<br>`review_id`*: string | destructive annotation |
+| `apply_blockout_plan` | Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build blockout separately. Never spends or builds geometry. | `context_id`*: string<br>`review_id`*: string | destructive annotation |
 | `read_model_text` | Read one explicitly selected complete text asset from a successful saved model job, including after restart. Obtain context_id and revision from list_local_jobs and asset_id from job_status results. Returns: request_id, asset_id and bounded full text. Never spends, parses a plan, applies to the scene or substitutes a truncated preview. Args: context_id, request_id, expected_revision, asset_id. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`*: string | read-only annotation |
 | `inspect_result_previews` | Inspect the previews of a downloaded saved job's results, as the native preview tiles and Waveform control show them, without generating, spending, applying or changing the scene or saved job. | `context_id`*: string<br>`request_id`*: string<br>`expected_revision`*: integer<br>`asset_id`: string<br>`envelope`: boolean<br>`action`: string (['inspect', 'retry', 'cancel'])<br>`bins`: integer<br>`wait`: number | read-only annotation |
 | `estimate_prompt` | Get the exact server price for New, Rewrite or Translate on the current scene's native prompt field. This does not generate or change text. Args: lane and action (GENERATE, REWRITE, TRANSLATE). Returns: quote_id and cu_cost_exact. Obtain explicit approval of that exact cost before approve_prompt. The current field text/model must remain unchanged. | `lane`: string (enum: see tools/list)<br>`action`*: string (['GENERATE', 'REWRITE', 'TRANSLATE']) | read-only annotation |
@@ -623,9 +634,9 @@ this computer can connect. The server refuses any bind address other than
   Blender's extension user directory that holds saved results, previews, captures
   and staging; or
 - the user chose it in Blender during the current Blender session: a reference file
-  picked with a generation form's **Upload** button, or a file set in the Render
-  Video first-frame field or a workflow input's **File** field, through the file
-  browser or typed into the field.
+  picked with a generation form's **Upload** button or dropped on the Scenario
+  sidebar, or a file set in the Render Video first-frame field or a workflow
+  input's **File** field, through the file browser or typed into the field.
 
 Every other path, including the Output Folder, which can point anywhere, is refused
 with `UploadRefused` before the file is opened, copied or sent. The path is resolved
@@ -639,9 +650,10 @@ outside the allowlist, so a refusal does not reveal which files exist.
 `first_frame_path` an agent set through `configure` is refused until the user
 chooses that file.
 
-Choices are recorded on Blender's main thread when one of those fields changes or
-the **Upload** file browser confirms a file, outside a local MCP tool call: a
-value an agent writes while its tool runs is never a choice. They are kept in
+Choices are recorded on Blender's main thread when one of those fields changes,
+the **Upload** file browser confirms a file or a file is dropped on the Scenario
+sidebar, outside a local MCP tool call: a value an agent writes while its tool
+runs is never a choice. They are kept in
 memory by resolved path, up to the 256 most recent, and forgotten when Blender
 quits or the extension is disabled; a path saved in a blend file in an earlier
 session must be chosen again. This policy does not apply to the user's own
@@ -816,17 +828,20 @@ timeout. Cancellation and interrupted download recovery use the same scoped
 revision guards as Image.
 
 Only the Image lane automatically imports verified PNG/EXR images into its
-unchanged original scene. Other lanes stop at `ready` after saving downloads;
-there is no implicit texture assignment, mesh import or sequencer insertion.
+original scene, if selected; scene edits keep the import, while Undo, Redo, loading
+a file or removing the scene leave the job `ready`. Other lanes stop at `ready`
+after saving downloads; there is no implicit texture assignment, mesh import or
+sequencer insertion.
 `job_status.results` reports asset identity, media type, expected size, `source`,
 `projection` and whether a download receipt was recorded. `source: original` means
 a declared OpenEXR original was saved instead of its preview, or a WAV original
 instead of Scenario's MP3 copy, with unknown size;
 `projection: equirectangular` appears only when Scenario declares a 360 image.
-Neither is an application approval, and neither is a listed file. Recovered
-display records use generic `kind: model`; original lane metadata is not
-persisted. PNG/EXR results can use the explicit image import approval above,
-without inferring a material or World assignment from their media type.
+Neither is an application approval, and neither is a listed file. A job listed after
+a restart reports the `kind` of its saved lane; one saved without a lane reports the
+kind its saved results establish, or `model` until they are known. PNG/EXR results
+can use the explicit image import approval above, without inferring a material or
+World assignment from their media type.
 Supported video/audio uses the explicit asset and scene/frame approval above.
 Saved model `import_units` use the scene/cursor approval above; in-place mesh
 editing is separate. `import_result` rejects direct cached-file import,
@@ -938,7 +953,10 @@ a form sends each decimal field as the shortest decimal its 32-bit storage holds
 (`0.8`, not `0.800000011920929`). `estimate_cost` and `generate` start
 each number parameter that is not given at its declared default, in the field's
 own type (`0.0` in a decimal field), as a form does. `null` still leaves an
-optional parameter to the service, like a field switched off in the form. The
+optional parameter to the service, like a field switched off in the form. A few
+models start at the curated value their form shows instead: Tripo P2, text or image,
+with Auto Size on and Face Limit 50000, Rodin with the PBR material, Uthana Text to
+Motion 3.0 with Animation only on. The
 [Environment lane](#environment-lane-360-panoramas) has no form; its requests
 apply their panorama contract's lane defaults and sizes instead.
 Approval is unchanged: `generate` needs the same parameters and the exact
@@ -1093,7 +1111,7 @@ same contract to the parameters before the exact quote:
 - Lane defaults apply when a parameter is unset: the Flux model makes one
   panorama (`numOutputs` 1) instead of the schema's two. The Image lane keeps
   the schema defaults of the same models.
-- The GPT model takes only 2048x1024 (default), 3072x1536 or 3840x1920.
+- The GPT model takes only 2048x1024, 3072x1536 or 3840x1920 (default).
 - A panorama-kind reference must be the `asset_id` of a saved, downloaded result
   of this account and project whose `job_status` result shows
   `projection: equirectangular` and `source: asset`. Other asset IDs, OpenEXR
@@ -1251,6 +1269,24 @@ result meshes were joined into one. See
 fit](MESH_APPLICATION.md#bounds-fit-for-remeshes-and-copied-parts).
 
 
+## Retexture kept texture
+
+For `mesh_policy: RETEXTURE`, `keep_texture` chooses which faces get the source's
+own maps back after the result's UVs and materials replace them: `SELECTED` (faces
+selected in Edit Mode), `HEAD` (a character's head, found from its shape) or
+`NONE`. Omitted, the review starts on `SELECTED` when some faces are selected,
+else on `HEAD` for sources that stand like a character (0.5 to 3 m tall, taller
+than wide) while the scene's Keep the head's texture option is on, else on
+`NONE`. The approval returns `keep_texture`, `kept_faces` and `kept_note`; for
+other policies `keep_texture` and `kept_note` are null and `kept_faces` is 0, and
+a `keep_texture` other than `NONE` is refused. `kept_faces` 0 with `HEAD` means no
+head was found and nothing will be kept. After success, `job_status`
+`mesh_edit.kept_texture` reports `mode`, `source` (`selection`, `head` or null),
+`faces`, the `maps` painted (`base_color`, `normal`, `roughness`, `metallic`) and
+`skipped` roles with their reason. See
+[kept texture](MESH_APPLICATION.md#keep-the-sources-texture-on-chosen-faces).
+
+
 ## Saved mesh undo status
 
 `mesh_edit.undo_available` reports whether a desktop Blender history checkpoint
@@ -1311,30 +1347,44 @@ provider/retargeting limitations.
 Use `mesh_policy: ANIMATE` with `purpose: mesh_source` or `mesh_edit` and one
 saved GLB, glTF or FBX unit from an Animate job when the source is skinned to an
 armature. The returned armature's clips are copied onto that existing rig; the
-source's mesh, skin, rig and object context stay, and no returned object is
-added. Every animated bone needs the same name and parent as the rig and a rest
-pose within 15 degrees, which the copied keys are corrected for, and location
-keys are scaled to the rig's units. The first clip becomes the active action;
-it, the other clips and the previous action stay in muted NLA tracks.
-`mesh_placement` and `keep_original` are not used. An unskinned source, a
-different skeleton or a result without clips is rejected, leaving the job
-reviewable. `mesh_edit.rig` names the animated rig, `mesh_edit.clips` the new
-actions and `mesh_edit.rest_correction_deg` the largest rest correction in
-degrees while the status is current. FBX clips, for RIG too, keep the file's
-frame rate and `mesh_edit.frame_rate_mismatch` reports a different scene FPS.
-The shared native history and receipt-only recovery rules apply. See [the
-ANIMATE contract](MESH_APPLICATION.md#apply-returned-animation).
+source's mesh, skin, rig and object context stay, and no returned object is added.
+Every animated bone needs the same name and parent as the rig and a rest pose
+within 15 degrees, which the copied keys are corrected for, and location keys are
+scaled to the rig's units. Otherwise, when both rigs are humanoid skeletons with
+Meshy, Mixamo, SMPL or Unreal bone names, as for a text-to-motion clip on a Meshy
+rig, the clips are [retargeted](MESH_APPLICATION.md#retarget-a-humanoid-clip) with
+root motion scaled by leg length and the feet kept on the rig's rest floor. Clips
+that also key the returned armature object, as files whose skin leaves the moving
+scene root out of its joints do, are only retargeted, that motion reaching the
+hips. The first clip becomes the active action; it, the other clips and the
+previous action stay in muted NLA tracks, and a scene frame range still at
+Blender's default 1 to 250 becomes the first clip's. `mesh_placement` and
+`keep_original` are not used. A skinned source too dense for other in-place edits
+still takes ANIMATE. An unskinned source, another
+skeleton that is not humanoid or a result without clips is rejected, leaving the
+job reviewable and the rig unchanged; `job_status` `error` then starts with
+"Animation not applied; the rig is unchanged" and says what to change, such as
+rigging the mesh again with Edit 3D > Rigging. `mesh_edit.rig` names the animated
+rig, `mesh_edit.clips` the new actions, `mesh_edit.rest_correction_deg` the
+largest rest correction in degrees (null when retargeted),
+`mesh_edit.retargeted_from` the returned skeleton when retargeted and
+`mesh_edit.frame_range` the range the first clip set, while the status is current.
+FBX clips, for RIG too, keep the file's frame rate and
+`mesh_edit.frame_rate_mismatch` reports a different scene FPS. The shared native
+history and receipt-only recovery rules apply. See [the ANIMATE
+contract](MESH_APPLICATION.md#apply-returned-animation).
 
 
 ## Blockout plan commands
 
-`estimate_blockout` reads the current scene's native Blockout description, type,
-scale and previous plan for DESIGN or REFINE. It returns an exact free quote;
-`approve_blockout` requires that quote and unchanged decimal cost, then persists
-one intent before submission. Changed fields, scenes or credentials reject the
+`estimate_blockout` reads the current scene's native Blockout description, density,
+model tier, uploaded reference image and previous plan for DESIGN or REFINE. It
+returns an exact free quote and the model the tier resolved to; `approve_blockout`
+requires that quote and unchanged decimal cost, then persists one intent before
+submission. Changed fields, scenes or credentials reject the
 approval. UI and MCP use the same facade and job session. Complete returned JSON
 updates only the unchanged original scene's stored plan; geometry is built by a
-separate explicit local **Build plan** action.
+separate explicit local **Build blockout** action.
 
 After failure or restart, use `list_local_jobs` for context/revision and
 `job_status` for saved asset IDs. `read_model_text` retrieves one selected full
@@ -1350,7 +1400,7 @@ replacement flag before explicit `apply_blockout_plan` approval. The handle is
 single-use and bound to the unchanged destination and saved record. Pass
 `discard: true` to the status command to discard a finished review. The complete
 plan stays in memory until approval; no result text is stored in job metadata.
-Use native **Build plan** separately for geometry. Native plan application has
+Use native **Build blockout** separately for geometry. Native plan application has
 Undo. `apply_blockout_plan` keeps the same scope and destination guards and
 records one Undo History step after the plan changes, which marks the file
 modified.

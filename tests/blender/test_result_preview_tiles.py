@@ -461,7 +461,9 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertEqual(self.requests, [])
         self.assertEqual(self.downloads, [])
         calls = self.draw(view)
-        self.assertIn(("icon", tile.icon_id or self.tiles._builtin("IMAGE_DATA"), ANY, ANY), calls)
+        self.assertIn(
+            ("icon", tile.icon_id or self.tiles.builtin_icon("IMAGE_DATA"), ANY, ANY), calls
+        )
         self.assertIn(("label", "(1) Image", "NONE"), calls)
         self.assertFalse([call for call in calls if call[0] == "operator"])
 
@@ -740,7 +742,7 @@ class ResultPreviewTileTests(unittest.TestCase):
         self.assertIn("could not decode", tile.message)
         self.assertEqual(self.data_counts(), self.counts)
         calls = self.draw(view)
-        self.assertIn(("icon", self.tiles._builtin("IMAGE_DATA"), ANY, ANY), calls)
+        self.assertIn(("icon", self.tiles.builtin_icon("IMAGE_DATA"), ANY, ANY), calls)
         (retry,) = [call for call in calls if call[0] == "operator"]
         self.assertEqual(
             retry[1:4], ("scenario.retry_result_preview", "Retry preview (1)", "FILE_REFRESH")
@@ -816,7 +818,7 @@ class ResultPreviewTileTests(unittest.TestCase):
             self.assertIn("did not complete; retrying", self.tile().message)
             self.assertNotIn("signature", self.tile().message)
             calls = self.draw(view)
-            self.assertIn(("icon", self.tiles._builtin("FILE_MOVIE"), ANY, ANY), calls)
+            self.assertIn(("icon", self.tiles.builtin_icon("FILE_MOVIE"), ANY, ANY), calls)
             self.settle(lambda: self.status() == "ready")
         self.assertEqual(self.tile().caption, "Video (1)")
         self.assertEqual(tuple(self.icon().image_size), (256, 144))
@@ -833,7 +835,7 @@ class ResultPreviewTileTests(unittest.TestCase):
             self.assertTrue(tile.retry)
             self.assertIn("no preview", tile.message)
             calls = self.draw(view)
-            self.assertIn(("icon", self.tiles._builtin("FILE_MOVIE"), ANY, ANY), calls)
+            self.assertIn(("icon", self.tiles.builtin_icon("FILE_MOVIE"), ANY, ANY), calls)
             self.assertIn("Retry preview (1)", [call[2] for call in calls if call[0] == "operator"])
             polls = len(self.requests)
             for _ in range(20):

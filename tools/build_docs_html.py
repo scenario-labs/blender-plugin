@@ -47,10 +47,11 @@ class HandbookError(ValueError):
 
 
 class _Page(HTMLParser):
-    def __init__(self, source: Path, root: Path, inline_images: bool):
+    def __init__(self, source: Path, root: Path, inline_images: bool, ref: str = "main"):
         super().__init__(convert_charrefs=False)
         self.source = source
         self.root = root
+        self.ref = quote(ref, safe="/-._~")
         self.inline_images = inline_images
         self.parts: list[str] = []
         self.assets: dict[Path, bytes] = {}
@@ -151,7 +152,7 @@ class _Page(HTMLParser):
             (
                 "https",
                 "github.com",
-                f"/scenario-labs/blender-plugin/{'tree' if target.is_dir() else 'blob'}/main"
+                f"/scenario-labs/blender-plugin/{'tree' if target.is_dir() else 'blob'}/{self.ref}"
                 + path,
                 url.query,
                 url.fragment,
@@ -292,6 +293,7 @@ def build_handbook(
     *,
     inline_images: bool = False,
     root: Path = ROOT,
+    ref: str = "main",
 ) -> Path:
     """Validate all inputs before writing HTML and referenced image snapshots."""
     source, template, manifest, output, root = (
@@ -321,7 +323,7 @@ def build_handbook(
     content = renderer.convert(source.read_text(encoding="utf-8"))
     values = {"content": content, "toc": renderer.toc, "version": html.escape(version), **inlined}
     page = SLOT.sub(lambda match: values[match[1].strip()], layout)
-    parsed = _Page(source, root, inline_images)
+    parsed = _Page(source, root, inline_images, ref)
     parsed.feed(page)
     parsed.close()
     if not all((parsed.doctype, parsed.lang, parsed.charset, parsed.viewport, parsed.title)):

@@ -36,7 +36,7 @@ RECORDS = [
     rec("model_patina-material", "PATINA Material", ["txt2img", "img2img"]),
     rec("model_some-lora", "Cartoon Backgrounds 2.0", ["txt2img", "img2img"], ["sc:scenario"]),
     rec("model_scenario-llm", "Scenario LLM", ["txt2txt", "img2txt"], ["tool"]),
-    rec("model_bytedance-seedance-2-0", "Seedance 2.0", ["txt2video", "img2video", "video2video"]),
+    rec("model_bytedance-seedance-2-5", "Seedance 2.5", ["txt2video", "img2video", "video2video"]),
     rec("model_minimax-h3", "Minimax H3", ["txt2video", "img2video", "video2video"]),
     rec("model_kling-v3-i2v-pro", "Kling V3 I2V Pro", ["img2video"]),
     rec(
@@ -79,8 +79,29 @@ def test_render_image_lane_keeps_edit_models_and_drops_utilities_and_patina():
 
 def test_render_video_lane_needs_a_video_input():
     got = ids(catalog.models_for_lane("render_video", RECORDS))
-    assert got[:2] == ["model_bytedance-seedance-2-0", "model_minimax-h3"]
+    assert got[:2] == ["model_bytedance-seedance-2-5", "model_minimax-h3"]
     assert "model_kling-v3-i2v-pro" not in got
+
+
+def test_render_video_default_is_seedance_2_5_whatever_else_the_catalog_lists():
+    # The first model is what a new Render Video form shows. A deprecated predecessor never
+    # appears, and an unranked relative (video-to-video only) follows the curated models.
+    older = rec(
+        "model_bytedance-seedance-2-0",
+        "Seedance 2.0",
+        ["txt2video", "img2video", "video2video"],
+        ["deprecated:model_bytedance-seedance-2-5"],
+    )
+    draft = rec(
+        "model_bytedance-seedance-2-5-draft-complete",
+        "Seedance 2.5 Draft Complete",
+        ["video2video"],
+    )
+    shuffled = [draft, older, *reversed(RECORDS)]
+    got = ids(catalog.models_for_lane("render_video", shuffled))
+    assert got[0] == "model_bytedance-seedance-2-5" == catalog.DEFAULT_MODELS["render_video"][0]
+    assert "model_bytedance-seedance-2-0" not in got
+    assert got.index("model_bytedance-seedance-2-5-draft-complete") > got.index("model_minimax-h3")
 
 
 def test_edit3d_lane_and_tasks():
@@ -100,6 +121,87 @@ def test_edit3d_lane_and_tasks():
     )
     assert catalog.edit3d_task("REMESH")[1] == "Remesh"
     assert catalog.edit3d_task("nope")[0] == "ALL"
+
+
+def test_retexture_starts_on_meshy_7_then_the_scene_edit_models():
+    # Meshy 7 repaints the whole outfit in about a minute; applying it in place keeps the
+    # source's head. The scene-edit models keep the face themselves, in 10 to 16 minutes.
+    inputs = [
+        {"name": "images", "type": "file_array", "kind": "image"},
+        {"name": "sceneFile", "type": "file", "kind": "3d"},
+        {"name": "prompt", "type": "string"},
+    ]
+    caps = ["img23d", "3d23d", "txt23d"]
+    opus = rec("model_scenario-claude-opus-5-5-3d", "Claude Opus 5.5 3D", caps, inputs=inputs)
+    astra = rec("model_scenario-gpt6-astra-3d", "GPT-6 Astra 3D", caps, inputs=inputs)
+    shuffled = [astra, *reversed(RECORDS), opus]
+    assert ids(catalog.edit3d_models("RETEXTURE", shuffled)) == [
+        "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
+        "model_scenario-gpt6-astra-3d",
+    ]
+    assert catalog.DEFAULT_MODELS["edit3d"][:2] == [
+        "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
+    ]
+    assert ids(catalog.models_for_lane("edit3d", shuffled))[0] == "model_meshy-7-retexture"
+    # The selected mesh goes to the scene file, not to the reference images listed first.
+    assert catalog.mesh_param(opus) == "sceneFile"
+    # Retexture is their only Edit 3D task, and they still build in the 3D lane.
+    tasks = [task for task, _label, _desc, models in catalog.EDIT3D_TASKS if opus.id in models]
+    assert tasks == ["RETEXTURE"]
+    assert opus.id in ids(catalog.models_for_lane("3d", shuffled))
+
+
+def test_only_the_slow_scene_edit_models_show_an_expected_wait():
+    assert catalog.expected_wait("model_scenario-claude-opus-5-5-3d") == (
+        "Slow: about 12 to 16 minutes on a 55,000-triangle character"
+    )
+    assert catalog.expected_wait("model_scenario-gpt6-astra-3d") == (
+        "Slow: about 10 minutes on a 55,000-triangle character"
+    )
+    assert catalog.expected_wait("model_meshy-7-retexture") is None
+    assert catalog.expected_wait("model_unknown") is None
+
+
+def test_text_to_motion_models_join_the_animate_task_first_and_stay_3d_results():
+    motion = [
+        rec(
+            "model_uthana-text-to-motion-3.0",
+            "Uthana Text to Motion 3.0",
+            ["txt23d"],
+            inputs=[{"name": "characterFile", "type": "file", "kind": "3d"}],
+        ),
+        rec("model_viggle-text-to-motion", "Viggle Text to Motion", ["txt23d"]),
+        rec("model_meshy-text-to-motion", "Meshy Text to Motion", ["txt23d"]),
+        rec(
+            "model_meshy-animation",
+            "Meshy Animation",
+            ["3d23d"],
+            inputs=[{"name": "model", "type": "file", "kind": "3d"}],
+        ),
+    ]
+    records = RECORDS + motion
+    assert ids(catalog.edit3d_models("ANIMATE", records)) == [
+        "model_uthana-text-to-motion-3.0",
+        "model_viggle-text-to-motion",
+        "model_meshy-animation",
+    ]
+    # Only the curated text-to-motion models join Edit 3D; they still generate in 3D.
+    assert "model_meshy-text-to-motion" not in ids(catalog.edit3d_models("ALL", records))
+    assert motion[1].lanes == {"3d", "edit3d"}
+    assert catalog.model_kind(motion[1]) == "3d"
+
+
+def test_meshy_library_motions_are_named_with_an_other_id_escape():
+    items = catalog.choice_items("model_meshy-animation", "actionId")
+    assert items[1][:2] == ("30", "Walk")
+    assert items[1][2] == "Casual_Walk (library ID 30)"
+    assert items[-1][0] == catalog.OTHER_CHOICE
+    assert {"Idle", "Run", "Wave hello", "Jump"} <= {label for _id, label, _d in items}
+    assert len(items) == len({value for value, _label, _d in items}) <= 20
+    assert catalog.choice_items("model_meshy-animation", "heightMeters") == []
+    assert catalog.choice_items("model_other", "actionId") == []
 
 
 def test_mesh_param_and_tagged_models():
@@ -399,12 +501,36 @@ def test_trained_models_lists_private_scope_then_public_loras_once():
 
 
 def test_audio_lane_lists_speech_music_and_sfx_models():
-    music = rec("model_elevenlabs-music-v2", "ElevenLabs Music v2", ["txt2audio"])
+    music = rec("model_elevenlabs-music-v2-5", "ElevenLabs Music v2.5", ["txt2audio"])
     cover = rec("model_minimax-music-cover", "Minimax Music Cover", ["audio2audio"])
     got = ids(catalog.models_for_lane("audio", RECORDS + [music, cover]))
-    assert got == ["model_elevenlabs-music-v2", "model_minimax-music-cover"]
+    assert got == ["model_elevenlabs-music-v2-5", "model_minimax-music-cover"]
     assert "model_google-gemini-3-1-flash" not in got
-    assert catalog.DEFAULT_MODELS["render_image"][0] == "model_openai-gpt-image-2"
+    assert catalog.DEFAULT_MODELS["render_image"][0] == "model_openai-gpt-image-2-5-sunburst"
+
+
+def test_a_newer_version_takes_the_older_ones_place_and_a_live_older_one_follows():
+    curated = catalog.DEFAULT_MODELS
+    for lane, newer, older in (
+        ("image", "model_google-gemini-nano-banana-2-1", "model_google-gemini-3-1-flash"),
+        ("render_image", "model_google-gemini-nano-banana-2-1", "model_google-gemini-3-1-flash"),
+        ("audio", "model_lyria-3-5", "model_lyria-3-pro"),
+        ("audio", "model_elevenlabs-tts-v4", "model_elevenlabs-tts-v3"),
+        ("edit3d", "model_tripo-retopology-v3", "model_tripo-retopology"),
+    ):
+        assert curated[lane].index(older) == curated[lane].index(newer) + 1, (lane, newer)
+    # Remesh offers Tripo Retopology v3 first; saved jobs on the older model keep their task.
+    retopology_v3 = rec(
+        "model_tripo-retopology-v3",
+        "Tripo Retopology v3",
+        ["3d23d"],
+        inputs=[{"name": "model", "type": "file", "kind": "3d"}],
+    )
+    assert ids(catalog.edit3d_models("REMESH", RECORDS + [retopology_v3])) == [
+        "model_tripo-retopology-v3",
+        "model_tripo-retopology",
+    ]
+    assert catalog.edit3d_task("REMESH")[3][0] == "model_tripo-retopology-v3"
 
 
 def _recorded(model_id):

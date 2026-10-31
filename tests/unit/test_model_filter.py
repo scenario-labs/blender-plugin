@@ -279,6 +279,19 @@ def test_3d_categories_need_a_mesh_input_for_edit_tasks():
     assert mf.categories_of(LLM) == set()
 
 
+def test_only_motion_models_that_animate_a_given_character_leave_3d_text():
+    cartwheel = rec(
+        "model_cartwheel-text-to-motion",
+        "Cartwheel Text to Motion",
+        ("txt23d", "3d23d"),
+        ("3D", "Cartwheel", "Motion", "animate", "sc:third-party"),
+    )
+    assert mf.animates_given_character(cartwheel)
+    # Text to motion returning its own character, a mesh editor and a generator stay.
+    for record in (MOTION, BANG, MESHY7):
+        assert not mf.animates_given_character(record)
+
+
 def test_loras_deprecated_and_text_models_are_never_visible():
     assert not mf.visible(LORA)
     assert not mf.visible(COMPOSITION)
@@ -385,3 +398,55 @@ def test_recent_models_touch_orders_dedupes_and_limits(tmp_path):
     assert mf.RecentModels(path).ids("image") == ["d", "c", "a"]
     path.write_text("not json")
     assert mf.RecentModels(path).ids("image") == []
+
+
+def test_music_length_spec_names_the_length_input_of_music_models_only():
+    from scenario.core.schema.params import parse_schema
+
+    def schema(model, inputs):
+        return parse_schema(rec(model.id, model.name, ("txt2audio",), model.tags, inputs=inputs))
+
+    seconds = {"name": "durationSeconds", "type": "number", "min": 3, "max": 600, "step": 1}
+    music = rec("model_elevenlabs-music-v2-5", "ElevenLabs Music v2.5", ("txt2audio",))
+    assert mf.music_length_spec(music, schema(music, [seconds])).name == "durationSeconds"
+    # ACE-Step names it duration; a length the model decides on its own is still the input.
+    ace = rec("model_ace-step-1-5", "ACE-Step 1.5 Text to Music - Quality", ("txt2audio",))
+    plain = {"name": "duration", "type": "number", "min": 10, "max": 600, "step": 1}
+    assert mf.music_length_spec(ace, schema(ace, [plain])).name == "duration"
+    # A sound effect has a length too, but it is not a music length.
+    sfx = rec("model_elevenlabs-sound-effects-v2", "ElevenLabs Sound Effects 2", ("txt2audio",))
+    assert mf.music_length_spec(sfx, schema(sfx, [seconds])) is None
+    # Music models without a length input, or with a choice list, have none to start.
+    lyria = rec("model_lyria-3-5", "Google Lyria 3.5", ("txt2audio",))
+    assert (
+        mf.music_length_spec(lyria, schema(lyria, [{"name": "prompt", "type": "string"}])) is None
+    )
+    choices = {"name": "duration", "type": "number", "allowedValues": [15, 30, 60]}
+    assert mf.music_length_spec(music, schema(music, [choices])) is None
+
+
+def test_motion_length_and_rate_specs_name_text_to_motion_inputs_only():
+    from scenario.core.schema.params import parse_schema
+
+    def schema(model, inputs):
+        return parse_schema(rec(model.id, model.name, ("txt23d",), inputs=inputs))
+
+    length = {"name": "length", "type": "number", "default": 8, "min": 4, "max": 10, "step": 1}
+    rate = {"name": "fps", "type": "number", "default": 30, "allowedValues": [24, 30, 60]}
+    uthana = rec("model_uthana-text-to-motion-3.0", "Uthana Text to Motion 3.0", ("txt23d",))
+    found = schema(uthana, [length, rate])
+    assert mf.motion_length_spec(uthana, found).name == "length"
+    assert mf.motion_rate_spec(uthana, found).name == "fps"
+    assert mf.rate_choice(found.by_name("fps"), 24.0) == 24
+    # 25 fps and NTSC's 23.976 are not offered: the model keeps its own rate.
+    assert mf.rate_choice(found.by_name("fps"), 25.0) is None
+    assert mf.rate_choice(found.by_name("fps"), 24000 / 1001) is None
+    # Viggle names its length duration and has no frame rate input.
+    duration = {"name": "duration", "type": "number", "default": 5, "min": 3, "max": 60}
+    viggle = rec("model_viggle-text-to-motion", "Viggle Text to Motion", ("txt23d",))
+    assert mf.motion_length_spec(viggle, schema(viggle, [duration])).name == "duration"
+    assert mf.motion_rate_spec(viggle, schema(viggle, [duration])) is None
+    # Other 3D models with the same input names are left alone.
+    other = rec("model_tripo-p2-text-to-3d", "Tripo P2 Text to 3D", ("txt23d",))
+    assert mf.motion_length_spec(other, schema(other, [length, rate])) is None
+    assert mf.motion_rate_spec(other, schema(other, [length, rate])) is None

@@ -16,6 +16,7 @@ ACTIVE_INTERVAL = 0.25
 IDLE_INTERVAL = 0.6
 _running = False
 _job_rows = None  # what job views last drew; compared each tick, never persisted
+_price = None  # what the visible form's price last drew; compared each tick, never persisted
 _failures = {}  # step -> the last exception type it reported
 
 
@@ -42,8 +43,19 @@ def _tick():
         _process()
     except Exception:  # an exception here would silently kill the timer
         log.exception("pump tick failed")
+    return ACTIVE_INTERVAL if _busy() else IDLE_INTERVAL
+
+
+def _busy():
+    """Catalog work runs, or a reference upload has its next step to take."""
     manager = runtime.state.manager
-    return ACTIVE_INTERVAL if manager is not None and manager.has_active() else IDLE_INTERVAL
+    if manager is not None and manager.has_active():
+        return True
+    uploads = runtime.state.reference_uploads
+    try:
+        return uploads is not None and uploads.advancing()
+    except Exception:  # the cadence must never stop the timer
+        return False
 
 
 def _process():
@@ -81,6 +93,17 @@ def _process():
         and runtime.credentials().valid
     ):
         generation.request_catalog()
+    # After process_catalog_events retired a session that a file load ended.
+    changed |= runtime.show_saved_jobs()
+    # Scene > New or another selected scene: its forms and mode lists, before any default.
+    try:
+        changed |= generation.sync_shown_forms()
+        _failures.pop("forms", None)
+    except Exception as error:  # never let it stop pricing; report each new failure once
+        changed = True
+        if type(error).__name__ != _failures.get("forms"):
+            _failures["forms"] = type(error).__name__
+            log.exception("synchronizing the selected scene's forms failed")
     from . import trained_defaults
 
     # Forms without an explicit choice take the scope's project default before any price.
@@ -107,10 +130,14 @@ def _process():
             lane_state = scene.scenario.lane_state(lane)
             if generation.rearm_repeat(scene, lane, lane_state, now):
                 changed = True
+            # A price the scene changed after is requested again once the scene settles.
+            if generation.reprice_revoked(scene, lane, lane_state):
+                changed = True
             if (
                 lane_state.estimate_state == "PENDING"
                 and lane_state.estimate_dirty_at
                 and now - lane_state.estimate_dirty_at >= ESTIMATE_DEBOUNCE
+                and generation.scene_settled(scene, lane, now)
             ):
                 if model_jobs.automatic_estimates_stopped():
                     lane_state.estimate_dirty_at = 0.0
@@ -122,7 +149,18 @@ def _process():
                     generation.request_estimate(scene, lane)
                     generation.note_repeat_quote(scene, lane, lane_state)
                     changed = True
+        if (
+            visible == "blockout"
+            and not model_jobs.automatic_estimates_stopped()
+            and runtime.credentials().valid
+            and runtime.online()
+        ):
+            from . import blockout
+
+            changed |= blockout.auto_quote(scene, now)
     if _jobs_changed():
+        changed = True
+    if _price_changed(current):
         changed = True
     # After the jobs' saved states moved: count generations for the rating prompt.
     try:
@@ -181,17 +219,47 @@ def _jobs_changed():
     Shared job projections change in context maintenance, not in a manager
     event, so this one comparison is what redraws Jobs, Generations and the
     viewport when progress or saved state moves. Online access is compared too,
-    because shared rows draw an offline line. Unchanged ticks never redraw.
+    because shared rows draw an offline line, and so is the session's spend line.
+    Unchanged ticks never redraw.
     """
     global _job_rows
     rows = (
         runtime.state.job_context_id,
         runtime.online(),
         tuple(_job_row(row, runtime.state.model_jobs) for row in runtime.state.jobs_view),
+        runtime.session_spend_label(),
     )
     if rows == _job_rows:
         return False
     _job_rows = rows
+    return True
+
+
+def _price_changed(scene):
+    """Report whether the selected scene's visible form changed its price since the last tick.
+
+    A requested price arrives in context maintenance, not in a manager event or
+    a step of this tick, so this comparison is what redraws the sidebar's
+    Generate button and the composer when "estimating" turns into a price or an
+    error. Unchanged ticks never redraw.
+    """
+    global _price
+    reading = None
+    if scene is not None:
+        lane = props.active_lane(scene)
+        if lane in props.GENERATION_LANES:
+            lane_state = scene.scenario.lane_state(lane)
+            reading = (
+                scene.session_uid,
+                lane,
+                lane_state.estimate_key,
+                lane_state.estimate_state,
+                lane_state.estimate_cu,
+                lane_state.estimate_error,
+            )
+    if reading == _price:
+        return False
+    _price = reading
     return True
 
 

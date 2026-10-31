@@ -338,17 +338,21 @@ def _body_for(model_id, parameters, *, lane="image"):
     if requested is not None and requested.picks and lane not in trained_models.LANES:
         raise ValueError("Trained models run in the image and render_image lanes")
     for spec in schema.specs:
-        # A form starts each number field at its declared default and sends it in the
-        # field's own type (0.0 in a decimal field, 1 in a whole one); do the same so an
-        # unchanged form and this request serialize alike. null still leaves it out.
+        # A form starts a setting at the model's curated starting value, else each number
+        # field at its declared default, and sends it in the field's own type (0.0 in a
+        # decimal field, 1 in a whole one); do the same so an unchanged form and this
+        # request serialize alike. null still leaves it out.
         # A panorama contract applies its own lane defaults and 2:1 sizes instead;
         # the Environment lane has no native form to match.
+        if contract is not None or spec.is_file or spec.name in parameters:
+            continue
         default = spec.default
-        if (
-            contract is None
-            and spec.ptype == "number"
+        curated = catalog.starting_value(record.id, spec)
+        if curated is not None:
+            parameters[spec.name] = curated
+        elif (
+            spec.ptype == "number"
             and not spec.allowed_values
-            and spec.name not in parameters
             and isinstance(default, int | float)
             and not isinstance(default, bool)
         ):
@@ -1453,7 +1457,12 @@ def estimate_blockout(args):
         jobs.poll()
         if item.phase != "READY":
             raise ScenarioError(0, item.error or "The Blockout price is unavailable")
-        return {"quote_id": item.identifier, "action": item.action, "cu_cost_exact": item.cost}
+        return {
+            "quote_id": item.identifier,
+            "action": item.action,
+            "model": item.model,
+            "cu_cost_exact": item.cost,
+        }
 
     return DeferredTool(item.task.result, finish)
 
@@ -1785,7 +1794,8 @@ def generate(args):
         "model_id": record.id,
         "note": "Submission is saved. Poll job_status for remote progress and verified downloads. "
         + (
-            "Image jobs import supported images only into their unchanged original scene. "
+            "Image jobs import supported images into their original scene if it is selected "
+            "when they arrive; Undo, Redo or opening a file stops the import for review. "
             if lane == "image"
             else "Panorama results stay saved; change a scene World only through "
             "prepare_result_application(purpose=world) and explicit approval. "
@@ -1927,6 +1937,11 @@ def prepare_result_application(args):
     size = args.get("target_size_m")
     if size is not None and (purpose != "import" or not args.get("asset_id")):
         raise ValueError("target_size_m needs the asset_id of a model import unit")
+    unlit = args.get("plane_unlit", False)
+    if unlit and purpose != "image_plane":
+        raise ValueError("plane_unlit applies only to purpose image_plane")
+    if args.get("tile_size_m") is not None and purpose != "material":
+        raise ValueError("tile_size_m applies only to purpose material")
     if purpose in {"mesh_edit", "mesh_source"}:
         _, approval = runtime.prepare_mesh_application(
             args["context_id"],
@@ -1939,6 +1954,7 @@ def prepare_result_application(args):
             placement=args.get("mesh_placement"),
             keep_original=args.get("keep_original", True),
             original_source=purpose == "mesh_source",
+            keep_texture=args.get("keep_texture"),
         )
         return {
             "context_id": args["context_id"],
@@ -1962,6 +1978,10 @@ def prepare_result_application(args):
             "primary": approval.primary,
             "mesh_placement": approval.placement,
             "keep_original": approval.keep_original,
+            # RETEXTURE paints the source's texture back on these faces after the result lands.
+            "keep_texture": approval.keep_texture if approval.kept is not None else None,
+            "kept_faces": approval.kept.faces if approval.kept is not None else 0,
+            "kept_note": approval.kept.note if approval.kept is not None else None,
             # FIT binds candidate bases; the verified mapping is reported after application.
             "result_to_source": None
             if approval.placement == "FIT"
@@ -1981,7 +2001,8 @@ def prepare_result_application(args):
             "REMESH replaces geometry, UVs and mesh materials, joining several meshes in the "
             "result into one only under FIT; UV replaces only active UVs. "
             "RETEXTURE preserves geometry and non-UV attributes, replacing all UV layers and "
-            "mesh materials. UV, RETEXTURE and RIG require the source surface: every returned "
+            "mesh materials, then paints the source's texture back on keep_texture faces. "
+            "UV, RETEXTURE and RIG require the source surface: every returned "
             "result mesh together may be triangulated, split at seams or reordered, but must "
             "match the source positions and faces, or fail with the reason. "
             "PARTS replaces source geometry with an empty mesh parent and 2 to 128 named parts; "
@@ -1995,13 +2016,24 @@ def prepare_result_application(args):
             "and one returned rig with its clips. Morphs and mesh "
             "animation are unsupported. A source already skinned to an armature accepts only RIG, "
             "which replaces its skin; its old rig is unchanged and Keep original's copy still "
-            "follows it, or ANIMATE. Move the source and its new rig group together afterward. "
+            "follows it, or ANIMATE, which alone takes one too dense for in-place edits. Move "
+            "the source and its new rig group together afterward. "
             "ANIMATE copies the returned armature's clips onto the rig that skins the source, "
             "keeping its mesh, skin and rig and adding no returned object. Every animated bone "
             "needs the same name and parent and a rest pose within 15 degrees, which keys are "
-            "corrected for; location keys are scaled to the rig. The first clip becomes active; "
-            "it, the others and the previous action stay in muted NLA tracks. ANIMATE does not "
-            "use placement or keep_original. "
+            "corrected for; location keys are scaled to the rig. Otherwise, when both rigs are "
+            "recognized humanoid skeletons (Meshy, Mixamo, SMPL or Unreal names), such as a "
+            "text-to-motion clip on a Meshy rig, the clips are retargeted body part by body "
+            "part, root motion scaled by leg length and the feet kept on the rig's rest floor, "
+            "and mesh_edit.retargeted_from names the returned skeleton; fingers keep their "
+            "pose. Clips that also key the returned "
+            "armature object, as files whose skin leaves the moving scene root out of its "
+            "joints do, are only retargeted, that motion reaching the hips. A refusal leaves "
+            "the rig unchanged and its job_status error says what to change. "
+            "The first clip becomes active; "
+            "it, the others and the previous action stay in muted NLA tracks. A scene frame "
+            "range still at Blender's default 1 to 250 becomes the first clip's "
+            "(mesh_edit.frame_range). ANIMATE does not use placement or keep_original. "
             "WORLD preserves imported scene "
             "positions; LOCAL treats imported positions as object-local. Neither rescales the "
             "result. FIT (the default, except for ANIMATE and a REMESH not from a Remesh "
@@ -2012,7 +2044,7 @@ def prepare_result_application(args):
             "2% of the source size from the other, at most 5% beyond and none beyond 10%; "
             "copied part vertices inside a closed source also pass. job_status mesh_edit "
             "reports the mapping used, fitted_from and fit_residual. "
-            "Keep original preserves an unselected copy. "
+            "Keep original preserves a hidden copy. "
             "When targets lists several objects, the captured input was exported from all of "
             "them: UV, RETEXTURE or RIG (one returned rig skinning them all) applies to every "
             "one or to none, in scene coordinates (WORLD, the identity mapping) or FIT from "
@@ -2029,6 +2061,7 @@ def prepare_result_application(args):
             args["expected_revision"],
             bpy.context.scene,
             bpy.context.view_layer.objects.active,
+            tile_size=args.get("tile_size_m"),
         )
         return {
             "context_id": args["context_id"],
@@ -2041,11 +2074,17 @@ def prepare_result_application(args):
             "target": approval.target_name,
             "slot": approval.target.active + 1,
             "roles": list(approval.roles),
+            "projection": approval.projection,
+            "tile_size_m": approval.tile_size,
             "kind": "material",
             "purpose": purpose,
             "note": "Approve one saved texture set for this mesh's active material slot. "
             "Images are packed; old materials and other slots are untouched. "
-            "Only a local single-user mesh with UVs in Object Mode is supported. "
+            "Only a local single-user mesh in Object Mode is supported. projection BOX means the "
+            "mesh has no UVs: box projection from object space, mesh unchanged; UV uses its active "
+            "UV map. One Mapping node repeats every map once per tile_size_m world metres, using "
+            "the object's scale at application; a UV mesh's size in metres is read from its UV "
+            "layout, and tiling stays 1 when that cannot be measured. "
             "Normals use Blender tangent space; height uses bump only. AO/edge nodes stay unconnected. "
             "This does not regenerate or save the blend file, and has no global undo transaction.",
         }
@@ -2116,8 +2155,58 @@ def prepare_result_application(args):
             "prices; call estimate_cost again before generate. Remove an existing first-frame "
             "slot with render_form first. Nothing has been changed.",
         }
+    if purpose in {"camera_background", "image_plane"}:
+        if not isinstance(args.get("asset_id"), str) or not args["asset_id"]:
+            raise ValueError(f"{purpose} requires the saved asset_id")
+        _, approval = runtime.prepare_landing_application(
+            args["context_id"],
+            args["request_id"],
+            args["expected_revision"],
+            bpy.context.scene,
+            args["asset_id"],
+            purpose=purpose,
+            unlit=unlit,
+        )
+        background = purpose == "camera_background"
+        return {
+            "context_id": args["context_id"],
+            "application_id": approval.identifier,
+            "reuse": approval.record.state.value == "applied",
+            "request_id": approval.record.intent.request_id,
+            "revision": approval.record.revision,
+            "scene": approval.scene_name,
+            "asset_id": approval.asset_id,
+            "kind": approval.kind,
+            "purpose": purpose,
+            **(
+                {
+                    "camera": approval.camera_name,
+                    "backgrounds_kept": approval.backgrounds,
+                    "frame": approval.frame,
+                }
+                if background
+                else {"cursor": list(approval.cursor), "plane_unlit": approval.unlit}
+            ),
+            "note": (
+                "Approve adding this saved result as one more background of the scene camera, "
+                "at half opacity behind objects, shown in camera view; existing backgrounds stay. "
+                + (
+                    "The video plays from a private local file as a clip starting at frame. "
+                    if approval.kind == "video"
+                    else "The image is packed. "
+                )
+                if background
+                else "Approve adding one new 1 m tall plane showing this image, facing -Y with "
+                "its bottom center at the cursor; the image is packed and its alpha, when its "
+                "header declares one, makes the plane transparent. "
+            )
+            + "Nothing has been added; changed destinations require review again.",
+        }
     if purpose != "import":
-        raise ValueError("Choose import, material, world, restore_world or video_first_frame")
+        raise ValueError(
+            "Choose import, material, world, restore_world, video_first_frame, "
+            "camera_background or image_plane"
+        )
     if args.get("asset_id"):
         _, approval = runtime.prepare_asset_application(
             args["context_id"],
@@ -3415,7 +3504,7 @@ SPECS = (
             "  - kind: optional string, image (default), audio, video or 3d; must match the file extension.\n"
             "Returns: context_id, reference_id, staging/upload state, request_id when persisted, kind and content_type after staging, and note.\n"
             'Example: {"path": "/chosen/reference.png"}.\n'
-            "Only two kinds of file are accepted: one the extension saved in its own folders (such as a downloaded result), or one the user chose in Blender during this session (a form's Upload button, the Render Video first-frame field or a workflow File field). Any other path, including the Output Folder, is refused with UploadRefused before anything is read or sent; ask the user to choose the file in Blender, or use capture_reference for the scene. Links are followed, so a link to an outside file is refused too.\n"
+            "Only two kinds of file are accepted: one the extension saved in its own folders (such as a downloaded result), or one the user chose in Blender during this session (a form's Upload button or a drop on the Scenario sidebar, the Render Video first-frame field or a workflow File field). Any other path, including the Output Folder, is refused with UploadRefused before anything is read or sent; ask the user to choose the file in Blender, or use capture_reference for the scene. Links are followed, so a link to an outside file is refused too.\n"
             "This sends the selected file to Scenario without conversion or sidecar discovery. Call only for an authorized upload; it does not generate or approve spending. Poll reference_upload_status until imported, then pass asset_id in estimate_cost or estimate_workflow parameters. Do not repeat an uncertain upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."
         ),
@@ -3500,17 +3589,19 @@ SPECS = (
             "  - context_id: required string, current context from list_local_jobs.\n"
             "  - request_id: required string, saved local job identity.\n"
             "  - expected_revision: required nonnegative integer, observed saved revision.\n"
-            "  - purpose: import (default), material, world, restore_world, mesh_edit, mesh_source or video_first_frame; material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id; a material map, or an image whose downloaded file header declares a size other than 2:1, is refused, and job_status omits apply_world when no other image remains. video_first_frame binds one downloaded PNG, JPEG or WebP colour result (job_status action use_first_frame) to the current scene's Render Video first frame by reusing its saved asset ID; it requires asset_id, a loaded Render Video model with an image input and no existing first-frame slot. The frame goes where render_form first_frame_route says.\n"
+            "  - purpose: import (default), material, world, restore_world, mesh_edit, mesh_source, video_first_frame, camera_background (another scene camera background from a PNG, JPEG, OpenEXR, MP4 or WebM asset_id) or image_plane (a new plane at the cursor from an image asset_id; plane_unlit true emits its colour); material uses the active mesh and saved unambiguous texture roles; World replacement requires asset_id; a material map, or an image whose downloaded file header declares a size other than 2:1, is refused, and job_status omits apply_world when no other image remains. video_first_frame binds one downloaded PNG, JPEG or WebP colour result (job_status action use_first_frame) to the current scene's Render Video first frame by reusing its saved asset ID; it requires asset_id, a loaded Render Video model with an image input and no existing first-frame slot. The frame goes where render_form first_frame_route says.\n"
             "  - asset_id: optional saved asset ID; required for one MP4/WebM video, MP3/WAV/OGG audio strip or video_first_frame image, or the key of one importable unit from job_status import_units for a GLB, glTF, FBX, OBJ or PLY model or SPZ or .splat Gaussian splats. Omit for PNG/EXR image import.\n"
             "  - splat_max_points: optional integer 250000, 500000, 1000000 (default) or 2000000 for an SPZ, PLY or .splat unit; denser files are thinned evenly.\n"
             "  - splat_axes: optional OPENGL (saved right/up/back) or OPENCV (saved right/down/forward) for an SPZ, PLY or .splat unit; the default is the file format's convention (OPENGL for SPZ, OPENCV for PLY and .splat), which providers may not follow.\n"
             "  - target_size_m: optional length in Blender units (metres at the default unit scale) from 0.01 to 1000 for a model import unit; the new group is scaled uniformly so its longest side has this length, with its bottom center still at the cursor. The longest side does not depend on how the provider oriented the model; read the height from dimensions_m after the import. Omit to keep the saved size.\n"
+            "  - tile_size_m: optional, 0.01 to 1000 (default 2), for purpose material: world metres per texture repeat. The approval reports it with projection BOX (a mesh without UVs: box projection, scaled by its object scale) or UV.\n"
             "  - mesh_policy: REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE; omit to start from the job's Edit 3D task (Animate: ANIMATE for a source skinned to an armature, else RIG), or RIG for another skinned source, which accepts only RIG or ANIMATE (see mesh_policy_source). ANIMATE ignores mesh_placement and keep_original. The approval note explains the chosen edit.\n"
             "  - mesh_placement: WORLD, LOCAL or FIT; FIT (not ANIMATE) applies one uniform scale and offset only if the result verifiably matches the source. Default: FIT, except WORLD for ANIMATE and the REMESH fallback.\n"
-            "  - keep_original: boolean, default true; keep an unselected copy of the original mesh. mesh_edit and mesh_source need the asset_id of a GLB, glTF, FBX or OBJ unit; mesh_source uses the unchanged source exported for the single captured input (every exported object), ignores selection and ends with undo, load or restart.\n"
-            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target (null for several objects), targets, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, format, primary, mesh_placement, keep_original, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why.\n"
+            "  - keep_texture: SELECTED, HEAD or NONE for RETEXTURE; omit to start on faces selected in Edit Mode, else a standing character's head; kept_note says what keeps its texture.\n"
+            "  - keep_original: boolean, default true; keep a hidden copy of the original mesh. mesh_edit and mesh_source need the asset_id of a GLB, glTF, FBX or OBJ unit; mesh_source uses the unchanged source exported for the single captured input (every exported object), ignores selection and ends with undo, load or restart.\n"
+            "Returns: context_id, application_id, request_id, revision, reuse, scene, images or asset_id/kind/frame, model format/primary/members/resources, cursor, splat_options (max_points and axes, null for mesh formats) and target_size_m (null keeps the saved size), or World format, and note. mesh_edit and mesh_source return target (null for several objects), targets, asset_id, mesh_policy, mesh_policy_source (requested, edit3d_task, rigged_source or default), edit3d_task, format, primary, mesh_placement, keep_original, keep_texture, kept_faces, kept_note, result_to_source and fit_bases (FIT only). video_first_frame returns kind, lane, model_id, input, input_label, sent_as, reason, asset_id, file, replaces_first_frame_path, enables_first_frame and mode=reuse_asset instead of reuse; sent_as=reference_image means the image becomes image 1 of input, and note says why. camera_background also returns camera, backgrounds_kept and frame; image_plane cursor and plane_unlit.\n"
             'Example: {"context_id": "from-list", "request_id": "from-list", "expected_revision": 8}.\n'
-            "Show the destination, selected assets and media frame, model format, files, cursor, target size and splat options, material target/slot/roles, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. Splats are shown as a coloured point cloud, not rendered as Gaussian splats; to change splat options or the target size, prepare again and show the new approval. This makes no network request, spends no credits and imports nothing. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
+            "Show the destination, selected assets and media frame, model format, files, cursor, target size and splat options, material target/slot/roles/tile size, World operation/format, mesh target/policy/placement/Keep original, or first-frame model/input, sent_as with its note and replaced file before apply_result_application. A model import reads only the listed members and, for glTF, the listed resources its references name; nothing is imported automatically and a model that is not primary is an alternate result. Splats are shown as a coloured point cloud, not rendered as Gaussian splats; to change splat options or the target size, prepare again and show the new approval. It spends no credits and imports nothing but may fetch missing files first. Ready or confirmed rolled-back results use their original application claim. Completed results require a new local reuse approval; show reuse=true as another application, never another generation. Unfinished reuse blocks another attempt. Restoration applies to this session's most recent World assignment for this job.\n"
             "Platform equivalent: none; this captures a local Blender destination."
         ),
         _schema(
@@ -3529,20 +3620,25 @@ SPECS = (
                         "mesh_edit",
                         "mesh_source",
                         "video_first_frame",
+                        "camera_background",
+                        "image_plane",
                     ],
                 },
+                "plane_unlit": {"type": "boolean"},
                 "mesh_policy": {
                     "type": "string",
                     "enum": ["REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"],
                 },
                 "mesh_placement": {"type": "string", "enum": ["WORLD", "LOCAL", "FIT"]},
                 "keep_original": {"type": "boolean"},
+                "keep_texture": {"type": "string", "enum": ["SELECTED", "HEAD", "NONE"]},
                 "splat_max_points": {
                     "type": "integer",
                     "enum": [250000, 500000, 1000000, 2000000],
                 },
                 "splat_axes": {"type": "string", "enum": ["OPENGL", "OPENCV"]},
                 "target_size_m": {"type": "number", "minimum": 0.01, "maximum": 1000},
+                "tile_size_m": {"type": "number", "minimum": 0.01, "maximum": 1000},
             },
             ["context_id", "request_id", "expected_revision"],
         ),
@@ -3579,7 +3675,7 @@ SPECS = (
             "  - action: refresh, resume, cancel, recover_download, stop_download, retry_receipt or find_cloud_job.\n"
             "Returns: saved status, revision, available actions and delivery error if any.\n"
             'Example: {"context_id":"from-list","request_id":"from-list","expected_revision":2,"action":"resume"}.\n'
-            "Refresh reads once; resume polls and downloads without automatic import. Cancel is listed only after a refresh confirms a running inference job, the only job type Scenario documents as cancellable; it requests cancellation once and observes the actual outcome. Other jobs are refused without a request and keep running. A running workflow job cannot be canceled: cancel returns an explanation and sends nothing; with the user's approval, reject a waiting step through decide_workflow_step instead. recover_download verifies interrupted local receipts without network calls. stop_download is listed only while this session downloads the job's results; it stops the transfer without saving a partial file, the job becomes download_failed and resume starts the download again. retry_receipt saves an already completed import without repeating it and requires the same live owner. find_cloud_job lists, read-only, recent cloud jobs that could belong to an unconfirmed submission; job_status then reports them as cloud_candidates. Only the user links one, in Blender's Jobs list: link_cloud_job and mark_reviewed are refused here. Stale contexts/revisions are rejected and nothing resubmits an uncertain submission.\n"
+            "Refresh reads once; resume polls and downloads without automatic import. Cancel is listed only after a refresh confirms a running inference job, the only job type Scenario documents as cancellable; it requests cancellation once and observes the actual outcome. Other jobs are refused without a request and keep running. A running workflow job cannot be canceled: cancel returns an explanation and sends nothing; with the user's approval, reject a waiting step through decide_workflow_step instead. recover_download verifies interrupted local receipts without network calls. stop_download is listed only while this session downloads the job's results; it stops the transfer without saving a partial file, the job becomes download_failed and resume starts the download again. It also stops a fetch. retry_receipt saves an already completed import without repeating it and requires the same live owner. find_cloud_job lists, read-only, recent cloud jobs that could belong to an unconfirmed submission; job_status then reports them as cloud_candidates. Only the user links one, in Blender's Jobs list: link_cloud_job and mark_reviewed are refused here. Stale contexts/revisions are rejected and nothing resubmits an uncertain submission.\n"
             "Platform equivalent: jobs.retrieve, jobs.list, jobs.trigger_action and assets.retrieve through the shared SDK, plus local receipt recovery."
         ),
         _schema(
@@ -3646,7 +3742,7 @@ SPECS = (
     ),
     ToolSpec(
         "estimate_blockout",
-        'Get the exact free estimate for the current scene\'s Blockout description or refinement. This reads the native Blockout fields and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, cu_cost_exact.\nExample: {"action": "DESIGN"}.\nPlatform equivalent: model_estimate for the Scenario LLM.',
+        'Get the exact free estimate for the current scene\'s Blockout description or refinement. This reads the native Blockout fields (description, density, Best or Fast model, uploaded reference image) and current plan; it does not generate or build geometry. Approve the exact returned cu_cost_exact separately. Args: action DESIGN or REFINE. Returns: quote_id, action, model (the Scenario LLM model the tier resolved to), cu_cost_exact.\nExample: {"action": "DESIGN"}.\nPlatform equivalent: model_estimate for the Scenario LLM.',
         _schema({"action": {"type": "string", "enum": ["DESIGN", "REFINE"]}}, []),
         estimate_blockout,
         {"readOnlyHint": True},
@@ -3690,7 +3786,7 @@ SPECS = (
     ),
     ToolSpec(
         "apply_blockout_plan",
-        'Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build plan separately. Never spends or builds geometry.\nExample: {"context_id": "current-context", "review_id": "saved-review"}.\nPlatform equivalent: local plan application.',
+        'Use a ready saved-plan review once, after explicit destination and replacement approval. Args: context_id, review_id from prepare_blockout_plan. Returns: scene, elements, geometry_changed=false. Replaces only the unchanged destination scene stored Blockout plan; use native Build blockout separately. Never spends or builds geometry.\nExample: {"context_id": "current-context", "review_id": "saved-review"}.\nPlatform equivalent: local plan application.',
         _schema(
             {"context_id": {"type": "string"}, "review_id": {"type": "string"}},
             ["context_id", "review_id"],
@@ -3981,8 +4077,8 @@ SPECS = (
             "Args:\n"
             "  - job_id: optional string, a Scenario job id or the local_id returned by generate.\n"
             "  - id: optional string, compatibility alias; provide job_id or id. job_id takes precedence if both are supplied.\n"
-            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, source, projection, downloaded, file, file_state), file_check_pending, actions, images and mesh_sources. For shared jobs, files lists the local path of every downloaded result of a ready job whose bytes match its saved receipt, in result order, whatever its kind and whether or not it was imported, including after a restart; each result's file is that path or null and file_state is verified, checking (file_check_pending is then true: call again or wait_for_job, which waits for it), missing, changed (partial, a link or other bytes), unavailable (the check could not run, such as a read error, or the file changed while it was hashed; Blender tries again by itself after a growing delay, file_check_pending stays true and wait_for_job does not wait for it), not_downloaded or not_ready. A listed file is never an application approval and never a URL. A result's source is asset, or original when a declared OpenEXR original was saved instead of its preview or a WAV original instead of Scenario's MP3 copy (size unknown); projection is equirectangular only when Scenario declares a 360 image, never inferred. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download, stop_download, retry_receipt and find_cloud_job map to recover_local_job. For a submitting or uncertain submission whose outcome Scenario never confirmed, cloud_lookup describes the read-only cloud history lookup (run once automatically, or again with find_cloud_job) and cloud_candidates lists the jobs it found (job_id, job_type, status, created_at, seconds_after_claim from the saved send time when known, prompt excerpt and cost). A candidate is never proof that it is this request's job: Scenario offers no request identity to match. Show them to the user; only the user links one, in Blender, after a fresh retrieval verifies it, and the job is then polled like any other. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. review_step marks a workflow job waiting for a decision: read it with workflow_job_steps and send only the user's explicit choice with decide_workflow_step; it is not a recover_local_job action. Mesh source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. Recovered jobs report kind=model; result media types remain available. Saved workflow jobs also return loop_steps, quote_may_understate and cost_warning: cu_cost_exact stays the approved quote, which may cover only one loop pass when quote_may_understate is true; loop_steps is null when this session did not record the definition's loop count. import_units classifies saved model results without reading files: key (the asset_id for prepare_result_application), format (glb, gltf, fbx, obj, ply, spz or splat), kind (mesh, splat, or ply until its bytes are read), primary (first in display order; the others are alternates), importable (true for every listed format in this release), members (asset_id, role and media_type) and glTF resources; import_findings lists saved files left out with a reason code. model_import summarizes this session's last import of the job (unit, format, members, dropped_references, frame_rate_mismatch and splat: points_total, points_kept, step, axes and spz_extensions, or null for a mesh) and is null after undo history changes; it also gives root (the new group's parent object), target_size_m, scale (the uniform factor applied, 1.0 at the saved size), dimensions_m (the group's world x, y, z size after scaling) and bottom_z_m (the world height of its lowest point), measured on its mesh geometry at the frame of the import in Blender units like scene_summary dimensions (metres at the default unit scale); spz_extensions true means the SPZ may declare other storage axes. Unknown jobs raise ValueError.\n"
-            "Shared jobs also return the same advisory in-memory projection as the native Jobs views, never persisted: lane is the model lane that submitted the job in this Blender session (null for workflow, Film, restarted and recovered jobs; it grants no destination). While a known remote job is active, remote_status is its latest validated Scenario status (pending, queued, warming-up, in-progress or finalizing), progress is the reported fraction from 0 to 1 or null when missing or invalid, remote_observed_at is that reading's UTC time and remote_stale is true when automatic polling is not keeping it current (delivery paused, Online Access off, a failed refresh being retried or a refresh overdue). All four are null otherwise. Only in-progress and finalizing fractions measure generation; the native Jobs views show a percentage only for those statuses above 0. Providers may keep progress at 0 until completion, so it is never a time estimate. delivery_paused is true while delivery waits for explicit review or recovery. status_notes lists the information lines the Jobs row shows, never errors: 'Status not refreshed; retrying' while a status read that timed out, lost its connection or got HTTP 408, 429 or 5xx waits to be retried (the wait doubles from 2 seconds up to 60, or follows a longer Retry-After; the eighth failure in a row pauses delivery with an error), 'Cancel not sent; the job keeps running' after a cancel whose status read failed, and 'Cancel not confirmed yet; checking the job's status' after a cancel request whose outcome is unknown; polling continues in every case and never sends the cancel again. delivery_active is true while this Blender session still advances the job by itself (submission, polling, download or an automatic image import); prepare no result application while it is true. delivery_offline is true while Blender's Online Access is disabled and holds a step this session would take by itself: status polling, or the download of a finished model or workflow job's results; delivery_active is then false, nothing is sent and the job resumes by itself once the user allows Online Access. It is false for paused, restarted and settled jobs and for finished Prompt Spark, Translate and Blockout jobs, whose text is read without a download. For a failed job, error is the reason Scenario gave (metadata.error, then metadata.hint) as one line of at most 400 characters, with its support error id (error_...) kept for the user to quote: each part is shown only when it is plain text and otherwise reads 'Scenario reported more details that are not shown here.', and when neither is plain text error is 'Scenario reported a failure without a readable reason.' It comes from the retrieval in this session that observed the failure, so a job that failed before a restart reports null.\n"
+            "Returns: local_id, job_id, status, cu_cost, files, error and kind. Shared jobs also return revision, cu_cost_exact, results (asset_id, name, media_type, size, source, projection, downloaded, file, file_state), file_check_pending, actions, images and mesh_sources. For shared jobs, files lists the local path of every downloaded result of a ready job whose bytes match its saved receipt, in result order, whatever its kind and whether or not it was imported, including after a restart; each result's file is that path or null and file_state is verified, checking (file_check_pending is then true: call again or wait_for_job, which waits for it), missing, changed (partial, a link or other bytes), unavailable (the check could not run, such as a read error, or the file changed while it was hashed; Blender tries again by itself after a growing delay, file_check_pending stays true and wait_for_job does not wait for it), not_downloaded or not_ready. A listed file is never an application approval and never a URL. A result's source is asset, or original when a declared OpenEXR original was saved instead of its preview or a WAV original instead of Scenario's MP3 copy (size unknown); projection is equirectangular only when Scenario declares a 360 image, never inferred. actions name explicit follow-ups that never run automatically: cancel_prepared maps to the cancel_prepared_job tool; refresh, resume, cancel, recover_download, stop_download, retry_receipt and find_cloud_job map to recover_local_job. For a submitting or uncertain submission whose outcome Scenario never confirmed, cloud_lookup describes the read-only cloud history lookup (run once automatically, or again with find_cloud_job) and cloud_candidates lists the jobs it found (job_id, job_type, status, created_at, seconds_after_claim from the saved send time when known, prompt excerpt and cost). A candidate is never proof that it is this request's job: Scenario offers no request identity to match. Show them to the user; only the user links one, in Blender, after a fresh retrieval verifies it, and the job is then polled like any other. use_first_frame offers a downloaded PNG, JPEG or WebP result to prepare_result_application with purpose video_first_frame, camera_background and image_plane offer results to the purposes of the same names, and first_frame reports this session's latest handoff for the job (state bound or failed, scene, input, asset_id, undo_recorded and error), or null. review_step marks a workflow job waiting for a decision: read it with workflow_job_steps and send only the user's explicit choice with decide_workflow_step; it is not a recover_local_job action. Mesh source records describe uploaded snapshots; they do not authorize finding or replacing an object after restart. After a restart, kind comes from the saved lane, else from the saved media types (model until known). Saved workflow jobs also return loop_steps, quote_may_understate and cost_warning: cu_cost_exact stays the approved quote, which may cover only one loop pass when quote_may_understate is true; loop_steps is null when this session did not record the definition's loop count. import_units classifies saved model results without reading files: key (the asset_id for prepare_result_application), format (glb, gltf, fbx, obj, ply, spz or splat), kind (mesh, splat, or ply until its bytes are read), primary (first in display order; the others are alternates), importable (true for every listed format in this release), members (asset_id, role and media_type) and glTF resources; import_findings lists saved files left out with a reason code. model_import summarizes this session's last import of the job (unit, format, members, dropped_references, frame_rate_mismatch and splat: points_total, points_kept, step, axes and spz_extensions, or null for a mesh) and is null after undo history changes; it also gives root (the new group's parent object), target_size_m, scale (the uniform factor applied, 1.0 at the saved size), dimensions_m (the group's world x, y, z size after scaling) and bottom_z_m (the world height of its lowest point), measured on its mesh geometry at the frame of the import in Blender units like scene_summary dimensions (metres at the default unit scale); spz_extensions true means the SPZ may declare other storage axes. Unknown jobs raise ValueError.\n"
+            "Shared jobs also return lane, the submitting model lane saved with the job (null for workflow, Film, cloud-recovered and older jobs; it grants no destination), and the same advisory in-memory projection as the native Jobs views, never persisted. While a known remote job is active, remote_status is its latest validated Scenario status (pending, queued, warming-up, in-progress or finalizing), progress is the reported fraction from 0 to 1 or null when missing or invalid, remote_observed_at is that reading's UTC time and remote_stale is true when automatic polling is not keeping it current (delivery paused, Online Access off, a failed refresh being retried or a refresh overdue). All four are null otherwise. Only in-progress and finalizing fractions measure generation; the native Jobs views show a percentage only for those statuses above 0. Providers may keep progress at 0 until completion, so it is never a time estimate. delivery_paused is true while delivery waits for explicit review or recovery. status_notes lists the information lines the Jobs row shows, never errors: 'Status not refreshed; retrying' while a status read that timed out, lost its connection or got HTTP 408, 429 or 5xx waits to be retried (the wait doubles from 2 seconds up to 60, or follows a longer Retry-After; the eighth failure in a row pauses delivery with an error), 'Cancel not sent; the job keeps running' after a cancel whose status read failed, and 'Cancel not confirmed yet; checking the job's status' after a cancel request whose outcome is unknown; polling continues in every case and never sends the cancel again. delivery_active is true while this Blender session still advances the job by itself (submission, polling, download, a fetch or an automatic image import); prepare no result application while it is true. delivery_offline is true while Blender's Online Access is disabled and holds a step this session would take by itself: status polling, or the download of a finished model or workflow job's results; delivery_active is then false, nothing is sent and the job resumes by itself once the user allows Online Access. It is false for paused, restarted and settled jobs and for finished Prompt Spark, Translate and Blockout jobs, whose text is read without a download. For a failed job, error is the reason Scenario gave (metadata.error, then metadata.hint) as one line of at most 400 characters, with its support error id (error_...) kept for the user to quote: each part is shown only when it is plain text and otherwise reads 'Scenario reported more details that are not shown here.', and when neither is plain text error is 'Scenario reported a failure without a readable reason.' It comes from the retrieval in this session that observed the failure, so a job that failed before a restart reports null.\n"
             "Workflow jobs also return awaiting_decision, true while the last retrieval in this session showed a waiting user-approval or user-selection step and no decision is being sent (delivery_active is then false), and pending_steps: node_id, type, iteration_index, loop_node_id, depends_on, review_asset_ids (at most 50 of review_asset_total), items (a selection's frozen candidates: asset IDs or texts per item_kind), min, max, actions, blocked, links_complete and review_id, never signed URLs. actions lists the decisions that may be sent. blocked is null, loop (the selection feeds a ForEach loop, a nested workflow or a node type the API reference does not list, which the approved price may not cover), unverified (the links between the workflow's steps could not be read and the workflow contains such a node, so the selection may feed it), unsupported (unreadable candidates or limits) or unidentified (no sendable node ID); loop, unverified and unsupported leave only reject, unidentified leaves none. Step links come from the job and, while a step waits, from the workflow's definition, read once per waiting period; links_complete is false when some links are still unknown, so depends_on and review_asset_ids may be incomplete. reject stops the workflow and is the only workflow cancellation. decision_error reports why the last decision was refused, not sent or is uncertain; never repeat an uncertain decision until the step is shown again. While a step waits, status refreshes every 15 seconds.\n"
             'Example: {"job_id": "job_example"}.\n'
             "Prefer this for one status check; it only knows jobs tracked by this Blender runtime.\n"
@@ -4049,7 +4145,7 @@ SPECS = (
             "  - source: optional string, VIEWPORT (default), CAMERA, VIEWPORT_CLIP, CAMERA_CLIP or MESH.\n"
             "Returns: context_id and reference_id; poll reference_upload_status until imported to obtain asset_id for a model or workflow file parameter. Captures use private temporary storage cleaned after staging.\n"
             'Example: {"source": "CAMERA"}.\n'
-            "Stills/clips use 1280x720 and require an interactive Blender window with a 3D viewport. Clips use the preview range when enabled, otherwise the scene frame range, without audio or implicit duration padding. MESH exports the selected meshes as one GLB and also works in background mode. This sends scene content to Scenario; use it only for an authorized reference upload.\n"
+            "Stills/clips are 1280 pixels on the long side, shaped like the camera's render frame for CAMERA sources and like the 3D viewport for VIEWPORT sources, and require an interactive Blender window with a 3D viewport. Clips use the preview range when enabled, otherwise the scene frame range, without audio or implicit duration padding. MESH exports the selected meshes as one GLB and also works in background mode. This sends scene content to Scenario; use it only for an authorized reference upload.\n"
             "Platform equivalent: upload_asset then upload_asset_complete."
         ),
         _schema(

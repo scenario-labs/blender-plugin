@@ -2,7 +2,7 @@
 
 The shared saved-job command applies one unambiguous saved texture set to one
 explicitly approved mesh material slot. It creates a new Principled BSDF material,
-loads exact receipt-bound PNG/EXR snapshots as new packed images, and preserves
+loads exact receipt-bound PNG, JPEG or EXR snapshots as new packed images, and preserves
 existing materials and all other slots. It does not regenerate, download again,
 save the blend file or change viewport shading.
 
@@ -16,16 +16,18 @@ the base preview stays saved without being loaded into the material. Base is the
 fallback when no albedo is present. This choice uses stored roles, regardless of
 asset order. Application does not select the first variant, infer roles from
 filenames or combine multiple texture sets. Unclassified assets remain saved and
-unused. Each selected map needs a verified receipt and a supported PNG/EXR media
-type; Blender must decode the same bounded bytes and pack the image before
-assignment. PNG maps may use 8- or 16-bit grayscale, RGB or RGBA samples. Scalar
+unused. Each selected map needs a verified receipt and a supported PNG, JPEG or EXR
+media type; Blender must decode the same bounded bytes and pack the image before
+assignment. PNG maps may use 8- or 16-bit grayscale, RGB or RGBA samples. JPEG maps
+pass the World JPEG checks without the 2:1 rule: 8-bit color, baseline or
+progressive, upright EXIF orientation, bounded segments and scans. Scalar
 maps such as metallic, smoothness and height can therefore retain their
 grayscale encoding; no file conversion or regeneration is required. Palette and
 grayscale-alpha PNGs remain unsupported. Receipt, CRC, byte, pixel and chunk
 limits still apply.
 
 UI and MCP offer material application only when the saved metadata passes the
-same texture-selection check used by approval. An unsupported JPEG/WebP map,
+same texture-selection check used by approval. An unsupported map such as WebP,
 missing receipt, ambiguous role or excessive combined size hides the action;
 the files remain saved. This availability check does not decode images or
 verify file bytes. Worker verification and destination checks still run after
@@ -41,9 +43,17 @@ explicit approval.
 | Height | Non-Color image through Bump, with distance 0.05; no geometric displacement |
 | AO/edge | Named packed texture nodes retained for deliberate artist wiring |
 
-All textures use the approved active UV map by name. This wiring does not prove
-provider normal-map handedness, channel layout, real-world scale, seamlessness or
-color fidelity. There is no automatic alpha, emission or ambient-occlusion blend.
+Every map reads one shared Mapping node, so they stay aligned. A mesh with UVs feeds it
+the approved active UV map by name. A mesh without UVs feeds it object-space coordinates
+and each image uses box projection with a 0.1 blend; the mesh data stays unchanged.
+**Tile size** (MCP `tile_size_m`, 0.01 to 1000, default 2) sets one repeat per that many
+metres. Box scale includes the object's scale at application, and later transform changes
+do not retile. A UV mesh scales its layout by its measured metres per UV unit, the median
+of up to 512 faces, and keeps tiling 1 with the Mapping node labelled when none can be
+measured. This wiring does not prove provider normal-map handedness, channel layout,
+seamlessness or color fidelity. Box projection has no tangent frame: a tangent-space
+normal map on a mesh without UVs uses Blender's fallback tangents, not the projected
+axes. There is no automatic alpha, emission or ambient-occlusion blend.
 The local operation is bounded to 256 MiB of combined map bytes and 32 million
 combined decoded pixels, plus the existing per-image format limits. These bounds
 do not guarantee decoder latency; copying, decoding and graph construction run
@@ -53,9 +63,9 @@ synchronously on Blender's main thread.
 
 **Apply saved material** and MCP `prepare_result_application(purpose: material)`
 capture the current scene, active mesh identity, data pointer, active slot,
-slot bindings, face-to-slot indices and active UV name. The target must be local,
-non-overridden, in Object Mode, have UVs, and own a single-user mesh. An object
-shared between scenes is rejected. At most 128 slots and one million polygons
+slot bindings, face-to-slot indices and active UV name, if any. The target must be local,
+non-overridden, in Object Mode and own a single-user mesh. An object
+shared between scenes is rejected. At most 128 slots and four million polygons
 bound synchronous destination checks. Nothing is chosen again from selection
 after confirmation; a late result cannot attach to a different active object.
 

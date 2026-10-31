@@ -311,10 +311,11 @@ is the scheduler's main-thread owner. Its own persistent timer runs every half
 second, or every tenth of a second while it has work, and never inside drawing;
 a failed redraw is logged and does not stop it:
 
-- **Requests.** It takes the first twelve unfinished rows of Jobs and the first
-  twelve rows Generations lists, whether or not those panels are open, and for
+- **Requests.** It takes the first twelve unfinished rows of Jobs and the
+  finished rows Generations draws on either surface, whether or not it is open:
+  a list's first twelve, a grid's page of twelve and its selected result. For
   each shared saved job whose results are downloaded (`ready`, `applying`,
-  `apply_failed` or `applied`) reads the saved record once per revision. A
+  `apply_failed` or `applied`), it reads the saved record once per revision. A
   request the scheduler refuses, for example when it already tracks its limit
   of pending previews, shows the reason under the tiles it left without a
   preview, keeps the job's other tiles and drawn page, and is made again after
@@ -322,7 +323,8 @@ a failed redraw is logged and does not stop it:
   record each time. It ranks the downloaded results, video, audio, embedded
   models and base color or untagged images first, then other texture maps and
   OBJ models, each in saved order, and requests the stills of the four on the
-  job's drawn page; a pager shows and requests the others four at a time.
+  job's drawn page and of the first, which its grid tile shows; a pager shows
+  and requests the others four at a time.
   It asks for stills only, so it never starts an audio envelope decode or
   fetches a clip.
 - **Image decoding.** It decodes the oldest issued image copy, one per tick,

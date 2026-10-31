@@ -8,6 +8,7 @@ import bpy
 from bpy.props import BoolProperty, EnumProperty, FloatProperty, IntProperty, StringProperty
 
 from .blender import updates
+from .core.ui.costs import CONFIRM_ABOVE_DEFAULT
 
 PORTAL_KEYS_URL = "https://app.scenario.com/team"
 
@@ -88,9 +89,16 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         default="~/Downloads/Scenario",
         description="Generated files are saved here, one subfolder per kind",
     )
+    confirm_above_cu: IntProperty(
+        name="Confirm generations above",
+        default=CONFIRM_ABOVE_DEFAULT,
+        min=0,
+        description="Ask before a Generate whose exact price is above this many CU; 0 asks every time",
+    )
     composer_enabled: BoolProperty(
         name="Floating composer in the viewport",
         default=True,
+        description="Show the Scenario prompt bar at the bottom of the 3D viewport",
         update=lambda self, context: __import__(
             __package__ + ".blender.composer", fromlist=["set_enabled"]
         ).set_enabled(self.composer_enabled),
@@ -111,7 +119,13 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         min=0,
         description="Width of the expanded composer in pixels (0 = default)",
     )
-    mcp_port: IntProperty(name="MCP Port", default=9876, min=1024, max=65535)
+    mcp_port: IntProperty(
+        name="MCP Port",
+        default=9876,
+        min=1024,
+        max=65535,
+        description="Local port agents use to reach this Blender; change it only if another app uses it",
+    )
     mcp_allow_python: BoolProperty(
         name="Allow connected agents to run Python",
         default=False,
@@ -125,6 +139,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
     )
     log_level: EnumProperty(
         name="Log Level",
+        description="How much the plugin writes to its log; Debug helps support find a problem",
         items=[("INFO", "Info", ""), ("DEBUG", "Debug", "")],
         default="INFO",
         update=lambda self, context: __import__(
@@ -176,6 +191,10 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
                 text="Allow Online Access is off in Blender's System preferences", icon="ERROR"
             )
         layout.prop(self, "output_dir")
+        layout.prop(self, "confirm_above_cu", text="Confirm generations above (CU)")
+        layout.label(
+            text="0 asks every time. Agent generations keep their own approval", icon="INFO"
+        )
         layout.prop(self, "composer_enabled")
         row = layout.row(align=True)
         row.enabled = self.composer_enabled

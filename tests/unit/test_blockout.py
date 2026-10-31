@@ -102,11 +102,98 @@ def test_plan_summary_counts_by_category_and_group():
     assert summary["by_group"] == {"G1": 2, "G2": 1}
 
 
-def test_instruction_includes_scene_type_and_refine():
-    base = blockout.instruction("a square", scene_type="exterior", scale="human")
-    assert "market" not in base and "JSON array" in base and "a square" in base
+def test_instruction_carries_density_budget_and_refine():
+    base = blockout.instruction("a square", density="simple")
+    assert "market" not in base and "JSON array" in base and "Scene to block out: a square" in base
+    assert "Use 30 to 60 elements" in base and "reference image" not in base
+    assert "Use 200 to 350 elements" in blockout.instruction("a square", density="expert")
+    assert "Use 120 to 200 elements" in blockout.instruction("a square", density="unknown")
     refine = blockout.instruction("add a tower", previous=[{"name": "x"}])
     assert "UPDATED" in refine and "add a tower" in refine
+
+
+def test_image_instruction_follows_the_picture_and_allows_an_empty_prompt():
+    text = blockout.instruction("", image=True)
+    assert "A reference image is attached" in text
+    assert text.endswith("Scene to block out: the place in the reference image")
+
+
+@pytest.mark.parametrize(
+    ("tier", "allowed", "expected"),
+    [
+        ("best", None, {"model": "claude-opus-5-5"}),
+        ("fast", None, {"model": "gemini-3.7-flash", "thinkingLevel": "low"}),
+        ("best", ["gemini-3.7-flash", "claude-opus-5-5"], {"model": "claude-opus-5-5"}),
+        # A newer model Scenario adds later is picked without a plugin release.
+        (
+            "best",
+            ["claude-opus-5-5", "claude-opus-6", "claude-opus-5-10"],
+            {"model": "claude-opus-6"},
+        ),
+        ("best", ["claude-opus-5-5", "claude-opus-5-10"], {"model": "claude-opus-5-10"}),
+        (
+            "fast",
+            ["gemini-3.5-flash-lite", "gemini-3.7-flash", "gemini-4-flash"],
+            {"model": "gemini-4-flash", "thinkingLevel": "low"},
+        ),
+        # A retired family falls back to the next fixed choice the list offers.
+        ("best", ["claude-fable-5-1", "gemini-3.7-flash"], {"model": "claude-fable-5-1"}),
+        ("fast", ["gemini-3.5-flash-lite", "claude-sonnet-5-5"], {"model": "claude-sonnet-5-5"}),
+        ("unknown", None, {"model": "claude-opus-5-5"}),
+    ],
+)
+def test_model_tiers_pick_the_newest_family_member(tier, allowed, expected):
+    assert blockout.model_parameters(tier, allowed) == expected
+
+
+def test_model_tiers_respect_thinking_levels_and_refuse_an_empty_family():
+    assert blockout.model_parameters("fast", ["gemini-3.7-flash"], ["none", "high"]) == {
+        "model": "gemini-3.7-flash"
+    }
+    with pytest.raises(ValueError):
+        blockout.model_parameters("fast", ["gemini-3.5-flash-lite"])
+
+
+@pytest.mark.parametrize(
+    ("model", "label"),
+    [
+        ("claude-opus-5-5", "Claude Opus 5.5"),
+        ("claude-opus-6", "Claude Opus 6"),
+        ("gemini-3.7-flash", "Gemini 3.7 Flash"),
+        ("gpt-6-astra", "GPT 6 Astra"),
+    ],
+)
+def test_model_label(model, label):
+    assert blockout.model_label(model) == label
+
+
+@pytest.mark.parametrize(
+    "wrapper",
+    [
+        '{{"results": [{{"text": {text}, "probability": 0.99}}]}}',
+        '```json\n{{"results": [{{"text": {text}, "probability": 0.99}}]}}\n```',
+    ],
+)
+def test_complete_plan_unwraps_the_scenario_llm_answer_wrapper(wrapper):
+    plan = json.dumps([{"name": "Wall", "size": [4, 0.3, 3]}, {"name": "Tower"}])
+    text = wrapper.format(text=json.dumps(plan))
+    assert blockout.parse_complete_plan(text) == blockout.parse_plan(plan)
+    listed = json.dumps({"results": json.loads(plan)})
+    assert blockout.parse_complete_plan(listed) == blockout.parse_plan(plan)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '{"results": [{"text": "[...blockout json...]", "probability": 0.99}]}',
+        '{"results": []}',
+        '{"results": [{"text": "[{\\"name\\": \\"cut"}]}',
+        '{"results": [{"text": "[{}]"}], "plan": []}',
+    ],
+)
+def test_wrapped_placeholders_and_prefixes_are_not_plans(text):
+    with pytest.raises(ValueError):
+        blockout.parse_complete_plan(text)
 
 
 def test_refinement_instruction_preserves_complete_plan_without_design_framing():
@@ -114,4 +201,68 @@ def test_refinement_instruction_preserves_complete_plan_without_design_framing()
     instruction = blockout.instruction("add one door", previous=previous)
     assert "Scene to block out:" not in instruction
     assert "UPDATED full plan applying this change: add one door" in instruction
-    assert json.loads(instruction.split("\nCurrent plan:\n")[1]) == previous
+    rows = instruction.split("\nCurrent plan:\n")[1]
+    assert blockout.parse_complete_plan(rows) == blockout.parse_plan(json.dumps(previous))
+
+
+def test_grouped_rows_parse_to_the_same_elements_as_keyed_objects():
+    keyed = [
+        {
+            "name": "Pond",
+            "category": "water",
+            "primitive": "cylinder",
+            "position": [-9, 5, 0.1],
+            "size": [8, 6, 0.2],
+            "rotation": 20,
+            "group": "Garden",
+        },
+        {
+            "name": "Roof",
+            "category": "structure",
+            "primitive": "wedge",
+            "position": [8, -4, 4.75],
+            "size": [8, 6, 1.5],
+            "rotation": 30,
+            "group": "Teahouse",
+        },
+    ]
+    rows = blockout.encode_rows(keyed)
+    assert json.loads(rows) == [
+        "Garden",
+        ["Pond", "water", "cylinder", -9.0, 5.0, 0.1, 8.0, 6.0, 0.2, 20.0],
+        "Teahouse",
+        ["Roof", "structure", "wedge", 8.0, -4.0, 4.75, 8.0, 6.0, 1.5, 30.0],
+    ]
+    assert len(rows) < 0.6 * len(json.dumps(keyed, separators=(",", ":")))
+    expected = blockout.parse_plan(json.dumps(keyed))
+    assert blockout.parse_complete_plan(rows) == blockout.parse_plan(rows) == expected
+    assert blockout.parse_complete_plan(f"```json\n{rows}\n```") == expected
+
+
+def test_rows_before_any_label_and_mixed_keyed_objects_still_parse():
+    text = '[["Rock", "prop", "sphere", 1, 2, 0.3, 0.6, 0.6, 0.6, 0], {"name": "Gate"}, "Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 0.1, 1, 0]]'
+    plan = blockout.parse_complete_plan(text)
+    assert [(e["name"], e["group"]) for e in plan] == [
+        ("Rock", "Blockout"),
+        ("Gate", "Blockout"),
+        ("Post", "Fence"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        '["Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 1, 0]]',  # a value is missing
+        '["Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 0.1, 1, 0, 9]]',
+        '["Fence"]',
+        '["Fence", 3]',
+    ],
+)
+def test_complete_plan_refuses_a_row_that_lost_or_gained_a_value(text):
+    with pytest.raises(ValueError):
+        blockout.parse_complete_plan(text)
+
+
+def test_a_lenient_parse_skips_an_incomplete_row():
+    text = '["Fence", ["Post", "structure", "box", 0, 0, 0.5, 0.1, 1, 0], ["Rail", "structure", "box", 0, 0, 0.8, 4, 0.1, 0.1, 0]]'
+    assert [e["name"] for e in blockout.parse_plan(text)] == ["Rail"]

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Bridge between ParamSpec schemas and the ScenarioParamValue collection, plus drawing."""
 
-from ..core.api.catalog import param_override
+from ..core.api.catalog import OTHER_CHOICE, choice_items, param_override, starting_value
 from ..core.schema.params import float32_decimal
 from . import props, runtime
 
@@ -75,6 +75,16 @@ def sync_params(lane_state, schema, model_id):
             created = True
             seeded.add(spec.name)
         keep[spec.name] = True
+        choices = choice_items(model_id, spec.name) if spec.ptype == "number" else []
+        if choices and not spec.allowed_values:
+            # Named choices pick the number; Other keeps the typed one.
+            runtime.set_enum_items(("param", model_id, spec.name), choices)
+            valid = [choice[0] for choice in choices]
+            if created or item.enum_value not in valid:
+                number = str(item.int_value if spec.is_integer else item.float_value)
+                _seed(item, "enum_value", valid.index(number if number in valid else OTHER_CHOICE))
+                seeded.add(spec.name)
+            continue
         if spec.allowed_values and spec.ptype != "string_array":
             # Blender rejects empty enum identifiers: an empty option means "unset", modelled by the enable toggle.
             options = [v for v in spec.allowed_values if str(v) != ""]
@@ -117,6 +127,23 @@ def sync_params(lane_state, schema, model_id):
     return seeded
 
 
+def unsynced(lane_state, schema, model_id):
+    """Whether a drawable setting of `model_id` has no row of that model; read-only.
+
+    sync_params gives every drawable setting a row of the form's model. A form
+    read from a file that this session has not synchronized can lack them, and a
+    request built from it would send only the server's defaults.
+    """
+    hidden = _hidden(model_id)
+    for spec in schema.specs:
+        if not _drawable(spec, hidden):
+            continue
+        item = lane_state.params.get(spec.name)
+        if item is None or item.model_id != model_id:
+            return True
+    return False
+
+
 def _numeric_fallback(spec, schema=None):
     """A sensible value when the schema has no default: preset, then 1024 for sizes, then the range."""
     lo = spec.min if spec.min is not None else 0
@@ -144,7 +171,9 @@ def _apply_default(item, spec, schema=None):
     item.has_range = spec.min is not None or spec.max is not None
     item.fmin = float(spec.min) if spec.min is not None else -1e9
     item.fmax = float(spec.max) if spec.max is not None else 1e9
-    default = spec.default
+    # A curated start replaces the schema default and switches an optional setting on, like a declared default.
+    curated = starting_value(item.model_id, spec)
+    default = spec.default if curated is None else curated
     if spec.ptype == "number":
         value = default if isinstance(default, (int, float)) else _numeric_fallback(spec, schema)
         if spec.is_integer:
@@ -160,6 +189,16 @@ def _apply_default(item, spec, schema=None):
     # No schema default and not required: leave it to the server unless the user opts in (seed, optional strengths).
     _seed(item, "enabled", spec.required_always or default is not None)
     props.clamp_param(item, _seed)
+
+
+def named(item, spec):
+    """Whether a number with named choices holds one of them rather than Other."""
+    return (
+        spec.ptype == "number"
+        and not spec.allowed_values
+        and bool(choice_items(item.model_id, spec.name))
+        and item.enum_value not in {OTHER_CHOICE, "", "NONE"}
+    )
 
 
 def collect_values(lane_state, schema):
@@ -178,6 +217,8 @@ def collect_values(lane_state, schema):
         enabled[spec.name] = spec.ptype == "boolean" or bool(item.enabled) or spec.required_always
         if spec.ptype == "string_array":
             values[spec.name] = multi_selection(item)
+        elif named(item, spec):
+            values[spec.name] = int(item.enum_value) if spec.is_integer else float(item.enum_value)
         elif spec.allowed_values:
             # numeric choices (Seedance duration: -1, 4..15) are edited through the enum, so read the enum, not int_value
             values[spec.name] = item.enum_value if item.enum_value != "NONE" else None
@@ -229,7 +270,11 @@ def draw_params(layout, lane_state, schema, exclude=(), locked=()):
                 row.prop(item, "enabled", text="")
             sub = row.row(align=True)
             sub.enabled = (item.enabled or spec.required_always) and spec.name not in locked
-            if spec.ptype == "number" and not spec.allowed_values:
+            if spec.ptype == "number" and choice_items(item.model_id, spec.name):
+                sub.prop(item, "enum_value", text=label)
+                if not named(item, spec):
+                    sub.prop(item, "int_value" if spec.is_integer else "float_value", text="")
+            elif spec.ptype == "number" and not spec.allowed_values:
                 sub.prop(item, "int_value" if spec.is_integer else "float_value", text=label)
             elif spec.ptype == "string_array":
                 col = sub.column(align=True)

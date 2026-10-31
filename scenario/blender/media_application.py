@@ -50,7 +50,8 @@ def _container_matches(data, suffix):
     )
 
 
-def _snapshot(item, path, directory, suffix):
+def snapshot(item, path, directory, suffix):
+    """Copy the saved file into `directory`, rehashing it against its receipt."""
     receipt, path = item.receipt, Path(path)
     if (
         receipt is None
@@ -59,7 +60,7 @@ def _snapshot(item, path, directory, suffix):
         or path.is_symlink()
     ):
         raise MediaApplicationError("Use a supported saved media receipt")
-    snapshot = directory / ("media" + suffix)
+    copy = directory / ("media" + suffix)
     flags = (
         os.O_RDONLY
         | getattr(os, "O_NOFOLLOW", 0)
@@ -67,7 +68,7 @@ def _snapshot(item, path, directory, suffix):
         | getattr(os, "O_BINARY", 0)
     )
     digest, size = hashlib.sha256(), 0
-    with os.fdopen(os.open(path, flags), "rb") as source, snapshot.open("xb") as target:
+    with os.fdopen(os.open(path, flags), "rb") as source, copy.open("xb") as target:
         if not stat.S_ISREG(os.fstat(source.fileno()).st_mode):
             raise MediaApplicationError("The saved media is not a regular file")
         while chunk := source.read(min(1024 * 1024, receipt.size - size + 1)):
@@ -82,7 +83,7 @@ def _snapshot(item, path, directory, suffix):
         os.fsync(target.fileno())
     if size != receipt.size or digest.hexdigest() != receipt.sha256:
         raise MediaApplicationError("The saved media no longer matches its receipt")
-    return snapshot
+    return copy
 
 
 def _insert(editor, path, kind, frame):
@@ -131,11 +132,11 @@ def apply_media(scene, item, path, *, frame):
     before = {strip.as_pointer() for strip in editor.strips} if editor else set()
     sounds = set(bpy.data.sounds)
     try:
-        snapshot = _snapshot(item, path, directory, suffix)
+        copy = snapshot(item, path, directory, suffix)
         editor = editor or scene.sequence_editor_create()
-        strip = _insert(editor, snapshot, kind, frame)
+        strip = _insert(editor, copy, kind, frame)
         strip["scenario_asset"] = item.asset.asset_id
-        return MediaApplication(strip, snapshot, kind, frame)
+        application = MediaApplication(strip, copy, kind, frame)
     except Exception:
         # Rollback failures deliberately escape as uncertainty: do not delete a
         # snapshot that might still be referenced by a partially inserted strip.
@@ -153,3 +154,24 @@ def apply_media(scene, item, path, *, frame):
         raise MediaApplicationError(
             "Could not insert verified media; saved downloads are preserved"
         ) from None
+    _show_in_sequencers(scene)
+    return application
+
+
+def _show_in_sequencers(scene):
+    """Let the Sequencer of each open workspace show `scene` when it shows none.
+
+    From Blender 5.0 a Sequencer shows its workspace's sequencer scene, not the
+    window's scene; an unset one draws an empty editor that hides the new strip.
+    A sequencer scene already chosen is kept, as the video strip operator does.
+    """
+    workspaces = [bpy.context.workspace]
+    if bpy.context.window_manager is not None:
+        workspaces += [window.workspace for window in bpy.context.window_manager.windows]
+    for workspace in workspaces:
+        if (
+            workspace is not None
+            and workspace.library is None
+            and workspace.sequencer_scene is None
+        ):
+            workspace.sequencer_scene = scene

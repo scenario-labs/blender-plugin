@@ -48,9 +48,10 @@ records are not imported.
 
 `JobIntent` freezes the local request ID, model/workflow target (or the fixed
 `prompt`/`translate` target for prompt helpers), payload SHA-256, server quote
-SHA-256, exact quoted cost as a decimal string, and originating
-file/scene/target/revision IDs. IDs describe the captured origin, never current
-selection. Generate a fresh request ID for an intentional new operation and hash
+SHA-256, exact quoted cost as a decimal string, originating
+file/scene/target/revision IDs and, from schema 13, the submitting generation lane
+([schema 13](#generation-lane)). IDs describe the captured origin, never
+current selection. Generate a fresh request ID for an intentional new operation and hash
 the exact immutable payload/quote bytes held by the SDK estimate. The caller must
 still verify the estimate belongs to the current adapter and matches the current
 scope, payload and origin before authorizing dispatch.
@@ -78,7 +79,7 @@ Every connection rechecks that the database is a regular nonsymlink file,
 including after a competing creation. The parent must remain trusted: this check
 and SQLite's path open are separate operations, not an atomic no-follow open.
 
-The database has an application ID and schema version **12**. SQLite transactions
+The database has an application ID and schema version **13**. SQLite transactions
 with `synchronous=FULL` commit the whole change or report `StoreError`; no cached
 in-memory result is reported as saved before commit succeeds. `BEGIN IMMEDIATE`
 serializes writers across threads/processes. Each operation owns a connection,
@@ -94,7 +95,7 @@ another request or resend. Intent fields and a known remote job ID cannot change
 Foreign databases, unsupported versions, malformed records and mismatched stored
 identities/revisions raise errors. They are preserved for explicit recovery,
 never silently replaced with empty history. An already-open store also fails if
-its database disappears. Previous shared schemas 2 through 11 upgrade in one
+its database disappears. Previous shared schemas 2 through 12 upgrade in one
 transaction that validates every scope, record, identity and revision. A corrupt
 row or failed commit preserves all previous rows and the old version. This is
 not a prototype import; version 1 and foreign databases remain rejected. Schema 2/3
@@ -110,7 +111,9 @@ receive the asset's own file and no projection (see
 [schema 10](#schema-10-declared-originals-and-lane-defaults)). Schema 10 rows keep
 their exact bytes ([schema 11](#schema-11-wav-originals)). Schemas before 12 receive
 an unknown submission claim time and no result parents
-([schema 12](#schema-12-submission-claim-time)). Older extension builds
+([schema 12](#schema-12-submission-claim-time)). Schemas before 13 receive no
+lane and no on-demand copies
+([schema 13](#schema-13-generation-lane-and-on-demand-copies)). Older extension builds
 reject a newer schema; stop older Blender processes before upgrading and do not
 expect an older build to open the upgraded store.
 
@@ -158,7 +161,7 @@ again. Restart recovery polls this state even after a crash before sending;
 there is no lease expiry or explicit reset/reattempt command. Schema 3 retains the
 immutable result manifest and receipts introduced in schema 2 and adds a separate
 `application_origin`. Claiming `applying` atomically saves that destination before
-any Blender mutation. Automatic application uses the original intent origin;
+any Blender mutation. Automatic Image import uses the scene captured at submission;
 explicit recovery may supply a newly approved destination. Neither changes the
 intent. Application receipts preserve the claimed destination. A new destination
 requires a new claim after confirmed rollback, never an interrupted `applying`
@@ -225,8 +228,8 @@ manifest's name and any expected size/digest. Receipts cannot be replaced.
 Revision checks and SQLite transactions serialize these writes with other job
 updates. A write failure preserves the previous durable record and propagates.
 Partial receipts survive `download_failed` and an explicit retry. `ready` requires
-a receipt for every asset. Neither a manifest nor a receipt is permission to
-spend again or apply to a different origin.
+a receipt for every asset but [on-demand copies](#on-demand-copies). Neither
+a manifest nor a receipt is permission to spend again or apply to a different origin.
 
 Before using an existing receipt, call `verify_download` from the
 [transfer module](RESULT_TRANSFERS.md). It rehashes the local regular file and
@@ -257,8 +260,9 @@ purpose and selected asset IDs. It stores no extra paths, prompts, credentials,
 URLs or Blender names. Supported purpose labels are images, media, model,
 mesh_edit, World and material; a label does not establish decoder compatibility
 or scene acceptance. New mesh replacements use `mesh_edit`; new static-model
-imports retain `model`. Existing claims keep their recorded labels, including
-older mesh replacements stored as `model`. This adds a validated label without
+imports retain `model`. Camera backgrounds and image planes reuse `images`, or
+`media` for a video background. Existing claims keep their recorded labels,
+including older mesh replacements stored as `model`. This adds a validated label without
 changing schema-5 fields. Older readers reject an unknown label; do not downgrade
 a store containing newer application purposes.
 
@@ -311,10 +315,11 @@ The shared quote path matches only declared 3D file inputs to completed captured
 uploads in the selected credential/project scope. Prompt strings, unknown assets
 and ordinary file uploads acquire no inferred source. Repeated array values keep
 their positions for both `type: file_array` and `type: file` with `array: true`,
-matching payload validation. Ambiguous captured records for the same asset
-reject the quote. The coordinator rechecks every binding before preparation and
-again before the paid claim. A missing or changed upload stops dispatch while
-preserving the job.
+matching payload validation. Byte-identical captures of one asset are one
+source and bind the latest; captures of different bytes reject the quote unless
+the user prices that asset without a captured source for the session. The
+coordinator rechecks every binding before preparation and again before the paid
+claim. A missing or changed upload stops dispatch while preserving the job.
 
 Bindings describe the immutable uploaded snapshot, not the current geometry of
 an object. Their origin may differ from the generation's current scene context.
@@ -620,4 +625,48 @@ response that describes it, such as the GLB behind a model's OBJ, MTL and maps. 
 outside the job, such as an input asset, one on a parent cycle or an unusable value is
 stored as `null`. The store refuses a parent outside the manifest, the result itself or
 a cycle. A later retrieval keeps the saved value, so lineage never refuses a download.
-Nothing reads it yet; 3D import does not bind files by parent.
+The manifest reads it to mark [on-demand copies](#on-demand-copies); 3D import does not
+bind files by parent.
+
+## Schema 13: generation lane and on-demand copies
+
+### Generation lane
+
+A job listed again after a restart or file load showed only that it ran a model: its
+Image results lost their file tools and a Render Image still its first-frame lead.
+Schema 13 adds `lane` to each local intent: the generation lane that submitted it, such
+as `image`, `render_image`, `3d`, `workflow` or `film`, a bounded lowercase identifier
+validated like a lane default's, or `null` for jobs other owners save, such as Blockout
+and prompt helper jobs. It is display data for the listed row's kind and controls; it is
+never a destination, origin or application authority, which still come from the job's own
+approvals. Cloud records have no lane. The prompt is still not saved, so a listed job
+names its model instead.
+
+### On-demand copies
+
+Some 3D models return their GLB again as an OBJ with its MTL and one PNG per map. Schema
+13 also adds `on_demand` to each result: true marks such a
+[format copy](RESULT_TRANSFERS.md#glb-format-copies-on-demand), which the job's download
+leaves for an explicit fetch. Only a result with a `parent_id` may be on demand. `ready`,
+`applying`, `apply_failed` and `applied` need a receipt for every other result;
+`record_download` refuses an on-demand copy.
+
+`record_fetch(request_id, asset_id, receipt, expected_revision=...)` saves the receipt
+of one on-demand copy of a `ready`, `apply_failed` or `applied` job with no local
+application in progress, under the same checks as `record_download`. It keeps the job
+state and increments the revision. Reuse history therefore allows a gap between
+source revisions, but only as many as the job's fetched copies explain, and an
+unfinished reuse still holds the job's current revision.
+
+### Upgrade from schema 12
+
+Opening a schema 12 store upgrades it in one immediate transaction like earlier schemas:
+every local intent is rewritten with `lane: null`, an unknown value that is never
+guessed, and every result with `on_demand: false`, so jobs saved before keep downloading
+every file. Cloud records gain no lane, and Film upload associations and lane defaults
+are preserved byte for byte. A row that already names a lane or an on-demand mark, one
+invalid row or a failed commit leaves the schema 12 file unchanged, and a schema 12
+build refuses the upgraded store as an unsupported format. The unit and installed tests
+rebuild `tests/fixtures/synthetic/jobs-schema12.sql`, a store written by the schema 12
+release's storage code, and check the upgrade, its rollback and refusal by a schema 12
+reader.

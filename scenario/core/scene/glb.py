@@ -58,7 +58,10 @@ def inspect_glb(data, *, static_only=True):
         buffers = document["buffers"]
         if len(buffers) != 1 or type(buffers[0]["byteLength"]) is not int:
             raise GLBError("Use one embedded binary buffer")
-        if not 0 <= chunks[1][2] - buffers[0]["byteLength"] <= 3:
+        # The binary chunk pads the buffer to 4 bytes. Some services, such as Viggle Text to
+        # Motion, leave unused bytes after it; glTF validators warn about those and importers
+        # never read them. A buffer longer than its chunk stays refused.
+        if not 0 <= buffers[0]["byteLength"] <= chunks[1][2]:
             raise GLBError("The embedded buffer size does not match")
         counts = [accessor["count"] for accessor in document.get("accessors", [])]
         if any(type(value) is not int or value < 1 for value in counts):

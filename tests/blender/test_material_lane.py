@@ -33,6 +33,40 @@ class MaterialLaneTests(unittest.TestCase):
         meta = self.generation.request_meta(bpy.context, "material")
         self.assertEqual(meta["target_objects"], [cube.name])
 
+    def test_lane_lists_patina_then_scenario_texture_then_other_texture_models(self):
+        catalog = submodule("core.api.catalog")
+        handlers = submodule("blender.handlers")
+        picker = submodule("blender.model_picker")
+        saved = {
+            key: list(value) if isinstance(value, list) else value
+            for key, value in picker._ctx.items()
+        }
+        self.addCleanup(picker._ctx.update, saved)
+
+        def texture(model_id, name, **extra):
+            raw = {"id": model_id, "name": name, "type": "custom", "status": "trained"}
+            raw.update(capabilities=["txt2img", "img2img"], tags=["sc:texture"], **extra)
+            return catalog.ModelRecord.from_api(raw)
+
+        data = json.loads((FIXTURES / "models" / "model_patina-material.json").read_text())
+        records = [
+            texture("model_ideogram-v4-tiling", "Ideogram V4 Tiling"),
+            texture("model_textures-moss", "Textures - Moss", type="flux.1-lora"),
+            texture("model_scenario-texture", "Scenario Texture"),
+            catalog.ModelRecord.from_api(data["model"]),
+        ]
+        self.runtime.state.reset()
+        handlers.dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        expected = ["model_patina-material", "model_scenario-texture", "model_ideogram-v4-tiling"]
+        self.assertEqual([r.id for r in self.runtime.state.lane_models["material"]], expected)
+        picker.prepare(bpy.context, "material")
+        items = bpy.context.window_manager.scenario_picker_items
+        self.assertEqual([item.model_id for item in items], expected)
+        render = {r.id for r in self.runtime.state.lane_models["render_image"]}
+        self.assertFalse(render & set(expected))
+
     def test_lane_hint_describes_explicit_saved_application(self):
         # Shared material jobs stop at saved results; only Apply saved material assigns them.
         from test_model_picker import FakeLayout

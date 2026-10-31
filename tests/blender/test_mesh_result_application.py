@@ -15,7 +15,12 @@ from unittest.mock import patch
 import bmesh
 import bpy
 from helpers import FIXTURES, animated_glb, parts_glb, submodule
-from mathutils import Matrix
+from mathutils import Matrix, Quaternion, Vector
+
+FREE_BONES = (
+    "Constraints or drivers move the animated bones: remove or mute them, then apply the "
+    "animation again"
+)
 
 
 class MeshResultTests(unittest.TestCase):
@@ -78,13 +83,19 @@ class MeshResultTests(unittest.TestCase):
             snapshot.cleanup()
 
     def morph_result(self):
+        def change(mesh):
+            primitive = mesh["primitives"][0]
+            primitive["targets"] = [{"POSITION": primitive["attributes"]["POSITION"]}]
+            mesh["weights"] = [0.0]
+            mesh["extras"] = {"targetNames": ["Fixture morph"]}
+
+        self.rewrite_mesh(change)
+
+    def rewrite_mesh(self, change):
+        """Save the result again with `change` applied to its first glTF mesh."""
         length = struct.unpack_from("<I", self.body, 12)[0]
         document = json.loads(self.body[20 : 20 + length])
-        mesh = document["meshes"][0]
-        primitive = mesh["primitives"][0]
-        primitive["targets"] = [{"POSITION": primitive["attributes"]["POSITION"]}]
-        mesh["weights"] = [0.0]
-        mesh["extras"] = {"targetNames": ["Fixture morph"]}
+        change(document["meshes"][0])
         value = json.dumps(document).encode()
         value += b" " * (-len(value) % 4)
         tail = self.body[20 + length :]
@@ -375,6 +386,26 @@ class MeshResultTests(unittest.TestCase):
         ]
         self.assertTrue(images)
         self.assertTrue(all(image.packed_file and image.filepath == "" for image in images))
+
+    def test_plugin_import_with_glb_mesh_extras_takes_in_place_edits(self):
+        # Providers name meshes in glTF extras, which Blender imports as custom properties.
+        self.rewrite_mesh(lambda mesh: mesh.update(extras={"name": "provider mesh"}))
+        imported = self.model.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        source = next(obj for obj in imported.objects if obj.type == "MESH")
+        self.assertEqual(source.data["name"], "provider mesh")
+        self.source = source
+        # The fixture node translates +2 on X; the explicit scene mapping undoes it.
+        mapping = Matrix.Translation((-2, 0, 0))
+        for policy in ("RETEXTURE", "REMESH"):
+            with self.subTest(policy=policy):
+                before = source.data
+                self.target = self.mesh.capture_target(self.scene, source)
+                result = self.apply(policy=policy, result_to_source=mapping)
+                self.assertEqual(result.policy, policy)
+                self.assertIsNot(source.data, before)
+                self.assertEqual(result.original.data, before)
+                self.assertEqual(dict(source.data.items()), {"name": "provider mesh"})
+                self.assertEqual(source["scenario_asset"], "mesh")
 
     def test_retexture_topology_failure_preserves_source_and_saved_file(self):
         before = self.model._snapshot()
@@ -1458,11 +1489,11 @@ class AnimateResultTests(unittest.TestCase):
             render.fps_base,
         )
 
-    def assert_unchanged_source(self, objects):
+    def assert_unchanged_source(self, objects, timeline=None):
         self.assertEqual(set(bpy.data.objects), objects)
         self.assertEqual(_skin(self.source, self.mesh), self.skin)
         self.assertIs(self.source.modifiers[0].object, self.rig)
-        self.assertEqual(self.timing(), self.timeline)
+        self.assertEqual(self.timing(), timeline or self.timeline)
         self.mesh.validate_target(self.target)
 
     def head_rise(self, clip):
@@ -1476,7 +1507,46 @@ class AnimateResultTests(unittest.TestCase):
         self.scene.frame_set(self.timeline[2])
         return heads[1] - heads[0], rotation
 
-    def test_clips_play_on_the_existing_rig_keeping_mesh_skin_and_timeline(self):
+    def test_a_rigged_mesh_over_the_work_cap_takes_only_animation(self):
+        self.ready_session()
+        provenance = submodule("blender.mesh_provenance")
+        geometry = bmesh.new()
+        bmesh.ops.create_grid(geometry, x_segments=12, y_segments=12, size=1.0)
+        geometry.to_mesh(self.source.data)
+        geometry.free()
+        limit = self.mesh._components(self.source.data) - 1
+        self.enterContext(patch.object(self.mesh, "MAX_COMPONENTS", limit))
+        fingerprint = self.enterContext(
+            patch.object(self.mesh, "_fingerprint", wraps=self.mesh._fingerprint)
+        )
+        # Its export keeps the source for ANIMATE, which reads neither geometry nor weights.
+        origin, source = provenance.export_with_source(
+            bpy.context, (self.source,), self.root / "dense.glb", self.session
+        )
+        binding = self.storage.JobMeshSource("mesh", None, "asset", "upload", 0, origin, source)
+        (self.target,) = self.session.mesh_source_targets(binding)
+        self.assertTrue(self.target.dense)
+        fingerprint.assert_not_called()
+        for policy in ("RIG", "REMESH"):
+            with self.subTest(policy=policy):
+                with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+                    self.apply(policy=policy)
+                self.assertEqual(
+                    str(caught.exception),
+                    "Mesh exceeds the synchronous application component limit; only ANIMATE, "
+                    "which applies returned clips to its rig, takes it",
+                )
+        result = self.apply(policy="ANIMATE")
+        self.assertIs(result.rig, self.rig)
+        self.assertEqual(len(result.clips), 2)
+        self.assertIs(self.rig.animation_data.action, result.clips[0])
+        # Without a skin, a mesh that large still cannot be captured.
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        with self.assertRaisesRegex(self.mesh.MeshApplicationError, "component limit"):
+            self.mesh.capture_target(self.scene, self.source)
+
+    def test_clips_play_on_the_existing_rig_keeping_mesh_and_skin(self):
         import math
 
         objects, mesh, rest = set(bpy.data.objects), self.source.data, _rest(self.rig)
@@ -1490,8 +1560,12 @@ class AnimateResultTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.armatures), armatures)
         # Only the copied clips stay; the returned character is never added.
         self.assertEqual(set(bpy.data.actions) - self.before["actions"], set(result.clips))
-        self.assert_unchanged_source(objects)
         first, second = result.clips
+        # Blender's default range becomes the first clip's; the rest of the timeline stays.
+        start, end = (round(frame) for frame in first.frame_range)
+        self.assertNotEqual((start, end), self.timeline[:2])
+        self.assertEqual(result.frame_range, (start, end))
+        self.assert_unchanged_source(objects, (start, end, *self.timeline[2:]))
         self.assertEqual(first.name, "Chain rig Clip 1")
         data = self.rig.animation_data
         self.assertEqual((data.action, data.action_slot.identifier), (first, "OBChain rig"))
@@ -1505,7 +1579,7 @@ class AnimateResultTests(unittest.TestCase):
         expected = (math.cos(0.25), math.sin(0.25), 0, 0)
         for got, want in zip(rotation, expected, strict=True):
             self.assertAlmostEqual(got, want, places=3)
-        self.assertEqual(self.timing(), self.timeline)
+        self.assertIsNone(result.retargeted_from)
         # Matching rests need no correction: the keys are copied unchanged.
         self.assertEqual(result.rest_correction_deg, 0.0)
 
@@ -1710,8 +1784,8 @@ class AnimateResultTests(unittest.TestCase):
         # clips; a soloed NLA track keeps Blender from playing the active action.
         apply_clips = self.animation.apply_clips
         cases = {
-            "constraint": "Constraints or drivers move the animated bones",
-            "driver": "Constraints or drivers move the animated bones",
+            "constraint": FREE_BONES,
+            "driver": FREE_BONES,
             "solo": "Unsolo the destination rig's NLA track",
         }
         for kind, message in cases.items():
@@ -1809,6 +1883,8 @@ class AnimateResultTests(unittest.TestCase):
                 self.assertEqual(self.model._snapshot(), snapshot)
                 self.assertEqual(_animation(self.rig), before)
                 self.assertEqual((data.action_influence, data.action_blend_type), (0.0, "ADD"))
+                # Rollback also gives back Blender's default frame range.
+                self.assertEqual(self.timing(), self.timeline)
                 self.assertTrue(self.path.exists())
         result = self.apply(policy="ANIMATE")
         self.assertEqual((data.action_influence, data.action_blend_type), (1.0, "REPLACE"))
@@ -1950,6 +2026,279 @@ class AnimateResultTests(unittest.TestCase):
             result = self.session.retry_model_receipt(caught.exception)
         self.assertEqual(result.record.state, self.storage.JobState.APPLIED)
         self.assertEqual((_animation(self.rig), set(bpy.data.actions)), (state, actions))
+
+
+class RetargetResultTests(unittest.TestCase):
+    """A text-to-motion clip on another humanoid skeleton, retargeted onto the source's rig."""
+
+    tearDown = MeshResultTests.tearDown
+    apply = MeshResultTests.apply
+    unit = MeshResultTests.unit
+    use_clips = AnimateResultTests.use_clips
+    timing = AnimateResultTests.timing
+
+    def setUp(self):
+        from helpers import humanoid_bones
+
+        MeshResultTests.setUp(self)
+        self.animation = submodule("blender.animation_application")
+        self.humanoid = submodule("core.scene.humanoid")
+        # The user's rig: Meshy names, in an A-pose, a tenth smaller, every bone rolled.
+        self.use_rig(height=0.9, arms_down=0.7, roll=0.4)
+        # The returned clip: a Mixamo skeleton in a T-pose, in centimetres at 0.01.
+        self.bones = humanoid_bones(self.names("mixamo"), prefix="mixamorig:")
+        self.use_clips(bones=self.bones, clips=(1.0,))
+        self.target = self.mesh.capture_target(self.scene, self.source)
+
+    def use_rig(self, **options):
+        """Skin the source to a new rig of Meshy-named `humanoid_bones(**options)`."""
+        from helpers import chain_rig, humanoid_bones
+
+        rig = humanoid_bones(self.names("meshy"), **options)
+        self.rig = chain_rig(self.scene, "Character rig", rig)
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        for index, name in enumerate(("Hips", "Spine02", "Head")):
+            self.source.vertex_groups.new(name=name).add([index], 1.0, "REPLACE")
+        self.source.modifiers.new("Character skin", "ARMATURE").object = self.rig
+        bpy.context.view_layer.update()
+
+    def names(self, family):
+        return self.humanoid.FAMILIES[family][1]
+
+    def poses(self, clip):
+        """Each frame's slot world pose matrices, on this rig and on the returned one."""
+        from helpers import clip_poses
+
+        start, end = (round(frame) for frame in clip.frame_range)
+        frames = range(start, end + 1, 6)
+        theirs = clip_poses(self.body, "Clip 1", frames, fps=self.scene.render.fps)
+        returned = dict(zip(self.humanoid.SLOTS, (bone[0] for bone in self.bones), strict=True))
+        mine = dict(zip(self.humanoid.SLOTS, self.names("meshy"), strict=True))
+        poses = {}
+        for frame in frames:
+            self.scene.frame_set(frame)
+            poses[frame] = {
+                slot: (
+                    self.rig.matrix_world @ self.rig.pose.bones[mine[slot]].matrix,
+                    theirs[frame][returned[slot]],
+                )
+                for slot in self.humanoid.SLOTS
+            }
+        self.scene.frame_set(start)
+        return poses
+
+    def assert_turns(self, poses):
+        """Every slot turns in the world as the returned bone did since the first frame.
+
+        The whole rotation counts, twist about the bone included.
+        """
+
+        def turn(matrix):
+            return matrix.to_3x3().normalized().to_quaternion()
+
+        first = poses[min(poses)]
+        for frame, slots in poses.items():
+            for slot, (mine, theirs) in slots.items():
+                got = turn(mine) @ turn(first[slot][0]).inverted()
+                want = turn(theirs) @ turn(first[slot][1]).inverted()
+                self.assertLess(_degrees(got.rotation_difference(want)), 0.5, (frame, slot))
+
+    def assert_follows(self, clip):
+        """Every limb points and turns as returned; the hips travel 0.9 times as far.
+
+        Return the returned hips' last sampled world position.
+        """
+        from mathutils import Vector
+
+        poses = self.poses(clip)
+        self.assert_turns(poses)
+        for frame, slots in poses.items():
+            heads = {slot: tuple(m.translation for m in pair) for slot, pair in slots.items()}
+            for slot, child in self.humanoid.CHILDREN.items():
+                got = heads[child][0] - heads[slot][0]
+                want = heads[child][1] - heads[slot][1]
+                self.assertLess(math.degrees(got.angle(want)), 0.5, (frame, slot))
+            # Legs of 0.81 m on this rig and 0.9 m returned: 0.9 times the travel.
+            hips, returned = heads["hips"]
+            travel = (returned - Vector((0, 0, 1.0))) * 0.9
+            self.assertLess((hips - Vector((0, 0, 0.9)) - travel).length, 1e-3, frame)
+        return returned
+
+    def test_limbs_follow_the_returned_skeleton_and_the_hips_carry_scaled_root_motion(self):
+        for mode in ("QUATERNION", "YXZ"):
+            with self.subTest(rotation_mode=mode):
+                try:
+                    for bone in self.rig.pose.bones:
+                        bone.rotation_mode = mode
+                    self.target = self.mesh.capture_target(self.scene, self.source)
+                    objects, rest = set(bpy.data.objects), _rest(self.rig)
+                    timeline = self.timing()
+                    result = self.apply(policy="ANIMATE")
+                    self.assertEqual(result.retargeted_from, "Mixamo")
+                    self.assertIsNone(result.rest_correction_deg)
+                    self.assertEqual((_rest(self.rig), set(bpy.data.objects)), (rest, objects))
+                    (clip,) = result.clips
+                    self.assertEqual(clip.name, "Character rig Clip 1")
+                    self.assertIs(self.rig.animation_data.action, clip)
+                    keyed = {curve.data_path.rsplit(".", 1)[1] for curve in _fcurves(clip)}
+                    rotation = "rotation_quaternion" if mode == "QUATERNION" else "rotation_euler"
+                    self.assertEqual(keyed, {"location", rotation})
+                    # Blender's default range became the clip's; the rest of the timeline stays.
+                    start, end = (round(frame) for frame in clip.frame_range)
+                    self.assertEqual(result.frame_range, (start, end))
+                    self.assertEqual(self.timing(), (start, end, *timeline[2:]))
+                    returned = self.assert_follows(clip)
+                    # The returned hips rise 1 m over the clip.
+                    self.assertAlmostEqual(returned.z, 2.0, places=3)
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_root_motion_keyed_on_the_returned_armature_reaches_the_hips(self):
+        # As in a file whose skin leaves the scene root, which carries the walk, out of its joints.
+        self.use_clips(bones=self.bones, clips=(1.0,), carry=True)
+        objects, rest = set(bpy.data.objects), _rest(self.rig)
+        result = self.apply(policy="ANIMATE")
+        self.assertEqual(result.retargeted_from, "Mixamo")
+        self.assertEqual((_rest(self.rig), set(bpy.data.objects)), (rest, objects))
+        (clip,) = result.clips
+        # Only bones are keyed: the rig object itself stays where the user put it.
+        self.assertTrue(all(c.data_path.startswith("pose.bones[") for c in _fcurves(clip)))
+        returned = self.assert_follows(clip)
+        # The returned armature moved 1 m along X and turned while its hips rose 1 m.
+        self.assertAlmostEqual(returned.x, 1.0, places=3)
+        self.assertAlmostEqual(returned.z, 2.0, places=3)
+
+    def test_a_crouched_clip_stands_on_the_rest_floor_with_feet_at_their_own_pitch(self):
+        # Ankles 16 cm over the floor on this rig and 10 cm on the returned skeleton,
+        # over balls 2 cm up on both: the feet point down more steeply here.
+        self.use_rig(height=0.9, ankle=0.16)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        theirs = dict(zip(self.humanoid.SLOTS, (bone[0] for bone in self.bones), strict=True))
+        mine = dict(zip(self.humanoid.SLOTS, self.names("meshy"), strict=True))
+        # Soft knees all through the clip: thighs forward, shins upright again, feet flat,
+        # and the hips that much lower, so the returned feet start on their floor.
+        bend = 0.6
+        held = {theirs["hips"]: (0.0, 0.45 * (1 - math.cos(bend)))}
+        for side in "lr":
+            held[theirs[f"{side}_upleg"]] = (bend, 0.0)
+            held[theirs[f"{side}_leg"]] = (-bend, 0.0)
+            held[theirs[f"{side}_foot"]] = (0.0, 0.0)
+        self.use_clips(bones=self.bones, clips=(1.0,), held=held)
+        world = self.rig.matrix_world
+        rest = {slot: world @ self.rig.data.bones[name].head_local for slot, name in mine.items()}
+        result = self.apply(policy="ANIMATE")
+        (clip,) = result.clips
+        poses = self.poses(clip)
+        self.assert_turns(poses)
+        # The hips start below their rest height, by this rig's own thighs' bend.
+        start = poses[min(poses)]["hips"][0].translation.z
+        self.assertAlmostEqual(start, 0.9 - 0.405 * (1 - math.cos(bend)), delta=1e-3)
+        for frame, slots in poses.items():
+            # The ankles and balls stand at rest height, then rise as the hips jump.
+            rise = slots["hips"][0].translation.z - start
+            for side in "lr":
+                ankle, ball = (slots[f"{side}_{part}"][0].translation for part in ("foot", "toe"))
+                for slot, head in ((f"{side}_foot", ankle), (f"{side}_toe", ball)):
+                    self.assertAlmostEqual(head.z - rest[slot].z, rise, delta=1e-3, msg=frame)
+                # Each foot keeps its rest pitch, as steep as before.
+                want = rest[f"{side}_toe"] - rest[f"{side}_foot"]
+                self.assertLess(math.degrees((ball - ankle).angle(want)), 0.5, (frame, side))
+
+    def test_clip_ends_rounded_by_float_keys_stay_on_their_whole_frames(self):
+        retarget = submodule("blender.motion_retarget")
+        # glTF keys times in float32: the last key of a 239-frame clip can land past it.
+        self.assertEqual(retarget.whole_frames((0.0, 239.00001525878906)), (0, 239))
+        self.assertEqual(retarget.whole_frames((0.9999996, 89.0)), (1, 89))
+        # Keys between frames still widen the range to the whole frames around them.
+        self.assertEqual(retarget.whole_frames((0.5, 191.04)), (0, 192))
+
+    def test_a_zero_axis_angle_reads_as_no_rotation(self):
+        retarget = submodule("blender.motion_retarget")
+        self.rig.rotation_mode = "AXIS_ANGLE"
+        self.rig.rotation_axis_angle = (0.7, 0.0, 0.0, 0.0)
+        self.rig.location = (1.0, 2.0, 3.0)
+        local = retarget._local(self.rig, {}, 1)
+        self.assertEqual(local.to_translation(), Vector((1.0, 2.0, 3.0)))
+        self.assertEqual(local.to_3x3().to_quaternion(), Quaternion())
+
+    def test_a_carried_clip_on_a_rig_that_is_no_humanoid_says_what_to_do(self):
+        from helpers import CHAIN, skin_to_chain_rig
+
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        self.rig = skin_to_chain_rig(self.scene, self.source)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        # Even bones named like the rig's: the armature's own motion belongs to no bone.
+        self.use_clips(bones=CHAIN, clips=(1.0,), carry=True)
+        before, animation = self.model._snapshot(), _animation(self.rig)
+        with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+            self.apply(policy="ANIMATE")
+        self.assertEqual(
+            caught.exception.reason,
+            "The clips move the returned armature itself, which only a humanoid rig can take. "
+            "Rig the mesh again with Edit 3D > Rigging, then apply the animation again",
+        )
+        self.assertEqual(self.model._snapshot(), before)
+        self.assertEqual(_animation(self.rig), animation)
+
+    def test_a_frame_range_the_user_set_stays(self):
+        self.scene.frame_start, self.scene.frame_end = 10, 90
+        result = self.apply(policy="ANIMATE")
+        self.assertIsNone(result.frame_range)
+        self.assertEqual((self.scene.frame_start, self.scene.frame_end), (10, 90))
+        self.assertEqual(result.retargeted_from, "Mixamo")
+
+    def test_rigs_whose_retargeted_bones_cannot_play_fail_without_mutation(self):
+        cases = {
+            "axis_angle": "Retargeted bones must use quaternion or Euler rotation",
+            "constraint": FREE_BONES,
+        }
+        for kind, message in cases.items():
+            with self.subTest(kind=kind):
+                try:
+                    bone = self.rig.pose.bones["LeftForeArm"]
+                    if kind == "axis_angle":
+                        bone.rotation_mode = "AXIS_ANGLE"
+                    else:
+                        bone.constraints.new("COPY_ROTATION")
+                    self.target = self.mesh.capture_target(self.scene, self.source)
+                    before, animation = self.model._snapshot(), _animation(self.rig)
+                    with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+                        self.apply(policy="ANIMATE")
+                    self.assertEqual(caught.exception.reason, message)
+                    self.assertEqual(self.model._snapshot(), before)
+                    self.assertEqual(_animation(self.rig), animation)
+                    self.assertEqual(self.timing()[:2], (1, 250))
+                finally:
+                    self.tearDown()
+                    self.setUp()
+
+    def test_another_skeleton_on_a_rig_that_is_no_humanoid_keeps_the_name_error(self):
+        from helpers import skin_to_chain_rig
+
+        self.source.modifiers.clear()
+        self.source.vertex_groups.clear()
+        self.rig = skin_to_chain_rig(self.scene, self.source)
+        self.target = self.mesh.capture_target(self.scene, self.source)
+        with self.assertRaises(self.module.MeshResultApplicationError) as caught:
+            self.apply(policy="ANIMATE")
+        self.assertEqual(
+            caught.exception.reason,
+            "The destination rig lacks a bone the clips animate. "
+            "Rig the mesh again with Edit 3D > Rigging, then apply the animation again",
+        )
+
+
+def _fcurves(action):
+    return [
+        curve
+        for layer in action.layers
+        for strip in layer.strips
+        for bag in strip.channelbags
+        for curve in bag.fcurves
+    ]
 
 
 def _rounded(vector):
@@ -3146,6 +3495,8 @@ class FbxAnimateTests(unittest.TestCase):
     def test_fbx_clip_at_another_frame_rate_is_reported_without_retiming(self):
         # A 30 fps file in this 24 fps scene: the clip keeps the file's frames.
         self.use_fbx(None, fps=30)
+        # A frame range the user set stays too.
+        self.scene.frame_start, self.scene.frame_end = 1, 120
         timeline = self.timing()
         result = self.apply(policy="ANIMATE")
         self.assertTrue(result.frame_rate_mismatch)

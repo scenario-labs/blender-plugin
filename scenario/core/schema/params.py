@@ -50,6 +50,9 @@ class ParamSpec:
     required_always: bool = False
     required_if_defined: tuple = ()
     required_if_not_defined: tuple = ()  # required only when none of these siblings are provided (either/or inputs)
+    # required.conditional: ((sibling, (values...)), ...) and whether any one match (operator "or") suffices.
+    required_when: tuple = ()
+    required_when_any: bool = False
     allowed_values: tuple = ()
     allowed_labels: dict = field(default_factory=dict)
     min: float = None
@@ -78,6 +81,24 @@ class ParamSpec:
 
     def label_for(self, value):
         return self.allowed_labels.get(value, str(value))
+
+    def accepts(self, value):
+        """Whether the schema still takes this value: its type, allowed values and range."""
+        if isinstance(value, bool):
+            expected = "boolean"
+        elif isinstance(value, (int, float)):
+            expected = "number"
+        else:
+            expected = "string"
+        if self.ptype != expected:
+            return False
+        if self.allowed_values:
+            return value in self.allowed_values
+        if expected == "number":
+            return (self.min is None or value >= self.min) and (
+                self.max is None or value <= self.max
+            )
+        return True
 
 
 @dataclass
@@ -195,6 +216,23 @@ def _parse_required(raw):
     return False, (), ()
 
 
+def _parse_conditional(raw):
+    """Return ((sibling, values), ...) and whether one match suffices, from required.conditional."""
+    rule = raw.get("conditional") if isinstance(raw, dict) else None
+    if not isinstance(rule, dict) or not isinstance(rule.get("values"), dict):
+        return (), False
+    pairs = tuple(
+        sorted(
+            (name, tuple(values) if isinstance(values, (list, tuple)) else (values,))
+            for name, values in rule["values"].items()
+            if _names_input(name)
+        )
+    )
+    # The default operator is undocumented: without "or", require every condition, so a local check
+    # never refuses a request the service would accept.
+    return pairs, rule.get("operator") == "or"
+
+
 def parse_schema(record):
     ui = record.ui_config
     selects = ui.get("selects") or {}
@@ -205,6 +243,7 @@ def parse_schema(record):
             continue
         ptype = raw.get("type") or "string"
         always, if_defined, if_not_defined = _parse_required(raw.get("required"))
+        required_when, required_when_any = _parse_conditional(raw.get("required"))
         allowed = tuple(raw.get("allowedValues") or raw.get("allowed_values") or ())
         labels = {}
         for key, label in (selects.get(name) or {}).items():
@@ -221,6 +260,8 @@ def parse_schema(record):
                 required_always=always,
                 required_if_defined=if_defined,
                 required_if_not_defined=if_not_defined,
+                required_when=required_when,
+                required_when_any=required_when_any,
                 allowed_values=allowed,
                 allowed_labels=labels,
                 min=raw.get("min"),
@@ -363,6 +404,19 @@ def validate(specs, body, one_of=(), exclusive=()):
     return errors
 
 
+def _holds(value, values):
+    """Whether a defined value is one of the listed values; an array holds if any item does."""
+    if not _defined(value):
+        return False
+    items = value if isinstance(value, (list, tuple)) else (value,)
+    # Python equality matches True with 1; booleans only match booleans, as in forms._equal_enum.
+    return any(
+        isinstance(item, bool) == isinstance(candidate, bool) and item == candidate
+        for item in items
+        for candidate in values
+    )
+
+
 def validate_requirements(specs, body, one_of=(), exclusive=()):
     """Validate sibling relationships independently of field type/value checks."""
     errors = []
@@ -376,6 +430,16 @@ def validate_requirements(specs, body, one_of=(), exclusive=()):
                 and not _defined(body.get(spec.name))
             ):
                 errors.append(f"{spec.label} is required when {dep.label} is set")
+        if spec.required_when and not _defined(body.get(spec.name)):
+            matched = [
+                name for name, values in spec.required_when if _holds(body.get(name), values)
+            ]
+            needed = 1 if spec.required_when_any else len(spec.required_when)
+            if len(matched) >= needed:
+                labels = " and ".join(
+                    by_name[name].label if name in by_name else name for name in matched[:needed]
+                )
+                errors.append(f"{spec.label} is required for the chosen {labels}")
     for group in one_of:
         if not any(_defined(body.get(name)) for name in group):
             labels = [(by_name[name].label if name in by_name else name) for name in group]

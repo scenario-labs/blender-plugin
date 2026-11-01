@@ -644,6 +644,31 @@ def test_blockout_recovery_follows_the_current_scene_review(review, expected):
     assert all(item.action == "recover_blockout" for item in items)
 
 
+@pytest.mark.parametrize(
+    ("unusable", "error", "shown"),
+    [
+        (
+            "The model returned an empty answer, not a plan.",
+            "ignored",
+            "The model returned an empty answer, not a plan.",
+        ),
+        (
+            "",
+            "Could not review this plan: Select the destination scene before reviewing",
+            "Could not review this plan: Select the destination scene before reviewing",
+        ),
+        ("", "", "Plan needs review; check job and destination"),
+    ],
+)
+def test_blockout_recovery_error_names_why_the_plan_could_not_be_reviewed(unusable, error, shown):
+    review = SimpleNamespace(
+        task=None, phase="ERROR", identifier="review", unusable=unusable, error=error
+    )
+    items = sja.describe(view(("recover_blockout",), "succeeded"), CONTEXT, TYPES, review)
+    assert rows(items)[0][3] == shown
+    assert rows(items)[1][2] == "scenario.read_saved_blockout"
+
+
 def test_every_offered_action_is_described_with_unique_keys_and_its_action_name():
     for state, length in itertools.product(("ready", "applied"), (1, 2)):
         for actions in itertools.combinations(VOCABULARY, length):

@@ -334,7 +334,11 @@ def _blockout(review, job):
         properties=job,
     )
     if review is not None and review.phase == "ERROR":
-        reason = getattr(review, "unusable", "") or "Plan needs review; check job and destination"
+        reason = (
+            getattr(review, "unusable", "")
+            or getattr(review, "error", "")
+            or "Plan needs review; check job and destination"
+        )
         error = _status(f"{action}:error", action, reason, "ERROR")
         return (error, read)
     return (read,)

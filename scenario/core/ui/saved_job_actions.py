@@ -339,8 +339,12 @@ def _blockout(review, job):
             or getattr(review, "error", "")
             or "Plan needs review; check job and destination"
         )
-        error = _status(f"{action}:error", action, reason, "ERROR")
-        return (error, read)
+        # Wrapped, because a sidebar label clips the reason it exists to show.
+        error = tuple(
+            _status(row.key, action, row.label, row.icon)
+            for row in _note(f"{action}:error", reason, "ERROR")
+        )
+        return (*error, read)
     return (read,)
 
 

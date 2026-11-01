@@ -622,8 +622,16 @@ def test_applied_results_show_reuse_only_with_a_reuse_action():
                     "recover_blockout:error",
                     "status",
                     None,
-                    "Plan needs review; check job and destination",
+                    "Plan needs review; check job and",
                     "ERROR",
+                    {},
+                ),
+                (
+                    "recover_blockout:error:1",
+                    "status",
+                    None,
+                    "destination",
+                    "NONE",
                     {},
                 ),
                 (
@@ -665,8 +673,10 @@ def test_blockout_recovery_error_names_why_the_plan_could_not_be_reviewed(unusab
         task=None, phase="ERROR", identifier="review", unusable=unusable, error=error
     )
     items = sja.describe(view(("recover_blockout",), "succeeded"), CONTEXT, TYPES, review)
-    assert rows(items)[0][3] == shown
-    assert rows(items)[1][2] == "scenario.read_saved_blockout"
+    assert " ".join(row[3] for row in rows(items)[:-1]) == shown
+    assert all(len(row[3]) <= sja.NOTE_WIDTH for row in rows(items)[:-1])
+    assert all(item.action == "recover_blockout" for item in items)
+    assert rows(items)[-1][2] == "scenario.read_saved_blockout"
 
 
 def test_every_offered_action_is_described_with_unique_keys_and_its_action_name():

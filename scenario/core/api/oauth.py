@@ -580,14 +580,18 @@ class TokenStorage:
             os.unlink(os.fspath(self.path))
         if not slots or self.keychain is None:
             return None
-        thread = threading.Thread(
-            target=lambda: [self._delete_quietly(entry) for entry in sorted(slots)],
-            name="ScenarioKeychainDelete",
-        )
+
+        def delete():
+            for entry in sorted(slots):
+                self._delete_quietly(entry)
+
+        thread = threading.Thread(target=delete, name="ScenarioKeychainDelete")
         thread.start()
         return thread
 
     def _delete_quietly(self, slot):
+        if self.keychain is None:
+            return  # Opted out of the store: its entries stay until a Blender that uses it.
         with contextlib.suppress(KeychainError):
             self.keychain.delete(slot)  # Nothing reads an entry the file no longer names.
 

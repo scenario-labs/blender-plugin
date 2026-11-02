@@ -470,6 +470,16 @@ def test_an_entry_in_a_store_this_blender_does_not_use_reads_as_no_session(tmp_p
     assert opted_out.load() is None
 
 
+def test_saving_after_opting_out_of_the_store_moves_the_token_to_the_file(tmp_path):
+    keychain = _Keychain()
+    oauth.TokenStorage(tmp_path / "sign-in.json", keychain).save(_tokens())
+    opted_out = oauth.TokenStorage(tmp_path / "sign-in.json")
+    assert opted_out.save(_tokens(refresh_token="refresh-2")) == ""
+    assert opted_out.load().tokens.refresh_token == "refresh-2"
+    assert opted_out.clear() is None
+    assert not opted_out.path.exists()
+
+
 def test_a_file_from_before_the_store_keeps_its_refresh_token(tmp_path):
     path = tmp_path / "sign-in.json"
     path.write_text(

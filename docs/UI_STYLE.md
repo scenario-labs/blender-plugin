@@ -65,7 +65,7 @@ runs on the account. Once chosen, that row, the Account box and Studio's connect
 page show **Team / Project** as a button that reopens the dialog. The choice
 belongs to the account that made it; Sign out forgets it. The list is read again at
 startup and whenever the dialog opens; a chosen project it no longer holds (deleted,
-or the role removed) is dropped.
+or the role removed) is dropped, and the sidebar says so under the red button.
 
 ![Credentials set to Sign in with Scenario before signing in](images/sign-in-preferences-signed-out.png)
 ![The Account box after a browser sign-in, with the chosen team and project, Sign out and Test connection](images/sign-in-preferences-signed-in.png)

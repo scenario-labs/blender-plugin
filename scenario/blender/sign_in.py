@@ -227,6 +227,7 @@ def _settle(teams, *, ask):
     chosen = runtime.browser_project()
     if chosen is not None and destinations.find(teams, chosen[0]) is None:
         _forget_choice()  # Deleted, or the account lost its role there.
+        runtime.state.browser_project_gone = chosen[1]
         runtime.set_message(f"{chosen[1]} is no longer available: choose a team and project")
         chosen = None
     only = destinations.only(teams)
@@ -285,6 +286,7 @@ def choose(project_id):
 def use(project_id):
     """Choose ``project_id``, say where the work goes and check the connection to it."""
     choose(project_id)
+    runtime.state.browser_project_gone = ""
     runtime.set_message(f"Scenario work goes to {runtime.browser_project()[1]}")
     if not bpy.app.background:
         try:
@@ -303,6 +305,9 @@ def draw_destination(layout):
     if chosen is None:
         row.alert = True
         row.operator("scenario.choose_project", text="Choose team and project", icon="ERROR")
+        if runtime.state.browser_project_gone:
+            # The full label is in the status message; the sidebar is too narrow for it.
+            layout.label(text="The chosen project is no longer available")
     else:
         row.operator("scenario.choose_project", text=chosen[1], icon="COMMUNITY")
     if runtime.state.browser_teams_error:

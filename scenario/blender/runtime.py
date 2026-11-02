@@ -97,6 +97,7 @@ class RuntimeState:
         self.browser_teams = None
         self.browser_teams_loading = False
         self.browser_teams_error = ""
+        self.browser_project_gone = ""  # Label of a chosen project the list no longer holds.
         self.account_label = ""
         self.connection_request = None
         self.connection_worker = None
@@ -320,6 +321,7 @@ def set_browser_session(session):
     state.browser_teams = None
     state.browser_teams_loading = False
     state.browser_teams_error = ""
+    state.browser_project_gone = ""
     state.account_label = ""
     sync_catalog_context()
 

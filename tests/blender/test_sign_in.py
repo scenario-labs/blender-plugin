@@ -185,6 +185,7 @@ class DestinationTests(unittest.TestCase):
         self.runtime.state.browser_teams = None
         self.runtime.state.browser_teams_loading = False
         self.runtime.state.browser_teams_error = ""
+        self.runtime.state.browser_project_gone = ""
 
     def test_nothing_runs_on_the_account_until_a_project_is_chosen(self):
         # The API-key override is not the browser account's destination.
@@ -297,6 +298,10 @@ class DestinationTests(unittest.TestCase):
         self.assertTrue(self.runtime.needs_browser_project())
         self.assertEqual(self.prefs.browser_project_label, "")
         self.assertIn("Studio / Game is no longer available", self.runtime.state.last_message)
+        # The sidebar keeps saying why until another project is chosen.
+        self.assertEqual(self.runtime.state.browser_project_gone, "Studio / Game")
+        self.sign_in.use("proj_film")
+        self.assertEqual(self.runtime.state.browser_project_gone, "")
 
     def test_a_deleted_project_falls_back_to_the_only_one_left(self):
         self.sign_in.choose("proj_film")

@@ -398,6 +398,7 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
     assert len(message.split(". ", 1)[0]) + 1 <= SIDEBAR_CHARS
     assert "Preferences" not in message
     assert error.value.__cause__ is None and error.value.__suppress_context__
+
     private = (
         "selected-key",
         "selected-secret",
@@ -411,6 +412,37 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
     assert {dict(call.url.params).get("projectId") for call in calls} == {project}
     # A model page is an allow-listed read: the SDK retries only 429 and 5xx.
     assert len(calls) == (1 + READ_RETRIES if status in (429, 500) else 1)
+
+
+SIGNED_IN_REJECTED = "Sign-in rejected (HTTP 401). Sign out of Scenario and sign in again."
+SIGNED_IN_DENIED = (
+    "Access denied (HTTP 403). Choose another team and project, or sign out of "
+    "Scenario and sign in again."
+)
+
+
+@pytest.mark.parametrize(
+    "status,project,expected",
+    [
+        (401, None, SIGNED_IN_REJECTED),
+        (401, PRIVATE_PROJECT, SIGNED_IN_REJECTED),
+        (403, None, SIGNED_IN_DENIED),
+        (403, PRIVATE_PROJECT, SIGNED_IN_DENIED),
+        (429, PRIVATE_PROJECT, LIMITED),
+    ],
+)
+def test_a_browser_account_is_never_told_to_check_a_key(adapter, status, project, expected):
+    client = adapter(
+        lambda request: httpx.Response(status, json={"error": "do-not-expose"}),
+        credentials=Credentials(token_source=_TokenSource("selected-token")),
+        project_id=project,
+    )
+    with pytest.raises(AdapterStatusError) as error:
+        client.model_page(page_size=1)
+    message = str(error.value)
+    assert message == expected
+    assert "key" not in message.lower()
+    assert len(message.split(". ", 1)[0]) + 1 <= SIDEBAR_CHARS
 
 
 def test_unscoped_discovery_never_blames_the_project_override(adapter):

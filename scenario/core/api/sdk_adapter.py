@@ -379,12 +379,20 @@ def _json(raw, *, exact=False):
     return result
 
 
-def _status_text(status, *, project):
+def _status_text(status, *, project, browser=False):
     """Short first sentence that survives clipped status lines, then fixed guidance.
 
-    The guidance is credential-source neutral (saved or environment keys). Never
-    include response bodies, URLs, identifiers or credentials.
+    A browser account is told to check its sign-in and chosen project; keys
+    (saved or environment) their key and secret. Never include response
+    bodies, URLs, identifiers or credentials.
     """
+    if browser and status == 401:
+        return "Sign-in rejected (HTTP 401). Sign out of Scenario and sign in again."
+    if browser and status == 403:
+        return (
+            "Access denied (HTTP 403). Choose another team and project, or sign out of "
+            "Scenario and sign in again."
+        )
     if status == 401:
         return "Key or secret rejected (HTTP 401). Check the selected API key and secret."
     if status == 403 and project:
@@ -757,6 +765,7 @@ class SDKAdapter:
         self._scope = object()
         self._closed = False
         self._sdk = _client(credentials, base_url, timeout, transport)
+        self._browser = credentials.token_source is not None
         # The same SDK client, credentials and HTTP pool with the SDK's documented
         # per-request retries. Only idempotent job, asset, model and workflow
         # retrieve, list and get-bulk reads use it. get-bulk is a POST that only
@@ -820,7 +829,9 @@ class SDKAdapter:
             project = project_id is not None and project_id is not omit
             status = error.status_code
             raise AdapterStatusError(
-                status, _status_text(status, project=project), _retry_after(error.response.headers)
+                status,
+                _status_text(status, project=project, browser=self._browser),
+                _retry_after(error.response.headers),
             ) from None
         except APIConnectionError:
             raise AdapterUnreachable() from None

@@ -133,7 +133,7 @@ clients see.
 0.10.0 delivered consolidated adoption, the shared runtime and the views. The
 open checks, fixes and decisions are in
 [#494](https://github.com/scenario-labs/blender-plugin/issues/494), and the
-rest of browser sign-in (secure storage, tenant selection) is open under
+rest of browser sign-in (secure storage) is open under
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67). Offline
 serialization tests and source inspection do not satisfy live or native
 acceptance criteria.

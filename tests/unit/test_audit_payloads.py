@@ -876,3 +876,12 @@ def test_file_clause_naming_nothing_stays_high_even_when_another_clause_pairs(tm
     report = capsys.readouterr().out
     assert report.count("`unparsed-exclusive-input`") == 1
     assert "multi-anchor keyframes" in report
+
+
+def test_motion_model_in_animate_needs_no_mesh_input(tmp_path, capsys):
+    model_id = "model_viggle-text-to-motion"
+    inputs = [{"name": "prompt", "type": "string", "required": True}]
+    (tmp_path / f"{model_id}.json").write_text(json.dumps({"id": model_id, "inputs": inputs}))
+    args = ["--offline", "--cache", str(tmp_path), "--models", model_id, "--fail-on", "HIGH"]
+    assert audit.run(args) == 0
+    assert "no-mesh-param" not in capsys.readouterr().out

@@ -43,3 +43,47 @@ def test_clamp_duration_for_numeric_ranges():
     assert cp.clamp_duration(2.0, 5, 15) == (5, "padded to the 5 s minimum")
     assert cp.clamp_duration(30.0, 5, 15) == (15, "trimmed to the 15 s maximum")
     assert cp.clamp_duration(2.5, None, None, integer=False) == (2.5, "")
+
+
+def test_capture_size_keeps_the_frame_shape_on_a_1280_long_side():
+    assert cp.capture_size(1920, 1080) == (1280, 720)
+    assert cp.capture_size(1080, 1920) == (720, 1280)
+    assert cp.capture_size(2048, 2048) == (1280, 1280)
+    assert cp.capture_size(1440, 1080) == (1280, 960)
+    # A 2.39:1 frame and an uneven viewport round each side to an even pixel count.
+    assert cp.capture_size(2390, 1000) == (1280, 536)
+    assert cp.capture_size(1645, 1027) == (1280, 800)
+    assert cp.capture_size(1027, 1645) == (800, 1280)
+    assert cp.capture_size(640, 480, long_side=320) == (320, 240)
+
+
+def test_capture_size_follows_the_displayed_shape_of_non_square_pixels():
+    # Anamorphic 2:1 pixels show a 1920x1080 frame as 32:9.
+    assert cp.capture_size(1920, 1080, pixel_aspect=(2.0, 1.0)) == (1280, 360)
+    assert cp.capture_size(1080, 1080, pixel_aspect=(1.0, 2.0)) == (640, 1280)
+
+
+def test_capture_size_sides_are_even_and_never_empty():
+    for width in range(1, 400, 7):
+        for height in (1, 3, 17, 401, 1081):
+            size = cp.capture_size(width, height)
+            assert max(size) == 1280
+            assert all(side >= 2 and side % 2 == 0 for side in size), (width, height, size)
+
+
+def test_capture_size_of_an_empty_or_invalid_frame_is_16_9():
+    for frame in ((0, 720), (1280, 0), (-5, 10), (float("nan"), 10), (float("inf"), 1)):
+        assert cp.capture_size(*frame) == (1280, 720), frame
+    assert cp.capture_size(1920, 1080, pixel_aspect=(1.0, 0.0)) == (1280, 720)
+
+
+def test_clip_label_names_each_capture_size_once():
+    assert cp.clip_label(1, 48, 2.0, 24.0) == "Frames 1 to 48: 2.0 s at 24 fps"
+    assert (
+        cp.clip_label(1, 48, 2.0, 24.0, [(720, 1280)])
+        == "Frames 1 to 48: 2.0 s at 24 fps, 720x1280"
+    )
+    assert (
+        cp.clip_label(10, 57, 1.96, 23.976, [(720, 1280), (1280, 800), (720, 1280)])
+        == "Frames 10 to 57: 2.0 s at 23.976 fps, 720x1280, 1280x800"
+    )

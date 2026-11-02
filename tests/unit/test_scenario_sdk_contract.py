@@ -378,7 +378,7 @@ def test_explicit_basic_credentials_override_ambient_basic(client_factory, monke
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason="SDK 2.3.0 auth precedence: https://github.com/scenario-labs/scenario-sdk-python/issues/26",
+    reason="SDK 2.5.0 auth precedence: https://github.com/scenario-labs/scenario-sdk-python/issues/26",
 )
 def test_explicit_bearer_must_override_ambient_basic(client_factory, monkeypatch):
     monkeypatch.setenv("SCENARIO_SDK_API_KEY", "ambient-key")

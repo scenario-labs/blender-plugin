@@ -678,7 +678,8 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
 
     old = Record({"request_id": "old"}, [{"asset": {"asset_id": "a"}, "receipt": None}])
     snapshot = package_probe.job_snapshot(old)
-    assert snapshot["intent"] == {"request_id": "old", "film_task": None}
+    # Schema 13 upgrades earlier local intents with an unknown lane.
+    assert snapshot["intent"] == {"request_id": "old", "film_task": None, "lane": None}
     # Schema 12 upgrades earlier rows with an unknown submission claim time.
     assert snapshot["claimed_at"] is None
     assert snapshot["results"][0]["asset"] == {
@@ -686,10 +687,12 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
         "source": "asset",
         "projection": None,
         "parent_id": None,
+        "on_demand": False,
     }
     binding = {"production_id": "production", "task_id": "take", "task_sha256": "a" * 64}
     bound = Record({"film_task": binding})
     assert package_probe.job_snapshot(bound)["intent"]["film_task"] == binding
+    assert package_probe.job_snapshot(Record({"lane": "image"}))["intent"]["lane"] == "image"
     cloud = Record({"source": "cloud"})
     assert package_probe.job_snapshot(cloud)["intent"] == {"source": "cloud"}
     assert old.intent == {"request_id": "old"}
@@ -699,6 +702,7 @@ def test_update_snapshot_adds_only_absent_film_and_result_fields(package_probe):
         "source": "original",
         "projection": "equirectangular",
         "parent_id": "a",
+        "on_demand": True,
     }
     current = Record({"request_id": "new"}, [{"asset": dict(saved), "receipt": None}])
     assert package_probe.job_snapshot(current)["results"][0]["asset"] == saved

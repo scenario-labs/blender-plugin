@@ -495,12 +495,39 @@ def test_selected_mesh_lookup_uses_index_and_decodes_only_matching_scope(
     assert any("USING INDEX upload_mesh_asset" in row[3] for row in plan)
 
 
-def test_mesh_lookup_bounds_ambiguous_matches_without_hiding_ambiguity(store, intent):
-    for index in range(5):
-        imported(store, replace(mesh_intent(intent), request_id=f"mesh-{index}"), "same-asset")
+def other_bytes(intent):
+    return replace(
+        intent, file_sha256=digest(b"vwxyz"), part_sha256=(digest(b"vwx"), digest(b"yz"))
+    )
+
+
+def test_byte_identical_captures_of_one_asset_read_as_their_latest(store, intent, monkeypatch):
+    from scenario.core.jobs import upload_store as module
+
+    # Scenario imports a re-upload of unchanged bytes as the same asset.
+    names = ["mesh-c", "mesh-a", "mesh-e", "mesh-b", "mesh-d"]
+    for name in names:
+        imported(store, replace(mesh_intent(intent), request_id=name), "same-asset")
+    decoded, decode = [], module._decode
+    monkeypatch.setattr(module, "_decode", lambda *a, **k: decoded.append(a) or decode(*a, **k))
+    matches = store.mesh_sources("same-asset")
+    # Insertion order, not request ID order, names the latest capture.
+    assert [record.intent.request_id for record in matches] == ["mesh-d"]
+    assert len(decoded) == 1
+
+
+@pytest.mark.parametrize("position", ["first", "middle", "last"])
+def test_captures_of_other_bytes_for_one_asset_stay_a_conflict(store, intent, position):
+    names = [f"mesh-{index}" for index in range(5)]
+    different = {"first": 0, "middle": 2, "last": 4}[position]
+    for index, name in enumerate(names):
+        source = other_bytes(intent) if index == different else intent
+        imported(store, replace(mesh_intent(source), request_id=name), "same-asset")
     matches = store.mesh_sources("same-asset")
     assert len(matches) == 2
-    assert len({record.intent.request_id for record in matches}) == 2
+    assert matches[0].intent.request_id == names[-1]
+    assert matches[1].intent.request_id == (names[-2] if position == "last" else names[different])
+    assert matches[0].intent.file_sha256 != matches[1].intent.file_sha256
     assert all(record.asset_id == "same-asset" for record in matches)
 
 

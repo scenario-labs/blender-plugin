@@ -396,6 +396,9 @@ def _error(operator, message):
 class SCENARIO_OT_workflow_catalog(bpy.types.Operator):
     bl_idname = "scenario.workflow_catalog"
     bl_label = "Refresh workflows"
+    bl_description = (
+        "List this project's workflows, or public ones, from Scenario; nothing is spent"
+    )
     privacy: StringProperty(default="private", options={"HIDDEN", "SKIP_SAVE"})
 
     def execute(self, context):
@@ -436,6 +439,7 @@ class SCENARIO_OT_load_workflow(bpy.types.Operator):
 class SCENARIO_OT_estimate_workflow(bpy.types.Operator):
     bl_idname = "scenario.estimate_workflow"
     bl_label = "Request workflow price"
+    bl_description = "Get the exact price of this workflow with its current inputs; pricing is free"
 
     def execute(self, context):
         try:

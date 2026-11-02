@@ -4,8 +4,12 @@
 
 A returned armature's clips are copied onto the armature that the captured
 source's Armature skin uses. The source mesh, its skin and the rig's rest data are
-never modified, and no returned object is kept. Bones are matched by name only;
-retargeting across different skeletons is unsupported.
+never modified, and no returned object is kept. Bones are matched by name; when
+the names, hierarchy or rest pose do not match and both rigs are recognized
+humanoids, the clips are retargeted instead (see `motion_retarget`). A clip that
+also keys the returned armature object, as when a file's skin leaves its scene
+root out of the joints and the root carries the travel, is always retargeted:
+that motion belongs to no bone a name could match.
 
 Both rigs bind the same character in the same rest pose, but a re-rig can orient
 a bone differently on it. Skinning moves a vertex by its bone's armature-space
@@ -32,7 +36,9 @@ from dataclasses import dataclass, field
 import bpy
 from mathutils import Vector
 
+from ..core.scene import humanoid
 from . import mesh_application as mesh
+from . import motion_retarget
 
 _log = logging.getLogger("scenario.jobs")
 
@@ -46,11 +52,17 @@ REST_TOLERANCE = math.radians(15)
 _NEGLIGIBLE = 1e-5
 # Exported uniform scale keys can differ between axes by a few 1e-5.
 _UNIFORM = 1e-4
+# A new scene's frame range: one the user has not set, which the first clip replaces.
+_DEFAULT_RANGE = (1, 250)
 _CHANNEL = re.compile(
     r'pose\.bones\["((?:[^"\\]|\\.)*)"\]\.'
     r"(location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale)"
 )
+# The returned armature object's own transform, which only a retarget plays.
+_CARRIED = re.compile(r"location|rotation_quaternion|rotation_euler|rotation_axis_angle|scale")
 _ROTATIONS = frozenset({"rotation_quaternion", "rotation_euler", "rotation_axis_angle"})
+# What to do when the clips match neither by name nor as two humanoids.
+_RIG_AGAIN = "Rig the mesh again with Edit 3D > Rigging, then apply the animation again"
 # Vector components a correction rotates: location, and the quaternion's X, Y and Z
 # (conjugation keeps W). Both maps are linear, so rotating every key and handle of
 # curves that share their timing rotates the interpolated values exactly, and the
@@ -105,7 +117,8 @@ def _values(curve):
 def _channels(action, slot):
     """Map each animated bone to its animated properties; reject anything else.
 
-    Also report whether any location key moves a bone away from its rest head.
+    Also report whether any location key moves a bone away from its rest head, and
+    which of its own transform properties the returned armature object keys.
     """
     if any(
         bag.fcurves
@@ -114,19 +127,23 @@ def _channels(action, slot):
         for bag in _channelbags(action, other)
     ):
         raise mesh.MeshApplicationError("Clips that animate other objects are unsupported")
-    bones, moved = {}, False
+    bones, moved, carried = {}, False, set()
     for bag in _channelbags(action, slot):
         for curve in bag.fcurves:
             match = _CHANNEL.fullmatch(curve.data_path)
+            if match is None and not curve.modifiers and _CARRIED.fullmatch(curve.data_path):
+                carried.add(curve.data_path)
+                continue
             if match is None or curve.modifiers:
                 raise mesh.MeshApplicationError(
-                    "Clips may only key bone location, rotation and scale"
+                    "Clips may only key the location, rotation and scale of the armature and "
+                    "its bones"
                 )
             name = bpy.utils.unescape_identifier(match.group(1))
             bones.setdefault(name, set()).add(match.group(2))
             if match.group(2) == "location" and not moved:
                 moved = any(abs(value) > 1e-9 for value in _values(curve))
-    return bones, moved
+    return bones, moved, carried
 
 
 def _orientation(rig, bone, world):
@@ -155,9 +172,21 @@ def _curves(action, slot):
     for bag in _channelbags(action, slot):
         for curve in bag.fcurves:
             match = _CHANNEL.fullmatch(curve.data_path)
+            if match is None:
+                continue
             name = bpy.utils.unescape_identifier(match.group(1))
             properties = curves.setdefault(name, {})
             properties.setdefault(match.group(2), {})[curve.array_index] = curve
+    return curves
+
+
+def _carried(action, slot):
+    """The returned armature object's own curves by property and array index."""
+    curves = {}
+    for bag in _channelbags(action, slot):
+        for curve in bag.fcurves:
+            if _CARRIED.fullmatch(curve.data_path):
+                curves.setdefault(curve.data_path, {})[curve.array_index] = curve
     return curves
 
 
@@ -311,11 +340,55 @@ def _scale(source, destination):
     return ratio
 
 
+def _match(source, destination, animated):
+    """The space in which every animated bone matches the destination by name and rest."""
+    for name, properties in animated.items():
+        returned = source.data.bones.get(name)
+        existing = destination.data.bones.get(name)
+        if returned is None or existing is None:
+            raise mesh.MeshApplicationError("The destination rig lacks a bone the clips animate")
+        if (
+            (returned.parent.name if returned.parent else None)
+            != (existing.parent.name if existing.parent else None)
+            or returned.use_connect != existing.use_connect
+            or returned.use_inherit_rotation != existing.use_inherit_rotation
+            or returned.inherit_scale != existing.inherit_scale
+            or returned.use_local_location != existing.use_local_location
+        ):
+            raise mesh.MeshApplicationError("Animated bones must keep the same hierarchy")
+        if properties & _ROTATIONS and (
+            source.pose.bones[name].rotation_mode != destination.pose.bones[name].rotation_mode
+        ):
+            raise mesh.MeshApplicationError("Animated bones must use the same rotation mode")
+    # Armature space first: a turned character keeps the clip in its own facing.
+    for world in (False, True):
+        if _within(source, destination, animated, world):
+            return world
+    raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+
+
+def _check_free(destination, names):
+    """Constraints and drivers evaluate after the action and would override the clips."""
+    data = destination.animation_data
+    drivers = data.drivers if data is not None else ()
+    driven = {
+        bpy.utils.unescape_identifier(match.group(1))
+        for curve in drivers
+        if (match := _CHANNEL.fullmatch(curve.data_path))
+    }
+    if driven & names or any(destination.pose.bones[name].constraints for name in names):
+        raise mesh.MeshApplicationError(
+            "Constraints or drivers move the animated bones: remove or mute them, then apply "
+            "the animation again"
+        )
+
+
 def validate_clips(target, objects):
     """Require one armature whose clips key bones the destination rig has with a close rest.
 
-    Return the destination rig, the clips, the location scale, the rest corrections
-    and the largest correction angle.
+    Return the destination rig, the clips, the location scale, the rest corrections,
+    the largest correction angle and, for another humanoid skeleton, the retarget
+    that replaces them (None when bones match by name).
     """
     mesh.validate_target(target)
     if target.skin is None:
@@ -341,52 +414,32 @@ def validate_clips(target, objects):
         # A mirrored or flattened armature object has no rest rotation to correct by.
         raise mesh.MeshApplicationError("Apply animation needs rigs that are not mirrored")
     clips = _clips(source)
-    animated, moved = {}, False
+    animated, moved, carried = {}, False, False
     for action, slot in clips:
-        bones, offset = _channels(action, slot)
-        moved = moved or offset
+        bones, offset, own = _channels(action, slot)
+        moved, carried = moved or offset, carried or bool(own)
         for name, properties in bones.items():
             animated.setdefault(name, set()).update(properties)
-    for name, properties in animated.items():
-        returned = source.data.bones.get(name)
-        existing = destination.data.bones.get(name)
-        if returned is None or existing is None:
-            raise mesh.MeshApplicationError("The destination rig lacks a bone the clips animate")
-        if (
-            (returned.parent.name if returned.parent else None)
-            != (existing.parent.name if existing.parent else None)
-            or returned.use_connect != existing.use_connect
-            or returned.use_inherit_rotation != existing.use_inherit_rotation
-            or returned.inherit_scale != existing.inherit_scale
-            or returned.use_local_location != existing.use_local_location
-        ):
-            raise mesh.MeshApplicationError("Animated bones must keep the same hierarchy")
-        if properties & _ROTATIONS and (
-            source.pose.bones[name].rotation_mode != destination.pose.bones[name].rotation_mode
-        ):
-            raise mesh.MeshApplicationError("Animated bones must use the same rotation mode")
-    # Armature space first: a turned character keeps the clip in its own facing.
-    for world in (False, True):
-        if _within(source, destination, animated, world):
-            break
-    else:
-        raise mesh.MeshApplicationError("The destination rig's rest pose does not match")
+    try:
+        if carried:
+            raise mesh.MeshApplicationError(
+                "The clips move the returned armature itself, which only a humanoid rig can take"
+            )
+        world = _match(source, destination, animated)
+    except mesh.MeshApplicationError as error:
+        # Another skeleton, such as a text-to-motion model's: retarget humanoids only.
+        retarget = motion_retarget.plan(source, destination)
+        if retarget is None:
+            raise mesh.MeshApplicationError(f"{error}. {_RIG_AGAIN}") from None
+        _log.info("Clips retargeted from a %s skeleton", retarget.family)
+        _check_free(destination, set(retarget.destination_bones.values()))
+        return destination, clips, 1.0, {}, 0.0, retarget
     _log.info("Clip rests compared in %s space", "world" if world else "armature")
-    # Constraints and drivers evaluate after the action and would override the clips.
-    drivers = data.drivers if data is not None else ()
-    driven = {
-        bpy.utils.unescape_identifier(match.group(1))
-        for curve in drivers
-        if (match := _CHANNEL.fullmatch(curve.data_path))
-    }
-    if driven & animated.keys() or any(
-        destination.pose.bones[name].constraints for name in animated
-    ):
-        raise mesh.MeshApplicationError("Constraints or drivers move the animated bones")
+    _check_free(destination, animated.keys())
     corrections, largest = _corrections(source, destination, animated, clips, world)
     # Rest-head location keys stay zero at any scale; sampled exports key every bone.
     ratio = _scale(source, destination) if moved else 1.0
-    return destination, clips, ratio, corrections, largest
+    return destination, clips, ratio, corrections, largest, None
 
 
 def _state(rig):
@@ -456,7 +509,7 @@ def _track(data, name, action, slot):
     track = data.nla_tracks.new()
     try:
         track.name = name
-        strip = track.strips.new(name, math.floor(action.frame_range[0]), action)
+        strip = track.strips.new(name, motion_retarget.whole_frames(action.frame_range)[0], action)
         strip.action_slot = slot
         track.mute = True
         if strip.action_slot != slot:
@@ -500,11 +553,18 @@ class AnimationApplication:
     source: object
     rig: object
     actions: tuple
-    # The largest rest correction applied to an animated bone, in degrees.
-    rest_correction_deg: float
+    # The largest rest correction applied to an animated bone, in degrees; None
+    # when the clips were retargeted from another skeleton.
+    rest_correction_deg: float | None
     _tracks: tuple = field(repr=False)
     _before: tuple | None = field(repr=False)
     _applied: tuple = field(repr=False)
+    # The returned skeleton's family name, such as "Mixamo", when retargeted.
+    retargeted_from: str | None = None
+    # The scene frame range the first clip set, or None when the user's range stayed.
+    frame_range: tuple | None = None
+    # The scene and its previous frame range, when the first clip replaced it.
+    _timeline: tuple | None = field(default=None, repr=False)
     _closed: bool = field(default=False, repr=False)
     # ANIMATE leaves mesh data alone, so there is no Keep original copy.
     original = None
@@ -526,6 +586,7 @@ class AnimationApplication:
             _restore(self.rig, self._before, self._tracks)
             if _state(self.rig) != self._before:
                 raise mesh.MeshApplicationError("Could not restore the rig's previous animation")
+            _restore_timeline(self._timeline)
         except ReferenceError:
             raise mesh.MeshApplicationError(
                 "Application data was removed; rollback is unavailable"
@@ -533,19 +594,48 @@ class AnimationApplication:
         self._closed = True
 
 
+def default_range(scene):
+    """Whether the scene still has Blender's default frame range and no preview range in use."""
+    return (scene.frame_start, scene.frame_end) == _DEFAULT_RANGE and not scene.use_preview_range
+
+
+def _fit_timeline(scene, clip):
+    """Play `clip` over a scene frame range still at Blender's default; return what changed.
+
+    A range the user set, or a preview range in use, is left alone.
+    """
+    previous = (scene.frame_start, scene.frame_end)
+    if not default_range(scene):
+        return None
+    scene.frame_start, scene.frame_end = motion_retarget.whole_frames(clip.frame_range)
+    return scene, previous
+
+
+def _restore_timeline(timeline):
+    if timeline is not None:
+        scene, (start, end) = timeline
+        scene.frame_start, scene.frame_end = start, end
+
+
 def apply_clips(target, objects):
     """Assign the first returned clip; keep it, the others and any previous action in muted NLA.
 
-    The rig's action blending becomes Replace at full influence. Timeline settings
-    stay unchanged. GLB and glTF clip timing follows the destination frame rate
-    through the shared staging scene; FBX clips keep the file's.
+    The rig's action blending becomes Replace at full influence. A scene frame range
+    still at Blender's default becomes the first clip's; the current frame and frame
+    rate stay. GLB and glTF clip timing follows the destination frame rate through
+    the shared staging scene; FBX clips keep the file's.
     """
-    rig, clips, ratio, corrections, largest = validate_clips(target, objects)
+    rig, clips, ratio, corrections, largest, retarget = validate_clips(target, objects)
     before = _state(rig)
-    actions, tracks = [], []
+    actions, tracks, timeline = [], [], None
     try:
         for action, slot in clips:
-            actions.append(_copy(action, slot, rig, ratio, corrections))
+            if retarget is None:
+                actions.append(_copy(action, slot, rig, ratio, corrections))
+            else:
+                name = f"{rig.name} {action.name}"
+                curves, carried = _curves(action, slot), _carried(action, slot)
+                actions.append(retarget.clip(action, slot, curves, name, carried))
         data = rig.animation_data or rig.animation_data_create()
         if data.action is not None:
             tracks.append(_track(data, data.action.name, data.action, data.action_slot))
@@ -559,16 +649,21 @@ def apply_clips(target, objects):
         data.action_influence = 1.0
         if (data.action, data.action_slot) != (clip, slot):
             raise mesh.MeshApplicationError("Blender did not assign the returned clip")
+        timeline = _fit_timeline(target.scene, clip)
         return AnimationApplication(
             target.obj,
             rig,
             tuple(clip for clip, _ in actions),
-            round(math.degrees(largest), 1),
+            None if retarget else round(math.degrees(largest), 1),
             tuple(tracks),
             before,
             _state(rig),
+            retargeted_from=humanoid.label(retarget.family) if retarget else None,
+            frame_range=(target.scene.frame_start, target.scene.frame_end) if timeline else None,
+            _timeline=timeline,
         )
     except BaseException:
+        _restore_timeline(timeline)
         _restore(rig, before, tracks)
         for clip, _ in actions:
             bpy.data.actions.remove(clip)

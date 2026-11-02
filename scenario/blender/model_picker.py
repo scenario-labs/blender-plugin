@@ -29,7 +29,7 @@ from bpy.props import (
 
 from ..core.api import model_filter, trained_offers
 from ..core.api.assets import download_file
-from ..core.api.catalog import PATINA_MODELS, TRAINED_COMPOSITION, TRAINED_LORA
+from ..core.api.catalog import TRAINED_COMPOSITION, TRAINED_LORA
 from ..core.api.errors import ScenarioError
 from ..core.ui import capability_status
 from . import generation, icons, props, runtime, trained_models
@@ -369,7 +369,7 @@ def refilter(wm):
 
 
 def _on_modality_change(self, context):
-    # A curated list (PATINA, the Environment mode's contract models) is not the tab's catalog.
+    # A lane's own list (Materials, the Environment mode's contract models) is not the tab's catalog.
     if not (_ctx["material_only"] or _ctx["panorama_only"]):
         _ctx["records"] = candidate_records(self.scenario_picker_modality)
     _enum_cache.pop(("categories", self.scenario_picker_modality), None)
@@ -518,9 +518,8 @@ def prepare(context, lane, category="all"):
     _ctx["panorama_only"] = lane == "panorama"
     modality = modality_for_lane(lane)
     if _ctx["material_only"]:
-        _ctx["records"] = [
-            r for r in runtime.state.records.values() if r.id in PATINA_MODELS
-        ] or list(runtime.state.lane_models.get("material") or [])
+        # The Materials lane list: PATINA, then Scenario Texture, then other texture models.
+        _ctx["records"] = list(runtime.state.lane_models.get("material") or [])
     elif _ctx["panorama_only"]:
         _ctx["records"] = generation.panorama_models(
             scene.scenario.panorama_mode, list(runtime.state.records.values())
@@ -543,10 +542,13 @@ def prepare(context, lane, category="all"):
 
 def _target_lane(scene, record, lane):
     """The lane a chosen model belongs to: the current lane when the modality matches, else the modality's base lane
-    (3D-to-3D models go to the Edit 3D lane / mode)."""
+    (3D-to-3D models, and models that animate a given character, go to the Edit 3D lane / mode)."""
     modality = model_filter.modality_of(record)
     caps = set(record.capabilities)
-    if modality == "3d" and "3d23d" in caps and "txt23d" not in caps and "img23d" not in caps:
+    if modality == "3d" and (
+        ("3d23d" in caps and "txt23d" not in caps and "img23d" not in caps)
+        or model_filter.animates_given_character(record)
+    ):
         return "edit3d"
     if modality_for_lane(lane) == modality and not (lane == "edit3d" and "3d23d" not in caps):
         return lane
@@ -842,7 +844,7 @@ class SCENARIO_OT_pick_model(bpy.types.Operator):
         if _ctx["material_only"]:
             header = layout.row()
             header.alignment = "CENTER"
-            header.label(text="Materials: PATINA models", icon="MATERIAL")
+            header.label(text="Materials: texture and PBR models", icon="MATERIAL")
         elif _ctx["panorama_only"]:
             header = layout.row()
             header.alignment = "CENTER"

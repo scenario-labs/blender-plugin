@@ -246,6 +246,20 @@ def test_offline_and_permission_revocation_stop_before_more_bytes(connection):
     conn.getresponse.assert_not_called()
 
 
+def test_connecting_takes_the_connect_timeout_then_sending_takes_the_socket_timeout(
+    connection,
+):
+    # A new connection tries each DNS address for the connect timeout: one that
+    # never accepts must not cost the 30-second socket timeout.
+    conn, factory = connection
+    send(uploader())
+    assert factory.call_args.kwargs["timeout"] == 5.0
+    waits = [call.args[0] for call in conn.sock.settimeout.call_args_list]
+    assert waits and set(waits) == {30.0}
+    send(uploader(timeout=2.0))
+    assert factory.call_args.kwargs["timeout"] == 2.0
+
+
 def test_deadline_between_chunks_stops_without_retry(connection, monkeypatch):
     conn, _ = connection
     now = 0.0

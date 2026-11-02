@@ -413,8 +413,9 @@ support explicit still captures; video inputs support explicit clips. **Upload
 selected mesh** creates one GLB reference for an empty 3D input. Preparation
 runs on the main thread in private temporary storage retained until asynchronous
 staging finishes or the session retires. Clips use the preview range when
-enabled, otherwise the scene range, at 1280x720 with no audio or implicit
-duration padding. Capture settings/current frame and mesh selection are
+enabled, otherwise the scene range, with no audio or implicit duration padding.
+Stills and clips are 1280 pixels on the long side, shaped like the camera's
+render frame or the viewport. Capture settings/current frame and mesh selection are
 restored. Restoration writes the preview-range toggle only when it changed, and
 a clip keeps an enabled preview range that already equals its span. In the GUI,
 Blender answers any write to that toggle, even an unchanged one, with a
@@ -478,11 +479,13 @@ when their scene is removed or replaced (Undo/Redo, file loading) or the
 connection changes. Attachment still requires the same scene, form slot or input
 and connection scope. A restart keeps whichever binding the upload had. Initialization,
 each PUT and completion still require durable claims and use one attempt only.
-Known processing uploads are polled at two-second intervals. Uncertain responses
-stop automatic mutation; no later status read releases a part claim or replays
-initialization/completion. The facade retains at most 128 handles per session.
-An admission rejection from a full worker/outcome queue has not started a task;
-the facade waits briefly and retries admission only. It never treats a failed
+Known processing uploads are read 0.5, 1 and 2 seconds after completion, then
+every two seconds; while an upload has a step to take, the GUI pump ticks every
+0.25 seconds instead of 0.6. Uncertain responses stop automatic mutation; no later
+status read releases a part claim or replays initialization/completion. The facade
+retains at most 128 handles per session. An admission rejection from a full
+worker/outcome queue has not started a task; the facade waits briefly and retries
+admission only. It never treats a failed
 task as this safe case. Explicit refresh that confirms `processing` re-enables
 status reads, while uncertain initialization/part/finalization cannot be replayed.
 The facade owns recovery tasks and drains their outcomes even after the dialog
@@ -736,9 +739,10 @@ their typed 3D input parameters and persists them before spending; see
 [generation source bindings](JOB_STORAGE.md#captured-mesh-inputs-in-generation-intents).
 Quotes look up only selected asset IDs within the credential scope, using a
 partial SQLite index of imported captured meshes. Each unique input needs one
-query and at most two decoded records; two matches still reject an ambiguous
-source. Repeated array entries keep their original positions without repeating
-the lookup, and absent optional inputs do not read upload storage. External
+query and at most two decoded records: the latest capture, then one of other
+bytes, which still rejects an ambiguous source. Repeated array entries keep
+their original positions without repeating the lookup, and absent optional
+inputs do not read upload storage. External
 assets and ordinary uploads do not gain an inferred source. Each quote allows at
 most 128 distinct 3D input asset IDs across all parameters, including unmatched
 external assets. A 129th identity fails before another lookup; repeated IDs share

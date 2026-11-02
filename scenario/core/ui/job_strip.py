@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from ..jobs.progress import LABELS as REMOTE_LABELS
 from .composer_layout import INSPECT_CHIP
+from .saved_job_actions import FIRST_FRAME_LANE
 
 ACTIVE_REMOTE_STATUSES = ("pending", "queued", "warming-up", "in-progress", "finalizing")
 TERMINAL_REMOTE_STATUSES = ("success", "failure", "canceled")
@@ -28,6 +29,7 @@ REMOTE_STATUSES = ACTIVE_REMOTE_STATUSES + TERMINAL_REMOTE_STATUSES
 TONES = ("active", "ready", "done", "review", "error")
 INSPECT_LABEL = "Inspect"
 CHOOSE_CHIP = "choose"  # several result actions: the chip opens the job card to pick one
+FIRST_FRAME_LABEL = "Use as first frame"
 
 # The Jobs panel's words for an active remote status, capitalized, so one job reads the same in
 # the strip and in Jobs rows: Queued, Starting, Generating, Finalizing.
@@ -188,7 +190,7 @@ def strip_status(
     return StripStatus(text, tone, fraction)
 
 
-def strip_chips(actions, saved_state, *, automatic=False, error=None):
+def strip_chips(actions, saved_state, *, automatic=False, error=None, lane=None):
     """Chips for one job view, left to right: at most one primary action, then Inspect.
 
     `actions` are the view's saved-job action descriptors (key, action, group,
@@ -201,6 +203,8 @@ def strip_chips(actions, saved_state, *, automatic=False, error=None):
     a receipt retry, a cancellation, download recovery while results are not
     local, the single apply action (without its asset number), or a choice
     between several, counting only the actions that reuse an applied job.
+    A Render Image job with exactly one first-frame action leads with that one
+    ("Use as first frame"), so an approved still reaches Render Video in one click.
     """
     inspect = StripChip(INSPECT_CHIP, INSPECT_LABEL)
     if saved_state in _INSPECT_ONLY:
@@ -208,11 +212,11 @@ def strip_chips(actions, saved_state, *, automatic=False, error=None):
     if saved_state == "ready" and automatic and not _message(error):
         return (inspect,)
     controls = [item for item in actions if item.operator and item.group in _CHIP_GROUPS]
-    primary = _primary(controls, saved_state)
+    primary = _primary(controls, saved_state, lane)
     return (inspect,) if primary is None else (primary, inspect)
 
 
-def _primary(controls, saved_state):
+def _primary(controls, saved_state, lane=None):
     for group in ("receipt", "cancel"):
         for item in controls:
             if item.group == group:
@@ -222,6 +226,9 @@ def _primary(controls, saved_state):
             if item.action in _DOWNLOAD_RECOVERY:
                 return StripChip(item.key, item.label)
     apply = [item for item in controls if item.group == "apply"]
+    first_frame = [item for item in apply if item.action == "use_first_frame"]
+    if lane == FIRST_FRAME_LANE and len(first_frame) == 1:
+        return StripChip(first_frame[0].key, FIRST_FRAME_LABEL)
     if len(apply) == 1:
         return StripChip(apply[0].key, _NUMBER.sub("", apply[0].label))
     if apply:

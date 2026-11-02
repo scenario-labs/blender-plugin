@@ -4,6 +4,9 @@
 
 Python-Markdown is a development dependency, never part of the extension bundle.
 The template's Google Fonts stylesheet remains external in both output modes.
+Images are copied beside the page, or inlined in the single file. A video or PDF is
+copied beside the page too, but the single file links the website copy instead of
+embedding megabytes of media.
 """
 
 import argparse
@@ -26,6 +29,9 @@ SLOT = re.compile(r"{{\s*([^{}]+?)\s*}}")
 INLINED = {"style": ("site.css", "style"), "search": ("handbook-search.js", "script")}
 # Icon links are local images: copied beside the page, or inlined in one file.
 ICON_RELS = {"icon", "apple-touch-icon"}
+SITE_URL = "https://blender.scenario.com/"
+# Large media the website serves from beside the page; the single file links it there.
+MEDIA_TYPES = {".mp4": "video/mp4", ".pdf": "application/pdf"}
 IMAGE_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -41,10 +47,11 @@ class HandbookError(ValueError):
 
 
 class _Page(HTMLParser):
-    def __init__(self, source: Path, root: Path, inline_images: bool):
+    def __init__(self, source: Path, root: Path, inline_images: bool, ref: str = "main"):
         super().__init__(convert_charrefs=False)
         self.source = source
         self.root = root
+        self.ref = quote(ref, safe="/-._~")
         self.inline_images = inline_images
         self.parts: list[str] = []
         self.assets: dict[Path, bytes] = {}
@@ -62,8 +69,8 @@ class _Page(HTMLParser):
         if "srcset" in attrs:
             raise HandbookError("Image srcset is unsupported; use one explicit local image")
 
-    def _asset(self, src: str) -> str:
-        """Copy a local image beside the output, or inline it, and return its new URL."""
+    def _local(self, src: str, kind: str) -> tuple[Path, Path]:
+        """Resolve a guide-relative file path, rejecting remote, escaping and missing files."""
         url = urlsplit(src)
         decoded = unquote(url.path)
         relative = Path(decoded)
@@ -77,10 +84,15 @@ class _Page(HTMLParser):
             or relative.is_absolute()
             or ".." in relative.parts
         ):
-            raise HandbookError(f"Image must use a local relative path: {src!r}")
-        image = (self.source.parent / relative).resolve()
-        if not image.is_relative_to(self.source.parent.resolve()) or not image.is_file():
-            raise HandbookError(f"Missing image or path outside the guide directory: {src!r}")
+            raise HandbookError(f"{kind.capitalize()} must use a local relative path: {src!r}")
+        file = (self.source.parent / relative).resolve()
+        if not file.is_relative_to(self.source.parent.resolve()) or not file.is_file():
+            raise HandbookError(f"Missing {kind} or path outside the guide directory: {src!r}")
+        return relative, file
+
+    def _asset(self, src: str) -> str:
+        """Copy a local image beside the output, or inline it, and return its new URL."""
+        relative, image = self._local(src, "image")
         mime = IMAGE_TYPES.get(image.suffix.lower())
         if mime is None:
             raise HandbookError(f"Unsupported image type: {src!r}")
@@ -91,6 +103,30 @@ class _Page(HTMLParser):
             return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
         self.assets[relative] = data
         return quote(relative.as_posix(), safe="/-._~")
+
+    def _media(self, src: str) -> str:
+        """Copy a local video or PDF beside the output; the single file links the website copy."""
+        relative, media = self._local(src, "media file")
+        if media.suffix.lower() not in MEDIA_TYPES:
+            raise HandbookError(f"Unsupported media type: {src!r}")
+        data = media.read_bytes()
+        if not data:
+            raise HandbookError(f"Empty media file: {src!r}")
+        path = quote(relative.as_posix(), safe="/-._~")
+        if self.inline_images:
+            return SITE_URL + path
+        self.assets[relative] = data
+        return path
+
+    def _video(self, attrs: dict[str, str | None]) -> None:
+        if not (attrs.get("aria-label") or "").strip():
+            raise HandbookError("Every video needs a descriptive aria-label")
+        if "controls" not in attrs or "autoplay" in attrs:
+            raise HandbookError("A video needs controls and must not autoplay")
+        if "src" in attrs:
+            raise HandbookError("Put a video file in a <source> element, not in src")
+        if attrs.get("poster"):
+            attrs["poster"] = self._asset(attrs["poster"])
 
     def _link(self, attrs: dict[str, str | None]) -> None:
         href = attrs.get("href") or ""
@@ -104,6 +140,9 @@ class _Page(HTMLParser):
         decoded = unquote(url.path)
         if "\\" in decoded or Path(decoded).is_absolute():
             raise HandbookError(f"Link must be repository-relative: {href!r}")
+        if Path(decoded).suffix.lower() in MEDIA_TYPES:
+            attrs["href"] = self._media(href)
+            return
         target = (self.source.parent / decoded).resolve()
         if not target.is_relative_to(self.root) or not target.exists():
             raise HandbookError(f"Missing repository link: {href!r}")
@@ -113,7 +152,7 @@ class _Page(HTMLParser):
             (
                 "https",
                 "github.com",
-                f"/scenario-labs/blender-plugin/{'tree' if target.is_dir() else 'blob'}/main"
+                f"/scenario-labs/blender-plugin/{'tree' if target.is_dir() else 'blob'}/{self.ref}"
                 + path,
                 url.query,
                 url.fragment,
@@ -128,6 +167,10 @@ class _Page(HTMLParser):
             self._image(attrs)
         elif tag == "a":
             self._link(attrs)
+        elif tag == "video":
+            self._video(attrs)
+        elif tag == "source":
+            attrs["src"] = self._media(attrs.get("src") or "")
         elif tag == "link" and (attrs.get("rel") or "").lower() in ICON_RELS:
             attrs["href"] = self._asset(attrs.get("href") or "")
         elif tag == "html":
@@ -250,6 +293,7 @@ def build_handbook(
     *,
     inline_images: bool = False,
     root: Path = ROOT,
+    ref: str = "main",
 ) -> Path:
     """Validate all inputs before writing HTML and referenced image snapshots."""
     source, template, manifest, output, root = (
@@ -279,7 +323,7 @@ def build_handbook(
     content = renderer.convert(source.read_text(encoding="utf-8"))
     values = {"content": content, "toc": renderer.toc, "version": html.escape(version), **inlined}
     page = SLOT.sub(lambda match: values[match[1].strip()], layout)
-    parsed = _Page(source, root, inline_images)
+    parsed = _Page(source, root, inline_images, ref)
     parsed.feed(page)
     parsed.close()
     if not all((parsed.doctype, parsed.lang, parsed.charset, parsed.viewport, parsed.title)):

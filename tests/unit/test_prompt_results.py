@@ -462,3 +462,32 @@ def test_model_text_can_recover_after_failed_binary_download(model):
     )
     assert result.text == "Full prompt"
     assert result.record == record and store.get("request") == record
+
+
+@pytest.mark.parametrize("parent", ["remote", "other", None])
+def test_model_text_reads_saved_output_after_scenario_replaces_the_job_list(model, parent):
+    from scenario.core.jobs.store import ResultAsset
+
+    owner, store, record, setup = model
+    record = store.set_results(
+        "request",
+        (ResultAsset("asset_text", "text.txt", "text/plain", 11),),
+        expected_revision=record.revision,
+    )
+    setup[3]["metadata"]["assetIds"] = ["asset_rerun"]
+    setup[4]["metadata"] = {} if parent is None else {"parentJobId": parent}
+    if parent == "remote":
+        assert model_text((owner, store, record, setup)).text == "Full prompt"
+    else:
+        with pytest.raises(ResultError, match="does not match"):
+            model_text((owner, store, record, setup))
+    assert setup[5] == ["/v1/jobs/remote", "/v1/assets/asset_text"]
+    assert store.get("request") == record
+
+
+def test_model_text_never_reads_an_unsaved_output_missing_from_the_job_list(model):
+    model[3][3]["metadata"]["assetIds"] = ["asset_rerun"]
+    model[3][4]["metadata"] = {"parentJobId": "remote"}
+    with pytest.raises(ResultError, match="does not match"):
+        model_text(model)
+    assert model[3][5] == ["/v1/jobs/remote"]

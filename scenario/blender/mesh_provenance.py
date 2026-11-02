@@ -73,11 +73,13 @@ def export_with_source(context, objects, path, session):
     # A single Armature skin is retained; the exporter sends its unposed mesh.
     # Several objects are retained together only when every one is capturable,
     # and within the bound application enforces on them together: never fingerprint
-    # sources that could not be applied.
+    # sources that could not be applied. One mesh over the bound is still tried:
+    # skinned to an armature, it is captured without its geometry for ANIMATE alone.
     captured = ()
-    total = sum(mesh_application._components(obj.data) for obj in objects)
     try:
-        if total <= mesh_application.MAX_COMPONENTS:
+        if len(objects) == 1 or mesh_application.within_component_limit(
+            obj.data for obj in objects
+        ):
             captured = tuple(capture_target(scene, obj) for obj in objects)
     except MeshApplicationError:
         # Upload/export supports more sources than in-place replacement.

@@ -12,7 +12,10 @@ import bmesh
 import bpy
 from bpy.props import StringProperty
 
+from ..core.api.errors import ScenarioError
 from ..core.scene import blockout as core
+from ..core.scene import blockout_view as core_view
+from . import blockout_view as view
 from . import runtime
 
 COLLECTION = "Blockout"
@@ -146,7 +149,9 @@ def _remove_tree(root):
 def clear_blockout(scene):
     """Clear only this scene's explicitly owned, unshared generated collection."""
     root = _owned_tree(scene)
-    return _remove_tree(root) if root is not None else 0
+    removed = _remove_tree(root) if root is not None else 0
+    view.purge_unused_materials()
+    return removed
 
 
 def _colour_the_viewport():
@@ -157,13 +162,44 @@ def _colour_the_viewport():
                 area.spaces.active.shading.color_type = "OBJECT"
 
 
-def build_blockout(context, elements):
-    """Stage a complete local build before replacing only this scene's owned tree."""
+class Built(list):
+    """The objects a build created; `added` names the camera and light it added to the scene."""
+
+    added = ()
+
+
+def _dress(scene, elements, staging):
+    """Stage the group colours and materials, then the camera and sun the scene lacks.
+
+    Returns ({group: (RGBA, material)}, names of what was added). Nothing here touches data the user owns.
+    """
+    colours = core_view.group_colours(elements, view.kept_colours(core_view.group_order(elements)))
+    materials = view.group_materials(colours, staging)
+    bounds = core_view.plan_bounds(elements)
+    added = []
+    if bounds is not None and view.lacks_camera(scene):
+        view.add_camera(scene, *bounds, staging)
+        added.append("camera")
+    if bounds is not None and view.lacks_light(scene):
+        view.add_sun(scene, *bounds, staging)
+        added.append("sun light")
+    return {group: (colours[group], materials[group]) for group in colours}, added
+
+
+def build_blockout(context, elements, *, dress=True):
+    """Stage a complete local build before replacing only this scene's owned tree.
+
+    With `dress`, each top-level group gets its own muted colour and shared material, and a camera framing
+    the blockout and a sun are added when the scene has none. A failed build removes everything it created.
+    """
     scene = context.scene
     old = _owned_tree(scene)
     root = _sub_collection(COLLECTION, scene.collection)
-    groups, created = {}, []
+    staging = view.Staging()
+    groups, created, looks, added = {}, Built(), {}, []
     try:
+        if dress:
+            looks, added = _dress(scene, elements, staging)
         for el in elements:
             group = el.get("group") or COLLECTION
             category = el.get("category") or core.DEFAULT_CATEGORY
@@ -182,23 +218,33 @@ def build_blockout(context, elements):
             obj.location = el.get("position") or (0.0, 0.0, 0.0)
             obj.scale = el.get("size") or (1.0, 1.0, 1.0)
             obj.rotation_euler = (0.0, 0.0, radians(el.get("rotation", 0.0) or 0.0))
-            r, g, b = core.CATEGORIES.get(category, core.CATEGORIES[core.DEFAULT_CATEGORY])[1]
-            obj.color = (r, g, b, 1.0)
+            if dress:
+                colour, material = looks[core_view.group_name(el)]
+                view.assign_material(obj, material)
+            else:
+                r, g, b = core.CATEGORIES.get(category, core.CATEGORIES[core.DEFAULT_CATEGORY])[1]
+                colour = (r, g, b, 1.0)
+            obj.color = colour
             obj[MARK] = category
             obj.display_type = "SOLID"
     except BaseException:
-        _remove_tree(root)
+        try:
+            _remove_tree(root)
+        finally:
+            staging.discard()
         raise
     # All decoding and creation succeeded before touching the old collection.
     # After publication starts, never destroy the staged replacement on failure.
     scene.scenario_blockout.built_collection = root
     if old is not None:
         _remove_tree(old)
+    view.purge_unused_materials()
     root.name = COLLECTION
     for name, coll in groups.items():
         coll.name = name
     for obj, element in zip(created, elements, strict=True):
         obj.name = element.get("name") or "Block"
+    created.added = tuple(added)
     if created and not bpy.app.background:
         _colour_the_viewport()
     return created
@@ -242,6 +288,26 @@ class SCENARIO_OT_blockout_approve(bpy.types.Operator):
 
         return _network_poll(cls, context)
 
+    def invoke(self, context, event):
+        """Above the "Confirm generations above" preference, name the model and exact price first."""
+        from ..core.ui.costs import confirms_spend, spend_confirmation
+        from .generation import confirm_threshold
+
+        jobs = runtime.state.blockout_jobs
+        item = jobs.actions.get(self.quote_id) if jobs is not None else None
+        # A stale or changed quote is refused by execute, without a dialog.
+        if (
+            item is None
+            or item.phase != "READY"
+            or item.cost != self.approved_cost
+            or not confirms_spend(item.cost, confirm_threshold())
+        ):
+            return self.execute(context)
+        title, message = spend_confirmation(core.model_label(item.model), item.cost)
+        return context.window_manager.invoke_confirm(
+            self, event, title=title, message=message, confirm_text="Generate"
+        )
+
     def execute(self, context):
         try:
             runtime.ensure_blockout_jobs().approve(
@@ -256,39 +322,53 @@ class SCENARIO_OT_blockout_approve(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _wrapped(layout, text, icon, width=36):
+    for index, line in enumerate(textwrap.wrap(text, width)):
+        layout.label(text=line, icon=icon if index == 0 else "NONE")
+
+
 def draw_status(layout, scene):
+    """The current action: its exact-price approval, progress or outcome. Never mutates."""
     from ..core.ui.costs import format_cu
+    from .blockout_jobs import CANCELED, binding, expected_time
 
     jobs = runtime.state.blockout_jobs
     item = jobs.current(scene) if jobs is not None else None
     if item is None:
         return
+    model = core.model_label(item.model)
     if item.phase == "READY":
-        from .blockout_jobs import binding
-
+        if binding(scene) != item.binding:
+            return  # A changed input makes this price stale; the panel offers a new one.
         row = layout.row()
-        row.enabled = binding(scene) == item.binding
+        row.scale_y = 1.4
+        verb = "Generate blockout" if item.action == "DESIGN" else "Refine blockout"
         op = row.operator(
             "scenario.blockout_approve",
-            text=f"Generate plan ({format_cu(item.cost)} CU)",
+            text=f"{verb} ({format_cu(item.cost)} CU)",
             icon="PLAY",
         )
         op.quote_id, op.approved_cost = item.identifier, item.cost
+        layout.label(text=f"{model}, {expected_time(item)}", icon="INFO")
     elif item.phase == "QUOTING":
-        layout.label(text="Getting plan price...", icon="TIME")
+        layout.label(text="Getting the price...", icon="TIME")
     elif item.phase in {"SUBMITTING", "POLLING", "LISTING", "READING"}:
-        layout.label(text="Preparing Blockout plan...", icon="TIME")
+        _wrapped(
+            layout,
+            f"{model} is {'refining' if item.action == 'REFINE' else 'designing'} the plan, "
+            f"{expected_time(item)}...",
+            "TIME",
+        )
     elif item.phase == "DONE":
-        layout.label(text="Plan ready. Build it to update geometry.", icon="CHECKMARK")
+        layout.label(text="Plan ready: build it below", icon="CHECKMARK")
     elif item.phase == "ERROR":
-        from .blockout_jobs import CANCELED
-
         if item.error == CANCELED:
             # A local cancellation sent nothing: there is no saved job to review.
-            for index, line in enumerate(textwrap.wrap(CANCELED, 32)):
-                layout.label(text=line, icon="INFO" if index == 0 else "NONE")
+            _wrapped(layout, CANCELED, "INFO", 32)
             return
         layout.label(text="Blockout needs review", icon="ERROR")
+        if item.error:
+            _wrapped(layout, item.error, "NONE")
         if item.request_id:
             layout.operator(
                 "scenario.inspect_saved_jobs", text="Inspect saved jobs", icon="VIEWZOOM"
@@ -297,9 +377,81 @@ def draw_status(layout, scene):
             layout.label(text="Check inputs and request a new price")
 
 
+def needs_price(scene, action="DESIGN"):
+    """Whether the panel should offer a price request for `action`: no current, unchanged quote."""
+    from .blockout_jobs import BUSY, binding
+
+    jobs = runtime.state.blockout_jobs
+    item = jobs.current(scene) if jobs is not None else None
+    if item is None:
+        return True
+    if item.phase in BUSY:
+        return False
+    return not (item.phase == "READY" and item.action == action and binding(scene) == item.binding)
+
+
+def draw_price(layout, scene):
+    """What stands in for Generate blockout while the design has no current price. Never mutates.
+
+    The pump prices settled inputs by itself, so the normal path shows a short wait and then
+    the priced button. A request by hand stays for a new plan from unchanged inputs and for
+    a failed automatic price, whose reason is shown.
+    """
+    from . import model_jobs
+    from .blockout_jobs import _design_inputs, binding
+
+    if not needs_price(scene):
+        return
+    props = scene.scenario_blockout
+    if props.image_path and not props.image_asset_id:
+        return  # The Upload button above comes first.
+    if not (props.prompt.strip() or props.image_asset_id):
+        layout.label(text="Describe a scene to see its price", icon="INFO")
+        return
+    jobs = runtime.state.blockout_jobs
+    item = jobs.current(scene) if jobs is not None else None
+    if item is not None and _design_inputs(item.binding) == _design_inputs(binding(scene)):
+        # A finished plan, an error or a refinement for these inputs stays on screen.
+        text = "Try again" if item.phase == "ERROR" and not item.request_id else "New plan"
+        layout.operator("scenario.blockout_design", text=text, icon="FILE_REFRESH")
+        return
+    reason = jobs.auto_price_error(scene) if jobs is not None else ""
+    if reason:
+        _wrapped(layout, reason, "ERROR")
+        layout.operator("scenario.blockout_design", text="Try again", icon="FILE_REFRESH")
+    elif (
+        model_jobs.automatic_estimates_stopped()
+        or not runtime.online()
+        or not runtime.credentials().valid
+    ):
+        layout.operator("scenario.blockout_design", text="Get price", icon="FILE_REFRESH")
+    else:
+        layout.label(text="Getting the price...", icon="TIME")
+
+
+def running_plans(shown=()):
+    """Blockout plans Scenario is designing, as Jobs rows; `shown` lists saved jobs drawn already."""
+    from .blockout_jobs import expected_time
+
+    jobs = runtime.state.blockout_jobs
+    if jobs is None:
+        return []
+    return [
+        f"{core.model_label(item.model)}, {expected_time(item)}"
+        for item in tuple(jobs.actions.values())
+        if item.phase in {"SUBMITTING", "POLLING", "LISTING", "READING"}
+        and item.request_id not in shown
+    ]
+
+
+def auto_quote(scene, now):
+    """Pump hook: price the visible Blockout design once its inputs settle."""
+    return runtime.ensure_blockout_jobs().auto_quote(scene, now)
+
+
 class SCENARIO_OT_blockout_design(bpy.types.Operator):
     bl_idname = "scenario.blockout_design"
-    bl_label = "Design blockout"
+    bl_label = "Get Blockout price"
     bl_description = "Request the exact price for a Blockout plan before approving generation"
 
     @classmethod
@@ -311,15 +463,41 @@ class SCENARIO_OT_blockout_design(bpy.types.Operator):
     def execute(self, context):
         props = context.scene.scenario_blockout
         prompt = props.prompt.strip()
-        if not prompt:
-            self.report({"WARNING"}, "Describe the scene to block out first")
+        if not prompt and not props.image_path:
+            self.report({"WARNING"}, "Describe the scene or choose a reference image first")
             return {"CANCELLED"}
         try:
             _design(context, prompt)
+        except ScenarioError as error:
+            self.report({"WARNING"}, error.reason)
+            return {"CANCELLED"}
         except Exception:
             self.report(
                 {"WARNING"}, "Could not request a Blockout price; check inputs and connection"
             )
+            return {"CANCELLED"}
+        return {"FINISHED"}
+
+
+class SCENARIO_OT_blockout_upload_image(bpy.types.Operator):
+    bl_idname = "scenario.blockout_upload_image"
+    bl_label = "Upload reference image"
+    bl_description = "Upload the chosen picture to Scenario so the plan can follow it"
+
+    @classmethod
+    def poll(cls, context):
+        from .operators import _network_poll
+
+        return _network_poll(cls, context)
+
+    def execute(self, context):
+        try:
+            runtime.ensure_blockout_jobs().upload_image(context.scene)
+        except ScenarioError as error:
+            self.report({"WARNING"}, error.reason)
+            return {"CANCELLED"}
+        except Exception:
+            self.report({"WARNING"}, "Upload could not start; check the image and try again")
             return {"CANCELLED"}
         return {"FINISHED"}
 
@@ -349,6 +527,9 @@ class SCENARIO_OT_blockout_refine(bpy.types.Operator):
             return {"CANCELLED"}
         try:
             _design(context, change, previous=previous)
+        except ScenarioError as error:
+            self.report({"WARNING"}, error.reason)
+            return {"CANCELLED"}
         except Exception:
             self.report(
                 {"WARNING"}, "Could not request a Blockout price; check inputs and connection"
@@ -359,8 +540,8 @@ class SCENARIO_OT_blockout_refine(bpy.types.Operator):
 
 class SCENARIO_OT_blockout_build(bpy.types.Operator):
     bl_idname = "scenario.blockout_build"
-    bl_label = "Rebuild blockout"
-    bl_description = "Rebuild the greybox from the current plan without calling the LLM again"
+    bl_label = "Build blockout"
+    bl_description = "Build the greybox from the current plan, locally, without calling the LLM"
     bl_options = {"REGISTER", "UNDO"}
 
     def execute(self, context):
@@ -369,13 +550,16 @@ class SCENARIO_OT_blockout_build(bpy.types.Operator):
             self.report({"WARNING"}, "No blockout plan yet; design one first")
             return {"CANCELLED"}
         try:
-            created = build_blockout(context, elements)
+            created = build_blockout(
+                context, elements, dress=context.scene.scenario_blockout.dress_scene
+            )
         except (ValueError, RuntimeError):
             self.report(
                 {"WARNING"}, "Could not build safely; inspect the existing Blockout collection"
             )
             return {"CANCELLED"}
-        self.report({"INFO"}, f"Rebuilt {len(created)} elements")
+        added = f", added a {' and a '.join(created.added)}" if created.added else ""
+        self.report({"INFO"}, f"Built {len(created)} elements{added}")
         return {"FINISHED"}
 
 
@@ -403,6 +587,7 @@ class SCENARIO_OT_blockout_clear(bpy.types.Operator):
 
 CLASSES = (
     SCENARIO_OT_blockout_design,
+    SCENARIO_OT_blockout_upload_image,
     SCENARIO_OT_blockout_approve,
     SCENARIO_OT_blockout_refine,
     SCENARIO_OT_blockout_build,

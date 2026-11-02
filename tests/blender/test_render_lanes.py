@@ -448,6 +448,87 @@ class RenderLanesTests(unittest.TestCase):
         )
         self.assertTrue(inspection["ready_to_estimate"], inspection["errors"])
 
+    def test_render_video_opens_on_seedance_2_5_and_sends_its_first_frame_with_the_clip(self):
+        # Live inputs of Seedance 2.5 (2026-10): its first frame excludes reference videos.
+        inputs = [
+            {"name": "prompt", "type": "string", "prompt": True, "label": "Prompt"},
+            {
+                "name": "image",
+                "type": "file",
+                "kind": "image",
+                "label": "First Frame",
+                "description": "First frame for image-to-video. "
+                "Mutually exclusive with reference images/videos.",
+            },
+            {
+                "name": "lastFrameImage",
+                "type": "file",
+                "kind": "image",
+                "label": "Last Frame",
+                "description": "Optional last frame. Only valid when a first frame is provided.",
+            },
+            {
+                "name": "referenceImages",
+                "type": "file_array",
+                "kind": "image",
+                "label": "Reference Images",
+                "maxLength": 30,
+                "description": "Reference images for multimodal / reference-to-video mode "
+                "(up to 30). Mutually exclusive with first frame.",
+            },
+            {
+                "name": "referenceVideos",
+                "type": "file_array",
+                "kind": "video",
+                "label": "Reference Videos",
+                "maxLength": 10,
+                "description": "Reference videos for multimodal, editing, or extension mode "
+                "(up to 10). Mutually exclusive with first frame.",
+            },
+        ]
+        base = {"type": "custom", "capabilities": ["txt2video", "img2video", "video2video"]}
+        current = {"id": "model_bytedance-seedance-2-5", "name": "Seedance 2.5", **base}
+        older = {
+            "id": "model_bytedance-seedance-2-0",
+            "name": "Seedance 2.0",
+            "tags": ["deprecated:model_bytedance-seedance-2-5"],
+            **base,
+        }
+        draft = {
+            "id": "model_bytedance-seedance-2-5-draft-complete",
+            "name": "Seedance 2.5 Draft Complete",
+            "type": "custom",
+            "capabilities": ["video2video"],
+        }
+        catalog = submodule("core.api.catalog")
+        records = [
+            catalog.ModelRecord.from_api(dict(model, inputs=inputs))
+            for model in (draft, older, current)
+        ] + [rec("model_minimax-h3")]
+        submodule("blender.handlers").dispatch(
+            ("catalog", {"privacy": "public", "records": records, "detailed": records})
+        )
+        listed = [item[0] for item in self.runtime.enum_items(("models", "render_video"))]
+        self.assertEqual(listed[0], "model_bytedance-seedance-2-5")
+        self.assertNotIn("model_bytedance-seedance-2-0", listed)
+        # A form nobody chose a model for shows the first one, not whichever was shown before.
+        self.assertEqual(self.video_lane.model_id, "model_bytedance-seedance-2-5")
+        schema = self.generation.schema_for(self.video_lane.model_id)
+        route = self.render_lanes.first_frame_route(schema)
+        self.assertEqual(
+            (route["input"], route["sent_as"], route["reason"]),
+            ("referenceImages", "reference_image", "exclusive"),
+        )
+        self.video_lane.prompt = "claymation"
+        self.video_lane.first_frame_path = str(FIXTURES / "patina-copper-512" / "albedo.png")
+        self.uploaded("render_video")
+        self.uploaded("render_video", "first_frame", "uploaded-first")
+        request = self.generation.build_request(self.scene, "render_video")
+        self.assertEqual(request.errors, [])
+        self.assertEqual(request.body["referenceVideos"], ["uploaded-scene"])
+        self.assertEqual(request.body["referenceImages"], ["uploaded-first"])
+        self.assertNotIn("image", request.body)
+
     def test_render_video_keeps_an_exact_first_frame_without_declared_exclusivity(self):
         self.video_lane.model_id = "model_bytedance-seedance-2-0"
         schema = self.generation.schema_for(self.video_lane.model_id)

@@ -86,6 +86,7 @@ def test_every_mime_alias_selects_one_format(media, fmt):
         "model/sog",
         "model/stl",
         "model/usd",
+        "model/vnd.usdz+zip",
         "model/x-3d-vox",
         "model/vnd.collada+xml",
         "model/x3d+xml",

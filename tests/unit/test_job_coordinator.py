@@ -19,6 +19,7 @@ from scenario.core.jobs.coordinator import (
     DuplicateRequestError,
     JobCoordinator,
     QuoteError,
+    QuoteExpired,
     RecoveryError,
     SubmissionUncertain,
 )
@@ -304,7 +305,7 @@ def test_expiry_is_measured_from_estimate_issuance_not_preparation(setup, point)
     offset = [0]
     coordinator, store, prepared, requests, _ = setup(clock=lambda: time.monotonic() + offset[0])
     offset[0] = 121
-    with pytest.raises(QuoteError, match="expired"):
+    with pytest.raises(QuoteExpired, match="expired"):
         if point == "prepare":
             coordinator.prepare(prepared.estimate, ORIGIN)
         else:

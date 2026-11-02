@@ -276,7 +276,7 @@ full render-lane desktop acceptance.
   result.
 - A saved material result shows **Tiling** whenever the file has a material with
   its derived name, and Tiling then scales that material's Mapping node, even if
-  it is an unrelated material. Saved application builds no Mapping node
+  it is an unrelated material
   ([#485](https://github.com/scenario-labs/blender-plugin/issues/485)).
 - Opening an Edit 3D or Environment form whose saved model is no longer in the
   catalog selects the first model, which makes a ready price in that scene stale.
@@ -287,10 +287,13 @@ full render-lane desktop acceptance.
 - Attach rig can replace the skin of a mesh already skinned to an armature, but
   only one vertex-group Armature modifier is supported; armature-deform or bone
   parenting, other modifiers and shape keys are rejected. Apply animation copies
-  returned clips only onto a rig with the same bone names and parents and a rest
-  pose within 15 degrees per bone, correcting the keys for that difference;
-  retargeting clips across different skeletons is not available yet
-  (roadmap#674 G14).
+  returned clips onto a rig with the same bone names and parents and a rest
+  pose within 15 degrees per bone, correcting the keys for that difference, or
+  retargets them between humanoid skeletons with Meshy, Mixamo, SMPL or Unreal
+  bone names. Other skeletons are refused, as are clips that move the returned
+  armature object itself on a rig that is not a humanoid; fingers and face bones
+  are not retargeted, and a clip's root motion assumes its first frame stands
+  upright.
 - Automatic Image-lane import and saved image and material application
   currently accept only PNG and scanline OpenEXR files. World application also
   accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.
@@ -346,11 +349,13 @@ full render-lane desktop acceptance.
 - Video-to-motion and speech-to-text workflows remain an explicit capability
   request in [#190](https://github.com/scenario-labs/blender-plugin/issues/190);
   model tags alone do not establish supported input and result handling. Models
-  offering `video23d` or `audio2txt` show a visible experimental status in the
-  picker, the Model row and `list_models`; the viewport composer's model chip
-  does not show it. They can be submitted; provider behavior and result handling
-  are not accepted. Generic import by file type may still bring in a returned
-  model (GLB, glTF, FBX, OBJ or mesh PLY) or media file.
+  offering `video23d`, `audio2txt` or `video2txt` show a visible experimental
+  status in the picker, the Model row and `list_models`; the viewport composer's
+  model chip does not show it. A model offering only `video2txt` produces text,
+  so neither the picker nor `list_models` lists it. Flagged models can be
+  submitted; provider behavior and result handling are not accepted. Generic
+  import by file type may still bring in a returned model (GLB, glTF, FBX, OBJ
+  or mesh PLY) or media file.
 
 ## Interface and capture
 

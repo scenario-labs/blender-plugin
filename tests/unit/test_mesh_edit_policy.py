@@ -15,6 +15,8 @@ ROTATING = "model_rodin-hyper3d-bang"  # listed by RETEXTURE and PARTS
     [
         ("model_tripo-retopology", "REMESH"),
         ("model_meshy-7-retexture", "RETEXTURE"),
+        ("model_scenario-claude-opus-5-5-3d", "RETEXTURE"),
+        ("model_scenario-gpt6-astra-3d", "RETEXTURE"),
         ("model_meshy-uv-unwrap", "UV"),
         ("model_meshy-rigging", "RIG"),
         ("model_tripo-segmentation-v2", "PARTS"),
@@ -32,6 +34,9 @@ def test_every_applicable_task_names_a_policy_and_animate_depends_on_the_source(
     start = policy.default_policy("model_meshy-animation")
     assert start == policy.DefaultPolicy("REMESH", "ANIMATE", derived=False)
     assert policy.default_policy("model_cartwheel-text-to-motion").task == "ANIMATE"
+    # Text-to-motion results start on ANIMATE too, whichever lane generated them.
+    for model_id in ("model_uthana-text-to-motion-3.0", "model_viggle-text-to-motion"):
+        assert policy.job_task(model_id) == "ANIMATE"
 
 
 def test_an_animate_job_keeps_a_skinned_rig_and_rigs_any_other_mesh():

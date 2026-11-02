@@ -452,6 +452,10 @@ def _deliver_binding(owner, token, binding):
     ref.label = (ref.label or "Reference") + " (uploaded snapshot)"
     binding.attached = True
     props.mark_estimate_dirty(_lane(binding.scene, binding.lane_name))
+    from . import generation
+
+    # Scenario may not price the asset it just imported yet; the form retries a few times.
+    generation.note_fresh_upload(binding.scene, binding.lane_name)
     # Delivered by maintenance, after the upload operator or tool has returned.
     file_state.mark_modified("Scenario reference upload")
 
@@ -546,15 +550,25 @@ class SCENARIO_OT_prepare_render_reference(bpy.types.Operator):
     bl_idname = "scenario.prepare_render_reference"
     bl_label = "Prepare render reference"
     bl_description = (
-        "Capture or upload this render input snapshot before requesting a generation price"
+        "Capture the scene and upload it with the chosen first frame; the price follows"
     )
     lane: StringProperty(default="render_image", options={"HIDDEN"})
     role: EnumProperty(
         items=[
+            ("all", "Scene and first frame", "Capture the scene, upload the first frame it uses"),
             ("scene", "Scene", "Scene capture"),
             ("first_frame", "First frame", "First-frame image"),
-        ]
+        ],
+        default="all",
     )
+
+    @classmethod
+    def description(cls, context, properties):
+        if properties.role == "first_frame":
+            return "Upload the chosen first-frame image before requesting a generation price"
+        if properties.role == "scene" or properties.lane != "render_video":
+            return "Capture the scene and upload it; the price follows"
+        return cls.bl_description
 
     @classmethod
     def poll(cls, context):
@@ -564,7 +578,10 @@ class SCENARIO_OT_prepare_render_reference(bpy.types.Operator):
         from . import render_references
 
         try:
-            render_references.prepare(context, self.lane, self.role)
+            if self.role == render_references.ALL:
+                render_references.capture_form(context, self.lane)
+            else:
+                render_references.prepare(context, self.lane, self.role)
         except Exception as error:
             reason = (
                 error.reason

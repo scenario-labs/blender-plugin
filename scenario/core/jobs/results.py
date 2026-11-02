@@ -14,6 +14,7 @@ from pathlib import Path
 from ..api.sdk_adapter import AdapterError
 from ..config import ext_for_mime
 from ..scene import splats
+from ..scene.model_formats import MATERIAL_MEDIA_TYPES, ModelFormat, model_format
 from ..scene.panorama import MAX_FILE_BYTES, world_candidate
 from . import playback, result_files
 from . import result_previews as previews
@@ -59,7 +60,7 @@ class _Canceled(Exception):
 @dataclass(frozen=True)
 class VerifiedResults:
     record: StoredJob
-    paths: tuple[Path, ...]
+    paths: tuple[Path | None, ...]
 
 
 MAX_PROMPT_BYTES = 65536
@@ -228,6 +229,30 @@ def _job_parents(records):
         if current == identifier:
             cyclic.add(identifier)
     return {key: value for key, value in parents.items() if key not in cyclic}
+
+
+def _on_demand(assets):
+    """Mark the OBJ, MTL and texture maps Scenario derives from a GLB result of the job.
+
+    They hold the GLB's mesh and maps again, in other files; the GLB imports with its
+    maps embedded, so they wait for an explicit fetch. Lineage decides, never a
+    filename: a copy names the GLB as its parent. When another result descends from
+    a copy, every file downloads with the job.
+    """
+    glbs = {asset.asset_id for asset in assets if model_format(asset.media_type) == ModelFormat.GLB}
+    copies = {
+        asset.asset_id
+        for asset in assets
+        if asset.parent_id in glbs
+        and (
+            model_format(asset.media_type) == ModelFormat.OBJ
+            or asset.media_type in MATERIAL_MEDIA_TYPES
+            or asset.texture_role is not None
+        )
+    }
+    if any(asset.parent_id in copies for asset in assets):
+        return assets
+    return [replace(asset, on_demand=asset.asset_id in copies) for asset in assets]
 
 
 def _asset(record, identifier, name, *, source=None):
@@ -405,24 +430,27 @@ class ResultCommands:
         identifiers = metadata.get("assetIds") if isinstance(metadata, dict) else None
         if not isinstance(identifiers, list) or not 1 <= len(identifiers) <= 128:
             raise ResultError("The model job has no supported bounded asset result list")
+        saved = {item.asset.asset_id for item in current.results}
         try:
             for identifier in identifiers:
                 _identity(identifier)
-            if len(set(identifiers)) != len(identifiers) or asset_id not in identifiers:
+            if len(set(identifiers)) != len(identifiers) or (saved and asset_id not in saved):
                 raise ValueError
-            if current.results and asset_id not in {
-                item.asset.asset_id for item in current.results
-            }:
+            # Scenario can replace a finished model job's output list minutes after
+            # success (seen with model_scenario-llm). The output this job saved stays
+            # readable when its own asset record names this job as its parent.
+            replaced = asset_id not in identifiers
+            if replaced and asset_id not in saved:
                 raise ValueError
         except ValueError:
             raise ResultError("The selected text asset does not match this saved job") from None
-        text = self._read_text_asset(asset_id)
+        text = self._read_text_asset(asset_id, job_id=current.remote_job_id if replaced else None)
         with self._guard():
             if self._store.get(request_id) != current:
                 raise StoreConflict("Model result changed; reload before acting")
             return ModelTextResult(current, asset_id, text)
 
-    def _read_text_asset(self, identifier):
+    def _read_text_asset(self, identifier, *, job_id=None):
         asset = self._request(self._adapter.asset, identifier, original_assets=True)
         if (
             asset.get("id") != identifier
@@ -431,6 +459,11 @@ class ResultCommands:
             or asset.get("mimeType") != "text/plain"
         ):
             raise ResultError("Scenario returned an unavailable or unsupported text asset")
+        metadata = asset.get("metadata")
+        if job_id is not None and (
+            not isinstance(metadata, dict) or metadata.get("parentJobId") != job_id
+        ):
+            raise ResultError("The selected text asset does not match this saved job")
         props = asset.get("properties")
         if not isinstance(props, dict):
             raise ResultError("Scenario returned no text asset properties")
@@ -509,7 +542,9 @@ class ResultCommands:
             assets.append(_asset(record, identifier, name))
             records[identifier] = record
         parents = _job_parents(records)
-        assets = [replace(asset, parent_id=parents.get(asset.asset_id)) for asset in assets]
+        assets = _on_demand(
+            [replace(asset, parent_id=parents.get(asset.asset_id)) for asset in assets]
+        )
         with self._guard():
             return self._store.set_results(
                 request_id, tuple(assets), expected_revision=current.revision
@@ -527,7 +562,7 @@ class ResultCommands:
         return root
 
     def download(self, request_id, *, expected_revision, cancel=None):
-        """Download every unfinished result; a set ``cancel`` stops without a receipt."""
+        """Download every unfinished result but on-demand copies; ``cancel`` stops without a receipt."""
         if cancel is not None and not callable(getattr(cancel, "is_set", None)):
             raise ResultError("Use a cancellation event")
         with self._store.result_transfer_lock(request_id):
@@ -555,6 +590,8 @@ class ResultCommands:
                     pass
                 if item.receipt is not None:
                     self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
+                    continue
+                if item.asset.on_demand:
                     continue
                 receipt = self._transfer(item, directory, cancel)
                 self._verify_saved(current, directory, item.asset.asset_id, receipt)
@@ -588,6 +625,81 @@ class ResultCommands:
                 "Result download did not complete; review saved files before retrying"
             ) from None
 
+    def fetch(self, request_id, *, expected_revision, asset_ids, cancel=None):
+        """Download on-demand copies of a completed job; ``cancel`` stops without a receipt.
+
+        The job keeps its state: each verified copy saves its receipt, and a failure
+        or a stop leaves the rest to fetch again. Copies already saved are verified.
+        """
+        if cancel is not None and not callable(getattr(cancel, "is_set", None)):
+            raise ResultError("Use a cancellation event")
+        try:
+            selected = tuple(_identity(value) for value in asset_ids)
+        except (TypeError, ValueError):
+            raise ResultError("Choose on-demand copies of this job") from None
+        with self._store.result_transfer_lock(request_id):
+            current = self._current(
+                request_id,
+                expected_revision,
+                {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED},
+            )
+            chosen = [item for item in current.results if item.asset.asset_id in selected]
+            if (
+                not selected
+                or len(set(selected)) != len(selected)
+                or len(chosen) != len(selected)
+                or not all(item.asset.on_demand for item in chosen)
+            ):
+                raise ResultError("Choose on-demand copies of this job")
+            if self._downloader is None:
+                raise ResultError("Result storage has not been configured")
+            try:
+                directory = self._directory(current)
+            except (OSError, ValueError, TransferError):
+                raise ResultError("Could not prepare private result storage") from None
+            try:
+                for item in chosen:
+                    with self._guard():
+                        pass
+                    if item.receipt is not None:
+                        self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
+                        continue
+                    # A copy saved without its receipt (Blender quit, or another process
+                    # changed the job first) was never trusted: fetch it again over it.
+                    orphan = directory / item.asset.name
+                    if orphan.is_symlink() or orphan.exists():
+                        orphan.unlink()
+                    receipt = self._transfer(item, directory, cancel)
+                    self._verify_saved(current, directory, item.asset.asset_id, receipt)
+                    with self._guard():
+                        # A copy's receipt only adds a saved file: record it on the
+                        # latest revision, which the store checks still accepts it.
+                        latest = self._store.get(request_id) or current
+                        current = self._store.record_fetch(
+                            request_id,
+                            item.asset.asset_id,
+                            receipt,
+                            expected_revision=latest.revision,
+                            **(
+                                {"allow_mesh_size_correction": True}
+                                if item.asset.media_type in REWRITTEN_MESH_TYPES
+                                else {}
+                            ),
+                        )
+                return current
+            except StoreError:
+                # Preserve an uncertain disk write. Never claim failure was saved.
+                raise
+            except _Canceled:
+                raise DownloadCanceled(
+                    "The download was stopped; no partial file was saved and choosing the "
+                    "result again starts it again"
+                ) from None
+            except Exception:
+                raise ResultError(
+                    "The files this result needs did not download; try again"
+                ) from None
+
     def _fresh_asset(self, item):
         """Read the asset again for a new signed URL; its saved description must hold."""
         response = self._request(self._adapter.asset, item.asset.asset_id, original_assets=True)
@@ -605,8 +717,8 @@ class ResultCommands:
         if item.asset.projection is None:
             # Likewise, a later response cannot relabel saved bytes as 360.
             fresh = replace(fresh, projection=None)
-        # Lineage is kept as saved; it never refuses a download.
-        fresh = replace(fresh, parent_id=item.asset.parent_id)
+        # Lineage, and the fetch it decided, are kept as saved; they never refuse a download.
+        fresh = replace(fresh, parent_id=item.asset.parent_id, on_demand=item.asset.on_demand)
         if fresh != item.asset:
             raise ResultError("Result metadata changed after the manifest was saved")
         return _download_url(response, item.asset.source)
@@ -694,7 +806,7 @@ class ResultCommands:
                 ) from None
             state = (
                 JobState.READY
-                if all(item.receipt is not None for item in current.results)
+                if all(item.receipt is not None or item.asset.on_demand for item in current.results)
                 else JobState.DOWNLOAD_FAILED
             )
             with self._guard():
@@ -723,6 +835,8 @@ class ResultCommands:
         if len(chosen) != 1:
             raise ResultError("Choose one saved media result")
         item, path = chosen[0]
+        if path is None:
+            raise ResultError("Download the selected result before inspecting its media")
         result = measure(path, item.receipt, item.asset.media_type, root=root, cancel=cancel)
         with self._guard():
             if self._store.get(request_id) != verified.record:
@@ -799,7 +913,10 @@ class ResultCommands:
         return splat
 
     def verify_ready(self, request_id, *, expected_revision, cancel=None):
-        """Rehash every saved receipt; a set `cancel` stops before the next receipt."""
+        """Rehash every saved receipt; a set `cancel` stops before the next receipt.
+
+        An on-demand copy not fetched yet has no path.
+        """
         current = self._current(
             request_id, expected_revision, {JobState.READY, JobState.APPLY_FAILED, JobState.APPLIED}
         )
@@ -813,6 +930,9 @@ class ResultCommands:
                     pass
                 if cancel is not None and cancel.is_set():
                     raise splats.SplatCancelled("Splat preparation cancelled")
+                if item.receipt is None and item.asset.on_demand:
+                    paths.append(None)
+                    continue
                 paths.append(
                     self._verify_saved(current, directory, item.asset.asset_id, item.receipt)
                 )

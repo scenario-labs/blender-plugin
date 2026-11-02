@@ -17,6 +17,7 @@ REFUSALS = ("not accepted", "refused", "unsupported", "not supported", "cannot",
     [
         (["audio2txt"], "Experimental: speech-to-text in testing"),
         (["VIDEO23D"], "Experimental: video-to-motion in testing"),
+        (["video2video", "video2txt"], "Experimental: video-to-text in testing"),
         (["txt23d", "video23d"], "Experimental: video-to-motion in testing"),
         (
             ["audio2txt", "video23d"],
@@ -62,9 +63,12 @@ def test_a_section_that_names_its_subject_uses_the_short_line():
 
 
 def test_flagged_models_stay_visible_in_the_picker():
+    # A video2txt-only model produces text, which has no tab, like img2txt; its
+    # status shows when the model also offers a capability that has one.
     for capability in UNACCEPTED_CAPABILITIES:
+        capabilities = [capability, "video2video"] if capability == "video2txt" else [capability]
         record = ModelRecord.from_api(
-            {"id": f"model_{capability}", "name": capability, "capabilities": [capability]}
+            {"id": f"model_{capability}", "name": capability, "capabilities": capabilities}
         )
         assert model_filter.visible(record), capability
         assert model_status(record.capabilities).startswith("Experimental: ")

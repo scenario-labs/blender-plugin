@@ -364,6 +364,58 @@ def test_several_apply_actions_offer_one_choice():
     assert applied == (js.StripChip("choose", "Reuse... (2)"), INSPECT)
 
 
+FIRST_FRAME_1 = Action(
+    "use_first_frame:a1",
+    "use_first_frame",
+    "apply",
+    "Use as video first frame (1)",
+    "scenario.use_saved_first_frame",
+)
+FIRST_FRAME_2 = Action(
+    "use_first_frame:a2",
+    "use_first_frame",
+    "apply",
+    "Use as video first frame (2)",
+    "scenario.use_saved_first_frame",
+)
+PLANE = Action(
+    "image_plane:a1",
+    "image_plane",
+    "apply",
+    "Add image plane (1)",
+    "scenario.add_saved_image_plane",
+)
+
+
+def test_a_render_image_still_reaches_render_video_from_one_chip():
+    actions = (REUSE_ROW, IMAGES, FIRST_FRAME_1, PLANE)
+    for state in ("ready", "applied"):
+        chips = js.strip_chips(actions, state, lane="render_image")
+        assert chips == (js.StripChip("use_first_frame:a1", js.FIRST_FRAME_LABEL), INSPECT)
+    # other lanes keep the choice between every reuse action
+    assert js.strip_chips(actions, "applied", lane="image") == (
+        js.StripChip("choose", "Reuse... (3)"),
+        INSPECT,
+    )
+    assert js.strip_chips(actions, "applied") == js.strip_chips(actions, "applied", lane="image")
+
+
+def test_the_first_frame_chip_waits_for_one_still_and_yields_to_recovery():
+    several = (IMAGES, FIRST_FRAME_1, FIRST_FRAME_2)
+    assert js.strip_chips(several, "ready", lane="render_image")[0].key == "choose"
+    assert js.strip_chips((IMAGES, PLANE), "ready", lane="render_image")[0].key == "choose"
+    # a pending receipt retry or a download recovery still comes first
+    assert js.strip_chips((RECEIPT, FIRST_FRAME_1), "applied", lane="render_image")[0].key == (
+        "retry_receipt"
+    )
+    assert js.strip_chips((RESUME, FIRST_FRAME_1), "succeeded", lane="render_image")[0].key == (
+        "resume"
+    )
+    # an import that is still automatic shows only Inspect
+    automatic = js.strip_chips((FIRST_FRAME_1,), "ready", automatic=True, lane="render_image")
+    assert automatic == (INSPECT,)
+
+
 def test_restoring_the_world_is_not_counted_as_reuse():
     panorama = js.strip_chips((REUSE_ROW, IMAGES, WORLD, RESTORE_WORLD), "applied")
     assert panorama == (js.StripChip("choose", "Reuse... (2)"), INSPECT)

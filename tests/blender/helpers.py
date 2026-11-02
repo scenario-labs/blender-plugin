@@ -332,6 +332,31 @@ def cube_result_glb(*, parts=1, subdivide=0, scale=0.5, location=(0, 0, 3)):
     return body
 
 
+def centered_figure_glb(height=1.85, width=0.6, depth=0.4):
+    """A box as tall as a person, centred on the origin as a provider delivers a real-size character.
+
+    The feet are at -height / 2 in the file, so an import must still ground them.
+    """
+    import bmesh
+
+    mesh = bmesh.new()
+    bmesh.ops.create_cube(mesh, size=1.0)
+    bmesh.ops.scale(mesh, vec=(width, depth, height), verts=mesh.verts)
+    data = bpy.data.meshes.new("Figure")
+    mesh.to_mesh(data)
+    mesh.free()
+    obj = bpy.data.objects.new("Figure", data)
+    bpy.context.scene.collection.objects.link(obj)
+    bpy.context.view_layer.update()
+    with tempfile.TemporaryDirectory() as directory:
+        path = pathlib.Path(directory) / "figure.glb"
+        submodule("blender.mesh_export").export_glb(bpy.context, [obj], str(path))
+        body = path.read_bytes()
+    bpy.data.objects.remove(obj)
+    bpy.data.meshes.remove(data)
+    return body
+
+
 def animated_glb(*, clips=2, morph=True, node_transform=False):
     """Add a two-bone skin, morph target and node clips to our first-party triangle."""
     original = (FIXTURES / "synthetic/static-triangle.glb").read_bytes()
@@ -636,6 +661,57 @@ def skin_to_chain_rig(scene, source):
     return rig
 
 
+def humanoid_bones(names, *, prefix="", height=1.0, arms_down=0.0, roll=0.0, ankle=0.1):
+    """A standing humanoid facing -Y with the 22 slot bones of `names`, in slot order.
+
+    Bones follow `scenario.core.scene.humanoid`: (name, parent, head, tail, roll)
+    as `chain_rig` and `clip_glb` take them, at `height` times a 1.8 m figure,
+    the arms lowered by `arms_down` radians from a T-pose and every bone rolled
+    by `roll` radians. The ankles stand `ankle` times `height` over the floor, and
+    the balls of the feet 0.02 times it.
+    """
+    import math
+
+    h = height
+    sag = (math.cos(arms_down), 0, -math.sin(arms_down))
+    joints = {
+        "hips": ((0, 0, 1.0), (0, 0, 1.1)),
+        "spine": ((0, 0, 1.1), (0, 0, 1.25)),
+        "chest": ((0, 0, 1.25), (0, 0, 1.4)),
+        "upper_chest": ((0, 0, 1.4), (0, 0, 1.5)),
+        "neck": ((0, 0, 1.5), (0, 0, 1.6)),
+        "head": ((0, 0, 1.6), (0, 0, 1.8)),
+    }
+    for side, sign in (("l", 1), ("r", -1)):
+        start = (sign * 0.18, 0, 1.45)
+        joints[f"{side}_shoulder"] = ((sign * 0.05, 0, 1.45), start)
+        for slot, length in (("arm", 0.27), ("forearm", 0.25), ("hand", 0.08)):
+            end = (start[0] + sign * sag[0] * length, 0, start[2] + sag[2] * length)
+            joints[f"{side}_{slot}"] = (start, end)
+            start = end
+        x = sign * 0.1
+        joints[f"{side}_upleg"] = ((x, 0, 1.0), (x, 0, 0.55))
+        joints[f"{side}_leg"] = ((x, 0, 0.55), (x, 0, ankle))
+        joints[f"{side}_foot"] = ((x, 0, ankle), (x, -0.12, 0.02))
+        joints[f"{side}_toe"] = ((x, -0.12, 0.02), (x, -0.18, 0.02))
+    humanoid = submodule("core.scene.humanoid")
+    mapped = dict(zip(humanoid.SLOTS, names, strict=True))
+    bones = []
+    for slot in humanoid.SLOTS:
+        head, tail = joints[slot]
+        parent = humanoid.PARENTS.get(slot)
+        bones.append(
+            (
+                prefix + mapped[slot],
+                prefix + mapped[parent] if parent else None,
+                tuple(value * h for value in head),
+                tuple(value * h for value in tail),
+                roll,
+            )
+        )
+    return tuple(bones)
+
+
 def clip_glb(
     bones=CHAIN,
     *,
@@ -647,6 +723,9 @@ def clip_glb(
     rotation=None,
     turn_object=True,
     still=(),
+    carry=False,
+    prop=None,
+    held=None,
 ):
     """Export a returned animated character with Blender's glTF exporter.
 
@@ -658,8 +737,14 @@ def clip_glb(
     and, with `location`, moves the first such bone along its Y axis by its amount
     in world units, over 24 frames; `stretch` also scales it along its Y axis, or by
     `1 + amount * rate` on each axis when it is a tuple of three rates. The
-    `still` bones stay unkeyed in the export. A triangle skinned to the first bone
-    is included. All scratch data is removed.
+    `still` bones stay unkeyed in the export. With `carry`, Clip N also moves the
+    armature object by its amount along world X and turns it by a quarter of it
+    in radians about Z, as files whose skin leaves the moving scene root out of
+    its joints do. `held` maps bone names to (angle, drop): such a bone turns by
+    `angle` radians about its X axis in every key instead, and the first bone also
+    moves `drop` world units back along its Y axis, as a crouch held through the
+    clip. A triangle skinned to the first bone is included, and with `prop` an
+    Empty hangs from that bone's tail. All scratch data is removed.
     """
     import math
 
@@ -688,6 +773,10 @@ def clip_glb(
         body.parent = rig
         body.vertex_groups.new(name=bones[0][0]).add([0, 1, 2], 1.0, "REPLACE")
         body.modifiers.new("Armature", "ARMATURE").object = rig
+        if prop is not None:
+            held = bpy.data.objects.new("Prop", None)
+            scene.collection.objects.link(held)
+            held.parent, held.parent_type, held.parent_bone = rig, "BONE", prop
         data = rig.animation_data_create()
         for index, amount in enumerate(clips, 1):
             action = bpy.data.actions.new(f"Clip {index}")
@@ -696,15 +785,21 @@ def clip_glb(
                 keyed = (bone for bone in bones if bone[0] not in still)
                 for number, (name, *_) in enumerate(keyed):
                     pose = rig.pose.bones[name]
-                    pose.rotation_quaternion = (math.cos(factor / 4), math.sin(factor / 4), 0, 0)
+                    angle, drop = (held or {}).get(name, (factor / 2, 0.0))
+                    pose.rotation_quaternion = (math.cos(angle / 2), math.sin(angle / 2), 0, 0)
                     pose.keyframe_insert("rotation_quaternion", frame=frame)
                     if location and number == 0:
-                        pose.location = (0, factor * unit, 0)
+                        pose.location = (0, (factor - drop) * unit, 0)
                         pose.keyframe_insert("location", frame=frame)
                     if stretch and number == 0:
                         rates = (0, 0.5, 0) if stretch is True else stretch
                         pose.scale = [1 + factor * rate for rate in rates]
                         pose.keyframe_insert("scale", frame=frame)
+                if carry:
+                    rig.location = (factor, 0, 0)
+                    rig.rotation_euler = (0, 0, factor / 4)
+                    rig.keyframe_insert("location", frame=frame)
+                    rig.keyframe_insert("rotation_euler", frame=frame)
             data.action = None
             track = data.nla_tracks.new()
             track.name = action.name
@@ -712,6 +807,8 @@ def clip_glb(
         for pose in rig.pose.bones:
             pose.location, pose.rotation_quaternion = (0, 0, 0), (1, 0, 0, 0)
             pose.scale = (1, 1, 1)
+        if carry:
+            rig.location, rig.rotation_euler = (0, 0, 0), (0, 0, 0)
         path = pathlib.Path(directory.name) / "clip.glb"
         # As above, only the window shows the scratch scene during export.
         bpy.ops.export_scene.gltf(
@@ -763,6 +860,34 @@ def clip_deforms(body, clip, frames, *, fps=24, world=False):
     The rig is imported into a scratch scene at `fps` with the staging import
     options and removed with everything else the import created.
     """
+    with _played_clip(body, clip, fps) as (scene, rig):
+        return deform_matrices(scene, rig, frames, world=world)
+
+
+def clip_heads(body, clip, frames, *, fps=24):
+    """World head positions of a returned GLB's bones playing clip `clip`, by frame and bone.
+
+    Imported like `clip_deforms`, so a clip that also moves the armature object counts.
+    """
+    poses = clip_poses(body, clip, frames, fps=fps)
+    return {
+        frame: {name: matrix.translation for name, matrix in bones.items()}
+        for frame, bones in poses.items()
+    }
+
+
+def clip_poses(body, clip, frames, *, fps=24):
+    """World pose matrices of a returned GLB's bones playing clip `clip`, by frame and bone."""
+    with _played_clip(body, clip, fps) as (scene, rig):
+        poses = {}
+        for frame in frames:
+            scene.frame_set(frame)
+            poses[frame] = {bone.name: rig.matrix_world @ bone.matrix for bone in rig.pose.bones}
+        return poses
+
+
+@contextmanager
+def _played_clip(body, clip, fps):
     names = (
         "objects",
         "meshes",
@@ -802,7 +927,7 @@ def clip_deforms(body, clip, frames, *, fps=24, world=False):
         )
         data.action = action
         data.action_slot = action.slots[0]
-        return deform_matrices(scene, rig, frames, world=world)
+        yield scene, rig
     finally:
         window.scene, window.view_layer = previous
         bpy.data.scenes.remove(scene)

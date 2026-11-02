@@ -510,8 +510,8 @@ class FilmControlsTests(unittest.TestCase):
         item = self.quote()
         original = self.owner().session.prepare_quote
 
-        def fail_after_write(quote):
-            original(quote)
+        def fail_after_write(quote, **options):
+            original(quote, **options)
             raise OSError("Synthetic lost acknowledgement")
 
         with patch.object(self.owner().session, "prepare_quote", side_effect=fail_after_write):

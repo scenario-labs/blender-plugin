@@ -1,0 +1,171 @@
+{
+ "model": {
+  "id": "model_scenario-claude-opus-5-5-3d",
+  "name": "Claude Opus 5.5 3D",
+  "shortDescription": "Build 3D objects from text or up to 8 images, or edit an existing model with visual guidance. Choose effort, topology and export format, with a Blender file included.",
+  "type": "custom",
+  "privacy": "public",
+  "capabilities": [
+   "img23d",
+   "3d23d",
+   "txt23d"
+  ],
+  "status": "trained",
+  "tags": [
+   "3D Editing",
+   "3d",
+   "3d editing",
+   "Claude",
+   "Opus 5.5",
+   "Reference-Guided Editing",
+   "Text to 3D",
+   "Topology",
+   "auto rig",
+   "blender",
+   "edit 3d model",
+   "editable 3d",
+   "fracture",
+   "game ready",
+   "hard-surface",
+   "image to 3d",
+   "lod",
+   "low poly",
+   "mocap",
+   "named parts",
+   "pbr materials",
+   "retexture",
+   "rigging",
+   "sc:featured",
+   "sc:scenario",
+   "udim",
+   "unreal engine",
+   "uv unwrap"
+  ],
+  "inputs": [
+   {
+    "description": "Building: 1 to 8 photos of the object, or leave empty to build from the prompt alone. Editing: optional images that guide the change, like a material sample, a logo or a marked-up view of the model.",
+    "kind": "image",
+    "label": "Reference Images",
+    "maxLength": 8,
+    "name": "images",
+    "costImpact": true,
+    "parent": true,
+    "type": "file_array"
+   },
+   {
+    "description": "Optional. Add any 3D model to edit it instead of building a new one. It comes back in the same format.",
+    "kind": "3d",
+    "label": "Edit a 3D Model",
+    "name": "sceneFile",
+    "costImpact": true,
+    "parent": true,
+    "type": "file"
+   },
+   {
+    "description": "Building: describe the object, like \"a weathered tugboat with a red hull\", or just name it when you add photos. Editing: describe the change, like \"open the lid\".",
+    "label": "Prompt",
+    "maxLength": 2000,
+    "name": "prompt",
+    "costImpact": false,
+    "prompt": true,
+    "required": {
+     "ifDefined": {
+      "sceneFile": {
+       "message": "Describe the change to make to the 3D model."
+      }
+     },
+     "ifNotDefined": {
+      "images": {
+       "message": "Describe the object to build, or add reference images or a 3D model to edit."
+      }
+     }
+    },
+    "type": "string"
+   },
+   {
+    "allowedValues": [
+     "standard",
+     "high",
+     "maximum"
+    ],
+    "description": "Standard for simple objects or small edits like a recolor. High or Maximum for detailed objects, or edits that add or reshape parts. When editing, match it to the change, not the model.",
+    "default": "high",
+    "group": "Settings",
+    "label": "Effort",
+    "name": "buildEffort",
+    "costImpact": true,
+    "type": "string"
+   },
+   {
+    "description": "Max triangles for a new model: 10k\u201350k for games, 250k for fine detail. Not used when editing.",
+    "default": 250000,
+    "group": "Settings",
+    "label": "Polycount Limit",
+    "max": 2000000,
+    "min": 1000,
+    "name": "faceBudget",
+    "costImpact": false,
+    "step": 10000,
+    "type": "number"
+   },
+   {
+    "allowedValues": [
+     "auto",
+     "glb",
+     "fbx",
+     "obj",
+     "usdz",
+     "stl",
+     "ply",
+     "blend"
+    ],
+    "description": "Format of the delivered model, which always comes with its Blender file. Auto: a GLB when building, the edited model's own format when editing. With Quads, an FBX unless the model is already FBX, OBJ, PLY or USDZ.",
+    "default": "auto",
+    "group": "Settings",
+    "label": "Output Format",
+    "name": "outputFormat",
+    "costImpact": false,
+    "type": "string"
+   },
+   {
+    "allowedValues": [
+     "auto",
+     "triangles",
+     "quads"
+    ],
+    "description": "Faces of the delivered model, checked before it is returned. Auto keeps an edited model's faces and lets the model choose for a new one.",
+    "default": "auto",
+    "group": "Settings",
+    "label": "Topology",
+    "name": "topology",
+    "costImpact": false,
+    "type": "string"
+   }
+  ],
+  "uiConfig": {
+   "selects": {
+    "buildEffort": {
+     "high": "High",
+     "maximum": "Maximum",
+     "standard": "Standard"
+    },
+    "outputFormat": {
+     "auto": "Auto",
+     "blend": "BLEND",
+     "fbx": "FBX",
+     "glb": "GLB",
+     "obj": "OBJ",
+     "ply": "PLY",
+     "stl": "STL",
+     "usdz": "USDZ"
+    },
+    "topology": {
+     "auto": "Auto",
+     "quads": "Quads",
+     "triangles": "Triangles"
+    }
+   }
+  },
+  "parameters": {}
+ }
+}

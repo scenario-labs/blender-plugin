@@ -8,7 +8,14 @@ from dataclasses import dataclass, field
 
 from ..core.api.errors import ScenarioError
 from ..core.jobs.store import JobState
-from .blockout_jobs import MODEL, binding, parse_complete_plan
+from .blockout_jobs import (
+    MODEL,
+    PlanUnusable,
+    binding,
+    parse_complete_plan,
+    refusal,
+    unusable_reason,
+)
 
 READABLE = {
     JobState.SUCCEEDED,
@@ -42,6 +49,7 @@ class PlanReview:
     elements: int = 0
     groups: int = 0
     error: str = ""
+    unusable: str = ""  # why a read answer holds no plan; reading it again changes nothing
 
 
 class BlockoutRecovery:
@@ -142,8 +150,10 @@ class BlockoutRecovery:
             try:
                 outcomes = self.session.drain(task=review.task)
                 review.task = None
-                if not outcomes or outcomes[0].error is not None:
+                if not outcomes:
                     raise ScenarioError(0, "The complete saved plan could not be read")
+                if outcomes[0].error is not None:
+                    raise outcomes[0].error
                 self._destination(review)
                 result = outcomes[0].result
                 record = result if review.phase == "LISTING" else result.record
@@ -154,14 +164,23 @@ class BlockoutRecovery:
                     continue
                 if record.intent.request_id != review.request_id:
                     raise ScenarioError(0, "The saved plan does not match this review")
-                elements = parse_complete_plan(result.text)
+                try:
+                    elements = parse_complete_plan(result.text)
+                except (ValueError, RecursionError):
+                    raise PlanUnusable(0, unusable_reason(result.text)) from None
                 review.plan = json.dumps(elements)
                 review.elements = len(elements)
                 review.groups = len({element["group"] for element in elements})
                 review.phase = "READY"
-            except Exception:
+            except Exception as error:
                 review.task, review.phase = None, "ERROR"
-                review.error = "Could not review this plan; inspect the saved job and destination"
+                review.unusable = error.reason if isinstance(error, PlanUnusable) else ""
+                reason = refusal(error).rstrip(".")
+                review.error = review.unusable or (
+                    f"Could not review this plan: {reason}"
+                    if reason
+                    else "Could not review this plan; inspect the saved job and destination"
+                )
 
     def status(self, identifier):
         review = self.reviews.get(identifier)

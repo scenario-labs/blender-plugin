@@ -56,6 +56,7 @@ MODEL_IDS = [
     "model_rodin-hyper3d-bang",
     "model_runway-aleph-2",
     "model_sc-upscale-flux-skybox",
+    "model_scenario-claude-opus-5-5-3d",
     "model_scenario-llm",
     "model_scenario-skybox-flux",
     "model_scenario-skybox-gpt",

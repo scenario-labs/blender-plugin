@@ -266,7 +266,8 @@ class McpJobFilesTests(unittest.TestCase):
         self.assertEqual(first["files"], [])
         self.assertEqual({row["file_state"] for row in first["results"]}, {"checking"})
         status = self.status_until_checked()
-        self.assertEqual((status["status"], status["kind"]), ("ready", "model"))
+        # Saved without a lane: the kind its results establish, a mesh before its images.
+        self.assertEqual((status["status"], status["kind"]), ("ready", "3d"))
         self.assertEqual(status["images"], [])
         self.assert_listed(status, directory)
         # The remote job ID finds the same saved job and files.

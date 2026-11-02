@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import bpy
-from helpers import FIXTURES, animated_glb, submodule
+from helpers import FIXTURES, animated_glb, centered_figure_glb, submodule
 from mathutils import Vector
 
 
@@ -70,6 +70,27 @@ class ModelApplicationTests(unittest.TestCase):
         self.assertEqual(bpy.context.view_layer.objects.active, self.existing)
         self.assertEqual(self.scene["keep"], "unchanged")
         self.assertEqual(tuple(self.root.iterdir()), (self.path,))
+
+    def test_real_size_model_keeps_its_height_and_lands_its_feet_on_the_cursor(self):
+        # A generation asked for real-world dimensions (Auto Size) arrives about 1.85 m tall,
+        # centred on its origin. Import adds no normalization: the size stays, the feet land.
+        data = centered_figure_glb(height=1.85)
+        path = self.root / "figure.glb"
+        path.write_bytes(data)
+        item = self.storage.StoredResult(
+            self.storage.ResultAsset("figure", path.name, "model/gltf-binary", len(data)),
+            self.transfers.DownloadedResult(path.name, len(data), hashlib.sha256(data).hexdigest()),
+        )
+        result = self.module.apply_model(self.scene, item, path, cursor=(1, 2, 3))
+        self.assertEqual(result.scale, 1.0)
+        self.assertEqual(tuple(result.root.scale), (1.0, 1.0, 1.0))
+        self.assertAlmostEqual(result.dimensions[2], 1.85, places=3)
+        self.assertAlmostEqual(result.bottom, 3.0, places=4)
+        mesh = next(obj for obj in result.objects if obj.type == "MESH")
+        points = [mesh.matrix_world @ Vector(corner) for corner in mesh.bound_box]
+        self.assertAlmostEqual(max(point.z for point in points) - min(p.z for p in points), 1.85, 3)
+        self.assertAlmostEqual((max(p.x for p in points) + min(p.x for p in points)) / 2, 1.0, 4)
+        self.assertAlmostEqual((max(p.y for p in points) + min(p.y for p in points)) / 2, 2.0, 4)
 
     def test_failed_publication_removes_only_new_data(self):
         previous = {name: set(getattr(bpy.data, name)) for name in self.module._DATA}
@@ -199,7 +220,9 @@ class ModelApplicationTests(unittest.TestCase):
         self.assertIn("temporary files may remain", logs.output[0])
 
     def use_animation(self, *, node_transform=False):
-        data = animated_glb(node_transform=node_transform)
+        self.use_glb(animated_glb(node_transform=node_transform))
+
+    def use_glb(self, data):
         self.path.write_bytes(data)
         self.item = self.storage.StoredResult(
             self.storage.ResultAsset("model", self.path.name, "model/gltf-binary", len(data)),
@@ -207,6 +230,86 @@ class ModelApplicationTests(unittest.TestCase):
                 self.path.name, len(data), hashlib.sha256(data).hexdigest()
             ),
         )
+
+    def imported_alone(self):
+        """Blender's importer alone, called as the add-on calls it, in a scene of its own."""
+        scene = bpy.data.scenes.new("Importer alone")
+        window = bpy.context.window
+        window.scene = scene
+        try:
+            with bpy.context.temp_override(
+                scene=scene, view_layer=scene.view_layers[0], collection=scene.collection
+            ):
+                result = bpy.ops.import_scene.gltf(
+                    filepath=str(self.path),
+                    import_pack_images=True,
+                    import_select_created_objects=False,
+                    import_scene_extras=False,
+                    import_scene_as_collection=False,
+                    bone_heuristic="BLENDER",
+                    disable_bone_shape=True,
+                )
+        finally:
+            window.scene = self.scene
+        self.assertEqual(result, {"FINISHED"})
+        return next(obj for obj in scene.objects if obj.type == "ARMATURE")
+
+    def posed(self, rig, frame):
+        """At `frame`: the skin's vertices and the prop's place, in the rig's space."""
+        window = bpy.context.window
+        scene = rig.users_scene[0]
+        window.scene = scene
+        try:
+            scene.frame_set(frame)
+            graph = bpy.context.evaluated_depsgraph_get()
+            to_rig = rig.matrix_world.inverted()
+            body = next(obj for obj in rig.children if obj.type == "MESH").evaluated_get(graph)
+            prop = next(obj for obj in rig.children if obj.type == "EMPTY")
+            skin = [to_rig @ body.matrix_world @ vertex.co for vertex in body.data.vertices]
+            hand = rig.pose.bones["LeftHand"].matrix
+            return skin, to_rig @ prop.matrix_world.translation, hand
+        finally:
+            window.scene = self.scene
+
+    def test_a_centimetre_rig_draws_its_bones_inside_the_character(self):
+        # Rigging returns centimetre skeletons under a 0.01 armature scale.
+        from helpers import clip_glb, humanoid_bones
+
+        names = submodule("core.scene.humanoid").FAMILIES["meshy"][1]
+        self.use_glb(clip_glb(humanoid_bones(names), clips=(1.0,), prop="LeftHand"))
+        alone = self.imported_alone()
+        result = self.module.apply_model(self.scene, self.item, self.path, cursor=(0, 0, 0))
+        rig = next(obj for obj in result.objects if obj.type == "ARMATURE")
+
+        def lengths(armature):
+            scale = armature.matrix_world.to_scale().x
+            return {bone.name: bone.length * scale for bone in armature.data.bones}
+
+        # The importer alone draws bones longer than the 1.8 m figure, in front of it.
+        self.assertGreater(max(lengths(alone).values()), 1.8)
+        self.assertTrue(alone.show_in_front)
+        drawn = lengths(rig)
+        self.assertLessEqual(max(drawn.values()), 0.9)
+        self.assertFalse(rig.show_in_front)
+        # A bone reaches its nearest child; a leaf takes its parent's length.
+        for name, length in (("Hips", 0.1), ("LeftUpLeg", 0.45), ("LeftArm", 0.27)):
+            self.assertAlmostEqual(drawn[name], length, places=4)
+        self.assertAlmostEqual(drawn["LeftHand"], drawn["LeftForeArm"], places=6)
+        # Rest, skin and clip are the importer's.
+        for bone in rig.data.bones:
+            for got, want in zip(
+                bone.matrix_local, alone.data.bones[bone.name].matrix_local, strict=True
+            ):
+                for a, b in zip(got, want, strict=True):
+                    self.assertAlmostEqual(a, b, delta=1e-3)
+        for frame in (0, 12, 24):
+            with self.subTest(frame=frame):
+                skin, prop, hand = self.posed(rig, frame)
+                want, _, _ = self.posed(alone, frame)
+                for got, expected in zip(skin, want, strict=True):
+                    self.assertLess((got - expected).length, 1e-3)
+                # The prop hangs from the hand's 8 cm tail, as exported.
+                self.assertLess((prop - hand @ Vector((0, 8, 0))).length, 1e-3)
 
     def test_rig_morph_and_multiple_clips_survive_with_destination_timing(self):
         self.use_animation()

@@ -23,6 +23,7 @@ def _modules():
         feedback,
         file_state,
         film,
+        generation,
         job_recovery,
         library_view,
         model_picker,
@@ -34,6 +35,7 @@ def _modules():
         prompts,
         props,
         reference_form,
+        result_grid,
         result_media,
         result_previews,
         shot_planner,
@@ -49,6 +51,7 @@ def _modules():
 
     modules = [
         props,
+        generation,
         file_state,
         desktop,
         sign_in,
@@ -70,6 +73,7 @@ def _modules():
         trained_models,
         trained_section,
         panels,
+        result_grid,
         workflow_controls,
         workflow_references,
         workflow_uploads,

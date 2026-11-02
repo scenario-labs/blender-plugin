@@ -396,11 +396,20 @@ class SDKEstimateTests(unittest.TestCase):
         with clock:
             pump._process()
         self.deliver()
-        # Switching back does not reprice the first scene. This does not show
-        # that its displayed quote can still be submitted: the round trip can
-        # leave its origin stale, and submission rechecks the origin first.
-        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        # Selecting a scene runs its frame update, which revokes its price like a
+        # frame change. The form drops that price, which Generate would refuse,
+        # and asks again once the scene has kept one revision.
+        refresh = submodule("core.jobs.quote_refresh")
+        self.assertEqual(self.lane.estimate_state, "PENDING")
+        self.assertEqual(self.generation.repricing_note(self.lane), refresh.SCENE_CHANGED)
         self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 2)
+        with patch.object(submodule("blender.props"), "clock", return_value=11.0):
+            pump._process()
+        self.deliver()
+        self.assertEqual(self.lane.estimate_state, "READY", self.lane.estimate_error)
+        ticket = self.runtime.state.estimates[self.lane.estimate_key]
+        self.assertTrue(self.runtime.state.model_jobs.quote_current(ticket))
+        self.assertEqual(len([call for call in self.calls if call.method == "POST"]), 3)
 
     def test_unselected_scene_edit_is_priced_after_switching_to_it(self):
         pump = submodule("blender.pump")

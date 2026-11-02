@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Write a schema 9 or schema 11 job-store fixture with the predecessor's own storage code.
+"""Write a schema 9, 11 or 12 job-store fixture with the predecessor's own storage code.
 
 The committed `tests/fixtures/synthetic/jobs-schema9.sql` was produced by
 extracting `scenario/` from commit b57c398f (a schema 9 main revision) and
 running this script against it; `jobs-schema11.sql` came the same way from
-commit 861d554e (the schema 11 release). It uses only that code's public
+commit 861d554e (the schema 11 release) and `jobs-schema12.sql` from commit
+2a3fc0e0 (the schema 12 release). It uses only that code's public
 store API, so the upgrade tests rebuild a database the previous release really
 wrote. Each fixture is the SQL dump of that database plus its two header pragmas,
 because the repository does not commit database files:
@@ -31,7 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 
 SERVICE = "https://service.example.invalid/v1"
-SCHEMAS = frozenset({9, 11})
+SCHEMAS = frozenset({9, 11, 12})
 
 
 def header(version):
@@ -63,7 +64,7 @@ def load(source):
         if not Path(module.__file__).resolve().is_relative_to(source):
             raise ValueError("Storage was imported from outside the selected source")
     if modules["store"]._VERSION not in SCHEMAS:
-        raise ValueError("This fixture records schema 9 or schema 11 only")
+        raise ValueError("This fixture records schema 9, 11 or 12 only")
     return modules
 
 
@@ -283,6 +284,28 @@ def write(modules, output):
         )
         advance(store, deliver(store, jobs, transfers, originals, (wav, panorama)), state.READY)
         advance(store, create("p-uncertain-model"), state.SUBMITTING, state.UNCERTAIN)
+    if jobs._VERSION >= 12:
+        # Schema 12 submission claim times and result parents.
+        claimed = create("q-claimed")
+        claimed = store.transition(
+            "q-claimed",
+            expected_revision=claimed.revision,
+            state=state.SUBMITTING,
+            claimed_at="2026-10-14T21:18:11.123Z",
+        )
+        advance(store, claimed, state.REMOTE, remote_job_id="remote-q")
+        obj = jobs.ResultAsset(
+            "asset-obj", "001-obj.obj", "model/obj", 17, "5" * 64, parent_id="asset-glb"
+        )
+        package = advance(
+            store,
+            create("r-parents"),
+            state.SUBMITTING,
+            state.REMOTE,
+            state.SUCCEEDED,
+            remote_job_id="remote-r",
+        )
+        advance(store, deliver(store, jobs, transfers, package, (glb, obj)), state.READY)
 
 
 def dump(database):

@@ -7,7 +7,7 @@ below come from the commits that first added each file, not a recent API refresh
 
 | Path | Contents and source | Recorded |
 | --- | --- | --- |
-| `models/*.json` | Twenty-four model records from `GET /models/{id}`, including the five [panorama contract models](#panorama-contract-models) | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini and the five panorama contract models 2026-10-10 |
+| `models/*.json` | Twenty-five model records from `GET /models/{id}`, including the five [panorama contract models](#panorama-contract-models) | 2026-08-28 and 2026-08-29; Seedance 2.0 Mini and the five panorama contract models 2026-10-10; Claude Opus 5.5 3D 2026-10-23 |
 | `models_list_page1.json` | Five public models from `GET /models?privacy=public&pageSize=5` | 2026-08-28 |
 | `models/trained/bases/*.json` | Five public LoRA-capable base model records from `GET /models/{id}`; see [trained-model contracts](#trained-model-contracts) | 2026-10-09 |
 | `models/trained/public/*.json` | Routing-field projections of six public Scenario LoRA and composition records from `GET /models/{id}` | 2026-10-09 |
@@ -377,8 +377,24 @@ uv run --locked --no-env-file python tools/make_job_store_fixture.py \
 cmp /path/to/new/jobs-schema11.sql tests/fixtures/synthetic/jobs-schema11.sql
 ```
 
+## Schema 12 job store
+
+`synthetic/jobs-schema12.sql` is the same kind of dump, written by the schema 12
+storage code of the schema 12 release commit `2a3fc0e0`. It holds the schema 11
+fixture's rows plus two that schema 12 code could write: a remote request with its
+submission claim time and a ready job whose OBJ result names its GLB parent. The
+[schema 13](../unit/test_job_store_schema13.py) upgrade tests and the installed-ZIP
+store test rebuild it the same way:
+
+```sh
+git archive 2a3fc0e0 scenario | tar -x -C /path/to/empty-directory
+uv run --locked --no-env-file python tools/make_job_store_fixture.py \
+  --source /path/to/empty-directory --output /path/to/new/jobs-schema12.sql
+cmp /path/to/new/jobs-schema12.sql tests/fixtures/synthetic/jobs-schema12.sql
+```
+
 The tool never overwrites a file: `--output` must name a new `.sql` path, so delete
 the committed fixture first only when intentionally replacing it. It refuses any
-source whose store is not schema 9 or 11, imports nothing from the current checkout and
+source whose store is not schema 9, 11 or 12, imports nothing from the current checkout and
 writes the database only to a temporary directory. The dump records rows, schema
 and index definitions, not SQLite page layout, which the upgrade does not depend on.

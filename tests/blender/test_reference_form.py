@@ -3,7 +3,9 @@
 """Native typed reference admission/attachment with actual upload session fixtures."""
 
 import json
+import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -792,6 +794,7 @@ class ReferenceFormTests(unittest.TestCase):
             {"name": "prompt", "type": "string", "prompt": True},
             {"name": "input", "type": "file", "kind": kind},
         ]
+        self.typed_model = model
         record = submodule("core.api.catalog").ModelRecord.from_api(model)
         base = submodule("core.api.catalog").ModelRecord.from_api(self.model)
         self.generation.set_catalog([base, record], [base, record])
@@ -918,6 +921,254 @@ class ReferenceFormTests(unittest.TestCase):
             prepared.prepare(bpy.context, "render_image", "scene")  # No desktop viewport.
         self.assertEqual(len(lane.references), 0)
         self.assertEqual(self.fixture.fixture.calls, [])
+
+    @contextmanager
+    def capturing(self):
+        """Capture without a GUI: the capture functions write a file, the viewport check passes."""
+        capture = submodule("blender.capture")
+
+        def write_capture(context, path, **kwargs):
+            Path(path).write_bytes(b"data")
+
+        with (
+            patch.object(
+                self.fixture.module,
+                "bpy",
+                SimpleNamespace(context=bpy.context, app=SimpleNamespace(background=False)),
+            ),
+            patch.object(capture, "capture_still", side_effect=write_capture) as still,
+            patch.object(capture, "capture_playblast", side_effect=write_capture) as clip,
+            patch.object(capture, "unavailable_reason", return_value=None),
+        ):
+            yield SimpleNamespace(still=still, clip=clip)
+
+    def per_upload_remote(self):
+        """Answer each upload from its own create request, so an image and a clip can upload together."""
+        session = self.fixture.fixture
+        original, base, remotes, lock = session.handler, dict(session.remote), {}, threading.Lock()
+
+        def answer(request):
+            with lock:
+                parts = request.url.path.strip("/").split("/")
+                after = parts[parts.index("uploads") + 1 :]
+                if request.method == "POST" and not after:
+                    body = json.loads(request.content)
+                    identifier = f"upload-{len(remotes) + 1}"
+                    remotes[identifier] = dict(
+                        base,
+                        id=identifier,
+                        kind=body["kind"],
+                        originalFileName=body["fileName"],
+                        fileName="uploads/synthetic-storage/" + body["fileName"],
+                        contentType=body["contentType"],
+                        status="pending",
+                    )
+                else:
+                    identifier = after[0]
+                session.remote = remotes[identifier]
+                return original(request)
+
+        session.handler = answer
+
+    def render_form(self, lane_name="render_image", kind="image"):
+        lane, _ = self.configure_typed_input(lane_name, kind)
+        lane.references.clear()
+        lane.prompt = "copper"
+        self.per_upload_remote()
+        return lane
+
+    def video_form_with_first_frame(self):
+        lane = self.render_form("render_video", "video")
+        model = dict(
+            self.model,
+            id=lane.model_id,
+            inputs=[
+                {"name": "prompt", "type": "string", "prompt": True},
+                {"name": "input", "type": "file", "kind": "video"},
+                {"name": "firstFrameImage", "type": "file", "kind": "image"},
+            ],
+        )
+        self.runtime.state.records[model["id"]] = submodule(
+            "core.api.catalog"
+        ).ModelRecord.from_api(model)
+        self.generation._schemas.pop(model["id"], None)
+        lane.first_frame_path = str(self.fixture.typed_source("image", ".png", "image/png"))
+        lane.use_first_frame = True
+        return lane
+
+    def test_one_capture_action_uploads_the_scene_and_first_frame_then_the_price_follows(self):
+        prepared = submodule("blender.render_references")
+        lane = self.video_form_with_first_frame()
+        with self.capturing() as seen:
+            self.assertEqual(
+                bpy.ops.scenario.prepare_render_reference(lane="render_video"), {"FINISHED"}
+            )
+        seen.clip.assert_called_once()
+        roles = sorted(ref[prepared.ROLE] for ref in lane.references)
+        self.assertEqual(roles, [prepared.FIRST_FRAME, prepared.SCENE])
+        # Uploading says so, in place of a price and of "prepare a reference" instructions.
+        request = self.generation.build_request(self.scene, "render_video", for_estimate=True)
+        self.assertEqual(request.errors, [prepared.UPLOADING_SCENE])
+        self.fixture.settle()
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+        self.assertEqual({ref.source for ref in lane.references}, {"ASSET"})
+        # Every upload that attached marked the form dirty: the pump prices it without a click.
+        self.assertEqual(lane.estimate_state, "PENDING")
+        request = self.generation.build_request(self.scene, "render_video", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        self.assertEqual(request.body["input"], "reference-asset")
+        self.assertEqual(request.body["firstFrameImage"], "reference-asset")
+        # The pump's next step asks for the quote with both uploaded assets; nothing is submitted.
+        jobs = Mock()
+        with patch.object(self.runtime, "ensure_model_jobs", return_value=jobs):
+            self.generation.request_estimate(self.scene, "render_video")
+        jobs.quote.assert_called_once()
+        self.assertEqual(jobs.quote.call_args.args[2]["firstFrameImage"], "reference-asset")
+        self.assertNotEqual(lane.estimate_key, "")
+        self.assertEqual(lane.estimate_state, "PENDING")
+        jobs.submit.assert_not_called()
+
+    def test_capture_action_leaves_the_first_frame_out_when_it_is_off(self):
+        prepared = submodule("blender.render_references")
+        lane = self.video_form_with_first_frame()
+        lane.use_first_frame = False
+        with self.capturing():
+            bpy.ops.scenario.prepare_render_reference(lane="render_video")
+        self.assertEqual([ref[prepared.ROLE] for ref in lane.references], [prepared.SCENE])
+        self.fixture.settle()
+        request = self.generation.build_request(self.scene, "render_video", for_estimate=True)
+        self.assertEqual(request.errors, [])
+        self.assertNotIn("firstFrameImage", request.body)
+
+    def test_capture_action_refuses_a_first_frame_the_model_cannot_take(self):
+        prepared = submodule("blender.render_references")
+        lane = self.video_form_with_first_frame()
+        model = dict(
+            self.model,
+            id=lane.model_id,
+            inputs=[
+                {"name": "prompt", "type": "string", "prompt": True},
+                {"name": "input", "type": "file", "kind": "video"},
+            ],
+        )
+        self.runtime.state.records[model["id"]] = submodule(
+            "core.api.catalog"
+        ).ModelRecord.from_api(model)
+        self.generation._schemas.pop(model["id"], None)
+        with self.capturing() as seen, self.assertRaises(RuntimeError) as raised:
+            bpy.ops.scenario.prepare_render_reference(lane="render_video")
+        self.assertIn("no input for the first frame", str(raised.exception))
+        seen.clip.assert_not_called()
+        self.assertEqual(len(lane.references), 0)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 0)
+        self.assertIsNone(prepared.slot_state(lane, prepared.SCENE))
+
+    def test_capture_again_replaces_an_uploaded_scene_in_one_action(self):
+        prepared = submodule("blender.render_references")
+        lane = self.render_form()
+        with self.capturing() as seen:
+            bpy.ops.scenario.prepare_render_reference(lane="render_image")
+            self.fixture.settle()
+            self.assertEqual(prepared.slot_state(lane, prepared.SCENE), prepared.READY)
+            lane.estimate_state, lane.estimate_key = "READY", "old-approval"
+            self.assertEqual(
+                bpy.ops.scenario.prepare_render_reference(lane="render_image"), {"FINISHED"}
+            )
+            self.assertEqual(lane.estimate_key, "")
+            self.assertEqual(prepared.slot_state(lane, prepared.SCENE), prepared.UPLOADING)
+            self.fixture.settle()
+        self.assertEqual(seen.still.call_count, 2)
+        self.assertEqual(len(lane.references), 1)
+        self.assertEqual(lane.references[0].source, "ASSET")
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+        self.assertEqual(lane.estimate_state, "PENDING")
+        request = self.generation.build_request(self.scene, "render_image", for_estimate=True)
+        self.assertEqual(request.errors, [])
+
+    def test_capture_action_never_replaces_a_scene_upload_that_is_still_running(self):
+        prepared = submodule("blender.render_references")
+        lane = self.render_form()
+        with self.capturing() as seen:
+            bpy.ops.scenario.prepare_render_reference(lane="render_image")
+            with self.assertRaises(RuntimeError) as raised:
+                bpy.ops.scenario.prepare_render_reference(lane="render_image")
+        self.assertIn("upload in progress", str(raised.exception))
+        self.assertEqual(seen.still.call_count, 1)
+        self.assertEqual(len(lane.references), 1)
+        self.assertEqual(prepared.slot_state(lane, prepared.SCENE), prepared.UPLOADING)
+        self.fixture.settle()
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 1)
+
+    def test_a_failed_recapture_keeps_the_scene_already_uploaded(self):
+        prepared = submodule("blender.render_references")
+        lane = self.render_form()
+        with self.capturing() as seen:
+            bpy.ops.scenario.prepare_render_reference(lane="render_image")
+            self.fixture.settle()
+            before = (lane.references[0].asset_id, lane.references[0].label, lane.estimate_state)
+            seen.still.side_effect = OSError("no frame")
+            with self.assertRaises(RuntimeError):
+                bpy.ops.scenario.prepare_render_reference(lane="render_image")
+        self.assertEqual(len(lane.references), 1)
+        ref = lane.references[0]
+        self.assertEqual((ref.asset_id, ref.label), before[:2])
+        self.assertEqual(ref[prepared.ROLE], prepared.SCENE)
+        self.assertEqual(prepared.slot_state(lane, prepared.SCENE), prepared.READY)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 1)
+
+    def test_capture_action_says_why_it_cannot_capture_and_changes_nothing(self):
+        prepared = submodule("blender.render_references")
+        capture = submodule("blender.capture")
+        lane = self.render_form()
+        for reason in ("Open a 3D viewport to capture the scene", "Add a camera to capture"):
+            with (
+                self.subTest(reason=reason),
+                patch.object(capture, "unavailable_reason", return_value=reason),
+                self.assertRaises(RuntimeError) as raised,
+            ):
+                bpy.ops.scenario.prepare_render_reference(lane="render_image")
+            self.assertIn(reason, str(raised.exception))
+            self.assertEqual(len(lane.references), 0)
+        with (
+            patch.object(self.runtime, "online", return_value=False),
+            self.assertRaises(submodule("core.api.errors").ScenarioError) as offline,
+        ):
+            prepared.capture_form(bpy.context, "render_image")
+        self.assertIn("Online Access", offline.exception.reason)
+        self.assertEqual(self.fixture.fixture.calls, [])
+
+    def test_the_price_waits_say_what_to_do_or_what_is_under_way(self):
+        prepared = submodule("blender.render_references")
+        lane = self.video_form_with_first_frame()
+        request = self.generation.build_request(self.scene, "render_video", for_estimate=True)
+        self.assertEqual(request.errors, [prepared.CAPTURE_SCENE])
+        with self.capturing():
+            bpy.ops.scenario.prepare_render_reference(lane="render_video")
+        self.fixture.settle()
+        # A first frame that was never uploaded is its own step.
+        for index, ref in reversed(list(enumerate(lane.references))):
+            if ref[prepared.ROLE] == prepared.FIRST_FRAME:
+                lane.references.remove(index)
+        request = self.generation.build_request(self.scene, "render_video", for_estimate=True)
+        self.assertEqual(request.errors, [prepared.NEEDS_FIRST_FRAME])
+
+    def test_the_composer_chip_follows_the_upload_and_the_connection(self):
+        prepared = submodule("blender.render_references")
+        lane = self.render_form()
+        valid = SimpleNamespace(valid=True)
+        with patch.object(self.runtime, "credentials", return_value=valid):
+            self.assertEqual(prepared.chip(lane), ("Capture", ""))
+            with self.capturing():
+                bpy.ops.scenario.prepare_render_reference(lane="render_image")
+            self.assertEqual(prepared.chip(lane), ("Uploading...", prepared.UPLOADING_SCENE))
+            self.fixture.settle()
+            self.assertEqual(prepared.chip(lane), ("Recapture", ""))
+            with patch.object(self.runtime, "online", return_value=False):
+                label, wait = prepared.chip(lane)
+            self.assertEqual(label, "Recapture")
+            self.assertIn("Online Access", wait)
+        with patch.object(self.runtime, "credentials", return_value=SimpleNamespace(valid=False)):
+            self.assertIn("credentials", prepared.chip(lane)[1])
 
     def test_render_first_frame_upload_and_optional_exclusion(self):
         prepared = submodule("blender.render_references")
@@ -1048,6 +1299,149 @@ class ReferenceFormTests(unittest.TestCase):
         self.fixture.settle()
         self.assertEqual(lane.references[0].source, "ASSET")
         self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 1)
+
+    def upload_mesh(self, lane, content, number):
+        """Upload the selected mesh exported as `content`; Scenario names one asset for all."""
+        lane.references.clear()
+        self.fixture.fixture.remote.update(id=f"mesh-upload-{number}", status="pending")
+
+        def export_file(context, objects, *, path):
+            Path(path).write_bytes(content)
+
+        with patch.object(submodule("blender.mesh_export"), "export_glb", side_effect=export_file):
+            self.assertEqual(
+                bpy.ops.scenario.upload_selected_mesh(lane="edit3d", param_name="input"),
+                {"FINISHED"},
+            )
+        self.fixture.settle()
+        self.assertEqual(lane.references[0].source, "ASSET")
+        self.assertEqual(lane.references[0].asset_id, "reference-asset")
+
+    def price(self, lane):
+        self.generation.request_estimate(self.scene, "edit3d")
+        for ticket in tuple(self.runtime.state.model_previews.values()):
+            try:
+                ticket.task.result(5)
+            except Exception:
+                pass  # The main-thread delivery reports a failed price.
+        self.runtime.sync_catalog_context()
+        return self.runtime.state.estimates.get(lane.estimate_key)
+
+    def price_actions(self, lane):
+        drawn = []
+
+        def operator(name, **kwargs):
+            drawn.append(name)
+            return SimpleNamespace()
+
+        layout = SimpleNamespace(operator=operator)
+        submodule("blender.panels").draw_price_retry(layout, lane, "edit3d")
+        return drawn
+
+    def mesh_form(self):
+        """An Edit 3D form on a selected cube; Scenario names every upload one asset."""
+        bpy.ops.mesh.primitive_cube_add()
+        cube = bpy.context.active_object
+        self.addCleanup(lambda: bpy.data.objects.remove(cube, do_unlink=True))
+        lane, _ = self.configure_typed_input("edit3d", "3d")
+        lane.prompt = "weathered stone"
+        self.fixture.fixture.remote["originalFileName"] = "reference.glb"
+        self.enterContext(
+            patch.object(submodule("blender.mesh_export"), "source_objects", return_value=[cube])
+        )
+        transfer = submodule("core.jobs.upload_transfers")
+        # The fixture's part upload accepts only b"data"; a changed mesh sends other bytes.
+        self.fixture.fixture.uploader.upload.side_effect = (
+            lambda url, data, *, number, content_type, expected_sha256: transfer.UploadedPart(
+                number, len(data), expected_sha256
+            )
+        )
+        original, quotes = self.fixture.fixture.handler, []
+        self.status, self.response = 269, b'{"creativeUnitsCost":2}'
+
+        def respond(request):
+            if "/uploads" in request.url.path:
+                return original(request)
+            if request.method == "GET":
+                return httpx.Response(200, json={"model": self.typed_model})
+            self.assertEqual(request.url.params.get("dryRun"), "true")  # pricing never spends
+            quotes.append(json.loads(request.content))
+            return httpx.Response(self.status, content=self.response)
+
+        self.fixture.fixture.handler = respond
+        return lane, quotes
+
+    def test_reuploaded_mesh_prices_and_a_changed_one_can_drop_its_captured_source(self):
+        lane, quotes = self.mesh_form()
+        # Uploading an unchanged mesh again: Scenario names the same asset.
+        self.upload_mesh(lane, b"data", 1)
+        self.upload_mesh(lane, b"data", 2)
+        self.assertEqual(self.fixture.fixture.uploader.upload.call_count, 2)
+        ticket = self.price(lane)
+        self.assertEqual(lane.estimate_state, "READY", lane.estimate_error)
+        self.assertEqual(len(ticket.quote.mesh_sources), 1)
+        self.assertEqual(self.price_actions(lane), [])
+        # A failed price offers to ask again.
+        self.response = b"{}"
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertEqual(lane.estimate_error, "Could not confirm this price; estimate again")
+        self.assertEqual(self.price_actions(lane), ["scenario.estimate_again"])
+        self.assertEqual(bpy.ops.scenario.estimate_again(lane="edit3d"), {"FINISHED"})
+        self.assertEqual(lane.estimate_state, "PENDING")
+        self.response = b'{"creativeUnitsCost":2}'
+        # Changed bytes that Scenario reports as the same asset have no known source.
+        self.upload_mesh(lane, b"abcd", 3)
+        self.assertIsNone(self.price(lane))
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertTrue(lane.estimate_error.startswith("Different captured meshes"))
+        self.assertEqual(self.price_actions(lane), ["scenario.price_without_capture"])
+        self.assertEqual(bpy.ops.scenario.price_without_capture(lane="edit3d"), {"FINISHED"})
+        self.assertEqual(lane.estimate_state, "PENDING")
+        ticket = self.price(lane)
+        self.assertEqual(lane.estimate_state, "READY", lane.estimate_error)
+        self.assertEqual(ticket.quote.mesh_sources, ())
+        # Nothing is left to resolve.
+        self.assertEqual(bpy.ops.scenario.price_without_capture(lane="edit3d"), {"CANCELLED"})
+        self.assertEqual(len(quotes), 4)
+        self.assertTrue(all(body["input"] == "reference-asset" for body in quotes))
+
+    def test_a_fresh_upload_refused_at_first_is_priced_again_on_its_own(self):
+        lane, quotes = self.mesh_form()
+        key = (self.scene.session_uid, "edit3d")
+        delays = self.generation.UPLOAD_RETRY_DELAYS
+        # Scenario refuses the price of the asset it has just imported.
+        self.status, self.response = 400, b'{"reason":"fixture refusal"}'
+        self.upload_mesh(lane, b"data", 1)
+        for delay in delays:
+            self.assertIsNone(self.price(lane))
+            self.assertEqual(lane.estimate_state, "PENDING")
+            self.assertEqual(self.generation.repricing_note(lane), self.generation.UPLOAD_NOT_READY)
+            entry = self.runtime.state.reprices[key]
+            self.assertEqual(entry.settle.delay, delay)
+            # The pump asks again only after the delay.
+            since = entry.settle.since
+            self.assertFalse(self.generation.scene_settled(self.scene, "edit3d", since + delay - 1))
+            self.assertTrue(self.generation.scene_settled(self.scene, "edit3d", since + delay))
+        # Retries are bounded: then the refusal shows, with Estimate again.
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertEqual(lane.estimate_error, "Could not confirm this price; estimate again")
+        self.assertEqual(self.price_actions(lane), ["scenario.estimate_again"])
+        self.assertNotIn(key, self.runtime.state.fresh_uploads)
+        # Another upload that Scenario prices once its first refusal has passed.
+        self.upload_mesh(lane, b"data", 2)
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "PENDING")
+        self.status, self.response = 269, b'{"creativeUnitsCost":2}'
+        self.assertIsNotNone(self.price(lane))
+        self.assertEqual(lane.estimate_state, "READY", lane.estimate_error)
+        self.assertNotIn(key, self.runtime.state.fresh_uploads)
+        # A later refusal of a form whose upload was priced shows at once.
+        self.status = 400
+        self.price(lane)
+        self.assertEqual(lane.estimate_state, "ERROR")
+        self.assertEqual(len(quotes), len(delays) + 4)
 
     def test_typed_uploads_attach_to_originating_lane_after_tab_switch(self):
         image_refs = len(self.lane.references)

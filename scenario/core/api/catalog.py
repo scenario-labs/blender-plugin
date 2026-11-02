@@ -32,49 +32,60 @@ LANE_CAPS = {
     },  # a mesh from the scene to a retextured / remeshed / rigged / animated mesh
 }
 PATINA_MODELS = ("model_patina-material", "model_patina", "model_patina-material-extract")
+# Scenario tags its texture models; the base ones that generate images also join the Materials lane,
+# so a new texture model appears there without a plugin release.
+TEXTURE_TAG = "sc:texture"
+TEXTURE_CAPS = {"txt2img", "img2img"}
 DEFAULT_MODELS = {
     "image": [
-        "model_openai-gpt-image-2",
+        "model_openai-gpt-image-2-5-sunburst",
+        "model_google-gemini-nano-banana-2-1",
         "model_google-gemini-3-1-flash",
         "model_bytedance-seedream-5-0-pro",
         "model_bytedance-seedream-5-0-lite",
         "model_z-image",
     ],
     "video": [
-        "model_bytedance-seedance-2-0",
         "model_bytedance-seedance-2-5",
         "model_veo3-1",
         "model_kling-v3-omni-video",
     ],
     "3d": [
-        "model_meshy-7-txt23d",
+        "model_tripo-p2-text-to-3d",
+        "model_meshy-7-1-txt23d",
         "model_rodin-hyper3d-v2-5-text-to-3d",
+        "model_tripo-p2-image-to-3d",
         "model_tripo-v3-1-image-to-3d",
-        "model_meshy-7-img23d",
+        "model_meshy-7-1-img23d",
         "model_hunyuan-3d-pro-3-1-i23d",
         "model_rodin-hyper3d-v2-5",
-        "model_tripo-p1-image-to-3d",
-        "model_meshy-7-multi-image-to-3d",
+        "model_meshy-7-1-multi-image-to-3d",
         "model_tripo-v3-1-multiview-to-3d",
         "model_hunyuan-3d-pro-3-1-multiview",
     ],
-    "material": list(PATINA_MODELS),
+    # PATINA's PBR sets first, then Scenario Texture; other texture models follow by name.
+    "material": [*PATINA_MODELS, "model_scenario-texture"],
     "audio": [
-        "model_elevenlabs-music-v2",
+        "model_elevenlabs-music-v2-5",
+        "model_lyria-3-5",
         "model_lyria-3-pro",
         "model_ace-step-1-5-quality-text-to-music",
         "model_minimax-music-3-0",
+        "model_elevenlabs-tts-v4",
         "model_elevenlabs-tts-v3",
-        "model_google-gemini-3-1-flash-tts",
+        "model_google-gemini-3-8-flash-tts",
         "model_elevenlabs-sound-effects-v2",
         "model_sonilo-v1-1-text-to-sound-effects",
         "model_sonilo-v1-1-video-to-sound-effects",
     ],
-    # The image edit models take a reference image and a look prompt; GPT Image 2 comes first (product decision).
+    # The image edit models take a reference image and a look prompt; GPT Image 2.5 Sunburst comes first
+    # (product decision).
     "render_image": [
-        "model_openai-gpt-image-2",
+        "model_openai-gpt-image-2-5-sunburst",
+        "model_google-gemini-nano-banana-2-1",
         "model_google-gemini-3-1-flash",
         "model_bytedance-seedream-5-0-pro",
+        "model_bfl-flux-3-image",
         "model_bfl-flux-2-max-editing",
         "model_bfl-flux-2-pro-editing",
         "model_qwen-image-edit-2511",
@@ -82,21 +93,21 @@ DEFAULT_MODELS = {
         "model_xai-grok-imagine-image-2-0",
         "model_z-image",
     ],
-    # the ten video models that accept a reference video (and images) to re-render
+    # the video models that accept a reference video (and images) to re-render
     "render_video": [
-        "model_bytedance-seedance-2-0",
-        "model_minimax-h3",
         "model_bytedance-seedance-2-5",
+        "model_minimax-h3",
         "model_bytedance-seedance-2-0-mini",
         "model_runway-aleph-2",
         "model_alibaba-happy-horse-video-editing",
         "model_google-omni-1-1-flash-edit",
-        "model_google-omni-flash-edit",
         "model_xai-grok-edit-video",
         "model_bfl-flux-3-extend",
     ],
     "edit3d": [
         "model_meshy-7-retexture",
+        "model_scenario-claude-opus-5-5-3d",
+        "model_tripo-retopology-v3",
         "model_tripo-retopology",
         "model_meshy-rigging",
         "model_meshy-animation",
@@ -126,7 +137,7 @@ def lane_kind(lane):
     return LANE_KIND.get(lane, "image")
 
 
-# Most specific lane first, so Patina reads as material and a mesh edit as 3d.
+# Most specific lane first, so a texture model reads as material and a mesh edit as 3d.
 _KIND_LANES = (
     "material",
     "3d",
@@ -159,14 +170,24 @@ EDIT3D_TASKS = (
         "REMESH",
         "Remesh",
         "Clean quad or triangle topology at a target polycount",
-        ("model_tripo-retopology", "model_meshy-remesh", "model_tencent-smarttopology"),
+        (
+            "model_tripo-retopology-v3",
+            "model_tripo-retopology",
+            "model_meshy-remesh",
+            "model_tencent-smarttopology",
+        ),
     ),
     (
         "RETEXTURE",
         "Retexture",
         "New textures and materials for the mesh, from a prompt or a style image",
+        # Meshy 7 repaints the whole surface in about a minute on the source's own UVs; applying it in place
+        # paints the source's texture back on the head (or the faces selected in Edit Mode). The scene-edit
+        # models after it repaint only what the prompt names and keep the face themselves, in 10 to 16 minutes.
         (
             "model_meshy-7-retexture",
+            "model_scenario-claude-opus-5-5-3d",
+            "model_scenario-gpt6-astra-3d",
             "model_tripo-v3-0-texturing",
             "model_trellis-2-retexture",
             "model_tencent-texture-edit",
@@ -192,7 +213,12 @@ EDIT3D_TASKS = (
         "ANIMATE",
         "Animate",
         "An animated version of a rigged character",
-        ("model_meshy-animation", "model_cartwheel-text-to-motion"),
+        (
+            "model_uthana-text-to-motion-3.0",
+            "model_viggle-text-to-motion",
+            "model_meshy-animation",
+            "model_cartwheel-text-to-motion",
+        ),
     ),
     (
         "PARTS",
@@ -223,19 +249,101 @@ UTILITY_HINTS = (
 )
 
 
-# Schema defaults that produce surprising results in Blender. Applied when the value is among the allowed ones.
+# Text-to-motion models that join the Animate task without a mesh input: they animate their
+# own humanoid skeleton from the prompt alone, and applying the result retargets the clip
+# onto the selected character's rig, so nothing is uploaded.
+MOTION_MODELS = ("model_uthana-text-to-motion-3.0", "model_viggle-text-to-motion")
+# Named choices for a numeric setting whose schema gives only a range, shown in the native
+# form with an Other entry that keeps any number. Meshy Animation's actionId picks one of
+# 600+ library motions (https://docs.meshy.ai/en/api/animation-library); a few common ones.
+PARAM_CHOICES = {
+    "model_meshy-animation": {
+        "actionId": (
+            (0, "Idle", "Idle"),
+            (30, "Walk", "Casual_Walk"),
+            (341, "Walk and look around", "Walk_Slowly_and_Look_Around"),
+            (14, "Run", "Run_02"),
+            (16, "Run fast", "RunFast"),
+            (509, "Sprint", "Lean_Forward_Sprint"),
+            (466, "Jump", "Regular_Jump"),
+            (28, "Wave hello", "Big_Wave_Hello"),
+            (290, "Wave one hand", "Wave_One_Hand"),
+            (298, "Cheer", "Cheer_with_Both_Hands_Up"),
+            (41, "Bow", "Formal_Bow"),
+            (313, "Talk", "Talk_with_Hands_Open"),
+            (22, "Dance", "FunnyDancing_01"),
+            (198, "Punch combo", "Punch_Combo"),
+            (207, "Roundhouse kick", "Roundhouse_Kick"),
+            (60, "Sit down", "Walk_to_Sit"),
+            (366, "Fall down", "falling_down"),
+        ),
+    },
+}
+OTHER_CHOICE = "OTHER"
+
+
+def choice_items(model_id, name):
+    """Enum items for a setting's named choices, Other last; empty when it has none."""
+    choices = (PARAM_CHOICES.get(model_id) or {}).get(name)
+    if not choices:
+        return []
+    return [
+        (str(value), label, f"{source} (library ID {value})") for value, label, source in choices
+    ] + [(OTHER_CHOICE, "Other ID", "Any library ID, typed in the field beside")]
+
+
+# Starting values for a model's settings where its schema default gives surprising results in Blender. The
+# sidebar, the composer and local MCP all start from them, and only while the schema still accepts the value.
 # Rodin's "All" material returns two meshes (a baked Shaded GLB and a PBR GLB); one PBR mesh is what a Blender user expects.
+# Tripo P2 picks its own face count, which leaves a character's face soft, and an arbitrary size. 50,000 faces is its
+# maximum and keeps the likeness in a file of a few MB; Auto Size returns a character at its real height in meters.
+# Tripo P2 Text to 3D starts the same way: a game prop of about 50,000 faces in a 5 MB GLB, at its real size.
+# Uthana Text to Motion 3.0 returns only its skeleton and clip: Apply animation keeps none of its mannequin mesh, and
+# with the mesh its skin leaves the scene root, which carries the walk, out of the joints.
+# Meshy 7 Retexture keeps the source's UVs and returns normal and metallic-roughness maps with its colour, so a kept
+# head gets all its own maps back, normals included, at the same 40 CU.
 PARAM_OVERRIDES = {
     "model_rodin-hyper3d-v2-5-text-to-3d": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-text-to-3d-fast": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5": {"material": "PBR"},
     "model_rodin-hyper3d-v2-5-fast": {"material": "PBR"},
+    "model_tripo-p2-image-to-3d": {"autoSize": True, "faceLimit": 50000},
+    "model_tripo-p2-text-to-3d": {"autoSize": True, "faceLimit": 50000},
+    "model_uthana-text-to-motion-3.0": {"animationOnly": True},
+    "model_meshy-7-retexture": {"enableOriginalUv": True, "enablePbr": True},
 }
+# Server minutes the slow Edit 3D models took on a 55,000-triangle character: Claude Opus 5.5 3D at high effort 12
+# and 16, GPT-6 Astra 3D 10. The form shows them; the quick models need no warning.
+EXPECTED_MINUTES = {
+    "model_scenario-claude-opus-5-5-3d": (12, 16),
+    "model_scenario-gpt6-astra-3d": (10, 10),
+}
+
+
+def expected_wait(model_id):
+    """How long a slow model usually takes, as the form says it, or None."""
+    span = EXPECTED_MINUTES.get(model_id)
+    if span is None:
+        return None
+    low, high = span
+    minutes = f"{low}" if low == high else f"{low} to {high}"
+    return f"Slow: about {minutes} minutes on a 55,000-triangle character"
+
+
 MULTIVIEW_HINTS = ("multi", "multiview")
 
 
 def param_override(model_id, name):
     return (PARAM_OVERRIDES.get(model_id) or {}).get(name)
+
+
+def starting_value(model_id, spec):
+    """The curated starting value of one setting of this model, or None.
+
+    None when the table names none, or when the model's current schema no longer accepts it.
+    """
+    value = param_override(model_id, spec.name)
+    return value if value is not None and spec.accepts(value) else None
 
 
 @dataclass
@@ -290,11 +398,27 @@ class ModelRecord:
     def lanes(self):
         caps = set(self.capabilities)
         lanes = {lane for lane, wanted in LANE_CAPS.items() if caps & wanted}
-        if self.id in PATINA_MODELS:
+        if is_texture_model(self):
             lanes.add("material")
         if self.id in PANORAMA_MODELS:
             lanes.add("panorama")
+        if self.id in MOTION_MODELS:
+            lanes.add("edit3d")
         return lanes
+
+
+def is_texture_model(record):
+    """PATINA, or a base model Scenario tags as a texture model that generates images.
+
+    Trained texture models carry the same tag; they stay out, as in every base lane.
+    """
+    if record.id in PATINA_MODELS:
+        return True
+    return (
+        TEXTURE_TAG in record.tags
+        and bool(TEXTURE_CAPS.intersection(record.capabilities))
+        and not is_trained(record)
+    )
 
 
 def is_utility(record):
@@ -400,12 +524,10 @@ def models_for_lane(lane, records):
         and r.status in ("", "trained")
         and not is_trained(r)
     ]
-    if lane == "material":
-        usable = [r for r in usable if r.id in PATINA_MODELS]
-    elif lane == "panorama":
+    if lane == "panorama":
         usable = [r for r in usable if r.id in PANORAMA_MODELS]
     elif lane == "render_image":
-        usable = [r for r in usable if r.id not in PATINA_MODELS and not is_utility(r)]
+        usable = [r for r in usable if not is_texture_model(r) and not is_utility(r)]
     return sorted(usable, key=lambda r: (rank.get(r.id, len(rank)), r.name.lower()))
 
 
@@ -414,7 +536,7 @@ def edit3d_task(task_id):
 
 
 def edit3d_models(task_id, records):
-    """Mesh-to-mesh models for one task, best first; ALL lists every 3d23d model with the curated ones first."""
+    """Models for one task, best first; ALL lists every 3d23d and text-to-motion model, curated first."""
     usable = models_for_lane("edit3d", records)
     if task_id == "ALL":
         return usable

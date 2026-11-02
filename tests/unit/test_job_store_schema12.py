@@ -74,10 +74,15 @@ def _uncertain(store, request_id="request", **changes):
 
 
 def _upgraded(raw):
-    """A schema 11 row as the upgrade rewrites it: unknown claim time and result parents."""
+    """A schema 11 row as the upgrade rewrites it: unknown claim time, parents and lane.
+
+    Schema 13 also marks no result as an on-demand copy.
+    """
     expected = json.loads(raw) | {"claimed_at": None}
+    if expected["intent"].get("source") != "cloud":
+        expected["intent"]["lane"] = None
     for item in expected["results"]:
-        item["asset"]["parent_id"] = None
+        item["asset"].update(parent_id=None, on_demand=False)
     return expected
 
 
@@ -121,7 +126,7 @@ def test_real_schema_eleven_store_upgrades_every_row_with_an_unknown_claim_time(
     uploads = _rows(schema11, "film_uploads", "scope, production_id, task_id, record")
     defaults = _rows(schema11, "trained_defaults", "scope, lane, revision, record")
     stores = {key: JobStore(schema11, scope) for key, scope in _scopes(schema11).items()}
-    assert _pragma(schema11, "user_version") == storage._VERSION == 12
+    assert _pragma(schema11, "user_version") == storage._VERSION
     after = _rows(schema11, "jobs", "scope, request_id, revision, record")
     assert [row[:3] for row in after] == [row[:3] for row in before]
     for (key, request_id, _, raw), (*_, migrated) in zip(before, after, strict=True):
@@ -186,16 +191,11 @@ def test_schema_twelve_is_refused_by_a_schema_eleven_reader_and_newer_by_this_on
             JobStore(schema11, scope)
     assert schema11.read_bytes() == upgraded
     with sqlite3.connect(schema11) as connection:
-        connection.execute("PRAGMA user_version=13")
+        connection.execute(f"PRAGMA user_version={storage._VERSION + 1}")
     newer = schema11.read_bytes()
     with pytest.raises(StoreError, match="Unsupported"):
         JobStore(schema11, scope)
     assert schema11.read_bytes() == newer
-
-
-def test_fresh_store_starts_at_schema_twelve(tmp_path, scope):
-    JobStore(tmp_path / "jobs.sqlite3", scope)
-    assert _pragma(tmp_path / "jobs.sqlite3", "user_version") == 12
 
 
 def test_claim_time_is_saved_with_the_submitting_claim_and_kept(store):

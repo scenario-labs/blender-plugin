@@ -1,10 +1,10 @@
 # SDK contracts for Studio adoption
 
 The shared adapter for compact creation, expanded Studio and local MCP must use
-`scenario-sdk`. The adoption baseline is **2.3.0**, inspected from the published
-[PyPI release](https://pypi.org/project/scenario-sdk/2.3.0/). Its wheel is
-`scenario_sdk-2.3.0-py3-none-any.whl`, with SHA256
-`8f36ce8e456ec75ad8ca966962312c4d98c673e1cfd83671a3a65714fa85cddd`.
+`scenario-sdk`. The adoption baseline is **2.5.0**, inspected from the published
+[PyPI release](https://pypi.org/project/scenario-sdk/2.5.0/). Its wheel is
+`scenario_sdk-2.5.0-py3-none-any.whl`, with SHA256
+`1f65a043cf28574af3be6cb7a8d186a20bd13f7762228324a1a17daea6ca0a3b`.
 The development dependency group pins this version and the MockTransport test
 client, `httpx==0.28.1`; [uv.lock](../uv.lock) pins their transitive dependencies.
 
@@ -37,7 +37,7 @@ catalog cache, generation/job/asset/upload endpoints, Spark and LLM clients are
 removed. No compatibility client or second job engine remains. Useful pure model
 records, lane/schema helpers and local display status classification remain.
 
-| Service operation | Shared implementation and selected SDK 2.3.0 method |
+| Service operation | Shared implementation and selected SDK 2.5.0 method |
 | --- | --- |
 | Model catalog, schemas, connection check | `SDKCatalog` / `SDKAdapter`: `models.with_raw_response.list/retrieve`; [trained-model discovery](#trained-model-catalog-reads) adds `models.with_raw_response.get_bulk` |
 | Exact model quote and submission, including render, Blockout and Film models | `JobCoordinator` / `SDKAdapter`: `generate.with_raw_response.run_model`, with `dry_run="true"` only for quotes |
@@ -94,7 +94,7 @@ Scenario or spending credits.
 [SDK contracts CI](../.github/workflows/sdk-contracts.yml) repeats these checks
 using the locked environment.
 
-| Adapter requirement | SDK 2.3.0 contract exercised |
+| Adapter requirement | SDK 2.5.0 contract exercised |
 | --- | --- |
 | Generic model estimate and submission | `generate.run_model`: POST, unchanged model-specific body, `dryRun` and `projectId` in the query |
 | Workflow estimate and submission | `workflows.run`: PUT, unchanged workflow-specific body, `dryRun` and `projectId` in the query |
@@ -573,8 +573,10 @@ UI refresh/load-older and MCP `list_generations` use the same connection and
 worker queue. `SDKAdapter.job_page` calls the pinned SDK's
 `jobs.with_raw_response.list` once with `hide_results=False`, a bounded page size
 and the opaque cursor; its response preserves unknown fields while validating
-job IDs and the next cursor. The existing adapter supplies selected credentials,
-project context when configured and online permission. There is no raw fallback.
+job IDs and the next cursor. With results, `jobs.list` returns only the last 30
+days; the history does not reach further. The existing adapter supplies selected
+credentials, project context when configured and online permission. There is no
+raw fallback.
 
 Prompt previews use `assets.with_raw_response.retrieve` on the captured connection,
 bounded to 30 per page; step jobs that price a workflow run but are missing from
@@ -671,7 +673,7 @@ comma-separated). For recovery candidates,
 by default and at most 5, with the same checks, and returns the rows with
 `complete` false when it stops at its limit instead of failing.
 
-The inspected SDK 2.2.0 and 2.3.0 have no lookup by client request identity and
+The inspected SDK 2.2.0 to 2.5.0 have no lookup by client request identity and
 no idempotency parameter for `generate.run_model`, `workflows.run`,
 `generate.prompt` or `generate.translate`, and the client sends no idempotency
 header; the API reference documents none either. Generic extension parameters do
@@ -699,9 +701,9 @@ Native and MCP controls offer cancellation only after such an observation. A
 contract test checks the pinned docstring and enum so an SDK upgrade that widens
 the limit is reviewed. No general workflow-cancel method appears in the
 inspected workflow resource. Rejecting a waiting user-approval or user-selection
-step is the only documented way for a client to stop a workflow. The SDK
-documents a loop-scoped effect for a rejected approval inside a ForEach
-iteration, so callers must trust the refreshed job status. Rejection cannot stop
+step is the only documented way for a client to stop a workflow. Since 2.5.0
+the SDK documents that a rejection inside a ForEach iteration also cancels the
+workflow; callers still trust the refreshed job status. Rejection cannot stop
 an executing step and must not be presented as general cancellation. A response
 may still be `in-progress` or
 already `success`; the SDK preserves it without forcing `canceled`. No lane
@@ -727,7 +729,7 @@ a separate concern, deferred for this release. Local durable jobs must still be
 isolated when credentials or an optional project override change. A local
 credential identity must not be presented as a server-reported account identity.
 
-SDK 2.3.0 generates every operation the adapter uses, so
+SDK 2.5.0 generates every operation the adapter uses, so
 [SDKResourceExtensions](../scenario/core/api/sdk_extensions.py) holds no method.
 It is where a named fallback goes, inside the shared adapter boundary and using
 the adapter's existing SDK client and HTTP pool, when a selected release lacks an
@@ -736,7 +738,7 @@ operation. The former discovery
 and selection ([SDK issue #33](https://github.com/scenario-labs/scenario-sdk-python/issues/33))
 fallbacks now use generated methods:
 
-| Adapter method | SDK 2.3.0 method | Query contract |
+| Adapter method | SDK 2.5.0 method | Query contract |
 | --- | --- | --- |
 | `teams()` | `teams.with_raw_response.list` | No team/project query, including when the adapter has a selected project. |
 | `projects(team_id)` | `projects.with_raw_response.list(team_id=...)` | Only the explicitly requested `teamId`; never inherit `projectId`. |
@@ -791,7 +793,7 @@ test do not claim live service acceptance.
   reference's default maximum, and indices stay within the exact JSON integer
   range. The step's own min/max bounds and candidate count remain the caller's
   check.
-- **Scope.** Both endpoints document `projectId` as required, and SDK 2.3.0
+- **Scope.** Both endpoints document `projectId` as required, and SDK 2.5.0
   types it as required for both. A decision uses the scope of the run it
   answers: the adapter's explicit project override when configured, otherwise
   API-key credential-bound scope with `projectId` omitted, as for `workflows.run`.
@@ -850,6 +852,10 @@ values in place and verify both Basic and Bearer requests. Keep the upstream
 expected failure until the SDK itself fixes #26, and remove the configuration
 workaround only after a verified environment-isolation interface replaces it.
 Token serialization does not establish browser OAuth acceptance by REST.
+
+Requests time out after 45 seconds, but connecting, the TLS handshake included,
+after 5 seconds (`CONNECT_TIMEOUT`, the SDK's own default). A new connection tries
+the DNS answer's addresses in turn, so an address that never accepts costs 5 seconds.
 
 ## Adapter coverage
 
@@ -937,7 +943,7 @@ can tell a transient refresh failure from a refusal. The
 [contract tests](../tests/unit/test_scenario_sdk_contract.py) drive each
 allow-listed read and each single-attempt operation through the adapter.
 
-| Adapter operation | SDK 2.3.0 method and contract |
+| Adapter operation | SDK 2.5.0 method and contract |
 | --- | --- |
 | Public/private model catalog | `models.list`: explicit page size/status/privacy, `paginationToken`, scope on every page, deduplication and cursor-loop/page-limit failures |
 | Bulk model summaries | `models.get_bulk` through its public raw-response wrapper: at most 50 IDs per request and 200 per call, requested identities only, identical duplicates merged, conflicts rejected, scope and online permission on every request, no partial result; see [trained-model catalog reads](#trained-model-catalog-reads) |
@@ -945,7 +951,7 @@ allow-listed read and each single-attempt operation through the adapter.
 | Public/private workflow catalog | `workflows.list`: SDK REST catalog replaces the need for Studio's public-workflow HTTP bypass; pagination and scope are tested synthetically |
 | Known model-job cancellation | `jobs.trigger_action(action="cancel")` through its public raw-response wrapper: one attempt, selected project, no terminal-state assumption from acknowledgement; coordinator retrieves before and after the action |
 | Waiting workflow step decision | `workflows.user_approval` or `workflows.user_selection` through its public raw-response wrapper ([workflow step decisions](#workflow-step-decisions)): explicit action, one attempt, project override only, status-carrying errors and a matching `job` acknowledgement; called only by the workflow job decision command |
-| Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–200 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
+| Scoped job discovery | `jobs.list` through the public raw-response wrapper: optional author/workflow/type/status filters, 1–100 items per page, bounded pagination and explicit errors instead of partial or conflicting history |
 | Multipart upload metadata | `uploads.create/retrieve/trigger_action(action="complete")`: immutable project scope, strict input/receipt identity, retained processing/future fields; no byte transfer, retry or automatic completion |
 | Collection and tag writes | `collections.create`, `collections.assets.add/remove` and `assets.update_tags(strict=false)` through public raw-response wrappers: one attempt, selected project, acknowledged identity checks, and `WriteRejected` (`AlreadyMembers` for the exact already-member add refusal) or `WriteUncertain` after dispatch |
 | Collection pages and organization read-back | `collections.list/retrieve` and `assets.get_bulk`: one bounded collection page with cursor-loop failure, matching collection identity, and requested-only asset records whose `tags` and `collectionIds` must be lists of strings |
@@ -994,6 +1000,13 @@ description can still render. This assumes the hidden input has no default; if
 one did, the dry run would report the service's error and nothing would be
 spent.
 
+`required.conditional` (SDK 2.3.0) makes an input required when siblings hold
+listed values. Validation applies it with `operator: "or"` when one condition
+matches, otherwise only when every condition does: the default operator is
+undocumented, so a local check never refuses what the service accepts. A sibling
+the schema does not declare never matches. Native panels do not yet mark such an
+input as required.
+
 The pure LoRA/composition routing helper retains required base-model wiring for
 its synthetic remote-MCP tests; strengths follow the policy in
 [trained-model routes](#trained-model-routes), so a wired LoRA without one is
@@ -1033,6 +1046,17 @@ The explicit live command is documented in
 tests do not claim live service acceptance or authorize a paid operation.
 
 ## Source baseline and remaining work
+
+### Selected SDK 2.5.0 upgrade
+
+The inspected 2.5.0 wheel keeps 2.3.0's required dependency closure and
+byte-identical MIT notice, and client, authentication and transport sources are
+unchanged, so the #26 header workaround remains. 2.4.0 adds asset and model
+restore, which the adapter does not adopt. 2.5.0 fixes SDK auto-pagination past
+an empty page and search offsets; the adapter pages `jobs.list` itself and never
+calls search, so neither changes its requests. `jobs.list` still documents 1 to
+100 items per page. Rejecting a workflow approval inside a ForEach iteration is
+now documented to cancel the workflow.
 
 ### Selected SDK 2.3.0 upgrade
 
@@ -1087,7 +1111,7 @@ When adopting further Studio code:
   operations. Do not infer coverage from a similar method name.
 - Reproduce each uncovered operation and link an upstream SDK issue before a
   narrow raw API fallback in the shared adapter, with its issue and removal
-  condition recorded. SDK 2.3.0 needs none.
+  condition recorded. SDK 2.5.0 needs none.
 - Bind exact quotes to payload/account/project, persist request identity before
   paid dispatch, and preserve an uncertain state after a lost response. SDK
   retry settings alone do not provide application persistence or prevent a
@@ -1249,7 +1273,7 @@ no service or paid check is implied. See [the composition contract](FILM_PLAN.md
 Native workflow forms and local MCP list public/private workflows and read their
 inputs through the adapter's `workflows.list` and `workflows.retrieve` wrappers.
 Estimates and single approved submissions call
-`workflows.with_raw_response.run`; the selected SDK 2.3.0 resource was inspected
+`workflows.with_raw_response.run`; the selected SDK 2.5.0 resource was inspected
 for its workflow-specific body, `dry_run` and `project_id` query mapping. No
 adapter, dependency or raw-API exception is added. The same JobSession and
 ModelJobs own scoped metadata, approvals, persisted identity, uncertainty,
@@ -1297,7 +1321,7 @@ dependency change is needed. These are free account metadata changes. They
 spend no credits, do not change the Blender scene and cannot be undone by
 Blender Undo.
 
-| Adapter method | SDK 2.3.0 method | Request and response contract |
+| Adapter method | SDK 2.5.0 method | Request and response contract |
 | --- | --- | --- |
 | `collection_page` | `collections.with_raw_response.list` | One page of 1 to 100 records and an opaque cursor. IDs are validated, identical duplicates are dropped, and conflicting duplicates, oversized pages or a repeated cursor fail. An empty page is valid. |
 | `collection` | `collections.with_raw_response.retrieve` | The returned `collection.id` must equal the requested ID. |

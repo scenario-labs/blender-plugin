@@ -181,6 +181,12 @@ since 0.10.0 on 2026-10-13; check the live index after each release. The Pages
 API's `status: null` is not a content check; verify the live response and page
 before changing these links again.
 
+The launch film and the illustrated guide PDF at the top of the handbook live in
+`docs/media/`. `tools/build_docs_html.py` copies them beside the page; the standalone
+release handbook links the website copy instead of embedding them. Commit a web
+encode of the film (1080p H.264 with `+faststart`, about 36 MB), never the master: the
+files stay in the Git history, and GitHub rejects any file over 100 MB.
+
 The description is:
 
 > Scenario for Blender: AI images, video, 3D and PBR materials in the viewport,

@@ -101,7 +101,11 @@ class PartUploader:
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.load_verify_locations(cafile=certifi.where())
             connection = http.client.HTTPSConnection(
-                host, timeout=min(self._policy.timeout, self._policy.total_timeout), context=context
+                host,
+                timeout=min(
+                    self._policy.connect_timeout, self._policy.timeout, self._policy.total_timeout
+                ),
+                context=context,
             )
             connection.set_debuglevel(0)
             connection.connect()

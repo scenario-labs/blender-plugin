@@ -456,6 +456,33 @@ class SessionResultTests(unittest.TestCase):
         self.assertEqual(set(bpy.data.images), before)
         self.assertEqual(self.store.get("request").state, self.storage.JobState.READY)
 
+    def test_image_import_into_the_submission_scene_survives_scene_edits(self):
+        # An Image job captures the scene it was submitted from; edits there keep it.
+        destination = self.session.capture_destination(self.scene)
+        _, completion = self.world_completion()
+        self.session.invalidate_scene(self.scene)
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_images(completion, destination="scene")
+        outcome = self.session.apply_images(completion, destination=destination)
+        self.assertEqual(outcome.record.state, self.storage.JobState.APPLIED)
+        self.assertEqual(outcome.record.application_origin, destination)
+        # An applied job is never imported again this way.
+        _, again = self.command("verify_results", outcome.record)
+        with self.assertRaisesRegex(
+            submodule("core.jobs.coordinator").ApplicationError, "not eligible"
+        ):
+            self.session.apply_images(again, destination=destination)
+
+    def test_undo_stops_an_image_import_into_the_submission_scene(self):
+        destination = self.session.capture_destination(self.scene)
+        verified, completion = self.world_completion()
+        before = set(bpy.data.images)
+        self.session.invalidate_all()
+        with self.assertRaises(self.module.OriginUnavailable):
+            self.session.apply_images(completion, destination=destination)
+        self.assertEqual(set(bpy.data.images), before)
+        self.assertEqual(self.store.get("request"), verified.record)
+
     def test_world_application_selects_exactly_one_of_multiple_results(self):
         self.asset_ids = ["asset", "second"]
         verified, completion = self.world_completion()

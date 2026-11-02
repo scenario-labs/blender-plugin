@@ -9,11 +9,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import bpy
+from bpy.app.handlers import persistent
 
-from ..core.api import trained_offers
+from ..core.api import model_filter, trained_offers
 from ..core.api.catalog import (
     DEFAULT_MODELS,
     LANE_KIND,
+    MOTION_MODELS,
     MULTIVIEW_HINTS,
     RENDER_LANES,
     USABLE_TRAINED_KINDS,
@@ -24,9 +26,18 @@ from ..core.api.catalog import (
     trained_kind,
 )
 from ..core.api.errors import ScenarioError
-from ..core.jobs.coordinator import DuplicateRequestError, RouteQuoteError
+from ..core.api.sdk_adapter import AdapterError, AdapterUnavailable, EstimateStartedJob
+from ..core.jobs import quote_refresh
+from ..core.jobs.coordinator import (
+    CaptureConflictError,
+    DuplicateRequestError,
+    QuoteError,
+    RouteQuoteError,
+)
 from ..core.scene import capture_plan, panorama_contract
 from ..core.schema.params import build_body, missing_required_files, parse_schema, validate
+from ..core.ui.composer_layout import PRICE_LOADING
+from ..core.ui.costs import CONFIRM_ABOVE_DEFAULT, confirms_spend
 from . import model_jobs, params_ui, props, runtime, selection, trained_models
 from .job_session import OriginUnavailable
 
@@ -35,6 +46,9 @@ log = logging.getLogger("scenario.generation")
 _schemas = {}
 MODEL_OFFLINE = "Online access is disabled; the model description cannot load"
 _MODEL_FAILED = "Could not load this model: "
+SETTINGS_NOT_LOADED = "This form's settings are not loaded; choose its model again"
+# Forms whose model length can follow the scene's: music, and text-to-motion in Edit 3D.
+SCENE_LENGTH_LANES = ("audio", "edit3d")
 
 
 class ModelLoading(ScenarioError):
@@ -55,7 +69,10 @@ def reload_lane(record):
 
     A catalog lane without a native form never falls back to its asset kind's
     form, which would drop that lane's own rules; only generic jobs use the kind.
+    A job listed from the store has no request to reload: it keeps only its hash.
     """
+    if record.meta.get("listed"):
+        return None
     if record.lane in props.GENERATION_LANES:
         return record.lane
     if record.lane in LANE_KIND:
@@ -115,6 +132,9 @@ def clear_catalog():
     runtime.state.estimates.clear()
     runtime.state.estimate_origins.clear()
     runtime.state.repeats.clear()  # a repeat belongs to the retired scope's price
+    runtime.state.reprices.clear()
+    runtime.state.capture_conflicts.clear()
+    runtime.state.fresh_uploads.clear()
     runtime.state.records.clear()
     runtime.state.lane_models.clear()
     runtime.state.enum_cache.clear()
@@ -187,6 +207,7 @@ def set_catalog(records, detailed, *, warmup=False):
             on_model_changed(
                 bpy.context, lane_state, mark_dirty=_trained_inputs_changed(lane_state, changed)
             )
+    _note_shown(bpy.context.scene)  # the pump need not synchronize it again
     if bpy.context.scene is not None:
         refresh_3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
         refresh_edit3d_models(bpy.context, mark_dirty=False, prefetch=not warmup)
@@ -365,14 +386,15 @@ def three_d_models(mode, records):
     """Bucket 3D models by how they are driven: TEXT (txt23d), IMAGE (one picture), MULTI (several views).
 
     With a schema, a file_array image input that accepts more than one file means multi-view. Without a schema
-    (list entries), the model id and name decide ("multi", "multiview"). Models taking 1 to N images appear in both."""
+    (list entries), the model id and name decide ("multi", "multiview"). Models taking 1 to N images appear in both.
+    A model that animates a character mesh it is given stays in Edit 3D > Animate, out of TEXT."""
     out = []
     for record in records:
         caps = set(record.capabilities)
         if record.deprecated_successor:
             continue
         if mode == "TEXT":
-            if "txt23d" in caps:
+            if "txt23d" in caps and not model_filter.animates_given_character(record):
                 out.append(record)
             continue
         if "img23d" not in caps:
@@ -477,6 +499,100 @@ def select_panorama_mode(context, mode):
         scenario.panorama_mode = mode  # its update refreshes the list
     else:
         refresh_panorama_models(context)
+
+
+# Lanes whose shared model list follows one scene's mode tab, with their refresh.
+_MODE_LISTS = {
+    "3d": refresh_3d_models,
+    "edit3d": refresh_edit3d_models,
+    "panorama": refresh_panorama_models,
+}
+
+
+_shown_scene = None  # session_uid of the selected scene whose forms were last synchronized
+
+
+def _sync_forms(context, scenes, *, mark_dirty):
+    """Give these scenes' forms their saved models and rows; the mode lists follow the selected one.
+
+    sync_params keeps the saved values the schema still has. The shared 3D,
+    Edit and Environment lists are rebuilt for the selected scene, with its
+    forms of those lanes; another scene's are synchronized once it is selected.
+    """
+    for scene in scenes:
+        for lane in props.GENERATION_LANES:
+            lane_state = scene.scenario.lane_state(lane)
+            if lane in _MODE_LISTS:
+                if mark_dirty:
+                    props.mark_estimate_dirty(lane_state)
+                continue
+            restore_model_key(lane_state)
+            on_model_changed(context, lane_state, mark_dirty=mark_dirty)
+    _note_shown(context.scene)
+    if context.scene is not None:
+        for refresh in _MODE_LISTS.values():
+            refresh(context, mark_dirty=mark_dirty)
+
+
+def _note_shown(scene):
+    global _shown_scene
+    _shown_scene = None if scene is None else scene.session_uid
+
+
+def reload_forms(context=None):
+    """Rebuild the forms of a file just read from their saved models (main thread).
+
+    A file brings its forms' saved models and values, but not the rows of a
+    model this session never synchronized, and the shared mode lists still
+    follow the previous file's modes. A price never survives a file load, so
+    every form is priced again when shown. Before the catalog loads,
+    set_catalog does this on delivery.
+    """
+    if runtime.state.catalog_loaded:
+        context = context or bpy.context
+        _sync_forms(context, bpy.data.scenes, mark_dirty=True)
+
+
+def sync_shown_forms(context=None):
+    """Synchronize the selected scene's forms when it changes (GUI pump, never in draw).
+
+    Scene > New and selecting another scene show forms this session may never
+    have synchronized, and mode lists built for another scene's modes. Such a
+    change synchronizes the scene's forms and lists once, keeping the prices
+    they have; a form without an explicit model shows its lane's first, curated
+    one, as in a new file. Other ticks check only the visible form, which an
+    undo or a script can leave without rows. Returns whether a form was
+    synchronized.
+    """
+    context = context or bpy.context
+    scene = context.scene
+    if not runtime.state.catalog_loaded or scene is None or scene.library is not None:
+        return False
+    if scene.session_uid != _shown_scene:
+        _sync_forms(context, (scene,), mark_dirty=False)
+        return True
+    lane = props.active_lane(scene)
+    if lane not in props.GENERATION_LANES:
+        return False
+    lane_state = scene.scenario.lane_state(lane)
+    schema = schema_for(lane_state.model_id)
+    if schema is None:
+        return False
+    if not params_ui.unsynced(lane_state, schema, lane_state.model_id):
+        if lane in SCENE_LENGTH_LANES and follow_scene_length(lane_state, schema):
+            props.mark_estimate_dirty(lane_state)  # the scene moved a music or motion length
+            return True
+        return False
+    on_model_changed(context, lane_state, mark_dirty=False)
+    return True
+
+
+@persistent
+def _load_post(*_):
+    try:
+        reload_forms()
+    except Exception:  # never let one form stop the file from opening cleanly
+        log.exception("Could not rebuild the forms of the opened file")
 
 
 def request_models(model_ids, *, mark_dirty=True):
@@ -609,6 +725,8 @@ def on_model_changed(context, lane_state, mark_dirty=True):
     seeded = params_ui.sync_params(lane_state, schema, model_id)
     if props.lane_of(lane_state) == "panorama":
         seeded |= _apply_contract_settings(lane_state, schema, model_id, previous)
+    elif props.lane_of(lane_state) in SCENE_LENGTH_LANES:
+        seeded |= follow_scene_length(lane_state, schema, seeded)
     trained_models.sync_bounds(lane_state)  # strength fields follow the base's declared range
     # Seeded values skip their RNA callbacks: re-arm this form's price and let a
     # seeded model duration drive the camera path, as an edit would.
@@ -693,18 +811,28 @@ def build_request(scene, lane, for_estimate=False):
             )
     references = lane_state.references
     if lane in RENDER_LANES:
-        from .render_references import active_references
+        from .render_references import active_references, uploading_note
 
+        if note := uploading_note(lane_state):
+            # A capture or first frame on its way: say so instead of a saved-upload instruction.
+            return Request(lane, lane_kind(lane), model_id, {}, errors=[note])
         references = active_references(lane_state)
     if error := scope_error(lane_state, references=references):
         return Request(lane, lane_kind(lane), model_id, {}, errors=[error])
     schema = schema_for(model_id)
     if schema is None:
         return Request(lane, lane_kind(lane), model_id, {}, errors=["Model not loaded yet"])
+    if params_ui.unsynced(lane_state, schema, model_id):
+        # Never price or send a form whose settings would fall back to server defaults.
+        return Request(lane, lane_kind(lane), model_id, {}, errors=[SETTINGS_NOT_LOADED])
     if lane == "video" and schema.by_name("duration") is not None and lane_state.match_timeline:
         apply_match_timeline(
             scene, lane_state, schema
         )  # base Video: the model duration follows the timeline
+    if lane in SCENE_LENGTH_LANES:
+        follow_scene_length(
+            lane_state, schema
+        )  # a music or motion length still at its start follows the scene
     values, enabled = params_ui.collect_values(lane_state, schema)
     record = runtime.state.records.get(model_id)
     refs = {
@@ -717,7 +845,11 @@ def build_request(scene, lane, for_estimate=False):
     # elsewhere (a text-to-motion model's character mesh) it is optional but still used when something is selected.
     # Skip it only when the user attached an explicit file/asset for that input.
     mesh_name = mesh_param(record) if record is not None else None
-    if lane == "edit3d" and mesh_name is None:
+    # Text-to-motion in Edit 3D sends no mesh: its clip is retargeted onto the selected rig.
+    motion = lane == "edit3d" and model_id in MOTION_MODELS
+    if motion:
+        mesh_name = None
+    elif lane == "edit3d" and mesh_name is None:
         return Request(
             lane, lane_kind(lane), model_id, {}, errors=["This model takes no mesh input"]
         )
@@ -727,7 +859,8 @@ def build_request(scene, lane, for_estimate=False):
         if lane == "edit3d" or mesh_export.source_objects(bpy.context):
             captures.append({"param": mesh_name, "source": "MESH", "camera": None, "first": True})
     for spec in schema.specs:
-        if not spec.is_file:
+        if not spec.is_file or (motion and (spec.kind or "").lower() == "3d"):
+            # A motion's character input is hidden and never sent, even from an older form.
             continue
         if spec.ptype == "file_array":
             array_params.add(spec.name)
@@ -792,8 +925,15 @@ def build_request(scene, lane, for_estimate=False):
     if lane == "edit3d":
         from . import mesh_export
 
-        if not mesh_export.source_objects(bpy.context):
+        objects = mesh_export.source_objects(bpy.context)
+        if not objects:
             errors.append("Select the mesh to edit")
+        elif motion and not any(
+            modifier.type == "ARMATURE" and modifier.object is not None
+            for obj in objects
+            for modifier in obj.modifiers
+        ):
+            errors.append("Rig the selected mesh first: the motion plays on its armature")
     if for_estimate:
         # The dry run rejects unknown asset ids (404), so files still to be uploaded are left out of the quote.
         if missing_required_files(schema.specs, check):
@@ -963,6 +1103,82 @@ def timeline_sync_info(scene, lane_state, schema):
     return seconds, value, note
 
 
+def scene_length(scene):
+    """The seconds of the scene's frame range, or its preview range when that is on."""
+    fps = scene.render.fps / (scene.render.fps_base or 1.0)
+    return capture_plan.frame_span(
+        scene.frame_start,
+        scene.frame_end,
+        fps,
+        use_preview=scene.use_preview_range,
+        preview_start=scene.frame_preview_start,
+        preview_end=scene.frame_preview_end,
+    )[2]
+
+
+def follow_scene_length(lane_state, schema, created=()):
+    """Start a music or text-to-motion model's length at the scene's, and keep it there until edited.
+
+    A length the form just created (`created` names it) takes the scene's. One that still
+    follows the scene (`follows_scene`, which any edit clears) is moved when the scene's
+    range changed. The value is clamped to the input's range and stored without its RNA
+    update, which would count as the user's edit; the caller re-arms the price for the
+    returned names. A text-to-motion model's frame rate follows the scene's the same way
+    when the model offers it, and its length waits while the scene still has Blender's
+    default frame range, which Apply animation replaces with the clip's. Runs on the main
+    thread, never while drawing.
+    """
+    from . import animation_application
+
+    record = runtime.state.records.get(lane_state.model_id)
+    if record is None:
+        return set()
+    scene = lane_state.id_data
+    seconds = scene_length(scene)
+    music = model_filter.music_length_spec(record, schema)
+    length = music or model_filter.motion_length_spec(record, schema)
+    if length is not None and (music or not animation_application.default_range(scene)):
+        value, _ = capture_plan.clamp_duration(
+            seconds, length.min, length.max, integer=length.is_integer
+        )
+    else:
+        value = None
+    inputs = [(length, value)] if length is not None else []
+    rate = model_filter.motion_rate_spec(record, schema)
+    if rate is not None:
+        fps = scene.render.fps / (scene.render.fps_base or 1.0)
+        inputs.append((rate, model_filter.rate_choice(rate, fps)))
+    return {spec.name for spec, value in inputs if _follow_scene(lane_state, spec, value, created)}
+
+
+def _follow_scene(lane_state, spec, value, created):
+    """Set one input that follows the scene to `value`, or leave it at None; return if it changed."""
+    index = lane_state.params.find(spec.name)
+    if index < 0:
+        return False
+    item = lane_state.params[index]
+    if spec.name not in created and not item.follows_scene:
+        return False
+    changed = False
+    if value is not None:
+        if spec.allowed_values:
+            choices = [str(option) for option in spec.allowed_values if str(option) != ""]
+            if item.enum_value != str(value):
+                item["enum_value"] = choices.index(str(value))
+                changed = True
+        else:
+            attr = "int_value" if spec.is_integer else "float_value"
+            if getattr(item, attr) != value:
+                item[attr] = value
+                changed = True
+        if not item.enabled:
+            item["enabled"] = True  # the model would otherwise choose its own value
+            changed = True
+    if not item.follows_scene:
+        item["follows_scene"] = True
+    return changed
+
+
 def perform_captures(context, request, runner=None):
     """Run the pending viewport/camera captures on the main thread and turn them into files."""
     from . import capture
@@ -1070,16 +1286,20 @@ def perform_captures(context, request, runner=None):
     return request
 
 
+def model_name(lane_state):
+    """The form's model as job views name it, with any LoRAs or composition after the base."""
+    record = runtime.state.records.get(lane_state.model_id)
+    name = record.name if record else lane_state.model_id
+    if len(lane_state.trained):
+        # "FLUX.1 Dev · LoRA (+1)"
+        name = trained_models.selection_label(lane_state, name)
+    return name
+
+
 def request_meta(context, lane, request=None):
     lane_state = context.scene.scenario.lane_state(lane)
-    record = runtime.state.records.get(lane_state.model_id)
-    meta = {
-        "prompt": lane_state.prompt,
-        "model_name": record.name if record else lane_state.model_id,
-    }
+    meta = {"prompt": lane_state.prompt, "model_name": model_name(lane_state)}
     if len(lane_state.trained):
-        # Job views name the LoRAs or composition with the base ("FLUX.1 Dev · LoRA (+1)").
-        meta["model_name"] = trained_models.selection_label(lane_state, meta["model_name"])
         meta["trained_models"] = trained_models.selection_meta(lane_state)
     if lane == "material":
         meta["target_objects"] = [
@@ -1183,13 +1403,17 @@ def process_model_jobs():
             lane_state.estimate_cu = float(estimate.cost)
             lane_state.estimate_state = "READY"
             lane_state.estimate_error = ""
+            runtime.state.fresh_uploads.pop((ticket.scene.session_uid, ticket.lane), None)
+            # The price an Enter or a Generate click waited for shows now: drop that wait line.
+            if runtime.state.last_message == PRICE_LOADING:
+                runtime.state.last_message = ""
         except Exception as error:
             jobs.quotes.pop(ticket.identifier, None)
             # Source/transport details can contain private inputs. Keep failures
             # actionable without copying arbitrary exception text into the UI.
             # A refused LoRA or composition carries fixed text naming only
-            # input labels and positions.
-            if isinstance(error, (RouteQuoteError, DuplicateRequestError)):
+            # input labels and positions; a capture conflict's text is fixed.
+            if isinstance(error, (RouteQuoteError, DuplicateRequestError, CaptureConflictError)):
                 message = str(error)
             elif isinstance(error, model_jobs.AutomaticEstimatesStopped):
                 message = error.reason
@@ -1203,9 +1427,23 @@ def process_model_jobs():
                     # Another scene was selected before this price arrived. The
                     # pump prices the form again once its own scene is selected.
                     props.mark_estimate_dirty(lane_state)
+                elif not isinstance(
+                    error, model_jobs.AutomaticEstimatesStopped
+                ) and not jobs.quote_current(ticket):
+                    # The scene changed while this price was requested: the worker
+                    # or the delivery refused it, so ask again once it settles.
+                    reprice(ticket.scene, ticket.lane, lane_state)
+                elif retry_fresh_upload(ticket.scene, ticket.lane, lane_state, error):
+                    pass  # A just-uploaded asset may still be processing: asked again later.
                 else:
                     lane_state.estimate_state = "ERROR"
                     lane_state.estimate_error = message
+                    if isinstance(error, CaptureConflictError):
+                        # The form offers to price this asset without its captured source.
+                        runtime.state.capture_conflicts[(ticket.scene.session_uid, ticket.lane)] = (
+                            key,
+                            error.asset_id,
+                        )
             except ReferenceError:
                 pass  # A removed scene cannot receive its old quote.
 
@@ -1283,11 +1521,24 @@ def rearm_repeat(scene, lane, lane_state, now):
 
 
 def prune_repeats():
-    """Forget repeats of scenes that no longer exist (pump only)."""
-    if runtime.state.repeats:
-        live = {scene.session_uid for scene in bpy.data.scenes}
-        for key in [key for key in runtime.state.repeats if key[0] not in live]:
-            del runtime.state.repeats[key]
+    """Forget repeats, repricings, capture conflicts and fresh uploads of removed scenes.
+
+    Pump only; fresh uploads are also forgotten once their retry window has passed.
+    """
+    now = props.clock()
+    fresh = runtime.state.fresh_uploads
+    for key in [key for key, entry in fresh.items() if now - entry.attached_at > UPLOAD_WINDOW]:
+        del fresh[key]
+    for entries in (
+        runtime.state.repeats,
+        runtime.state.reprices,
+        runtime.state.capture_conflicts,
+        fresh,
+    ):
+        if entries:
+            live = {scene.session_uid for scene in bpy.data.scenes}
+            for key in [key for key in entries if key[0] not in live]:
+                del entries[key]
 
 
 def note_repeat_quote(scene, lane, lane_state):
@@ -1297,7 +1548,207 @@ def note_repeat_quote(scene, lane, lane_state):
         entry.key = lane_state.estimate_key
 
 
-def submit_generation(context, lane):
+@dataclass(frozen=True)
+class SpendReview:
+    """The exact quote a Generate confirmation names; only that quote may then be submitted."""
+
+    scene: int  # the scene's session_uid
+    lane: str
+    ticket: object
+    cost: str
+    model: str
+
+
+# Refused when the confirmed quote is no longer the form's: the dialog named another price.
+PRICE_CHANGED = "The price changed; check it and generate again"
+
+
+def confirm_threshold():
+    """The "Confirm generations above" preference in CU (0 confirms every Generate)."""
+    return getattr(runtime.prefs(), "confirm_above_cu", CONFIRM_ABOVE_DEFAULT)
+
+
+def spend_review(scene, lane, threshold):
+    """The confirmation a Generate needs before spending, or None to submit at once.
+
+    Only a ready quote is reviewed; without one, submission refuses as it always has.
+    """
+    lane_state = scene.scenario.lane_state(lane)
+    ticket = runtime.state.estimates.get(lane_state.estimate_key)
+    quote = getattr(ticket, "quote", None)
+    if lane_state.estimate_state != "READY" or quote is None:
+        return None
+    cost = str(quote.estimate.cost)
+    if not confirms_spend(cost, threshold):
+        return None
+    return SpendReview(scene.session_uid, lane, ticket, cost, model_name(lane_state))
+
+
+@dataclass
+class Reprice:
+    """A form pricing itself again after its price was revoked; main thread, memory only."""
+
+    settle: quote_refresh.Settle
+    note: str = quote_refresh.SCENE_CHANGED
+
+
+class PriceRefreshing(ScenarioError):
+    """Generate sent nothing and the form is being priced again; not an error to keep."""
+
+    def __init__(self, reason):
+        super().__init__(0, reason)
+
+
+def _revision(scene):
+    """The scene's current origin, or None without a job session; reads no inputs."""
+    jobs = runtime.state.model_jobs
+    try:
+        return jobs.session.capture(scene) if jobs is not None else None
+    except Exception:
+        return None
+
+
+def reprice(scene, lane, lane_state, note=quote_refresh.SCENE_CHANGED, delay=quote_refresh.SETTLE):
+    """Price this form again once its scene has kept one revision for `delay`; never spends."""
+    props.mark_estimate_dirty(lane_state)
+    settle = quote_refresh.Settle(_revision(scene), lane_state.estimate_dirty_at, delay)
+    runtime.state.reprices[(scene.session_uid, lane)] = Reprice(settle, note)
+
+
+# Scenario can refuse the first price of an asset it has only just imported, then
+# price it a few seconds later. A form whose upload was just attached asks again on
+# its own after these delays, within UPLOAD_WINDOW seconds of the attachment.
+UPLOAD_RETRY_DELAYS = (5.0, 10.0, 20.0, 40.0)
+UPLOAD_WINDOW = 120.0
+UPLOAD_NOT_READY = "Upload not ready yet; retrying"  # one sidebar line
+
+
+@dataclass
+class FreshUpload:
+    """A form whose uploaded asset was just attached; main thread, memory only."""
+
+    attached_at: float
+    tries: int = 0
+
+
+def note_fresh_upload(scene, lane):
+    """Remember that an upload was just attached to this form (main thread)."""
+    runtime.state.fresh_uploads[(scene.session_uid, lane)] = FreshUpload(props.clock())
+
+
+def retry_fresh_upload(scene, lane, lane_state, error):
+    """Price a fresh upload's form again after Scenario refused or lost its price.
+
+    Returns True when a retry was scheduled. Only service replies and lost
+    responses qualify, a bounded number of times; a dry run never spends.
+    """
+    key = (scene.session_uid, lane)
+    entry = runtime.state.fresh_uploads.get(key)
+    if (
+        entry is None
+        or not isinstance(error, AdapterError)
+        or isinstance(error, (EstimateStartedJob, AdapterUnavailable))
+    ):
+        return False
+    if entry.tries >= len(UPLOAD_RETRY_DELAYS) or props.clock() - entry.attached_at > UPLOAD_WINDOW:
+        del runtime.state.fresh_uploads[key]
+        return False
+    delay = UPLOAD_RETRY_DELAYS[entry.tries]
+    entry.tries += 1
+    reprice(scene, lane, lane_state, UPLOAD_NOT_READY, delay)
+    return True
+
+
+def repricing_note(lane_state):
+    """Why a pending form is being priced again, or ""; read-only for drawing."""
+    try:
+        key = (lane_state.id_data.session_uid, props.lane_of(lane_state))
+    except (AttributeError, ReferenceError):
+        return ""
+    entry = runtime.state.reprices.get(key)
+    return entry.note if entry is not None and lane_state.estimate_state == "PENDING" else ""
+
+
+def reprice_revoked(scene, lane, lane_state):
+    """Price a form again when the scene changed after its price (pump only).
+
+    Returns True when the form changed. A price the scene no longer backs would
+    only be refused by Generate, so its handle is retired.
+    """
+    key = (scene.session_uid, lane)
+    if lane_state.estimate_state != "PENDING":
+        runtime.state.reprices.pop(key, None)
+    if lane_state.estimate_state != "READY":
+        return False
+    jobs = runtime.state.model_jobs
+    ticket = runtime.state.estimates.get(lane_state.estimate_key)
+    if (
+        jobs is None
+        or not isinstance(ticket, model_jobs.ModelQuote)
+        or ticket.origin is None  # nothing to compare: never a repricing loop
+        or jobs.quote_current(ticket)
+    ):
+        return False
+    del runtime.state.estimates[lane_state.estimate_key]
+    if jobs.quotes.get(ticket.identifier) is ticket:
+        del jobs.quotes[ticket.identifier]
+    reprice(scene, lane, lane_state)
+    return True
+
+
+def estimate_again_offered(lane_state):
+    """Whether a failed price can be requested again from its form; read-only for drawing."""
+    return lane_state.estimate_state == "ERROR" and not model_jobs.automatic_estimates_stopped()
+
+
+def capture_conflict(lane_state):
+    """The asset whose captured meshes conflict in this form's failed price, or "".
+
+    Read-only for drawing; only the form's current failed price counts.
+    """
+    try:
+        key = (lane_state.id_data.session_uid, props.lane_of(lane_state))
+    except (AttributeError, ReferenceError):
+        return ""
+    entry = runtime.state.capture_conflicts.get(key)
+    if entry is None or lane_state.estimate_state != "ERROR":
+        return ""
+    estimate_key, asset_id = entry
+    return asset_id if estimate_key == lane_state.estimate_key else ""
+
+
+def price_without_capture(scene, lane):
+    """Price the form's conflicting captured asset with no captured source this session.
+
+    Saves and sends nothing, then prices the form again. A refusal raises
+    ScenarioError with fixed text.
+    """
+    lane_state = scene.scenario.lane_state(lane)
+    asset_id = capture_conflict(lane_state)
+    jobs = runtime.state.model_jobs
+    if not asset_id or jobs is None:
+        raise ScenarioError(0, "This price has no conflicting captured mesh; estimate again")
+    runtime.state.capture_conflicts.pop((scene.session_uid, lane), None)
+    try:
+        jobs.session.price_without_capture(asset_id)
+    except QuoteError as error:
+        props.mark_estimate_dirty(lane_state)  # its text is fixed and asks for a new price
+        raise ScenarioError(0, str(error)) from None
+    except Exception:
+        raise ScenarioError(
+            0, "Could not read saved uploads; inspect them and estimate again"
+        ) from None
+    props.mark_estimate_dirty(lane_state)
+
+
+def scene_settled(scene, lane, now):
+    """Whether a repricing form's scene kept one revision long enough (pump only)."""
+    entry = runtime.state.reprices.get((scene.session_uid, lane))
+    return entry is None or entry.settle.settled(_revision(scene), now)
+
+
+def submit_generation(context, lane, review=None):
+    """Spend the form's ready quote once; after a confirmation, only the quote it named."""
     runtime.sync_catalog_context()
     scene = context.scene
     lane_state = scene.scenario.lane_state(lane)
@@ -1311,8 +1762,14 @@ def submit_generation(context, lane):
         raise ScenarioError(0, "Wait for a fresh price before generating")
     if repeat_holding(lane_state):
         raise ScenarioError(0, "Generate is available again in a moment")
+    if review is not None and (
+        review.ticket is not ticket or review.lane != lane or review.scene != scene.session_uid
+    ):
+        # Refused before the quote is consumed, so the form keeps its new price to review.
+        raise ScenarioError(0, PRICE_CHANGED)
     # A rejected attempt can consume the handle before storage reports an
-    # error. Never keep that price actionable or automatically reprice it.
+    # error. Never keep that price actionable or automatically reprice it,
+    # unless the refusal is NothingSent: then nothing is saved for review.
     lane_state.estimate_state = "IDLE"
     runtime.state.estimates.pop(lane_state.estimate_key, None)
     try:
@@ -1327,6 +1784,21 @@ def submit_generation(context, lane):
             lane=lane,
             meta=request_meta(context, lane, request),
         )
+    except model_jobs.NothingSent as error:
+        # Nothing was sent and nothing needs review: price the form again.
+        jobs.quotes.pop(ticket.identifier, None)
+        reprice(scene, lane, lane_state, error.note)
+        reason = (
+            "The scene changed after this price"
+            if isinstance(error, model_jobs.QuoteRevoked)
+            else error.reason
+        )
+        raise PriceRefreshing(f"{reason}; Generate again once the new price shows") from None
+    except DuplicateRequestError as error:
+        # Refused before anything was saved; its fixed text names the request to check.
+        lane_state.estimate_state = "ERROR"
+        lane_state.estimate_error = str(error)
+        raise ScenarioError(0, str(error)) from None
     except ScenarioError:
         lane_state.estimate_state = "ERROR"
         lane_state.estimate_error = "Inspect saved jobs and request a fresh price"
@@ -1359,3 +1831,13 @@ def _save_render_result(scene):
         log.warning("no render result to save: %s", err)
         return None
     return str(path)
+
+
+def register():
+    if _load_post not in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.append(_load_post)
+
+
+def unregister():
+    if _load_post in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_load_post)

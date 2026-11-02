@@ -110,6 +110,77 @@ def test_markdown_and_raw_images_require_alt_and_one_explicit_file(inputs, image
     assert not inputs["output"].exists()
 
 
+VIDEO = (
+    '<video controls poster="images/panel.png" aria-label="Launch film">'
+    '<source src="media/film.mp4" type="video/mp4"></video>\n\n'
+    "[The guide](media/guide.pdf)"
+)
+
+
+@pytest.fixture
+def media(inputs):
+    folder = inputs["source"].parent / "media"
+    folder.mkdir()
+    (folder / "film.mp4").write_bytes(b"film bytes")
+    (folder / "guide.pdf").write_bytes(b"%PDF guide")
+    inputs["source"].write_text(VIDEO)
+    return folder
+
+
+def test_website_copies_video_poster_and_pdf_beside_the_page(inputs, media):
+    output = build_handbook(**inputs)
+    text = output.read_text()
+    assert 'poster="images/panel.png"' in text
+    assert '<source src="media/film.mp4" type="video/mp4">' in text
+    assert 'href="media/guide.pdf"' in text
+    assert (output.parent / "media/film.mp4").read_bytes() == b"film bytes"
+    assert (output.parent / "media/guide.pdf").read_bytes() == b"%PDF guide"
+    assert (output.parent / "images/panel.png").read_bytes() == PNG
+    inputs["source"].write_text("# Guide\n\nNo media")
+    build_handbook(**inputs)
+    assert not (output.parent / "media").exists() or not any((output.parent / "media").iterdir())
+
+
+def test_standalone_links_the_website_copy_of_video_and_pdf(inputs, media):
+    output = build_handbook(**inputs, inline_images=True)
+    text = output.read_text()
+    assert '<source src="https://blender.scenario.com/media/film.mp4" type="video/mp4">' in text
+    assert 'href="https://blender.scenario.com/media/guide.pdf"' in text
+    assert f"data:image/png;base64,{base64.b64encode(PNG).decode()}" in text
+    assert not (output.parent / "media").exists()
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<video poster="images/panel.png" aria-label="Film"></video>',
+        '<video controls aria-label="  "></video>',
+        '<video controls aria-label="Film" autoplay></video>',
+        '<video controls aria-label="Film" src="media/film.mp4"></video>',
+        '<video controls aria-label="Film"><source src="media/missing.mp4"></video>',
+        '<video controls aria-label="Film"><source src="https://example.invalid/f.mp4"></video>',
+        '<video controls aria-label="Film"><source src="media/film.mp4#t=5"></video>',
+        '<video controls aria-label="Film" poster="https://example.invalid/p.png"></video>',
+        "[The guide](media/missing.pdf)",
+    ],
+)
+def test_video_needs_label_controls_and_a_local_source(inputs, media, markup):
+    inputs["source"].write_text(markup)
+    with pytest.raises(HandbookError):
+        build_handbook(**inputs)
+    assert not inputs["output"].exists()
+
+
+def test_empty_or_unsupported_media_is_rejected(inputs, media):
+    (media / "guide.pdf").write_bytes(b"")
+    with pytest.raises(HandbookError, match="Empty media file"):
+        build_handbook(**inputs)
+    inputs["source"].write_text('<video controls aria-label="Film"><source src="media/a.mov">')
+    (media / "a.mov").write_bytes(b"mov")
+    with pytest.raises(HandbookError, match="Unsupported media type"):
+        build_handbook(**inputs)
+
+
 def test_empty_image_is_rejected(inputs):
     (inputs["source"].parent / "images/panel.png").write_bytes(b"")
     with pytest.raises(HandbookError, match="Empty image"):
@@ -291,6 +362,14 @@ def test_relative_directory_links_use_github_tree_urls(inputs):
     text = build_handbook(**inputs).read_text()
     assert 'href="https://github.com/scenario-labs/blender-plugin/tree/main/docs/images"' in text
     assert 'href="https://github.com/scenario-labs/blender-plugin/tree/main"' in text
+
+
+def test_relative_links_can_point_to_a_release_tag(inputs):
+    inputs["source"].write_text("[Images](images)\n\n[Guide](guide.md)")
+    text = build_handbook(**inputs, ref="blender-plugin-v1.2.3").read_text()
+    base = "https://github.com/scenario-labs/blender-plugin"
+    assert f'href="{base}/tree/blender-plugin-v1.2.3/docs/images"' in text
+    assert f'href="{base}/blob/blender-plugin-v1.2.3/docs/guide.md"' in text
 
 
 @pytest.mark.parametrize("inline", [False, True])

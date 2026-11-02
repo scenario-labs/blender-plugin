@@ -4,6 +4,9 @@
 
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
+# The "Confirm generations above" preference's default, in CU.
+CONFIRM_ABOVE_DEFAULT = 500
+
 
 def format_cu(value):
     """Group CU values, using three decimals or three significant compact digits.
@@ -30,6 +33,25 @@ def format_cu(value):
         if "." in text:
             text = text.rstrip("0").rstrip(".")
         return text + suffix
+
+
+def confirms_spend(cost, threshold):
+    """Whether a Generate at this exact price asks first: above `threshold` CU, or always at 0."""
+    limit = Decimal(str(threshold))
+    return limit <= 0 or Decimal(str(cost)) > limit
+
+
+def spend_confirmation(model, cost):
+    """The native confirmation's title and message: the model and the exact server price."""
+    return f"Generate with {model}?", f"Exact price: {cost} CU"
+
+
+def session_spend_label(total, count):
+    """The Jobs panel's running total of accepted jobs' quotes, or "" before the first one."""
+    if not count:
+        return ""
+    jobs = "1 job" if count == 1 else f"{count:,} jobs"
+    return f"This session: {format_cu(total)} CU across {jobs}"
 
 
 def workflow_loop_warning(loop_steps):

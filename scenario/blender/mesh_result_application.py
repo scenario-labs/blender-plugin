@@ -16,8 +16,15 @@ import bpy
 from mathutils import Matrix
 
 from ..core.scene import mesh_correspondence
+from ..core.scene.kept_texture import KeptRegion
 from ..core.scene.model_formats import ModelFormat, UnitKind
-from . import animation_application, mesh_application, model_application, rig_application
+from . import (
+    animation_application,
+    kept_texture,
+    mesh_application,
+    model_application,
+    rig_application,
+)
 from .model_application import _undo_enabled, _undo_push
 
 _log = logging.getLogger("scenario.jobs")
@@ -64,6 +71,13 @@ class MeshEditApplication:
     joined_meshes: int | None = None
     # A bounds fit's (worst distance, fraction beyond tolerance) of the source size.
     fit_residual: tuple = ()
+    # ANIMATE: the returned skeleton's family when its clips were retargeted, and
+    # the scene frame range the first clip set in place of Blender's default.
+    retargeted_from: str | None = None
+    frame_range: tuple | None = None
+    # RETEXTURE: where the source's own texture was kept (mode, source, faces, maps
+    # and skipped roles with their reason); None when no region was requested.
+    kept_texture: dict | None = None
 
 
 POLICIES = frozenset({"REMESH", "UV", "RETEXTURE", "PARTS", "RIG", "ANIMATE"})
@@ -113,11 +127,12 @@ def _validate_sources(sources, policy, result_to_source):
         )
 
 
-def validate_request(target, *, policy, result_to_source, keep_original):
+def validate_request(target, *, policy, result_to_source, keep_original, keep_texture=None):
     """Validate the captured source(s) and explicit policy without decoding files.
 
     A tuple of targets is several captured sources edited together: UV,
     RETEXTURE or RIG, with result scene coordinates (identity) or its FIT.
+    `keep_texture` is RETEXTURE's reviewed `KeptRegion` of those sources, or None.
     """
     sources = targets(target)
     for item in sources:
@@ -126,8 +141,21 @@ def validate_request(target, *, policy, result_to_source, keep_original):
         raise MeshResultApplicationError(
             "Choose REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE and an explicit Keep original value"
         )
+    if keep_texture is not None and (
+        policy != "RETEXTURE"
+        or not isinstance(keep_texture, KeptRegion)
+        or len(keep_texture.weights) != sum(len(item.mesh.vertices) for item in sources)
+    ):
+        raise MeshResultApplicationError(
+            "Keep texture applies only to Replace textures, reviewed on these sources"
+        )
     if isinstance(target, tuple):
         _validate_sources(sources, policy, result_to_source)
+    if any(item.dense for item in sources) and policy != "ANIMATE":
+        raise MeshResultApplicationError(
+            "Mesh exceeds the synchronous application component limit; only ANIMATE, which "
+            "applies returned clips to its rig, takes it"
+        )
     if any(item.skin is not None for item in sources) and policy not in _RIGGED:
         # Static policies would silently drop the source's skin and rig binding.
         raise MeshResultApplicationError(
@@ -151,7 +179,9 @@ def validate_request(target, *, policy, result_to_source, keep_original):
     return mesh_application._matrix(result_to_source)
 
 
-def prepare_saved_mesh(target, unit, files, *, policy, result_to_source, keep_original):
+def prepare_saved_mesh(
+    target, unit, files, *, policy, result_to_source, keep_original, keep_texture=None
+):
     """Check the request, then rehash the unit into a private snapshot before any claim.
 
     `files` maps the verified job's asset IDs to (StoredResult, path). Static
@@ -160,7 +190,11 @@ def prepare_saved_mesh(target, unit, files, *, policy, result_to_source, keep_or
     the returned snapshot's cleanup.
     """
     validate_request(
-        target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
+        target,
+        policy=policy,
+        result_to_source=result_to_source,
+        keep_original=keep_original,
+        keep_texture=keep_texture,
     )
     if not applicable(unit):
         raise model_application.ModelPreflightError(
@@ -310,13 +344,14 @@ def _source_parts(target, meshes, surface, owner, textures=None):
 def _copied_parts(target, meshes, mapping):
     """Copy result part meshes into source-local coordinates."""
     for obj in meshes:
-        # Copies keep their own data, so custom mesh properties stay unsupported.
         mesh_application._validate_object(obj.users_scene[0], obj)
         mesh_application._matrix(mapping @ obj.matrix_world)
     parts = []
     for index, obj in enumerate(meshes, 1):
         mesh = obj.data.copy()
         mesh.use_fake_user = False
+        # Like parts split from the source's faces, each keeps the source's properties.
+        mesh_application._carry_properties(target.mesh, mesh)
         mesh.transform(mapping @ obj.matrix_world)
         mesh.update()
         mesh_application._fingerprint(mesh)
@@ -337,7 +372,7 @@ def _stage_parts(target, meshes, mapping):
         raise MeshResultApplicationError("Choose a static result containing 2 to 128 mesh parts")
     components = 0
     for obj in meshes:
-        mesh_application._validate_object(obj.users_scene[0], obj, read_only=True)
+        mesh_application._validate_object(obj.users_scene[0], obj)
         data = obj.data
         components += len(data.vertices) + len(data.edges) + len(data.loops) + len(data.polygons)
         components += sum(len(attribute.data) for attribute in data.attributes)
@@ -447,7 +482,9 @@ def _validate_targets(target):
         mesh_application.validate_target(item)
 
 
-def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_original):
+def apply_saved_mesh(
+    target, snapshot, *, policy, result_to_source, keep_original, keep_texture=None
+):
     """Use an explicit imported-scene-to-source-local mapping or an approved verified fit.
 
     `snapshot` comes from `prepare_saved_mesh` and is consumed here. UV,
@@ -456,10 +493,15 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
     Alignment is never guessed: a `FitRequest` is used only when the full
     correspondence, or for REMESH and copied parts the surface distance, verifies
     it. A tuple of targets applies UV, RETEXTURE or RIG to all of them at once, or
-    to none.
+    to none. A RETEXTURE `keep_texture` region then gets the sources' own maps
+    back under its faces, painted into the result's new images before acceptance.
     """
     mapping = validate_request(
-        target, policy=policy, result_to_source=result_to_source, keep_original=keep_original
+        target,
+        policy=policy,
+        result_to_source=result_to_source,
+        keep_original=keep_original,
+        keep_texture=keep_texture,
     )
     model_application.use_snapshot(snapshot)
     several = isinstance(target, tuple)
@@ -565,6 +607,12 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                     result_to_source=local_mapping,
                     keep_original=keep_original,
                 )
+            kept = None
+            if keep_texture is not None:
+                # Only this application's new images change; a failure rolls back.
+                kept = kept_texture.composite(
+                    targets(target), keep_texture, imported.get("images", ())
+                )
             if parts:
                 _publish_parts(target, parts)
             # ANIMATE makes no copy; every other receipt lists one entry per source.
@@ -602,6 +650,9 @@ def apply_saved_mesh(target, snapshot, *, policy, result_to_source, keep_origina
                 parts_from,
                 joined,
                 getattr(fit, "residual", ()),
+                getattr(receipt, "retargeted_from", None),
+                getattr(receipt, "frame_range", None),
+                kept,
             )
     except Exception as error:
         if receipt is not None:

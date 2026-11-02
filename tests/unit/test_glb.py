@@ -44,7 +44,8 @@ def test_textured_static_hierarchy_passes():
         lambda d: d["scenes"].append({"nodes": [0]}),
         lambda d: d["accessors"][0].update(count=MAX_ACCESSOR_ENTRIES + 1),
         lambda d: d["accessors"][0].update(count=True),
-        lambda d: d["buffers"][0].update(byteLength=1),
+        lambda d: d["buffers"][0].update(byteLength=1_000_000),
+        lambda d: d["buffers"][0].update(byteLength=-1),
         lambda d: d.update(nodes=[]),
         lambda d: d["nodes"][0].update(matrix=[float("nan")] * 16),
     ],
@@ -52,6 +53,23 @@ def test_textured_static_hierarchy_passes():
 def test_unsupported_dependencies_and_allocation_bounds_are_rejected(mutation):
     with pytest.raises(GLBError):
         inspect_glb(modified(mutation))
+
+
+def test_unused_bytes_after_the_buffer_in_its_chunk_pass():
+    # Viggle Text to Motion pads its binary chunk well beyond the buffer; importers ignore that.
+    data = FIXTURE.read_bytes()
+    length = struct.unpack_from("<I", data, 12)[0]
+    start = 20 + length
+    binary = struct.unpack_from("<I", data, start)[0]
+    data = (
+        struct.pack("<4sII", b"glTF", 2, len(data) + 64)
+        + data[12:start]
+        + struct.pack("<I", binary + 64)
+        + data[start + 4 :]
+        + bytes(64)
+    )
+    result = inspect_glb(data)
+    assert result["buffers"][0]["byteLength"] < binary + 64
 
 
 @pytest.mark.parametrize(

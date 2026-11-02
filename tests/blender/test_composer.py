@@ -1268,10 +1268,70 @@ class ComposerSideRegionTests(unittest.TestCase):
         ):
             operator = self._operator()
             self._clicks(operator, ctx, point, (10.0, 10.0 + quick))
-            generate.assert_called_once_with(lane="image")
+            # Its invoke path, as the sidebar's button: a price above the preference asks first.
+            generate.assert_called_once_with("INVOKE_DEFAULT", lane="image")
             # two separate clicks still submit twice, as two clicks on a button do
             self._clicks(operator, ctx, point, (20.0, 30.0))
         self.assertEqual(generate.call_count, 3)
+
+    def test_the_capture_chip_is_a_render_lane_control_that_starts_the_capture_action(self):
+        scene = bpy.context.scene
+        ctx = self._context(sidebar=False)
+        state = self.state_mod.ComposerState()
+        state.expanded = True
+        for lane, offered in (("image", False), ("video", False), ("render_image", True)):
+            with self.subTest(lane=lane):
+                scene.scenario.lane = lane
+                state.sync_from_lane(scene)
+                self.assertEqual(self.modal._layout(ctx, state).capture_rect is not None, offered)
+        scene.scenario.lane = "render_video"
+        state.sync_from_lane(scene)
+        layout = self.modal._layout(ctx, state)
+        point = self._centre(layout.capture_rect)
+        self.assertEqual(layout.hit(*point), ("capture",))
+        # Settings and Generate keep their own targets beside it.
+        for rect, kind in ((layout.settings_rect, "settings"), (layout.generate_rect, "generate")):
+            self.assertEqual(layout.hit(*self._centre(rect)), (kind,))
+        references = self.modal.render_references
+        capture = mock.Mock()
+        ops = SimpleNamespace(scenario=SimpleNamespace(prepare_render_reference=capture))
+        with (
+            mock.patch.object(self.runtime.state, "composer", state),
+            mock.patch.object(self.modal, "bpy", SimpleNamespace(ops=ops)),
+        ):
+            operator = self._operator()
+            with mock.patch.object(references, "chip", return_value=("Capture", "")):
+                self._clicks(operator, ctx, point, (10.0,))
+            capture.assert_called_once_with("EXEC_DEFAULT", lane="render_video", role="all")
+            operator.report.assert_not_called()
+            # An upload under way, no connection or an upload to review: the click says why, starts nothing.
+            capture.reset_mock()
+            wait = "Uploading the scene capture; the price follows"
+            with mock.patch.object(references, "chip", return_value=("Uploading...", wait)):
+                self._clicks(operator, ctx, point, (20.0,))
+            capture.assert_not_called()
+            operator.report.assert_called_once_with({"INFO"}, wait)
+            # A refused action keeps the composer and shows the reason the operator gave.
+            operator.report.reset_mock()
+            capture.side_effect = RuntimeError("Error: Open a 3D viewport to capture the scene")
+            with mock.patch.object(references, "chip", return_value=("Capture", "")):
+                self._clicks(operator, ctx, point, (30.0,))
+            operator.report.assert_called_once_with(
+                {"WARNING"}, "Open a 3D viewport to capture the scene"
+            )
+
+    def test_an_offline_render_form_names_online_access_instead_of_the_capture(self):
+        lane = bpy.context.scene.scenario.lane_state("render_image")
+        references = submodule("blender.render_references")
+        status_note = submodule("blender.composer.draw").status_note
+        lane.estimate_state, lane.estimate_error = "UNAVAILABLE", references.CAPTURE_SCENE
+        with mock.patch.object(self.runtime, "online", return_value=True):
+            self.assertEqual(status_note(lane), references.CAPTURE_SCENE)
+        with mock.patch.object(self.runtime, "online", return_value=False):
+            self.assertEqual(status_note(lane), references.CAPTURE_OFFLINE)
+            # Other price problems keep their own words.
+            lane.estimate_error = "The price changed"
+            self.assertEqual(status_note(lane), "The price changed")
 
     def test_a_double_click_value_from_a_direct_caller_still_resets(self):
         ctx = self._context(sidebar=False)
@@ -1690,6 +1750,7 @@ class ComposerEditFormTests(unittest.TestCase):
         self.panels = submodule("blender.panels")
         self.draw = submodule("blender.composer.draw")
         self.modal = submodule("blender.composer.modal")
+        self.layout = submodule("core.ui.composer_layout")
         self.composer = submodule("blender.composer.state").ComposerState()
         self.composer.expanded = True
         self.runtime.state.composer = self.composer
@@ -1802,6 +1863,7 @@ class ComposerEditFormTests(unittest.TestCase):
         tab=None,
         value="PRESS",
         when=0.0,
+        ctrl=False,
     ):
         """Deliver one composer click (on `kind` or a lane `tab`) or one key press to the real modal handler.
 
@@ -1815,7 +1877,7 @@ class ComposerEditFormTests(unittest.TestCase):
             mouse_region_x=10,
             mouse_region_y=10,
             shift=False,
-            ctrl=False,
+            ctrl=ctrl,
             oskey=False,
             alt=False,
             unicode=text,
@@ -1902,9 +1964,56 @@ class ComposerEditFormTests(unittest.TestCase):
         self.assertEqual(shown.fields, ["Describe the edit to the selected mesh"])
         operator = self.press("generate")
         self.jobs.settle()
-        operator.report.assert_not_called()
+        # The edited form's own price is still on its way: the composer says so and sends nothing.
+        operator.report.assert_called_once_with({"INFO"}, self.layout.PRICE_LOADING)
         self.assertEqual((self.jobs.paid, self.edit3d.last_error), ([], ""))
         self.assertEqual(self.three_d.estimate_state, "READY")
+
+    def test_enter_while_the_price_loads_says_so_and_sends_nothing(self):
+        self.quote("edit3d", "7.25")
+        self.drawn()
+        self.composer.focused = True
+        self.press(key="S", text="s")  # typing reprices the form
+        self.assertEqual(self.edit3d.estimate_state, "PENDING")
+        operator = self.press(key="RET")
+        operator.report.assert_called_once_with({"INFO"}, self.layout.PRICE_LOADING)
+        # The card's status note shows it too, where Enter used to blur without a word.
+        self.assertEqual(self.runtime.message_visible(), self.layout.PRICE_LOADING)
+        self.assertFalse(self.composer.focused)
+        self.jobs.settle()
+        self.assertEqual(self.jobs.paid, [])
+
+    def test_the_price_wait_line_goes_once_the_price_shows(self):
+        self.quote("edit3d", "7.25")
+        self.drawn()
+        self.composer.focused = True
+        self.press(key="S", text="s")
+        self.press(key="RET")
+        self.assertEqual(self.runtime.message_visible(), self.layout.PRICE_LOADING)
+        self.quote("edit3d", "7.25")
+        # Generate shows the price; a line saying it is on its way would contradict it.
+        self.assertEqual(self.runtime.message_visible(), "")
+        self.assertIn("7.25 CU", self.drawn().label)
+        # Any other status line stays for its usual time.
+        self.runtime.set_message("Generating with the fixture model")
+        self.quote("edit3d", "7.25")
+        self.assertEqual(self.runtime.message_visible(), "Generating with the fixture model")
+
+    def test_a_focused_prompt_hands_shortcuts_it_does_not_use_to_blender(self):
+        self.quote("edit3d", "7.25")
+        self.drawn()
+        self.composer.focused = True
+        for key, text, ctrl in (("S", "s", True), ("Q", "q", True), ("F12", "", False)):
+            with self.subTest(key=key, ctrl=ctrl):
+                self.press(key=key, text=text, ctrl=ctrl, expect=("PASS_THROUGH",))
+        # Undo, redo and the keys the prompt edits with stay with it.
+        for key in ("Z", "Y", "LEFT_CTRL"):
+            with self.subTest(key=key):
+                self.press(key=key, ctrl=True)
+        self.press(key="A", ctrl=True)
+        self.assertEqual(self.composer.field.selected_text(), "rusty iron plates")
+        self.assertTrue(self.composer.focused)
+        self.assertEqual((self.edit3d.prompt, self.jobs.paid), ("rusty iron plates", []))
 
     def test_rejected_submission_keeps_the_composer_responsive(self):
         self.quote("edit3d", "7.25")

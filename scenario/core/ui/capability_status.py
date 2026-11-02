@@ -5,10 +5,14 @@
 Display only: a status never blocks a model. Its jobs still run and their results
 stay in saved jobs. Generic import is offered by file type, so a returned model
 (GLB, glTF, FBX, OBJ or mesh PLY) or media file may be imported, but
-speech-to-text and video-to-motion handling has not been accepted (#190).
+speech-to-text, video-to-text and video-to-motion handling has not been accepted (#190).
 """
 
-UNACCEPTED_CAPABILITIES = {"audio2txt": "speech-to-text", "video23d": "video-to-motion"}
+UNACCEPTED_CAPABILITIES = {
+    "audio2txt": "speech-to-text",
+    "video2txt": "video-to-text",
+    "video23d": "video-to-motion",
+}
 
 
 def label(subject=""):

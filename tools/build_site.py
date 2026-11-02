@@ -51,6 +51,7 @@ def build_site(
     template=ROOT / "docs/handbook-template.html",
     manifest=ROOT / "scenario/blender_manifest.toml",
     root=ROOT,
+    ref="main",
 ):
     """Expose the complete snapshot only after both existing builders succeed."""
     output = output.absolute()
@@ -61,7 +62,7 @@ def build_site(
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".site-", dir=output.parent) as temporary:
         staged = Path(temporary) / "site"
-        build_handbook(source, template, manifest, staged / "index.html", root=root)
+        build_handbook(source, template, manifest, staged / "index.html", root=root, ref=ref)
         # Image paths are source-relative; reserve repo/ even on case-sensitive hosts.
         if any(path.name.casefold() == "repo" for path in staged.iterdir()):
             raise ValueError("Handbook assets conflict with the reserved repo directory")
@@ -85,6 +86,7 @@ def main(argv=None):
     parser.add_argument("--source", type=Path, default=ROOT / "docs/USER_GUIDE.md")
     parser.add_argument("--template", type=Path, default=ROOT / "docs/handbook-template.html")
     parser.add_argument("--manifest", type=Path, default=ROOT / "scenario/blender_manifest.toml")
+    parser.add_argument("--ref", default="main", help="Git ref that handbook links point to")
     args = parser.parse_args(argv)
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
@@ -105,6 +107,7 @@ def main(argv=None):
             source=args.source,
             template=args.template,
             manifest=args.manifest,
+            ref=args.ref,
         )
         session.cleanup()
         print(f"Verified site: {output}")

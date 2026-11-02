@@ -53,8 +53,11 @@ def dispatch(event):
     elif name == "catalog_failed":
         payload = payload["error"] if isinstance(payload, dict) else payload
         runtime.state.catalog_loading = False
-        runtime.state.catalog_error = str(payload)
-        runtime.set_message(f"Could not load models: {payload}")
+        # When Allow Online Access went off during the read, the panel says so and,
+        # with no recorded error, the pump reads the catalog again once it is back on.
+        if runtime.online():
+            runtime.state.catalog_error = str(payload)
+            runtime.set_message(f"Could not load models: {payload}")
     elif name == "models":
         generation.set_models(
             payload["detailed"], payload["failed"], mark_dirty=payload.get("mark_dirty", True)

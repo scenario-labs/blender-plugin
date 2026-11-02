@@ -10,6 +10,8 @@ PILL_WIDTH, PILL_HEIGHT = 320, 44
 CARD_WIDTH, CARD_HEIGHT = 820, 132
 TAB_HEIGHT, ROW_GAP, PAD = 24, 8, 12
 GENERATE_WIDTH, MODEL_WIDTH, COLLAPSE_SIZE, SETTINGS_WIDTH = 190, 200, 20, 84
+# The render lanes' capture chip: beside Settings, only when the card has room for it whole.
+CAPTURE_WIDTH, CAPTURE_MIN_WIDTH = 104, 88
 RESIZE_SIZE, MIN_CARD_WIDTH, MIN_PILL_WIDTH, DRAG_THRESHOLD = 16, 420, 200, 4
 # Blender's default double-click time, for a caller whose preferences cannot say
 DOUBLE_CLICK_MS = 350
@@ -60,10 +62,43 @@ FORM_REPLACED_TYPING = "The form behind the composer changed. Press Esc to show 
 FORM_REPLACED_GENERATE = "The form behind the composer changed. Check its prompt, then generate"
 # The Environment mode the composer's prompt drives; other modes are sidebar forms.
 PANORAMA_PROMPT_MODE = "GENERATE"
+# Why Enter or Generate sent nothing yet: the form's price is on its way, or a repeat waits.
+PRICE_LOADING = "Getting the price: generate once it shows"
+REPEAT_WAITING = "Generate is available again in a moment"
+# Keys a focused prompt hands to Blender when it does not use them: function keys and Ctrl or Cmd
+# shortcuts (Ctrl+S saves, F12 renders). Undo and redo stay with the prompt, so typing there never
+# undoes the scene behind it; modifier presses and pointer events stay too.
+FUNCTION_KEYS = frozenset(f"F{n}" for n in range(1, 25))
+PROMPT_KEEPS = frozenset({"Z", "Y"})
+MODIFIER_KEYS = frozenset(
+    ("LEFT_CTRL", "RIGHT_CTRL", "LEFT_SHIFT", "RIGHT_SHIFT", "LEFT_ALT", "RIGHT_ALT")
+    + ("OSKEY", "HYPER", "APP")
+)
+NOT_KEYS = ("MOUSE", "TRACKPAD", "NDOF", "TIMER", "WINDOW", "PEN", "ERASER", "XR_", "EVT_")
 
 
 def placeholder_for(lane):
     return PLACEHOLDERS.get(lane, "Type a prompt")
+
+
+def generate_wait(estimate_state, holding):
+    """The status line for Enter or Generate on a form that cannot submit yet, else ""."""
+    if holding:
+        return REPEAT_WAITING
+    if estimate_state in ("IDLE", "PENDING"):
+        return PRICE_LOADING
+    return ""
+
+
+def passes_to_blender(event_type, command):
+    """Whether a focused prompt hands this unhandled key press to Blender's own shortcuts.
+
+    `command` is Ctrl or Cmd held. Keys the prompt handles never reach this question."""
+    if event_type in FUNCTION_KEYS:
+        return True
+    if not command or event_type in PROMPT_KEEPS or event_type in MODIFIER_KEYS:
+        return False
+    return not any(part in event_type for part in NOT_KEYS)
 
 
 def clip_label(text, max_width, measure):
@@ -355,6 +390,7 @@ class Layout:
     # False when the uncovered span or the region height cannot hold the card: the pill is shown even if the card
     # was asked for
     card_fits: bool = True
+    capture_rect: Rect = None  # render lanes only: capture the scene, upload it and price the form
 
     def offset(self):
         """The offset that reproduces this placement as clamped, relative to its default spot."""
@@ -389,6 +425,8 @@ class Layout:
             return ("model",)
         if self.settings_rect is not None and self.settings_rect.contains(px, py):
             return ("settings",)
+        if self.capture_rect is not None and self.capture_rect.contains(px, py):
+            return ("capture",)
         return ("drag",)
 
 
@@ -594,7 +632,14 @@ def clamp_offset(offset, size, region_w, region_h, scale=1.0, insets=(0.0, 0.0))
 
 
 def pill_placement(
-    region_w, region_h, expanded, scale=1.0, offset=(0.0, 0.0), width=None, insets=(0.0, 0.0)
+    region_w,
+    region_h,
+    expanded,
+    scale=1.0,
+    offset=(0.0, 0.0),
+    width=None,
+    insets=(0.0, 0.0),
+    capture=False,
 ):
     """Geometry of the composer. `offset` moves it from its default bottom-centre spot (region pixels), `width`
     overrides the card (expanded) or pill (collapsed) width. `insets` are the (left, right) widths of side regions
@@ -604,6 +649,9 @@ def pill_placement(
     When the region cannot hold the card at its minimum size with its margins (a large UI scale beside an open
     sidebar, or a short viewport), the layout is the pill even if `expanded`, and the card width does not apply to
     it. The caller keeps its expanded choice and width, so the card comes back as soon as there is room.
+
+    `capture` asks for the render lanes' capture chip after Settings; it is left out when the card cannot hold
+    it whole between Settings and Generate.
 
     The pill narrows to MIN_PILL_WIDTH with its margins kept; a narrower span then takes the margins, and a span
     narrower than MIN_PILL_WIDTH still gets a pill that wide, ending at the span's right edge as the offset clamps."""
@@ -653,10 +701,13 @@ def pill_placement(
         min(GENERATE_WIDTH * s, w / 2 - pad),
         row_h,
     )
-    settings = None
+    settings = capture_rect = None
     room = generate.x - gap - (model.right + gap)
     if room >= 40 * s:
         settings = Rect(model.right + gap, bottom_y, min(SETTINGS_WIDTH * s, room), row_h)
+        left = generate.x - gap - (settings.right + gap)
+        if capture and left >= CAPTURE_MIN_WIDTH * s:
+            capture_rect = Rect(settings.right + gap, bottom_y, min(CAPTURE_WIDTH * s, left), row_h)
     grip = RESIZE_SIZE * s
     resize = Rect(card.right - grip, card.y, grip, grip)  # bottom-right corner
     return Layout(
@@ -673,4 +724,5 @@ def pill_placement(
         resize,
         base=base,
         insets=insets,
+        capture_rect=capture_rect,
     )

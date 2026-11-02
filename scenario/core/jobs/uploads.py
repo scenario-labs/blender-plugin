@@ -169,7 +169,7 @@ class UploadCommands:
         return result
 
     def mesh_sources(self, asset_id):
-        """Read selected captured exports in this scope; never infer a primary source."""
+        """Read a selected captured asset in this scope: its latest capture, then one of other bytes."""
         with self._guard():
             return self._store.mesh_sources(asset_id)
 

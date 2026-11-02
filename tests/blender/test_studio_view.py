@@ -69,6 +69,10 @@ class StudioViewTests(unittest.TestCase):
         done = records.JobRecord("done", "model", "model", "fixture", {}, status="success")
         self.runtime.state.jobs_view[:] = [active, done]
         recovery, panels = submodule("blender.job_recovery"), submodule("blender.panels")
+        results = bpy.context.window_manager.scenario_results_view
+        for name in ("sidebar_layout", "studio_layout", "result"):
+            self.addCleanup(setattr, results, name, getattr(results, name))
+        results.sidebar_layout, results.studio_layout, results.result = "LIST", "LIST", ""
         with patch.object(recovery, "draw_controls") as controls:
             for panel in (panels.SCENARIO_PT_jobs, panels.SCENARIO_PT_generations):
                 panel.draw(SimpleNamespace(layout=MagicMock()), bpy.context)
@@ -77,13 +81,17 @@ class StudioViewTests(unittest.TestCase):
             for page in ("JOBS", "RESULTS"):
                 self.view.page = page
                 self.studio.draw_view(MagicMock(), bpy.context, width=960)
+            # The Results grid's large view of a result draws its row's controls too.
+            results.studio_layout, results.result = "GRID", "done"
+            self.studio.draw_view(MagicMock(), bpy.context, width=960)
             studio = [call.args[1] for call in controls.call_args_list]
         # One descriptor source: Studio reuses the sidebar rows for the same views.
         self.assertEqual(len(sidebar), 2)
         self.assertIs(sidebar[0], active)
         self.assertIs(sidebar[1], done)
-        self.assertEqual(len(studio), 2)
-        self.assertTrue(all(a is b for a, b in zip(sidebar, studio, strict=True)))
+        self.assertEqual(len(studio), 3)
+        self.assertTrue(all(a is b for a, b in zip(sidebar, studio[:2], strict=True)))
+        self.assertIs(studio[2], done)
         self.assertFalse(self.workflow.calls)
 
     def test_every_page_labels_feedback_once_and_the_sidebar_keeps_its_heart(self):

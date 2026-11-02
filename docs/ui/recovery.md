@@ -5,9 +5,11 @@ jobs. The shared rules are in the [UI style guide](../UI_STYLE.md).
 
 ## Blockout plan approval interaction
 
-Blockout uses **Get design price**, then **Generate plan (cost)**. Refine has its
-own quote. A completed plan exposes **Build plan**; generation itself leaves
-geometry unchanged. Clear opens a confirmation dialog. Drawing is read-only.
+Blockout prices a settled description automatically and shows **Generate
+blockout (cost)**; **New plan** or **Try again** requests one by hand for unchanged
+or refused inputs. Refine has its own quote. A completed plan exposes **Build
+blockout**; generation itself leaves geometry unchanged. Clear opens a confirmation
+dialog. Drawing is read-only.
 
 The exact ZIP with SHA-256
 `44edc43008d64f1e2836c95c0cb526f5c727a4278f6468676d4d7ef71b8fc47e`
@@ -44,7 +46,7 @@ preceding ZIP; no new UI behavior or live provider acceptance is claimed here.
 Saved jobs expose **Read saved Blockout plan**, followed by **Use saved Blockout
 plan** after complete text validation. The confirmation names the scene and
 element/group counts, warns before replacing an existing plan and explains that
-geometry remains unchanged until a separate Build plan action. Cancellation
+geometry remains unchanged until a separate Build blockout action. Cancellation
 discards the review. Drawing does not read the service or mutate the plan.
 
 The exact package with SHA-256

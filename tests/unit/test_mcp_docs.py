@@ -28,15 +28,14 @@ def test_committed_reference_matches_all_registered_source_contracts():
         assert not re.search(r"\b\d+ tools\b", (ROOT / relative).read_text())
 
 
-def test_guide_tool_map_shows_every_registered_tool_once():
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [(generator.MAP_START, generator.MAP_END), (generator.INTRO_START, generator.INTRO_END)],
+)
+def test_guide_tool_map_shows_every_registered_tool_once(start, end):
     guide = (ROOT / "docs/USER_GUIDE.md").read_text()
-    assert (
-        generator.replace_block(
-            guide, generator.generated_map(), generator.MAP_START, generator.MAP_END
-        )
-        == guide
-    )
-    block = guide.split(generator.MAP_START, 1)[1].split(generator.MAP_END, 1)[0]
+    assert generator.replace_block(guide, generator.generated_map(), start, end) == guide
+    block = guide.split(start, 1)[1].split(end, 1)[0]
     shown = re.findall(r'<li tabindex="0"><code>([^<]+)</code></li>', block)
     registered = [
         tool["name"]

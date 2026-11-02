@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Scenario Inc.
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Verified local files of saved results, for status display only.
+"""Verified local files of saved results, for status and result rows only.
 
 A worker on the preview lane rehashes each downloaded result of a ready job
 against its saved receipt and returns where the file is, with its identity
@@ -86,11 +86,11 @@ class ResultFiles:
 
     ``pending`` alone may be read from another thread: it reads this memory
     and the identities of the files it lists, and changes nothing. Jobs are
-    checked once a status read asks for them (``watch``). One batch of at most
-    ``BATCH_LIMIT`` targets is in flight at a time, so the checks never hold
-    the preview lane longer than a preview batch. A check that could not run
-    (``unavailable``) is still to come: it is queued again after a delay that
-    doubles up to ``RETRY_CAP``, and no wait waits for it.
+    checked once a status read or an image row asks for them (``watch``).
+    One batch of at most ``BATCH_LIMIT`` targets is in flight at a time, so the
+    checks never hold the preview lane longer than a preview batch. A check that
+    could not run (``unavailable``) is still to come: it is queued again after a
+    delay that doubles up to ``RETRY_CAP``, and no wait waits for it.
     """
 
     def __init__(self, *, clock=time.monotonic):

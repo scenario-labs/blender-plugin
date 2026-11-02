@@ -237,7 +237,7 @@ def test_gpt_case_refuses_a_size_outside_the_presets_before_any_dry_run(runs, se
     assert service.calls and not service.bodies(dry_run=True) and not service.bodies(dry_run=False)
     assert runs.quote("preset", GPT, "panorama", {"prompt": "a lake"}) == 0
     [(_, quoted)] = service.bodies(dry_run=True)
-    assert (quoted["width"], quoted["height"]) == (2048, 1024)
+    assert (quoted["width"], quoted["height"]) == (3840, 1920)
 
 
 ELSEWHERE = "only in a panorama model input"

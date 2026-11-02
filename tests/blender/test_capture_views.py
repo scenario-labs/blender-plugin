@@ -7,17 +7,13 @@ import json
 import math
 import os
 import struct
-import sys
 import tempfile
 import types
 import unittest
 import unittest.mock
 
 import bpy
-from helpers import assert_unmarked, reset_scene, submodule
-
-GPU_RENDERS = sys.platform == "darwin"
-GPU_REASON = "Workbench needs the GPU context of macOS background runs"
+from helpers import GPU_REASON, GPU_RENDERS, assert_unmarked, reset_scene, submodule
 
 
 def targa(width, height, rgb=(200, 40, 40)):

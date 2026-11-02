@@ -622,8 +622,16 @@ def test_applied_results_show_reuse_only_with_a_reuse_action():
                     "recover_blockout:error",
                     "status",
                     None,
-                    "Plan needs review; check job and destination",
+                    "Plan needs review; check job and",
                     "ERROR",
+                    {},
+                ),
+                (
+                    "recover_blockout:error:1",
+                    "status",
+                    None,
+                    "destination",
+                    "NONE",
                     {},
                 ),
                 (
@@ -642,6 +650,33 @@ def test_blockout_recovery_follows_the_current_scene_review(review, expected):
     items = sja.describe(view(("recover_blockout",), "succeeded"), CONTEXT, TYPES, review)
     assert rows(items) == expected
     assert all(item.action == "recover_blockout" for item in items)
+
+
+@pytest.mark.parametrize(
+    ("unusable", "error", "shown"),
+    [
+        (
+            "The model returned an empty answer, not a plan.",
+            "ignored",
+            "The model returned an empty answer, not a plan.",
+        ),
+        (
+            "",
+            "Could not review this plan: Select the destination scene before reviewing",
+            "Could not review this plan: Select the destination scene before reviewing",
+        ),
+        ("", "", "Plan needs review; check job and destination"),
+    ],
+)
+def test_blockout_recovery_error_names_why_the_plan_could_not_be_reviewed(unusable, error, shown):
+    review = SimpleNamespace(
+        task=None, phase="ERROR", identifier="review", unusable=unusable, error=error
+    )
+    items = sja.describe(view(("recover_blockout",), "succeeded"), CONTEXT, TYPES, review)
+    assert " ".join(row[3] for row in rows(items)[:-1]) == shown
+    assert all(len(row[3]) <= sja.NOTE_WIDTH for row in rows(items)[:-1])
+    assert all(item.action == "recover_blockout" for item in items)
+    assert rows(items)[-1][2] == "scenario.read_saved_blockout"
 
 
 def test_every_offered_action_is_described_with_unique_keys_and_its_action_name():

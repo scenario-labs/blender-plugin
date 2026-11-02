@@ -18,6 +18,7 @@ import urllib.request
 import pytest
 
 from scenario.core.api import oauth
+from scenario.core.keychain import KeychainError
 
 APP = oauth.OAuthApp(
     issuer="https://idp.example.invalid",
@@ -320,39 +321,216 @@ def test_attempt_refuses_an_unconfigured_application_and_a_late_cancel(monkeypat
         attempt.close()
 
 
-# --- token file ---------------------------------------------------------------
+# --- token storage ------------------------------------------------------------
 
 
-def test_token_file_round_trip_is_private_and_atomic(tmp_path):
-    path = tmp_path / "sign-in.json"
-    tokens = _tokens()
-    oauth.save_tokens(path, tokens)
-    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+class _Keychain:
+    """A credential store in memory, counting reads, that can refuse or stay silent."""
+
+    name = "the test keychain"
+
+    def __init__(self):
+        self.entries = {}
+        self.reads = 0
+        self.refuse_writes = False
+        self.silent = False
+
+    def read(self, slot):
+        self.reads += 1
+        if self.silent:
+            raise KeychainError("the test keychain did not answer")
+        return self.entries.get(slot)
+
+    def write(self, slot, secret):
+        if self.refuse_writes or self.silent:
+            raise KeychainError("the test keychain refused to save the sign-in")
+        self.entries[slot] = secret
+
+    def delete(self, slot):
+        if self.silent:
+            raise KeychainError("the test keychain did not answer")
+        self.entries.pop(slot, None)
+
+
+@pytest.fixture(params=["file", "keychain"])
+def storage(request, tmp_path):
+    store = _Keychain() if request.param == "keychain" else None
+    return oauth.TokenStorage(tmp_path / "sign-in.json", store)
+
+
+def _refresh_token(storage):
+    saved = storage.load()
+    return saved.tokens.refresh_token if saved is not None else None
+
+
+def _record(storage):
+    return json.loads(storage.path.read_bytes())
+
+
+def test_without_a_store_the_private_file_holds_the_refresh_token_only(tmp_path):
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json")
+    assert storage.save(_tokens()) == ""
+    assert stat.S_IMODE(storage.path.stat().st_mode) == 0o600
     assert [p.name for p in tmp_path.iterdir()] == ["sign-in.json"]
-    assert oauth.load_tokens(path) == tokens
-    oauth.save_tokens(path, _tokens(access_token="access-2"))
-    assert oauth.load_tokens(path).access_token == "access-2"
-    oauth.clear_tokens(path)
-    oauth.clear_tokens(path)
-    assert oauth.load_tokens(path) is None
+    record = _record(storage)
+    assert record["refresh_token"] == "refresh-1"
+    assert "access-1" not in storage.path.read_text()
+    saved = storage.load()
+    assert saved == storage.saved()
+    assert (saved.tokens.account, saved.tokens.refresh_token) == (_tokens().account, "refresh-1")
+    assert (saved.tokens.access_token, saved.slot) == ("", "")
+    assert saved.tokens.expiring()
+    assert storage.where("") == oauth.STORED_PRIVATELY
+
+
+def test_with_a_store_the_file_names_the_entry_and_holds_no_token(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    slot = storage.save(_tokens())
+    assert keychain.entries == {slot: "refresh-1"}
+    assert _record(storage)["keychain"] == slot
+    text = storage.path.read_text()
+    assert "refresh-1" not in text and "access-1" not in text
+    # The file alone names the account without touching the store.
+    saved = storage.saved()
+    assert (saved.tokens.account, saved.tokens.refresh_token, saved.slot) == (
+        _tokens().account,
+        "",
+        slot,
+    )
+    assert keychain.reads == 0
+    assert storage.load().tokens.refresh_token == "refresh-1"
+    assert keychain.reads == 1
+    assert storage.where(slot) == "the test keychain"
+
+
+def test_a_store_that_refuses_leaves_the_token_in_the_private_file(tmp_path):
+    keychain = _Keychain()
+    keychain.refuse_writes = True
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    assert storage.save(_tokens()) == ""
+    assert keychain.entries == {}
+    assert _record(storage)["refresh_token"] == "refresh-1"
+    assert storage.where("") == oauth.STORED_PRIVATELY
+
+
+def test_a_new_sign_in_replaces_the_previous_entry_and_a_refresh_keeps_it(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    first = storage.save(_tokens())
+    assert storage.save(_tokens(refresh_token="refresh-2"), first) == first
+    assert keychain.entries == {first: "refresh-2"}
+    second = storage.save(_tokens(subject="user_2", refresh_token="refresh-9"))
+    assert second != first
+    assert keychain.entries == {second: "refresh-9"}
+
+
+def test_an_unwritable_file_leaves_no_new_entry_behind(tmp_path, monkeypatch):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    slot = storage.save(_tokens())
+
+    def full(path, record):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(oauth, "_write_record", full)
+    with pytest.raises(OSError):
+        storage.save(_tokens(subject="user_2"))
+    assert keychain.entries == {slot: "refresh-1"}
+
+
+def test_clear_deletes_the_file_at_once_and_the_entries_on_their_own_thread(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    slot = storage.save(_tokens())
+    keychain.entries["older"] = "refresh-0"
+    thread = storage.clear("older")
+    assert not storage.path.exists()
+    thread.join(5)
+    assert keychain.entries == {}
+    assert storage.clear() is None
+    assert storage.load() is None
+    assert slot
+
+
+def test_a_store_that_does_not_answer_is_reported_not_taken_for_a_sign_out(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    storage.save(_tokens())
+    keychain.silent = True
+    with pytest.raises(KeychainError):
+        storage.load()
+    assert storage.saved() is not None
+
+
+def test_an_entry_in_a_store_this_blender_does_not_use_reads_as_no_session(tmp_path):
+    oauth.TokenStorage(tmp_path / "sign-in.json", _Keychain()).save(_tokens())
+    opted_out = oauth.TokenStorage(tmp_path / "sign-in.json")
+    assert opted_out.saved() is not None
+    assert opted_out.load() is None
+
+
+def test_a_file_from_before_the_store_keeps_its_refresh_token(tmp_path):
+    path = tmp_path / "sign-in.json"
+    path.write_text(
+        json.dumps(
+            {
+                "format": "scenario-browser-sign-in-v1",
+                "issuer": APP.issuer,
+                "client_id": APP.client_id,
+                "service": APP.service,
+                "subject": "user_1",
+                "access_token": "access-1",
+                "refresh_token": "refresh-1",
+                "expires_at": time.time() + 3600,
+            }
+        )
+    )
+    saved = oauth.TokenStorage(path, _Keychain()).saved()
+    assert (saved.tokens.refresh_token, saved.tokens.access_token, saved.slot) == (
+        "refresh-1",
+        "",
+        "",
+    )
+
+
+def _v2(**fields):
+    record = {
+        "format": "scenario-browser-sign-in-v2",
+        "issuer": APP.issuer,
+        "client_id": APP.client_id,
+        "service": APP.service,
+        "subject": "user_1",
+    }
+    record.update(fields)
+    return json.dumps(record).encode()
 
 
 @pytest.mark.parametrize(
-    "content", [b"", b"[]", b'{"format": "other"}', b'{"format": "x", "a": 1}']
+    "content",
+    [
+        b"",
+        b"[]",
+        b'{"format": "other"}',
+        b'{"format": "x", "a": 1}',
+        _v2(),
+        _v2(keychain="slot", refresh_token="refresh-1"),
+        _v2(keychain=7),
+        b'{"format": "scenario-browser-sign-in-v2", "refresh_token": "refresh-1"}',
+    ],
 )
-def test_unreadable_or_foreign_token_files_are_ignored(tmp_path, content):
+def test_unreadable_foreign_or_ambiguous_token_files_are_ignored(tmp_path, content):
     path = tmp_path / "sign-in.json"
     path.write_bytes(content)
-    assert oauth.load_tokens(path) is None
+    assert oauth.TokenStorage(path, _Keychain()).load() is None
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_a_symlinked_token_file_is_never_read(tmp_path):
-    real = tmp_path / "real.json"
-    oauth.save_tokens(real, _tokens())
+    oauth.TokenStorage(tmp_path / "real.json").save(_tokens())
     link = tmp_path / "sign-in.json"
-    link.symlink_to(real)
-    assert oauth.load_tokens(link) is None
+    link.symlink_to(tmp_path / "real.json")
+    assert oauth.TokenStorage(link).saved() is None
 
 
 # --- token session ------------------------------------------------------------
@@ -371,26 +549,104 @@ class _Refresh:
         return outcome
 
 
-def test_session_refreshes_an_expiring_token_once_and_saves_it(tmp_path):
-    path = tmp_path / "sign-in.json"
-    stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
+def _session(storage, tokens, refresh):
+    slot = storage.save(tokens)
+    return oauth.TokenSession(APP, tokens, storage, slot=slot, refresh=refresh)
+
+
+def _reopened(storage, refresh):
+    """The session a Blender that just started builds from the file alone."""
+    saved = storage.saved()
+    return oauth.TokenSession(APP, saved.tokens, storage, slot=saved.slot, refresh=refresh)
+
+
+def test_a_reopened_session_reads_its_token_on_the_first_request_only(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    slot = storage.save(_tokens())
     fresh = _tokens(access_token="access-2", refresh_token="refresh-2")
     refresh = _Refresh(fresh)
-    session = oauth.TokenSession(APP, stale, path, refresh=refresh)
+    session = _reopened(storage, refresh)
+    assert session.peek() == ""
+    assert session.account == _tokens().account
+    assert session.stored_in == "the test keychain"
+    assert keychain.reads == 0  # built on the main thread from the file alone
+    assert session.bearer() == "access-2"
+    assert session.bearer() == "access-2"
+    assert refresh.calls == ["refresh-1"]
+    assert keychain.reads == 1
+    assert keychain.entries == {slot: "refresh-2"}
+    assert session.peek() == "access-2"
+
+
+def test_a_reopened_session_without_a_store_refreshes_from_the_file(tmp_path):
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json")
+    storage.save(_tokens())
+    refresh = _Refresh(_tokens(access_token="access-2", refresh_token="refresh-2"))
+    session = _reopened(storage, refresh)
+    assert session.bearer() == "access-2"
+    assert refresh.calls == ["refresh-1"]
+    assert _refresh_token(storage) == "refresh-2"
+
+
+def test_a_session_saved_in_the_file_moves_to_the_store_at_its_next_refresh(tmp_path):
+    oauth.TokenStorage(tmp_path / "sign-in.json").save(_tokens())
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    session = _reopened(storage, _Refresh(_tokens(access_token="a2", refresh_token="refresh-2")))
+    assert session.stored_in == oauth.STORED_PRIVATELY
+    assert session.bearer() == "a2"
+    record = _record(storage)
+    assert "refresh_token" not in record
+    assert keychain.entries == {record["keychain"]: "refresh-2"}
+    assert session.stored_in == "the test keychain"
+
+
+def test_a_store_that_does_not_answer_fails_the_request_and_keeps_the_session(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    storage.save(_tokens())
+    refresh = _Refresh(_tokens(access_token="access-2", refresh_token="refresh-2"))
+    session = _reopened(storage, refresh)
+    keychain.silent = True
+    with pytest.raises(oauth.SignInError, match="did not answer") as raised:
+        session.bearer()
+    assert not isinstance(raised.value, oauth.SignedOut)
+    assert session.ended is None
+    assert refresh.calls == []
+    keychain.silent = False
+    assert session.bearer() == "access-2"
+
+
+def test_a_session_whose_saved_token_is_gone_asks_to_sign_in_again(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    storage.save(_tokens())
+    keychain.entries.clear()  # deleted from the keychain by hand
+    refresh = _Refresh()
+    session = _reopened(storage, refresh)
+    with pytest.raises(oauth.SignedOut, match="sign in again"):
+        session.bearer()
+    assert session.ended is not None
+    assert refresh.calls == []
+
+
+def test_session_refreshes_an_expiring_token_once_and_saves_it(storage):
+    stale = _tokens(expires_at=time.time() + 10)
+    fresh = _tokens(access_token="access-2", refresh_token="refresh-2")
+    refresh = _Refresh(fresh)
+    session = _session(storage, stale, refresh)
     assert session.peek() == "access-1"
     assert session.account == stale.account
     assert session.bearer() == "access-2"
     assert session.bearer() == "access-2"
     assert refresh.calls == ["refresh-1"]
-    assert oauth.load_tokens(path).refresh_token == "refresh-2"
+    assert _refresh_token(storage) == "refresh-2"
     assert session.peek() == "access-2"
 
 
-def test_session_serializes_concurrent_refreshes(tmp_path):
-    path = tmp_path / "sign-in.json"
+def test_session_serializes_concurrent_refreshes(storage):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
     gate = threading.Event()
 
     calls = []
@@ -400,7 +656,7 @@ def test_session_serializes_concurrent_refreshes(tmp_path):
         gate.wait(5)
         return _tokens(access_token="access-2", refresh_token="refresh-2")
 
-    session = oauth.TokenSession(APP, stale, path, refresh=slow_refresh)
+    session = _session(storage, stale, slow_refresh)
     results = []
     workers = [threading.Thread(target=lambda: results.append(session.bearer())) for _ in range(3)]
     for worker in workers:
@@ -414,144 +670,122 @@ def test_session_serializes_concurrent_refreshes(tmp_path):
     assert calls == ["refresh-1"]  # one refresh for three waiting workers
 
 
-def test_a_refused_refresh_ends_the_session_and_clears_only_its_own_file(tmp_path):
-    path = tmp_path / "sign-in.json"
+def test_a_refused_refresh_ends_the_session_and_clears_only_its_own_save(storage):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
-    session = oauth.TokenSession(APP, stale, path, refresh=_Refresh(oauth.SignedOut("ended")))
+    session = _session(storage, stale, _Refresh(oauth.SignedOut("ended")))
     with pytest.raises(oauth.SignedOut):
         session.bearer()
     assert session.ended == "ended"
-    assert oauth.load_tokens(path) is None
+    assert storage.load() is None
     with pytest.raises(oauth.SignedOut):
         session.bearer()
-    # Another process already rotated the file: its tokens survive this failure.
-    other = _tokens(access_token="access-9", refresh_token="refresh-9")
-    oauth.save_tokens(path, other)
+    # Another process saved a newer refresh token: it is adopted first, so the
+    # old one is never spent, and it survives this session's later failures.
+    storage.save(_tokens(refresh_token="refresh-9"))
+    refresh = _Refresh(_tokens(access_token="access-10", refresh_token="refresh-10"))
     session = oauth.TokenSession(
-        APP,
-        _tokens(expires_at=time.time() + 10, refresh_token="old"),
-        path,
-        refresh=_Refresh(oauth.SignedOut("ended")),
+        APP, _tokens(expires_at=time.time() + 10, refresh_token="old"), storage, refresh=refresh
     )
-    # The other process's tokens are adopted first, so no refresh is spent at all.
-    assert session.bearer() == "access-9"
-    assert oauth.load_tokens(path) == other
+    assert session.bearer() == "access-10"
+    assert refresh.calls == ["refresh-9"]
+    assert _refresh_token(storage) == "refresh-10"
 
 
-def test_a_transient_refresh_failure_keeps_the_session(tmp_path):
-    path = tmp_path / "sign-in.json"
+def test_a_transient_refresh_failure_keeps_the_session(storage):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
     fresh = _tokens(access_token="access-2", refresh_token="refresh-2")
-    session = oauth.TokenSession(
-        APP, stale, path, refresh=_Refresh(oauth.SignInError("HTTP 502"), fresh)
-    )
+    session = _session(storage, stale, _Refresh(oauth.SignInError("HTTP 502"), fresh))
     with pytest.raises(oauth.SignInError):
         session.bearer()
     assert session.ended is None
-    assert oauth.load_tokens(path) == stale
+    assert _refresh_token(storage) == "refresh-1"
     assert session.bearer() == "access-2"
 
 
-def test_an_unwritable_token_file_does_not_lose_the_rotated_tokens(tmp_path, monkeypatch):
-    path = tmp_path / "sign-in.json"
+def test_an_unwritable_token_file_does_not_lose_the_rotated_tokens(storage, monkeypatch):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
     fresh = _tokens(access_token="access-2", refresh_token="refresh-2")
-    session = oauth.TokenSession(APP, stale, path, refresh=_Refresh(fresh))
-    real_save = oauth.save_tokens
+    session = _session(storage, stale, _Refresh(fresh))
+    real_write = oauth._write_record
     failures = [OSError("disk full")]
 
-    def flaky_save(target, tokens):
+    def flaky_write(path, record):
         if failures:
             raise failures.pop()
-        real_save(target, tokens)
+        real_write(path, record)
 
-    monkeypatch.setattr(oauth, "save_tokens", flaky_save)
+    monkeypatch.setattr(oauth, "_write_record", flaky_write)
     assert session.bearer() == "access-2"
-    assert oauth.load_tokens(path) == stale
+    # The store took the new token before the file failed; the file still names it.
+    assert _refresh_token(storage) == ("refresh-2" if storage.keychain else "refresh-1")
     assert session.bearer() == "access-2"
-    assert oauth.load_tokens(path) == fresh
+    assert _refresh_token(storage) == "refresh-2"
 
 
-def test_sign_out_ends_the_session_and_deletes_the_file(tmp_path):
-    path = tmp_path / "sign-in.json"
-    oauth.save_tokens(path, _tokens())
-    session = oauth.TokenSession(APP, _tokens(), path, refresh=_Refresh())
-    session.sign_out()
+def test_sign_out_ends_the_session_and_deletes_what_was_saved(storage):
+    session = _session(storage, _tokens(), _Refresh())
+    thread = session.sign_out()
+    if thread is not None:
+        thread.join(5)
     assert session.ended == "Signed out"
-    assert oauth.load_tokens(path) is None
+    assert not storage.path.exists()
+    if storage.keychain is not None:
+        assert storage.keychain.entries == {}
     with pytest.raises(oauth.SignedOut):
         session.bearer()
 
 
-def test_a_refresh_token_spent_first_by_another_process_adopts_its_rotation(tmp_path):
-    path = tmp_path / "sign-in.json"
+def test_a_refresh_token_spent_first_by_another_process_adopts_its_rotation(storage):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
-    rotated = _tokens(access_token="access-2", refresh_token="refresh-2")
     calls = []
 
     def racing_refresh(app, tokens):
         calls.append(tokens.refresh_token)
-        # The other Blender's rotation lands between this process's read and its request.
-        oauth.save_tokens(path, rotated)
-        raise oauth.SignedOut("ended")
+        if tokens.refresh_token == "refresh-1":
+            # The other Blender's rotation lands between this process's read and its request.
+            storage.save(_tokens(refresh_token="refresh-2"), storage.saved().slot)
+            raise oauth.SignedOut("ended")
+        return _tokens(access_token="access-3", refresh_token="refresh-3")
 
-    session = oauth.TokenSession(APP, stale, path, refresh=racing_refresh)
-    assert session.bearer() == "access-2"
+    session = _session(storage, stale, racing_refresh)
+    assert session.bearer() == "access-3"
     assert session.ended is None
-    assert calls == ["refresh-1"]
-    assert oauth.load_tokens(path) == rotated
+    assert calls == ["refresh-1", "refresh-2"]
+    assert _refresh_token(storage) == "refresh-3"
 
 
-@pytest.mark.parametrize("second", ["fresh", "refused"])
-def test_an_adopted_rotation_that_is_expiring_too_is_refreshed_in_turn(tmp_path, second):
-    path = tmp_path / "sign-in.json"
+def test_an_adopted_rotation_that_is_refused_too_ends_the_session(storage):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
-    rotated = _tokens(
-        access_token="access-2", refresh_token="refresh-2", expires_at=time.time() + 10
-    )
-    fresh = _tokens(access_token="access-3", refresh_token="refresh-3")
     calls = []
 
     def refresh(app, tokens):
         calls.append(tokens.refresh_token)
         if tokens.refresh_token == "refresh-1":
-            oauth.save_tokens(path, rotated)
-            raise oauth.SignedOut("ended")
-        if second == "refused":
-            raise oauth.SignedOut("ended")
-        return fresh
+            storage.save(_tokens(refresh_token="refresh-2"), storage.saved().slot)
+        raise oauth.SignedOut("ended")
 
-    session = oauth.TokenSession(APP, stale, path, refresh=refresh)
-    if second == "fresh":
-        assert session.bearer() == "access-3"
-        assert session.ended is None
-        assert oauth.load_tokens(path) == fresh
-    else:
-        with pytest.raises(oauth.SignedOut):
-            session.bearer()
-        assert session.ended == "ended"
-        assert oauth.load_tokens(path) is None  # the adopted rotation was this session's too
+    session = _session(storage, stale, refresh)
+    with pytest.raises(oauth.SignedOut):
+        session.bearer()
+    assert session.ended == "ended"
+    assert storage.load() is None  # the adopted rotation was this session's too
     assert calls == ["refresh-1", "refresh-2"]
 
 
-def test_a_refresh_never_rewrites_a_file_signed_out_or_replaced_from_another_process(tmp_path):
-    path = tmp_path / "sign-in.json"
+def test_a_refresh_never_rewrites_a_save_signed_out_or_replaced_from_another_process(storage):
     stale = _tokens(expires_at=time.time() + 10)
-    oauth.save_tokens(path, stale)
     fresh = _tokens(access_token="access-2", refresh_token="refresh-2")
-    session = oauth.TokenSession(APP, stale, path, refresh=_Refresh(fresh))
-    oauth.clear_tokens(path)  # signed out from another Blender
+    session = _session(storage, stale, _Refresh(fresh))
+    thread = storage.clear()  # signed out from another Blender
+    if thread is not None:
+        thread.join(5)
     assert session.bearer() == "access-2"
     assert session.ended is None
-    assert oauth.load_tokens(path) is None
-    other = _tokens(subject="user_2", access_token="access-9", refresh_token="refresh-9")
-    oauth.save_tokens(path, other)  # another account signed in from another Blender
-    session = oauth.TokenSession(APP, stale, path, refresh=_Refresh(fresh))
+    assert storage.load() is None
+    session = _session(storage, stale, _Refresh(fresh))
+    other = _tokens(subject="user_2", refresh_token="refresh-9")
+    storage.save(other)  # another account signed in from another Blender
     assert session.bearer() == "access-2"
     assert session.ended is None
-    assert oauth.load_tokens(path) == other
+    saved = storage.load()
+    assert (saved.tokens.account, saved.tokens.refresh_token) == (other.account, "refresh-9")

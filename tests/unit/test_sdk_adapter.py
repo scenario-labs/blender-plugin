@@ -598,6 +598,30 @@ def test_invalid_credentials_fail_before_client_creation(adapter, credentials):
         adapter(credentials=credentials)
 
 
+class _UnreadSession(_TokenSource):
+    """A saved sign-in in a Blender that just started: no token until its first request."""
+
+    def peek(self):
+        return "" if self.bearer_calls == 0 else self.tokens[0]
+
+
+def test_a_session_without_a_token_yet_builds_and_refreshes_on_its_first_request(adapter):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"job": {"id": "fixture-job"}})
+
+    credentials = Credentials(token_source=_UnreadSession("refreshed-token"))
+    assert credentials.authorization(refresh=False) is None
+    client = adapter(handler, credentials=credentials)
+    assert credentials.token_source.bearer_calls == 0  # nothing read while building
+    client.job("fixture-job")
+    assert requests[0].headers["Authorization"] == "Bearer refreshed-token"
+    with pytest.raises(ValueError):
+        Credentials("key", "secret", token_source=_UnreadSession("t")).authorization(refresh=False)
+
+
 def test_an_ended_browser_session_refuses_before_sending(adapter):
     from scenario.core.api.oauth import SignedOut
 

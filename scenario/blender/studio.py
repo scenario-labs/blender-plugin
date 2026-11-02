@@ -21,6 +21,7 @@ from . import (
     library_view,
     panels,
     runtime,
+    sign_in,
     workflow_controls,
 )
 
@@ -114,8 +115,12 @@ def draw_connection(layout, context):
     source = getattr(prefs, "credential_source", "PREFERENCES")
     sources = {"BROWSER": "Scenario account", "ENVIRONMENT": "Environment"}
     box.label(text="Credentials: " + sources.get(source, "Preferences"))
-    project = getattr(prefs, "project_id", "").strip()
-    box.label(text="Project: " + (project or "Default scope"))
+    if source == "BROWSER":
+        if runtime.browser_session() is not None:
+            sign_in.draw_destination(box)
+    else:
+        project = getattr(prefs, "project_id", "").strip()
+        box.label(text="Project: " + (project or "Default scope"))
     box.operator(
         "preferences.addon_show", text="Open Scenario Preferences", icon="PREFERENCES"
     ).module = runtime.PACKAGE

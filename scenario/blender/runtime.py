@@ -92,6 +92,11 @@ class RuntimeState:
         # its private state file on first use; None until then or after sign-out.
         self.browser_session = None
         self.browser_session_loaded = False
+        # The signed-in account's teams and projects (core.api.destinations.Team),
+        # None until the sign-in module's worker has read them.
+        self.browser_teams = None
+        self.browser_teams_loading = False
+        self.browser_teams_error = ""
         self.account_label = ""
         self.connection_request = None
         self.connection_worker = None
@@ -280,6 +285,7 @@ def paths():
 
 
 BROWSER_SESSION_FILE = "sign-in.json"
+CHOOSE_PROJECT = "Choose the team and project your Scenario work goes to"
 
 
 def browser_session_path():
@@ -311,6 +317,9 @@ def set_browser_session(session):
     """Install the account a sign-in produced, or None after a sign-out."""
     state.browser_session = session
     state.browser_session_loaded = True
+    state.browser_teams = None
+    state.browser_teams_loading = False
+    state.browser_teams_error = ""
     state.account_label = ""
     sync_catalog_context()
 
@@ -331,9 +340,42 @@ def credentials():
 
 
 def project_id():
-    """Read the explicit optional override; never infer a key's server project."""
+    """The selected destination: the browser account's chosen project, or a key's override.
+
+    API keys read the explicit optional override and never infer a server project.
+    A browser account has no implicit project: until one is chosen, None.
+    """
     p = prefs()
+    if getattr(p, "credential_source", "PREFERENCES") == "BROWSER":
+        chosen = browser_project()
+        return chosen[0] if chosen is not None else None
     return (getattr(p, "project_id", "") or "").strip() or None
+
+
+def browser_project():
+    """(project id, label) the signed-in account chose, or None.
+
+    A choice saved by another account (a sign-out, then someone else signs in)
+    is not this account's and selects nothing.
+    """
+    p = prefs()
+    session = browser_session()
+    if p is None or session is None:
+        return None
+    chosen = (getattr(p, "browser_project_id", "") or "").strip()
+    if not chosen or getattr(p, "browser_project_account", "") != session.account:
+        return None
+    return chosen, getattr(p, "browser_project_label", "") or chosen
+
+
+def needs_browser_project():
+    """True while a signed-in browser account has not chosen where its work goes."""
+    p = prefs()
+    return (
+        getattr(p, "credential_source", "PREFERENCES") == "BROWSER"
+        and browser_session() is not None
+        and browser_project() is None
+    )
 
 
 def catalog_selection_matches():
@@ -372,6 +414,9 @@ def ensure_catalog():
         if creds.browser and session is None:
             # A worker ended the session between the two reads.
             raise ScenarioError(0, "Sign in to Scenario in Scenario Preferences")
+        if creds.browser and project_id() is None:
+            # No server default: a paid action must never land in a team the user did not pick.
+            raise ScenarioError(0, CHOOSE_PROJECT)
         try:
             if session is not None:
                 # No authorization() check here: it could refresh on the main thread.

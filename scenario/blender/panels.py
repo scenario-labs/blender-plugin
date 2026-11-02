@@ -21,6 +21,7 @@ from . import (
     props,
     result_previews,
     runtime,
+    sign_in,
 )
 
 KIND_ICON = {
@@ -97,6 +98,11 @@ def draw_account_strip(layout, context):
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
         draw_feedback_heart(row)
         return False
+    if getattr(runtime.prefs(), "credential_source", "PREFERENCES") == "BROWSER":
+        # Always in view: the team and project the work goes to, and the switch.
+        sign_in.draw_destination(layout)
+        if runtime.browser_project() is None:
+            return False
     if not online:
         return False
     row = layout.row(align=True)

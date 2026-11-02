@@ -94,6 +94,11 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         default="",
         update=credentials_changed,
     )
+    # The signed-in account's destination, chosen in the team and project dialog.
+    # Bound to the account that chose it: another account starts with none.
+    browser_project_id: StringProperty(default="", update=credentials_changed)
+    browser_project_label: StringProperty(default="")
+    browser_project_account: StringProperty(default="")
     output_dir: StringProperty(
         name="Output Folder",
         subtype="DIR_PATH",
@@ -185,10 +190,8 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         else:
             box.label(text="SCENARIO_API_KEY + SCENARIO_API_SECRET", icon="CONSOLE")
             box.label(text="From the environment used to launch Blender")
-        box.prop(self, "project_id")
-        if self.credential_source == "BROWSER":
-            box.label(text="Blank uses your account's default scope", icon="INFO")
-        else:
+        if self.credential_source != "BROWSER":
+            box.prop(self, "project_id")
             box.label(text="Blank uses the API key's default scope", icon="INFO")
             if not runtime.credentials().valid:
                 box.label(text="The selected source needs both a key and a secret", icon="ERROR")
@@ -248,6 +251,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
         elif runtime.browser_session() is not None:
             box.label(text="Signed in with your Scenario account", icon="CHECKMARK")
             box.label(text="Saved privately in this Blender's extension data", icon="INFO")
+            sign_in.draw_destination(box)
             row = box.row(align=True)
             row.operator("scenario.sign_out", text="Sign out", icon="X")
             row.operator("scenario.test_connection", text="Test connection", icon="CHECKMARK")

@@ -177,7 +177,7 @@ class _Listing:
 
 
 def load_teams(*, choose=False):
-    """Read the signed-in account's teams and projects; ``choose`` opens the dialog after."""
+    """Read the signed-in account's teams and projects; ``choose`` settles the destination after."""
     global _listing
     session = runtime.browser_session()
     if session is None:
@@ -216,10 +216,35 @@ def _poll_teams():
     runtime.state.browser_teams_error = listing.error
     if listing.error:
         runtime.set_message(listing.error)
-    elif listing.choose:
-        open_chooser()
+    else:
+        _settle(listing.teams, ask=listing.choose)
     _redraw()
     return None
+
+
+def _settle(teams, *, ask):
+    """Drop a choice the list no longer holds, use an only project, else ask if told to."""
+    chosen = runtime.browser_project()
+    if chosen is not None and destinations.find(teams, chosen[0]) is None:
+        _forget_choice()  # Deleted, or the account lost its role there.
+        runtime.set_message(f"{chosen[1]} is no longer available: choose a team and project")
+        chosen = None
+    only = destinations.only(teams)
+    try:
+        if chosen is None and only is not None:
+            use(only)  # No choice to make: the account's only project.
+        elif ask:
+            open_chooser()
+    except ScenarioError:
+        open_chooser()
+
+
+def _forget_choice():
+    p = runtime.prefs()
+    if p is not None:
+        p.browser_project_label = ""
+        p.browser_project_account = ""
+        p.browser_project_id = ""
 
 
 def wait_teams():
@@ -241,7 +266,7 @@ def open_chooser():
     if window is None:
         return
     with context.temp_override(window=window, screen=window.screen):
-        bpy.ops.scenario.choose_project("INVOKE_DEFAULT")
+        bpy.ops.scenario.choose_project("INVOKE_DEFAULT", fresh=True)
 
 
 def choose(project_id):
@@ -255,6 +280,17 @@ def choose(project_id):
     p.browser_project_label = destinations.label(*found)
     p.browser_project_account = session.account
     p.browser_project_id = project_id
+
+
+def use(project_id):
+    """Choose ``project_id``, say where the work goes and check the connection to it."""
+    choose(project_id)
+    runtime.set_message(f"Scenario work goes to {runtime.browser_project()[1]}")
+    if not bpy.app.background:
+        try:
+            runtime.request_connection_check()
+        except ScenarioError:
+            pass  # Chosen; the account strip reports the check's outcome.
 
 
 def draw_destination(layout):
@@ -287,11 +323,7 @@ def sign_out():
         session.sign_out()
     else:
         oauth.clear_tokens(runtime.browser_session_path())
-    p = runtime.prefs()
-    if p is not None:
-        p.browser_project_label = ""
-        p.browser_project_account = ""
-        p.browser_project_id = ""
+    _forget_choice()
     runtime.set_browser_session(None)
     runtime.set_message("Signed out of Scenario")
     _redraw()
@@ -376,13 +408,15 @@ class SCENARIO_OT_choose_project(bpy.types.Operator):
 
     team: bpy.props.EnumProperty(name="Team", items=_team_items, update=_team_changed)
     project: bpy.props.EnumProperty(name="Project", items=_project_items)
+    fresh: bpy.props.BoolProperty(options={"HIDDEN", "SKIP_SAVE"})
 
     def invoke(self, context, event):
         if runtime.browser_session() is None:
             self.report({"ERROR"}, "Scenario: sign in first")
             return {"CANCELLED"}
-        if runtime.state.browser_teams is None:
-            # Read first; the dialog opens once the list arrives.
+        if not self.fresh or runtime.state.browser_teams is None:
+            # Read first, so projects created or deleted since show; the dialog
+            # opens once the list arrives.
             load_teams(choose=True)
             if runtime.state.browser_teams_error:
                 self.report({"ERROR"}, f"Scenario: {runtime.state.browser_teams_error}")
@@ -412,18 +446,11 @@ class SCENARIO_OT_choose_project(bpy.types.Operator):
             self.report({"ERROR"}, "Scenario: choose a project")
             return {"CANCELLED"}
         try:
-            choose(self.project)
+            use(self.project)
         except ScenarioError as err:
             self.report({"ERROR"}, f"Scenario: {err.reason}")
             return {"CANCELLED"}
-        label = runtime.browser_project()[1]
-        runtime.set_message(f"Scenario work goes to {label}")
         self.report({"INFO"}, runtime.state.last_message)
-        if not bpy.app.background:
-            try:
-                runtime.request_connection_check()
-            except ScenarioError:
-                pass  # Chosen; the account strip reports the check's outcome.
         _redraw()
         return {"FINISHED"}
 
@@ -452,8 +479,16 @@ CLASSES = (
 def register():
     for cls in CLASSES:
         bpy.utils.register_class(cls)
-    # Read the saved session here rather than from the first draw.
-    runtime.browser_session()
+    # Read the saved session here rather than from the first draw, and check its
+    # choice against the account's current teams (a project can be deleted).
+    p = runtime.prefs()
+    if (
+        runtime.browser_session() is not None
+        and getattr(p, "credential_source", "") == "BROWSER"
+        and not bpy.app.background
+        and runtime.online()
+    ):
+        load_teams()
 
 
 def unregister():

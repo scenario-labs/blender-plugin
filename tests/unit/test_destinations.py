@@ -73,6 +73,19 @@ def test_malformed_records_are_skipped_not_trusted():
     assert [(p.id, p.name) for p in teams[0].projects] == [("proj_ok", "proj_ok")]
 
 
+def test_only_names_the_single_usable_project_across_teams():
+    assert destinations.only(destinations.teams_from(RESPONSE)) is None
+    single = {
+        "teams": [
+            {"id": "team_empty", "name": "Invited", "projects": []},
+            {"id": "team_solo", "name": "Solo", "projects": [{"id": "proj_only"}]},
+        ]
+    }
+    assert destinations.only(destinations.teams_from(single)) == "proj_only"
+    assert destinations.only(destinations.teams_from(RESPONSE)[2:]) is None
+    assert destinations.only(()) is None
+
+
 def test_no_teams_is_an_empty_list():
     assert destinations.teams_from({"teams": []}) == ()
     assert destinations.teams_from({}) == ()

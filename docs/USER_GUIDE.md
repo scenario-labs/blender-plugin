@@ -306,9 +306,11 @@ guide; follow the instructions attached to them.
 
 - **Sign in with Scenario** opens your web browser on Scenario's sign-in page and
   keeps the session in the extension's private state folder, refreshed in the
-  background. It then asks which team and project your work goes to; nothing
-  runs on the account until you choose. The account row of the Scenario sidebar
-  shows the choice and switches it. **Sign out** forgets both.
+  background. It then asks which team and project your work goes to, or uses
+  your only project when you have one; nothing runs on the account until a
+  project is chosen. If the chosen project is deleted, Blender asks again. The
+  account row of the Scenario sidebar shows the choice and switches it.
+  **Sign out** forgets both.
 - **Saved in Blender** keeps the key and secret in Blender's preferences, masked
   on screen but not in an OS keychain.
 - **Environment** reads `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` from the

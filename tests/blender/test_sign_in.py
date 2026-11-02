@@ -106,6 +106,15 @@ TEAMS = {
 }
 
 
+# One usable project, behind a team where the account has none.
+ONE_PROJECT = {
+    "teams": [
+        {"id": "team_invited", "name": "Invited", "projects": []},
+        {"id": "team_solo", "name": "Solo", "projects": [{"id": "proj_only", "name": "Only"}]},
+    ]
+}
+
+
 class _Session:
     """A signed-in account that holds no token and never refreshes."""
 
@@ -134,9 +143,11 @@ class _Adapter:
     def __exit__(self, *args):
         return False
 
+    answer = TEAMS
+
     def teams(self):
         assert self.online()
-        return TEAMS
+        return self.answer
 
 
 class DestinationTests(unittest.TestCase):
@@ -241,6 +252,65 @@ class DestinationTests(unittest.TestCase):
             [(t.name, [p.name for p in t.projects]) for t in teams],
             [("Studio", ["Film", "Game"]), ("Personal", ["Sketches", "Tests"]), ("Invited", [])],
         )
+
+    def _sign_in_reads(self, answer, *, choose=True):
+        self.runtime.state.browser_teams = None
+        try:
+            with (
+                online_access(True),
+                patch.object(self.sign_in, "SDKAdapter", _Adapter),
+                patch.object(_Adapter, "answer", answer),
+            ):
+                self.sign_in.load_teams(choose=choose)
+                self.sign_in.wait_teams()
+        finally:
+            if bpy.app.timers.is_registered(self.sign_in._poll_teams):
+                bpy.app.timers.unregister(self.sign_in._poll_teams)
+
+    def test_an_account_with_one_project_uses_it_without_asking(self):
+        with patch.object(self.sign_in, "open_chooser") as chooser:
+            self._sign_in_reads(ONE_PROJECT)
+        chooser.assert_not_called()
+        self.assertEqual(self.runtime.project_id(), "proj_only")
+        self.assertEqual(self.runtime.browser_project()[1], "Solo / Only")
+        self.assertFalse(self.runtime.needs_browser_project())
+
+    def test_an_account_with_several_projects_is_asked(self):
+        with patch.object(self.sign_in, "open_chooser") as chooser:
+            self._sign_in_reads(TEAMS)
+        chooser.assert_called_once_with()
+        self.assertIsNone(self.runtime.project_id())
+        self.assertTrue(self.runtime.needs_browser_project())
+
+    def test_a_deleted_project_is_forgotten_when_the_list_arrives(self):
+        self.sign_in.choose("proj_game")
+        without_game = {
+            "teams": [
+                {**team, "projects": [p for p in team["projects"] if p["id"] != "proj_game"]}
+                for team in TEAMS["teams"]
+            ]
+        }
+        with patch.object(self.sign_in, "open_chooser") as chooser:
+            self._sign_in_reads(without_game, choose=False)
+        chooser.assert_not_called()
+        self.assertIsNone(self.runtime.project_id())
+        self.assertTrue(self.runtime.needs_browser_project())
+        self.assertEqual(self.prefs.browser_project_label, "")
+        self.assertIn("Studio / Game is no longer available", self.runtime.state.last_message)
+
+    def test_a_deleted_project_falls_back_to_the_only_one_left(self):
+        self.sign_in.choose("proj_film")
+        with patch.object(self.sign_in, "open_chooser") as chooser:
+            self._sign_in_reads(ONE_PROJECT, choose=False)
+        chooser.assert_not_called()
+        self.assertEqual(self.runtime.project_id(), "proj_only")
+
+    def test_a_listed_choice_is_kept(self):
+        self.sign_in.choose("proj_tests")
+        with patch.object(self.sign_in, "open_chooser") as chooser:
+            self._sign_in_reads(TEAMS, choose=False)
+        chooser.assert_not_called()
+        self.assertEqual(self.runtime.project_id(), "proj_tests")
 
     def test_offline_reads_nothing(self):
         self.runtime.state.browser_teams = None

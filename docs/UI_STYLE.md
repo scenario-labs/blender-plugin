@@ -58,11 +58,14 @@ and the sign-in timers maintain; it starts nothing.
 
 A browser account has no implicit project. Right after the sign-in, the **Choose
 team and project** dialog opens on the account's teams, with a Team and a Project
-menu. Until a project is chosen, the sidebar's account row is a red **Choose team
-and project** button and nothing runs on the account. Once chosen, that row, the
-Account box and Studio's connection page show **Team / Project** as a button that
-reopens the dialog. The choice belongs to the account that made it; Sign out
-forgets it.
+menu; an account with a single usable project across its teams gets that project
+without the dialog, since there is nothing to choose. Until a project is chosen,
+the sidebar's account row is a red **Choose team and project** button and nothing
+runs on the account. Once chosen, that row, the Account box and Studio's connection
+page show **Team / Project** as a button that reopens the dialog. The choice
+belongs to the account that made it; Sign out forgets it. The list is read again at
+startup and whenever the dialog opens; a chosen project it no longer holds (deleted,
+or the role removed) is dropped.
 
 ![Credentials set to Sign in with Scenario before signing in](images/sign-in-preferences-signed-out.png)
 ![The Account box after a browser sign-in, with the chosen team and project, Sign out and Test connection](images/sign-in-preferences-signed-in.png)

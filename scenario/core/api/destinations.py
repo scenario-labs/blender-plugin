@@ -60,6 +60,12 @@ def find(teams, project_id):
     return None
 
 
+def only(teams):
+    """The project id when the account can use exactly one project, else None."""
+    ids = [project.id for team in teams for project in team.projects]
+    return ids[0] if len(ids) == 1 else None
+
+
 def label(team, project):
     """How the destination reads in the interface: ``Team / Project``."""
     return f"{team.name} / {project.name}"

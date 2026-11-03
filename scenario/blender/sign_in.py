@@ -353,10 +353,14 @@ class SCENARIO_OT_sign_in(bpy.types.Operator):
             return {"CANCELLED"}
         if bpy.app.background:
             wait()
+            # No timer runs headless: apply the team list before finishing, so an
+            # only project is used and a caller can choose among several.
+            wait_teams()
             if runtime.browser_session() is None:
                 self.report({"ERROR"}, f"Scenario: {runtime.state.last_message}")
                 return {"CANCELLED"}
-            self.report({"INFO"}, runtime.state.last_message)
+            level = "WARNING" if runtime.state.browser_teams_error else "INFO"
+            self.report({level}, runtime.state.last_message)
             return {"FINISHED"}
         self.report({"INFO"}, "Continue in your web browser")
         return {"FINISHED"}

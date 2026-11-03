@@ -7,6 +7,9 @@ contacts the identity provider. Switching the preference off while the browser
 is pending must cancel the attempt before any token exchange.
 """
 
+import os
+import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -324,3 +327,103 @@ class DestinationTests(unittest.TestCase):
         adapter.assert_not_called()
         self.assertIsNone(self.runtime.state.browser_teams)
         self.assertIn("Allow Online Access", self.runtime.state.browser_teams_error)
+
+
+class _AnsweredBrowser:
+    """A sign-in attempt whose browser answers at once with the account's tokens."""
+
+    url = "https://idp.example.invalid/oauth/authorize?fixture"
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def complete(self, *, cancelled=None, timeout=None, opener=None):
+        return self.tokens
+
+    def close(self):
+        pass
+
+
+class HeadlessSignInTests(unittest.TestCase):
+    """Background Blender runs no timer: the operator applies the team list itself."""
+
+    def setUp(self):
+        self.sign_in = submodule("blender.sign_in")
+        self.runtime = submodule("blender.runtime")
+        self.desktop = submodule("blender.desktop")
+        self.oauth = submodule("core.api.oauth")
+        self.prefs = self.runtime.prefs()
+        self.saved = {
+            name: getattr(self.prefs, name)
+            for name in (
+                "credential_source",
+                "browser_project_id",
+                "browser_project_label",
+                "browser_project_account",
+            )
+        }
+        self.message = self.runtime.state.last_message
+        self.session = (
+            self.runtime.state.browser_session,
+            self.runtime.state.browser_session_loaded,
+        )
+        self.directory = tempfile.TemporaryDirectory()
+        self.app = self.oauth.OAuthApp(
+            issuer="https://idp.example.invalid",
+            client_id="fixture-client",
+            service="https://service.example.invalid/v1",
+        )
+        tokens = self.oauth.TokenSet(
+            issuer=self.app.issuer,
+            client_id=self.app.client_id,
+            service=self.app.service,
+            subject="user_headless",
+            access_token="fixture-access",
+            refresh_token="fixture-refresh",
+            expires_at=time.time() + 3600,
+        )
+        self.browser = _AnsweredBrowser(tokens)
+        self.prefs.credential_source = "BROWSER"
+        self.prefs.browser_project_id = ""
+        self.prefs.browser_project_account = ""
+
+    def tearDown(self):
+        for timer in (self.sign_in._poll, self.sign_in._poll_teams):
+            if bpy.app.timers.is_registered(timer):
+                bpy.app.timers.unregister(timer)
+        self.runtime.set_browser_session(None)
+        self.runtime.state.browser_session, self.runtime.state.browser_session_loaded = self.session
+        for name, value in self.saved.items():
+            setattr(self.prefs, name, value)
+        self.runtime.state.last_message = self.message
+        self.directory.cleanup()
+
+    def _sign_in(self, answer):
+        path = os.path.join(self.directory.name, "sign-in.json")
+        with (
+            online_access(True),
+            patch.object(self.oauth, "selected_app", return_value=self.app),
+            patch.object(self.oauth, "SignInAttempt", return_value=self.browser),
+            patch.object(self.desktop, "open_url"),
+            patch.object(self.runtime, "browser_session_path", return_value=path),
+            patch.object(self.sign_in, "SDKAdapter", _Adapter),
+            patch.object(_Adapter, "answer", answer),
+        ):
+            result = bpy.ops.scenario.sign_in()
+            self.assertEqual(result, {"FINISHED"})
+            self.assertFalse(self.sign_in.pending())
+            self.assertFalse(self.runtime.state.browser_teams_loading)
+
+    def test_an_only_project_is_chosen_before_the_operator_returns(self):
+        self._sign_in(ONE_PROJECT)
+        self.assertEqual(self.runtime.project_id(), "proj_only")
+        self.assertFalse(self.runtime.needs_browser_project())
+        self.assertEqual(self.runtime.state.last_message, "Scenario work goes to Solo / Only")
+
+    def test_several_projects_can_be_chosen_once_the_operator_returns(self):
+        self._sign_in(TEAMS)
+        self.assertTrue(self.runtime.needs_browser_project())
+        self.assertEqual(len(self.runtime.state.browser_teams), 3)
+        result = bpy.ops.scenario.choose_project(team="team_personal", project="proj_tests")
+        self.assertEqual(result, {"FINISHED"})
+        self.assertEqual(self.runtime.project_id(), "proj_tests")

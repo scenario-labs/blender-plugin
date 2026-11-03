@@ -81,10 +81,6 @@ class SignInTests(unittest.TestCase):
             runtime.state.last_message = message
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 # Two teams with several projects each, and a team where the account has none.
 TEAMS = {
     "teams": [
@@ -427,3 +423,7 @@ class HeadlessSignInTests(unittest.TestCase):
         result = bpy.ops.scenario.choose_project(team="team_personal", project="proj_tests")
         self.assertEqual(result, {"FINISHED"})
         self.assertEqual(self.runtime.project_id(), "proj_tests")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -22,6 +22,7 @@ def test_literal_network_destinations_require_a_disclosure_review():
     assert hosts <= {
         "api.cloud.scenario.com",
         "app.scenario.com",
+        "clerk.scenario.com",
         "127.0.0.1",
         "blender.scenario.com",
         "github.com",

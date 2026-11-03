@@ -40,7 +40,7 @@ wheels = [
 ]
 
 [permissions]
-network = "api.cloud.scenario.com, blender.scenario.com (opt-in), 127.0.0.1"
+network = "api.cloud, clerk, blender.scenario.com (opt-in), 127.0.0.1"
 files = "Save generated media to disk and import it into the scene"
 clipboard = "Copy asset ids, errors and MCP setup; paste into the prompt"
 

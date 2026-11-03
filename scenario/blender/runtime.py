@@ -12,6 +12,7 @@ import bpy
 
 from .. import prefs as prefs_module
 from ..core import config
+from ..core.api import oauth
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
 from ..core.api.sdk_catalog import SDKCatalog
@@ -87,6 +88,16 @@ class RuntimeState:
         self.catalog_credentials = None
         self.catalog_project_id = None
         self.retired_catalogs = []
+        # The signed-in browser account (core.api.oauth.TokenSession), loaded from
+        # its private state file on first use; None until then or after sign-out.
+        self.browser_session = None
+        self.browser_session_loaded = False
+        # The signed-in account's teams and projects (core.api.destinations.Team),
+        # None until the sign-in module's worker has read them.
+        self.browser_teams = None
+        self.browser_teams_loading = False
+        self.browser_teams_error = ""
+        self.browser_project_gone = ""  # Label of a chosen project the list no longer holds.
         self.account_label = ""
         self.connection_request = None
         self.connection_worker = None
@@ -274,19 +285,99 @@ def paths():
     return config.Paths(state_dir=state_dir, cache_dir=cache_dir, output_dir=output_dir)
 
 
+BROWSER_SESSION_FILE = "sign-in.json"
+CHOOSE_PROJECT = "Choose the team and project your Scenario work goes to"
+
+
+def browser_session_path():
+    return paths().state_dir / BROWSER_SESSION_FILE
+
+
+def browser_session():
+    """The saved browser account for the selected application, or None.
+
+    Read once per Blender session; a sign-in or sign-out replaces it. A saved
+    session of another application or API (a developer override) is ignored,
+    never sent elsewhere.
+    """
+    if not state.browser_session_loaded:
+        state.browser_session_loaded = True
+        try:
+            app = oauth.selected_app()
+        except oauth.SignInError:
+            return None
+        path = browser_session_path()
+        tokens = oauth.load_tokens(path)
+        if tokens is not None and tokens.matches(app):
+            state.browser_session = oauth.TokenSession(app, tokens, path)
+    session = state.browser_session
+    return session if session is not None and session.ended is None else None
+
+
+def set_browser_session(session):
+    """Install the account a sign-in produced, or None after a sign-out."""
+    state.browser_session = session
+    state.browser_session_loaded = True
+    state.browser_teams = None
+    state.browser_teams_loading = False
+    state.browser_teams_error = ""
+    state.browser_project_gone = ""
+    state.account_label = ""
+    sync_catalog_context()
+
+
 def credentials():
     p = prefs()
+    source = p.credential_source if p else "PREFERENCES"
+    account = None
+    if source == "BROWSER":
+        session = browser_session()
+        account = session.account if session is not None else ""
     return config.resolve_credentials(
         p.api_key if p else "",
         p.api_secret if p else "",
-        source=p.credential_source if p else "PREFERENCES",
+        source=source,
+        account=account,
     )
 
 
 def project_id():
-    """Read the explicit optional override; never infer a key's server project."""
+    """The selected destination: the browser account's chosen project, or a key's override.
+
+    API keys read the explicit optional override and never infer a server project.
+    A browser account has no implicit project: until one is chosen, None.
+    """
     p = prefs()
+    if getattr(p, "credential_source", "PREFERENCES") == "BROWSER":
+        chosen = browser_project()
+        return chosen[0] if chosen is not None else None
     return (getattr(p, "project_id", "") or "").strip() or None
+
+
+def browser_project():
+    """(project id, label) the signed-in account chose, or None.
+
+    A choice saved by another account (a sign-out, then someone else signs in)
+    is not this account's and selects nothing.
+    """
+    p = prefs()
+    session = browser_session()
+    if p is None or session is None:
+        return None
+    chosen = (getattr(p, "browser_project_id", "") or "").strip()
+    if not chosen or getattr(p, "browser_project_account", "") != session.account:
+        return None
+    return chosen, getattr(p, "browser_project_label", "") or chosen
+
+
+def needs_browser_project():
+    """True while a signed-in browser account has not chosen where its work goes."""
+    p = prefs()
+    return (
+        getattr(p, "credential_source", "PREFERENCES") == "BROWSER"
+        and browser_session() is not None
+        and browser_project() is None
+    )
 
 
 def catalog_selection_matches():
@@ -316,19 +407,34 @@ def ensure_catalog():
     creds = credentials()
     if state.catalog is None:
         if not creds.valid:
+            if prefs() is not None and prefs().credential_source == "BROWSER":
+                raise ScenarioError(0, "Sign in to Scenario in Scenario Preferences")
             raise ScenarioError(
                 0, "Complete the selected credential source in Scenario Preferences"
             )
+        session = browser_session() if creds.browser else None
+        if creds.browser and session is None:
+            # A worker ended the session between the two reads.
+            raise ScenarioError(0, "Sign in to Scenario in Scenario Preferences")
+        if creds.browser and project_id() is None:
+            # No server default: a paid action must never land in a team the user did not pick.
+            raise ScenarioError(0, CHOOSE_PROJECT)
         try:
-            selected = SDKCredentials(creds.key, creds.secret)
-            selected.authorization()
+            if session is not None:
+                # No authorization() check here: it could refresh on the main thread.
+                selected = SDKCredentials(token_source=session)
+                storage = dict(service=session.app.service, account=session.account)
+            else:
+                selected = SDKCredentials(creds.key, creds.secret)
+                selected.authorization()
+                storage = {}
         except ValueError:
             raise ScenarioError(
                 0, "The selected credentials are not a valid API key and secret"
             ) from None
         try:
             store = open_credential_store(
-                paths().state_dir / "shared-jobs", selected, project_id=project_id()
+                paths().state_dir / "shared-jobs", selected, project_id=project_id(), **storage
             )
         except StoreError as error:
             raise ScenarioError(0, str(error)) from None

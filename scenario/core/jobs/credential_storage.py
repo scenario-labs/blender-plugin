@@ -100,15 +100,24 @@ def _scope_key(root, database):
     return _read_key(path)
 
 
-def open_credential_store(root, credentials, *, service=API_URL, project_id=None, team_id=None):
-    """Reopen this key pair's local jobs; never discover or select a remote tenant.
+def open_credential_store(
+    root, credentials, *, service=API_URL, project_id=None, team_id=None, account=None
+):
+    """Reopen this key pair's or signed-in account's local jobs; never select a remote tenant.
 
-    The private root belongs under extension user data. Keep scope.key with the
+    A browser account names its stable local identity in ``account`` (the
+    identity provider and subject), so its jobs survive token refreshes. The
+    private root belongs under extension user data. Keep scope.key with the
     database in backups. This is isolation, not encryption or credential storage.
     """
-    if not isinstance(credentials, Credentials) or credentials.bearer_token:
+    if not isinstance(credentials, Credentials):
+        raise ValueError("Local credential storage requires explicit credentials")
+    bearer = bool(credentials.bearer_token or credentials.token_source is not None)
+    if bearer and not (isinstance(account, str) and account):
         raise ValueError("Local credential storage requires an explicit API-key pair")
-    credentials.authorization()
+    if not bearer and account is not None:
+        raise ValueError("An account identity belongs to a browser sign-in only")
+    credentials.authorization(refresh=False)
     # Validate non-secret context before creating any files.
     JobScope(service, "local", project_id, team_id)
     try:
@@ -119,11 +128,15 @@ def open_credential_store(root, credentials, *, service=API_URL, project_id=None
         root = root.resolve(strict=True)
         database = root / "jobs.sqlite3"
         key = _scope_key(root, database)
-        payload = json.dumps(
-            ["api-key-v1", service, credentials.api_key, credentials.api_secret],
-            separators=(",", ":"),
-        ).encode()
-        identity = "local-key-" + hmac.new(key, payload, hashlib.sha256).hexdigest()
+        if bearer:
+            payload = json.dumps(["browser-v1", service, account], separators=(",", ":")).encode()
+            identity = "local-account-" + hmac.new(key, payload, hashlib.sha256).hexdigest()
+        else:
+            payload = json.dumps(
+                ["api-key-v1", service, credentials.api_key, credentials.api_secret],
+                separators=(",", ":"),
+            ).encode()
+            identity = "local-key-" + hmac.new(key, payload, hashlib.sha256).hexdigest()
         return JobStore(database, JobScope(service, identity, project_id, team_id))
     except OSError:
         raise StoreError(

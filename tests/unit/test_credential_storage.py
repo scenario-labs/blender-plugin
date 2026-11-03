@@ -211,6 +211,51 @@ def test_invalid_or_bearer_credentials_do_not_create_storage(tmp_path, credentia
     assert list(tmp_path.iterdir()) == []
 
 
+class _Source:
+    def __init__(self, token):
+        self.token = token
+
+    def peek(self):
+        return self.token
+
+    def bearer(self):
+        return self.token
+
+
+def test_a_browser_account_keeps_its_jobs_across_token_rotation(tmp_path):
+    account = "https://idp.example.invalid#user_1"
+    first = open_credential_store(
+        tmp_path, Credentials(token_source=_Source("access-1")), account=account
+    )
+    record = uncertain(first)
+    rotated = open_credential_store(
+        tmp_path, Credentials(token_source=_Source("access-2")), account=account
+    )
+    assert rotated.scope == first.scope
+    assert rotated.scope.account_id.startswith("local-account-")
+    assert rotated.get(record.intent.request_id).state is JobState.SUBMITTING
+    other = open_credential_store(
+        tmp_path, Credentials(token_source=_Source("access-1")), account=account + "0"
+    )
+    assert other.scope != first.scope
+    assert other.scope.account_id != open_credential_store(tmp_path, CREDS).scope.account_id
+
+
+@pytest.mark.parametrize(
+    "credentials, account",
+    [
+        (Credentials(token_source=_Source("access-1")), None),
+        (Credentials(token_source=_Source("access-1")), ""),
+        (Credentials(bearer_token="access-1"), None),
+        (CREDS, "https://idp.example.invalid#user_1"),
+    ],
+)
+def test_an_account_identity_belongs_to_a_browser_sign_in_only(tmp_path, credentials, account):
+    with pytest.raises(ValueError):
+        open_credential_store(tmp_path, credentials, account=account)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_symlinked_scope_key_is_rejected(tmp_path):
     original = open_credential_store(tmp_path / "first", CREDS)
     second = tmp_path / "second"

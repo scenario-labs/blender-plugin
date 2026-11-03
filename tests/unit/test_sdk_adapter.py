@@ -78,11 +78,33 @@ def adapter():
         client.close()
 
 
-@pytest.mark.parametrize("bearer", [False, True])
+class _TokenSource:
+    """A stand-in for core.api.oauth.TokenSession: one token per bearer() call."""
+
+    def __init__(self, *tokens):
+        self.tokens = list(tokens)
+        self.bearer_calls = 0
+
+    def peek(self):
+        return self.tokens[0]
+
+    def bearer(self):
+        self.bearer_calls += 1
+        token = self.tokens[0]
+        if isinstance(token, Exception):
+            raise token
+        if len(self.tokens) > 1:
+            self.tokens.pop(0)
+        return token
+
+
+@pytest.mark.parametrize("bearer", [False, True, "source"])
 def test_account_and_headers_are_isolated_without_changing_environment(
     adapter, monkeypatch, bearer
 ):
     ambient = {
+        "SCENARIO_API_KEY": "ambient-key",
+        "SCENARIO_API_SECRET": "ambient-secret",
         "SCENARIO_SDK_API_KEY": "ambient-key",
         "SCENARIO_SDK_API_SECRET": "ambient-secret",
         "SCENARIO_SDK_JWT": "ambient-jwt",
@@ -99,17 +121,25 @@ def test_account_and_headers_are_isolated_without_changing_environment(
         requests.append(request)
         return httpx.Response(200, json={"job": {"id": "fixture-job"}})
 
-    credentials = (
-        Credentials(bearer_token="selected-token")
-        if bearer
-        else Credentials("selected-key", "selected-secret")
-    )
+    if bearer == "source":
+        credentials = Credentials(token_source=_TokenSource("selected-token", "rotated-token"))
+    elif bearer:
+        credentials = Credentials(bearer_token="selected-token")
+    else:
+        credentials = Credentials("selected-key", "selected-secret")
     client = adapter(handler, credentials=credentials, project_id="selected-project")
     client.job("fixture-job")
     request = requests[0]
     assert request.url.host == "service.example.invalid"
     assert request.headers["Host"] == "service.example.invalid"
-    assert request.headers["Authorization"] == credentials.authorization()
+    if bearer == "source":
+        assert request.headers["Authorization"] == "Bearer selected-token"
+        # Read per request: a refresh between two calls reaches the second one.
+        client.job("fixture-job")
+        assert requests[1].headers["Authorization"] == "Bearer rotated-token"
+        assert credentials.token_source.bearer_calls == 2
+    else:
+        assert request.headers["Authorization"] == credentials.authorization()
     assert request.headers["User-Agent"] == f"ScenarioBlender/{__version__}"
     assert len(request.headers.get_list("Authorization")) == 1
     assert "X-Private" not in request.headers and "X-Project-Id" not in request.headers
@@ -368,6 +398,7 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
     assert len(message.split(". ", 1)[0]) + 1 <= SIDEBAR_CHARS
     assert "Preferences" not in message
     assert error.value.__cause__ is None and error.value.__suppress_context__
+
     private = (
         "selected-key",
         "selected-secret",
@@ -381,6 +412,37 @@ def test_status_errors_are_actionable_without_private_details(adapter, status, p
     assert {dict(call.url.params).get("projectId") for call in calls} == {project}
     # A model page is an allow-listed read: the SDK retries only 429 and 5xx.
     assert len(calls) == (1 + READ_RETRIES if status in (429, 500) else 1)
+
+
+SIGNED_IN_REJECTED = "Sign-in rejected (HTTP 401). Sign out of Scenario and sign in again."
+SIGNED_IN_DENIED = (
+    "Access denied (HTTP 403). Choose another team and project, or sign out of "
+    "Scenario and sign in again."
+)
+
+
+@pytest.mark.parametrize(
+    "status,project,expected",
+    [
+        (401, None, SIGNED_IN_REJECTED),
+        (401, PRIVATE_PROJECT, SIGNED_IN_REJECTED),
+        (403, None, SIGNED_IN_DENIED),
+        (403, PRIVATE_PROJECT, SIGNED_IN_DENIED),
+        (429, PRIVATE_PROJECT, LIMITED),
+    ],
+)
+def test_a_browser_account_is_never_told_to_check_a_key(adapter, status, project, expected):
+    client = adapter(
+        lambda request: httpx.Response(status, json={"error": "do-not-expose"}),
+        credentials=Credentials(token_source=_TokenSource("selected-token")),
+        project_id=project,
+    )
+    with pytest.raises(AdapterStatusError) as error:
+        client.model_page(page_size=1)
+    message = str(error.value)
+    assert message == expected
+    assert "key" not in message.lower()
+    assert len(message.split(". ", 1)[0]) + 1 <= SIDEBAR_CHARS
 
 
 def test_unscoped_discovery_never_blames_the_project_override(adapter):
@@ -526,11 +588,30 @@ def test_unverified_routing_and_invalid_records_never_reach_transport(adapter, c
         Credentials("key"),
         Credentials("key", "secret", "token"),
         Credentials(bearer_token="bad\ntoken"),
+        Credentials(bearer_token="token", token_source=_TokenSource("other")),
+        Credentials("key", "secret", token_source=_TokenSource("token")),
+        Credentials(token_source=_TokenSource("bad token")),
     ],
 )
 def test_invalid_credentials_fail_before_client_creation(adapter, credentials):
     with pytest.raises(ValueError):
         adapter(credentials=credentials)
+
+
+def test_an_ended_browser_session_refuses_before_sending(adapter):
+    from scenario.core.api.oauth import SignedOut
+
+    source = _TokenSource("selected-token")
+    client = adapter(
+        lambda request: pytest.fail("A refused token must not reach transport"),
+        credentials=Credentials(token_source=source),
+    )
+    source.tokens = [SignedOut("The Scenario session has ended; sign in again")]
+    with pytest.raises(AdapterError, match="session has ended") as excinfo:
+        client.job("fixture-job")
+    assert not isinstance(excinfo.value, AdapterStatusError)
+    with pytest.raises(AdapterError, match="session has ended"):
+        client.create_collection("name")
 
 
 def test_closed_clients_and_blank_projects_are_rejected(adapter):

@@ -25,6 +25,7 @@ BASELINE = (
     "test_upload_transfers",
     "test_upload_store",
     "test_credentials",
+    "test_sign_in",
     "test_sdk_connection",
     "test_result_commands",
     "test_upload_commands",

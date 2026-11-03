@@ -21,6 +21,7 @@ from . import (
     props,
     result_previews,
     runtime,
+    sign_in,
 )
 
 KIND_ICON = {
@@ -87,15 +88,21 @@ def draw_account_strip(layout, context):
     if not creds.valid:
         row = layout.row(align=True)
         source = getattr(runtime.prefs(), "credential_source", "PREFERENCES")
-        message = (
-            "Environment key/secret missing"
-            if source == "ENVIRONMENT"
-            else "Add key and secret in Preferences"
-        )
+        if source == "BROWSER":
+            message = "Sign in to Scenario in Preferences"
+        elif source == "ENVIRONMENT":
+            message = "Environment key/secret missing"
+        else:
+            message = "Add key and secret in Preferences"
         row.label(text=message, icon="ERROR")
         row.operator("preferences.addon_show", text="", icon="PREFERENCES").module = runtime.PACKAGE
         draw_feedback_heart(row)
         return False
+    if getattr(runtime.prefs(), "credential_source", "PREFERENCES") == "BROWSER":
+        # Always in view: the team and project the work goes to, and the switch.
+        sign_in.draw_destination(layout)
+        if runtime.browser_project() is None:
+            return False
     if not online:
         return False
     row = layout.row(align=True)

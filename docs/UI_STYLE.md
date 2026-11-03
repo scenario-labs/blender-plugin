@@ -47,6 +47,30 @@ other platforms continue in #494.
 ![Environment credentials retain the explicit optional project B selection](images/project-scope-environment.png)
 ![Viewport selection and front view remain usable after editing Preferences](images/project-scope-viewport.png)
 
+## Browser sign-in in Preferences
+
+**Credentials > Sign in with Scenario** replaces the key fields and the Project
+ID field with one **Sign in with Scenario** button and a one-line note; while the
+browser is open the box says so and offers **Cancel**; once signed in it shows
+the account state, the chosen **Team / Project** as a button, then **Sign out**
+and **Test connection** side by side. Drawing reads the saved session the pump
+and the sign-in timers maintain; it starts nothing.
+
+A browser account has no implicit project. Right after the sign-in, the **Choose
+team and project** dialog opens on the account's teams, with a Team and a Project
+menu; an account with a single usable project across its teams gets that project
+without the dialog, since there is nothing to choose. Until a project is chosen,
+the sidebar's account row is a red **Choose team and project** button and nothing
+runs on the account. Once chosen, that row, the Account box and Studio's connection
+page show **Team / Project** as a button that reopens the dialog. The choice
+belongs to the account that made it; Sign out forgets it. The list is read again at
+startup and whenever the dialog opens; a chosen project it no longer holds (deleted,
+or the role removed) is dropped, and the sidebar says so under the red button.
+
+![Credentials set to Sign in with Scenario before signing in](images/sign-in-preferences-signed-out.png)
+![The Account box after a browser sign-in, with the chosen team and project, Sign out and Test connection](images/sign-in-preferences-signed-in.png)
+![The Choose team and project dialog with a Team and a Project menu](images/sign-in-choose-project.png)
+
 ## Tabs and segmented choices
 
 A row of mutually exclusive choices (lane tabs, picker modality tabs and

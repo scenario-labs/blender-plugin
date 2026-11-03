@@ -35,6 +35,10 @@ CALLBACK_PATH = "/callback"
 SCOPES = "profile email offline_access"
 # A browser sign-in that nobody completes stops listening after this long.
 SIGN_IN_TIMEOUT = 300.0
+# The listener serves one connection at a time: one that sends no request for
+# this long (a browser's unused extra connection) is dropped, so it can hold
+# neither the real callback nor close().
+CALLBACK_READ_TIMEOUT = 5.0
 # A token this close to its expiry is refreshed before it is used.
 REFRESH_MARGIN = 60.0
 TOKEN_TIMEOUT = 30.0
@@ -351,6 +355,8 @@ class LoopbackServer:
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            timeout = CALLBACK_READ_TIMEOUT
+
             def log_message(self, *args):
                 pass
 

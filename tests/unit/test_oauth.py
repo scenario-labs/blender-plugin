@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import socket
 import stat
 import threading
 import time
@@ -270,6 +271,21 @@ def test_listener_reports_denial_and_malformed_callbacks(listener, query, messag
     assert status == 200 and "not completed" in page
     with pytest.raises(oauth.SignInError, match=message):
         server.wait(timeout=1)
+
+
+def test_a_silent_connection_holds_neither_the_callback_nor_close(listener, monkeypatch):
+    # A browser can open a connection it never uses; the listener serves one at a time.
+    monkeypatch.setattr(oauth, "CALLBACK_READ_TIMEOUT", 0.3)
+    server = listener()
+    address = ("127.0.0.1", urllib.parse.urlsplit(server.redirect_uri).port)
+    with socket.create_connection(address):
+        status, page = _get(f"{server.redirect_uri}?state=state-1&code=code-1")
+        assert status == 200 and "close this tab" in page
+        assert server.wait(timeout=1) == "code-1"
+        with socket.create_connection(address):
+            started = time.monotonic()
+            server.close()
+            assert time.monotonic() - started < 2
 
 
 def test_listener_wait_honors_timeout_and_cancellation(listener):

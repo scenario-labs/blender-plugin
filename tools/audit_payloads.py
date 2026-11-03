@@ -248,9 +248,11 @@ def audit_one(model_id, contexts, record, schema):
                     )
                 )
 
-    # 3. edit3d/3d models must have a detectable mesh input (kind 3d file).
+    # 3. edit3d/3d models must have a detectable mesh input (kind 3d file). Motion models
+    #    animate their own skeleton from the prompt and upload no mesh.
     if (
-        (edit3d or "3d" in [c.split(":")[-1] for c in contexts])
+        model_id not in C.MOTION_MODELS
+        and (edit3d or "3d" in [c.split(":")[-1] for c in contexts])
         and mesh is None
         and any(s.kind == "3d" for s in files) is False
     ):

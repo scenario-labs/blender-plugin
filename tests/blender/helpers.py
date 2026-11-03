@@ -59,6 +59,10 @@ def reset_scene():
 # From 5.1, a file read in the background starts unmarked, as on the desktop.
 MARKS_OBSERVABLE = not bpy.app.background or bpy.app.version >= (5, 1, 0)
 
+# Background Workbench renders crash on runners without a GPU context; macOS runs have one.
+GPU_RENDERS = sys.platform == "darwin"
+GPU_REASON = "Workbench needs the GPU context of macOS background runs"
+
 
 def assert_unmarked(test, message=None):
     """Check that the open file is not marked modified, where Blender can show it."""

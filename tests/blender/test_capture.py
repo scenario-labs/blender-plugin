@@ -7,7 +7,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import bpy
-from helpers import FRAME_NOTIFYING, recording_context, reset_scene, submodule
+from helpers import (
+    FRAME_NOTIFYING,
+    GPU_REASON,
+    GPU_RENDERS,
+    recording_context,
+    reset_scene,
+    submodule,
+)
 
 
 def _is_video(render):
@@ -144,6 +151,7 @@ class CaptureTests(unittest.TestCase):
         )
         self.assertEqual(self.capture.RenderSettings.snapshot(scene), before)
 
+    @unittest.skipUnless(GPU_RENDERS, GPU_REASON)
     def test_playblast_encoding_keeps_a_clip_of_a_lossless_scene_small(self):
         if not getattr(bpy.app.ffmpeg, "supported", False):
             self.skipTest("this Blender build has no FFmpeg")

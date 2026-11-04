@@ -6,12 +6,13 @@
   "evidence": {
     "path": "docs/SDK_UPLOADS.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
-    "limits": "Claims touched by later code commits were checked against the SDK adapter, upload store, staging, transfer, coordinator and form code; other sections were spot-checked. No live Scenario or S3 call, no desktop interaction, and no claim that the service accepts every media kind, size or multipart file.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Changed claims checked against the pinned SDK upload types, adapter, upload store, staging, transfer, coordinator and form code; other sections spot-checked. No live Scenario or S3 call, no desktop interaction, and no claim that the service accepts every media kind, size or multipart file.",
     "sources": [
       "docs/SDK_UPLOADS.md",
       "pyproject.toml",
+      "scenario/blender/blockout_jobs.py",
       "scenario/blender/capture.py",
       "scenario/blender/film.py",
       "scenario/blender/film_capture.py",

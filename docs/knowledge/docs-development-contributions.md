@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/development/contributions.md",
     "coverage": "policy",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
     "limits": "Policy guide. Workflow, Dependabot, lychee, hook and house-rule statements were checked against their configuration; GitHub rulesets, Actions settings, Scorecard publication and hosted link reporting were not observed.",
     "sources": [
       ".github/dependabot.yml",

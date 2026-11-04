@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/RESULT_PREVIEWS.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
-    "limits": "Source-reviewed against the preview modules, scheduler, lane commands and Blender owners. No live Scenario preview, workflow review asset or provider audio file; real players, sound output and drawing on Windows, Linux and macOS x64 desktops are not exercised.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Source-reviewed against the preview modules, scheduler, lane commands, Results grid requests and Blender owners. No live Scenario preview, workflow review asset or provider audio file; real players, sound output and drawing on Windows, Linux and macOS x64 desktops are not exercised.",
     "sources": [
       ".github/workflows/blender-baseline.yml",
       "scenario/blender/audio_player_worker.py",
@@ -17,6 +17,7 @@
       "scenario/blender/panels.py",
       "scenario/blender/preview_decode.py",
       "scenario/blender/pump.py",
+      "scenario/blender/result_grid.py",
       "scenario/blender/result_media.py",
       "scenario/blender/result_previews.py",
       "scenario/blender/review_previews.py",
@@ -42,6 +43,7 @@
       "tests/blender/run_all.py",
       "tests/blender/test_audio_player.py",
       "tests/blender/test_mcp_result_previews.py",
+      "tests/blender/test_result_grid.py",
       "tests/blender/test_result_media.py",
       "tests/blender/test_result_preview_tiles.py",
       "tests/blender/test_result_previews.py",

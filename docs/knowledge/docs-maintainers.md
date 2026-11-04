@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/MAINTAINERS.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
     "limits": "Workflow, Dependabot, CODEOWNERS, smoke tooling, site proxy and manifest claims checked against the sources. Rulesets, merge and security settings, access, Pages, Vercel, project 31, environment secrets and Scorecard results are recorded readbacks; no live GitHub or Vercel setting was read.",
     "sources": [
       ".github/CODEOWNERS",

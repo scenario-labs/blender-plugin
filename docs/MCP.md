@@ -255,6 +255,14 @@ without UVs, else `UV`) and `tile_size_m`, the metres one texture repeat spans; 
 [material application](MATERIAL_APPLICATION.md) for single-user restrictions, supported
 maps, tiling, rollback and no-global-undo limits.
 
+`purpose: camera_background` with the `asset_id` of a downloaded colour PNG, JPEG,
+OpenEXR, MP4 or WebM result adds it as one more background of the scene camera;
+`purpose: image_plane` adds a still as a new 1 m tall plane at the cursor, and
+`plane_unlit: true` makes it emit its colour. The approval returns `camera`,
+`backgrounds_kept` and `frame`, or `cursor` and `plane_unlit`. `job_status` offers
+eligible results as actions of the same names. See
+[camera background and image plane](BLENDER_JOB_CONTEXT.md#saved-camera-background-and-image-plane).
+
 ## Typed local references
 
 `upload_reference` accepts a chosen local file and an optional `kind`: `image`
@@ -956,7 +964,7 @@ own type (`0.0` in a decimal field), as a form does. `null` still leaves an
 optional parameter to the service, like a field switched off in the form. A few
 models start at the curated value their form shows instead: Tripo P2, text or image,
 with Auto Size on and Face Limit 50000, Rodin with the PBR material, Uthana Text to
-Motion 3.0 with Animation only on. The
+Motion 3.0 with Animation only on, Meshy 7 Retexture with Generate PBR Maps on. The
 [Environment lane](#environment-lane-360-panoramas) has no form; its requests
 apply their panorama contract's lane defaults and sizes instead.
 Approval is unchanged: `generate` needs the same parameters and the exact
@@ -1703,7 +1711,7 @@ clip or selected mesh; the native **Render result** snapshot has no
 it into the saved Studio form, and the quote binds captured selected-mesh sources
 the same way.
 
-`estimate_workflow` requests a free exact quote through SDK 2.2.0
+`estimate_workflow` requests a free exact quote through SDK 2.5.0
 [`workflows.run`](https://docs.scenario.com/api/python/resources/workflows/methods/run)
 with `dry_run="true"` in the query. It returns the original `parameters`, the
 normalized `payload` including defaults, and `cu_cost_exact`. Review that payload

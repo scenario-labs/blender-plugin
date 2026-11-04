@@ -206,8 +206,8 @@ collection and parent group. It places the model's world-space bottom center at
 the approved 3D cursor, retains the imported hierarchy and materials, packs
 embedded images, and leaves existing objects, selection, active object and
 viewport shading unchanged. It does not replace an existing source mesh or
-implement the edit policies above. Alternate result files and maps remain saved;
-only the selected GLB is imported. One import consumes the job's application
+implement the edit policies above. Only the selected GLB is imported; alternate
+results and maps stay with the job. One import consumes the job's application
 claim.
 
 [`glb.inspect_glb`](../scenario/core/scene/glb.py) checks the
@@ -362,7 +362,7 @@ handling. `model/gltf-binary` and `model/glb` are GLB, `model/gltf+json` is JSON
 glTF, and `model/x-fbx` plus the two Autodesk `application/*` FBX types are FBX.
 OBJ, PLY (`model/ply`, `application/x-ply`), SPZ and `.splat` complete the supported
 set; `model/mtl` is only an OBJ companion. Other `model/*` types, such as ksplat,
-sog, STL and USD, are reported as unsupported. `check_signature` confirms that
+sog, STL, USD and USDZ, are reported as unsupported. `check_signature` confirms that
 leading bytes match the declared format (binary FBX, gzip or `NGSP` SPZ, whole
 32-byte `.splat` records); it never chooses a format by content.
 
@@ -458,7 +458,8 @@ with `importable`, `primary`, its members and roles, glTF candidate resources an
 `import_findings` for files left out. SPZ and `.splat` units are offered as
 splats, and a PLY unit is a mesh or splats depending on its bytes; both follow
 [saved Gaussian splat import](#saved-gaussian-splat-import). Nothing is imported
-automatically.
+automatically. Choosing a unit whose [GLB copies](RESULT_TRANSFERS.md#glb-format-copies-on-demand)
+are not saved yet, for an import or a mesh edit, downloads them first; choose it again afterwards.
 
 The review captures the scene revision and cursor like the GLB command above. The
 dialog and MCP approval name the format, the saved files (for example
@@ -516,8 +517,8 @@ actions and the staging scene, then verifies the datablock sets. Receipt-only
 retry, reuse claims and session cleanup are shared with the GLB path. MCP status
 keeps a session-local `model_import` summary (unit, format, members, dropped
 references and frame-rate mismatch) until undo history changes. Newly downloaded
-`model/glb`, Autodesk FBX `application/*` and `model/mtl` results keep `.glb`,
-`.fbx` and `.mtl` local name extensions instead of `.bin`; saved names never
+`model/glb`, Autodesk FBX `application/*`, `model/mtl` and USDZ results keep `.glb`,
+`.fbx`, `.mtl` and `.usdz` local name extensions instead of `.bin`; saved names never
 change, and import uses canonical snapshot names, not local ones.
 
 ## Saved Gaussian splat import

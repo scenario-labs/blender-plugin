@@ -16,7 +16,7 @@ approval before the render quote.
    and optional project. `account_id` is required for the coordinator even though
    read/estimate-only adapters may omit it. Missing identity fails before any
    request; a store with different scope is also rejected.
-   For explicit API keys, the active runtime's
+   For explicit API keys or a browser sign-in, the active runtime's
    [credential-bound local store](JOB_STORAGE.md#identity-and-ownership) supplies
    the same local account pseudonym to the catalog adapter and store. No server
    identity discovery is needed. These identities are not proof that credentials
@@ -537,8 +537,9 @@ of the full account/team/project/service scope and local request identity, so
 identical asset names in separate requests cannot overwrite each other.
 
 `download_results` loads a missing manifest, durably claims `downloading`, and
-retrieves each unfinished asset again for a fresh signed URL. Identity, MIME and
-size must still match the manifest, apart from
+retrieves each unfinished asset but
+[on-demand copies](RESULT_TRANSFERS.md#glb-format-copies-on-demand) again for a
+fresh signed URL. Identity, MIME and size must still match the manifest, apart from
 [legacy OBJ/MTL byte counts](RESULT_TRANSFERS.md#legacy-obj-and-mtl-byte-counts).
 A saved known texture role must match too.
 An unclassified/legacy result remains unclassified even if a fresh response
@@ -548,7 +549,8 @@ is refreshed, never switched to a newly declared original or relabelled as 360.
 The bounded downloader publishes without overwriting files; its verification
 uses the same configured byte cap. Each receipt commits before advancing to
 another asset. Existing receipts are rehash-verified instead of redownloaded.
-All receipts must exist before `ready`.
+All other receipts must exist before `ready`; `fetch_results` saves chosen copies
+later under the same checks and keeps the job state.
 
 A transfer fails only after its [bounded retries](RESULT_TRANSFERS.md#transfer-lane-retries-and-resume).
 A transfer, metadata or verification failure saves `download_failed` and reports
@@ -560,15 +562,15 @@ resumes an interrupted worker automatically or calls generation. An unreceipted
 published file after a crash requires separate explicit reconciliation.
 
 `verify_results` returns the unchanged scoped/origin-bound record and verified
-local paths for `ready`, `apply_failed` or `applied`. It performs no service call
-or scene mutation and rejects a changed job revision. These paths are not an
-application authorization: the Blender owner must recheck origin/target and
-atomically claim application before changing the scene. Interrupted `applying`
-is deliberately rejected; a prior scene mutation may already have occurred.
+local paths (none for an unfetched copy) for `ready`, `apply_failed` or `applied`.
+It performs no service call or scene mutation and rejects a changed job revision.
+These paths are not an application authorization: the Blender owner must recheck
+origin/target and atomically claim application before changing the scene. Interrupted
+`applying` is deliberately rejected; a prior scene mutation may already have occurred.
 
-All three methods are available through `JobWorkers` with the same SDK lifetime
-and main-thread polling interface; downloads run on the transfer lane, the others
-on the job workers. Deactivation stops subsequent asset work and cancels an
+These methods are available through `JobWorkers` with the same SDK lifetime and
+main-thread polling interface; downloads and fetches run on the transfer lane, the
+others on the job workers. Deactivation stops subsequent asset work and cancels an
 in-flight transfer at its next chunk; an asset whose bytes were already complete
 can still save its receipt to the old scope.
 Closing a view must not deactivate these application-owned workers. The runtime
@@ -581,8 +583,8 @@ every model lane; recovered results apply only after fresh destination approval
 
 `recover_downloads(request_id, expected_revision=...)` is an explicit offline
 command for a saved `downloading` record. It rehashes every committed receipt.
-If every asset has a verified receipt, it saves `ready`; otherwise it saves
-`download_failed`, retaining all prior receipts. A later explicit
+If every asset but an on-demand copy has a verified receipt, it saves `ready`;
+otherwise it saves `download_failed`, retaining all prior receipts. A later explicit
 `download_results` command retries only missing assets using fresh SDK URLs.
 Recovery itself calls neither the SDK nor generation, starts no transfer,
 resolves no Blender target and does not apply results.

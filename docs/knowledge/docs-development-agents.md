@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/development/agents.md",
     "coverage": "policy",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
     "limits": "Commands, links, settings and validator options were checked against the skill files, project settings, MCP client templates, lock file and validator source. The validator was not run, and Codex or Claude command invocation was not exercised.",
     "sources": [
       ".agents/skills/blender-download-artifacts/SKILL.md",

@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/MODEL_PAYLOAD_AUDIT.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
-    "limits": "Source-reviewed against the audit tool, API contract workflow, failure reporters and SDK adapter. No live audit, workflow dispatch or Scenario call; hosted scheduling and issue reporting were not re-run.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Source-reviewed against the audit tool, API contract workflow, failure reporters and SDK adapter. No live audit, workflow dispatch or Scenario call; hosted scheduling and issue reporting are not exercised.",
     "sources": [
       ".github/workflows/api-contract.yml",
       "docs/MODEL_PAYLOAD_AUDIT.md",

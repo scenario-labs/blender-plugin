@@ -6,7 +6,7 @@ accepted candidate, the published release and the evidence still pending, which
 [#494](https://github.com/scenario-labs/blender-plugin/issues/494) now tracks,
 including the checks below owned by #68 or #440. It does not
 replace the [release plan](release-plan.md) or narrow retained-lane acceptance,
-and publication authorizes nothing further. OAuth remains deferred under #67. The
+and publication authorizes nothing further. The
 [0.10.0 evidence by lane](#0100-evidence-by-lane) is the current summary; later
 sections keep their own candidate identities and dates.
 

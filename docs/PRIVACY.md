@@ -79,7 +79,8 @@ agent connection uses loopback HTTP, described below.
 Sign in with Scenario opens `https://clerk.scenario.com`, Scenario's identity
 provider, in your browser, and the extension exchanges and refreshes its tokens
 there. The browser returns to a listener on `127.0.0.1` (port 9877, 9878 or
-9879) once, for the sign-in's single-use code; the listener stops right after.
+9879) once, for the sign-in's single-use code; the listener stops right after. The
+extension then reads your teams and projects from the Scenario API so you can choose one.
 
 The official update repository and handbook use `https://blender.scenario.com/`,
 served by Vercel from the copy hosted by GitHub Pages. The site counts each
@@ -178,9 +179,10 @@ it leaks or a machine holding it is lost.
 
 Sign in with Scenario keeps its access and refresh tokens in `state/sign-in.json`
 under the extension's user directory, a private file (owner read and write
-only) that is never written into a `.blend` file. The token is refreshed in
-place; Sign out deletes the file. Revoke the "Scenario for Blender" application
-in your Scenario account if a machine holding it is lost.
+only) that is never written into a `.blend` file. The token is refreshed in place.
+Blender's preferences keep the chosen project's ID, its team and project names and your
+account's sign-in ID. Sign out deletes the file and that choice. Revoke the "Scenario for Blender"
+application in your Scenario account if a machine holding it is lost.
 
 The extension's own user directory under Blender's extensions folder keeps the
 recovery state of shared jobs in `state/shared-jobs/jobs.sqlite3`: each job's IDs,

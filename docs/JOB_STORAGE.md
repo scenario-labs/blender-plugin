@@ -15,10 +15,11 @@ cannot be read or changed through the current instance.
 
 For explicit API-key credentials,
 [`open_credential_store`](../scenario/core/jobs/credential_storage.py) binds that
-scope to the exact service and selected key/secret pair. A random installation-local
-key signs this input with HMAC-SHA256; only the resulting `local-key-…` pseudonym
-enters `JobScope.account_id`. It is not a server account identifier and is never
-sent to Scenario. No discovery request or team/project selection is required.
+scope to the exact service and selected key/secret pair, or for a browser sign-in to the
+account's issuer and subject, which token refreshes keep. A random installation-local key
+signs this input with HMAC-SHA256; only the resulting `local-key-…` or `local-account-…`
+pseudonym enters `JobScope.account_id`. It is not a server account identifier and is never
+sent to Scenario. API keys need no discovery request or team/project selection.
 Optional explicit team/project values still partition the store. Changing either
 credential selects different records; switching back to the original pair restores
 access to its records. Credential rotation does not automatically transfer jobs.
@@ -412,11 +413,10 @@ designs need: result file source, result projection and per-scope lane defaults
 for trained or private models. Live remote progress, a failed job's reason, the
 composer's scene/lane binding, workflow step decisions, Film review/export
 state, asset organization reviews and preview caches stay in memory or in
-disposable caches, so they add nothing here. No intent-level lane or
-trained-model display name is stored: restarted display records remain generic
-model jobs and show the quoted target model. Saved `.blend` properties added by
-later interface work are separate from this database, and the upload database
-keeps its own version.
+disposable caches, so they add nothing here. No trained-model display name is
+stored; schema 13 adds the [intent lane](#generation-lane). Saved `.blend` properties
+added by later interface work are separate from this database, and the upload
+database keeps its own version.
 
 Of three further fields considered here, schema 12 stores one:
 
@@ -456,7 +456,7 @@ chooses the file and refreshes its destination.
 
 A separate `trained_defaults` table holds at most one explicit default per selected
 scope and generation lane. The key is the same SHA256 of `JobScope` used by jobs,
-so the credential pseudonym, API base, team and project override all partition it;
+so the credential pseudonym, API base, team and project all partition it;
 no server identity or discovered default project is inferred. A `TrainedModelDefault`
 names the lane, a route and model identities only:
 
@@ -492,8 +492,8 @@ preserved for recovery.
 Callers reach these rows through one
 [`ModelDefaults`](../scenario/core/jobs/model_defaults.py) owner per selection,
 not through the store directly. `runtime.ensure_model_defaults` binds it to the
-selected job store, so its scope is exactly the credential pseudonym and optional
-Project ID override that select local jobs. A blank override is the key scope;
+selected job store, so its scope is exactly the credential pseudonym and project
+that select local jobs. A key's blank Project ID override is the key scope;
 no project, team or account is taken from discovery or a model list. It needs
 no network, job session or connection check. Reading a lane never writes and
 never falls back to another lane, project or credential scope. `save` takes an

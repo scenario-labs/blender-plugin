@@ -43,12 +43,14 @@ mesh. A **Longest side** checkbox, off by default, enables a length field; when
 checked, a line says the group is scaled evenly with its bottom at the cursor.
 When the job edited a mesh still in the scene, a **Match <mesh>** checkbox comes
 first, on for shape-keeping tasks; it replaces the cursor and length lines with
-the mesh's bottom center and longest side.
-Changing either calls `check()`, which exchanges the approval for a new handle
-with the same scene, cursor and unit, as for splat options below. A last line
-says the files are checked again first. Every line stays
-within 66 characters, the longest line the earlier 480 px desktop capture
-showed. Drawing only reads the prepared values; cancel discards the approval.
+the mesh's bottom center and longest side. Changing either calls `check()`, which
+exchanges the approval for a new handle with the same scene, cursor and unit, as
+for splat options below. A last line says the files are checked again first.
+Every line stays within 66 characters, the longest line the earlier 480 px
+desktop capture showed. Drawing only reads the prepared values; cancel discards
+the approval. An import or mesh edit whose files wait for an
+[on-demand download](../RESULT_TRANSFERS.md#glb-format-copies-on-demand) starts it
+instead of a review; choose it again once it finishes.
 
 Physical desktop evidence of this dialog, its fit at other sizes and DPI,
 and viewport interaction after a non-GLB import is pending.
@@ -210,9 +212,11 @@ objects](../MESH_APPLICATION.md#several-captured-objects).
 
 The mesh review's **Replace textures** choice preserves geometry and adopts all
 result UV layers and mesh material assignments. Its two explanation lines name
-that replacement and require the same surface, allowing triangles and seams.
-Keep original and coordinate placement remain explicit, and drawing stays read-only.
-Both current-destination and captured-source review use this policy.
+that replacement and require the same surface, allowing triangles and seams. A
+**Keep texture** menu (**Selected faces**, **Head** or **Nothing**) and a line
+naming the [kept faces](../MESH_APPLICATION.md#keep-the-sources-texture-on-chosen-faces)
+follow. Keep original and coordinate placement remain explicit, and drawing stays
+read-only. Both current-destination and captured-source review use this policy.
 
 Mouse selection exposed the policy and its geometry-preservation explanation.
 Escape canceled without changing materials, geometry or local claims. A fresh

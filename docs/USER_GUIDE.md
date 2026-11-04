@@ -64,11 +64,10 @@ scene, run tools and generate over MCP</p>
 </div>
 
 The extension is experimental: check the [known limitations](KNOWN_LIMITATIONS.md)
-before you rely on a feature. This handbook follows current development, so it may
-describe changes that are not released yet. The [release notes](../CHANGELOG.md)
-list what each release contains, and each automated release attaches the handbook
-for its version as `scenario-handbook-<version>.html`. The
-[documentation index](index.md) covers the technical details.
+before you rely on a feature. This handbook describes the newest release; the
+[release notes](../CHANGELOG.md) list what each release contains, and each automated
+release attaches the handbook for its version as `scenario-handbook-<version>.html`.
+The [documentation index](index.md) covers the technical details.
 
 Screenshots may show earlier layouts, and prices in them are examples, not quotes.
 Select a screenshot to enlarge it.
@@ -285,9 +284,9 @@ you its updates:
    lists the account requirements.
 5. In Edit > Preferences > Add-ons > Scenario, leave **Credentials** on **Saved
    in Blender**, paste the key and secret, and press **Test connection**. Pick
-   an **Output Folder** (default `~/Downloads/Scenario`). **Sign in with
-   Scenario**, which opens your browser instead, becomes usable once Scenario's
-   OAuth application is registered.
+   an **Output Folder** (default `~/Downloads/Scenario`). To use your Scenario
+   account without a key, skip step 4 and choose **Sign in with Scenario**,
+   which opens your browser.
 
 Then press `N` in the 3D viewport and open the **Scenario** tab.
 
@@ -316,7 +315,7 @@ guide; follow the instructions attached to them.
 - **Environment** reads `SCENARIO_API_KEY` and `SCENARIO_API_SECRET` from the
   environment that launched Blender, which suits automation. Both are required.
 
-The two sources never mix: environment values are ignored while **Saved in
+The two key sources never mix: environment values are ignored while **Saved in
 Blender** is selected, and a missing value is never borrowed from the other source.
 The account strip tells you when the selected source lacks its key or secret.
 
@@ -333,7 +332,7 @@ the key. A **429** means too many requests: try again shortly. Other HTTP failur
 show only their code. Error messages never include service responses, credentials
 or IDs.
 
-**Project ID (optional)** works with either source. Leave it blank to use the key's
+**Project ID (optional)** works with either key source. Leave it blank to use the key's
 default scope, or enter a project you are allowed to use. It's an override, not a
 way to gain access: a malformed ID is rejected, and a permission error never falls
 back to the default project. The ID is saved with Blender's preferences.
@@ -492,9 +491,9 @@ Which models appear depends on your credentials.
 | 3D | All, Generate, Splat, Remesh, Retexture, UV Unwrap, Rigging, Animate, Parts |
 
 **Trained** lists LoRAs and compositions; see
-[Use a LoRA or composition](#use-a-lora-or-composition). Speech-to-text and
-video-to-motion models are marked **Experimental**: you can generate with them,
-but their results aren't fully supported yet
+[Use a LoRA or composition](#use-a-lora-or-composition). Speech-to-text,
+video-to-text and video-to-motion models are marked **Experimental**: you can
+generate with them, but their results aren't fully supported yet
 ([#190](https://github.com/scenario-labs/blender-plugin/issues/190)).
 
 ## The floating composer
@@ -1466,15 +1465,16 @@ See the [known limitations](KNOWN_LIMITATIONS.md) for current spending limits.
 With online access and credentials enabled, price checks send your prompt and
 settings to `https://api.cloud.scenario.com` as you edit. Generating can send
 reference files, captures and exported meshes, and spends credits. Catalogs and
-thumbnails load from Scenario, and cloud history loads when you ask for it. Saved
-credentials, prompts, jobs and media stay on your machine. A connected local agent
-can read your scene and request paid work. **Share anonymous usage data**, in the
-extension's preferences, is off by default, and the Scenario panel asks once after
-you connect; turned on, it tells Scenario which commands and agent tools you use,
-never your prompts, files or account. Feedback
-sends your rating, message and optional email, only when you press Send, with your
-extension and Blender versions and system type, plus your install ID while usage
-data is shared. See [Privacy and data handling](PRIVACY.md) for details.
+thumbnails load from Scenario, and cloud history loads when you ask for it.
+**Sign in with Scenario** signs in and renews its session at `clerk.scenario.com`.
+Saved credentials, prompts, jobs and media stay on your machine. A connected local
+agent can read your scene and request paid work. **Share anonymous usage data**, in
+the extension's preferences, is off by default, and the Scenario panel asks once
+after you connect; turned on, it tells Scenario which commands and agent tools you
+use, never your prompts, files or account. Feedback sends your rating, message and
+optional email, only when you press Send, with your extension and Blender versions
+and system type, plus your install ID while usage data is shared. See
+[Privacy and data handling](PRIVACY.md) for details.
 
 ## Files and folders
 
@@ -1493,11 +1493,11 @@ data is shared. See [Privacy and data handling](PRIVACY.md) for details.
 - **"Scenario needs Blender's Allow Online Access"**: press **Allow Online
   Access** below it. Blender started with `--offline-mode` must be restarted
   without it.
-- **"Loading models..." doesn't end**: check your key and secret (Test
-  connection) and Allow Online Access. A Retry button appears if the request
-  failed.
-- **HTTP 401 or 403**: check the key and secret. If a 403 mentions the Project
-  ID, check that the project belongs to the key, or clear it.
+- **"Loading models..." doesn't end**: check your credentials (Test connection)
+  and Allow Online Access. A Retry button appears if the request failed.
+- **HTTP 401 or 403**: check the key and secret, or sign out and sign in again.
+  If a 403 mentions the Project ID, check that it belongs to the key, or clear
+  it; signed in, choose another team and project.
 - **"Prompt is required" / "Add a reference to see the cost"**: fill in the
   prompt or add the required reference.
 - **"Select the mesh to edit"**: the 3D tab's Edit mode needs a selected mesh.

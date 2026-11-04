@@ -20,7 +20,7 @@ runtime acceptance have separate gates.
 - **Main-thread application** ([pump.py](../../scenario/blender/pump.py)): Drains
   SDK catalog and feedback events, keeps usage data and local MCP in step with
   Online Access, maintains shared job delivery and redraws when events arrive or
-  drawn job rows change. GUI timer handling differs from headless execution.
+  drawn job rows or prices change. GUI timer handling differs from headless execution.
 - **Local MCP** ([server.py](../../scenario/mcp/server.py),
   [tools_scenario.py](../../scenario/mcp/tools_scenario.py),
   [mcp_service.py](../../scenario/blender/mcp_service.py)): Queues scene tools for
@@ -31,8 +31,8 @@ runtime acceptance have separate gates.
   [prefs.py](../../scenario/prefs.py)): Credentials default to the saved Blender
   pair; environment credentials require explicit selection and cannot mix with
   preferences. A browser sign-in is a third source, isolated the same way.
-  Optional project selection scopes both catalog and shared jobs; live
-  permission acceptance remains separate.
+  Project selection, optional for an API key and required for a browser account,
+  scopes both catalog and shared jobs; live permission acceptance remains separate.
 
 Do not infer UI/MCP parity from the shared adapter's test coverage, or promote
 prototype transport usage into an approved exception to the mandatory SDK policy
@@ -88,7 +88,7 @@ for the open checks.
 | Origin and stale-result protection | [JobSession](../../scenario/blender/job_session.py) binds entry points to the selected credentials/project and captured scene/target. Restart recovery uses fresh context and destination approval. | Saved names or IDs cannot restore live scene authority; see the [context contract](../BLENDER_JOB_CONTEXT.md). |
 | Result downloads | [ModelJobs](../../scenario/blender/model_jobs.py) drives saved manifests, bounded transfers and explicit interrupted-download recovery for model lanes. [Transfers](../RESULT_TRANSFERS.md) retain verified receipts and configured storage hosts. | Only admitted Image jobs automatically apply supported images to their original scene; other model results need explicit destination approval. Unsupported formats and uncertain states remain saved for inspection. |
 | Result previews | [Result previews](../RESULT_PREVIEWS.md) give the selected [JobSession](../../scenario/blender/job_session.py) a main-thread scheduler and the [workers](../../scenario/core/jobs/workers.py)' dedicated preview lane. Native preview tiles, workflow review previews, waveforms, private player copies and local MCP [`inspect_result_previews`](../MCP.md#saved-result-previews) use that scheduler; the guide owns each source, cache and offline process. | Clip display is #445, and live thumbnail coverage is not established. Desktop checks of preview tiles, playback, waveforms and review previews continue in #494. |
-| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, saved model package, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. The native and MCP Render Video first-frame handoff is a form binding: it verifies the saved image but takes no claim and leaves the job state unchanged. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. Remaining first-frame handoff checks continue in #494. |
+| Application claims | Native [saved-job controls](../../scenario/blender/job_recovery.py) and [MCP result commands](../MCP.md) prepare and apply image, media, camera background, image plane, saved model package, material, World and supported mesh-edit destinations through ModelJobs/JobSession. Claims precede scene mutation; known receipt retries do not repeat it. The native and MCP Render Video first-frame handoff is a form binding: it verifies the saved image but takes no claim and leaves the job state unchanged. | Restarted uncertain claims require inspection. Format, target, rollback and undo limits differ by application; no atomic blend-file save is promised. Remaining first-frame handoff checks continue in #494. |
 | Prompt Spark | [Prompt commands](../SDK_ADOPTION.md#prompt-spark-command-boundary) use exact quotes, durable submission and complete text recovery on the shared workers. Native/MCP New, Rewrite and Translate require unchanged-field approval; render preparation has a separate Spark approval. | Live provider acceptance remains; Spark approval does not authorize the subsequent render generation. |
 | Uploads | [Reference uploads](../SDK_UPLOADS.md) use private staging, signed storage transfers and durable SDK commands on the shared workers. Generation and workflow forms attach through guarded bindings; native/MCP recovery and saved-reference attachment require the selected scope and fresh destination approval. | Live upload/result journeys remain open. |
 | Model forms | [Schema forms](../../scenario/core/schema/forms.py) validate adopted model inputs before shared pricing and submission. | Trained LoRAs and compositions use routes checked before quoting; a private composition is unverified, and the desktop recheck of project defaults continues in #494. |

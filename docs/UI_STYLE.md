@@ -397,11 +397,12 @@ the render result; a **video** input offers Upload plus the clip captures. Never
 offer a source that produces the wrong asset type (no image capture on a 3D
 character input).
 
-A selected mesh appears as a candidate for each empty **3D** input. **Upload
-selected mesh** explicitly exports the selection as one GLB and uploads that
-snapshot. A pending or completed explicit reference replaces the pinned candidate;
-do not offer a second mesh upload into an occupied slot. Edit 3D still requires
-an input mesh. Later scene edits do not change an already uploaded snapshot.
+A selected mesh appears as a candidate for each empty **3D** input. **Upload selected mesh**
+explicitly exports the selection as one GLB and uploads that snapshot. A pending or completed
+explicit reference replaces the pinned candidate; do not offer a second mesh upload into an
+occupied slot. Edit 3D still requires an input mesh; its text-to-motion models hide the 3D
+input and send none, since the clip plays on the mesh's armature. Later scene edits do not
+change an already uploaded snapshot.
 
 Across generation forms, attaching a local file does not send it. Image inputs
 also support explicit viewport, camera and Render Result snapshots. Video inputs
@@ -471,11 +472,11 @@ action as one descriptor, never as a surface-specific button. Hide an action
 that is not offered rather than drawing it disabled, and keep any approval in
 the operator's own dialog.
 
-**Reload parameters** is available only when a result records a supported
-generation lane, or a generic job records a supported kind. A catalog lane
-without a native form never falls back to its kind's form, which would drop
-that lane's rules. Film tasks and generic jobs without that information keep
-their saved-result controls; they must not overwrite the Image form.
+**Reload parameters** is available only when a result records a supported generation lane, or a
+generic job records a supported kind, and never for a job listed from the saved store, which keeps
+only its request's hash. A catalog lane without a native form never falls back to its kind's
+form, which would drop that lane's rules. Film tasks and generic jobs without that information
+keep their saved-result controls; they must not overwrite the Image form.
 
 **Remove background** prepares the Image form and never submits directly. Its
 message tells users to upload the reference, review the price and choose
@@ -775,9 +776,9 @@ The composer's modal operator runs one session at a time. A pointer move over
 the composer starts one, and so does a pointer move anywhere in a 3D viewport
 while the prompt is focused. The session lasts until a click outside the
 composer, or until the pointer leaves it while the prompt is unfocused. A
-refused Generate, such as a failed poll or an error report from the submission,
-is reported as a warning and the session goes on, and so is an error from the
-operator a [job strip](#compact-job-strip) chip runs. If handling any other event
+refused Generate or **Capture**, such as a failed poll or an error report from
+its operator, is reported as a warning and the session goes on, and so is an
+error from the operator a [job strip](#compact-job-strip) chip runs. If handling any other event
 raises, whether a click, a key, a pointer move or a drag, the composer ends its
 session and Blender reports the error. So does an error that F2 or a
 composition's second press raises while opening the
@@ -799,11 +800,11 @@ the saved placement through the composer's load handler, which persists across
 loads.
 
 A physical Blender 5.1.2 macOS check found the composer frozen for the rest of
-the session after one Generate refused by the GUI spend guard: clicks on it fell
-through to the viewport, and a file load did not help because Blender had
+the session after one Generate refused by the automated-GUI-probe guard: clicks
+on it fell through to the viewport, and a file load did not help because Blender had
 dropped the non-persistent load handler at the first load. Generate refusals
 became warnings in a later change. Installed tests on the packaged ZIP now send
-the modal a Generate refused by the spend guard's poll and an error raised while
+the modal a Generate refused by that guard's poll and an error raised while
 a key is typed in the focused prompt. They call the cancel callback during a
 placement drag and during a selection drag in the focused prompt, and run three
 file loads in a row. The error, cancel and file-load tests fail on the previous

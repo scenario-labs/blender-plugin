@@ -23,12 +23,12 @@ and follows up through the same private channel.
 
 ## Scope
 
-This repository ships Scenario for Blender. It uses Scenario API credentials,
-communicates with `api.cloud.scenario.com` and, for opt-in usage data and
-feedback, `blender.scenario.com`, saves generated files and imports media into
-Blender, and provides a local MCP server. Relevant reports include:
+This repository ships Scenario for Blender. It uses Scenario API credentials or a
+browser sign-in through `clerk.scenario.com`, communicates with `api.cloud.scenario.com`
+and, for opt-in usage data and feedback, `blender.scenario.com`, saves generated files
+and imports media into Blender, and provides a local MCP server. Relevant reports include:
 
-- Unexpected exposure of keys, secrets or signed URLs through preferences, logs,
+- Unexpected exposure of keys, secrets, sign-in tokens or signed URLs through preferences, logs,
   errors, files or network requests, including credential-source selection involving
   `SCENARIO_API_KEY`, `SCENARIO_API_SECRET` and saved Blender preferences.
 - A local MCP listener exposed beyond loopback, or a page from a non-loopback origin
@@ -63,7 +63,7 @@ extension releases.
 
 ## Secrets in issues and pull requests
 
-API keys and secrets and signed asset URLs are credentials. Never commit them or
+API keys and secrets, sign-in tokens and signed asset URLs are credentials. Never commit them or
 paste them into public issues or pull requests. Check screenshots, logs and sample
 files before sharing them. If a secret is already exposed, report it privately instead of
 pointing to it in a public issue, and revoke or rotate credentials you control.

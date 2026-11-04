@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/ui/saved-3d.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
-    "limits": "Labels, dialog lines and interaction rules are source-reviewed against the saved-job controls and application modules. Desktop observations are recorded synthetic macOS checks that this review did not repeat. No live Scenario call, provider output, other platform or DPI.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Labels, dialog lines and interaction rules are source-reviewed against the saved-job controls and application modules. Desktop observations are recorded synthetic macOS checks that this review did not repeat; Keep texture, Longest side, Match and on-demand downloads have none. No live Scenario call, provider output, other platform or DPI.",
     "sources": [
       "docs/images/captured-mesh-source-approval.png",
       "docs/images/captured-mesh-source-result.png",
@@ -36,6 +36,7 @@
       "scenario/blender/animation_application.py",
       "scenario/blender/job_recovery.py",
       "scenario/blender/job_session.py",
+      "scenario/blender/kept_texture.py",
       "scenario/blender/mesh_application.py",
       "scenario/blender/mesh_export_fingerprint.py",
       "scenario/blender/mesh_provenance.py",
@@ -45,11 +46,15 @@
       "scenario/blender/rig_application.py",
       "scenario/blender/runtime.py",
       "scenario/blender/splat_application.py",
+      "scenario/core/jobs/results.py",
       "scenario/core/scene/glb.py",
+      "scenario/core/scene/kept_texture.py",
       "scenario/core/scene/mesh_edit_policy.py",
+      "scenario/core/scene/placement.py",
       "scenario/core/ui/saved_job_actions.py",
       "scenario/mcp/tools_scenario.py",
       "tests/blender/helpers.py",
+      "tests/blender/test_kept_texture.py",
       "tests/blender/test_mesh_application.py",
       "tests/blender/test_mesh_result_application.py",
       "tests/blender/test_model_application.py",
@@ -59,6 +64,7 @@
       "tests/fixtures/README.md",
       "tests/fixtures/synthetic/static-triangle.glb",
       "tests/unit/test_glb.py",
+      "tests/unit/test_kept_texture.py",
       "tests/unit/test_saved_job_actions.py"
     ]
   }

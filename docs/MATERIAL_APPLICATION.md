@@ -29,9 +29,10 @@ limits still apply.
 UI and MCP offer material application only when the saved metadata passes the
 same texture-selection check used by approval. An unsupported map such as WebP,
 missing receipt, ambiguous role or excessive combined size hides the action;
-the files remain saved. This availability check does not decode images or
-verify file bytes. Worker verification and destination checks still run after
-explicit approval.
+the files remain saved. A map that is a [GLB format copy](RESULT_TRANSFERS.md#glb-format-copies-on-demand)
+downloads when application is chosen; choose it again once saved. The check does
+not decode images or verify file bytes; worker verification and destination checks
+still run after explicit approval.
 
 | Map | New material behavior |
 | --- | --- |

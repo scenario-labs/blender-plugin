@@ -20,7 +20,7 @@ operation to its SDK method. See [SDK_BUNDLE.md](SDK_BUNDLE.md) for exact
 artifact/notice pinning, supported wheel targets, staging and installed-runtime
 verification.
 
-The development fixture recorder also uses this adapter for the twenty-four selected
+The development fixture recorder also uses this adapter for the twenty-five selected
 model detail reads and one bounded public model-list page. `SDKAdapter.model_page`
 returns a single validated response wrapper without exhausting its cursor; the
 recorder retains that wrapper and reconstructs the detail `model` wrapper from
@@ -49,7 +49,7 @@ records, lane/schema helpers and local display status classification remain.
 | Asset library browsing and text search | Shared coordinator: `assets.with_raw_response.list` and `search.with_raw_response.asset_search`; explicit single-page reads with selected project scope |
 | Collection and tag organization (shared review commands, native Library and local MCP tools) | Shared organization commands / `SDKAdapter`: `collections.with_raw_response.list/retrieve/create`, `collections.with_raw_response.assets.add/remove`, `assets.with_raw_response.update_tags/get_bulk`; see [asset organization writes](#asset-organization-writes) |
 | Reference upload metadata, progress and completion | Shared upload coordinator: `uploads.with_raw_response.create/retrieve/trigger_action` |
-| Optional team/project discovery | `SDKAdapter.teams/projects`: `teams.with_raw_response.list` and `projects.with_raw_response.list`; see [discovery](#sdk-resource-extensions) |
+| Team/project discovery, optional for API keys and the browser sign-in's destination choice | `SDKAdapter.teams/projects`: `teams.with_raw_response.list` and `projects.with_raw_response.list`; see [discovery](#sdk-resource-extensions) |
 | Developer model audit, fixture recorder and smoke tools | The same `SDKAdapter`; smoke generation and explicit reference-plan uploads use shared coordinator commands. [Reference automation](../tests/smoke/README.md#prepare-reference-inputs) reuses the upload SDK methods above and signed-part transport. |
 
 Workflow adapter primitives also use the pinned public SDK methods documented
@@ -160,7 +160,7 @@ credential context and pending request. Concurrent clicks share that pending
 check, and failures use sanitized SDK errors after the SDK's bounded
 [read retries](#read-retries). Success
 proves only model access, including a valid empty list. It does not establish
-account/project identity or resolve SDK issue #29.
+account/project identity.
 
 The catalog preview worker remains a non-spending SDK helper using
 `generate.with_raw_response.run_model(dry_run="true")`, captured nested inputs,
@@ -191,12 +191,12 @@ their REST fields:
 | Kind | REST record |
 | --- | --- |
 | `lora` | A `*-lora` type, such as `flux.1-lora`, `flux.2-klein-4b-edit-lora`, `qwen-image-lora` or `zimage-lora` |
-| `composition` | A `*-composition` type; SDK 2.2.0 declares `flux.1-composition` |
+| `composition` | A `*-composition` type; SDK 2.5.0 declares `flux.1-composition` |
 | `custom_private` | A `custom` record with no parent, training images or concepts that is private: its `privacy` field is `private`, or the selected scope's private model list returned it |
 | `unsupported` | Any other type, such as `elevenlabs-voice`, `gpt-image-1` or `flux.1-pro`, a `type` that is not a string, or a `custom` record with a parent, training images or concepts |
 
 A `custom` record without lineage that is neither marked private nor returned
-by the private list has no kind. Offline tests cover every SDK 2.2.0 type
+by the private list has no kind. Offline tests cover every SDK 2.5.0 type
 literal and fail when an SDK upgrade changes that set. `catalog.is_trained`
 keeps `lora`, `composition` and `unsupported` records out of the base lanes and
 the picker's base-model chips. For every type literal, privacy and lineage it
@@ -239,7 +239,7 @@ receive the same text as an `AdapterError`, except a quote's reads of the models
 a request names, which report a `RouteQuoteError` (see
 [trained-model routes](#trained-model-routes)).
 
-Every operation here is a public SDK 2.2.0 method, so there is no raw fallback,
+Every operation here is a public SDK 2.5.0 method, so there is no raw fallback,
 SDK issue or dependency change. Offline transport tests establish serialization,
 scope, caching and failure handling only. A zero-spend capture, described in
 [trained-model REST contracts](#trained-model-rest-contracts), records which
@@ -398,7 +398,7 @@ then refused before any request with the same text as a `RouteError`; local MCP
 also refuses a listed composition named in the stack input instead of moving it
 to `modelIdInput`. The fresh reads still catch what changed since the listing.
 
-Every call here is an existing public SDK 2.2.0 method; there is no raw
+Every call here is an existing public SDK 2.5.0 method; there is no raw
 fallback, SDK extension, SDK issue or dependency change. Offline tests compare
 the policy with every captured dry run and exercise the coordinator through the
 real SDK and a socket-free `MockTransport`. Private LoRAs and compositions, paid
@@ -452,7 +452,7 @@ base and selection, never while one is pending and not again after a recorded
 failure; the quote then reads every chosen model again as above. Defaults live
 in the local job store, not in the service.
 
-Every call here is an existing public SDK 2.2.0 method; there is no new SDK method,
+Every call here is an existing public SDK 2.5.0 method; there is no new SDK method,
 raw fallback, SDK extension, SDK issue or dependency change. Offline and installed
 tests use the captured public fixtures and synthetic private records behind a
 socket-free transport; private LoRAs and compositions remain unverified against
@@ -484,14 +484,15 @@ missing base description read like a form's default does.
 The same choice through the form and through MCP builds byte-identical payloads,
 so the saved intent's `payload_sha256` and target match. Two client-side
 representations changed for this: form decimal fields send the shortest decimal
-their 32-bit storage holds, and MCP model requests start number parameters that
-are not given at their declared default in the field's type, as a form does. The
+their 32-bit storage holds, and MCP model requests start parameters that are not
+given at the model's curated starting value, else number parameters at their
+declared default in the field's type, as a form does. The
 service receives the same values as before in a different JSON spelling (`0.8`
 rather than `0.800000011920929`, `0.0` rather than `0`). Environment lane
 requests, which have no form, keep their panorama contract's lane defaults
 instead.
 
-Every call is an existing public SDK 2.2.0 method; there is no new SDK method, raw
+Every call is an existing public SDK 2.5.0 method; there is no new SDK method, raw
 fallback, SDK extension, SDK issue or dependency change. Installed tests use the
 captured public fixtures and synthetic private records behind a socket-free
 transport.
@@ -501,7 +502,7 @@ transport.
 All model smoke entry points use `tools.smoke_image` as their shared engine;
 `tools.smoke_model` selects Image, Material, Video, GLB, audio, panorama or HDRI
 result checks.
-Fresh metadata uses SDK 2.2.0 `models.with_raw_response.retrieve`, exact estimates
+Fresh metadata uses SDK 2.5.0 `models.with_raw_response.retrieve`, exact estimates
 and one paid submission use `generate.with_raw_response.run_model`, and saved-job
 polling/download metadata use `jobs.with_raw_response.retrieve` and
 `assets.with_raw_response.retrieve`. The shared coordinator retains the existing
@@ -542,10 +543,12 @@ saved receipts with an adapter that refuses online access; they make no SDK call
 The shared coordinator's [model text reader](JOB_COORDINATOR.md#model-text-recovery)
 uses the same pinned SDK `jobs.with_raw_response.retrieve` and
 `assets.with_raw_response.retrieve` methods. The selected model output must occur
-in `metadata.assetIds`; its asset must report top-level `kind="text"` and
-`mimeType="text/plain"`. `properties.hasFullPreview` controls whether the preview
-is complete; otherwise the existing credential-free bounded storage downloader
-reads the full body. These fields are established by the published 2.2.0 types
+in `metadata.assetIds`, or be a saved output whose asset's `metadata.parentJobId`
+names the job, since Scenario can replace that list after success. Its asset must
+report top-level `kind="text"` and `mimeType="text/plain"`.
+`properties.hasFullPreview` controls whether the preview is complete; otherwise
+the existing credential-free bounded storage downloader reads the full body.
+These fields are established by the published 2.5.0 types
 and the [asset API contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve).
 No SDK extension, new raw API exception, dependency or retry change is needed.
 This read-only command does not establish live provider acceptance.
@@ -557,9 +560,11 @@ Blockout Design and Refine use the selected JobSession through
 `models.with_raw_response.retrieve`; the exact quote and single paid submission
 use `generate.with_raw_response.run_model` for `model_scenario-llm`, with the
 existing query-only dry-run and no-retry policy. Job and complete text reads use
-the methods above. UI and MCP share this route; there is no endpoint exception,
-SDK pin change or parallel paid worker. API keys retain credential-bound server
-scope without requiring discovery or a project override.
+the methods above, and an optional reference image uses the
+[shared upload commands](SDK_UPLOADS.md#active-reference-uploads). UI and MCP share
+this route; there is no endpoint exception, SDK pin change or parallel paid worker.
+API keys retain credential-bound server scope without requiring discovery or a
+project override.
 
 Offline SDK transport fixtures and installed native tests establish command
 wiring and scope/origin guards. Saved-plan recovery reuses these same metadata
@@ -595,7 +600,7 @@ submission or result application. See the
 ## Completed cloud job adoption
 
 The [shared adoption command](JOB_COORDINATOR.md#adopting-a-completed-cloud-job)
-uses SDK 2.2.0 `jobs.with_raw_response.retrieve` through `SDKAdapter.job`.
+uses SDK 2.5.0 `jobs.with_raw_response.retrieve` through `SDKAdapter.job`.
 The published wheel and [job retrieval reference](https://docs.scenario.com/api/python/resources/jobs/methods/retrieve)
 establish GET `/jobs/{jobId}`, optional `projectId` and the `job` response wrapper.
 The adapter preserves the original metadata used to verify the selected model
@@ -667,7 +672,7 @@ explicitly request them with `False`. This option stays unchanged on every page.
 Job IDs use the same validation as retrieval, so malformed or padded IDs fail
 the listing. Unknown response fields/statuses are preserved. Listings are not
 server snapshots; retrieve a known remote ID again before acting on its state.
-`jobs` also takes a `job_types` list (1 to 8 types SDK 2.2.0 accepts, sent
+`jobs` also takes a `job_types` list (1 to 8 types SDK 2.5.0 accepts, sent
 comma-separated). For recovery candidates,
 `SDKAdapter.recent_jobs(job_types=..., workflow_id=...)` reads two pages of 100
 by default and at most 5, with the same checks, and returns the rows with
@@ -712,7 +717,7 @@ so live cancellation is unobserved; rejection inside a loop continues in #494.
 The coordinator tests completion races and known-ID restart polling offline.
 Record a sanitized upstream SDK issue before any fallback for these boundaries;
 these upload/job operations introduce no raw calls or fallback and claim no live
-service failure. Discovery uses the separate exception below.
+service failure.
 
 ## SDK resource extensions
 
@@ -724,9 +729,9 @@ the adapter; missing SDK coverage does not mean missing API capability.
 
 API-key requests use the server's credential-bound scope. Callers can omit
 `teamId` and `projectId`; discovery and project selection are not prerequisites
-for estimates or submission. OAuth's explicit tenant-selection requirements are
-a separate concern, deferred for this release. Local durable jobs must still be
-isolated when credentials or an optional project override change. A local
+for estimates or submission. A browser sign-in has no implicit scope: its work
+goes only to a project chosen from its account's `teams()` list. Local durable
+jobs must still be isolated when credentials or an optional project override change. A local
 credential identity must not be presented as a server-reported account identity.
 
 SDK 2.5.0 generates every operation the adapter uses, so
@@ -753,10 +758,11 @@ selects the first project, changes adapter scope, nor claims that listed
 projects identify the key's default project. Nested metadata remains unvalidated
 service data.
 
-Team discovery is optional. In the OAuth flow the backend may provision a
+Team discovery is optional for API keys. In the OAuth flow the backend may provision a
 personal team/default project for a user without teams during `GET /teams`, so
 do not describe that route as universally side-effect-free or add an automatic
-onboarding probe. These methods are not yet called by the active Blender UI.
+onboarding probe. The browser sign-in reads `teams()` for its project choice;
+nothing calls `projects()`.
 
 To add a missing method, inspect the pinned SDK, reproduce the gap, link
 an upstream issue, then add a named extension with a verified endpoint/body/query
@@ -874,8 +880,6 @@ the [Blender job context](BLENDER_JOB_CONTEXT.md#active-saved-job-controls).
 Generated operations use public SDK methods
 through their `with_raw_response` wrappers, which preserve wire JSON. Only the
 allow-listed reads below retry; every other operation uses `max_retries=0`.
-The named discovery and selection exceptions also use the same zero-retry SDK
-client; the selection request also disables retries on its own options.
 
 ### Read retries
 
@@ -1032,8 +1036,8 @@ Render Video first-frame target, and the existing
 other asset ID. That dry run resolves asset IDs but does not check which inputs
 may be combined, so the shared form preparation refuses two file inputs whose
 descriptions say they can't be combined, before any quote. Settings described that
-way are not checked. This is local validation, not an SDK gap. Authoritative
-account/project discovery remains integration work; live acceptance remains separate.
+way are not checked. This is local validation, not an SDK gap. API keys have no
+authoritative account/project discovery; live acceptance remains separate.
 
 Run the adapter and command contracts offline with:
 
@@ -1071,15 +1075,6 @@ the adapter reads raw schemas and used neither. Other new operations, such as
 quality gate, IP detection and model presets, are not adopted by this upgrade.
 
 ### Selected SDK 2.2.0 upgrade
-
-The inspected 2.2.0 wheel retains the same required dependency closure and
-byte-identical MIT notice as 2.1.0. Client/authentication and transport sources
-are unchanged, so both the #26 header workaround and #29 discovery extensions
-remain necessary. 2.2.0 also lacks `workflows.user_selection`, so the
-[#33 selection extension](#workflow-step-decisions) is required too; the
-dependency tests flag each missing method for review on upgrade. Resource/type
-updates include stricter query annotations and additional model/job metadata;
-raw-response parsing preserves those fields.
 
 Model and workflow `dry_run` now declare `"true"` or `"api"`. The adapter uses
 `"true"` for existing estimates and omits the parameter for actual submissions,
@@ -1126,8 +1121,7 @@ When adopting further Studio code:
   media, historical ZIPs and account-specific validation exports out of the
   canonical runtime tree.
 
-Browser sign-in ships in `core/api/oauth.py`, usable once the production OAuth
-application is registered; the rest of
+Browser sign-in ships in `core/api/oauth.py`; the rest of
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open. The open
 acceptance checks on Blender 5.0, 5.1 and 5.2, including Linux and Windows
 desktop interaction and coexistence with other extensions, are in
@@ -1137,7 +1131,7 @@ desktop interaction and coexistence with other extensions, are in
 
 `SDKAdapter.estimate_prompt` and `JobCoordinator.quote_prompt` use the public
 [SDK prompt method](https://docs.scenario.com/api/python/resources/generate/methods/prompt),
-verified against the pinned 2.2.0 artifact. This initial parameter subset accepts
+verified against the pinned 2.5.0 artifact. This initial parameter subset accepts
 an explicit SDK mode, optional text `prompt`, `modelId`, `images`, and an integer
 `numResults` from 1 to 5 (default 1). It rejects unknown fields and scope/dry-run
 injection. `contextual-v2` allows up to 15 references; other supported modes are
@@ -1171,7 +1165,7 @@ the same bounded text-result command. No LLM substitution or raw endpoint is use
 
 ## Original result assets
 
-`SDKAdapter.asset(identifier, original_assets=True)` passes the SDK 2.2.0
+`SDKAdapter.asset(identifier, original_assets=True)` passes the SDK 2.5.0
 `assets.with_raw_response.retrieve` keyword of the same name, serialized as the
 `originalAssets=true` query beside any `projectId`. The
 [asset API contract](https://docs.scenario.com/api/python/resources/assets/methods/retrieve)
@@ -1184,7 +1178,7 @@ raw fallback, retry, authentication or dependency change is involved. See
 
 ## Saved texture-map roles
 
-The existing `SDKAdapter.asset` path uses SDK 2.2.0
+The existing `SDKAdapter.asset` path uses SDK 2.5.0
 `assets.with_raw_response.retrieve`, retaining the documented `mimeType` and
 `metadata.type` fields without another API call or fallback. Offline contracts
 exercise those fields through the public wrapper. The result command stores
@@ -1197,7 +1191,7 @@ policy, provider acceptance or the dependency pin.
 
 ## Declared HDR originals and projections
 
-The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.2.0
+The same `assets.with_raw_response.retrieve` response also keeps the SDK 2.5.0
 `originalFileUrl` and `originalMimeType` fields. The typed
 `AssetRetrieveResponse.original_mime_type` documents that an HDRi skybox exposes
 a JPEG preview as `url` and its `.exr` or `.hdr` file as the original; for
@@ -1255,7 +1249,7 @@ No SDK gap was found, so no scenario-sdk-python issue is needed.
 
 `JobSession.quote_film_composition` uses the existing shared adapter
 `models.with_raw_response.retrieve` and `generate.with_raw_response.run_model`
-methods with SDK 2.2.0. The former supplies current model inputs; the latter
+methods with SDK 2.5.0. The former supplies current model inputs; the latter
 uses `dry_run="true"` for estimation, query-only optional project scope and
 unchanged model parameters. Approval submits the same exact estimate once
 through the existing durable coordinator and adapter. Paid retries remain
@@ -1287,7 +1281,7 @@ interactive node handling, general workflow cancellation or expanded Studio.
 
 ## Asset library reads
 
-The published SDK 2.2.0 provides [asset listing](https://docs.scenario.com/api/python/resources/assets/methods/list)
+The published SDK 2.5.0 provides [asset listing](https://docs.scenario.com/api/python/resources/assets/methods/list)
 and [asset search](https://docs.scenario.com/api/python/resources/search/methods/asset_search).
 `SDKAdapter.asset_page` uses the raw public list wrapper for one bounded page,
 optional collection and opaque cursor. Owned-scope listing omits privacy; explicit
@@ -1311,7 +1305,7 @@ establish live search quality or provider acceptance.
 
 ## Asset organization writes
 
-The published SDK 2.2.0 covers collection listing, retrieval and creation,
+The published SDK 2.5.0 covers collection listing, retrieval and creation,
 [collection membership](https://docs.scenario.com/api/python/resources/collections),
 [asset tag changes](https://docs.scenario.com/api/python/resources/assets/methods/update_tags)
 and the [bulk asset read](https://docs.scenario.com/api/python/resources/assets/methods/get_bulk)
@@ -1325,7 +1319,7 @@ Blender Undo.
 | --- | --- | --- |
 | `collection_page` | `collections.with_raw_response.list` | One page of 1 to 100 records and an opaque cursor. IDs are validated, identical duplicates are dropped, and conflicting duplicates, oversized pages or a repeated cursor fail. An empty page is valid. |
 | `collection` | `collections.with_raw_response.retrieve` | The returned `collection.id` must equal the requested ID. |
-| `asset_records` | `assets.with_raw_response.get_bulk` | POST with 1 to 200 IDs in the body; repeated IDs are read once. Found records are returned by ID in request order, with unknown fields kept. When a response omits a requested asset, the result leaves it out and the caller treats it as unverified; this is adapter handling, not a documented service contract. The identifier and record checks are the ones `models_bulk` uses: unrequested or conflicting records fail. Records whose `tags` or `collectionIds` are absent, null or not lists of strings also fail: SDK 2.2.0 declares both required, so missing metadata never reads as empty. |
+| `asset_records` | `assets.with_raw_response.get_bulk` | POST with 1 to 200 IDs in the body; repeated IDs are read once. Found records are returned by ID in request order, with unknown fields kept. When a response omits a requested asset, the result leaves it out and the caller treats it as unverified; this is adapter handling, not a documented service contract. The identifier and record checks are the ones `models_bulk` uses: unrequested or conflicting records fail. Records whose `tags` or `collectionIds` are absent, null or not lists of strings also fail: SDK 2.5.0 declares both required, so missing metadata never reads as empty. |
 | `create_collection` | `collections.with_raw_response.create` | POST `{"name": ...}`. The acknowledged `collection.name` must match exactly and its ID must be valid. A valid ID with another name raises `WriteUncertain` with that `collection_id`. |
 | `add_collection_assets`, `remove_collection_assets` | `collections.with_raw_response.assets.add/remove` | PUT or DELETE with a JSON `assetIds` body of 1 to 49 unique IDs, the per-request maximum the SDK docstring states ("Max 49 at once"). The acknowledged `collection.id` must match. An add refused because an asset is already a member raises `AlreadyMembers`. |
 | `update_asset_tags` | `assets.with_raw_response.update_tags` | PUT with explicit `strict=false` and a nonempty `add` and/or `delete` list. The reported `added` and `deleted` lists must be subsets of the request and may be empty for documented non-strict no-ops. |

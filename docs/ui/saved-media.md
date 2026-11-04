@@ -162,7 +162,8 @@ interaction and other platforms are not yet recorded; they continue in #494.
 Shared saved jobs whose results are downloaded show preview tiles above their
 saved-job controls, in Jobs, Generations and the Studio pages that reuse them:
 four at a time, primary results first (video, audio, embedded model, base
-color or untagged image), then other maps. Each tile is the preview icon or,
+color or untagged image), then other maps. The Results grid's large view leaves
+out a row of one tile, which it already shows large. Each tile is the preview icon or,
 until it is ready, the result kind's built-in icon at the same size, with a
 caption that starts with the number of its saved-job controls: **(1) Video**,
 **(3) Albedo**. Blender keeps the start of a caption that does not fit, so a
@@ -302,12 +303,15 @@ at UI scale 2.0 and other platforms are not yet recorded; they continue in
 
 ## Saved material approval
 
-**Apply saved material** names the scene, mesh, slot and saved texture roles.
-Explain packing, replacement of that slot only, height-as-bump, retained AO/edge
-nodes and the absence of a global undo entry. Preparation requires a local UV
-mesh with one object user in one scene; drawing reads the prepared snapshot and
-never opens files or changes assignments. Cancel discards its approval. A changed
-mesh, slot or scene revision requires a new review rather than retargeting.
+**Apply saved material** names the scene, mesh, slot and saved texture roles,
+then offers a **Tile size**, the length one texture repeat spans on the active UV
+map or, for a mesh without UVs, in a box projection; changing it exchanges the
+approval for a new one. Explain packing, replacement of that slot only,
+height-as-bump, retained AO/edge nodes and the absence of a global undo entry.
+Preparation requires a local mesh with one object user in one scene; drawing reads
+the prepared snapshot and never opens files or changes assignments. Cancel discards
+its approval. A changed mesh, slot or scene revision requires a new review rather
+than retargeting.
 
 Offline desktop acceptance on macOS arm64 Blender 5.1.2 used exact ZIP
 `b30a62ff2864507ad62dfd8eb743d3b17a17e7487bf1c94185072efcff405f67`,

@@ -715,8 +715,8 @@ JSDoc types let the Site CI job type-check it with `tsc --checkJs`. The
 downloads pages under `repo/` come from
 [tools/site_pages.py](tools/site_pages.py) and inline the same stylesheet,
 wordmark and analytics snippet. `make docs` renders the guide to ignored
-`site/index.html` and copies just its referenced images, the template's favicons
-included, beside it. A neighboring `.assets.json` record lets repeat builds
+`site/index.html` and copies just its referenced images (the template's favicons
+included), videos and PDFs beside it. A neighboring `.assets.json` record lets repeat builds
 remove unchanged image copies that the guide no longer uses, including when
 switching the same output to inline mode. Unrecorded files are retained;
 modified old copies and symlinked destinations stop the build for inspection.
@@ -725,7 +725,7 @@ comes from the extension manifest. Python-Markdown is pinned in the development
 environment; it is not included in the extension ZIP or imported by shared
 build/install tools.
 
-For a single HTML file containing the content and images:
+For a single HTML file with the images inlined (its videos and PDFs link the website copy):
 
 ```sh
 uv run --locked --no-env-file python tools/build_docs_html.py \
@@ -779,10 +779,10 @@ a failed renderer, archive validation or repository generation leaves no partial
 site. Guide image paths cannot occupy the reserved `repo/` directory. Replaying
 the same inputs with the same Blender executable produces identical site files.
 
-`tools/build_site.py` accepts `--source`, `--template` and `--manifest`, plus the
-shared `--blender`, `--artifacts` and `--timeout` options. `BLENDER` discovery works
-as for other native tools. Blender validates the exact archives and generates the
-repository in a fresh isolated profile with online access disabled; successful
+`tools/build_site.py` accepts `--source`, `--template`, `--manifest`, `--ref` (the guide links'
+Git ref, `main` by default) and the shared `--blender`, `--artifacts` and `--timeout` options.
+`BLENDER` discovery works as for other native tools. Blender validates the exact archives and
+generates the repository in a fresh isolated profile with online access disabled; successful
 profiles are cleaned, and logs remain outside the site under `.blender-profile`
 (or `--artifacts`). The command makes no downloads and needs no publishing
 credentials. Offline tests use synthetic archives and a fake native command

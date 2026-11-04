@@ -1,10 +1,10 @@
 # API-key release plan
 
-The current release uses explicitly configured API key/secret credentials with
-optional project selection. Browser OAuth is deferred under
-[#67](https://github.com/scenario-labs/blender-plugin/issues/67); it must not block
-independent implementation or be claimed complete. This changes the release
-onboarding gate, not the mandatory SDK-first, scope, spend or scene-safety rules.
+The current release uses explicitly configured API key/secret credentials with optional
+project selection, or a browser sign-in with a chosen team and project. The rest of
+[#67](https://github.com/scenario-labs/blender-plugin/issues/67) stays open; it must not block
+independent implementation or be claimed complete. This changes the release onboarding gate,
+not the mandatory SDK-first, scope, spend or scene-safety rules.
 
 ## Candidate acceptance
 

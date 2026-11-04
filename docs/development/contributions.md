@@ -226,10 +226,10 @@ review gate and lints the whole Python tree.
 
 [Dependabot](../../.github/dependabot.yml) checks weekly, waits seven days
 after a release before proposing it, and opens one PR per ecosystem: GitHub
-Actions (`ci(deps)`, `area:ci`), the Node tooling in `package.json`
-(`chore(deps)`, `area:tooling`; `@types/node` stays on the `.nvmrc` major) and
-the ClusterFuzzLite builder image (`ci(deps)`). Do not add `include: scope`,
-which would append a second dependency scope.
+Actions in workflows and local composite actions (`ci(deps)`, `area:ci`), the
+Node tooling in `package.json` (`chore(deps)`, `area:tooling`; `@types/node`
+stays on the `.nvmrc` major) and the ClusterFuzzLite builder image (`ci(deps)`).
+Do not add `include: scope`, which would append a second dependency scope.
 
 Keep third-party action references pinned to a full 40-character commit SHA with
 the release version in a trailing comment, for example
@@ -313,7 +313,7 @@ The artifact is public; code-scanning access follows GitHub's repository roles.
 Schedules on public repositories can be disabled after 60 days without activity;
 a maintainer can re-enable the workflow in Actions.
 
-Preserve the [upstream publication restrictions](https://github.com/ossf/scorecard-action/blob/v2.4.4/README.md#workflow-restrictions)
+Preserve the [upstream publication restrictions](https://github.com/ossf/scorecard-action/blob/v2.5.0/README.md#workflow-restrictions)
 when updating this workflow. Publishing uses the job's OIDC permission and the
 default GitHub token; rulesets do not require an additional PAT. Keep write
 permissions inside the publishing job and its steps restricted to the approved

@@ -77,10 +77,10 @@ and [returned animation](../MESH_APPLICATION.md#apply-returned-animation).
 object, or several edited together, and a durable original or local-reuse claim.
 It rejects changed geometry/context, unverified results and uncertain rollback, while
 known receipt retry only saves persistence. The caller supplies an explicit
-Blender-imported-scene-to-source-local matrix or a verified fit, edit policy and
-Keep original choice.
-Native **Apply mesh edit** and MCP `purpose: mesh_edit` prepare the same
-captured target, explicit scene/local placement, policy and Keep original review.
+Blender-imported-scene-to-source-local matrix or a verified fit, edit policy, Keep
+original choice and, for retexture, an optional region that keeps the source's texture.
+Native **Apply mesh edit** and MCP `purpose: mesh_edit` prepare the same captured
+target, explicit scene/local placement, policy, Keep original and Keep texture review.
 It makes no service request and uses no second executor. The captured-source flow
 below connects export metadata to this review.
 [Surface matching](../MESH_APPLICATION.md#surface-matching) verifies provider

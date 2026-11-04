@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/ui/studio-and-library.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
     "limits": "Source-reviewed against the implementation. Its desktop evidence paragraphs record named earlier candidates and were not repeated. No live Scenario call, native Blender run or desktop interaction.",
     "sources": [
       "docs/UI_STYLE.md",
@@ -33,8 +33,10 @@
       "scenario/blender/reference_form.py",
       "scenario/blender/reference_uploads.py",
       "scenario/blender/registry.py",
+      "scenario/blender/result_grid.py",
       "scenario/blender/review_previews.py",
       "scenario/blender/runtime.py",
+      "scenario/blender/sign_in.py",
       "scenario/blender/studio.py",
       "scenario/blender/workflow_controls.py",
       "scenario/blender/workflow_references.py",

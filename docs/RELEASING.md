@@ -78,6 +78,8 @@ Blender runtime acceptance remain separate requirements.
    render the standalone `scenario-handbook-X.Y.Z.html`, generate `SHA256SUMS`
    for the ZIP and handbook, and attest all three files. Attach them and the
    attestation's Sigstore bundle, `scenario-X.Y.Z.sigstore.json`, to the draft.
+   Append a Contributors section thanking the human PR authors that GitHub's
+   generated notes list since the latest release.
 4. Validate that same ZIP with Blender 5.1.2 and 5.2.3.
 5. Publish only after those jobs succeed. Publication creates the tag through
    the release App and triggers the separate public-changelog workflow.

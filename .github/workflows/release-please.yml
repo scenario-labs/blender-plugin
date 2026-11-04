@@ -144,6 +144,15 @@ jobs:
           cp "$BUNDLE" "dist/scenario-${VERSION}.sigstore.json"
           gh release upload "$TAG" "dist/scenario-${VERSION}.zip" "dist/scenario-handbook-${VERSION}.html" dist/SHA256SUMS "dist/scenario-${VERSION}.sigstore.json" --clobber
 
+      # release-please notes name no authors; GitHub's generated notes do. A
+      # missing thank-you must not hold back a validated release.
+      - name: Thank the release's contributors in the draft notes
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 tools/release_contributors.py
+
   # The zip content does not depend on which Blender builds it, so the artefact
   # built above is the file validated here on the other supported LTS lines.
   validate:

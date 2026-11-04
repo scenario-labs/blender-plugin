@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/development/validation.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
-    "limits": "CI, weekly OS, fuzz, unit and native-runner statements were checked against workflows and tools; package-update probe claims were spot-checked against the probe and runner, not traced assertion by assertion. No Blender launch, hosted workflow run or live Scenario call.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "CI, coverage, weekly OS, fuzz, unit and native-runner statements were checked against workflows and tools; package-update probe claims were spot-checked against the probe and runner, not traced assertion by assertion. No Blender launch, hosted workflow run or live Scenario call.",
     "sources": [
       ".github/actions/setup-blender/action.yml",
       ".github/workflows/agent-skills.yml",
@@ -17,6 +17,7 @@
       ".github/workflows/cflite.yml",
       ".github/workflows/ci.yml",
       ".github/workflows/commitlint.yml",
+      ".github/workflows/coverage.yml",
       ".github/workflows/knowledge.yml",
       ".github/workflows/pr-name.yml",
       ".github/workflows/publish-changelog.yml",

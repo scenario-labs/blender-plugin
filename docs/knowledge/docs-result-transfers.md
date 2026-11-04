@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/RESULT_TRANSFERS.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
-    "limits": "Claims touched by later code commits were checked against the downloader, transfer lane, download retries, result commands, metadata, preview and splat decoder code; other sections were spot-checked. No live CDN, HDRi original, WAV original or splat provider check and no desktop interaction; live service observations in the document were not repeated.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Reviewed against the downloader, transfer lane, connect timeout, retries, on-demand fetches, result commands, metadata and the pinned SDK's asset fields; other sections were spot-checked. No live CDN, HDRi original, WAV original or splat provider check and no desktop interaction; live service observations in the document were not repeated.",
     "sources": [
       "docs/RESULT_TRANSFERS.md",
       "pyproject.toml",
@@ -39,8 +39,10 @@
       "scenario/core/jobs/store.py",
       "scenario/core/jobs/transfers.py",
       "scenario/core/jobs/upload_sources.py",
+      "scenario/core/jobs/upload_transfers.py",
       "scenario/core/jobs/uploads.py",
       "scenario/core/jobs/workers.py",
+      "scenario/core/scene/model_formats.py",
       "scenario/core/scene/panorama.py",
       "scenario/core/scene/splat_ply.py",
       "scenario/core/scene/splats.py",

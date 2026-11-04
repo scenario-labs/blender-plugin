@@ -6,9 +6,9 @@
   "evidence": {
     "path": "CONTRIBUTING.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
-    "limits": "Environment, live-command, native-runner, CI, desktop-review, documentation and image-tool statements were checked against current tools and workflows; portable fetch, install and capture-backend details were not re-inspected. No Blender launch, hosted workflow run, live Scenario call or desktop interaction.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Environment, live-command, native-runner, CI, desktop-review, documentation and image-tool statements were checked against current tools and workflows; portable fetch, install and capture-backend details were not inspected. No Blender launch, hosted workflow run, live Scenario call or desktop interaction.",
     "sources": [
       ".github/actions/setup-blender/action.yml",
       ".github/pull_request_template.md",

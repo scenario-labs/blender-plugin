@@ -71,9 +71,9 @@ isolated profile, using a synthetic saved job and blocked external networking:
   reapplies the recovered plan. Geometry stays unchanged throughout.
 - A viewport click selects the existing cube, and Home frames the scene,
   confirming viewport focus and keyboard navigation after the dialog.
-- A separate **Build plan** click creates the recovered tower and preserves the
-  existing cube, light and camera. Approval, Undo/Redo, viewport interaction and
-  building issue no further service requests or submissions.
+- A separate **Build plan** (now **Build blockout**) click creates the recovered tower and
+  preserves the existing cube, light and camera. Approval, Undo/Redo, viewport interaction
+  and building issue no further service requests or submissions.
 
 ![Saved Blockout plan confirmation names the destination and preserves geometry until Build](../images/blockout-recovery-approval.png)
 

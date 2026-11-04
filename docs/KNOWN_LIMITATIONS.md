@@ -137,13 +137,13 @@ full render-lane desktop acceptance.
   versions that share a title collide when extracted side by side. A second
   end-to-end run with two versions met all three;
   [#494](https://github.com/scenario-labs/blender-plugin/issues/494) tracks them.
-- Credentials use one explicitly selected pair (saved Blender preferences by
-  default, environment only when selected). UI and MCP model jobs use credential-bound
-  local storage. Preferences also allow an explicit optional project ID; changing
-  it retires approvals and selects separate saved jobs. Blank uses the API key's
-  default scope without discovering its identity. Live project permission and
-  cross-project service acceptance continue in #494; browser sign-in keeps its
-  tokens in a private file rather than an OS keychain, and the rest of
+- Credentials use one explicitly selected source (the saved Blender pair by default,
+  the environment pair or a browser sign-in only when selected). UI and MCP model jobs
+  use credential-bound local storage. Preferences also allow an explicit optional
+  project ID; changing it retires approvals and selects separate saved jobs. Blank
+  uses the API key's default scope without discovering its identity. Live project
+  permission and cross-project service acceptance continue in #494; browser sign-in
+  keeps its tokens in a private file rather than an OS keychain, and the rest of
   [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open.
 - An uncertain submission is not reconciled automatically: Scenario offers no
   idempotency key or client reference that identifies the job a lost request
@@ -294,12 +294,12 @@ full render-lane desktop acceptance.
   armature object itself on a rig that is not a humanoid; fingers and face bones
   are not retargeted, and a clip's root motion assumes its first frame stands
   upright.
-- Automatic Image-lane import and saved image and material application
-  currently accept only PNG and scanline OpenEXR files. World application also
-  accepts baseline or progressive JPEG and ACES-labelled OpenEXR panoramas.
-  Other image results, such as WebP, or JPEG and ACES-labelled OpenEXR outside
-  World, stay saved with the job without import. The World review's format line
-  for an ACES-labelled result, *ACES-labelled OpenEXR (float, AP0 as
+- Automatic Image-lane import and saved image application currently accept only
+  PNG and scanline OpenEXR files. Material, camera background, image plane and World
+  application also accept baseline or progressive color JPEG, and World application
+  ACES-labelled OpenEXR panoramas. Other image results, such as WebP, or ACES-labelled
+  OpenEXR outside World, stay saved with the job without import. The World review's
+  format line for an ACES-labelled result, *ACES-labelled OpenEXR (float, AP0 as
   ACES2065-1)*, comes from the server's media type. On 2026-10-10 the EXR
   original of a paid HDRi Skybox result declared no primaries, so Blender
   decoded it as Linear Rec.709 under that line; only the file's own declarations
@@ -503,14 +503,14 @@ full render-lane desktop acceptance.
   shown waveform is drawn from its cached envelope and checked once per second
   for a changed connection; it does not monitor later external file changes, but
   every Play and decode rechecks the saved receipt.
-- Automatic result previews cover the first twelve jobs of Jobs and of
-  Generations and show four results per job at a time; a job with more pages
-  through them with **‹** and **›**. A physical recheck of #423's fit at UI
-  scales 1.0 and 2.0 found the arrows as tall as the tiles' icon cells, still
-  about 9 px (scale 1.0) or 18 px (scale 2.0) beyond the visible image in the
-  default-width sidebar, with paged tiles about 30% smaller than an unpaged
-  row's. #432 then sized the arrows to the preview images, and a physical
-  recheck on 2026-10-13 found them within 0 to 1 px of the images at UI scales
+- Automatic result previews cover the first twelve jobs of Jobs and the Generations
+  rows drawn (a list's first twelve, or a grid's page and selected result) and show
+  four results per job at a time; a job with more pages through them with **‹** and
+  **›**. A physical recheck of #423's fit at UI scales 1.0 and 2.0 found the arrows as
+  tall as the tiles' icon cells, still about 9 px (scale 1.0) or 18 px (scale 2.0)
+  beyond the visible image in the default-width sidebar, with paged tiles about 30%
+  smaller than an unpaged row's. #432 then sized the arrows to the preview images,
+  and a physical recheck on 2026-10-13 found them within 0 to 1 px of the images at UI scales
   1.0 and 2.0, and Studio's arrows about 1.2 steps wide at 2.0, stretched past
   their one step by the row. The arrows now keep one step at every UI scale, as
   Studio showed at UI scale 2.0 on the #440 candidate. Which result kinds
@@ -568,7 +568,7 @@ full render-lane desktop acceptance.
 ## Verification
 
 Offline contracts establish the behavior of fixtures and local state machines.
-Browser sign-in has offline protocol tests and no native run yet, and the rest of
+Browser sign-in has offline protocol and installed Blender tests, and the rest of
 [#67](https://github.com/scenario-labs/blender-plugin/issues/67) is open; the open
 provider, UI/MCP parity and platform checks are in
 [#494](https://github.com/scenario-labs/blender-plugin/issues/494).

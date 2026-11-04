@@ -27,7 +27,7 @@ SDK dependency wheels, licensed GPL-3.0-or-later. Read the
 ## Requirements
 
 - Blender 5.0 or later, as declared in the [extension manifest](scenario/blender_manifest.toml).
-- A Scenario account with API access, an API key and its secret. See
+- A Scenario account with API access: [sign in](#authentication), or an API key and its secret. See
   [Obtain your API key](https://docs.scenario.com/get-started/documentation/quick-start-guide/step-1-obtain-your-api-key)
   and [Scenario help](https://help.scenario.com) for current account requirements.
 - An internet connection and Blender's **Allow Online Access** setting enabled
@@ -159,8 +159,7 @@ blender --background scene.blend --command scenario_blender
 **Credentials > Sign in with Scenario** opens your web browser on Scenario's
 sign-in page and keeps the resulting session in the extension's private state
 folder, refreshed in the background, never in `userpref.blend` or a `.blend`
-file, then asks which team and project the work goes to; it becomes usable once
-Scenario's OAuth application is registered.
+file, then asks which team and project the work goes to.
 **Saved in Blender** uses an API key and secret from the preferences, and
 **Credentials > Environment** explicitly selects an environment pair instead.
 The hosted Scenario MCP service has its own authentication, described in its
@@ -173,7 +172,8 @@ while you edit, before Generate. Upload reference sends files, scene captures or
 exported meshes; generation and prompt tools spend credits. Catalogs, thumbnails
 and result previews load from Scenario; cloud history and Library assets load
 when requested. Anonymous usage data, off by default, and feedback you send go
-to `blender.scenario.com`. Saved keys, prompts, job state and media remain in
+to `blender.scenario.com`; browser sign-in exchanges and refreshes its tokens with
+`clerk.scenario.com`. Saved keys, prompts, job state and media remain in
 Blender preferences, extension storage or output files. Connected local agents
 can read your scene and request paid work using your account. Read
 [Privacy and data handling](docs/PRIVACY.md) for destinations, storage, clipboard

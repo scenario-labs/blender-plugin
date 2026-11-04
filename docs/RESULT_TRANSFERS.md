@@ -2,7 +2,7 @@
 
 `scenario.core.jobs.transfers` provides a synchronous, bpy-free storage primitive
 for application-owned workers. It does not contact Scenario API endpoints;
-those remain the shared SDK adapter's responsibility. SDK 2.2.0 returns storage
+those remain the shared SDK adapter's responsibility. SDK 2.5.0 returns storage
 URLs but does not transfer their bytes. This module uses Python's HTTPS transport
 and the already bundled certifi certificate authorities, adding no dependency.
 
@@ -243,7 +243,7 @@ fallback is created. A process crash can leave private temporary staging for
 later cleanup, as with other interrupted transfers.
 
 [Model text recovery](JOB_COORDINATOR.md#model-text-recovery) uses the same
-reader for one explicitly selected output. SDK 2.2.0 exposes text classification
+reader for one explicitly selected output. SDK 2.5.0 exposes text classification
 as top-level `kind`, separately from `mimeType`; the old nested `type.kind` shape
 does not qualify. An explicit `properties.hasFullPreview=true` permits the whole
 preview; otherwise a bounded full-body read must succeed. There is no fallback
@@ -307,7 +307,7 @@ limit counts its declared size and result previews leave it out.
 
 ## Declared HDR originals and 360 projection
 
-SDK 2.2.0 documents that an HDRi skybox asset exposes a JPEG preview as `url` and
+SDK 2.5.0 documents that an HDRi skybox asset exposes a JPEG preview as `url` and
 its `.exr` or `.hdr` file as `originalFileUrl`, labelled by `originalMimeType`.
 The extension selects only the OpenEXR labels: when an image asset declares
 `image/x-exr` or `image/aces` there, the manifest records
@@ -458,7 +458,7 @@ are described in [saved Gaussian splat import](MESH_APPLICATION.md#saved-gaussia
 The prototype SPZ import now delegates to the same builder. Live evidence must
 still confirm provider MIME types, SPZ versions, axis conventions and whether the
 `url` saved from an [untransformed asset read](#untransformed-result-assets)
-serves a 3D asset's original bytes; SDK 2.2.0 documents `original_file_url` for
+serves a 3D asset's original bytes; SDK 2.5.0 documents `original_file_url` for
 some replaced 3D assets.
 
 ## Saved-result preview transfers

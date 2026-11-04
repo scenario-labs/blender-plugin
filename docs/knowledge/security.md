@@ -6,13 +6,14 @@
   "evidence": {
     "path": "SECURITY.md",
     "coverage": "policy",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
-    "limits": "Policy reviewed against the MCP server, client setup, preferences, credential selection, Python guard, telemetry relay client and Scorecard workflow. It certifies no implementation; repository security settings, the advisory form and the published Scorecard result were not checked.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Policy reviewed against the MCP server, client setup, preferences, credential selection, browser sign-in, Python guard, telemetry relay client and Scorecard workflow. It certifies no implementation; repository security settings, the advisory form and the published Scorecard result were not checked.",
     "sources": [
       ".github/workflows/scorecard.yml",
       "scenario/blender/mcp_service.py",
       "scenario/blender_manifest.toml",
+      "scenario/core/api/oauth.py",
       "scenario/core/config.py",
       "scenario/core/telemetry/relay.py",
       "scenario/mcp/client_setup.py",

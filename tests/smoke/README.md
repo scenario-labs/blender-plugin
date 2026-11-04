@@ -405,8 +405,8 @@ Environment form and local MCP, in single runs and in suites:
   and `panorama` for the others. A mismatch fails before any request.
 - `quote` reads the model's current schema, a free read, and applies the
   contract before the dry run. Schema drift fails closed; forced values (the
-  HDRI's OpenEXR-only outputs) and the lane default (one Flux output) are
-  applied; a GPT size must be one of the 2:1 presets; the result must pass the
+  HDRI's OpenEXR-only outputs) and defaults (one Flux output, the largest GPT
+  size) are applied; a GPT size must be one of the 2:1 presets; the result must pass the
   schema's own checks, including file inputs whose descriptions say they can't
   be combined. A refused case prints the contract's reasons and quotes nothing.
   The quote record, version 4, keeps the prepared parameters and the verified

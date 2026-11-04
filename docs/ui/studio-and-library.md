@@ -300,7 +300,7 @@ refreshes it), so a control disabled by its own read still looked unavailable
 after the read finished, although the pump had refreshed the popup.
 
 **Organize** on an asset row opens a dialog (width 480) showing the captured
-asset name and the selected project label, as on the Connection page. Choose
+asset name and the session's Project ID, or **API key default scope**. Choose
 Add to collection, Remove from collection, Add tags, Remove tags or New collection
 and add. The collection dropdown lists the loaded collections, plus the browsed
 Collection ID, and preselects the browsed one. Before collections are loaded,

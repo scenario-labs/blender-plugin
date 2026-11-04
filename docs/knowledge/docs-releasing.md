@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/RELEASING.md",
     "coverage": "inherited",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
     "limits": "Pipeline, Pages, downloads page, bootstrap and package-probe claims source-reviewed against the workflows and tools. Repository, selector and provenance tool details were not re-read claim by claim. No release, Pages run, GitHub read, changelog request or Blender run; live tag rules and immutable releases are recorded elsewhere.",
     "sources": [
       ".github/workflows/blender-baseline.yml",

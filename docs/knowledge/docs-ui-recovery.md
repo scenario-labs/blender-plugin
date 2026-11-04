@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/ui/recovery.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "1f1ec19bfa8dcb544672429df77aa329841366e7",
-    "limits": "Source-reviewed against the Blockout, saved-plan recovery, cloud history and unconfirmed-submission lookup and link code. Recorded installed-test and desktop evidence, including its archive hashes, was not rerun; no live Scenario call or desktop interaction, and the candidate dialog has no desktop check.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Source-reviewed against the Blockout, saved-plan recovery, cloud history and unconfirmed-submission lookup and link code. Recorded installed-test and desktop evidence, including its archive hashes and the earlier two-step Blockout flow, was not rerun; no live Scenario call or desktop interaction, and the candidate dialog has no desktop check.",
     "sources": [
       "docs/images/blockout-plan-approval.png",
       "docs/images/blockout-plan-built.png",

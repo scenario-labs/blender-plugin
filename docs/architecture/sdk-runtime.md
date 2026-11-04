@@ -10,17 +10,17 @@ Blockout Design/Refine now use
 [BlockoutJobs](../../scenario/blender/blockout_jobs.py), owned by the selected
 JobSession. UI and MCP share exact quote approval, durable submission, polling
 and complete text retrieval. Guarded delivery stores a plan; explicit local
-Build plan creates geometry. No unbound prototype event can apply a late plan.
+**Build blockout** creates geometry. No unbound prototype event can apply a late plan.
 The [Blockout contract](../BLENDER_JOB_CONTEXT.md#blockout-plan-commands) describes
 scene ownership and recovery limits. Saved-plan recovery reads complete text
 through that session, then requires a separate approval bound to a newly selected
 scene and its unchanged Blockout fields. It replaces the stored plan only;
-geometry still needs Build plan. This scoped integration does not establish
+geometry still needs **Build blockout**. This scoped integration does not establish
 Film or complete release acceptance.
 
 [SDKCatalog](../../scenario/core/api/sdk_catalog.py) binds model list/detail
-reads to the explicitly selected API-key pair. The application owns this context;
-opening or closing a panel does not replace it. The existing manager dispatches
+reads to the explicitly selected API-key pair or browser sign-in. The application
+owns this context; opening or closing a panel does not replace it. The existing manager dispatches
 reads off the main thread through one reusable SDK adapter/HTTP pool per catalog
 connection. Retirement disables later requests immediately; the last active
 reader closes the pool. Extension teardown does not wait for catalog network I/O
@@ -113,16 +113,19 @@ team/project selection. Discovery uses the generated `teams` and `projects`
 resources, is optional and does not infer the key's default project from the first
 listed project. Opening the catalog also opens the
 [credential-bound local job store](../JOB_STORAGE.md#identity-and-ownership).
-Its installation-local HMAC pseudonym binds the exact selected key/secret pair to
-`JobScope.account_id`; it is not a discovered server account and is never sent to
-the API. The catalog's adapter carries the same scope. Credential changes retire
-both selections; switching back or restarting reopens the original records.
+Its installation-local HMAC pseudonym binds the exact selected key/secret pair, or
+a browser account's identity-provider subject, to `JobScope.account_id`; it is not
+a discovered server account and is never sent to the API. The catalog's adapter
+carries the same scope. Credential changes retire both selections; switching
+back or restarting reopens the original records.
 Missing/corrupt local scope keys and storage failures block context creation with
 an explicit error rather than silently replacing history. Model/schema caches
 remain in memory. Opening the store alone does not activate a `JobSession` or
 job workers. Quote, submission, upload and recovery entry points lazily activate
-the shared session described below. They use the same selected scope while the
-catalog retains its own metadata pool. Prototype jobs are not migrated or resumed;
+the shared session described below, as does the GUI pump's once-per-context
+listing of saved jobs, paused for review, when the store holds any. They use the
+same selected scope while the catalog retains its own metadata pool. Prototype
+jobs are not migrated or resumed;
 [local prototype records](runtime.md#local-prototype-records) remain read-only snapshots.
 
 **Test connection** uses the same SDK context for one fresh model-list page of
@@ -136,9 +139,10 @@ discard late success and failure. The result confirms model access; it does not
 derive account/project identity or activate durable jobs. Failures carry the
 adapter's fixed status text: HTTP 401 and 403 ask to check the selected key and
 secret, a 403 names the Project ID only when that request carried the override,
-and 429 asks for a later retry. Other statuses keep the generic HTTP text. Model
-record reads through `SDKAdapter.model` are the exception: their HTTP 403 or 404
-reports that the model is not available to the selected credentials or project.
+and 429 asks for a later retry. A browser account's 401 asks it to sign in again,
+its 403 to choose another team and project or sign in again. Other statuses keep
+the generic HTTP text. Model record reads through `SDKAdapter.model` are the exception: their HTTP
+403 or 404 reports that the model is not available to the selected credentials or project.
 No message includes response bodies, URLs or identifiers.
 
 Explicit local MCP recovery calls now lazily activate the selected
@@ -156,12 +160,14 @@ across model lanes use this session, as described below.
 
 ## Optional project selection
 
-Preferences expose an explicit optional Project ID for either credential source.
+Preferences expose an explicit optional Project ID for both API-key sources.
 `runtime.project_id` trims surrounding whitespace and treats blank as no override;
-the shared JobScope validates nonempty IDs before storage or SDK construction.
-The selected value is passed to `open_credential_store` and therefore to both
-catalog and job SDK pools. Neither discovery nor a guessed server identity is
-required. This uses the existing SDK `project_id` query configuration unchanged.
+the shared JobScope validates nonempty IDs before storage or SDK construction. A
+browser sign-in has no implicit project: it opens no catalog until its account
+chooses one from `teams()`. The selected value is passed to `open_credential_store`
+and therefore to both catalog and job SDK pools. API keys need neither discovery
+nor a guessed server identity. This uses the existing SDK `project_id` query
+configuration unchanged.
 
 Project changes follow the same retirement path as credential changes: clear
 catalog/schema/history/quote projections, deactivate the old session and reject
@@ -208,9 +214,11 @@ Generate. Failed file/model/schema
 preflight preserves the current form; a successful preparation invalidates its
 old quote without canceling existing jobs or admitted uploads.
 
-Clicking **Generate** in any model form requires its unchanged ready quote. MCP `generate`
-for every model lane requires its `quote_id` and the explicitly approved `cu_cost_exact`
-string as `approved_cost`. The quote also binds its lane: callers cannot turn an
+Clicking **Generate** in any model form requires its unchanged ready quote; above
+the **Confirm generations above** preference, a dialog names that exact price
+first and submits only that quote. MCP `generate` for every model lane requires
+its `quote_id` and the explicitly approved `cu_cost_exact` string as `approved_cost`.
+The quote also binds its lane: callers cannot turn an
 Image approval into a render, material or other lane submission. A displayed float
 is not used to reconstruct the price. The 3D tab in Edit mode resolves to the
 Edit 3D lane through one rule (`props.effective_lane`) shared by the pricing pump,
@@ -225,10 +233,12 @@ repeat that submission. Timeouts retain uncertain saved state without retry; an
 [identical request](../JOB_COORDINATOR.md#identical-unconfirmed-requests) in that
 scope is refused until Scenario confirms it, or the user links it to a cloud job
 or marks it reviewed in Blender.
-An unsuccessful UI attempt clears the ready price and requires explicit repricing;
-it never silently obtains another approval. Retained MCP/UI approvals are not evicted
-to admit new quotes. At capacity, new estimates are rejected until a consumed handle
-can be reclaimed; repricing a UI form explicitly releases its previous approval.
+A UI attempt refused before anything was saved, such as after a scene change or
+quote expiry, prices the form again; any other unsuccessful attempt clears the
+ready price and requires explicit repricing. Neither obtains another approval.
+Retained MCP/UI approvals are not evicted to admit new quotes. At capacity, new
+estimates are rejected until a consumed handle can be reclaimed; repricing a UI
+form explicitly releases its previous approval.
 
 GUI and headless main-thread context maintenance drains completed submissions,
 polls their known remote IDs at two-second intervals and downloads successful
@@ -268,11 +278,11 @@ hand one downloaded saved PNG, JPEG or WebP result to the Render Video
 first-frame slot by reusing its asset ID, without an upload or a stored file
 path; see the
 [handoff command](../BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame).
-Saved video/audio, GLB, glTF, FBX, OBJ and mesh PLY models, material maps and
-supported mesh edits use explicit destination approval through the shared
-session; their format and target limits are described below and in the
-application guides. Explicit viewport/camera clips and selected-mesh GLB uploads
-now share the typed reference lifecycle through both forms and MCP. They stage
+Saved video/audio, GLB, glTF, FBX, OBJ and mesh PLY models, material maps,
+camera backgrounds, image planes and supported mesh edits use explicit
+destination approval through the shared session; their format and target limits
+are described below and in the application guides. Explicit viewport/camera clips and selected-mesh
+GLB uploads now share the typed reference lifecycle through both forms and MCP. They stage
 private snapshots; clips preserve the preview/scene range without duration
 padding, and mesh export restores selection. Later source edits do not change an
 uploaded reference. Native recovery can refresh known uploads, cancel unclaimed
@@ -283,8 +293,9 @@ asset IDs are supported. Downloaded images are receipt-verified again on the
 main thread, decoded from private snapshots and packed as image datablocks after
 a durable application claim. Automatic import supports bounded 8-/16-bit
 grayscale/RGB/RGBA PNG and scanline OpenEXR; other formats remain saved without
-import. It does not assign textures or replace scene targets. A stale origin,
-download error, non-transient or
+import. It does not assign textures or replace scene targets. Images land in the
+scene captured at submission, which must be selected, whatever is edited there.
+Undo/Redo, file loading, removing that scene, a download error, a non-transient or
 [repeated status read error](../BLENDER_JOB_CONTEXT.md#status-refresh-failures)
 or uncertain application stops automatic delivery without another generation. The
 [transfer policy](../RESULT_TRANSFERS.md#active-image-delivery) names the
@@ -315,8 +326,8 @@ saved `ready` results without automatically assigning materials, importing
 meshes or inserting media strips. Status includes the saved result manifest,
 receipt presence and the paths of only those downloaded files whose bytes match
 their receipts. Restarted
-display records are generic model jobs; the original lane is not persisted, so
-they have no scene/lane binding. Explicit PNG/EXR import remains available by
+records have no scene binding; they show the lane saved with the job, display
+only, or are generic model jobs when saved without one. Explicit PNG/EXR import remains available by
 result type. For supported video/audio, **Add video/audio strip** and MCP
 `prepare_result_application(asset_id=...)` capture one asset and the selected
 scene/frame for approval. The shared command verifies local receipts and claims
@@ -337,10 +348,10 @@ SPZ, `.splat` and Gaussian splat PLY results are decoded by a worker in the
 local-operation slot with reviewed point limits and axes, then built on the main
 thread as a new point cloud (mesh plus Geometry Nodes and a new material) under
 the same claim and receipt rules; it approximates splats and is not a splat
-renderer. In-place clip application needs a matching skeleton; retargeting
-across skeletons remains open. Saved PNG, JPEG and OpenEXR results, including
-`image/aces`, also offer explicit World replacement unless a texture role or a
-declared header size other than 2:1 rules it out, with a separate guarded
+renderer. In-place clip application needs a matching skeleton or
+[retargets a humanoid clip](../MESH_APPLICATION.md#retarget-a-humanoid-clip).
+Saved PNG, JPEG and OpenEXR results, including `image/aces`, also offer explicit World replacement
+unless a texture role or a declared header size other than 2:1 rules it out, with a separate guarded
 restore in the current session. Application refuses a file whose container
 differs from its saved media type;
 [World application](../WORLD_APPLICATION.md#accepted-local-files) lists the

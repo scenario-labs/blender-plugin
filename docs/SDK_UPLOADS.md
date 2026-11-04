@@ -1,7 +1,7 @@
 # Scoped upload metadata commands
 
 The shared [SDK adapter](../scenario/core/api/sdk_adapter.py) exposes the
-multipart upload metadata lifecycle through the packaged **scenario-sdk 2.2.0**.
+multipart upload metadata lifecycle through the packaged **scenario-sdk 2.5.0**.
 These commands do not read files, transfer bytes, persist signed URLs or start a
 background worker by themselves. Native forms and local MCP use them through the
 shared workers for [reference uploads](#active-reference-uploads).
@@ -44,16 +44,16 @@ a validated or authorized storage transfer plan**. Do not log raw records: parts
 may contain signed URLs and other sensitive response details.
 
 Only the create response carries the multipart plan. Live service responses
-(SDK 2.2.0) return `parts` (number, signed `url`, `expires`), `partsCount`,
+return `parts` (number, signed `url`, `expires`), `partsCount`,
 `fileSize`, `contentType` and `originalFileName` from `create`. Retrieval of the
 same pending upload, before or after its part PUTs, and the completion action
-omit all five fields; the SDK's shared `Upload` model types them as optional.
+omit all five fields; the SDK's `Upload` response models type them as optional.
 No operation reissues part URLs or aborts a pending upload. The response
 `fileName` is a server storage key, not the chosen name.
 
 ## Completion and uncertain responses
 
-The SDK 2.2.0 generated action parameter is `Literal["complete"]`; its docstring
+The generated action parameter is `Literal["complete"]`; its docstring
 says `"upload-complete"`. The adapter uses the generated literal already covered
 by the dependency contracts. The live service accepted `"complete"` and
 acknowledged it as `validating`; retrieval then reported `validated` and
@@ -406,8 +406,8 @@ return a session-owned handle immediately. Poll `reference_upload_status` until
 the saved state is `imported`, then pass its `asset_id` to the intended model or
 workflow file input in a fresh estimate. Uploading does not submit generation or
 approve its cost. Generation forms use the same
-owner through **Upload reference** for image, audio, video and 3D files; loaded
-workflow forms use it through
+owner through **Upload reference** for image, audio, video and 3D files, Blockout
+for its optional reference image; loaded workflow forms use it through
 [workflow input attachment](#workflow-input-attachment). Image inputs also
 support explicit still captures; video inputs support explicit clips. **Upload
 selected mesh** creates one GLB reference for an empty 3D input. Preparation
@@ -436,7 +436,9 @@ reference-image array when the model has no such input or says its first frame
 can't be combined with the scene clip. A Render Video first frame
 [handed from a saved image result](BLENDER_JOB_CONTEXT.md#saved-image-to-render-video-first-frame)
 needs no upload: it reuses that result's existing asset ID under the same scope,
-asset and kind markers, with no upload marker or local file path.
+asset and kind markers, with no upload marker or local file path. **Use as
+reference** reuses a saved image result's asset the same way while its downloaded
+file still matches the receipt.
 
 The upload kind and final file extension must match the local format policy.
 An omitted kind remains `image`; a video path does not silently change the kind.
@@ -740,7 +742,8 @@ their typed 3D input parameters and persists them before spending; see
 Quotes look up only selected asset IDs within the credential scope, using a
 partial SQLite index of imported captured meshes. Each unique input needs one
 query and at most two decoded records: the latest capture, then one of other
-bytes, which still rejects an ambiguous source. Repeated array entries keep
+bytes, which still rejects an ambiguous source unless the user chooses **Price
+without captured source** for that asset this session. Repeated array entries keep
 their original positions without repeating the lookup, and absent optional
 inputs do not read upload storage. External
 assets and ordinary uploads do not gain an inferred source. Each quote allows at

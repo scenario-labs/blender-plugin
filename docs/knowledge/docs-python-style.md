@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/PYTHON_STYLE.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "04c30c3b7815ff8983a59c0e37a05608db23455e",
-    "limits": "Source-reviewed against the uv, Ruff, lint workflow and hook configuration. Blender's bundled Python versions and Studio's line length come from external sources that were not re-read; linting does not prove Blender API compatibility.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Source-reviewed against the uv, Ruff, lint workflow and hook configuration. Blender's bundled Python versions and Studio's line length come from external sources not inspected here; linting does not prove Blender API compatibility.",
     "sources": [
       ".git-blame-ignore-revs",
       ".github/workflows/ci.yml",

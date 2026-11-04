@@ -6,9 +6,9 @@
   "evidence": {
     "path": "docs/FILM_PLAN.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
-    "limits": "Checked against the Film sources by tracing every implementation change since each section was written and spot-checking bounds, labels and MCP tool names; not every sentence was re-derived from code. Desktop and live evidence is cited, not repeated. No live Scenario call, Blender run or desktop interaction.",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
+    "limits": "Checked against the Film sources and the shared job, upload, result and session code they reuse; bounds, labels and MCP tool names were spot-checked, not every sentence re-derived from code. Desktop and live evidence is cited, not repeated. No live Scenario call, Blender run or desktop interaction.",
     "sources": [
       "scenario/blender/file_state.py",
       "scenario/blender/film.py",

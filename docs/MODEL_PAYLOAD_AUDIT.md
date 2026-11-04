@@ -22,7 +22,7 @@ The checks flag:
   already represents the relationship as a one-of group.
 - Multiple required file inputs, for review rather than automatic rejection.
 - Prompts described as alternatives to a still-required file.
-- Edit 3D models without a detectable mesh input.
+- Edit 3D models, other than text-to-motion ones, without a detectable mesh input.
 - Prompts that the Edit 3D schema fails to select for drawing.
 - Required flags lost during parsing, and empty schemas.
 - Inputs whose descriptions say they are mutually exclusive with, or can't be
@@ -170,7 +170,7 @@ maintainers can re-enable them after checking the configured test scope.
 
 The exact pinned SDK release and bundle are documented in
 [SDK_ADOPTION.md](SDK_ADOPTION.md) and [SDK_BUNDLE.md](SDK_BUNDLE.md). The audit
-uses `SDKAdapter.model`, which calls SDK 2.2.0's public
+uses `SDKAdapter.model`, which calls SDK 2.5.0's public
 `models.with_raw_response.retrieve(model_id, project_id=...)` method for
 `GET /models/{id}`. It retains the complete model object for the existing parser
 and uses no raw API fallback or low-level SDK verb. The shared adapter retries
@@ -178,7 +178,7 @@ this read only within its bounded [read retries](SDK_ADOPTION.md#read-retries)
 and isolates ambient credentials.
 
 The [public API documentation](https://docs.scenario.com/) and
-[official Python SDK release](https://pypi.org/project/scenario-sdk/2.2.0/)
+[official Python SDK release](https://pypi.org/project/scenario-sdk/2.5.0/)
 describe service contracts. This audit does not invoke any paid endpoint or
 `dryRun` operation. Offline MockTransport checks verify the selected SDK mapping;
 actual service acceptance must be recorded separately.

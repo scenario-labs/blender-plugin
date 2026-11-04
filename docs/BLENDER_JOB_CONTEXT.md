@@ -450,9 +450,9 @@ Unregister removes timer and lifecycle hooks even after session cleanup failures
 allowing the remaining extension registry cleanup to proceed. Control exceptions
 continue to propagate; a session with live workers retains its ownership.
 
-The selected API-key context and worker-safe online snapshot are bound by the
-active runtime as described above. The account scope is a local pseudonym, not a
-guessed server account ID.
+The selected API key or browser account and worker-safe online snapshot are bound
+by the active runtime as described above. The account scope is a local pseudonym,
+not a guessed server account ID.
 
 ## Recovery inspection and cancellation
 
@@ -500,8 +500,8 @@ application. No default production host policy is selected by the session.
 Without storage configuration, download and verification report a configuration
 error without changing the stored job, including a reopened READY record.
 
-On the main thread, `load_results`, `download_results`, `recover_downloads` and
-`verify_results` queue
+On the main thread, `load_results`, `download_results`, `fetch_results`,
+`recover_downloads` and `verify_results` queue
 the corresponding [coordinator commands](JOB_COORDINATOR.md#result-retrieval-and-download-commands)
 with the original stored origin and expected record revision. Metadata reads run
 on the existing pool, signed transfers on its separate
@@ -512,13 +512,14 @@ new Blender context.
 
 `drain` validates both the record inside `VerifiedResults` and ordinary result
 records against the issuing origin/scope. Verification returns a frozen result
-containing a tuple of verified local paths. `deliver` still requires the original
-current scene/target and permits the completion to be used once. Receipt
-verification does not lock file bytes, run an importer or mark a job APPLIED;
-callers must preserve private storage ownership. The explicit application
-commands below consume these completions. Download failures remain
-`DOWNLOAD_FAILED` for explicit retry, while local verification failures do not
-trigger another download or generation.
+containing a tuple of verified local paths, None for an
+[on-demand copy](RESULT_TRANSFERS.md#glb-format-copies-on-demand) not fetched yet.
+`deliver` still requires the original current scene/target and permits the
+completion to be used once. Receipt verification does not lock file bytes, run an
+importer or mark a job APPLIED; callers must preserve private storage ownership.
+The explicit application commands below consume these completions. Download
+failures remain `DOWNLOAD_FAILED` for explicit retry, while local verification
+failures do not trigger another download or generation.
 Explicit interrupted-download recovery only reconciles verified local receipts
 and durable state under the cross-process transfer lock. A restarted session can
 recover those downloads, but its completion cannot rebind an old scene or target.
@@ -1152,7 +1153,7 @@ saved without one are generic `model` views of the kind their results establish.
 
 When a retrieval reports `status: failure`, the coordinator commits the saved
 `failed` state from it, and the same `ModelJobs._observe` hook reads the reason
-Scenario gave. SDK 2.2.0 and the [job retrieval reference](https://docs.scenario.com/api/python/resources/jobs/methods/retrieve)
+Scenario gave. SDK 2.5.0 and the [job retrieval reference](https://docs.scenario.com/api/python/resources/jobs/methods/retrieve)
 document two optional strings in `Job.metadata`: `error` ("Eventual error for
 the job") and `hint` ("Actionable hint for the user explaining what went wrong
 and how to resolve it"). [`failures.observe`](../scenario/core/jobs/failures.py)
@@ -1653,17 +1654,17 @@ reversible scene edits.
 ## Verified saved-mesh replacement
 
 `apply_recovered_mesh(completion, destination=..., asset_id=..., target=...,
-policy=..., result_to_source=..., keep_original=...)` applies one saved GLB,
-JSON glTF, FBX or OBJ import unit, keyed like a model import, with an explicit
-REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE policy to an explicitly captured
+policy=..., result_to_source=..., keep_original=..., keep_texture=...)` applies one
+saved GLB, JSON glTF, FBX or OBJ import unit, keyed like a model import, with an
+explicit REMESH, UV, RETEXTURE, PARTS, RIG or ANIMATE policy to an explicitly captured
 source mesh. The target snapshot must match the resolved scene/object origin and
 its geometry/context must still match before claiming application. A caller
-captures this source before asynchronous work and binds its policy, mapping and
-Keep original choice to the approved operation; the command does not derive
-provider semantics or infer targets from selection. A tuple of targets, from one
-export of [several captured
-objects](MESH_APPLICATION.md#several-captured-objects), binds a scene
-destination instead and applies UV, RETEXTURE or RIG to all of them under one
+captures this source before asynchronous work and binds its policy, mapping, Keep
+original choice and any RETEXTURE kept-texture region to the approved operation;
+the command does not derive provider semantics or infer targets from selection. A
+tuple of targets, from one export of
+[several captured objects](MESH_APPLICATION.md#several-captured-objects), binds a
+scene destination instead and applies UV, RETEXTURE or RIG to all of them under one
 claim.
 
 The [verified mesh command](MESH_APPLICATION.md#captured-source-and-verified-saved-mesh-command)

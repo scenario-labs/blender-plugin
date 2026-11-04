@@ -6,8 +6,8 @@
   "evidence": {
     "path": "docs/ui/film.md",
     "coverage": "source-reviewed",
-    "reviewed_at": "2026-10-18",
-    "reviewed_revision": "14fb6420365472553d3585ca508baeb7e3d44aa0",
+    "reviewed_at": "2026-11-04",
+    "reviewed_revision": "a316f6a00c2c126d63e349f492fd9340d7ca7e3b",
     "limits": "Interaction rules checked against the Film control sources. The recorded desktop runs, ZIP hashes and screenshots were not repeated; they describe the builds they name. No live Scenario call, Blender run or desktop interaction.",
     "sources": [
       "docs/images/film-capture-approval.png",

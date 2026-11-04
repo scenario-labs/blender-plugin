@@ -184,8 +184,8 @@ for newly generated shared jobs.
 [`model_application.py`](../../scenario/blender/model_application.py) stages one
 receipt-bound embedded GLB, or one saved GLB, glTF, FBX, OBJ or mesh PLY package
 snapshot rehashed on the main thread before its claim, in a disposable scene, then
-publishes a new collection/group at an approved cursor, uniformly scaled when an
-approved target size asks for it. It preserves the original
+publishes a new collection/group at an approved cursor or on the mesh the job edited,
+scaled evenly when approved to a target size or that mesh's size. It preserves the original
 selection, packs only textures embedded in or read from the package, retains rigs
 and node/morph animation clips, and keeps the destination timeline unchanged. The
 [model guide](../MESH_APPLICATION.md#explicit-saved-glb-import) and its

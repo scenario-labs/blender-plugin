@@ -37,10 +37,18 @@ jobs:
           version-file: pyproject.toml
           enable-cache: true
       - run: uv sync --locked
+      - name: Install a Secret Service for the keychain test
+        run: sudo apt-get install -y --no-install-recommends dbus libsecret-tools gnome-keyring
       - name: Test the exact ZIP in a new profile
         env:
           BLENDER_VERSION: ${{ matrix.version }}
-        run: uv run --locked --no-env-file python tools/test_blender.py --expected-version "$BLENDER_VERSION" --artifacts "$RUNNER_TEMP/scenario-tests"
+        # A session bus and an unlocked keyring let test_keychain reach the real
+        # Secret Service; the runner is disposable, so its password is not secret.
+        run: |
+          dbus-run-session -- bash -euc '
+            printf runner | gnome-keyring-daemon --unlock --components=secrets >/dev/null
+            uv run --locked --no-env-file python tools/test_blender.py --expected-version "$BLENDER_VERSION" --artifacts "$RUNNER_TEMP/scenario-tests"
+          '
       - name: Test native extension install and update on loopback
         env:
           BLENDER_VERSION: ${{ matrix.version }}

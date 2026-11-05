@@ -47,6 +47,8 @@ TOKEN_TIMEOUT = 30.0
 _TOKEN_FILE_HEADER = "scenario-browser-sign-in-v2"
 # Builds before the credential store kept both tokens in the file; their refresh token still reads.
 _V1_HEADER = "scenario-browser-sign-in-v1"
+# Store entries a Blender opted out of the store could not delete, for the next one that uses it.
+_RETIRED = "retired"
 STORED_PRIVATELY = "this Blender's private extension data"
 
 
@@ -539,6 +541,9 @@ class TokenStorage:
         the private file. Raises OSError when the file cannot be written.
         """
         previous = self.saved()
+        retired = self._retired()
+        if previous is not None and previous.slot:
+            retired.add(previous.slot)
         if self.keychain is None:
             slot = ""
         else:
@@ -558,24 +563,36 @@ class TokenStorage:
             record["keychain"] = slot
         else:
             record["refresh_token"] = tokens.refresh_token
+        retired.discard(slot)
+        if retired and self.keychain is None:
+            record[_RETIRED] = sorted(retired)
         try:
             _write_record(self.path, record)
         except OSError:
             if slot and (previous is None or previous.slot != slot):
                 self._delete_quietly(slot)
             raise
-        if previous is not None and previous.slot and previous.slot != slot:
-            self._delete_quietly(previous.slot)
+        for entry in sorted(retired):
+            self._delete_quietly(entry)
         return slot
 
     def clear(self, slot=""):
         """Delete the state file, its store entry and the store entry ``slot``.
 
         The file goes at once. The entries are deleted on a thread of their own,
-        which is returned, because a locked keychain can block.
+        which is returned, because a locked keychain can block. Opted out of the
+        store, the file is replaced by one naming only the entries, which reads
+        as signed out until a Blender that uses the store deletes them.
         """
         saved = self.saved()
-        slots = {slot, saved.slot if saved is not None else ""} - {""}
+        slots = ({slot, saved.slot if saved is not None else ""} | self._retired()) - {""}
+        if slots and self.keychain is None:
+            try:
+                _write_record(self.path, {"format": _TOKEN_FILE_HEADER, _RETIRED: sorted(slots)})
+            except OSError:
+                pass  # The token must still go: delete the file below.
+            else:
+                return None
         with contextlib.suppress(FileNotFoundError):
             os.unlink(os.fspath(self.path))
         if not slots or self.keychain is None:
@@ -589,9 +606,17 @@ class TokenStorage:
         thread.start()
         return thread
 
+    def _retired(self):
+        """The store entries the file names for deletion, as a set."""
+        data = _read_record(self.path)
+        entries = data.get(_RETIRED) if data is not None else None
+        if not isinstance(entries, list):
+            return set()
+        return {entry for entry in entries if isinstance(entry, str) and entry}
+
     def _delete_quietly(self, slot):
         if self.keychain is None:
-            return  # Opted out of the store: its entries stay until a Blender that uses it.
+            return  # Opted out of the store: the file names the entry for a Blender that uses it.
         with contextlib.suppress(KeychainError):
             self.keychain.delete(slot)  # Nothing reads an entry the file no longer names.
 

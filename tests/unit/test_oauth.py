@@ -472,12 +472,40 @@ def test_an_entry_in_a_store_this_blender_does_not_use_reads_as_no_session(tmp_p
 
 def test_saving_after_opting_out_of_the_store_moves_the_token_to_the_file(tmp_path):
     keychain = _Keychain()
-    oauth.TokenStorage(tmp_path / "sign-in.json", keychain).save(_tokens())
+    slot = oauth.TokenStorage(tmp_path / "sign-in.json", keychain).save(_tokens())
     opted_out = oauth.TokenStorage(tmp_path / "sign-in.json")
     assert opted_out.save(_tokens(refresh_token="refresh-2")) == ""
     assert opted_out.load().tokens.refresh_token == "refresh-2"
+    # The entry it may not delete stays named, so a Blender that uses the store can.
+    assert _record(opted_out)["retired"] == [slot]
+    assert keychain.entries == {slot: "refresh-1"}
+
+
+def test_an_opted_out_sign_out_keeps_its_entries_named_for_the_store(tmp_path):
+    keychain = _Keychain()
+    path = tmp_path / "sign-in.json"
+    slot = oauth.TokenStorage(path, keychain).save(_tokens())
+    opted_out = oauth.TokenStorage(path)
     assert opted_out.clear() is None
-    assert not opted_out.path.exists()
+    assert _record(opted_out) == {"format": "scenario-browser-sign-in-v2", "retired": [slot]}
+    assert opted_out.saved() is None and opted_out.load() is None
+    assert opted_out.save(_tokens(refresh_token="refresh-2")) == ""
+    assert _record(opted_out)["retired"] == [slot]
+    assert opted_out.clear() is None
+    assert keychain.entries == {slot: "refresh-1"}
+    oauth.TokenStorage(path, keychain).clear().join(5)
+    assert keychain.entries == {} and not path.exists()
+
+
+def test_a_sign_in_with_the_store_deletes_entries_left_while_opted_out(tmp_path):
+    keychain = _Keychain()
+    path = tmp_path / "sign-in.json"
+    first = oauth.TokenStorage(path, keychain).save(_tokens())
+    oauth.TokenStorage(path).save(_tokens(refresh_token="refresh-2"))
+    storage = oauth.TokenStorage(path, keychain)
+    second = storage.save(_tokens(refresh_token="refresh-3"))
+    assert keychain.entries == {second: "refresh-3"} and second != first
+    assert "retired" not in _record(storage)
 
 
 def test_a_file_from_before_the_store_keeps_its_refresh_token(tmp_path):

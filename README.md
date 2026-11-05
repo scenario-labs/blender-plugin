@@ -157,9 +157,10 @@ blender --background scene.blend --command scenario_blender
 ### Authentication
 
 **Credentials > Sign in with Scenario** opens your web browser on Scenario's
-sign-in page and keeps the resulting session in the extension's private state
-folder, refreshed in the background, never in `userpref.blend` or a `.blend`
-file, then asks which team and project the work goes to.
+sign-in page and keeps the resulting session in the system's keychain (a private
+state file where there is none), refreshed in the background, never in
+`userpref.blend` or a `.blend` file, then asks which team and project the work
+goes to.
 **Saved in Blender** uses an API key and secret from the preferences, and
 **Credentials > Environment** explicitly selects an environment pair instead.
 The hosted Scenario MCP service has its own authentication, described in its

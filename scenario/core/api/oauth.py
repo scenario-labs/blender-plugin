@@ -5,8 +5,9 @@
 This is the desktop authorization protocol of scenario-labs/roadmap#692, not a
 Scenario service operation: the SDK has no client for it, so the token endpoint
 is called with the standard library. Nothing here touches bpy or the network
-of the SDK adapter. Tokens are kept in a private file under the extension's
-state directory and are never logged.
+of the SDK adapter. The refresh token is kept in the computer's credential
+store (``core.keychain``), or in a private file when there is none; the access
+token lives in memory only. Neither is ever logged.
 """
 
 import base64
@@ -25,8 +26,9 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
+from ..keychain import KeychainError
 from .user_agent import user_agent_string
 
 # The ports registered with the Scenario for Blender OAuth application.
@@ -42,7 +44,14 @@ CALLBACK_READ_TIMEOUT = 5.0
 # A token this close to its expiry is refreshed before it is used.
 REFRESH_MARGIN = 60.0
 TOKEN_TIMEOUT = 30.0
-_TOKEN_FILE_HEADER = "scenario-browser-sign-in-v1"
+_TOKEN_FILE_HEADER = "scenario-browser-sign-in-v2"
+# Builds before the credential store kept both tokens in the file; their refresh token still reads.
+_V1_HEADER = "scenario-browser-sign-in-v1"
+# Store entries not deleted yet, by a store that refused or a Blender opted out of it.
+_RETIRED = "retired"
+# Serializes this Blender's state file updates; never held across a store call.
+_FILE_LOCK = threading.Lock()
+STORED_PRIVATELY = "this Blender's private extension data"
 
 
 class SignInError(RuntimeError):
@@ -423,8 +432,8 @@ def _private_open(path, flags, mode=0o600):
     return os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), mode)
 
 
-def load_tokens(path):
-    """The saved session, or None when there is none or the file is not ours."""
+def _read_record(path):
+    """The state file's JSON object, or None when there is none or the file is not ours."""
     path = os.fspath(path)
     if not os.path.lexists(path) or os.path.islink(path):
         return None
@@ -435,39 +444,14 @@ def load_tokens(path):
             data = json.loads(source.read())
     except (OSError, ValueError):
         return None
-    if not isinstance(data, dict) or data.get("format") != _TOKEN_FILE_HEADER:
-        return None
-    try:
-        return TokenSet(
-            issuer=str(data["issuer"]),
-            client_id=str(data["client_id"]),
-            service=str(data["service"]),
-            subject=str(data["subject"]),
-            access_token=str(data["access_token"]),
-            refresh_token=str(data["refresh_token"]),
-            expires_at=float(data["expires_at"]),
-        )
-    except (KeyError, TypeError, ValueError):
-        return None
+    return data if isinstance(data, dict) else None
 
 
-def save_tokens(path, tokens):
-    """Publish the session atomically as a private file, replacing the previous one."""
+def _write_record(path, record):
+    """Publish the state file atomically as a private file, replacing the previous one."""
     path = os.fspath(path)
     directory = os.path.dirname(path) or "."
-    payload = json.dumps(
-        {
-            "format": _TOKEN_FILE_HEADER,
-            "issuer": tokens.issuer,
-            "client_id": tokens.client_id,
-            "service": tokens.service,
-            "subject": tokens.subject,
-            "access_token": tokens.access_token,
-            "refresh_token": tokens.refresh_token,
-            "expires_at": tokens.expires_at,
-        },
-        separators=(",", ":"),
-    ).encode()
+    payload = json.dumps(record, separators=(",", ":")).encode()
     descriptor, temporary = tempfile.mkstemp(prefix=".sign-in-", dir=directory)
     try:
         with os.fdopen(descriptor, "wb") as output:
@@ -480,30 +464,220 @@ def save_tokens(path, tokens):
             os.unlink(temporary)
 
 
-def clear_tokens(path):
-    with contextlib.suppress(FileNotFoundError):
-        os.unlink(os.fspath(path))
+@dataclass(frozen=True)
+class SavedSession:
+    """A saved sign-in: its account's tokens and where its refresh token is kept.
+
+    ``slot`` names the credential store entry holding the refresh token, or is
+    empty when the private file holds it. The access token is never saved, so a
+    saved session's access token is empty and already expiring.
+    """
+
+    tokens: TokenSet
+    slot: str = ""
+
+
+class TokenStorage:
+    """The signed-in account's state file and, when the computer has one, its credential store entry.
+
+    With a store (``core.keychain``) the file names the account and the store
+    entry, never a token; without one, or when the store refuses, the file
+    holds the refresh token itself, readable by its owner only. ``saved`` reads
+    the file alone, so Blender's main thread may call it; ``load``, ``save``
+    and the store half of ``clear`` can block on the store and belong on workers.
+    """
+
+    def __init__(self, path, keychain=None):
+        self.path = path
+        self.keychain = keychain
+
+    def where(self, slot):
+        """Where a session with this ``slot`` keeps its refresh token, for the account box."""
+        if slot and self.keychain is not None:
+            return self.keychain.name
+        return STORED_PRIVATELY
+
+    def saved(self):
+        """The saved session from the file alone; its refresh token is empty when a store holds it."""
+        data = _read_record(self.path)
+        if data is None or data.get("format") not in (_TOKEN_FILE_HEADER, _V1_HEADER):
+            return None
+        try:
+            tokens = TokenSet(
+                issuer=str(data["issuer"]),
+                client_id=str(data["client_id"]),
+                service=str(data["service"]),
+                subject=str(data["subject"]),
+                access_token="",
+                refresh_token=str(data.get("refresh_token") or ""),
+                expires_at=0.0,
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+        slot = data.get("keychain", "") if data["format"] == _TOKEN_FILE_HEADER else ""
+        if not isinstance(slot, str) or bool(slot) == bool(tokens.refresh_token):
+            return None  # Exactly one place holds the refresh token.
+        return SavedSession(tokens, slot)
+
+    def load(self):
+        """The saved session with its refresh token, or None when there is none any more.
+
+        Reads the store when it holds the token. Raises ``KeychainError`` when
+        the store does not answer: the session may well still be there.
+        """
+        saved = self.saved()
+        if saved is None or not saved.slot:
+            return saved
+        if self.keychain is None:
+            return None  # Saved in a store this Blender is told not to use.
+        secret = self.keychain.read(saved.slot)
+        if not secret:
+            return None
+        return SavedSession(replace(saved.tokens, refresh_token=secret), saved.slot)
+
+    def save(self, tokens, slot=""):
+        """Save the account and its refresh token; return the store entry used, "" for the file.
+
+        An empty ``slot`` opens a new entry, as a sign-in does; the entry of the
+        session it replaces is deleted, and stays named in the file until the
+        store has deleted it. A store that refuses leaves the token in the
+        private file. Raises OSError when the file cannot be written.
+        """
+        previous = self.saved()
+        if self.keychain is None:
+            slot = ""
+        else:
+            slot = slot or secrets.token_hex(16)
+            try:
+                self.keychain.write(slot, tokens.refresh_token)
+            except KeychainError:
+                slot = ""
+        record = {
+            "format": _TOKEN_FILE_HEADER,
+            "issuer": tokens.issuer,
+            "client_id": tokens.client_id,
+            "service": tokens.service,
+            "subject": tokens.subject,
+        }
+        if slot:
+            record["keychain"] = slot
+        else:
+            record["refresh_token"] = tokens.refresh_token
+        try:
+            with _FILE_LOCK:
+                retired = self._retired()
+                if previous is not None and previous.slot:
+                    retired.add(previous.slot)
+                retired.discard(slot)
+                if retired:
+                    record[_RETIRED] = sorted(retired)
+                _write_record(self.path, record)
+        except OSError:
+            if slot and (previous is None or previous.slot != slot):
+                self._delete(slot)
+            raise
+        left = {entry for entry in sorted(retired) if not self._delete(entry)}
+        if left != retired:
+            with _FILE_LOCK:
+                if _read_record(self.path) == record:  # Not replaced meanwhile.
+                    if left:
+                        record[_RETIRED] = sorted(left)
+                    else:
+                        del record[_RETIRED]
+                    with contextlib.suppress(OSError):
+                        _write_record(self.path, record)
+        return slot
+
+    def clear(self, slot=""):
+        """Delete the state file, its store entry and the store entry ``slot``.
+
+        The file goes at once. The entries are deleted on a thread of their own,
+        which is returned, because a locked keychain can block. An entry the
+        store does not delete, or that this Blender opted out of the store may
+        not, stays named in a file without a token, which reads as signed out,
+        until a Blender that uses the store deletes it.
+        """
+        saved = self.saved()
+        slots = ({slot, saved.slot if saved is not None else ""} | self._retired()) - {""}
+        with _FILE_LOCK:
+            if slots and self.keychain is None:
+                try:
+                    _write_record(
+                        self.path, {"format": _TOKEN_FILE_HEADER, _RETIRED: sorted(slots)}
+                    )
+                except OSError:
+                    pass  # The token must still go: delete the file below.
+                else:
+                    return None
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(os.fspath(self.path))
+        if not slots or self.keychain is None:
+            return None
+
+        def delete():
+            left = {entry for entry in sorted(slots) if not self._delete(entry)}
+            if left:
+                with _FILE_LOCK:
+                    self._name(left)
+
+        thread = threading.Thread(target=delete, name="ScenarioKeychainDelete")
+        thread.start()
+        return thread
+
+    def _retired(self):
+        """The store entries the file names for deletion, as a set."""
+        data = _read_record(self.path)
+        entries = data.get(_RETIRED) if data is not None else None
+        if not isinstance(entries, list):
+            return set()
+        return {entry for entry in entries if isinstance(entry, str) and entry}
+
+    def _name(self, entries):
+        """Add store entries to those the file names for deletion, after a sign-out.
+
+        A session saved since keeps its tokens and gains the names. Called with
+        ``_FILE_LOCK`` held.
+        """
+        data = _read_record(self.path)
+        if data is None or data.get("format") != _TOKEN_FILE_HEADER:
+            data = {"format": _TOKEN_FILE_HEADER}
+        data[_RETIRED] = sorted(self._retired() | set(entries))
+        with contextlib.suppress(OSError):
+            _write_record(self.path, data)
+
+    def _delete(self, slot):
+        """Delete one store entry; False when the store did not, or this Blender may not use it."""
+        if self.keychain is None:
+            return False
+        try:
+            self.keychain.delete(slot)
+        except KeychainError:
+            return False
+        return True
 
 
 class TokenSession:
     """The signed-in account's current access token, refreshed on demand.
 
-    Workers call ``bearer`` before each request. One refresh runs at a time:
+    Workers call ``bearer`` before each request. A session read from disk holds
+    no access token: its first ``bearer`` reads the refresh token from the
+    credential store and refreshes, on that worker. One refresh runs at a time:
     a worker that finds another refresh in flight waits for its outcome instead
     of spending the same refresh token twice. Another Blender on the same
-    account may rotate the refresh token first: the file is re-read before a
-    refresh and its newer tokens adopted, and a refresh refused because that
-    rotation landed in between adopts it afterwards. A refresh the provider
-    refuses otherwise ends the session for every caller until the user signs in
-    again. The file is rewritten only while it still holds this account: signed
-    out or replaced from another Blender, it is left alone and this session
-    lives on in memory.
+    account may rotate the refresh token first: the saved token is re-read
+    before a refresh and adopted, and a refresh refused because that rotation
+    landed in between adopts it afterwards. A refresh the provider refuses
+    otherwise ends the session for every caller until the user signs in again.
+    The saved session is rewritten only while it still holds this account:
+    signed out or replaced from another Blender, it is left alone and this
+    session lives on in memory.
     """
 
-    def __init__(self, app, tokens, path, *, refresh=refresh_tokens):
+    def __init__(self, app, tokens, storage, *, slot="", refresh=refresh_tokens):
         self._app = app
         self._tokens = tokens
-        self._path = path
+        self._storage = storage
+        self._slot = slot
         self._refresh = refresh
         self._lock = threading.Lock()
         self._ended = None
@@ -526,34 +700,54 @@ class TokenSession:
         """The reason the session ended, or None while it is usable."""
         return self._ended
 
+    @property
+    def stored_in(self):
+        """Where the refresh token is kept, for the account box."""
+        return self._storage.where(self._slot)
+
     def peek(self):
         """The current access token without a refresh, for a client's construction.
 
         Lock-free on purpose: the lock is held across a refresh's network call,
-        and this is read on Blender's main thread.
+        and this is read on Blender's main thread. Empty until the first request
+        of a session read from disk.
         """
         return self._tokens.access_token
 
-    def _saved_for_this_account(self):
-        """The file's tokens while it still belongs to this account, else None."""
-        saved = load_tokens(self._path)
-        if saved is None or saved.account != self._tokens.account or not saved.matches(self._app):
-            return None
-        return saved
+    def _ours(self, saved):
+        return (
+            saved is not None
+            and saved.tokens.account == self._tokens.account
+            and saved.tokens.matches(self._app)
+        )
+
+    def _load(self):
+        """Read the saved refresh token, on the first request of this Blender."""
+        try:
+            saved = self._storage.load()
+        except KeychainError as error:
+            raise SignInError(f"Could not read the Scenario sign-in: {error}") from None
+        if not self._ours(saved):
+            self._ended = "The Scenario sign-in is no longer saved on this computer; sign in again"
+            raise SignedOut(self._ended)
+        self._tokens, self._slot = saved.tokens, saved.slot
 
     def _adopt_newer(self):
-        """Take the tokens another process saved for this account, if any."""
-        saved = self._saved_for_this_account()
-        if saved is not None and saved.refresh_token != self._tokens.refresh_token:
-            self._tokens = saved
+        """Take the refresh token another process saved for this account, if any."""
+        try:
+            saved = self._storage.load()
+        except KeychainError:
+            return  # The store did not answer: refresh with what this session holds.
+        if self._ours(saved) and saved.tokens.refresh_token != self._tokens.refresh_token:
+            self._tokens, self._slot = saved.tokens, saved.slot
             self._unsaved = False
 
     def _rotated(self):
         """This session's tokens after a refresh.
 
         A refusal right after another Blender rotated the same refresh token is
-        that Blender's win, not the end of the account: its tokens are adopted
-        and, when they are expiring too, refreshed in turn.
+        that Blender's win, not the end of the account: its token is adopted
+        and refreshed in turn.
         """
         burned = self._tokens.refresh_token
         try:
@@ -567,18 +761,28 @@ class TokenSession:
         return self._refresh(self._app, self._tokens)
 
     def _save(self):
-        if self._saved_for_this_account() is None:
+        saved = self._storage.saved()
+        if not self._ours(saved):
             # Signed out, or another account signed in, from another Blender:
             # never rewrite that; this session keeps its tokens in memory.
             self._unsaved = False
             return
         try:
-            save_tokens(self._path, self._tokens)
+            self._slot = self._storage.save(self._tokens, saved.slot)
         except OSError:
             # Keep the rotated tokens in memory and try again on the next call.
             self._unsaved = True
         else:
             self._unsaved = False
+
+    def _forget_if_unchanged(self):
+        """After a refused refresh, delete the saved session unless another Blender renewed it."""
+        try:
+            saved = self._storage.load()
+        except KeychainError:
+            return
+        if saved is None or saved.tokens.refresh_token == self._tokens.refresh_token:
+            self._storage.clear(self._slot)
 
     def bearer(self):
         with self._lock:
@@ -586,24 +790,28 @@ class TokenSession:
                 raise SignedOut(self._ended)
             if self._unsaved:
                 self._save()
-            if self._tokens.expiring():
+            if not self._tokens.refresh_token:
+                self._load()
+            elif self._tokens.expiring():
                 self._adopt_newer()
             if self._tokens.expiring():
                 try:
                     self._tokens = self._rotated()
                 except SignedOut as error:
                     self._ended = str(error)
-                    saved = load_tokens(self._path)
-                    if saved is None or saved.refresh_token == self._tokens.refresh_token:
-                        clear_tokens(self._path)
+                    self._forget_if_unchanged()
                     raise
                 self._save()
             return self._tokens.access_token
 
     def sign_out(self):
+        """End the session and delete what this computer saved of it.
+
+        Returns the thread deleting the credential store entries, or None.
+        """
         with self._lock:
             self._ended = "Signed out"
-            clear_tokens(self._path)
+            return self._storage.clear(self._slot)
 
 
 class SignInAttempt:

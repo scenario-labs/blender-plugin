@@ -333,7 +333,9 @@ class _Keychain:
         self.entries = {}
         self.reads = 0
         self.refuse_writes = False
+        self.refuse_deletes = False
         self.silent = False
+        self.gate = None  # An Event a deletion waits for.
 
     def read(self, slot):
         self.reads += 1
@@ -347,7 +349,9 @@ class _Keychain:
         self.entries[slot] = secret
 
     def delete(self, slot):
-        if self.silent:
+        if self.gate is not None:
+            self.gate.wait(5)
+        if self.silent or self.refuse_deletes:
             raise KeychainError("the test keychain did not answer")
         self.entries.pop(slot, None)
 
@@ -451,6 +455,47 @@ def test_clear_deletes_the_file_at_once_and_the_entries_on_their_own_thread(tmp_
     assert storage.clear() is None
     assert storage.load() is None
     assert slot
+
+
+def test_an_entry_the_store_does_not_delete_at_sign_out_stays_named(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    slot = storage.save(_tokens())
+    keychain.refuse_deletes = True
+    storage.clear().join(5)
+    assert _record(storage) == {"format": "scenario-browser-sign-in-v2", "retired": [slot]}
+    assert storage.saved() is None
+    keychain.refuse_deletes = False
+    storage.clear().join(5)
+    assert keychain.entries == {} and not storage.path.exists()
+
+
+def test_a_replaced_entry_the_store_does_not_delete_stays_named_until_it_does(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    first = storage.save(_tokens())
+    keychain.refuse_deletes = True
+    second = storage.save(_tokens(refresh_token="refresh-2"))
+    assert _record(storage)["retired"] == [first]
+    assert storage.load().tokens.refresh_token == "refresh-2"
+    keychain.refuse_deletes = False
+    assert storage.save(_tokens(refresh_token="refresh-3"), second) == second
+    assert keychain.entries == {second: "refresh-3"}
+    assert "retired" not in _record(storage)
+
+
+def test_a_sign_in_saved_while_a_sign_out_deletes_keeps_its_session(tmp_path):
+    keychain = _Keychain()
+    storage = oauth.TokenStorage(tmp_path / "sign-in.json", keychain)
+    first = storage.save(_tokens())
+    keychain.gate, keychain.refuse_deletes = threading.Event(), True
+    thread = storage.clear()
+    second = storage.save(_tokens(refresh_token="refresh-2"))
+    keychain.gate.set()
+    thread.join(5)
+    assert storage.load().tokens.refresh_token == "refresh-2"
+    assert storage.saved().slot == second
+    assert _record(storage)["retired"] == [first]
 
 
 def test_a_store_that_does_not_answer_is_reported_not_taken_for_a_sign_out(tmp_path):

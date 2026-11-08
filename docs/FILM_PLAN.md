@@ -23,8 +23,8 @@ of editorial duration. Tasks have explicit names; another take needs another
 task name. Model parameter objects are data and still require the selected
 SDK model schema before a quote.
 
-Text-field limits apply both before and after punctuation normalization. Replacing
-an em dash with a comma and space cannot produce a value above its field limit.
+Text fields keep the author's text verbatim, punctuation included; only surrounding
+whitespace is trimmed, and each field limit applies to the text as written.
 Placeholder names are trimmed; names that then collide are rejected so no legend
 entry is silently overwritten. Distinct names retain their order and meanings.
 Scene object names must also be unique after normalization so motion targets are

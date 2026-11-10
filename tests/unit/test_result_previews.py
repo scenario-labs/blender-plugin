@@ -22,6 +22,7 @@ import pytest
 
 from scenario.core.api.sdk_adapter import Credentials, SDKAdapter
 from scenario.core.audio_waveform import EnvelopeBuilder, WaveformCanceled, WaveformError
+from scenario.core.jobs import local_render as render
 from scenario.core.jobs import result_previews as previews
 from scenario.core.jobs import transfers
 from scenario.core.jobs.coordinator import JobCoordinator
@@ -1002,7 +1003,7 @@ def test_eviction_and_sweep_remove_only_owned_stale_entries(env, tmp_path):
         for path in preview.path.parent.iterdir():
             os.utime(path, (stamp, stamp))
         entries.append((key, preview))
-    unrelated = env.cache / "v1" / ("a" * 64) / "not-an-entry"
+    unrelated = env.cache / previews.LAYOUT / ("a" * 16) / "not-an-entry"
     unrelated.mkdir()
     cache.evict(max_bytes=len(JPEG) * 2 + 1024)
     assert cache.read(entries[0][0], STILL) is None
@@ -1054,6 +1055,49 @@ def test_eviction_counts_only_freed_bytes_when_an_entry_cannot_be_removed(
     assert entries[0][1].path.exists()
     assert cache.read(entries[1][0], STILL) is None
     assert cache.read(entries[2][0], STILL) == entries[2][1]
+
+
+@pytest.mark.parametrize("user", ["a" * 20, "\u00e9" * 20])
+def test_cached_still_paths_fit_blender_in_a_default_windows_profile(user):
+    # Blender opens cached stills and decode copies by their ordinary Win32
+    # path; blender_path refuses one over its bound before Blender sees it.
+    # A 20-character user name and Blender 5.0's default extension user
+    # directory must leave headroom for a longer name or a deeper profile.
+    headroom = 48
+
+    def root(name):
+        return PureWindowsPath(
+            r"\\?\C:\Users",
+            name,
+            r"AppData\Roaming\Blender Foundation\Blender\5.0",
+            r"extensions\.user\user_default\scenario\cache\result-previews",
+        )
+
+    keys = (
+        previews.PreviewKey("f" * 64, "f" * 64, "asset", "image/png", "f" * 64, 2**63 - 1),
+        previews.ReviewKey("f" * 64, "f" * 64, "f" * 64, "asset"),
+    )
+    stills = ["still" + suffix for suffix, _ in previews._SERVER[STILL].values()]
+    sources = ["source" + suffix for suffix, _ in previews._LOCAL_IMAGES.values()]
+    work = ("work", "preview-" + "x" * 8)
+    for name in (user, user + "x" * headroom):
+        paths = [
+            root(name).joinpath(*previews.entry_parts(key), still)
+            for key in keys
+            for still in stills
+        ]
+        paths += [root(name).joinpath(*work, file) for file in [*sources, "preview.png"]]
+        for path in paths:
+            assert render.blender_path(path) == str(path)[4:]
+
+
+def test_eviction_removes_the_former_cache_layout(env):
+    cache = previews.PreviewCache(env.cache)
+    legacy = env.cache / "v1" / ("a" * 64) / ("b" * 64)
+    legacy.mkdir(parents=True)
+    (legacy / "still.png").write_bytes(png(2, 2))
+    cache.evict()
+    assert not (env.cache / "v1").exists()
 
 
 def test_publish_keeps_an_existing_valid_entry(env):
@@ -1111,7 +1155,7 @@ def test_publish_requires_bounded_still_dimensions(env, rendition, details):
             sha256=hashlib.sha256(data).hexdigest(),
             **details,
         )
-    assert not (env.cache / "v1").exists()
+    assert not (env.cache / previews.LAYOUT).exists()
 
 
 def test_cached_still_without_bounded_dimensions_is_a_miss(env):

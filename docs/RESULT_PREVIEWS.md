@@ -415,12 +415,14 @@ result in a system or Blender player.
 The runtime passes `cache/result-previews` under Blender's extension user
 directory. If that directory cannot be created, the session still runs jobs and
 `result_previews` reports that previews are not configured. Entries live in
-`v1/<scope digest>/<key digest>/`; the scope digest matches the saved result
-partition and the key also binds the request, asset, MIME type and receipt
-digest and size. Another credential, project, request or byte content therefore
-never shares an entry. Stills and clips have a data file and a JSON sidecar
-holding digests, sizes, dimensions and the server preview asset ID, never a URL,
-credential or prompt. Envelopes and `missing` markers are sidecars only.
+`v2/<scope digest>/<key digest>/`, named by digest prefixes so that Windows
+paths stay within Blender's limit. The scope digest is the saved result
+partition's and the key also binds the request, asset, MIME type and receipt
+digest and size; reads compare the whole key with the sidecar's. Another
+credential, project, request or byte content therefore never shares an entry.
+Stills and clips have a data file and a JSON sidecar holding digests, sizes,
+dimensions and the server preview asset ID, never a URL, credential or prompt.
+Envelopes and `missing` markers are sidecars only.
 
 Like saved results, the paths the cache returns, including decode requests,
 use the canonical spelling of its root: on Windows, the extended-length `\\?\`
@@ -432,10 +434,11 @@ Reads accept only a regular, nonsymlink file whose size, digest and signature
 match its sidecar; anything else is a cache miss. Publication never replaces a
 valid entry. At most every ten minutes the lane removes abandoned work
 directories older than a day and evicts the least recently used entries beyond
-512 MiB, keeping entries used in the last minute. That pass normally starts a
-preview batch. Once every rendition has settled no batch comes, so when previews
-were written since the last pass, the scheduler queues a maintenance-only lane
-command on the same ten-minute cadence. It reads no job record and makes no
+512 MiB, keeping entries used in the last minute; it also deletes the former
+`v1` layout. That pass normally starts a preview batch. Once every rendition
+has settled no batch comes, so when previews were written since the last pass,
+the scheduler queues a maintenance-only lane command on the same ten-minute
+cadence. It reads no job record and makes no
 network request, and it evicts only beyond the budget. A cache that writes took
 past 512 MiB is therefore brought back toward it within about ten minutes of the
 previous pass, whether or not more previews are requested. A ready status can

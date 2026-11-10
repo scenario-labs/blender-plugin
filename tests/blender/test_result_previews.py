@@ -325,7 +325,9 @@ class SessionPreviewTests(unittest.TestCase):
         directories exceed MAX_PATH. The cache writes them through Windows'
         extended namespace; enumerating the plain spelling would find nothing.
         """
-        return list(self.transfers._root(self.cache).joinpath("v1").rglob("envelope.json"))
+        return list(
+            self.transfers._root(self.cache).joinpath(self.previews.LAYOUT).rglob("envelope.json")
+        )
 
     def test_audio_envelope_decodes_in_an_offline_child_on_the_lane(self):
         self.offline_session()

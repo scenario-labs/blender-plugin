@@ -80,7 +80,17 @@ AUDIO_SOURCE_MAX_BYTES = 256 * 1024 * 1024
 SIDECAR_MAX_BYTES = 128 * 1024
 CACHE_MAX_BYTES = 512 * 1024 * 1024
 WORK_STALE_SECONDS = 24 * 60 * 60
+# Entries live in LAYOUT/<scope>/<entry>/. Blender opens cached stills by their
+# ordinary Windows path, which blender_path bounds at 258 characters, so the
+# directories take digest prefixes: in a default profile, a 20-character user
+# name leaves more than 50 characters to spare. The sidecar holds the whole key
+# and reads compare it, so a shared prefix could only cause a cache miss.
+LAYOUT = "v2"
+_LEGACY_LAYOUTS = ("v1",)
+_SCOPE_DIGITS, _ENTRY_DIGITS = 16, 32
 _HEX = re.compile(r"[0-9a-f]{64}")
+_SCOPE_NAME = re.compile(rf"[0-9a-f]{{{_SCOPE_DIGITS}}}")
+_ENTRY_NAME = re.compile(rf"[0-9a-f]{{{_ENTRY_DIGITS}}}")
 _MEDIA_TYPE = re.compile(r"[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,63}")
 
 
@@ -694,6 +704,11 @@ def discard_directory(directory):
         pass
 
 
+def entry_parts(key):
+    """Directory names below the cache root that hold one key's entry."""
+    return LAYOUT, key.scope[:_SCOPE_DIGITS], key.name[:_ENTRY_DIGITS]
+
+
 class PreviewCache:
     """Private preview files below a caller-owned root, written by one lane per process.
 
@@ -738,7 +753,7 @@ class PreviewCache:
 
     def _entry(self, key, *, create=False):
         try:
-            return self._directory("v1", key.scope, key.name, create=create)
+            return self._directory(*entry_parts(key), create=create)
         except FileNotFoundError:
             if create:
                 raise PreviewError("Preview cache is unavailable") from None
@@ -946,24 +961,34 @@ class PreviewCache:
 
         Only bytes actually removed count as freed: an entry the system keeps,
         such as a file Windows holds open, leaves the next oldest entry in line
-        and is tried again on the next pass.
+        and is tried again on the next pass. Entries of an earlier layout are
+        never read again, so they are removed whole.
         """
         now = time.time() if now is None else now
+        for name in _LEGACY_LAYOUTS:
+            legacy = self._root / name
+            try:
+                if stat.S_ISDIR(legacy.lstat().st_mode):
+                    shutil.rmtree(legacy, ignore_errors=True)
+            except OSError:
+                pass  # Absent, or removed on a later pass.
         entries, total = [], 0
         try:
-            scopes = tuple((self._root / "v1").iterdir())
+            scopes = tuple((self._root / LAYOUT).iterdir())
         except OSError:
             return
         for scope in scopes:
             try:
-                if not _HEX.fullmatch(scope.name) or not stat.S_ISDIR(scope.lstat().st_mode):
+                if not _SCOPE_NAME.fullmatch(scope.name) or not stat.S_ISDIR(scope.lstat().st_mode):
                     continue
                 names = tuple(scope.iterdir())
             except OSError:
                 continue
             for entry in names:
                 try:
-                    if not _HEX.fullmatch(entry.name) or not stat.S_ISDIR(entry.lstat().st_mode):
+                    if not _ENTRY_NAME.fullmatch(entry.name) or not stat.S_ISDIR(
+                        entry.lstat().st_mode
+                    ):
                         continue
                     files = [item.lstat() for item in entry.iterdir()]
                 except OSError:

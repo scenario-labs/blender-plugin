@@ -1091,6 +1091,29 @@ def test_cached_still_paths_fit_blender_in_a_default_windows_profile(user):
             assert render.blender_path(path) == str(path)[4:]
 
 
+def test_keys_sharing_an_entry_directory_never_read_each_other(env, monkeypatch):
+    # Entry directories are digest prefixes: if two keys ever share one, only
+    # the whole key in the sidecar keeps them apart.
+    monkeypatch.setattr(previews, "entry_parts", lambda key: (previews.LAYOUT, "a" * 16, "b" * 32))
+    cache = previews.PreviewCache(env.cache)
+    key = previews.PreviewKey("a" * 64, "b" * 64, "asset", "image/jpeg", "c" * 64, 1)
+    other = replace(key, asset_id="other")
+    staged = cache.workspace() / "still"
+    staged.write_bytes(JPEG)
+    published = cache.publish(
+        other,
+        STILL,
+        staged,
+        media_type="image/jpeg",
+        size=len(JPEG),
+        sha256=hashlib.sha256(JPEG).hexdigest(),
+        width=32,
+        height=24,
+    )
+    assert cache.read(other, STILL) == published
+    assert cache.read(key, STILL) is None
+
+
 def test_eviction_removes_the_former_cache_layout(env):
     cache = previews.PreviewCache(env.cache)
     legacy = env.cache / "v1" / ("a" * 64) / ("b" * 64)

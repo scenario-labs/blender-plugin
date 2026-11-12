@@ -21,11 +21,16 @@ sys.path.insert(0, str(HERE))
 
 from blender_env import inspect_zip, sha256, verify_installed  # noqa: E402
 
+# The extension keeps a browser sign-in in the OS credential store; a native run
+# keeps it in its disposable profile instead, whatever machine runs it.
+os.environ["SCENARIO_CREDENTIAL_STORE"] = "file"
+
 BASELINE = (
     "test_upload_transfers",
     "test_upload_store",
     "test_credentials",
     "test_sign_in",
+    "test_keychain",
     "test_sdk_connection",
     "test_result_commands",
     "test_upload_commands",

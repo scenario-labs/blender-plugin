@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Scenario Inc.
+# SPDX-License-Identifier: GPL-3.0-or-later
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 #
 # Scenario: CodeRabbit configuration for scenario-labs/blender-plugin

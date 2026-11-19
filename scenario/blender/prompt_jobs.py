@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import bpy
 
 from ..core.api.errors import ScenarioError
+from ..core.jobs import failures
 from ..core.jobs.store import JobState
 from . import file_state
 
@@ -32,6 +33,8 @@ class PromptAction:
     cost: str = ""
     error: str = ""
     next_poll: float = 0.0
+    # Scenario's reason from the last retrieval that observed the job failed.
+    failure: object = field(default=None, repr=False)
     # The submission's outcome was unconfirmed when this action stopped; once
     # the user links its cloud job and it finishes, the action reads its text.
     unconfirmed: bool = False
@@ -230,6 +233,7 @@ class PromptJobs:
                         continue
                     if item.phase == "POLLING":
                         item.next_poll = time.monotonic() + 2.0
+                        item.failure = _observe_failure(completion.result)
                 record = self.store.get(item.request_id)
                 if record is None:
                     raise ScenarioError(0, "The saved prompt job is unavailable")
@@ -247,16 +251,29 @@ class PromptJobs:
                         item.task = self.session.read_prompt_results(
                             item.request_id, expected_revision=record.revision
                         )
+                elif record.state == JobState.FAILED:
+                    failure = item.failure
+                    observed = failure is not None and (
+                        failure.remote_job_id,
+                        failure.revision,
+                    ) == (record.remote_job_id, record.revision)
+                    raise ScenarioError(
+                        0, failure.reason if observed else "Scenario reported the job failed"
+                    )
                 else:
                     raise ScenarioError(
                         0, "The prompt job needs inspection; do not repeat an uncertain submission"
                     )
-            except Exception:
+            except Exception as error:
                 item.task = None
                 item.phase = "ERROR"
+                # Only a ScenarioError carries a reason meant for display.
+                reason = error.reason if isinstance(error, ScenarioError) else ""
                 item.error = (
-                    self._stopped(item.request_id)
+                    self._stopped(item.request_id, reason)
                     if item.request_id
+                    else f"Prompt price unavailable: {reason}"
+                    if reason
                     else "Prompt price unavailable or inputs changed; request a new price"
                 )
                 if item.request_id:
@@ -274,7 +291,7 @@ class PromptJobs:
                             "never send it again"
                         )
 
-    def _stopped(self, request_id):
+    def _stopped(self, request_id, reason=""):
         # Local cancellation makes a queued submission fail its stored-state
         # check before dispatch; a remote job ID means Scenario saw the request.
         try:
@@ -283,4 +300,15 @@ class PromptJobs:
             record = None
         if record is not None and record.state == JobState.CANCELED and not record.remote_job_id:
             return "Prompt request canceled; nothing was sent to Scenario"
+        if reason:
+            return f"Prompt action stopped: {reason}"
         return "Prompt action stopped; inspect the saved job"
+
+
+def _observe_failure(snapshot):
+    """Scenario's plain-text reason from a refresh that observed a failure, else None."""
+    try:
+        return failures.observe(snapshot)
+    except Exception:
+        # Never log the response; it may carry signed result URLs.
+        return None

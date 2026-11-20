@@ -53,6 +53,7 @@ class PromptToolsTests(unittest.TestCase):
         self.cloud_jobs = []
         self.result_text = "A copper teapot\nSoft studio light"
         self.fail_read = False
+        self.job_error = None  # a failed remote job's metadata.error
         self.render_model = None  # served to model description reads
         self.hold_quotes, self.held_quotes = None, threading.Semaphore(0)
         api, catalog, session = self.api, self.runtime.SDKCatalog, self.runtime.JobSession
@@ -70,6 +71,18 @@ class PromptToolsTests(unittest.TestCase):
                 if self.fail_read:
                     return httpx.Response(503)
                 index = int(request.url.path.rsplit("-", 1)[-1]) - 1
+                if self.job_error is not None:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "job": {
+                                "jobId": f"remote-{index + 1}",
+                                "status": "failure",
+                                "jobType": "generate-prompt",
+                                "metadata": {"error": self.job_error},
+                            }
+                        },
+                    )
                 translate = self.paid[index].url.path.endswith("/translate")
                 output = (
                     {"translation": self.result_text}
@@ -311,6 +324,18 @@ class PromptToolsTests(unittest.TestCase):
         self.assertEqual(bpy.ops.scenario.prompt_spark(lane="image"), {"CANCELLED"})
         self.assertEqual(len(self.paid), 1)
         self.assertEqual(self.lane.prompt, "a teapot")
+
+    def test_a_failed_prompt_job_shows_scenario_reason(self):
+        item = self.quote("REWRITE")
+        self.job_error = "The prompt model is unavailable"
+        self.assertEqual(self.approve(item), {"FINISHED"})
+        self.advance(item)
+        self.assertEqual(
+            (item.phase, item.error),
+            ("ERROR", "Prompt action stopped: The prompt model is unavailable"),
+        )
+        self.assertEqual(self.lane.prompt, "a teapot")
+        self.assertEqual(len(self.paid), 1)
 
     def test_an_unconfirmed_prompt_refuses_an_identical_one_after_restart_until_reviewed(self):
         item = self.quote()

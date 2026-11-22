@@ -169,7 +169,7 @@ def test_placeholder_legend_preserves_distinct_normalized_entries():
         ("placeholders", 2000),
     ],
 )
-def test_normalized_recipe_text_obeys_its_field_limit(field, maximum):
+def test_recipe_text_obeys_its_field_limit(field, maximum):
     raw = fixture()
     shot = raw["shots"][0]
     if field in {"style", "story"}:
@@ -183,11 +183,27 @@ def test_normalized_recipe_text_obeys_its_field_limit(field, maximum):
         target, key = shot["placeholders"], "mountain"
     else:
         target, key = shot, field
-    target[key] = "x" * (maximum - 3) + "\u2014x"
+    target[key] = "x" * (maximum - 2) + "\u2014x"
     film_module().validate_film_plan(raw)
     target[key] += "x"
     with pytest.raises(ValueError, match=f"at most {maximum} characters"):
         film_module().validate_film_plan(raw)
+
+
+def test_recipe_text_keeps_dashes_and_trims_only_surrounding_whitespace():
+    raw = fixture()
+    dash = "Dawn \u2014 a cloud sea"
+    raw["style"] = f"  {dash}  "
+    raw["heroes"]["courier"]["description"] = dash
+    shot = raw["shots"][0]
+    shot["placeholders"]["mountain"] = dash
+    shot["dialogue"] = {"text": dash, "speaker": "Courier", "task": "speech", "offset": 0}
+    plan = film_module().validate_film_plan(raw)
+    first = plan["shots"][0]
+    assert plan["style"] == dash
+    assert plan["heroes"]["courier"]["description"] == dash
+    assert first["placeholders"]["mountain"] == dash
+    assert first["dialogue"]["text"] == dash
 
 
 @pytest.mark.parametrize("source_duration", [None, 30])

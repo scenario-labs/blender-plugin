@@ -265,15 +265,19 @@ class Credentials:
         """The Authorization header value; ``refresh=False`` only validates the shape.
 
         A token source may refresh over the network, so callers on Blender's
-        main thread validate without a refresh and leave it to the request.
+        main thread validate without a refresh and leave it to the request. A
+        token source that holds no token yet (a saved sign-in in a Blender that
+        just started) has no shape to check: ``refresh=False`` returns None.
         """
         import base64
 
         bearer_token = self.bearer_token
         if self.token_source is not None:
-            if bearer_token:
-                raise ValueError("Select one bearer token or one token source")
+            if bearer_token or self.api_key or self.api_secret:
+                raise ValueError("Select one API-key pair, one bearer token or one token source")
             bearer_token = self.token_source.bearer() if refresh else self.token_source.peek()
+            if not bearer_token and not refresh:
+                return None
         basic = bool(self.api_key and self.api_secret)
         partial = bool(self.api_key) != bool(self.api_secret)
         if partial or basic == bool(bearer_token):

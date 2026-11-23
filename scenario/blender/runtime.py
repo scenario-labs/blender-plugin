@@ -11,7 +11,7 @@ import uuid
 import bpy
 
 from .. import prefs as prefs_module
-from ..core import config
+from ..core import config, keychain
 from ..core.api import oauth
 from ..core.api.errors import ScenarioError
 from ..core.api.sdk_adapter import Credentials as SDKCredentials
@@ -293,6 +293,11 @@ def browser_session_path():
     return paths().state_dir / BROWSER_SESSION_FILE
 
 
+def browser_storage():
+    """Where the browser sign-in is saved: the credential store when the computer has one."""
+    return oauth.TokenStorage(browser_session_path(), keychain.system_store())
+
+
 def browser_session():
     """The saved browser account for the selected application, or None.
 
@@ -306,10 +311,11 @@ def browser_session():
             app = oauth.selected_app()
         except oauth.SignInError:
             return None
-        path = browser_session_path()
-        tokens = oauth.load_tokens(path)
-        if tokens is not None and tokens.matches(app):
-            state.browser_session = oauth.TokenSession(app, tokens, path)
+        # The file alone: the credential store is read by the first request's worker.
+        storage = browser_storage()
+        saved = storage.saved()
+        if saved is not None and saved.tokens.matches(app):
+            state.browser_session = oauth.TokenSession(app, saved.tokens, storage, slot=saved.slot)
     session = state.browser_session
     return session if session is not None and session.ended is None else None
 

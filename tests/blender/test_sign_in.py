@@ -9,8 +9,10 @@ is pending must cancel the attempt before any token exchange.
 
 import os
 import tempfile
+import threading
 import time
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import bpy
@@ -37,6 +39,47 @@ class _PendingBrowser:
 
     def close(self):
         self.closed = True
+
+
+class _AnsweredBrowser:
+    """A sign-in attempt whose browser answers at once with the given tokens."""
+
+    url = "https://idp.example.invalid/oauth/authorize?fixture"
+
+    def __init__(self, tokens):
+        self.tokens = tokens
+
+    def complete(self, *, cancelled=None, timeout=None, opener=None):
+        return self.tokens
+
+    def close(self):
+        pass
+
+
+class _Keychain:
+    """A credential store that records which thread touches it."""
+
+    name = "the test keychain"
+
+    def __init__(self):
+        self.entries = {}
+        self.main_thread_calls = []
+
+    def _touch(self, call):
+        if threading.current_thread() is threading.main_thread():
+            self.main_thread_calls.append(call)
+
+    def read(self, slot):
+        self._touch("read")
+        return self.entries.get(slot)
+
+    def write(self, slot, secret):
+        self._touch("write")
+        self.entries[slot] = secret
+
+    def delete(self, slot):
+        self._touch("delete")
+        self.entries.pop(slot, None)
 
 
 class SignInTests(unittest.TestCase):
@@ -79,6 +122,66 @@ class SignInTests(unittest.TestCase):
             sign_in.cancel()
             sign_in.wait()
             runtime.state.last_message = message
+
+    def test_the_credential_store_is_used_only_off_the_main_thread(self):
+        """Sign-in saves, start-up reads the file alone, sign-out deletes on a thread."""
+        sign_in = submodule("blender.sign_in")
+        runtime = submodule("blender.runtime")
+        desktop = submodule("blender.desktop")
+        oauth = submodule("core.api.oauth")
+        app = oauth.OAuthApp(
+            issuer="https://idp.example.invalid",
+            client_id="fixture-client",
+            service="https://service.example.invalid/v1",
+        )
+        tokens = oauth.TokenSet(
+            issuer=app.issuer,
+            client_id=app.client_id,
+            service=app.service,
+            subject="user_a",
+            access_token="access-1",
+            refresh_token="refresh-1",
+            expires_at=time.time() + 3600,
+        )
+        keychain = _Keychain()
+        previous = runtime.state.browser_session, runtime.state.browser_session_loaded
+        message = runtime.state.last_message
+        with tempfile.TemporaryDirectory() as directory:
+            storage = oauth.TokenStorage(Path(directory) / "sign-in.json", keychain)
+            try:
+                with (
+                    patch.object(oauth, "selected_app", return_value=app),
+                    patch.object(oauth, "SignInAttempt", return_value=_AnsweredBrowser(tokens)),
+                    patch.object(desktop, "open_url"),
+                    patch.object(runtime, "browser_storage", return_value=storage),
+                    patch.object(sign_in, "load_teams"),
+                ):
+                    with online_access(True):
+                        sign_in.start()
+                        sign_in.wait()
+                    session = runtime.state.browser_session
+                    self.assertEqual(session.account, tokens.account)
+                    self.assertEqual(session.stored_in, "the test keychain")
+                    self.assertEqual(list(keychain.entries.values()), ["refresh-1"])
+                    # A Blender that starts reads the file alone and builds the session.
+                    runtime.state.browser_session = None
+                    runtime.state.browser_session_loaded = False
+                    reopened = runtime.browser_session()
+                    self.assertEqual(reopened.account, tokens.account)
+                    self.assertEqual(reopened.peek(), "")
+                    sign_in.sign_out()
+                    self.assertFalse(storage.path.exists())
+                for thread in threading.enumerate():
+                    if thread.name == "ScenarioKeychainDelete":
+                        thread.join(5)
+                self.assertEqual(keychain.entries, {})
+                self.assertEqual(keychain.main_thread_calls, [])
+            finally:
+                if bpy.app.timers.is_registered(sign_in._poll):
+                    bpy.app.timers.unregister(sign_in._poll)
+                runtime.set_browser_session(previous[0])
+                runtime.state.browser_session_loaded = previous[1]
+                runtime.state.last_message = message
 
 
 # Two teams with several projects each, and a team where the account has none.
@@ -125,6 +228,8 @@ class _Session:
             client_id="fixture-client",
             service="https://service.example.invalid/v1",
         )
+
+    stored_in = "this Blender's private extension data"
 
     def sign_out(self):
         pass

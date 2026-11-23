@@ -304,8 +304,10 @@ guide; follow the instructions attached to them.
 ### Credentials and project
 
 - **Sign in with Scenario** opens your web browser on Scenario's sign-in page and
-  keeps the session in the extension's private state folder, refreshed in the
-  background. It then asks which team and project your work goes to, or uses
+  keeps the session in your system's keychain (macOS Keychain, Windows
+  Credential Manager or the Linux Secret Service), or in the extension's private
+  state folder when there is none, refreshed in the background. Preferences show
+  which. It then asks which team and project your work goes to, or uses
   your only project when you have one; nothing runs on the account until a
   project is chosen. If the chosen project is deleted, Blender asks again. The
   account row of the Scenario sidebar shows the choice and switches it.

@@ -250,7 +250,7 @@ class ScenarioPreferences(bpy.types.AddonPreferences):
             box.operator("scenario.cancel_sign_in", text="Cancel", icon="X")
         elif runtime.browser_session() is not None:
             box.label(text="Signed in with your Scenario account", icon="CHECKMARK")
-            box.label(text="Saved privately in this Blender's extension data", icon="INFO")
+            box.label(text=f"Saved in {runtime.browser_session().stored_in}", icon="INFO")
             sign_in.draw_destination(box)
             row = box.row(align=True)
             row.operator("scenario.sign_out", text="Sign out", icon="X")

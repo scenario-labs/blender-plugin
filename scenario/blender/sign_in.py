@@ -35,13 +35,14 @@ _enum_items = {"team": [], "project": []}
 
 
 class _Attempt:
-    def __init__(self, app, attempt, path):
+    def __init__(self, app, attempt, storage):
         self.app = app
         self.attempt = attempt
-        self.path = path
+        self.storage = storage
         self.cancelled = threading.Event()
         self.reason = ""  # Why the attempt was cancelled, when it was.
         self.tokens = None
+        self.slot = ""  # The credential store entry the tokens were saved in.
         self.error = ""
         self.thread = threading.Thread(target=self._run, name="ScenarioSignInWait", daemon=True)
 
@@ -51,9 +52,14 @@ class _Attempt:
 
     def _run(self):
         try:
-            self.tokens = self.attempt.complete(cancelled=self.cancelled)
+            tokens = self.attempt.complete(cancelled=self.cancelled)
+            # Here, not on the main thread: the credential store can block.
+            self.slot = self.storage.save(tokens)
+            self.tokens = tokens
         except oauth.SignInError as error:
             self.error = self.reason or str(error)
+        except OSError:
+            self.error = "Could not save the Scenario session"
         except Exception:  # The worker must end with an outcome, never a traceback.
             log.exception("browser sign-in failed")
             self.error = "The sign-in did not complete"
@@ -105,7 +111,7 @@ def start():
     except (ValueError, playback.PlaybackError, OSError, RuntimeError):
         attempt.close()
         raise ScenarioError(0, "The system could not open the web browser") from None
-    _pending = _Attempt(app, attempt, runtime.browser_session_path())
+    _pending = _Attempt(app, attempt, runtime.browser_storage())
     _pending.thread.start()
     if not bpy.app.timers.is_registered(_poll):
         bpy.app.timers.register(_poll, first_interval=POLL_INTERVAL, persistent=True)
@@ -135,16 +141,13 @@ def _poll():
     if attempt.tokens is None:
         runtime.set_message(attempt.error or "The sign-in did not complete")
     else:
-        try:
-            oauth.save_tokens(attempt.path, attempt.tokens)
-        except OSError:
-            runtime.set_message("Could not save the Scenario session")
-        else:
-            session = oauth.TokenSession(attempt.app, attempt.tokens, attempt.path)
-            runtime.set_browser_session(session)
-            runtime.set_message("Signed in to Scenario")
-            # Ask where the work goes now, not at the first Generate.
-            load_teams(choose=True)
+        session = oauth.TokenSession(
+            attempt.app, attempt.tokens, attempt.storage, slot=attempt.slot
+        )
+        runtime.set_browser_session(session)
+        runtime.set_message("Signed in to Scenario")
+        # Ask where the work goes now, not at the first Generate.
+        load_teams(choose=True)
     _redraw()
     return None
 
@@ -327,7 +330,7 @@ def sign_out():
     if session is not None:
         session.sign_out()
     else:
-        oauth.clear_tokens(runtime.browser_session_path())
+        runtime.browser_storage().clear()
     _forget_choice()
     runtime.set_browser_session(None)
     runtime.set_message("Signed out of Scenario")

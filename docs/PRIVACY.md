@@ -177,11 +177,15 @@ saved fields and save preferences to remove them there; also check backups and
 how your launcher stores environment variables. Rotate the key in Scenario if
 it leaks or a machine holding it is lost.
 
-Sign in with Scenario keeps its access and refresh tokens in `state/sign-in.json`
-under the extension's user directory, a private file (owner read and write
-only) that is never written into a `.blend` file. The token is refreshed in place.
+Sign in with Scenario keeps its refresh token in the macOS Keychain, Windows
+Credential Manager or a Linux desktop's Secret Service, as a "Scenario for Blender"
+item. `state/sign-in.json` under the extension's user directory then names the
+account and that item, not a token. Without such a store, or with
+`SCENARIO_CREDENTIAL_STORE=file`, that private file (owner read and write only)
+holds the refresh token itself. The access token stays in memory and is refreshed
+on the first request after Blender starts. Neither is written into a `.blend` file.
 Blender's preferences keep the chosen project's ID, its team and project names and your
-account's sign-in ID. Sign out deletes the file and that choice. Revoke the "Scenario for Blender"
+account's sign-in ID. Sign out deletes the file, the item and that choice. Revoke the "Scenario for Blender"
 application in your Scenario account if a machine holding it is lost.
 
 The extension's own user directory under Blender's extensions folder keeps the

@@ -201,15 +201,21 @@ def _selection():
 
 def select_objects(args):
     names = set(args.get("names") or [])
+    view_layer = bpy.context.view_layer
     with file_state.marking("Scenario MCP selection", _selection):
-        for obj in selection.layer_objects(bpy.context.view_layer):
+        layer = selection.layer_objects(view_layer)
+        for obj in layer:
             obj.select_set(obj.name in names)
-        first = next((bpy.data.objects[n] for n in names if n in bpy.data.objects), None)
-        if first is not None:
-            bpy.context.view_layer.objects.active = first
+        # Only a view-layer object can become active; any other raises in Blender.
+        picked = [obj for obj in layer if obj.name in names]
+        if picked:
+            view_layer.objects.active = picked[0]
+    selected = {obj.name for obj in picked}
+    in_file = names & set(bpy.data.objects.keys())
     return {
-        "selected": sorted(names & set(bpy.data.objects.keys())),
-        "missing": sorted(names - set(bpy.data.objects.keys())),
+        "selected": sorted(selected),
+        "missing": sorted(names - in_file),
+        "not_in_view_layer": sorted(in_file - selected),
     }
 
 
@@ -901,7 +907,7 @@ SPECS = (
             "Replace the selection in the current view layer with the named Blender objects.\n"
             "Args:\n"
             "  - names: required array of strings, object names to select; an empty array clears selection.\n"
-            "Returns: selected and missing name lists. A matching object becomes active; do not rely on array order to choose it.\n"
+            "Returns: selected, missing (not in the file) and not_in_view_layer (in the file, outside the current view layer, so not selected) name lists. A selected object becomes active; do not rely on array order to choose it.\n"
             'Example: {"names": ["Cube"]}.\n'
             "Prefer scene_summary to verify names and the existing selection before changing it.\n"
             "No platform equivalent."

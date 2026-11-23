@@ -179,6 +179,25 @@ class McpToolsTests(unittest.TestCase):
         self.tb.set_frame({"frame": 42})
         self.assertEqual(bpy.context.scene.frame_current, 42)
 
+    def test_select_objects_reports_names_outside_the_view_layer(self):
+        other = bpy.data.scenes.new("Elsewhere")
+        offstage = bpy.data.objects.new("Offstage", None)
+        other.collection.objects.link(offstage)
+        try:
+            result = self.tb.select_objects({"names": ["Offstage", "Crate", "Nope"]})
+            self.assertEqual(result["selected"], ["Crate"])
+            self.assertEqual(result["missing"], ["Nope"])
+            self.assertEqual(result["not_in_view_layer"], ["Offstage"])
+            self.assertEqual(bpy.context.view_layer.objects.active.name, "Crate")
+            # Only names outside the view layer: nothing is selected and nothing raises.
+            result = self.tb.select_objects({"names": ["Offstage"]})
+            self.assertEqual(result["selected"], [])
+            self.assertEqual(result["not_in_view_layer"], ["Offstage"])
+            self.assertFalse(bpy.data.objects["Crate"].select_get())
+        finally:
+            bpy.data.objects.remove(offstage)
+            bpy.data.scenes.remove(other)
+
     def test_list_models_and_schema_use_loaded_catalog(self):
         runtime = submodule("blender.runtime")
         catalog = submodule("core.api.catalog")
